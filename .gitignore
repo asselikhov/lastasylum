@@ -1,0 +1,8 @@
+backend/.env
+backend/node_modules/
+backend/dist/
+backend/coverage/
+mobile-android/.gradle/
+mobile-android/local.properties
+mobile-android/**/build/
+*.log
