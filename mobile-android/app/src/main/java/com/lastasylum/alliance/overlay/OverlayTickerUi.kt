@@ -1,9 +1,12 @@
 package com.lastasylum.alliance.overlay
 
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.util.TypedValue
+import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.TextView
 
 object OverlayTickerUi {
@@ -46,6 +49,24 @@ object OverlayTickerUi {
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
         view.letterSpacing = 0.02f
         view.alpha = 0.92f
+    }
+
+    /** Круглая кнопка оверлея (показать/скрыть UI, блокировка позиций). */
+    fun applyRoundOverlayFab(context: Context, button: ImageButton) {
+        val side = dp(context, 44f).toInt()
+        val pad = dp(context, 10f).toInt()
+        val circle = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.parseColor("#E6282540"))
+            setStroke(dp(context, 1.5f).toInt(), Color.parseColor("#889B7CFF"))
+        }
+        button.background = circle
+        button.minimumWidth = side
+        button.minimumHeight = side
+        button.setPadding(pad, pad, pad, pad)
+        button.scaleType = ImageView.ScaleType.CENTER_INSIDE
+        button.imageTintList = ColorStateList.valueOf(Color.parseColor("#F0ECFF"))
+        button.alpha = 0.96f
     }
 
     private fun dp(context: Context, value: Float): Float {

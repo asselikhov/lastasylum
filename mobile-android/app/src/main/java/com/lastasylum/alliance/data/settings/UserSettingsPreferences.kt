@@ -20,9 +20,17 @@ class UserSettingsPreferences(context: Context) {
         prefs.edit().putBoolean(KEY_COMPACT_OVERLAY, value).apply()
     }
 
+    /** Если true — пузырёк PTT и круглые кнопки нельзя перетаскивать (случайные сдвиги). */
+    fun isOverlayDragLocked(): Boolean = prefs.getBoolean(KEY_OVERLAY_DRAG_LOCK, false)
+
+    fun setOverlayDragLocked(value: Boolean) {
+        prefs.edit().putBoolean(KEY_OVERLAY_DRAG_LOCK, value).apply()
+    }
+
     private companion object {
         const val PREFS_NAME = "squadrelay_user_settings"
         const val KEY_QUIET = "quiet_notifications"
         const val KEY_COMPACT_OVERLAY = "compact_overlay"
+        const val KEY_OVERLAY_DRAG_LOCK = "overlay_drag_lock"
     }
 }

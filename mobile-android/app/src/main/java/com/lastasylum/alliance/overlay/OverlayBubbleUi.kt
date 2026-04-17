@@ -16,8 +16,22 @@ object OverlayBubbleUi {
         ERROR,
     }
 
-    fun applyBubbleStyle(context: Context, view: View, state: BubbleState, compact: Boolean = false) {
-        val sizeDp = if (compact) 54f else 72f
+    /**
+     * @param iconOnly только круг с микрофоном (без подписи) — чуть крупнее для читаемой иконки.
+     */
+    fun applyBubbleStyle(
+        context: Context,
+        view: View,
+        state: BubbleState,
+        compact: Boolean = false,
+        iconOnly: Boolean = false,
+    ) {
+        val sizeDp = when {
+            iconOnly && compact -> 52f
+            iconOnly && !compact -> 60f
+            compact -> 54f
+            else -> 72f
+        }
         applyCircleStyle(context, view, state, sizeDp = sizeDp)
     }
 
