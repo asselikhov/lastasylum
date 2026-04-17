@@ -339,19 +339,7 @@ class CombatOverlayService : Service() {
     private fun setStripPlainMessage(message: String) {
         val lines = chatStripLines ?: return
         OverlayChatStripUi.clearLines(lines)
-        val tv = TextView(this).apply {
-            this.text = message
-            setTextColor(Color.parseColor("#E8ECF8"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
-            setPadding(dp(6), dp(4), dp(6), dp(4))
-        }
-        lines.addView(
-            tv,
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ),
-        )
+        OverlayChatStripUi.addNoticeLine(this, lines, message)
     }
 
     private fun jwtSubFromAccessToken(): String? {
@@ -614,7 +602,7 @@ class CombatOverlayService : Service() {
             }
         }
 
-        val stripLp = LinearLayout.LayoutParams(dp(172), dp(186)).apply {
+        val stripLp = LinearLayout.LayoutParams(dp(280), dp(210)).apply {
             gravity = Gravity.CENTER_VERTICAL
             marginEnd = dp(8)
         }

@@ -163,6 +163,7 @@
     <string name="overlay_cmd_help_text">Нужна помощь</string>
     <string name="overlay_cmd_stand_down_label">ОТБОЙ</string>
     <string name="overlay_cmd_stand_down_text">Отбой</string>
+    <string name="overlay_chat_dismiss_cd">Убрать сообщение из ленты оверлея</string>
 
     <!-- API / network (ViewModel) -->
     <string name="err_invalid_credentials">Неверная почта или пароль.</string>
