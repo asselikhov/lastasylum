@@ -1212,7 +1212,8 @@ class CombatOverlayService : Service() {
                 result.onSuccess { sent ->
                     input.setText("")
                     showOverlayHistoryStatus(null)
-                    // Лента берётся из stripMessageBuffer; сокет может не прислать эхо сразу — обновляем из ответа API.
+                    // Время «увидели на устройстве» — effectiveInstant берёт max(сервер, это), иначе кривой createdAt выкидывает карточку из превью.
+                    messageReceivedAt[sent.stableKey()] = Instant.now()
                     processOverlayChatMessage(sent)
                 }.onFailure { e ->
                     showOverlayHistoryStatus(

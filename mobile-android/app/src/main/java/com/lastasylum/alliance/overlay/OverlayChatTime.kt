@@ -35,13 +35,19 @@ object OverlayChatTime {
     }
 
     /**
-     * Время для сортировки и «5 минут»: сначала серверное [ChatMessage.createdAt],
-     * иначе время первого прихода в оверлей из [receivedAt].
+     * Время для сортировки и окна «5 минут»: [max] серверного [ChatMessage.createdAt]
+     * и времени прихода в оверлей из [receivedAt], чтобы локальная отметка (например после POST)
+     * не игнорировалась при «кривой» дате с сервера.
      */
     fun effectiveInstant(msg: ChatMessage, receivedAt: Map<String, Instant>): Instant {
-        parseInstant(msg.createdAt)?.let { return it }
-        val key = msg.stableKey()
-        return receivedAt[key] ?: Instant.EPOCH
+        val server = parseInstant(msg.createdAt)
+        val client = receivedAt[msg.stableKey()]
+        return when {
+            server == null && client == null -> Instant.EPOCH
+            server == null -> client!!
+            client == null -> server!!
+            else -> maxOf(server, client)
+        }
     }
 
     fun formatClock(instant: Instant): String =
