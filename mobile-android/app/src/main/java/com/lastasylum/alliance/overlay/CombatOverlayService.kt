@@ -771,12 +771,15 @@ class CombatOverlayService : Service() {
     private fun applyOverlayVisibilityState() {
         val bubbleContainer = overlayView
         val toggle = toggleView
+        val lock = lockView
         if (overlayCollapsed) {
             hideQuickCommands()
             hideTicker()
             chatStripScroll?.visibility = View.GONE
             bubbleContainer?.animate()?.cancel()
             bubbleContainer?.visibility = View.GONE
+            lock?.visibility = View.GONE
+            toggle?.visibility = View.VISIBLE
             toggle?.setImageResource(R.drawable.ic_overlay_ui_expand)
             toggle?.contentDescription = getString(R.string.overlay_cd_toggle_show_ui)
         } else {
@@ -786,6 +789,9 @@ class CombatOverlayService : Service() {
             bubbleContainer?.alpha = 1f
             bubbleContainer?.scaleX = 1f
             bubbleContainer?.scaleY = 1f
+            lock?.visibility = View.VISIBLE
+            lock?.let { refreshLockFabIcon(it) }
+            toggle?.visibility = View.VISIBLE
             toggle?.setImageResource(R.drawable.ic_overlay_ui_collapse)
             toggle?.contentDescription = getString(R.string.overlay_cd_toggle_hide_ui)
             ensureTicker()

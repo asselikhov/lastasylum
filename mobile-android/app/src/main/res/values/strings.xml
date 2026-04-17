@@ -165,7 +165,7 @@
     <string name="overlay_cmd_stand_down_text">Отбой</string>
     <string name="overlay_chat_dismiss_cd">Убрать сообщение из ленты оверлея</string>
     <string name="overlay_cd_toggle_hide_ui">Скрыть чат и микрофон</string>
-    <string name="overlay_cd_toggle_show_ui">Показать чат и микрофон</string>
+    <string name="overlay_cd_toggle_show_ui">Показать чат, микрофон и кнопку блокировки позиций</string>
     <string name="overlay_cd_lock_positions">Заблокировать перемещение кнопок</string>
     <string name="overlay_cd_unlock_positions">Разблокировать перемещение кнопок</string>
 
