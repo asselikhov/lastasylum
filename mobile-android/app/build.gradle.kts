@@ -16,6 +16,9 @@ val squadRelayLocalProperties = Properties().apply {
     }
 }
 
+/** Публичный бэкенд (Render). И prod, и dev по умолчанию — чтобы телефон работал без LAN. */
+val squadRelayPublicBackendUrl = "https://lastasylum-backend.onrender.com/"
+
 android {
     namespace = "com.lastasylum.alliance"
     compileSdk = 34
@@ -38,13 +41,14 @@ android {
     productFlavors {
         create("dev") {
             dimension = "env"
-            // Эмулятор: 10.0.2.2. Физическое устройство: в mobile-android/local.properties задать
-            // squadrelay.api.baseUrl=http://ВАШ_IP:3000/
+            // По умолчанию — Render (удобно с реального телефона). Локальный Nest:
+            // в local.properties: squadrelay.api.baseUrl=http://10.0.2.2:3000/ (эмулятор)
+            // или http://IP_ПК_LAN:3000/ (телефон в той же Wi‑Fi).
             val overrideUrl = squadRelayLocalProperties.getProperty("squadrelay.api.baseUrl")?.trim().orEmpty()
             val devApiUrl = if (overrideUrl.isNotEmpty()) {
                 overrideUrl.trimEnd('/') + "/"
             } else {
-                "http://10.0.2.2:3000/"
+                squadRelayPublicBackendUrl
             }
             buildConfigField("String", "API_BASE_URL", "\"$devApiUrl\"")
         }
@@ -53,7 +57,7 @@ android {
             buildConfigField(
                 "String",
                 "API_BASE_URL",
-                "\"https://lastasylum-backend.onrender.com/\"",
+                "\"$squadRelayPublicBackendUrl\"",
             )
         }
     }

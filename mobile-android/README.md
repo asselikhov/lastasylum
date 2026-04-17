@@ -16,7 +16,7 @@
 
 1. Open `mobile-android` in Android Studio.
 2. Sync Gradle files.
-3. Set `API_BASE_URL` in `app/build.gradle.kts` to your Render backend URL.
+3. Вариант сборки **dev** по умолчанию ходит на Render (`lastasylum-backend.onrender.com`). Для локального Nest задайте в `mobile-android/local.properties` строку `squadrelay.api.baseUrl=http://10.0.2.2:3000/` (эмулятор) или `http://<IP_ПК>:3000/` (телефон в Wi‑Fi).
 4. Run app on Android 9+ device/emulator.
 
 ## Next implementation steps
