@@ -56,7 +56,7 @@
     <!-- Overlay screen -->
     <string name="overlay_title">Управление оверлеем</string>
     <string name="overlay_description">Включите плавающую панель и режим «нажми и говори» перед боем.</string>
-    <string name="overlay_visibility_hint">Не видно в игре: в настройках приложения включите «поверх других приложений»; на Xiaomi/POCO дополнительно «Всплывающие окна» / «Отображать всплывающие окна при работе в фоне». На Android 12+ часть игр скрывает чужие оверлеи во время матча — тогда панель видна в лаунчере и вне игры.</string>
+    <string name="overlay_visibility_hint">Панель показывается поверх игры, пока включён боевой режим. Не видно в игре: в настройках приложения включите «поверх других приложений»; на Xiaomi/POCO дополнительно «Всплывающие окна» / «Отображать всплывающие окна при работе в фоне». На Android 12+ часть игр скрывает чужие оверлеи во время матча — тогда панель видна в лаунчере и вне игры.</string>
     <string name="overlay_role_privileges">Права по роли: %1$s</string>
     <string name="overlay_start_combat">Запустить боевой режим</string>
     <string name="overlay_stop_combat">Остановить боевой режим</string>
@@ -168,6 +168,14 @@
     <string name="overlay_cd_toggle_show_ui">Показать чат, микрофон и кнопку блокировки позиций</string>
     <string name="overlay_cd_lock_positions">Заблокировать перемещение кнопок</string>
     <string name="overlay_cd_unlock_positions">Разблокировать перемещение кнопок</string>
+    <string name="overlay_history_title">История чата</string>
+    <string name="overlay_history_close_cd">Закрыть историю</string>
+    <string name="overlay_cd_history">Открыть или закрыть полную историю чата</string>
+    <string name="overlay_history_input_hint">Сообщение</string>
+    <string name="overlay_history_send_cd">Отправить</string>
+    <string name="overlay_history_sending">Отправка…</string>
+    <string name="overlay_history_send_failed">Не удалось отправить: %1$s</string>
+    <string name="overlay_history_empty_send">Введите текст сообщения</string>
 
     <!-- API / network (ViewModel) -->
     <string name="err_invalid_credentials">Неверная почта или пароль.</string>

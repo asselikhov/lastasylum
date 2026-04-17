@@ -6,12 +6,16 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.text.TextUtils
 import android.util.TypedValue
+import android.content.res.ColorStateList
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.graphics.ColorUtils
+import com.google.android.material.card.MaterialCardView
 import com.lastasylum.alliance.R
 import kotlin.math.abs
 
@@ -46,9 +50,9 @@ object OverlayChatStripUi {
         )
         val bg = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
-            cornerRadius = dp(context, 12f)
-            setColor(Color.parseColor("#9910121E"))
-            setStroke(dp(context, 1f).toInt(), Color.parseColor("#559B7CFF"))
+            cornerRadius = dp(context, 16f)
+            setColor(Color.parseColor("#A010121E"))
+            setStroke(dp(context, 1.5f).toInt(), Color.parseColor("#669B7CFF"))
         }
         scroll.background = bg
     }
@@ -82,8 +86,10 @@ object OverlayChatStripUi {
             ),
             titleText = title,
             titleColor = Color.parseColor("#F4F0FF"),
+            senderRole = null,
             bodyText = message.replace("\n", " ").trim(),
             bodyColor = Color.parseColor("#D8D0EC"),
+            showDismiss = false,
         )
     }
 
@@ -93,10 +99,12 @@ object OverlayChatStripUi {
         sender: String,
         text: String,
         senderId: String?,
+        senderRole: String?,
         selfUserId: String?,
+        showDismiss: Boolean = true,
     ) {
         val safe = text.replace("\n", " ").trim()
-        val preview = if (safe.length > 120) safe.take(120) + "…" else safe
+        val preview = if (safe.length > 160) safe.take(160) + "…" else safe
         val displayName = sender.trim().take(22).ifBlank { "—" }
         val initial = displayName.first().uppercaseChar()
         val (accent, bodyMuted) = colorsFor(senderId, displayName, selfUserId)
@@ -114,8 +122,10 @@ object OverlayChatStripUi {
             avatarGradient = avatarColors,
             titleText = displayName,
             titleColor = titleColor,
+            senderRole = senderRole?.trim()?.take(12)?.takeIf { it.isNotBlank() },
             bodyText = preview,
             bodyColor = bodyColor,
+            showDismiss = showDismiss,
         )
     }
 
@@ -126,11 +136,13 @@ object OverlayChatStripUi {
         avatarGradient: IntArray,
         titleText: String,
         titleColor: Int,
+        senderRole: String?,
         bodyText: String,
         bodyColor: Int,
+        showDismiss: Boolean = true,
     ) {
         val avatarSide = dp(context, 36f).toInt()
-        val cornerCard = dp(context, 14f)
+        val cornerCard = dp(context, 16f)
         val cornerAvatar = dp(context, 8f)
 
         val avatar = TextView(context).apply {
@@ -158,21 +170,35 @@ object OverlayChatStripUi {
             )
             text = titleText
             setTextColor(titleColor)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             typeface = Typeface.DEFAULT_BOLD
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
+        }
+
+        val roleView = TextView(context).apply {
+            val r = senderRole.orEmpty()
+            visibility = if (r.isNotBlank()) View.VISIBLE else View.GONE
+            text = r
+            setTextColor(Color.parseColor("#9AA3C4"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f)
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(context, 1f).toInt() }
         }
 
         val bodyView = TextView(context).apply {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(context, 2f).toInt() }
+            ).apply { topMargin = dp(context, 3f).toInt() }
             text = bodyText
             setTextColor(bodyColor)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
-            maxLines = 2
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            maxLines = 4
             ellipsize = TextUtils.TruncateAt.END
         }
 
@@ -184,6 +210,7 @@ object OverlayChatStripUi {
                 1f,
             )
             addView(titleView)
+            addView(roleView)
             addView(bodyView)
         }
 
@@ -192,6 +219,7 @@ object OverlayChatStripUi {
             layoutParams = LinearLayout.LayoutParams(closeSize, closeSize).apply {
                 marginStart = dp(context, 4f).toInt()
             }
+            visibility = if (showDismiss) View.VISIBLE else View.GONE
             gravity = Gravity.CENTER
             text = "✕"
             contentDescription = context.getString(R.string.overlay_chat_dismiss_cd)
@@ -200,34 +228,50 @@ object OverlayChatStripUi {
             setPadding(dp(context, 4f).toInt(), 0, dp(context, 4f).toInt(), 0)
         }
 
-        val card = LinearLayout(context).apply {
+        val inner = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply {
-                bottomMargin = dp(context, 6f).toInt()
-            }
             setPadding(
                 dp(context, 10f).toInt(),
+                dp(context, 7f).toInt(),
                 dp(context, 8f).toInt(),
-                dp(context, 8f).toInt(),
-                dp(context, 8f).toInt(),
+                dp(context, 7f).toInt(),
             )
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = cornerCard
-                setColor(cardFill)
-                setStroke(dp(context, 1f).toInt(), cardStroke)
-            }
             addView(avatar)
             addView(textColumn)
             addView(close)
         }
 
-        close.setOnClickListener {
-            (card.parent as? LinearLayout)?.removeView(card)
+        val themed = OverlayTickerUi.themedFabContext(context)
+        val card = MaterialCardView(themed).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                bottomMargin = dp(context, 5f).toInt()
+            }
+            radius = cornerCard
+            cardElevation = dp(context, 3f)
+            maxCardElevation = dp(context, 6f)
+            strokeWidth = dp(context, 1f).toInt().coerceAtLeast(1)
+            setStrokeColor(ColorStateList.valueOf(cardStroke))
+            setCardBackgroundColor(ColorStateList.valueOf(cardFill))
+            setUseCompatPadding(true)
+            preventCornerOverlap = false
+            isClickable = false
+            addView(
+                inner,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+        }
+
+        if (showDismiss) {
+            close.setOnClickListener {
+                (card.parent as? LinearLayout)?.removeView(card)
+            }
         }
 
         container.addView(card)

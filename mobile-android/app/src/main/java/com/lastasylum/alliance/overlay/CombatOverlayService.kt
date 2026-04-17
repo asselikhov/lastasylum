@@ -17,7 +17,10 @@ import android.speech.SpeechRecognizer
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.WindowManager
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -26,19 +29,22 @@ import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.view.ViewGroup
 import android.util.Base64
-import android.widget.ImageButton
 import android.widget.ImageView
 import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationCompat
+import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.ui.util.toUserMessageRu
 import org.json.JSONObject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 class CombatOverlayService : Service() {
     private var speechRecognizer: SpeechRecognizer? = null
@@ -48,9 +54,9 @@ class CombatOverlayService : Service() {
     private var windowManager: WindowManager? = null
     private var overlayView: FrameLayout? = null
     private var overlayBubble: FrameLayout? = null
-    private var toggleView: ImageButton? = null
+    private var toggleView: FloatingActionButton? = null
     private var toggleParams: WindowManager.LayoutParams? = null
-    private var lockView: ImageButton? = null
+    private var lockView: FloatingActionButton? = null
     private var lockParams: WindowManager.LayoutParams? = null
     private val quickCommandViews = mutableListOf<TextView>()
     private var tickerView: TextView? = null
@@ -64,6 +70,26 @@ class CombatOverlayService : Service() {
     private var chatStripLines: LinearLayout? = null
     private var overlayMessageListener: ((ChatMessage) -> Unit)? = null
 
+    /** Буфер для ленты: до [STRIP_BUFFER_CAP], фильтр по времени в [refreshOverlayChatStrip]. */
+    private val stripMessageBuffer = mutableListOf<ChatMessage>()
+    private val messageReceivedAt = mutableMapOf<String, Instant>()
+    private var overlayHistoryRoot: FrameLayout? = null
+    private var overlayHistoryScroll: ScrollView? = null
+    private var overlayHistoryLines: LinearLayout? = null
+    private var overlayHistoryParams: WindowManager.LayoutParams? = null
+    private var overlayHistoryFab: FloatingActionButton? = null
+    private var overlayHistoryVisible = false
+    private var overlayHistoryInput: com.google.android.material.textfield.TextInputEditText? = null
+    private var overlayHistorySend: FloatingActionButton? = null
+    private var overlayHistoryStatus: TextView? = null
+    private val overlayHistoryDedupeIds = mutableSetOf<String>()
+
+    private val stripTickRunnable = Runnable {
+        pruneStripBuffer()
+        refreshOverlayChatStrip()
+        scheduleStripTick()
+    }
+
     override fun onCreate() {
         super.onCreate()
         initSpeechRecognizer()
@@ -73,7 +99,7 @@ class CombatOverlayService : Service() {
         isServiceInstanceActive = true
     }
 
-    /** Call on create and on every start: overlay appears after user grants permission in settings. */
+    /** Показать оверлей при наличии разрешения (в том числе поверх других приложений и игр). */
     private fun ensureOverlayIfPermitted() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
             updateNotification(getString(R.string.overlay_notif_permission_required))
@@ -82,6 +108,12 @@ class CombatOverlayService : Service() {
         if (overlayView == null) {
             showOverlayControl()
         }
+    }
+
+    /** Порог «это перетаскивание, не тап»: чуть ниже системного slop, чтобы FAB не «залипали». */
+    private fun dragSlopPx(): Int {
+        val slop = ViewConfiguration.get(this).scaledTouchSlop
+        return (slop * 2 / 3).coerceIn(dp(3), dp(12))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -299,6 +331,21 @@ class CombatOverlayService : Service() {
             WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
 
+    /**
+     * Окно полноэкранного чата: без [FLAG_NOT_FOCUSABLE], чтобы работали поле ввода и клавиатура.
+     */
+    private fun overlayHistoryWindowFlags(): Int =
+        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+
+    private fun applyOverlayHistoryLayoutCompat(params: WindowManager.LayoutParams) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            params.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+    }
+
     private fun applyOverlayLayoutCompat(params: WindowManager.LayoutParams) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             params.layoutInDisplayCutoutMode =
@@ -309,30 +356,113 @@ class CombatOverlayService : Service() {
         }
     }
 
-    private fun appendOverlayChatLine(
-        sender: String,
-        text: String,
-        senderId: String? = null,
-        autoScroll: Boolean = true,
-    ) {
-        val lines = chatStripLines ?: return
-        OverlayChatStripUi.addLine(
-            this,
-            lines,
-            sender,
-            text,
-            senderId,
-            jwtSubFromAccessToken(),
-        )
-        while (lines.childCount > OVERLAY_CHAT_MAX_LINES) {
-            lines.removeViewAt(0)
+    private fun scheduleStripTick() {
+        mainHandler.removeCallbacks(stripTickRunnable)
+        mainHandler.postDelayed(stripTickRunnable, STRIP_TICK_MS)
+    }
+
+    private fun cancelStripTick() {
+        mainHandler.removeCallbacks(stripTickRunnable)
+    }
+
+    private fun upsertStripBuffer(msg: ChatMessage) {
+        val id = msg._id?.takeIf { it.isNotBlank() }
+        if (id != null) {
+            val i = stripMessageBuffer.indexOfFirst { it._id == id }
+            if (i >= 0) {
+                stripMessageBuffer[i] = msg
+            } else {
+                stripMessageBuffer.add(msg)
+            }
+        } else {
+            stripMessageBuffer.add(msg)
         }
-        if (autoScroll) {
-            scrollChatStripToEnd()
+    }
+
+    private fun pruneStripBuffer() {
+        if (stripMessageBuffer.isEmpty()) return
+        val cutoff = Instant.now().minus(STRIP_MAX_AGE_MINUTES, ChronoUnit.MINUTES)
+        stripMessageBuffer.removeAll {
+            OverlayChatTime.effectiveInstant(it, messageReceivedAt).isBefore(cutoff)
+        }
+        stripMessageBuffer.sortBy { OverlayChatTime.effectiveInstant(it, messageReceivedAt) }
+        while (stripMessageBuffer.size > STRIP_BUFFER_CAP) {
+            stripMessageBuffer.removeAt(0)
+        }
+    }
+
+    private fun stripVisibleForPreview(): List<ChatMessage> {
+        val cutoff = Instant.now().minus(STRIP_MAX_AGE_MINUTES, ChronoUnit.MINUTES)
+        return stripMessageBuffer
+            .filter { !OverlayChatTime.effectiveInstant(it, messageReceivedAt).isBefore(cutoff) }
+            .sortedBy { OverlayChatTime.effectiveInstant(it, messageReceivedAt) }
+            .takeLast(STRIP_MAX_MESSAGES)
+    }
+
+    private fun refreshOverlayChatStrip() {
+        val lines = chatStripLines ?: return
+        pruneStripBuffer()
+        val selfId = jwtSubFromAccessToken()
+        OverlayChatStripUi.clearLines(lines)
+        for (msg in stripVisibleForPreview()) {
+            OverlayChatStripUi.addLine(
+                this,
+                lines,
+                msg.senderUsername,
+                msg.text,
+                msg.senderId,
+                msg.senderRole,
+                selfId,
+                showDismiss = false,
+            )
+        }
+        scrollChatStripToEnd()
+    }
+
+    private fun processOverlayChatMessage(msg: ChatMessage) {
+        upsertStripBuffer(msg)
+        val key = msg.stableKey()
+        val parsed = OverlayChatTime.parseInstant(msg.createdAt)
+        val cutoff = Instant.now().minus(STRIP_MAX_AGE_MINUTES, ChronoUnit.MINUTES)
+        val selfId = jwtSubFromAccessToken()
+        when {
+            parsed == null -> messageReceivedAt.putIfAbsent(key, Instant.now())
+            parsed.isBefore(cutoff) &&
+                selfId != null &&
+                msg.senderId == selfId -> {
+                // Свои новые сообщения: если дата с сервера «старше окна», не выкидывать из превью-ленты.
+                messageReceivedAt[key] = Instant.now()
+            }
+            else -> messageReceivedAt.putIfAbsent(key, parsed ?: Instant.now())
+        }
+        refreshOverlayChatStrip()
+        if (overlayHistoryVisible) {
+            mainHandler.post { appendOverlayHistoryIfVisible(msg) }
+        }
+    }
+
+    private fun appendOverlayHistoryIfVisible(msg: ChatMessage) {
+        val lines = overlayHistoryLines ?: return
+        val selfId = jwtSubFromAccessToken()
+        if (!OverlayChatHistoryPanel.appendIncomingMessage(
+                this,
+                lines,
+                msg,
+                selfId,
+                messageReceivedAt,
+                overlayHistoryDedupeIds,
+            )
+        ) {
+            return
+        }
+        overlayHistoryScroll?.post {
+            overlayHistoryScroll?.fullScroll(View.FOCUS_DOWN)
         }
     }
 
     private fun setStripPlainMessage(message: String) {
+        stripMessageBuffer.clear()
+        messageReceivedAt.clear()
         val lines = chatStripLines ?: return
         OverlayChatStripUi.clearLines(lines)
         OverlayChatStripUi.addNoticeLine(this, lines, message)
@@ -363,18 +493,20 @@ class CombatOverlayService : Service() {
 
     private fun beginOverlayChatSubscription() {
         if (overlayMessageListener != null) return
+        cancelStripTick()
         val listener: (ChatMessage) -> Unit = { msg ->
             mainHandler.post {
                 val roomId = AppContainer.from(this).chatRoomPreferences.getSelectedRoomId()
                 if (roomId != null && msg.roomId.isNotBlank() && msg.roomId != roomId) {
                     return@post
                 }
-                appendOverlayChatLine(msg.senderUsername, msg.text, msg.senderId)
+                processOverlayChatMessage(msg)
             }
         }
         overlayMessageListener = listener
         mainHandler.post {
             AppContainer.from(this).chatRepository.addOverlayMessageListener(listener)
+            scheduleStripTick()
         }
         serviceScope.launch {
             val container = AppContainer.from(this@CombatOverlayService)
@@ -385,20 +517,19 @@ class CombatOverlayService : Service() {
                 }
                 return@launch
             }
-            container.chatRepository.loadRecentMessages(roomId)
+            container.chatRepository.loadRecentMessages(roomId, null, OVERLAY_HISTORY_LOAD)
                 .onSuccess { loaded ->
-                    val tail = loaded.sortedBy { it.createdAt.orEmpty() }.takeLast(OVERLAY_CHAT_MAX_LINES)
                     mainHandler.post {
-                        chatStripLines?.let { OverlayChatStripUi.clearLines(it) }
-                        tail.forEach { m ->
-                            appendOverlayChatLine(
-                                m.senderUsername,
-                                m.text,
-                                m.senderId,
-                                autoScroll = false,
-                            )
+                        stripMessageBuffer.clear()
+                        messageReceivedAt.clear()
+                        loaded.forEach { m ->
+                            upsertStripBuffer(m)
+                            when (val p = OverlayChatTime.parseInstant(m.createdAt)) {
+                                null -> messageReceivedAt.putIfAbsent(m.stableKey(), Instant.now())
+                                else -> messageReceivedAt[m.stableKey()] = p
+                            }
                         }
-                        scrollChatStripToEnd()
+                        refreshOverlayChatStrip()
                     }
                 }
                 .onFailure {
@@ -410,6 +541,10 @@ class CombatOverlayService : Service() {
     }
 
     private fun endOverlayChatSubscription() {
+        cancelStripTick()
+        hideOverlayHistoryPanel()
+        stripMessageBuffer.clear()
+        messageReceivedAt.clear()
         overlayMessageListener?.let { listener ->
             runCatching {
                 AppContainer.from(applicationContext).chatRepository.removeOverlayMessageListener(listener)
@@ -432,7 +567,7 @@ class CombatOverlayService : Service() {
             WindowManager.LayoutParams.TYPE_PHONE
         }
 
-        val layoutParams = WindowManager.LayoutParams(
+        val overlayWindowLayoutParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             type,
@@ -451,27 +586,23 @@ class CombatOverlayService : Service() {
         var startTouchY = 0f
         var isDragging = false
         var startedRecording = false
-        val dragThreshold = dp(14)
-        val pressDelayMs = 150L
+        val dragThreshold = dragSlopPx()
+        val pressDelayMs = 100L
 
-        val stripLines: LinearLayout?
-        val stripScroll: ScrollView?
+        val lines = OverlayChatStripUi.createLinesContainer(this@CombatOverlayService)
+        val stripScroll = ScrollView(this).apply {
+            OverlayChatStripUi.styleStripScroll(this@CombatOverlayService, this)
+            addView(
+                lines,
+                ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+        }
+        val stripLines = lines
         if (compact) {
-            stripLines = null
-            stripScroll = null
-        } else {
-            val lines = OverlayChatStripUi.createLinesContainer(this@CombatOverlayService)
-            stripLines = lines
-            stripScroll = ScrollView(this).apply {
-                OverlayChatStripUi.styleStripScroll(this@CombatOverlayService, this)
-                addView(
-                    lines,
-                    ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ),
-                )
-            }
+            stripScroll.visibility = View.GONE
         }
 
         lateinit var windowRoot: FrameLayout
@@ -507,8 +638,8 @@ class CombatOverlayService : Service() {
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
                         hideQuickCommands()
-                        initialX = layoutParams.x
-                        initialY = layoutParams.y
+                        initialX = overlayWindowLayoutParams.x
+                        initialY = overlayWindowLayoutParams.y
                         startTouchX = event.rawX
                         startTouchY = event.rawY
                         isDragging = false
@@ -541,13 +672,13 @@ class CombatOverlayService : Service() {
                         if (isDragging && !dragLocked) {
                             val screenWidth = resources.displayMetrics.widthPixels
                             val screenHeight = resources.displayMetrics.heightPixels
-                            val rootW = windowRoot.width.takeIf { it > 0 } ?: dp(260)
-                            val rootH = windowRoot.height.takeIf { it > 0 } ?: dp(120)
+                            val rootW = windowRoot.width.takeIf { it > 0 }?.coerceAtLeast(dp(48)) ?: dp(260)
+                            val rootH = windowRoot.height.takeIf { it > 0 }?.coerceAtLeast(dp(48)) ?: dp(120)
                             val nextX = (initialX + deltaX).coerceIn(0, screenWidth - rootW)
                             val nextY = (initialY + deltaY).coerceIn(0, screenHeight - rootH)
-                            layoutParams.x = nextX
-                            layoutParams.y = nextY
-                            manager.updateViewLayout(windowRoot, layoutParams)
+                            overlayWindowLayoutParams.x = nextX
+                            overlayWindowLayoutParams.y = nextY
+                            manager.updateViewLayout(windowRoot, overlayWindowLayoutParams)
                             syncTickerPosition()
                         }
                         true
@@ -558,12 +689,13 @@ class CombatOverlayService : Service() {
                         recordingStartRunnable = null
                         if (!isDragging && startedRecording) {
                             stopRecording()
-                        } else if (!isDragging) {
+                        } else if (!isDragging && event.action != MotionEvent.ACTION_CANCEL) {
                             val loc = IntArray(2)
                             bubbleView.getLocationOnScreen(loc)
                             toggleQuickCommands(loc[0], loc[1])
                         }
                         startedRecording = false
+                        isDragging = false
                         true
                     }
 
@@ -572,7 +704,7 @@ class CombatOverlayService : Service() {
             }
         }
 
-        val stripLp = LinearLayout.LayoutParams(dp(280), dp(210)).apply {
+        val stripLp = LinearLayout.LayoutParams(dp(280), dp(200)).apply {
             gravity = Gravity.CENTER_VERTICAL
             marginEnd = dp(8)
         }
@@ -583,15 +715,44 @@ class CombatOverlayService : Service() {
             gravity = Gravity.CENTER_VERTICAL
         }
 
+        val fabCtx = OverlayTickerUi.themedFabContext(this@CombatOverlayService)
+        val historyFab = FloatingActionButton(fabCtx).apply {
+            OverlayTickerUi.styleOverlayFab(fabCtx, this, 40f)
+            setImageResource(R.drawable.ic_overlay_history)
+            contentDescription = getString(R.string.overlay_cd_history)
+            isClickable = false
+            isFocusable = false
+        }
+        val historyHit = FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(54), dp(54)).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                marginEnd = dp(4)
+            }
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { toggleOverlayHistoryPanel() }
+            addView(
+                historyFab,
+                FrameLayout.LayoutParams(dp(40), dp(40), Gravity.CENTER),
+            )
+        }
+
+        val stripLpActual = if (compact) {
+            LinearLayout.LayoutParams(0, 0).apply {
+                gravity = Gravity.CENTER_VERTICAL
+            }
+        } else {
+            stripLp
+        }
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, 0, 0, 0)
-            if (!compact && stripScroll != null) {
-                addView(stripScroll, stripLp)
-            }
+            addView(stripScroll, stripLpActual)
+            addView(historyHit)
             addView(bubble, bubbleLp)
         }
+        overlayHistoryFab = historyFab
 
         windowRoot = FrameLayout(this).apply {
             elevation = 22f
@@ -606,15 +767,13 @@ class CombatOverlayService : Service() {
         chatStripScroll = stripScroll
         chatStripLines = stripLines
 
-        manager.addView(overlayView, layoutParams)
+        manager.addView(overlayView, overlayWindowLayoutParams)
         windowManager = manager
         ensureToggleButton()
         ensureLockButton()
         ensureTicker()
         syncTickerPosition()
-        if (!compact) {
-            beginOverlayChatSubscription()
-        }
+        beginOverlayChatSubscription()
     }
 
     private fun ensureToggleButton() {
@@ -640,8 +799,9 @@ class CombatOverlayService : Service() {
             y = dp(86)
         }
 
-        val toggle = ImageButton(this).apply {
-            OverlayTickerUi.applyRoundOverlayFab(this@CombatOverlayService, this)
+        val toggleCtx = OverlayTickerUi.themedFabContext(this)
+        val toggle = FloatingActionButton(toggleCtx).apply {
+            OverlayTickerUi.styleOverlayFab(toggleCtx, this)
             setImageResource(R.drawable.ic_overlay_ui_collapse)
             contentDescription = getString(R.string.overlay_cd_toggle_hide_ui)
         }
@@ -678,8 +838,9 @@ class CombatOverlayService : Service() {
             y = dp(138)
         }
 
-        val lock = ImageButton(this).apply {
-            OverlayTickerUi.applyRoundOverlayFab(this@CombatOverlayService, this)
+        val lockCtx = OverlayTickerUi.themedFabContext(this)
+        val lock = FloatingActionButton(lockCtx).apply {
+            OverlayTickerUi.styleOverlayFab(lockCtx, this)
             refreshLockFabIcon(this)
         }
         attachDraggableFab(lock, params) {
@@ -693,7 +854,7 @@ class CombatOverlayService : Service() {
         manager.addView(lock, params)
     }
 
-    private fun refreshLockFabIcon(button: ImageButton) {
+    private fun refreshLockFabIcon(button: FloatingActionButton) {
         val locked = AppContainer.from(this).userSettingsPreferences.isOverlayDragLocked()
         button.setImageResource(
             if (locked) R.drawable.ic_overlay_lock_locked else R.drawable.ic_overlay_lock_open,
@@ -708,7 +869,7 @@ class CombatOverlayService : Service() {
      * При заблокированных позициях перетаскивание отключено, касание выполняет [onTap].
      */
     private fun attachDraggableFab(
-        view: ImageButton,
+        view: View,
         params: WindowManager.LayoutParams,
         onTap: () -> Unit,
     ) {
@@ -718,12 +879,13 @@ class CombatOverlayService : Service() {
         var startRawX = 0f
         var startRawY = 0f
         var dragging = false
-        val threshold = dp(12)
+        val threshold = dragSlopPx()
         view.setOnTouchListener { _, event ->
             val locked = AppContainer.from(this).userSettingsPreferences.isOverlayDragLocked()
             if (locked) {
-                if (event.action == MotionEvent.ACTION_UP) {
-                    onTap()
+                when (event.action) {
+                    MotionEvent.ACTION_UP -> onTap()
+                    else -> Unit
                 }
                 return@setOnTouchListener true
             }
@@ -748,8 +910,8 @@ class CombatOverlayService : Service() {
                     if (dragging) {
                         val sw = resources.displayMetrics.widthPixels
                         val sh = resources.displayMetrics.heightPixels
-                        val w = view.width.coerceAtLeast(dp(44))
-                        val h = view.height.coerceAtLeast(dp(44))
+                        val w = view.width.coerceAtLeast(dp(48))
+                        val h = view.height.coerceAtLeast(dp(48))
                         params.x = (initialX + dx).coerceIn(0, (sw - w).coerceAtLeast(0))
                         params.y = (initialY + dy).coerceIn(0, (sh - h).coerceAtLeast(0))
                         runCatching { manager.updateViewLayout(view, params) }
@@ -759,10 +921,15 @@ class CombatOverlayService : Service() {
 
                 MotionEvent.ACTION_UP -> {
                     if (!dragging) onTap()
+                    dragging = false
                     true
                 }
 
-                MotionEvent.ACTION_CANCEL -> true
+                MotionEvent.ACTION_CANCEL -> {
+                    dragging = false
+                    true
+                }
+
                 else -> false
             }
         }
@@ -773,6 +940,7 @@ class CombatOverlayService : Service() {
         val toggle = toggleView
         val lock = lockView
         if (overlayCollapsed) {
+            hideOverlayHistoryPanel()
             hideQuickCommands()
             hideTicker()
             chatStripScroll?.visibility = View.GONE
@@ -783,7 +951,8 @@ class CombatOverlayService : Service() {
             toggle?.setImageResource(R.drawable.ic_overlay_ui_expand)
             toggle?.contentDescription = getString(R.string.overlay_cd_toggle_show_ui)
         } else {
-            chatStripScroll?.visibility = View.VISIBLE
+            val compactStrip = AppContainer.from(this).userSettingsPreferences.isCompactOverlay()
+            chatStripScroll?.visibility = if (compactStrip) View.GONE else View.VISIBLE
             bubbleContainer?.animate()?.cancel()
             bubbleContainer?.visibility = View.VISIBLE
             bubbleContainer?.alpha = 1f
@@ -981,6 +1150,154 @@ class CombatOverlayService : Service() {
         runCatching { manager.updateViewLayout(ticker, params) }
     }
 
+    private fun toggleOverlayHistoryPanel() {
+        if (overlayHistoryVisible) {
+            hideOverlayHistoryPanel()
+        } else {
+            showOverlayHistoryPanel()
+        }
+    }
+
+    private fun hideOverlayHistoryPanel() {
+        val root = overlayHistoryRoot ?: return
+        overlayHistoryVisible = false
+        overlayHistoryInput?.let { hideOverlayIme(it) }
+        val manager = windowManager ?: return
+        runCatching { manager.removeView(root) }
+        overlayHistoryRoot = null
+        overlayHistoryScroll = null
+        overlayHistoryLines = null
+        overlayHistoryParams = null
+        overlayHistoryInput = null
+        overlayHistorySend = null
+        overlayHistoryStatus = null
+        overlayHistoryDedupeIds.clear()
+    }
+
+    private fun hideOverlayIme(view: View) {
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager ?: return
+        imm.hideSoftInputFromWindow(view.windowToken, 0)
+    }
+
+    private fun showOverlayHistoryStatus(message: String?) {
+        val tv = overlayHistoryStatus ?: return
+        if (message.isNullOrBlank()) {
+            tv.visibility = View.GONE
+            tv.text = ""
+        } else {
+            tv.text = message
+            tv.visibility = View.VISIBLE
+        }
+    }
+
+    private fun attemptSendOverlayHistoryMessage() {
+        val input = overlayHistoryInput ?: return
+        val text = input.text?.toString()?.trim().orEmpty()
+        if (text.isEmpty()) {
+            showOverlayHistoryStatus(getString(R.string.overlay_history_empty_send))
+            return
+        }
+        val roomId = runCatching { AppContainer.from(this).chatRoomPreferences.getSelectedRoomId() }.getOrNull()
+        if (roomId.isNullOrBlank()) {
+            showOverlayHistoryStatus(getString(R.string.overlay_strip_no_room))
+            return
+        }
+        showOverlayHistoryStatus(getString(R.string.overlay_history_sending))
+        overlayHistorySend?.isEnabled = false
+        hideOverlayIme(input)
+        serviceScope.launch {
+            val result = AppContainer.from(this@CombatOverlayService).chatRepository.sendMessage(text, roomId)
+            mainHandler.post {
+                overlayHistorySend?.isEnabled = true
+                result.onSuccess { sent ->
+                    input.setText("")
+                    showOverlayHistoryStatus(null)
+                    // Лента берётся из stripMessageBuffer; сокет может не прислать эхо сразу — обновляем из ответа API.
+                    processOverlayChatMessage(sent)
+                }.onFailure { e ->
+                    showOverlayHistoryStatus(
+                        getString(R.string.overlay_history_send_failed, e.toUserMessageRu(resources)),
+                    )
+                }
+            }
+        }
+    }
+
+    private fun showOverlayHistoryPanel() {
+        if (overlayHistoryVisible) return
+        val manager = windowManager ?: return
+        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else {
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
+        }
+
+        val panel = OverlayChatHistoryPanel.create(this) {
+            hideOverlayHistoryPanel()
+        }
+
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            type,
+            overlayHistoryWindowFlags(),
+            android.graphics.PixelFormat.TRANSLUCENT,
+        ).apply {
+            applyOverlayHistoryLayoutCompat(this)
+            gravity = Gravity.TOP or Gravity.START
+            x = 0
+            y = 0
+            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+        }
+
+        overlayHistoryRoot = panel.root
+        overlayHistoryScroll = panel.scroll
+        overlayHistoryLines = panel.lines
+        overlayHistoryInput = panel.input
+        overlayHistorySend = panel.sendButton
+        overlayHistoryStatus = panel.statusView
+        overlayHistoryParams = params
+        overlayHistoryVisible = true
+        runCatching { manager.addView(panel.root, params) }
+
+        panel.sendButton.setOnClickListener { attemptSendOverlayHistoryMessage() }
+        panel.input.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEND) {
+                attemptSendOverlayHistoryMessage()
+                true
+            } else {
+                false
+            }
+        }
+
+        serviceScope.launch {
+            val container = AppContainer.from(this@CombatOverlayService)
+            val roomId = container.chatRoomPreferences.getSelectedRoomId() ?: return@launch
+            val result = container.chatRepository.loadRecentMessages(roomId, null, OVERLAY_HISTORY_LOAD)
+            mainHandler.post {
+                val targetLines = overlayHistoryLines ?: return@post
+                result.onSuccess { list ->
+                    OverlayChatHistoryPanel.populate(
+                        this@CombatOverlayService,
+                        targetLines,
+                        list,
+                        jwtSubFromAccessToken(),
+                        messageReceivedAt,
+                        overlayHistoryDedupeIds,
+                    )
+                    overlayHistoryScroll?.post {
+                        overlayHistoryScroll?.fullScroll(View.FOCUS_DOWN)
+                    }
+                }.onFailure {
+                    mainHandler.post {
+                        showOverlayHistoryStatus(getString(R.string.overlay_strip_history_failed))
+                    }
+                }
+            }
+        }
+    }
+
     private fun dp(value: Int): Int {
         val density = resources.displayMetrics.density
         return (value * density).toInt()
@@ -999,6 +1316,7 @@ class CombatOverlayService : Service() {
         }
         overlayView = null
         overlayBubble = null
+        overlayHistoryFab = null
         chatStripScroll = null
         chatStripLines = null
         windowManager = null
@@ -1023,7 +1341,11 @@ class CombatOverlayService : Service() {
     companion object {
         private const val CHANNEL_ID = "combat_overlay_channel"
         private const val NOTIFICATION_ID = 7001
-        private const val OVERLAY_CHAT_MAX_LINES = 24
+        private const val STRIP_MAX_MESSAGES = 3
+        private const val STRIP_MAX_AGE_MINUTES = 5L
+        private const val STRIP_BUFFER_CAP = 80
+        private const val STRIP_TICK_MS = 45_000L
+        private const val OVERLAY_HISTORY_LOAD = 150
 
         const val ACTION_START_RECORDING = "com.squadrelay.action.START_RECORDING"
         const val ACTION_STOP_RECORDING = "com.squadrelay.action.STOP_RECORDING"

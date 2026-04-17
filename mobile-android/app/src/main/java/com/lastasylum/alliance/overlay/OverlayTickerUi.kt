@@ -5,11 +5,20 @@ import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.util.TypedValue
-import android.widget.ImageButton
+import android.view.ContextThemeWrapper
 import android.widget.ImageView
 import android.widget.TextView
+import com.google.android.material.floatingactionbutton.FloatingActionButton
+import com.lastasylum.alliance.R
 
 object OverlayTickerUi {
+    /**
+     * Контекст с Material 3 для виджетов оверлея из сервиса
+     * ([FloatingActionButton], [com.google.android.material.card.MaterialCardView] и т.д.).
+     */
+    fun themedFabContext(base: Context): Context =
+        ContextThemeWrapper(base, R.style.Theme_LastAsylum_OverlayMaterial)
+
     fun applyTickerStyle(context: Context, view: TextView) {
         val card = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
@@ -51,22 +60,24 @@ object OverlayTickerUi {
         view.alpha = 0.92f
     }
 
-    /** Круглая кнопка оверлея (показать/скрыть UI, блокировка позиций). */
-    fun applyRoundOverlayFab(context: Context, button: ImageButton) {
-        val side = dp(context, 44f).toInt()
-        val pad = dp(context, 10f).toInt()
-        val circle = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(Color.parseColor("#E6282540"))
-            setStroke(dp(context, 1.5f).toInt(), Color.parseColor("#889B7CFF"))
-        }
-        button.background = circle
-        button.minimumWidth = side
-        button.minimumHeight = side
-        button.setPadding(pad, pad, pad, pad)
-        button.scaleType = ImageView.ScaleType.CENTER_INSIDE
-        button.imageTintList = ColorStateList.valueOf(Color.parseColor("#F0ECFF"))
-        button.alpha = 0.96f
+    /**
+     * Круглый FAB оверлея (Material 3): ripple, подъём, тон иконки.
+     * [context] — обычно [themedFabContext].
+     */
+    @JvmOverloads
+    fun styleOverlayFab(
+        context: Context,
+        fab: FloatingActionButton,
+        diameterDp: Float = 48f,
+    ) {
+        val side = dp(context, diameterDp).toInt()
+        fab.setCustomSize(side)
+        fab.size = FloatingActionButton.SIZE_AUTO
+        fab.scaleType = ImageView.ScaleType.CENTER
+        fab.imageTintList = ColorStateList.valueOf(Color.parseColor("#F4F0FF"))
+        fab.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#E6282548"))
+        fab.elevation = dp(context, 5f)
+        fab.alpha = 0.98f
     }
 
     private fun dp(context: Context, value: Float): Float {

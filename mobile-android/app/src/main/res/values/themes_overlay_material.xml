@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Только для ContextThemeWrapper при создании FAB оверлея (не меняет тему всего приложения). -->
+    <style name="Theme.LastAsylum.OverlayMaterial" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="colorPrimary">#9B7CFF</item>
+        <item name="colorOnPrimary">#1A1024</item>
+        <item name="colorPrimaryContainer">#3A2F55</item>
+        <item name="colorOnPrimaryContainer">#EDE7FF</item>
+        <item name="colorSurfaceContainerHigh">#2A2538</item>
+    </style>
+</resources>
