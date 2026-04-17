@@ -9,6 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
+import { DEFAULT_ALLIANCE_ID } from '../common/constants/default-alliance-id';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { ChatService } from './chat.service';
@@ -80,7 +81,7 @@ export class ChatGateway {
     @ConnectedSocket() client: AuthSocket,
     @MessageBody() payload: { allianceId: string },
   ) {
-    const allianceId = payload.allianceId || 'OBZHORY';
+    const allianceId = payload.allianceId || DEFAULT_ALLIANCE_ID;
     void client.join(allianceId);
     return { event: 'room:joined', data: { allianceId } };
   }
@@ -94,7 +95,7 @@ export class ChatGateway {
       throw new WsException('Unauthorized socket connection');
     }
 
-    const allianceId = payload.allianceId ?? 'OBZHORY';
+    const allianceId = payload.allianceId ?? DEFAULT_ALLIANCE_ID;
     const message = await this.chatService.createMessage({
       allianceId,
       text: payload.text,

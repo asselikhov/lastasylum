@@ -30,7 +30,7 @@ export class SttController {
   @Roles(AllianceRole.R2)
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @UseInterceptors(FileInterceptor('audio'))
-  async transcribe(
+  transcribe(
     @Req() req: { user: RequestUser },
     @UploadedFile() file?: Express.Multer.File,
   ) {
@@ -38,7 +38,7 @@ export class SttController {
       throw new BadRequestException('Audio file is required');
     }
 
-    const text = await this.sttService.transcribe(file);
+    const text = this.sttService.transcribe(file);
 
     return {
       text: `${req.user.username}: ${text}`,

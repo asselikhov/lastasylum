@@ -8,6 +8,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { DEFAULT_ALLIANCE_ID } from '../common/constants/default-alliance-id';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -32,11 +33,14 @@ export class ChatController {
 
   @Get('messages')
   @Roles(AllianceRole.R2)
-  getRecentMessages(
-    @Req() _req: { user: RequestUser },
+  async getRecentMessages(
+    @Req() req: { user: RequestUser },
     @Query('allianceId') allianceId?: string,
   ) {
-    return this.chatService.getRecentMessages(allianceId ?? 'OBZHORY');
+    await this.chatService.assertUserMayUseChat(req.user.userId);
+    return this.chatService.getRecentMessages(
+      allianceId ?? DEFAULT_ALLIANCE_ID,
+    );
   }
 
   @Post('messages')
@@ -46,7 +50,8 @@ export class ChatController {
     @Req() req: { user: RequestUser },
     @Body() dto: CreateMessageDto,
   ) {
-    const allianceId = dto.allianceId ?? 'OBZHORY';
+    await this.chatService.assertUserMayUseChat(req.user.userId);
+    const allianceId = dto.allianceId ?? DEFAULT_ALLIANCE_ID;
     const message = await this.chatService.createMessage({
       allianceId,
       text: dto.text,

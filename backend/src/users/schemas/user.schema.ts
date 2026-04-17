@@ -1,6 +1,8 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
+import { DEFAULT_ALLIANCE_ID } from '../../common/constants/default-alliance-id';
 import { AllianceRole } from '../../common/enums/alliance-role.enum';
+import { TeamMembershipStatus } from '../../common/enums/team-membership-status.enum';
 
 export type UserDocument = HydratedDocument<User>;
 
@@ -23,8 +25,16 @@ export class User {
   })
   role: AllianceRole;
 
-  @Prop({ required: true, default: 'OBZHORY' })
+  @Prop({ required: true, default: DEFAULT_ALLIANCE_ID })
   allianceName: string;
+
+  @Prop({
+    type: String,
+    required: true,
+    enum: TeamMembershipStatus,
+    default: TeamMembershipStatus.ACTIVE,
+  })
+  membershipStatus: TeamMembershipStatus;
 
   @Prop({ type: String, default: null })
   refreshTokenHash: string | null;

@@ -1,17 +1,22 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   NotFoundException,
+  Param,
   Patch,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { DEFAULT_ALLIANCE_ID } from '../common/constants/default-alliance-id';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { UpdateMembershipDto } from './dto/update-membership.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
+import { UpdateUsernameDto } from './dto/update-username.dto';
 import { MuteUserDto } from './dto/mute-user.dto';
 import { UsersService } from './users.service';
 
@@ -38,7 +43,7 @@ export class UsersController {
   @Get()
   @Roles(AllianceRole.R4)
   async listAllianceMembers() {
-    const users = await this.usersService.listByAlliance('OBZHORY');
+    const users = await this.usersService.listByAlliance(DEFAULT_ALLIANCE_ID);
     return users.map((user) => this.usersService.toSafeUser(user));
   }
 
@@ -56,6 +61,7 @@ export class UsersController {
     return this.usersService.toSafeUser(updatedUser);
   }
 
+  /** Must be before :id routes so "mute" is not captured as id. */
   @Roles(AllianceRole.R4)
   @Patch('mute')
   async muteUser(@Body() dto: MuteUserDto) {
@@ -69,5 +75,47 @@ export class UsersController {
     }
 
     return this.usersService.toSafeUser(updatedUser);
+  }
+
+  @Roles(AllianceRole.R5)
+  @Patch(':id/membership')
+  async updateMembership(
+    @Param('id') id: string,
+    @Body() dto: UpdateMembershipDto,
+  ) {
+    const updatedUser = await this.usersService.updateMembershipStatus(
+      id,
+      dto.status,
+    );
+    if (!updatedUser) {
+      throw new NotFoundException('User not found');
+    }
+    return this.usersService.toSafeUser(updatedUser);
+  }
+
+  @Roles(AllianceRole.R5)
+  @Patch(':id/username')
+  async updateUsername(@Param('id') id: string, @Body() dto: UpdateUsernameDto) {
+    const updatedUser = await this.usersService.updateUsername(
+      id,
+      dto.username,
+    );
+    if (!updatedUser) {
+      throw new NotFoundException('User not found');
+    }
+    return this.usersService.toSafeUser(updatedUser);
+  }
+
+  @Roles(AllianceRole.R5)
+  @Delete(':id')
+  async deleteUser(@Param('id') id: string, @Req() req: { user: RequestUser }) {
+    if (id === req.user.userId) {
+      throw new NotFoundException('Cannot delete your own account here');
+    }
+    const ok = await this.usersService.deleteUser(id);
+    if (!ok) {
+      throw new NotFoundException('User not found');
+    }
+    return { success: true };
   }
 }

@@ -4,5 +4,6 @@ backend/dist/
 backend/coverage/
 mobile-android/.gradle/
 mobile-android/local.properties
+mobile-android/.idea/
 mobile-android/**/build/
 *.log

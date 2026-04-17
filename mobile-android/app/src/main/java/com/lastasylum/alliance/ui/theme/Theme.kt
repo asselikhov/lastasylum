@@ -4,21 +4,21 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 
-private val LastAsylumColorScheme = darkColorScheme(
-    primary = ObzPrimary,
-    onPrimary = ObzOnPrimary,
-    secondary = ObzSecondary,
-    background = ObzBackground,
-    surface = ObzSurface,
-    surfaceContainerHigh = ObzSurfaceHigh,
-    error = ObzError,
+private val SquadRelayColorScheme = darkColorScheme(
+    primary = SquadRelayPrimary,
+    onPrimary = SquadRelayOnPrimary,
+    secondary = SquadRelaySecondary,
+    background = SquadRelayBackground,
+    surface = SquadRelaySurface,
+    surfaceContainerHigh = SquadRelaySurfaceHigh,
+    error = SquadRelayError,
 )
 
 @Composable
-fun LastAsylumTheme(content: @Composable () -> Unit) {
+fun SquadRelayTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = LastAsylumColorScheme,
-        typography = LastAsylumTypography,
+        colorScheme = SquadRelayColorScheme,
+        typography = SquadRelayTypography,
         content = content,
     )
 }

@@ -1,4 +1,4 @@
-# Last Asylum Backend
+# SquadRelay Backend
 
 NestJS backend for alliance communication features:
 - JWT authentication with alliance roles (R2-R5)
@@ -27,8 +27,6 @@ JWT_SECRET=...
 JWT_EXPIRES_IN=7d
 JWT_REFRESH_SECRET=...
 JWT_REFRESH_EXPIRES_IN=30d
-OPENAI_API_KEY=...
-OPENAI_STT_MODEL=whisper-1
 ```
 
 ## Run locally
@@ -50,7 +48,6 @@ npm run start:dev
 - `PATCH /users/mute` - mute player for N minutes (R4+)
 - `GET /chat/messages` - recent alliance messages (JWT)
 - `POST /chat/messages` - create message (JWT) and broadcast `message:new` to the alliance room
-- `POST /stt/transcribe` - upload audio and get text (JWT, multipart `audio`)
 
 ## WebSocket overview
 

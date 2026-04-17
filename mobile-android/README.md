@@ -1,6 +1,6 @@
-# Last Asylum Android App
+# SquadRelay (Android)
 
-Premium Android client for alliance communication in Last Asylum:
+Клиент для голоса, чата и оверлея отряда в SquadRelay:
 - Battle chat feed
 - Overlay control entrypoint
 - Profile/preferences
@@ -17,8 +17,7 @@ Premium Android client for alliance communication in Last Asylum:
 1. Open `mobile-android` in Android Studio.
 2. Sync Gradle files.
 3. Set `API_BASE_URL` in `app/build.gradle.kts` to your Render backend URL.
-4. On the server, set `OPENAI_API_KEY` for real Whisper STT (optional; without it the API uses a mock transcript).
-5. Run app on Android 9+ device/emulator.
+4. Run app on Android 9+ device/emulator.
 
 ## Next implementation steps
 
@@ -26,5 +25,5 @@ Premium Android client for alliance communication in Last Asylum:
 - Access and refresh token storage via encrypted preferences
 - Realtime chat via Socket.IO
 - Foreground service + floating overlay controls
-- Push-to-talk recording -> STT endpoint -> chat message pipeline
+- Push-to-talk recording -> local Android speech recognition -> chat message pipeline
 - Role-aware UI (R2/R3/R4/R5)

@@ -1,7 +1,6 @@
 param(
     [string]$MongoUri = "",
-    [string]$ApiBaseUrl = "",
-    [string]$OpenAiApiKey = ""
+    [string]$ApiBaseUrl = ""
 )
 
 Set-StrictMode -Version Latest
@@ -32,7 +31,7 @@ if (-not (Test-Path $androidGradle)) {
 }
 
 Write-Host ""
-Write-Host "=== Last Asylum: автоматическая настройка ===" -ForegroundColor Cyan
+Write-Host "=== SquadRelay: автоматическая настройка ===" -ForegroundColor Cyan
 Write-Host ""
 
 $MongoUri = Ask-IfEmpty $MongoUri "Вставь MONGODB_URI (из MongoDB Atlas):"
@@ -46,10 +45,6 @@ if ([string]::IsNullOrWhiteSpace($ApiBaseUrl)) {
 if (-not $ApiBaseUrl.EndsWith("/")) {
     $ApiBaseUrl = "$ApiBaseUrl/"
 }
-if ([string]::IsNullOrWhiteSpace($OpenAiApiKey)) {
-    $OpenAiApiKey = Read-Host "OPENAI_API_KEY (можно Enter, тогда будет mock STT)"
-}
-
 $jwtSecret = New-RandomSecret
 $jwtRefreshSecret = New-RandomSecret
 
@@ -61,8 +56,6 @@ JWT_SECRET=$jwtSecret
 JWT_EXPIRES_IN=7d
 JWT_REFRESH_SECRET=$jwtRefreshSecret
 JWT_REFRESH_EXPIRES_IN=30d
-OPENAI_API_KEY=$OpenAiApiKey
-OPENAI_STT_MODEL=whisper-1
 "@
 
 Set-Content -Path $backendEnv -Value $envContent -Encoding UTF8

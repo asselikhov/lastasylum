@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "LastAsylumMobile"
+rootProject.name = "SquadRelay"
 include(":app")

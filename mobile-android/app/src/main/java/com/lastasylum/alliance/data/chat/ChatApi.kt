@@ -7,7 +7,9 @@ import retrofit2.http.Query
 
 interface ChatApi {
     @GET("chat/messages")
-    suspend fun getMessages(@Query("allianceId") allianceId: String = "OBZHORY"): List<ChatMessage>
+    suspend fun getMessages(
+        @Query("allianceId") allianceId: String = AllianceDefaults.DEFAULT_ALLIANCE_ID,
+    ): List<ChatMessage>
 
     @POST("chat/messages")
     suspend fun sendMessage(@Body request: SendMessageRequest): ChatMessage

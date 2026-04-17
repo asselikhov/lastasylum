@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SquadRelay</string>
+
+    <!-- Auth -->
+    <string name="auth_brand">SquadRelay</string>
+    <string name="auth_tagline">Чат альянса, оверлей и голосовые команды.</string>
+    <string name="auth_tab_login">Вход</string>
+    <string name="auth_tab_register">Регистрация</string>
+    <string name="auth_username">Имя в игре</string>
+    <string name="auth_username_helper">Не менее 3 символов</string>
+    <string name="auth_email">Email</string>
+    <string name="auth_password">Пароль</string>
+    <string name="auth_password_helper">Не менее 8 символов</string>
+    <string name="auth_password_confirm">Повтор пароля</string>
+    <string name="auth_button_login">Войти</string>
+    <string name="auth_button_register">Создать аккаунт</string>
+    <string name="auth_password_mismatch">Пароли не совпадают</string>
+    <string name="auth_register_pending">Аккаунт создан. Дождитесь подтверждения администратора (R5), затем войдите по email и паролю.</string>
+
+    <!-- Navigation -->
+    <string name="nav_title">SquadRelay • %1$s (%2$s)</string>
+    <string name="cd_logout">Выйти</string>
+    <string name="tab_chat">Чат</string>
+    <string name="tab_overlay">Оверлей</string>
+    <string name="tab_profile">Профиль</string>
+    <string name="tab_admin">Админ</string>
+
+    <!-- Chat -->
+    <string name="chat_title">Боевой чат альянса</string>
+    <string name="chat_logged_in">Вы вошли как %1$s (%2$s)</string>
+    <string name="chat_message_hint">Сообщение</string>
+    <string name="chat_send">Отправить</string>
+    <string name="chat_message_header">%1$s %2$s</string>
+    <string name="chat_empty_state">Пока нет сообщений — напишите первым.</string>
+    <string name="chat_voice_hint">Голос в бою: вкладка «Оверлей» → «Запустить боевой режим». На экране появится пузырёк: удерживайте его пальцем для записи (отпустите — отправится в чат). Короткое касание — быстрые команды.</string>
+
+    <!-- Overlay screen -->
+    <string name="overlay_title">Управление оверлеем</string>
+    <string name="overlay_description">Включите плавающую панель и режим «нажми и говори» перед боем.</string>
+    <string name="overlay_role_privileges">Права по роли: %1$s</string>
+    <string name="overlay_start_combat">Запустить боевой режим</string>
+    <string name="overlay_stop_combat">Остановить боевой режим</string>
+    <string name="overlay_ptt_start">Начать запись (PTT)</string>
+    <string name="overlay_ptt_stop">Остановить запись (PTT)</string>
+    <string name="overlay_permission_settings">Разрешение поверх окон</string>
+
+    <!-- Profile -->
+    <string name="profile_title">Профиль и настройки</string>
+    <string name="profile_pilot">Пилот: %1$s</string>
+    <string name="profile_quiet_title">Тихий режим</string>
+    <string name="profile_quiet_subtitle">Меньше второстепенных уведомлений</string>
+    <string name="profile_compact_title">Компактный оверлей</string>
+    <string name="profile_compact_subtitle">Меньше плавающих кнопок в бою</string>
+    <string name="profile_role">Роль: %1$s</string>
+
+    <!-- Admin (R5) -->
+    <string name="admin_title">Админка команды</string>
+    <string name="admin_subtitle">Подтверждение новичков, роли, никнеймы и исключение из команды.</string>
+    <string name="admin_refresh">Обновить список</string>
+    <string name="admin_dismiss_error">Скрыть ошибку</string>
+    <string name="admin_status_pending">ожидает подтверждения</string>
+    <string name="admin_status_active">в команде</string>
+    <string name="admin_status_removed">исключён из команды</string>
+    <string name="admin_field_role">Роль: %1$s</string>
+    <string name="admin_field_status">Статус: %1$s</string>
+    <string name="admin_btn_approve">Принять в команду</string>
+    <string name="admin_btn_remove_team">Убрать из команды</string>
+    <string name="admin_btn_mark_pending">Вернуть в ожидание</string>
+    <string name="admin_role_change">Сменить роль</string>
+    <string name="admin_rename">Никнейм</string>
+    <string name="admin_new_nickname">Новый ник</string>
+    <string name="admin_save_nickname">Сохранить</string>
+    <string name="admin_delete_account">Удалить аккаунт из базы…</string>
+    <string name="admin_delete_title">Удалить пользователя?</string>
+    <string name="admin_delete_body">Будет удалён аккаунт «%1$s» и все его сессии. Действие необратимо.</string>
+    <string name="admin_delete_confirm">Удалить</string>
+    <string name="admin_delete_cancel">Отмена</string>
+    <string name="admin_ok_approved">Игрок принят в команду</string>
+    <string name="admin_ok_removed">Игрок убран из команды</string>
+    <string name="admin_ok_pending">Статус: ожидание</string>
+    <string name="admin_ok_role">Роль обновлена</string>
+    <string name="admin_ok_rename">Никнейм обновлён</string>
+    <string name="admin_ok_deleted">Пользователь удалён</string>
+
+    <!-- Combat overlay service -->
+    <string name="overlay_notif_combat_active">Боевой режим активен</string>
+    <string name="overlay_notif_permission_required">Нужно разрешение «поверх других приложений»</string>
+    <string name="overlay_notif_speech_unavailable">Распознавание речи на устройстве недоступно</string>
+    <string name="overlay_notif_listening">Слушаю…</string>
+    <string name="overlay_notif_recognizing">Распознаю…</string>
+    <string name="overlay_notif_start_recognition_failed">Не удалось начать распознавание</string>
+    <string name="overlay_notif_recognition_failed">Ошибка распознавания</string>
+    <string name="overlay_notif_no_speech">Речь не распознана</string>
+    <string name="overlay_notif_speech_error">Ошибка распознавания речи</string>
+    <string name="overlay_notif_voice_sent">Голосовое сообщение отправлено</string>
+    <string name="overlay_notif_voice_chat_failed">Речь распознана, но чат не принял сообщение</string>
+    <string name="overlay_channel_name">Боевой оверлей</string>
+    <string name="overlay_notif_title">SquadRelay — боевой режим</string>
+    <string name="overlay_bubble_idle">МИК\nудерж.</string>
+    <string name="overlay_bubble_recording">ЗАП</string>
+    <string name="overlay_bubble_sending">···</string>
+    <string name="overlay_toggle_hide">Скрыть</string>
+    <string name="overlay_toggle_show">Показать</string>
+    <string name="overlay_ticker_voice">Голос: %1$s</string>
+    <string name="overlay_cmd_assembly_label">СБОР</string>
+    <string name="overlay_cmd_assembly_text">Сбор к лидеру</string>
+    <string name="overlay_cmd_focus_label">ФОКУС</string>
+    <string name="overlay_cmd_focus_text">Фокус по цели №1</string>
+    <string name="overlay_cmd_help_label">ПОМОЩЬ</string>
+    <string name="overlay_cmd_help_text">Нужна помощь</string>
+    <string name="overlay_cmd_stand_down_label">ОТБОЙ</string>
+    <string name="overlay_cmd_stand_down_text">Отбой</string>
+
+    <!-- API / network (ViewModel) -->
+    <string name="err_invalid_credentials">Неверная почта или пароль.</string>
+    <string name="err_session_refresh">Сессия устарела. Войдите снова.</string>
+    <string name="err_auth_with_code">Ошибка авторизации (%1$d).</string>
+    <string name="err_email_taken">Этот email уже занят. Войдите или укажите другой адрес.</string>
+    <string name="err_email_taken_short">Этот email уже занят.</string>
+    <string name="err_form_check">Проверьте данные в форме.</string>
+    <string name="err_forbidden">Доступ запрещён.</string>
+    <string name="err_rate_limit">Слишком много запросов. Подождите минуту.</string>
+    <string name="err_server_temp">Сервер временно недоступен. Попробуйте позже.</string>
+    <string name="err_server_generic">Ошибка сервера. Попробуйте позже.</string>
+    <string name="err_network_with_code">Ошибка сети (%1$d).</string>
+    <string name="err_no_connection">Нет соединения с сервером. Проверьте интернет.</string>
+    <string name="err_timeout">Превышено время ожидания. Проверьте интернет и попробуйте снова.</string>
+    <string name="err_unknown">Неизвестная ошибка.</string>
+    <string name="err_validation_username">Имя пользователя: от 3 символов.</string>
+    <string name="err_validation_email">Укажите корректный email.</string>
+    <string name="err_validation_password">Пароль: не менее 8 символов.</string>
+    <string name="err_pending_approval">Аккаунт ожидает подтверждения администратора.</string>
+    <string name="err_username_taken">Этот ник уже занят.</string>
+
+    <string name="session_expired_message">Сессия устарела. Войдите снова.</string>
+</resources>

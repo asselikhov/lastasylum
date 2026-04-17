@@ -7,4 +7,6 @@ data class AuthState(
     val isAuthenticated: Boolean = false,
     val user: AuthUser? = null,
     val error: String? = null,
+    /** Non-error info, e.g. registration pending admin approval. */
+    val infoMessage: String? = null,
 )

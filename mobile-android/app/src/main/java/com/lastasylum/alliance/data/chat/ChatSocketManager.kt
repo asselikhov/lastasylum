@@ -20,13 +20,19 @@ class ChatSocketManager {
             .build()
         socket = IO.socket(baseUrl.trimEnd('/') + "/chat", options).apply {
             on(Socket.EVENT_CONNECT) {
-                emit("room:join", JSONObject().put("allianceId", "OBZHORY"))
+                emit(
+                    "room:join",
+                    JSONObject().put("allianceId", AllianceDefaults.DEFAULT_ALLIANCE_ID),
+                )
             }
             on("message:new") { args ->
                 val payload = args.firstOrNull() as? JSONObject ?: return@on
                 val message = ChatMessage(
                     _id = payload.optString("_id"),
-                    allianceId = payload.optString("allianceId", "OBZHORY"),
+                    allianceId = payload.optString(
+                        "allianceId",
+                        AllianceDefaults.DEFAULT_ALLIANCE_ID,
+                    ),
                     senderId = payload.optString("senderId"),
                     senderUsername = payload.optString("senderUsername"),
                     senderRole = payload.optString("senderRole"),
@@ -39,7 +45,7 @@ class ChatSocketManager {
         }
     }
 
-    fun sendMessage(text: String, allianceId: String = "OBZHORY") {
+    fun sendMessage(text: String, allianceId: String = AllianceDefaults.DEFAULT_ALLIANCE_ID) {
         socket?.emit(
             "message:send",
             JSONObject()

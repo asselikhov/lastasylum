@@ -12,7 +12,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.lastasylum.alliance.R
 
 @Composable
 fun ProfileScreen(
@@ -31,27 +33,27 @@ fun ProfileScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(
-            text = "Profile & Preferences",
+            text = stringResource(R.string.profile_title),
             style = MaterialTheme.typography.headlineSmall,
         )
         Text(
-            text = "Pilot: $username",
+            text = stringResource(R.string.profile_pilot, username),
             style = MaterialTheme.typography.titleMedium,
         )
         SettingRow(
-            title = "Quiet mode",
-            subtitle = "Reduce non-critical alerts",
+            title = stringResource(R.string.profile_quiet_title),
+            subtitle = stringResource(R.string.profile_quiet_subtitle),
             checked = quietMode.value,
             onToggle = { quietMode.value = it },
         )
         SettingRow(
-            title = "Compact overlay",
-            subtitle = "Smaller floating controls while in battle",
+            title = stringResource(R.string.profile_compact_title),
+            subtitle = stringResource(R.string.profile_compact_subtitle),
             checked = compactOverlay.value,
             onToggle = { compactOverlay.value = it },
         )
         Text(
-            text = "Role: $role",
+            text = stringResource(R.string.profile_role, role),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.secondary,
         )

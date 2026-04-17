@@ -6,7 +6,7 @@ import com.lastasylum.alliance.data.auth.TokenStore
 import com.lastasylum.alliance.data.chat.ChatRepository
 import com.lastasylum.alliance.data.chat.ChatSocketManager
 import com.lastasylum.alliance.data.network.NetworkModule
-import com.lastasylum.alliance.data.stt.SttRepository
+import com.lastasylum.alliance.data.users.UsersRepository
 
 class AppContainer private constructor(context: Context) {
     private val appContext = context.applicationContext
@@ -15,6 +15,7 @@ class AppContainer private constructor(context: Context) {
 
     val authRepository: AuthRepository = AuthRepository(
         authApi = NetworkModule.authApi,
+        authorizedAuthApi = authorizedClients.authorizedAuthApi,
         tokenStore = tokenStore,
     )
 
@@ -24,8 +25,8 @@ class AppContainer private constructor(context: Context) {
         socketManager = ChatSocketManager(),
     )
 
-    val sttRepository: SttRepository = SttRepository(
-        sttApi = authorizedClients.sttApi,
+    val usersRepository: UsersRepository = UsersRepository(
+        usersApi = authorizedClients.usersApi,
     )
 
     companion object {

@@ -1,0 +1,78 @@
+package com.lastasylum.alliance.ui.util
+
+import android.content.res.Resources
+import com.lastasylum.alliance.R
+import org.json.JSONArray
+import org.json.JSONObject
+import retrofit2.HttpException
+
+fun Throwable.toUserMessageRu(resources: Resources): String {
+    if (this is HttpException) {
+        val code = code()
+        val raw = response()?.errorBody()?.string().orEmpty()
+        val parsed = parseNestMessage(raw, resources)
+        return when (code) {
+            401 -> when {
+                raw.contains("Invalid credentials", ignoreCase = true) ->
+                    resources.getString(R.string.err_invalid_credentials)
+                raw.contains("Invalid refresh", ignoreCase = true) ||
+                    raw.contains("Refresh session is not active", ignoreCase = true) ->
+                    resources.getString(R.string.err_session_refresh)
+                else -> parsed ?: resources.getString(R.string.err_auth_with_code, code)
+            }
+            409 -> resources.getString(R.string.err_email_taken)
+            400 -> parsed ?: resources.getString(R.string.err_form_check)
+            403 -> when {
+                raw.contains("Account pending administrator approval", ignoreCase = true) ->
+                    resources.getString(R.string.err_pending_approval)
+                else -> resources.getString(R.string.err_forbidden)
+            }
+            429 -> resources.getString(R.string.err_rate_limit)
+            502, 503 -> resources.getString(R.string.err_server_temp)
+            in 500..599 -> resources.getString(R.string.err_server_generic)
+            else -> parsed ?: resources.getString(R.string.err_network_with_code, code)
+        }
+    }
+    if (this is java.net.UnknownHostException) {
+        return resources.getString(R.string.err_no_connection)
+    }
+    if (this is java.net.SocketTimeoutException) {
+        return resources.getString(R.string.err_timeout)
+    }
+    return message?.takeIf { it.isNotBlank() } ?: resources.getString(R.string.err_unknown)
+}
+
+private fun parseNestMessage(raw: String, resources: Resources): String? {
+    if (raw.isBlank()) return null
+    return runCatching {
+        val obj = JSONObject(raw)
+        when (val m = obj.opt("message")) {
+            is String -> m.takeIf { it.isNotBlank() }?.let { translateKnownServerMessage(it, resources) }
+            is JSONArray -> {
+                val first = (0 until m.length())
+                    .mapNotNull { i -> m.optString(i).takeIf(String::isNotBlank) }
+                    .firstOrNull()
+                first?.let { translateKnownServerMessage(it, resources) }
+            }
+            else -> null
+        }
+    }.getOrNull()
+}
+
+private fun translateKnownServerMessage(english: String, resources: Resources): String = when {
+    english.contains("Email is already in use", ignoreCase = true) ->
+        resources.getString(R.string.err_email_taken_short)
+    english.contains("Invalid credentials", ignoreCase = true) ->
+        resources.getString(R.string.err_invalid_credentials)
+    english.contains("username", ignoreCase = true) &&
+        (english.contains("longer", ignoreCase = true) || english.contains("shorter", ignoreCase = true)) ->
+        resources.getString(R.string.err_validation_username)
+    english.contains("email", ignoreCase = true) && english.contains("valid", ignoreCase = true) ->
+        resources.getString(R.string.err_validation_email)
+    english.contains("password", ignoreCase = true) &&
+        (english.contains("longer", ignoreCase = true) || english.contains("shorter", ignoreCase = true)) ->
+        resources.getString(R.string.err_validation_password)
+    english.contains("Username is already taken", ignoreCase = true) ->
+        resources.getString(R.string.err_username_taken)
+    else -> english
+}

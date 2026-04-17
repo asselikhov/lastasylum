@@ -20,7 +20,9 @@ import androidx.compose.runtime.remember
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.lastasylum.alliance.R
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.OverlayPermissions
 
@@ -53,15 +55,15 @@ fun OverlayControlScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text(
-            text = "Overlay Control",
+            text = stringResource(R.string.overlay_title),
             style = MaterialTheme.typography.headlineSmall,
         )
         Text(
-            text = "Enable floating battle overlay and push-to-talk mode before entering the game.",
+            text = stringResource(R.string.overlay_description),
             style = MaterialTheme.typography.bodyMedium,
         )
         Text(
-            text = "Current role privileges: $role",
+            text = stringResource(R.string.overlay_role_privileges, role),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.secondary,
         )
@@ -76,10 +78,10 @@ fun OverlayControlScreen(
                 OverlayPermissions.openOverlayPermissionSettings(context)
             }
         }) {
-            Text(text = "Start Combat Mode")
+            Text(text = stringResource(R.string.overlay_start_combat))
         }
         OutlinedButton(onClick = { CombatOverlayService.stopService(context) }) {
-            Text(text = "Stop Combat Mode")
+            Text(text = stringResource(R.string.overlay_stop_combat))
         }
         OutlinedButton(onClick = {
             if (!hasMicPermission.value) {
@@ -93,12 +95,18 @@ fun OverlayControlScreen(
             }
             isRecording.value = !isRecording.value
         }, colors = ButtonDefaults.outlinedButtonColors()) {
-            Text(text = if (isRecording.value) "Stop PTT Recording" else "Start PTT Recording")
+            Text(
+                text = if (isRecording.value) {
+                    stringResource(R.string.overlay_ptt_stop)
+                } else {
+                    stringResource(R.string.overlay_ptt_start)
+                },
+            )
         }
         OutlinedButton(onClick = {
             OverlayPermissions.openOverlayPermissionSettings(context)
         }) {
-            Text(text = "Open Overlay Permission")
+            Text(text = stringResource(R.string.overlay_permission_settings))
         }
     }
 }

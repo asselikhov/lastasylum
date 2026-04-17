@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -10,6 +11,8 @@ import type { StringValue } from 'ms';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
+import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
+import { UserDocument } from '../users/schemas/user.schema';
 import { UsersService } from '../users/users.service';
 
 @Injectable()
@@ -34,6 +37,16 @@ export class AuthService {
       role: dto.role,
     });
 
+    if (
+      this.usersService.effectiveMembership(user) ===
+      TeamMembershipStatus.PENDING
+    ) {
+      return {
+        approvalRequired: true,
+        user: this.usersService.toSafeUser(user),
+      };
+    }
+
     return this.signAuthResponse(
       user._id.toString(),
       user.email,
@@ -55,6 +68,8 @@ export class AuthService {
     if (!isPasswordValid) {
       throw new UnauthorizedException('Invalid credentials');
     }
+
+    this.assertMembershipAllowsLogin(user);
 
     return this.signAuthResponse(
       user._id.toString(),
@@ -91,12 +106,26 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
+    this.assertMembershipAllowsLogin(user);
+
     return this.signAuthResponse(
       user._id.toString(),
       user.email,
       user.username,
       user.role,
     );
+  }
+
+  private assertMembershipAllowsLogin(user: UserDocument): void {
+    const status = this.usersService.effectiveMembership(user);
+    if (status === TeamMembershipStatus.REMOVED) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    if (status === TeamMembershipStatus.PENDING) {
+      throw new ForbiddenException(
+        'Account pending administrator approval',
+      );
+    }
   }
 
   async logout(userId: string): Promise<{ success: true }> {
@@ -133,6 +162,11 @@ export class AuthService {
     const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
     await this.usersService.updateRefreshTokenHash(userId, refreshTokenHash);
 
+    const full = await this.usersService.findById(userId);
+    const membershipStatus = full
+      ? this.usersService.effectiveMembership(full)
+      : TeamMembershipStatus.ACTIVE;
+
     return {
       accessToken,
       refreshToken,
@@ -141,6 +175,7 @@ export class AuthService {
         email,
         username,
         role,
+        membershipStatus,
       },
     };
   }

@@ -1,19 +1,24 @@
 package com.lastasylum.alliance.ui.chat
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatRepository
+import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class ChatViewModel(
+    application: Application,
     private val repository: ChatRepository,
-) : ViewModel() {
+) : AndroidViewModel(application) {
     private val _state = MutableStateFlow(ChatState(isLoading = true))
     val state: StateFlow<ChatState> = _state.asStateFlow()
+
+    private val res get() = getApplication<Application>().resources
 
     init {
         loadInitial()
@@ -31,7 +36,7 @@ class ChatViewModel(
                 }
                 .onFailure { throwable ->
                     _state.value = _state.value.copy(
-                        error = throwable.message ?: "Unable to send message",
+                        error = throwable.toUserMessageRu(res),
                     )
                 }
         }
@@ -49,7 +54,7 @@ class ChatViewModel(
                 .onFailure { throwable ->
                     _state.value = ChatState(
                         isLoading = false,
-                        error = throwable.message ?: "Unable to load chat",
+                        error = throwable.toUserMessageRu(res),
                     )
                 }
         }

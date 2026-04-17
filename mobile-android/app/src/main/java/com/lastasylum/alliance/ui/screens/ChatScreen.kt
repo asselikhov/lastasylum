@@ -20,7 +20,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.lastasylum.alliance.R
 import com.lastasylum.alliance.ui.chat.ChatState
 
 @Composable
@@ -41,19 +43,36 @@ fun ChatScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            text = "Alliance Battle Feed",
+            text = stringResource(R.string.chat_title),
             style = MaterialTheme.typography.headlineSmall,
         )
         Text(
-            text = "Logged in as $username ($role)",
+            text = stringResource(R.string.chat_logged_in, username, role),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.secondary,
+        )
+        Text(
+            text = stringResource(R.string.chat_voice_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.tertiary,
         )
         if (state.isLoading) {
             CircularProgressIndicator()
         } else {
-            state.messages.forEach { message ->
-                ChatCard("${message.senderRole} ${message.senderUsername}", message.text)
+            if (state.messages.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.chat_empty_state),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                state.messages.forEach { message ->
+                    ChatCard(
+                        senderRole = message.senderRole,
+                        senderUsername = message.senderUsername,
+                        message = message.text,
+                    )
+                }
             }
         }
         if (!state.error.isNullOrBlank()) {
@@ -64,7 +83,7 @@ fun ChatScreen(
                 value = draft,
                 onValueChange = { draft = it },
                 modifier = Modifier.weight(1f),
-                label = { Text("Message") },
+                label = { Text(stringResource(R.string.chat_message_hint)) },
                 singleLine = true,
             )
             TextButton(
@@ -74,14 +93,15 @@ fun ChatScreen(
                 },
                 enabled = draft.isNotBlank(),
             ) {
-                Text("Send")
+                Text(stringResource(R.string.chat_send))
             }
         }
     }
 }
 
 @Composable
-private fun ChatCard(sender: String, message: String) {
+private fun ChatCard(senderRole: String, senderUsername: String, message: String) {
+    val sender = stringResource(R.string.chat_message_header, senderRole, senderUsername)
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
