@@ -1,7 +1,9 @@
 package com.lastasylum.alliance.ui.auth
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
+import com.lastasylum.alliance.BuildConfig
 import androidx.lifecycle.viewModelScope
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.auth.AuthRepository
@@ -53,6 +55,7 @@ class AuthViewModel(
                     )
                 }
                 .onFailure { throwable ->
+                    logAuthFailure("login", throwable)
                     _state.value = AuthState(
                         isLoading = false,
                         isAuthenticated = false,
@@ -88,6 +91,7 @@ class AuthViewModel(
                     }
                 }
                 .onFailure { throwable ->
+                    logAuthFailure("register", throwable)
                     _state.value = AuthState(
                         isLoading = false,
                         isAuthenticated = false,
@@ -120,6 +124,7 @@ class AuthViewModel(
                     )
                 }
                 .onFailure { throwable ->
+                    logAuthFailure("forgotPassword", throwable)
                     _state.value = AuthState(
                         isLoading = false,
                         isAuthenticated = false,
@@ -144,6 +149,7 @@ class AuthViewModel(
                     )
                 }
                 .onFailure { throwable ->
+                    logAuthFailure("resetPassword", throwable)
                     _state.value = AuthState(
                         isLoading = false,
                         isAuthenticated = false,
@@ -167,7 +173,8 @@ class AuthViewModel(
                     user = user,
                 )
             }
-            .onFailure {
+            .onFailure { err ->
+                logAuthFailure("refreshSession", err)
                 authRepository.logout()
                 _state.value = AuthState(
                     isLoading = false,
@@ -175,5 +182,22 @@ class AuthViewModel(
                     error = getApplication<Application>().getString(R.string.session_expired_message),
                 )
             }
+    }
+
+    private fun logAuthFailure(stage: String, throwable: Throwable) {
+        val extra = if (throwable is retrofit2.HttpException) {
+            " HTTP ${throwable.code()}"
+        } else {
+            ""
+        }
+        Log.e(
+            TAG,
+            "$stage$extra api=${BuildConfig.API_BASE_URL} :: ${throwable.javaClass.simpleName}: ${throwable.message}",
+            throwable,
+        )
+    }
+
+    private companion object {
+        private const val TAG = "SquadRelayAuth"
     }
 }
