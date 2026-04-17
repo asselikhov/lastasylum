@@ -8,25 +8,31 @@ import com.lastasylum.alliance.data.chat.ChatRoomPreferences
 import com.lastasylum.alliance.data.chat.ChatRoomsRepository
 import com.lastasylum.alliance.data.chat.ChatSocketManager
 import com.lastasylum.alliance.data.network.NetworkModule
+import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.users.UsersRepository
 
 class AppContainer private constructor(context: Context) {
     private val appContext = context.applicationContext
     val tokenStore: TokenStore = TokenStore(appContext)
     val chatRoomPreferences: ChatRoomPreferences = ChatRoomPreferences(appContext)
-    private val authorizedClients = NetworkModule.createAuthorizedClients(tokenStore)
+    val userSettingsPreferences: UserSettingsPreferences = UserSettingsPreferences(appContext)
+    private val chatSocketManager = ChatSocketManager()
+
+    private lateinit var chatRepositoryImpl: ChatRepository
+
+    private val authorizedClients = NetworkModule.createAuthorizedClients(tokenStore) {
+        if (::chatRepositoryImpl.isInitialized) {
+            chatRepositoryImpl.onAccessTokenRefreshed()
+        }
+    }
+
+    val chatRepository: ChatRepository
+        get() = chatRepositoryImpl
 
     val authRepository: AuthRepository = AuthRepository(
         authApi = NetworkModule.authApi,
         authorizedAuthApi = authorizedClients.authorizedAuthApi,
         tokenStore = tokenStore,
-        chatRoomPreferences = chatRoomPreferences,
-    )
-
-    val chatRepository: ChatRepository = ChatRepository(
-        chatApi = authorizedClients.chatApi,
-        tokenStore = tokenStore,
-        socketManager = ChatSocketManager(),
         chatRoomPreferences = chatRoomPreferences,
     )
 
@@ -37,6 +43,15 @@ class AppContainer private constructor(context: Context) {
     val usersRepository: UsersRepository = UsersRepository(
         usersApi = authorizedClients.usersApi,
     )
+
+    init {
+        chatRepositoryImpl = ChatRepository(
+            chatApi = authorizedClients.chatApi,
+            tokenStore = tokenStore,
+            socketManager = chatSocketManager,
+            chatRoomPreferences = chatRoomPreferences,
+        )
+    }
 
     companion object {
         @Volatile

@@ -5,7 +5,7 @@ import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
 import android.util.TypedValue
-import android.widget.TextView
+import android.view.View
 import androidx.core.graphics.ColorUtils
 
 object OverlayBubbleUi {
@@ -16,29 +16,30 @@ object OverlayBubbleUi {
         ERROR,
     }
 
-    fun applyBubbleStyle(context: Context, view: TextView, state: BubbleState) {
-        applyCircleStyle(context, view, state, sizeDp = 56f, textSp = 11f)
+    fun applyBubbleStyle(context: Context, view: View, state: BubbleState, compact: Boolean = false) {
+        val sizeDp = if (compact) 54f else 72f
+        applyCircleStyle(context, view, state, sizeDp = sizeDp)
     }
 
-    fun applyQuickCommandStyle(context: Context, view: TextView, state: BubbleState) {
-        applyCircleStyle(context, view, state, sizeDp = 44f, textSp = 10f)
+    fun applyQuickCommandStyle(context: Context, view: View, state: BubbleState) {
+        applyCircleStyle(context, view, state, sizeDp = 44f)
     }
 
     private fun applyCircleStyle(
         context: Context,
-        view: TextView,
+        view: View,
         state: BubbleState,
         sizeDp: Float,
-        textSp: Float,
     ) {
-        val idleFill = Color.parseColor("#2A1F45")
-        val idleStroke = Color.parseColor("#8E6CFF")
-        val recFill = Color.parseColor("#3D1020")
-        val recStroke = Color.parseColor("#FF6464")
-        val sendFill = Color.parseColor("#0F2A28")
+        // Палитра как в SquadRelay (Compose): primary #9B7CFF, surface тёмный, secondary бирюза на «отправке».
+        val idleFill = Color.parseColor("#15101F")
+        val idleStroke = Color.parseColor("#9B7CFF")
+        val recFill = Color.parseColor("#1F1530")
+        val recStroke = Color.parseColor("#C4B5FD")
+        val sendFill = Color.parseColor("#0D1E1C")
         val sendStroke = Color.parseColor("#2DD4BF")
-        val errFill = Color.parseColor("#2A1515")
-        val errStroke = Color.parseColor("#FF4444")
+        val errFill = Color.parseColor("#2A1010")
+        val errStroke = Color.parseColor("#FF6B6B")
 
         val (fill, stroke) = when (state) {
             BubbleState.IDLE -> idleFill to idleStroke
@@ -48,13 +49,13 @@ object OverlayBubbleUi {
         }
 
         val sizePx = dpToPx(context, sizeDp).toInt()
-        val strokePx = dpToPx(context, 2f).toInt()
+        val strokePx = dpToPx(context, if (state == BubbleState.IDLE || state == BubbleState.RECORDING) 3f else 2f).toInt()
 
         val fillDrawable = GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
             intArrayOf(
                 fill,
-                ColorUtils.blendARGB(fill, Color.BLACK, 0.25f),
+                ColorUtils.blendARGB(fill, Color.BLACK, 0.28f),
             ),
         ).apply {
             shape = GradientDrawable.OVAL
@@ -64,7 +65,7 @@ object OverlayBubbleUi {
         val glow = GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
             intArrayOf(
-                ColorUtils.setAlphaComponent(stroke, 90),
+                ColorUtils.setAlphaComponent(stroke, 110),
                 ColorUtils.setAlphaComponent(stroke, 0),
             ),
         ).apply {
@@ -76,13 +77,8 @@ object OverlayBubbleUi {
         layer.setLayerInset(1, strokePx, strokePx, strokePx, strokePx)
 
         view.background = layer
-        view.setTextColor(Color.WHITE)
-        view.minWidth = sizePx
-        view.minHeight = sizePx
-        view.gravity = android.view.Gravity.CENTER
-        view.setPadding(0, 0, 0, 0)
-        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSp)
-        view.letterSpacing = 0.08f
+        view.minimumWidth = sizePx
+        view.minimumHeight = sizePx
     }
 
     private fun dpToPx(context: Context, dp: Float): Float {

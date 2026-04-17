@@ -7,6 +7,7 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.auth.AuthRepository
 import com.lastasylum.alliance.data.auth.RegisterResult
 import com.lastasylum.alliance.ui.util.toUserMessageRu
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -16,13 +17,23 @@ class AuthViewModel(
     application: Application,
     private val authRepository: AuthRepository,
 ) : AndroidViewModel(application) {
-    private val _state = MutableStateFlow(AuthState(isLoading = true))
+    /** Не держим экран в «загрузке» при фоновом refresh — иначе нельзя войти другим аккаунтом, пока таймаутит старый refresh. */
+    private val _state = MutableStateFlow(AuthState(isLoading = false))
     val state: StateFlow<AuthState> = _state.asStateFlow()
 
     private val res get() = getApplication<Application>().resources
 
+    private var sessionRestoreJob: Job? = null
+
     init {
-        restoreSession()
+        sessionRestoreJob = viewModelScope.launch {
+            restoreSession()
+        }
+    }
+
+    private fun cancelSilentSessionRestore() {
+        sessionRestoreJob?.cancel()
+        sessionRestoreJob = null
     }
 
     fun clearError() {
@@ -30,6 +41,7 @@ class AuthViewModel(
     }
 
     fun login(email: String, password: String) {
+        cancelSilentSessionRestore()
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true, error = null, infoMessage = null)
             authRepository.login(email, password)
@@ -51,6 +63,7 @@ class AuthViewModel(
     }
 
     fun register(username: String, email: String, password: String) {
+        cancelSilentSessionRestore()
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true, error = null, infoMessage = null)
             authRepository.register(username, email, password)
@@ -85,35 +98,82 @@ class AuthViewModel(
     }
 
     fun logout() {
+        cancelSilentSessionRestore()
         viewModelScope.launch {
             authRepository.logout()
             _state.value = AuthState(isLoading = false, isAuthenticated = false)
         }
     }
 
-    private fun restoreSession() {
+    fun forgotPassword(email: String) {
+        cancelSilentSessionRestore()
         viewModelScope.launch {
-            if (!authRepository.hasSession()) {
-                _state.value = AuthState(isLoading = false, isAuthenticated = false)
-                return@launch
-            }
-
-            authRepository.refreshSession()
-                .onSuccess { user ->
-                    _state.value = AuthState(
-                        isLoading = false,
-                        isAuthenticated = true,
-                        user = user,
-                    )
-                }
-                .onFailure {
-                    authRepository.logout()
+            _state.value = _state.value.copy(isLoading = true, error = null, infoMessage = null)
+            authRepository.forgotPassword(email)
+                .onSuccess {
                     _state.value = AuthState(
                         isLoading = false,
                         isAuthenticated = false,
-                        error = getApplication<Application>().getString(R.string.session_expired_message),
+                        infoMessage = getApplication<Application>().getString(
+                            R.string.auth_forgot_sent,
+                        ),
+                    )
+                }
+                .onFailure { throwable ->
+                    _state.value = AuthState(
+                        isLoading = false,
+                        isAuthenticated = false,
+                        error = throwable.toUserMessageRu(res),
                     )
                 }
         }
+    }
+
+    fun resetPassword(email: String, token: String, newPassword: String) {
+        cancelSilentSessionRestore()
+        viewModelScope.launch {
+            _state.value = _state.value.copy(isLoading = true, error = null, infoMessage = null)
+            authRepository.resetPassword(email, token, newPassword)
+                .onSuccess {
+                    _state.value = AuthState(
+                        isLoading = false,
+                        isAuthenticated = false,
+                        infoMessage = getApplication<Application>().getString(
+                            R.string.auth_reset_success,
+                        ),
+                    )
+                }
+                .onFailure { throwable ->
+                    _state.value = AuthState(
+                        isLoading = false,
+                        isAuthenticated = false,
+                        error = throwable.toUserMessageRu(res),
+                    )
+                }
+        }
+    }
+
+    private suspend fun restoreSession() {
+        if (!authRepository.hasSession()) {
+            _state.value = AuthState(isLoading = false, isAuthenticated = false)
+            return
+        }
+
+        authRepository.refreshSession()
+            .onSuccess { user ->
+                _state.value = AuthState(
+                    isLoading = false,
+                    isAuthenticated = true,
+                    user = user,
+                )
+            }
+            .onFailure {
+                authRepository.logout()
+                _state.value = AuthState(
+                    isLoading = false,
+                    isAuthenticated = false,
+                    error = getApplication<Application>().getString(R.string.session_expired_message),
+                )
+            }
     }
 }

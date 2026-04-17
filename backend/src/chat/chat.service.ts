@@ -1,4 +1,8 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
@@ -87,13 +91,30 @@ export class ChatService {
     });
   }
 
-  async getRecentMessages(userId: string, roomId: string, limit = 30) {
+  async getRecentMessages(
+    userId: string,
+    roomId: string,
+    options?: { limit?: number; before?: string },
+  ) {
+    const rawLimit = options?.limit ?? 30;
+    const limit = Math.min(100, Math.max(1, Math.floor(rawLimit)));
     const { allianceId, roomObjectId } = await this.assertRoomForUser(
       userId,
       roomId,
     );
+    const filter: Record<string, unknown> = {
+      allianceId,
+      roomId: roomObjectId,
+    };
+    const before = options?.before?.trim();
+    if (before) {
+      if (!Types.ObjectId.isValid(before)) {
+        throw new BadRequestException('Invalid before cursor');
+      }
+      filter._id = { $lt: new Types.ObjectId(before) };
+    }
     return this.messageModel
-      .find({ allianceId, roomId: roomObjectId })
+      .find(filter)
       .sort({ createdAt: -1 })
       .limit(limit)
       .lean()

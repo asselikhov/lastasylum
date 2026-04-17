@@ -45,3 +45,18 @@ sealed class RegisterResult {
     data class LoggedIn(val user: AuthUser) : RegisterResult()
     data object PendingApproval : RegisterResult()
 }
+
+data class ForgotPasswordRequest(
+    val email: String,
+)
+
+data class ResetPasswordRequest(
+    val email: String,
+    val token: String,
+    val newPassword: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class OkEnvelope(
+    val ok: Boolean? = null,
+)

@@ -19,11 +19,22 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
+import android.view.ViewGroup
+import android.graphics.Typeface
+import android.util.Base64
+import android.util.TypedValue
+import android.widget.ImageView
+import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationCompat
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.di.AppContainer
-import java.util.Locale
+import org.json.JSONObject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -37,7 +48,8 @@ class CombatOverlayService : Service() {
     private var awaitingSpeechResult = false
     private var windowManager: WindowManager? = null
     private var overlayView: FrameLayout? = null
-    private var overlayBubble: TextView? = null
+    private var overlayBubble: FrameLayout? = null
+    private var overlayPttPill: TextView? = null
     private var toggleView: TextView? = null
     private var toggleParams: WindowManager.LayoutParams? = null
     private val quickCommandViews = mutableListOf<TextView>()
@@ -48,29 +60,60 @@ class CombatOverlayService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var recordingStartRunnable: Runnable? = null
     private var overlayCollapsed = false
+    private var chatStripScroll: ScrollView? = null
+    private var chatStripLines: LinearLayout? = null
+    private var overlayMessageListener: ((ChatMessage) -> Unit)? = null
 
     override fun onCreate() {
         super.onCreate()
         initSpeechRecognizer()
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.overlay_notif_combat_active)))
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)) {
-            showOverlayControl()
-        } else {
+        ensureOverlayIfPermitted()
+        isServiceInstanceActive = true
+    }
+
+    /** Call on create and on every start: overlay appears after user grants permission in settings. */
+    private fun ensureOverlayIfPermitted() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
             updateNotification(getString(R.string.overlay_notif_permission_required))
+            return
+        }
+        if (overlayView == null) {
+            showOverlayControl()
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START_RECORDING -> startRecording()
-            ACTION_STOP_RECORDING -> stopRecording()
-            ACTION_STOP_SERVICE -> stopSelf()
+            ACTION_STOP_SERVICE -> {
+                stopSelf()
+                return START_STICKY
+            }
+            ACTION_REBUILD_OVERLAY -> {
+                if (overlayView != null) {
+                    removeOverlayControl()
+                }
+                ensureOverlayIfPermitted()
+                return START_STICKY
+            }
+            ACTION_REFRESH_NOTIFICATION -> {
+                updateNotification(getString(R.string.overlay_notif_combat_active))
+                return START_STICKY
+            }
+            else -> {
+                ensureOverlayIfPermitted()
+                when (intent?.action) {
+                    ACTION_START_RECORDING -> startRecording()
+                    ACTION_STOP_RECORDING -> stopRecording()
+                }
+            }
         }
         return START_STICKY
     }
 
     override fun onDestroy() {
+        isServiceInstanceActive = false
         stopRecording()
         speechRecognizer?.destroy()
         speechRecognizer = null
@@ -148,7 +191,7 @@ class CombatOverlayService : Service() {
                     updateNotification(getString(R.string.overlay_notif_speech_error))
                     pulseBubbleError()
                 }
-                setBubbleUi(OverlayBubbleUi.BubbleState.IDLE, getString(R.string.overlay_bubble_idle))
+                setBubbleUi(OverlayBubbleUi.BubbleState.IDLE, getString(R.string.overlay_ptt_caption))
             }
 
             override fun onResults(results: android.os.Bundle?) {
@@ -161,7 +204,7 @@ class CombatOverlayService : Service() {
                     .orEmpty()
                 if (text.isBlank()) {
                     updateNotification(getString(R.string.overlay_notif_no_speech))
-                    setBubbleUi(OverlayBubbleUi.BubbleState.IDLE, getString(R.string.overlay_bubble_idle))
+                    setBubbleUi(OverlayBubbleUi.BubbleState.IDLE, getString(R.string.overlay_ptt_caption))
                     return
                 }
                 serviceScope.launch { publishRecognizedText(text) }
@@ -177,7 +220,7 @@ class CombatOverlayService : Service() {
         container.chatRepository.sendSystemVoiceMessage(text)
             .onSuccess {
                 updateNotification(getString(R.string.overlay_notif_voice_sent))
-                setBubbleUi(OverlayBubbleUi.BubbleState.IDLE, getString(R.string.overlay_bubble_idle))
+                setBubbleUi(OverlayBubbleUi.BubbleState.IDLE, getString(R.string.overlay_ptt_caption))
                 showTicker(getString(R.string.overlay_ticker_voice, text))
             }
             .onFailure {
@@ -194,8 +237,9 @@ class CombatOverlayService : Service() {
     private fun setBubbleUi(state: OverlayBubbleUi.BubbleState, label: String) {
         mainHandler.post {
             val bubble = overlayBubble ?: return@post
-            OverlayBubbleUi.applyBubbleStyle(this, bubble, state)
-            bubble.text = label
+            val compact = AppContainer.from(this).userSettingsPreferences.isCompactOverlay()
+            OverlayBubbleUi.applyBubbleStyle(this, bubble, state, compact)
+            overlayPttPill?.text = label
         }
     }
 
@@ -203,7 +247,10 @@ class CombatOverlayService : Service() {
         setBubbleUi(OverlayBubbleUi.BubbleState.ERROR, "!")
         mainHandler.postDelayed(
             {
-                setBubbleUi(OverlayBubbleUi.BubbleState.IDLE, getString(R.string.overlay_bubble_idle))
+                setBubbleUi(
+                    OverlayBubbleUi.BubbleState.IDLE,
+                    getString(R.string.overlay_ptt_caption),
+                )
             },
             1400L,
         )
@@ -227,16 +274,157 @@ class CombatOverlayService : Service() {
     }
 
     private fun buildNotification(content: String): Notification {
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        val quiet = AppContainer.from(this).userSettingsPreferences.isQuietMode()
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle(getString(R.string.overlay_notif_title))
             .setContentText(content)
             .setOngoing(true)
-            .build()
+            .setPriority(
+                if (quiet) {
+                    NotificationCompat.PRIORITY_MIN
+                } else {
+                    NotificationCompat.PRIORITY_LOW
+                },
+            )
+        builder.setSilent(quiet)
+        return builder.build()
+    }
+
+    private fun applyOverlayLayoutCompat(params: WindowManager.LayoutParams) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            params.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+    }
+
+    private fun appendOverlayChatLine(
+        sender: String,
+        text: String,
+        senderId: String? = null,
+        autoScroll: Boolean = true,
+    ) {
+        val lines = chatStripLines ?: return
+        OverlayChatStripUi.addLine(
+            this,
+            lines,
+            sender,
+            text,
+            senderId,
+            jwtSubFromAccessToken(),
+        )
+        while (lines.childCount > OVERLAY_CHAT_MAX_LINES) {
+            lines.removeViewAt(0)
+        }
+        if (autoScroll) {
+            scrollChatStripToEnd()
+        }
+    }
+
+    private fun setStripPlainMessage(message: String) {
+        val lines = chatStripLines ?: return
+        OverlayChatStripUi.clearLines(lines)
+        val tv = TextView(this).apply {
+            this.text = message
+            setTextColor(Color.parseColor("#E8ECF8"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
+            setPadding(dp(6), dp(4), dp(6), dp(4))
+        }
+        lines.addView(
+            tv,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+    }
+
+    private fun jwtSubFromAccessToken(): String? {
+        val token = runCatching { AppContainer.from(this).tokenStore.getAccessToken() }.getOrNull()
+            ?: return null
+        val parts = token.split('.')
+        if (parts.size < 2) return null
+        var payload = parts[1].replace('-', '+').replace('_', '/')
+        when (payload.length % 4) {
+            2 -> payload += "=="
+            3 -> payload += "="
+            else -> {}
+        }
+        return runCatching {
+            val json = String(Base64.decode(payload, Base64.DEFAULT), Charsets.UTF_8)
+            JSONObject(json).optString("sub", "").takeIf { it.isNotBlank() }
+        }.getOrNull()
+    }
+
+    private fun scrollChatStripToEnd() {
+        chatStripScroll?.post {
+            chatStripScroll?.fullScroll(View.FOCUS_DOWN)
+        }
+    }
+
+    private fun beginOverlayChatSubscription() {
+        if (overlayMessageListener != null) return
+        val listener: (ChatMessage) -> Unit = { msg ->
+            mainHandler.post {
+                val roomId = AppContainer.from(this).chatRoomPreferences.getSelectedRoomId()
+                if (roomId != null && msg.roomId.isNotBlank() && msg.roomId != roomId) {
+                    return@post
+                }
+                appendOverlayChatLine(msg.senderUsername, msg.text, msg.senderId)
+            }
+        }
+        overlayMessageListener = listener
+        mainHandler.post {
+            AppContainer.from(this).chatRepository.addOverlayMessageListener(listener)
+        }
+        serviceScope.launch {
+            val container = AppContainer.from(this@CombatOverlayService)
+            val roomId = container.chatRoomPreferences.getSelectedRoomId()
+            if (roomId == null) {
+                mainHandler.post {
+                    setStripPlainMessage(getString(R.string.overlay_strip_no_room))
+                }
+                return@launch
+            }
+            container.chatRepository.loadRecentMessages(roomId)
+                .onSuccess { loaded ->
+                    val tail = loaded.sortedBy { it.createdAt.orEmpty() }.takeLast(OVERLAY_CHAT_MAX_LINES)
+                    mainHandler.post {
+                        chatStripLines?.let { OverlayChatStripUi.clearLines(it) }
+                        tail.forEach { m ->
+                            appendOverlayChatLine(
+                                m.senderUsername,
+                                m.text,
+                                m.senderId,
+                                autoScroll = false,
+                            )
+                        }
+                        scrollChatStripToEnd()
+                    }
+                }
+                .onFailure {
+                    mainHandler.post {
+                        setStripPlainMessage(getString(R.string.overlay_strip_history_failed))
+                    }
+                }
+        }
+    }
+
+    private fun endOverlayChatSubscription() {
+        overlayMessageListener?.let { listener ->
+            runCatching {
+                AppContainer.from(applicationContext).chatRepository.removeOverlayMessageListener(listener)
+            }
+        }
+        overlayMessageListener = null
+        mainHandler.post {
+            chatStripLines?.let { OverlayChatStripUi.clearLines(it) }
+        }
     }
 
     private fun showOverlayControl() {
         if (overlayView != null) return
+        val compact = AppContainer.from(this).userSettingsPreferences.isCompactOverlay()
         val manager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -253,9 +441,10 @@ class CombatOverlayService : Service() {
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
+            applyOverlayLayoutCompat(this)
             gravity = Gravity.TOP or Gravity.START
             x = dp(18)
-            y = dp(380)
+            y = dp(280)
         }
 
         var initialX = 0
@@ -267,16 +456,80 @@ class CombatOverlayService : Service() {
         val dragThreshold = dp(14)
         val pressDelayMs = 150L
 
-        val bubble = TextView(this).apply {
-            text = getString(R.string.overlay_bubble_idle)
+        val stripLines: LinearLayout?
+        val stripScroll: ScrollView?
+        if (compact) {
+            stripLines = null
+            stripScroll = null
+        } else {
+            val lines = OverlayChatStripUi.createLinesContainer(this@CombatOverlayService)
+            stripLines = lines
+            stripScroll = ScrollView(this).apply {
+                OverlayChatStripUi.styleStripScroll(this@CombatOverlayService, this)
+                addView(
+                    lines,
+                    ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ),
+                )
+            }
+        }
+
+        lateinit var windowRoot: FrameLayout
+
+        val micSize = if (compact) dp(24) else dp(30)
+        val pill = TextView(this).apply {
+            text = getString(R.string.overlay_ptt_caption)
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, if (compact) 7f else 8f)
+            typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
-            maxLines = 2
+            maxLines = 1
+            letterSpacing = 0.06f
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(12).toFloat()
+                setColor(Color.parseColor("#AA35285A"))
+            }
+            setPadding(dp(8), dp(3), dp(8), dp(3))
+        }
+        val mic = ImageView(this).apply {
+            setImageDrawable(
+                ContextCompat.getDrawable(
+                    this@CombatOverlayService,
+                    R.drawable.ic_overlay_mic,
+                ),
+            )
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }
+        val bubble = FrameLayout(this).apply {
             OverlayBubbleUi.applyBubbleStyle(
                 this@CombatOverlayService,
                 this,
                 OverlayBubbleUi.BubbleState.IDLE,
+                compact,
             )
-            setOnTouchListener { view, event ->
+            addView(
+                mic,
+                FrameLayout.LayoutParams(micSize, micSize).apply {
+                    gravity = Gravity.CENTER_HORIZONTAL or Gravity.TOP
+                    topMargin = if (compact) dp(10) else dp(14)
+                },
+            )
+            addView(
+                pill,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                ).apply {
+                    gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                    bottomMargin = if (compact) dp(7) else dp(10)
+                    leftMargin = dp(6)
+                    rightMargin = dp(6)
+                },
+            )
+            setOnTouchListener { bubbleView, event ->
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
                         hideQuickCommands()
@@ -314,12 +567,14 @@ class CombatOverlayService : Service() {
                         if (isDragging) {
                             val screenWidth = resources.displayMetrics.widthPixels
                             val screenHeight = resources.displayMetrics.heightPixels
-                            val nextX = (initialX + deltaX).coerceIn(dp(8), screenWidth - dp(72))
-                            val nextY = (initialY + deltaY).coerceIn(dp(100), screenHeight - dp(180))
+                            val rootW = windowRoot.width.takeIf { it > 0 } ?: dp(260)
+                            val rootH = windowRoot.height.takeIf { it > 0 } ?: dp(120)
+                            val nextX = (initialX + deltaX).coerceIn(dp(8), screenWidth - rootW - dp(8))
+                            val nextY = (initialY + deltaY).coerceIn(dp(80), screenHeight - rootH - dp(48))
                             layoutParams.x = nextX
                             layoutParams.y = nextY
-                            manager.updateViewLayout(view, layoutParams)
-                            syncTickerPosition(nextX, nextY)
+                            manager.updateViewLayout(windowRoot, layoutParams)
+                            syncTickerPosition()
                         }
                         true
                     }
@@ -330,9 +585,11 @@ class CombatOverlayService : Service() {
                         if (!isDragging && startedRecording) {
                             stopRecording()
                         } else if (!isDragging) {
-                            toggleQuickCommands(layoutParams.x, layoutParams.y)
+                            val loc = IntArray(2)
+                            bubbleView.getLocationOnScreen(loc)
+                            toggleQuickCommands(loc[0], loc[1])
                         } else if (isDragging) {
-                            snapBubbleToSide(manager, view, layoutParams)
+                            snapBubbleToSide(manager, windowRoot, layoutParams)
                         }
                         startedRecording = false
                         true
@@ -343,15 +600,47 @@ class CombatOverlayService : Service() {
             }
         }
 
-        overlayBubble = bubble
-        overlayView = FrameLayout(this).apply {
-            addView(bubble)
+        val stripLp = LinearLayout.LayoutParams(dp(172), dp(186)).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            marginEnd = dp(8)
         }
+        val bubbleLp = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply {
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, 0)
+            if (!compact && stripScroll != null) {
+                addView(stripScroll, stripLp)
+            }
+            addView(bubble, bubbleLp)
+        }
+
+        windowRoot = FrameLayout(this).apply {
+            elevation = 22f
+            setBackgroundColor(Color.TRANSPARENT)
+            addView(row)
+        }
+
+        overlayBubble = bubble
+        overlayPttPill = pill
+        overlayView = windowRoot
+        chatStripScroll = stripScroll
+        chatStripLines = stripLines
+
         manager.addView(overlayView, layoutParams)
         windowManager = manager
         ensureToggleButton()
         ensureTicker()
-        syncTickerPosition(layoutParams.x, layoutParams.y)
+        syncTickerPosition()
+        if (!compact) {
+            beginOverlayChatSubscription()
+        }
     }
 
     private fun ensureToggleButton() {
@@ -372,6 +661,7 @@ class CombatOverlayService : Service() {
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
+            applyOverlayLayoutCompat(this)
             gravity = Gravity.TOP or Gravity.START
             x = dp(10)
             y = dp(86)
@@ -397,6 +687,7 @@ class CombatOverlayService : Service() {
         if (overlayCollapsed) {
             hideQuickCommands()
             hideTicker()
+            chatStripScroll?.visibility = View.GONE
             bubbleContainer?.animate()?.cancel()
             bubbleContainer?.visibility = View.VISIBLE
             bubbleContainer?.alpha = 0.5f
@@ -405,6 +696,7 @@ class CombatOverlayService : Service() {
             toggle?.text = getString(R.string.overlay_toggle_show)
             toggle?.animate()?.alpha(1f)?.setDuration(120L)?.start()
         } else {
+            chatStripScroll?.visibility = View.VISIBLE
             bubbleContainer?.animate()?.cancel()
             bubbleContainer?.visibility = View.VISIBLE
             bubbleContainer?.alpha = 1f
@@ -505,6 +797,7 @@ class CombatOverlayService : Service() {
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                 android.graphics.PixelFormat.TRANSLUCENT,
             ).apply {
+                applyOverlayLayoutCompat(this)
                 gravity = Gravity.TOP or Gravity.START
                 x = bubbleX + offsets[index].first
                 y = bubbleY + offsets[index].second
@@ -551,6 +844,7 @@ class CombatOverlayService : Service() {
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
+            applyOverlayLayoutCompat(this)
             gravity = Gravity.TOP or Gravity.START
             x = horizontalMargin
             y = dp(110)
@@ -589,7 +883,7 @@ class CombatOverlayService : Service() {
         }
     }
 
-    private fun syncTickerPosition(bubbleX: Int, bubbleY: Int) {
+    private fun syncTickerPosition() {
         val manager = windowManager ?: return
         val params = tickerParams ?: return
         val ticker = tickerView ?: return
@@ -606,7 +900,7 @@ class CombatOverlayService : Service() {
         val screenWidth = resources.displayMetrics.widthPixels
         val screenHeight = resources.displayMetrics.heightPixels
         val leftX = dp(10)
-        val rightX = screenWidth - dp(72)
+        val rightX = screenWidth - dp(96)
         val slotTop = dp(160)
         val slotMid = screenHeight / 2
         val slotBottom = (screenHeight - dp(230)).coerceAtLeast(slotTop + dp(120))
@@ -616,7 +910,7 @@ class CombatOverlayService : Service() {
         params.y = targetY
         runCatching { manager.updateViewLayout(view, params) }
         hideQuickCommands()
-        syncTickerPosition(params.x, params.y)
+        syncTickerPosition()
     }
 
     private fun dp(value: Int): Int {
@@ -625,6 +919,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun removeOverlayControl() {
+        endOverlayChatSubscription()
         hideTicker()
         hideQuickCommands()
         removeToggleButton()
@@ -635,6 +930,9 @@ class CombatOverlayService : Service() {
         }
         overlayView = null
         overlayBubble = null
+        overlayPttPill = null
+        chatStripScroll = null
+        chatStripLines = null
         windowManager = null
     }
 
@@ -649,10 +947,34 @@ class CombatOverlayService : Service() {
     companion object {
         private const val CHANNEL_ID = "combat_overlay_channel"
         private const val NOTIFICATION_ID = 7001
+        private const val OVERLAY_CHAT_MAX_LINES = 24
 
         const val ACTION_START_RECORDING = "com.squadrelay.action.START_RECORDING"
         const val ACTION_STOP_RECORDING = "com.squadrelay.action.STOP_RECORDING"
         const val ACTION_STOP_SERVICE = "com.squadrelay.action.STOP_SERVICE"
+        const val ACTION_REBUILD_OVERLAY = "com.squadrelay.action.REBUILD_OVERLAY"
+        const val ACTION_REFRESH_NOTIFICATION = "com.squadrelay.action.REFRESH_NOTIFICATION"
+
+        @Volatile
+        var isServiceInstanceActive: Boolean = false
+
+        /** Re-layout overlay (e.g. compact mode) while combat service is running. */
+        fun requestRebuildOverlayIfRunning(context: Context) {
+            if (!isServiceInstanceActive) return
+            val intent = Intent(context, CombatOverlayService::class.java).apply {
+                action = ACTION_REBUILD_OVERLAY
+            }
+            context.startService(intent)
+        }
+
+        /** Re-post foreground notification (quiet mode) while service is running. */
+        fun refreshQuietNotificationIfRunning(context: Context) {
+            if (!isServiceInstanceActive) return
+            val intent = Intent(context, CombatOverlayService::class.java).apply {
+                action = ACTION_REFRESH_NOTIFICATION
+            }
+            context.startService(intent)
+        }
 
         fun startService(context: Context) {
             val intent = Intent(context, CombatOverlayService::class.java)

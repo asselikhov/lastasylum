@@ -116,6 +116,46 @@ export class UsersService {
       .exec();
   }
 
+  async setPasswordResetToken(
+    email: string,
+    tokenHash: string,
+    expires: Date,
+  ): Promise<void> {
+    await this.userModel
+      .updateOne(
+        { email: email.toLowerCase() },
+        {
+          $set: {
+            passwordResetTokenHash: tokenHash,
+            passwordResetExpires: expires,
+          },
+        },
+      )
+      .exec();
+  }
+
+  async applyPasswordReset(
+    email: string,
+    newPasswordHash: string,
+  ): Promise<UserDocument | null> {
+    return this.userModel
+      .findOneAndUpdate(
+        { email: email.toLowerCase() },
+        {
+          $set: {
+            passwordHash: newPasswordHash,
+            refreshTokenHash: null,
+          },
+          $unset: {
+            passwordResetTokenHash: 1,
+            passwordResetExpires: 1,
+          },
+        },
+        { new: true },
+      )
+      .exec();
+  }
+
   toSafeUser(user: UserDocument): SafeUser {
     return {
       id: user._id.toString(),

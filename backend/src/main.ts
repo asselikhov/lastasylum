@@ -1,11 +1,17 @@
 import { ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import { parseAllowedOriginsFromEnv } from './common/config/allowed-origins';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const config = app.get(ConfigService);
+  const origins = parseAllowedOriginsFromEnv(
+    config.get<string>('ALLOWED_ORIGINS'),
+  );
   app.enableCors({
-    origin: '*',
+    origin: origins ?? '*',
   });
   app.useGlobalPipes(
     new ValidationPipe({

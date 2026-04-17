@@ -41,6 +41,12 @@ export class User {
 
   @Prop({ type: Date, default: null })
   mutedUntil: Date | null;
+
+  @Prop({ type: String, default: null })
+  passwordResetTokenHash: string | null;
+
+  @Prop({ type: Date, default: null })
+  passwordResetExpires: Date | null;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

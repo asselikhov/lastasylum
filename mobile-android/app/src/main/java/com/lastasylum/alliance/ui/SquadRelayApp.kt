@@ -20,6 +20,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.ui.auth.AuthScreen
 import com.lastasylum.alliance.ui.auth.AuthViewModel
 import com.lastasylum.alliance.ui.auth.AuthViewModelFactory
@@ -49,6 +50,15 @@ fun SquadRelayApp() {
         runCatching { fetchNewerApkDownloadUrl() }.getOrNull()?.let { pendingApkUrl = it }
     }
 
+    LaunchedEffect(authState.isAuthenticated) {
+        if (!authState.isAuthenticated) {
+            runCatching {
+                AppContainer.from(application).chatRepository.resetRealtimeForLogout()
+                CombatOverlayService.stopService(application)
+            }
+        }
+    }
+
     SquadRelayTheme {
         Surface(
             modifier = Modifier.fillMaxSize(),
@@ -63,6 +73,8 @@ fun SquadRelayApp() {
                         infoMessage = authState.infoMessage,
                         onLoginClick = authViewModel::login,
                         onRegisterClick = authViewModel::register,
+                        onForgotPassword = authViewModel::forgotPassword,
+                        onResetPassword = authViewModel::resetPassword,
                         onClearError = authViewModel::clearError,
                     )
                 } else {

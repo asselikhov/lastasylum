@@ -1,27 +1,27 @@
 package com.lastasylum.alliance.ui
 
+import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.RadioButtonChecked
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -47,7 +47,6 @@ enum class AppTab(val route: String, val titleRes: Int) {
     ADMIN("admin", R.string.tab_admin),
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppNavigation(
     userId: String,
@@ -58,6 +57,16 @@ fun AppNavigation(
     adminViewModelFactory: AdminViewModelFactory,
     modifier: Modifier = Modifier,
 ) {
+    val activity = LocalContext.current as ComponentActivity
+    val chatViewModel: ChatViewModel = viewModel(
+        viewModelStoreOwner = activity,
+        key = "alliance_chat",
+        factory = chatViewModelFactory,
+    )
+    LaunchedEffect(Unit) {
+        chatViewModel.refreshChat()
+    }
+
     val navController = rememberNavController()
     val navBackStackEntry = navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry.value?.destination
@@ -84,43 +93,24 @@ fun AppNavigation(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground,
-        topBar = {
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface,
-                    actionIconContentColor = MaterialTheme.colorScheme.onSurface,
-                ),
-                title = {
-                    Text(
-                        text = stringResource(R.string.nav_title, username, role),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                },
-                actions = {
-                    FilledIconButton(onClick = onLogout) {
-                        Icon(
-                            imageVector = Icons.Outlined.Logout,
-                            contentDescription = stringResource(R.string.cd_logout),
-                        )
-                    }
-                },
-            )
-        },
         bottomBar = {
             NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 contentColor = MaterialTheme.colorScheme.onSurface,
+                tonalElevation = 3.dp,
             ) {
                 visibleTabs.forEach { tab ->
                     val isSelected =
                         currentDestination?.hierarchy?.any { it.route == tab.route } == true
                     NavigationBarItem(
                         selected = isSelected,
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
                         onClick = {
                             navController.navigate(tab.route) {
                                 popUpTo(navController.graph.findStartDestination().id) {
@@ -162,38 +152,32 @@ fun AppNavigation(
         NavHost(
             navController = navController,
             startDestination = AppTab.CHAT.route,
+            modifier = Modifier.padding(contentPadding),
         ) {
             composable(AppTab.CHAT.route) {
-                val chatViewModel: ChatViewModel = viewModel(factory = chatViewModelFactory)
                 val chatState by chatViewModel.state.collectAsStateWithLifecycle()
                 ChatScreen(
-                    contentPadding = contentPadding,
-                    username = username,
-                    role = role,
                     state = chatState,
                     onSendMessage = chatViewModel::sendMessage,
                     onSelectRoom = chatViewModel::selectRoom,
                     onClearError = chatViewModel::clearError,
+                    onLoadOlder = chatViewModel::loadOlderMessages,
                 )
             }
             composable(AppTab.OVERLAY.route) {
-                OverlayControlScreen(
-                    contentPadding = contentPadding,
-                    role = role,
-                )
+                OverlayControlScreen(role = role)
             }
             composable(AppTab.PROFILE.route) {
                 ProfileScreen(
-                    contentPadding = contentPadding,
                     username = username,
                     role = role,
+                    onLogout = onLogout,
                 )
             }
             composable(AppTab.ADMIN.route) {
                 val adminViewModel: AdminViewModel = viewModel(factory = adminViewModelFactory)
                 val adminState by adminViewModel.state.collectAsStateWithLifecycle()
                 AdminScreen(
-                    contentPadding = contentPadding,
                     currentUserId = userId,
                     state = adminState,
                     onRefresh = adminViewModel::refresh,

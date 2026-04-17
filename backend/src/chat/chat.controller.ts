@@ -108,12 +108,19 @@ export class ChatController {
   async getRecentMessages(
     @Req() req: { user: RequestUser },
     @Query('roomId') roomId?: string,
+    @Query('before') before?: string,
+    @Query('limit') limitRaw?: string,
   ) {
     if (!roomId?.trim()) {
       throw new BadRequestException('roomId query parameter is required');
     }
     await this.chatService.assertUserMayUseChat(req.user.userId);
-    return this.chatService.getRecentMessages(req.user.userId, roomId);
+    const parsed = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
+    const limit = Number.isFinite(parsed) ? parsed : undefined;
+    return this.chatService.getRecentMessages(req.user.userId, roomId, {
+      before,
+      limit,
+    });
   }
 
   @Post('messages')

@@ -5,6 +5,9 @@ import com.lastasylum.alliance.R
 import org.json.JSONArray
 import org.json.JSONObject
 import retrofit2.HttpException
+import java.net.ConnectException
+import java.util.Locale
+import javax.net.ssl.SSLHandshakeException
 
 fun Throwable.toUserMessageRu(resources: Resources): String {
     if (this is HttpException) {
@@ -38,6 +41,18 @@ fun Throwable.toUserMessageRu(resources: Resources): String {
     }
     if (this is java.net.SocketTimeoutException) {
         return resources.getString(R.string.err_timeout)
+    }
+    if (this is ConnectException) {
+        return resources.getString(R.string.err_no_connection)
+    }
+    if (this is SSLHandshakeException) {
+        return resources.getString(R.string.err_tls_handshake)
+    }
+    if (this is java.io.IOException) {
+        val m = message.orEmpty().lowercase(Locale.ROOT)
+        if (m.contains("cleartext") && m.contains("not permitted")) {
+            return resources.getString(R.string.err_cleartext_blocked)
+        }
     }
     return message?.takeIf { it.isNotBlank() } ?: resources.getString(R.string.err_unknown)
 }

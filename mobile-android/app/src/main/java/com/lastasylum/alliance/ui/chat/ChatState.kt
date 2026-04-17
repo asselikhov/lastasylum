@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.ui.chat
 
+import com.lastasylum.alliance.data.chat.ChatConnectionState
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 
@@ -11,4 +12,7 @@ data class ChatState(
     val messages: List<ChatMessage> = emptyList(),
     val error: String? = null,
     val currentUserId: String = "",
+    val connectionState: ChatConnectionState = ChatConnectionState.Disconnected,
+    val isLoadingOlder: Boolean = false,
+    val hasMoreOlder: Boolean = true,
 )

@@ -11,8 +11,8 @@ object OverlayTickerUi {
         val card = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = dp(context, 12f)
-            setColor(Color.parseColor("#CC111826"))
-            setStroke(dp(context, 1.25f).toInt(), Color.parseColor("#667E8CA8"))
+            setColor(Color.parseColor("#CC10141E"))
+            setStroke(dp(context, 1.25f).toInt(), Color.parseColor("#559B7CFF"))
         }
 
         view.background = card
@@ -32,8 +32,8 @@ object OverlayTickerUi {
         val chip = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = dp(context, 18f)
-            setColor(Color.parseColor("#C21A2233"))
-            setStroke(dp(context, 1f).toInt(), Color.parseColor("#6D8AA0C2"))
+            setColor(Color.parseColor("#CC1A1F2B"))
+            setStroke(dp(context, 1f).toInt(), Color.parseColor("#449B7CFF"))
         }
         view.background = chip
         view.setTextColor(Color.parseColor("#FFEAF0FF"))

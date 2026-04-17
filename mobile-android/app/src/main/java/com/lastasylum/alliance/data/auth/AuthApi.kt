@@ -15,4 +15,10 @@ interface AuthApi {
 
     @POST("auth/logout")
     suspend fun logout()
+
+    @POST("auth/forgot-password")
+    suspend fun forgotPassword(@Body body: ForgotPasswordRequest): OkEnvelope
+
+    @POST("auth/reset-password")
+    suspend fun resetPassword(@Body body: ResetPasswordRequest): OkEnvelope
 }

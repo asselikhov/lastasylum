@@ -13,8 +13,13 @@ import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
 import { UsersService } from '../users/users.service';
 import { ChatRoomsService } from './chat-rooms.service';
+import { parseAllowedOriginsFromEnv } from '../common/config/allowed-origins';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { ChatService } from './chat.service';
+
+/** Align with HTTP POST /chat/messages throttling (8 sends per 10s window). */
+const WS_MESSAGE_WINDOW_MS = 10_000;
+const WS_MESSAGE_MAX = 8;
 
 type GatewayUser = {
   userId: string;
@@ -37,12 +42,15 @@ type AuthSocket = Socket<
 @WebSocketGateway({
   namespace: '/chat',
   cors: {
-    origin: '*',
+    origin: parseAllowedOriginsFromEnv(process.env.ALLOWED_ORIGINS) ?? true,
   },
 })
 export class ChatGateway {
   @WebSocketServer()
   server: Server;
+
+  /** userId -> timestamps of message:send (sliding window). */
+  private readonly wsMessageSendTimestamps = new Map<string, number[]>();
 
   constructor(
     private readonly chatService: ChatService,
@@ -136,6 +144,7 @@ export class ChatGateway {
     if (!payload.roomId?.trim()) {
       throw new WsException('roomId is required');
     }
+    this.assertWsMessageSendRate(client.data.user.userId);
 
     const message = await this.chatService.createMessage({
       roomId: payload.roomId.trim(),
@@ -149,5 +158,16 @@ export class ChatGateway {
 
   broadcastNewMessage(roomId: string, message: unknown) {
     this.server?.to(`chat:${roomId}`).emit('message:new', message);
+  }
+
+  private assertWsMessageSendRate(userId: string): void {
+    const now = Date.now();
+    const prev = this.wsMessageSendTimestamps.get(userId) ?? [];
+    const recent = prev.filter((t) => now - t < WS_MESSAGE_WINDOW_MS);
+    if (recent.length >= WS_MESSAGE_MAX) {
+      throw new WsException('Too many messages, try again shortly');
+    }
+    recent.push(now);
+    this.wsMessageSendTimestamps.set(userId, recent);
   }
 }

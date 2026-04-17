@@ -27,6 +27,8 @@ interface ChatApi {
     @GET("chat/messages")
     suspend fun getMessages(
         @Query("roomId") roomId: String,
+        @Query("before") before: String? = null,
+        @Query("limit") limit: Int? = null,
     ): List<ChatMessage>
 
     @POST("chat/messages")

@@ -1,26 +1,40 @@
+import { MailerService } from '@nestjs-modules/mailer';
 import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import {
+  createHash,
+  randomBytes,
+  timingSafeEqual,
+} from 'node:crypto';
 import type { StringValue } from 'ms';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
 import { UserDocument } from '../users/schemas/user.schema';
 import { UsersService } from '../users/users.service';
 
+const RESET_TOKEN_TTL_MS = 45 * 60 * 1000;
+
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly mailerService: MailerService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -131,6 +145,80 @@ export class AuthService {
   async logout(userId: string): Promise<{ success: true }> {
     await this.usersService.updateRefreshTokenHash(userId, null);
     return { success: true };
+  }
+
+  /**
+   * Always returns the same shape so callers cannot infer whether the email exists.
+   */
+  async forgotPassword(dto: ForgotPasswordDto): Promise<{ ok: true }> {
+    const email = dto.email.toLowerCase().trim();
+    const user = await this.usersService.findByEmail(email);
+    if (
+      user &&
+      this.usersService.effectiveMembership(user) ===
+        TeamMembershipStatus.ACTIVE
+    ) {
+      const token = randomBytes(32).toString('hex');
+      const tokenHash = createHash('sha256').update(token, 'utf8').digest('hex');
+      const expires = new Date(Date.now() + RESET_TOKEN_TTL_MS);
+      await this.usersService.setPasswordResetToken(email, tokenHash, expires);
+      const appName =
+        this.configService.get<string>('APP_PUBLIC_NAME')?.trim() ||
+        'SquadRelay';
+      try {
+        await this.mailerService.sendMail({
+          to: email,
+          subject: `${appName}: сброс пароля`,
+          text: `Скопируйте токен в приложение (действителен 45 минут):\n\n${token}\n`,
+          html: `<p>Скопируйте токен в приложение (действителен 45 минут):</p><pre style="word-break:break-all">${token}</pre>`,
+        });
+      } catch (err) {
+        this.logger.error(
+          `Failed to send password reset email to ${email}`,
+          err instanceof Error ? err.stack : String(err),
+        );
+      }
+    }
+    return { ok: true };
+  }
+
+  async resetPassword(dto: ResetPasswordDto): Promise<{ ok: true }> {
+    const email = dto.email.toLowerCase().trim();
+    const user = await this.usersService.findByEmail(email);
+    if (
+      !user?.passwordResetTokenHash ||
+      !user.passwordResetExpires ||
+      user.passwordResetExpires.getTime() < Date.now()
+    ) {
+      throw new UnauthorizedException('Invalid or expired reset token');
+    }
+    if (
+      this.usersService.effectiveMembership(user) !==
+      TeamMembershipStatus.ACTIVE
+    ) {
+      throw new UnauthorizedException('Invalid or expired reset token');
+    }
+    const digest = createHash('sha256')
+      .update(dto.token.trim(), 'utf8')
+      .digest('hex');
+    const stored = user.passwordResetTokenHash;
+    let valid = false;
+    try {
+      const a = Buffer.from(digest, 'hex');
+      const b = Buffer.from(stored, 'hex');
+      valid = a.length === b.length && timingSafeEqual(a, b);
+    } catch {
+      valid = false;
+    }
+    if (!valid) {
+      throw new UnauthorizedException('Invalid or expired reset token');
+    }
+    const newHash = await bcrypt.hash(dto.newPassword, 10);
+    const updated = await this.usersService.applyPasswordReset(email, newHash);
+    if (!updated) {
+      throw new UnauthorizedException('Invalid or expired reset token');
+    }
+    return { ok: true };
   }
 
   private async signAuthResponse(

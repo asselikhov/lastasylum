@@ -16,6 +16,17 @@
     <string name="auth_button_login">Войти</string>
     <string name="auth_button_register">Создать аккаунт</string>
     <string name="auth_password_mismatch">Пароли не совпадают</string>
+    <string name="auth_forgot_link">Забыли пароль?</string>
+    <string name="auth_forgot_title">Сброс пароля</string>
+    <string name="auth_forgot_hint">Укажите email — пришлём письмо с токеном.</string>
+    <string name="auth_forgot_send">Отправить письмо</string>
+    <string name="auth_forgot_sent">Если аккаунт существует, на почту отправлено письмо с токеном.</string>
+    <string name="auth_reset_title">Новый пароль</string>
+    <string name="auth_reset_token">Токен из письма</string>
+    <string name="auth_reset_new_password">Новый пароль</string>
+    <string name="auth_reset_submit">Сохранить пароль</string>
+    <string name="auth_reset_success">Пароль обновлён. Войдите с новым паролем.</string>
+    <string name="auth_back_to_login">Назад ко входу</string>
     <string name="auth_register_pending">Аккаунт создан. Дождитесь подтверждения администратора (R5), затем войдите по email и паролю.</string>
     <string name="auth_build_footer">Сборка %1$s (%2$d) · %3$s</string>
 
@@ -34,8 +45,11 @@
     <string name="chat_send">Отправить</string>
     <string name="chat_message_header">%1$s %2$s</string>
     <string name="chat_empty_state">Пока нет сообщений — напишите первым.</string>
-    <string name="chat_voice_hint">Голос в бою: вкладка «Оверлей» → «Запустить боевой режим». На экране появится пузырёк: удерживайте его пальцем для записи (отпустите — отправится в чат). Короткое касание — быстрые команды.</string>
+    <string name="chat_voice_hint">Голос в бою: вкладка «Оверлей» → «Запустить боевой режим». Слева от пузырька — короткая лента чата; удерживайте пузырёк для записи (отпустите — отправится в чат). Короткое касание по пузырьку — быстрые команды.</string>
     <string name="chat_no_rooms">Нет комнат чата. Попросите администратора (R5) создать комнату.</string>
+    <string name="chat_connection_connecting">Подключение к чату…</string>
+    <string name="chat_connection_reconnecting">Потеря связи, переподключение…</string>
+    <string name="chat_connection_offline">Нет соединения с сервером чата</string>
     <string name="cd_chat_message">Сообщение от %1$s, роль %2$s: %3$s</string>
     <string name="err_chat_no_room">Выберите комнату чата в приложении, затем снова запишите голос.</string>
 
@@ -47,6 +61,7 @@
     <string name="overlay_stop_combat">Остановить боевой режим</string>
     <string name="overlay_ptt_start">Начать запись (PTT)</string>
     <string name="overlay_ptt_stop">Остановить запись (PTT)</string>
+    <string name="overlay_ptt_caption">НАЖМИ И ГОВОРИ</string>
     <string name="overlay_permission_settings">Разрешение поверх окон</string>
 
     <!-- Profile -->
@@ -56,10 +71,12 @@
     <string name="profile_quiet_subtitle">Меньше второстепенных уведомлений</string>
     <string name="profile_compact_title">Компактный оверлей</string>
     <string name="profile_compact_subtitle">Меньше плавающих кнопок в бою</string>
+    <string name="profile_settings_overlay_hint">Тихий режим и компактный оверлей сохраняются на устройстве. Если боевой режим уже включён, компактный вид применится сразу; иначе — при следующем запуске с вкладки «Оверлей».</string>
     <string name="profile_role">Роль: %1$s</string>
     <string name="profile_build_title">Версия приложения</string>
     <string name="profile_build_line">%1$s (код %2$d) · собрано %3$s</string>
     <string name="profile_check_update">Проверить обновление</string>
+    <string name="profile_logout">Выйти из аккаунта</string>
     <string name="profile_update_none">Установлена актуальная версия.</string>
     <string name="profile_update_error">Не удалось проверить обновление. Проверьте интернет.</string>
     <string name="update_dialog_title">Доступна новая версия</string>
@@ -106,6 +123,14 @@
     <string name="admin_ok_room_created">Комната создана</string>
     <string name="admin_ok_room_renamed">Комната переименована</string>
     <string name="admin_ok_room_deleted">Комната удалена</string>
+    <string name="admin_room_new_title">Новое название комнаты</string>
+    <string name="admin_rooms_empty">Комнат пока нет — задайте название выше и нажмите «Создать комнату».</string>
+    <string name="admin_members_empty">Участников в списке нет. Нажмите «Обновить список» или проверьте соединение.</string>
+    <string name="admin_cd_set_role">Назначить роль %1$s</string>
+    <string name="admin_cd_rename_room">Переименовать комнату %1$s</string>
+    <string name="admin_cd_delete_room">Удалить комнату %1$s</string>
+    <string name="admin_cd_refresh_members">Обновить список участников</string>
+    <string name="admin_cd_refresh_rooms">Обновить список комнат</string>
 
     <!-- Combat overlay service -->
     <string name="overlay_notif_combat_active">Боевой режим активен</string>
@@ -126,6 +151,8 @@
     <string name="overlay_bubble_sending">···</string>
     <string name="overlay_toggle_hide">Скрыть</string>
     <string name="overlay_toggle_show">Показать</string>
+    <string name="overlay_strip_no_room">Откройте вкладку «Чат» и выберите комнату — лента подтянется сюда.</string>
+    <string name="overlay_strip_history_failed">Не удалось загрузить историю чата.</string>
     <string name="overlay_ticker_voice">Голос: %1$s</string>
     <string name="overlay_cmd_assembly_label">СБОР</string>
     <string name="overlay_cmd_assembly_text">Сбор к лидеру</string>
@@ -148,8 +175,10 @@
     <string name="err_server_temp">Сервер временно недоступен. Попробуйте позже.</string>
     <string name="err_server_generic">Ошибка сервера. Попробуйте позже.</string>
     <string name="err_network_with_code">Ошибка сети (%1$d).</string>
+    <string name="err_cleartext_blocked">Подключение по HTTP заблокировано. Установите debug-сборку приложения или откройте бэкенд по HTTPS.</string>
     <string name="err_no_connection">Нет соединения с сервером. Проверьте интернет.</string>
-    <string name="err_timeout">Превышено время ожидания. Проверьте интернет и попробуйте снова.</string>
+    <string name="err_tls_handshake">Не удалось установить защищённое соединение (TLS). Проверьте дату и время на устройстве и сеть Wi‑Fi/мобильную передачу данных.</string>
+    <string name="err_timeout">Превышено время ожидания ответа сервера. Проверьте интернет; если бэкенд на бесплатном хостинге, после простоя первый запрос может занять до минуты — нажмите «Войти» ещё раз.</string>
     <string name="err_unknown">Неизвестная ошибка.</string>
     <string name="err_validation_username">Имя пользователя: от 3 символов.</string>
     <string name="err_validation_email">Укажите корректный email.</string>

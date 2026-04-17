@@ -1,14 +1,15 @@
 package com.lastasylum.alliance.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
@@ -16,6 +17,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -29,17 +31,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.users.TeamMemberDto
 import com.lastasylum.alliance.ui.admin.AdminUiState
+import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 
 @Composable
 fun AdminScreen(
-    contentPadding: PaddingValues,
     currentUserId: String,
     state: AdminUiState,
     onRefresh: () -> Unit,
@@ -61,31 +67,49 @@ fun AdminScreen(
     var renameRoomTarget by remember { mutableStateOf<ChatRoomDto?>(null) }
     var renameDraft by remember { mutableStateOf("") }
     var newRoomTitle by remember { mutableStateOf("") }
+    val context = LocalContext.current
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(contentPadding)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(horizontal = SquadRelayDimens.screenPaddingHorizontal - 4.dp),
+        verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.blockGap),
     ) {
         item {
             Text(
                 text = stringResource(R.string.admin_title),
                 style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onBackground,
             )
         }
         item {
             Text(
                 text = stringResource(R.string.admin_subtitle),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.secondary,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onRefresh, enabled = !state.isLoading) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedButton(
+                    onClick = onRefresh,
+                    enabled = !state.isLoading,
+                    shape = MaterialTheme.shapes.large,
+                    modifier = Modifier.semantics {
+                        contentDescription = context.getString(R.string.admin_cd_refresh_members)
+                    },
+                ) {
                     Text(stringResource(R.string.admin_refresh))
+                }
+                if (state.isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(26.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
                 }
             }
         }
@@ -93,6 +117,7 @@ fun AdminScreen(
             Text(
                 text = stringResource(R.string.admin_rooms_title),
                 style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground,
             )
             Text(
                 text = stringResource(R.string.admin_rooms_subtitle),
@@ -110,6 +135,7 @@ fun AdminScreen(
                     onValueChange = { newRoomTitle = it },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
+                    shape = MaterialTheme.shapes.medium,
                     label = { Text(stringResource(R.string.admin_rooms_new_hint)) },
                 )
                 Button(
@@ -118,6 +144,7 @@ fun AdminScreen(
                         newRoomTitle = ""
                     },
                     enabled = newRoomTitle.isNotBlank(),
+                    shape = MaterialTheme.shapes.large,
                 ) {
                     Text(stringResource(R.string.admin_rooms_create))
                 }
@@ -125,29 +152,46 @@ fun AdminScreen(
             OutlinedButton(
                 onClick = onRefreshRooms,
                 enabled = !state.roomsLoading,
-                modifier = Modifier.padding(top = 8.dp),
+                shape = MaterialTheme.shapes.large,
+                modifier = Modifier
+                    .padding(top = 8.dp)
+                    .semantics {
+                        contentDescription = context.getString(R.string.admin_cd_refresh_rooms)
+                    },
             ) {
                 Text(stringResource(R.string.admin_refresh))
             }
             if (state.roomsLoading && state.rooms.isEmpty()) {
-                CircularProgressIndicator(modifier = Modifier.padding(top = 8.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
-            if (!state.roomError.isNullOrBlank()) {
+            val roomErrorText = state.roomError
+            if (!roomErrorText.isNullOrBlank()) {
                 Text(
-                    text = state.roomError!!,
+                    text = roomErrorText,
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }
-            if (!state.roomSnack.isNullOrBlank()) {
+            val roomSnackText = state.roomSnack
+            if (!roomSnackText.isNullOrBlank()) {
                 Row(
                     modifier = Modifier.padding(top = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = state.roomSnack!!,
+                        text = roomSnackText,
                         color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.weight(1f),
@@ -162,7 +206,7 @@ fun AdminScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 4.dp),
+                    .padding(top = 2.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -174,13 +218,23 @@ fun AdminScreen(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = {
-                        renameRoomTarget = room
-                        renameDraft = room.title
-                    }) {
+                    TextButton(
+                        onClick = {
+                            renameRoomTarget = room
+                            renameDraft = room.title
+                        },
+                        modifier = Modifier.semantics {
+                            contentDescription = context.getString(R.string.admin_cd_rename_room, room.title)
+                        },
+                    ) {
                         Text(stringResource(R.string.admin_rooms_rename))
                     }
-                    TextButton(onClick = { deleteRoomTarget = room }) {
+                    TextButton(
+                        onClick = { deleteRoomTarget = room },
+                        modifier = Modifier.semantics {
+                            contentDescription = context.getString(R.string.admin_cd_delete_room, room.title)
+                        },
+                    ) {
                         Text(
                             stringResource(R.string.admin_rooms_delete),
                             color = MaterialTheme.colorScheme.error,
@@ -190,15 +244,58 @@ fun AdminScreen(
             }
         }
         item {
-            if (state.isLoading && state.members.isEmpty()) {
-                CircularProgressIndicator()
+            if (!state.roomsLoading && state.rooms.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.admin_rooms_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                )
             }
         }
         item {
-            if (!state.error.isNullOrBlank()) {
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = SquadRelayDimens.itemGap),
+                color = MaterialTheme.colorScheme.outlineVariant,
+            )
+        }
+        item {
+            when {
+                state.isLoading && state.members.isEmpty() -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 16.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                !state.isLoading && state.members.isEmpty() && state.error.isNullOrBlank() -> {
+                    Text(
+                        text = stringResource(R.string.admin_members_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp),
+                    )
+                }
+            }
+        }
+        item {
+            val membersErrorText = state.error
+            if (!membersErrorText.isNullOrBlank()) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        text = state.error!!,
+                        text = membersErrorText,
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 5,
@@ -212,9 +309,10 @@ fun AdminScreen(
             }
         }
         item {
-            if (!state.snackMessage.isNullOrBlank()) {
+            val snackMessageText = state.snackMessage
+            if (!snackMessageText.isNullOrBlank()) {
                 Text(
-                    text = state.snackMessage!!,
+                    text = snackMessageText,
                     color = MaterialTheme.colorScheme.primary,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 3,
@@ -273,7 +371,8 @@ fun AdminScreen(
                     value = renameDraft,
                     onValueChange = { renameDraft = it },
                     singleLine = true,
-                    label = { Text(stringResource(R.string.admin_new_nickname)) },
+                    shape = MaterialTheme.shapes.medium,
+                    label = { Text(stringResource(R.string.admin_room_new_title)) },
                     modifier = Modifier.fillMaxWidth(),
                 )
             },
@@ -348,16 +447,18 @@ private fun AdminMemberCard(
         else -> stringResource(R.string.admin_status_active)
     }
     val isSelf = member.id == currentUserId
+    val context = LocalContext.current
 
     Card(
+        shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(SquadRelayDimens.cardInnerPadding - 2.dp),
+            verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
         ) {
             Text(
                 text = member.username,
@@ -385,17 +486,29 @@ private fun AdminMemberCard(
 
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                 if (member.membershipStatus == "pending") {
-                    Button(onClick = onApprove, modifier = Modifier.weight(1f)) {
+                    Button(
+                        onClick = onApprove,
+                        modifier = Modifier.weight(1f),
+                        shape = MaterialTheme.shapes.large,
+                    ) {
                         Text(stringResource(R.string.admin_btn_approve))
                     }
                 }
                 if (member.membershipStatus == "active") {
-                    OutlinedButton(onClick = onRemoveFromTeam, modifier = Modifier.weight(1f)) {
+                    OutlinedButton(
+                        onClick = onRemoveFromTeam,
+                        modifier = Modifier.weight(1f),
+                        shape = MaterialTheme.shapes.large,
+                    ) {
                         Text(stringResource(R.string.admin_btn_remove_team))
                     }
                 }
                 if (member.membershipStatus == "removed") {
-                    OutlinedButton(onClick = onRestorePending, modifier = Modifier.weight(1f)) {
+                    OutlinedButton(
+                        onClick = onRestorePending,
+                        modifier = Modifier.weight(1f),
+                        shape = MaterialTheme.shapes.large,
+                    ) {
                         Text(stringResource(R.string.admin_btn_mark_pending))
                     }
                 }
@@ -411,7 +524,13 @@ private fun AdminMemberCard(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 listOf("R2", "R3", "R4", "R5").forEach { r ->
-                    OutlinedButton(onClick = { onSetRole(r) }) {
+                    OutlinedButton(
+                        onClick = { onSetRole(r) },
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier.semantics {
+                            contentDescription = context.getString(R.string.admin_cd_set_role, r)
+                        },
+                    ) {
                         Text(r)
                     }
                 }
@@ -427,11 +546,13 @@ private fun AdminMemberCard(
                     onValueChange = { draftName = it },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
+                    shape = MaterialTheme.shapes.medium,
                     label = { Text(stringResource(R.string.admin_new_nickname)) },
                 )
                 Button(
                     onClick = { onRename(draftName) },
                     enabled = draftName.length >= 3 && draftName != member.username,
+                    shape = MaterialTheme.shapes.large,
                 ) {
                     Text(stringResource(R.string.admin_save_nickname))
                 }

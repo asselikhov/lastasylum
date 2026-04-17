@@ -12,6 +12,7 @@ import okhttp3.Route
 class TokenAuthenticator(
     private val tokenStore: TokenStore,
     private val authApi: AuthApi,
+    private val onAccessTokenRefreshed: () -> Unit = {},
 ) : Authenticator {
     override fun authenticate(route: Route?, response: Response): Request? {
         if (responseCount(response) >= 2) {
@@ -24,6 +25,7 @@ class TokenAuthenticator(
         } ?: return null
 
         tokenStore.saveTokens(refreshed.accessToken, refreshed.refreshToken)
+        runCatching { onAccessTokenRefreshed() }
         return response.request.newBuilder()
             .header("Authorization", "Bearer ${refreshed.accessToken}")
             .build()

@@ -2,7 +2,6 @@ package com.lastasylum.alliance.ui.chat
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,7 +22,7 @@ fun RoleBadge(
     Text(
         text = role,
         modifier = modifier
-            .background(bg, RoundedCornerShape(6.dp))
+            .background(bg, MaterialTheme.shapes.extraSmall)
             .padding(horizontal = 8.dp, vertical = 3.dp),
         color = fg,
         style = MaterialTheme.typography.labelLarge.copy(

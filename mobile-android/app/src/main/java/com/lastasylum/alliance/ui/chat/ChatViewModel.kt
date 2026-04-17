@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+private const val PAGE_SIZE = 30
+
 class ChatViewModel(
     application: Application,
     private val repository: ChatRepository,
@@ -25,38 +27,43 @@ class ChatViewModel(
     private val res get() = getApplication<Application>().resources
 
     init {
-        bootstrap()
+        viewModelScope.launch {
+            repository.realtimeConnectionState.collect { s ->
+                _state.value = _state.value.copy(connectionState = s)
+            }
+        }
     }
 
-    private fun bootstrap() {
-        viewModelScope.launch {
-            _state.value = _state.value.copy(isRoomsLoading = true, error = null)
-            repository.listRooms()
-                .onSuccess { rooms ->
-                    if (rooms.isEmpty()) {
-                        _state.value = ChatState(
-                            isRoomsLoading = false,
-                            currentUserId = currentUserId,
-                            error = getApplication<Application>().getString(
-                            com.lastasylum.alliance.R.string.chat_no_rooms,
-                        ),
-                        )
-                        return@launch
-                    }
-                    val stored = chatRoomPreferences.getSelectedRoomId()
-                    val selected = rooms.find { it.id == stored }?.id ?: rooms.minByOrNull { it.sortOrder }?.id
-                        ?: rooms.first().id
-                    chatRoomPreferences.setSelectedRoomId(selected)
-                    openRoom(selected, rooms)
-                }
-                .onFailure { e ->
-                    _state.value = ChatState(
-                        isRoomsLoading = false,
-                        error = e.toUserMessageRu(res),
-                        currentUserId = currentUserId,
-                    )
-                }
+    fun refreshChat() {
+        viewModelScope.launch { bootstrap() }
+    }
+
+    private suspend fun bootstrap() {
+        _state.value = _state.value.copy(isRoomsLoading = true, error = null)
+        val rooms = repository.listRooms().getOrElse { e ->
+            _state.value = ChatState(
+                isRoomsLoading = false,
+                error = e.toUserMessageRu(res),
+                currentUserId = currentUserId,
+            )
+            return
         }
+        if (rooms.isEmpty()) {
+            _state.value = ChatState(
+                isRoomsLoading = false,
+                currentUserId = currentUserId,
+                error = getApplication<Application>().getString(
+                    com.lastasylum.alliance.R.string.chat_no_rooms,
+                ),
+            )
+            return
+        }
+        val stored = chatRoomPreferences.getSelectedRoomId()
+        val selected = rooms.find { it.id == stored }?.id
+            ?: rooms.minByOrNull { it.sortOrder }?.id
+            ?: rooms.first().id
+        chatRoomPreferences.setSelectedRoomId(selected)
+        openRoom(selected, rooms)
     }
 
     fun selectRoom(roomId: String) {
@@ -77,13 +84,16 @@ class ChatViewModel(
             error = null,
             messages = emptyList(),
             currentUserId = currentUserId,
+            hasMoreOlder = true,
+            isLoadingOlder = false,
         )
-        repository.loadRecentMessages(roomId)
+        repository.loadRecentMessages(roomId, beforeMessageId = null, limit = PAGE_SIZE)
             .onSuccess { loaded ->
                 _state.value = _state.value.copy(
                     isLoading = false,
                     messages = loaded,
                     selectedRoomId = roomId,
+                    hasMoreOlder = loaded.size >= PAGE_SIZE,
                 )
                 repository.connectRealtime(roomId, ::onIncomingMessage)
             }
@@ -93,6 +103,39 @@ class ChatViewModel(
                     error = e.toUserMessageRu(res),
                 )
             }
+    }
+
+    fun loadOlderMessages() {
+        val roomId = _state.value.selectedRoomId ?: return
+        val oldestId = _state.value.messages.lastOrNull()?._id ?: return
+        if (!_state.value.hasMoreOlder || _state.value.isLoadingOlder || _state.value.isLoading) {
+            return
+        }
+        viewModelScope.launch {
+            _state.value = _state.value.copy(isLoadingOlder = true)
+            repository.loadRecentMessages(
+                roomId = roomId,
+                beforeMessageId = oldestId,
+                limit = PAGE_SIZE,
+            )
+                .onSuccess { older ->
+                    val existingIds = _state.value.messages.mapNotNull { it._id }.toSet()
+                    val merged = _state.value.messages + older.filter { msg ->
+                        msg._id == null || msg._id !in existingIds
+                    }
+                    _state.value = _state.value.copy(
+                        messages = merged,
+                        isLoadingOlder = false,
+                        hasMoreOlder = older.size >= PAGE_SIZE,
+                    )
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(
+                        isLoadingOlder = false,
+                        error = e.toUserMessageRu(res),
+                    )
+                }
+        }
     }
 
     fun sendMessage(text: String) {

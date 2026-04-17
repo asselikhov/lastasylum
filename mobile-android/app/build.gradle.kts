@@ -1,6 +1,18 @@
-﻿plugins {
+﻿import java.util.Properties
+
+plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+val squadRelayLocalProperties = Properties().apply {
+    // Монорепо: часто local.properties лежит в корне репозитория; приоритет у mobile-android/local.properties.
+    listOf(
+        rootProject.file("../local.properties"),
+        rootProject.file("local.properties"),
+    ).filter { it.exists() }.forEach { f ->
+        f.inputStream().use { load(it) }
+    }
 }
 
 android {
@@ -18,8 +30,31 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
-        buildConfigField("String", "API_BASE_URL", "\"https://lastasylum-backend.onrender.com/\"")
         buildConfigField("long", "BUILD_TIME_MS", "${System.currentTimeMillis()}L")
+    }
+
+    flavorDimensions += "env"
+    productFlavors {
+        create("dev") {
+            dimension = "env"
+            // Эмулятор: 10.0.2.2. Физическое устройство: в mobile-android/local.properties задать
+            // squadrelay.api.baseUrl=http://ВАШ_IP:3000/
+            val overrideUrl = squadRelayLocalProperties.getProperty("squadrelay.api.baseUrl")?.trim().orEmpty()
+            val devApiUrl = if (overrideUrl.isNotEmpty()) {
+                overrideUrl.trimEnd('/') + "/"
+            } else {
+                "http://10.0.2.2:3000/"
+            }
+            buildConfigField("String", "API_BASE_URL", "\"$devApiUrl\"")
+        }
+        create("prod") {
+            dimension = "env"
+            buildConfigField(
+                "String",
+                "API_BASE_URL",
+                "\"https://lastasylum-backend.onrender.com/\"",
+            )
+        }
     }
 
     buildTypes {
