@@ -2,21 +2,25 @@ package com.lastasylum.alliance.data.auth
 
 import com.squareup.moshi.JsonClass
 
+@JsonClass(generateAdapter = true)
 data class LoginRequest(
     val email: String,
     val password: String,
 )
 
+@JsonClass(generateAdapter = true)
 data class RegisterRequest(
     val username: String,
     val email: String,
     val password: String,
 )
 
+@JsonClass(generateAdapter = true)
 data class RefreshRequest(
     val refreshToken: String,
 )
 
+@JsonClass(generateAdapter = true)
 data class AuthUser(
     val id: String,
     val email: String,
@@ -26,6 +30,7 @@ data class AuthUser(
     val allianceName: String? = null,
 )
 
+@JsonClass(generateAdapter = true)
 data class AuthResponse(
     val accessToken: String,
     val refreshToken: String,
@@ -46,10 +51,12 @@ sealed class RegisterResult {
     data object PendingApproval : RegisterResult()
 }
 
+@JsonClass(generateAdapter = true)
 data class ForgotPasswordRequest(
     val email: String,
 )
 
+@JsonClass(generateAdapter = true)
 data class ResetPasswordRequest(
     val email: String,
     val token: String,
