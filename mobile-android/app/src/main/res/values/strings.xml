@@ -56,6 +56,7 @@
     <!-- Overlay screen -->
     <string name="overlay_title">Управление оверлеем</string>
     <string name="overlay_description">Включите плавающую панель и режим «нажми и говори» перед боем.</string>
+    <string name="overlay_visibility_hint">Не видно в игре: в настройках приложения включите «поверх других приложений»; на Xiaomi/POCO дополнительно «Всплывающие окна» / «Отображать всплывающие окна при работе в фоне». На Android 12+ часть игр скрывает чужие оверлеи во время матча — тогда панель видна в лаунчере и вне игры.</string>
     <string name="overlay_role_privileges">Права по роли: %1$s</string>
     <string name="overlay_start_combat">Запустить боевой режим</string>
     <string name="overlay_stop_combat">Остановить боевой режим</string>

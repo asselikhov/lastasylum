@@ -74,6 +74,11 @@ fun OverlayControlScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
+            text = stringResource(R.string.overlay_visibility_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
             text = stringResource(R.string.overlay_role_privileges, role),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.secondary,

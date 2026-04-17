@@ -291,10 +291,25 @@ class CombatOverlayService : Service() {
         return builder.build()
     }
 
+    /**
+     * Флаги для TYPE_APPLICATION_OVERLAY: полноэкранные игры и вырезы.
+     * [FLAG_NOT_TOUCH_MODAL] — касания мимо пузырька уходят в игру (прозрачные области не «крадут» ввод).
+     * [FLAG_LAYOUT_NO_LIMITS] — окно не обрезается по insets полноэкранного приложения.
+     */
+    private fun overlayWindowFlags(): Int =
+        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+
     private fun applyOverlayLayoutCompat(params: WindowManager.LayoutParams) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             params.layoutInDisplayCutoutMode =
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            params.setFitInsetsTypes(0)
         }
     }
 
@@ -437,8 +452,7 @@ class CombatOverlayService : Service() {
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             type,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            overlayWindowFlags(),
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
             applyOverlayLayoutCompat(this)
@@ -624,6 +638,8 @@ class CombatOverlayService : Service() {
         windowRoot = FrameLayout(this).apply {
             elevation = 22f
             setBackgroundColor(Color.TRANSPARENT)
+            @Suppress("DEPRECATION")
+            fitsSystemWindows = false
             addView(row)
         }
 
@@ -657,8 +673,7 @@ class CombatOverlayService : Service() {
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             type,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            overlayWindowFlags(),
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
             applyOverlayLayoutCompat(this)
@@ -793,8 +808,7 @@ class CombatOverlayService : Service() {
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 type,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                overlayWindowFlags(),
                 android.graphics.PixelFormat.TRANSLUCENT,
             ).apply {
                 applyOverlayLayoutCompat(this)
@@ -840,8 +854,7 @@ class CombatOverlayService : Service() {
             (screenWidth - horizontalMargin * 2).coerceAtLeast(dp(180)),
             WindowManager.LayoutParams.WRAP_CONTENT,
             type,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            overlayWindowFlags(),
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
             applyOverlayLayoutCompat(this)
