@@ -1,9 +1,10 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
 import { UsersService } from '../users/users.service';
+import { ChatRoomsService } from './chat-rooms.service';
 import { Message } from './schemas/message.schema';
 
 type MessageAuthor = {
@@ -17,6 +18,7 @@ export class ChatService {
   constructor(
     @InjectModel(Message.name) private readonly messageModel: Model<Message>,
     private readonly usersService: UsersService,
+    private readonly chatRoomsService: ChatRoomsService,
   ) {}
 
   async assertUserMayUseChat(userId: string): Promise<void> {
@@ -29,10 +31,31 @@ export class ChatService {
     }
   }
 
+  private async assertRoomForUser(
+    userId: string,
+    roomId: string,
+  ): Promise<{ allianceId: string; roomObjectId: Types.ObjectId }> {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new ForbiddenException('User not found');
+    }
+    const room = await this.chatRoomsService.findById(roomId);
+    if (!room || room.archivedAt) {
+      throw new ForbiddenException('Room not found');
+    }
+    if (room.allianceId !== user.allianceName) {
+      throw new ForbiddenException('Room is not available for your alliance');
+    }
+    return {
+      allianceId: user.allianceName,
+      roomObjectId: room._id as Types.ObjectId,
+    };
+  }
+
   async createMessage(input: {
-    allianceId: string;
     text: string;
     author: MessageAuthor;
+    roomId: string;
   }) {
     const authorUser = await this.usersService.findById(input.author.userId);
     if (
@@ -49,8 +72,14 @@ export class ChatService {
       );
     }
 
+    const { allianceId, roomObjectId } = await this.assertRoomForUser(
+      input.author.userId,
+      input.roomId,
+    );
+
     return this.messageModel.create({
-      allianceId: input.allianceId,
+      allianceId,
+      roomId: roomObjectId,
       text: input.text.trim(),
       senderId: input.author.userId,
       senderUsername: input.author.username,
@@ -58,9 +87,13 @@ export class ChatService {
     });
   }
 
-  async getRecentMessages(allianceId: string, limit = 30) {
+  async getRecentMessages(userId: string, roomId: string, limit = 30) {
+    const { allianceId, roomObjectId } = await this.assertRoomForUser(
+      userId,
+      roomId,
+    );
     return this.messageModel
-      .find({ allianceId })
+      .find({ allianceId, roomId: roomObjectId })
       .sort({ createdAt: -1 })
       .limit(limit)
       .lean()

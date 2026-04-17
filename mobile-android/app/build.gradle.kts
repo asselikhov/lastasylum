@@ -11,7 +11,7 @@ android {
         applicationId = "com.lastasylum.alliance"
         minSdk = 28
         targetSdk = 34
-        versionCode = 1
+        versionCode = 2
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -19,6 +19,7 @@ android {
             useSupportLibrary = true
         }
         buildConfigField("String", "API_BASE_URL", "\"https://lastasylum-backend.onrender.com/\"")
+        buildConfigField("long", "BUILD_TIME_MS", "${System.currentTimeMillis()}L")
     }
 
     buildTypes {

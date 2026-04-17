@@ -27,6 +27,10 @@ JWT_SECRET=...
 JWT_EXPIRES_IN=7d
 JWT_REFRESH_SECRET=...
 JWT_REFRESH_EXPIRES_IN=30d
+
+# Sideloaded APK (optional): app calls GET /mobile/android-update. If ANDROID_APK_VERSION_CODE is greater than the installed app’s versionCode and ANDROID_APK_DOWNLOAD_URL is set, the client shows an update prompt and opens the URL in the browser.
+ANDROID_APK_VERSION_CODE=2
+ANDROID_APK_DOWNLOAD_URL=
 ```
 
 ## Run locally

@@ -23,6 +23,7 @@ data class AuthUser(
     val username: String,
     val role: String,
     val membershipStatus: String? = null,
+    val allianceName: String? = null,
 )
 
 data class AuthResponse(

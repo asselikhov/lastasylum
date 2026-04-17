@@ -9,8 +9,10 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
-import { DEFAULT_ALLIANCE_ID } from '../common/constants/default-alliance-id';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
+import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
+import { UsersService } from '../users/users.service';
+import { ChatRoomsService } from './chat-rooms.service';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { ChatService } from './chat.service';
 
@@ -20,11 +22,16 @@ type GatewayUser = {
   role: AllianceRole;
 };
 
+type SocketData = {
+  user?: GatewayUser;
+  lastJoinedChatRoom?: string;
+};
+
 type AuthSocket = Socket<
   Record<string, never>,
   Record<string, never>,
   Record<string, never>,
-  { user?: GatewayUser }
+  SocketData
 >;
 
 @WebSocketGateway({
@@ -39,6 +46,8 @@ export class ChatGateway {
 
   constructor(
     private readonly chatService: ChatService,
+    private readonly chatRoomsService: ChatRoomsService,
+    private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {}
@@ -77,13 +86,43 @@ export class ChatGateway {
   }
 
   @SubscribeMessage('room:join')
-  joinRoom(
+  async joinRoom(
     @ConnectedSocket() client: AuthSocket,
-    @MessageBody() payload: { allianceId: string },
+    @MessageBody() payload: { roomId?: string },
   ) {
-    const allianceId = payload.allianceId || DEFAULT_ALLIANCE_ID;
-    void client.join(allianceId);
-    return { event: 'room:joined', data: { allianceId } };
+    if (!client.data.user) {
+      throw new WsException('Unauthorized socket connection');
+    }
+    const roomId = typeof payload?.roomId === 'string' ? payload.roomId.trim() : '';
+    if (!roomId) {
+      throw new WsException('roomId is required');
+    }
+
+    await this.chatService.assertUserMayUseChat(client.data.user.userId);
+
+    const user = await this.usersService.findById(client.data.user.userId);
+    const room = await this.chatRoomsService.findById(roomId);
+    if (!user || !room || room.archivedAt) {
+      throw new WsException('Room not found');
+    }
+    if (room.allianceId !== user.allianceName) {
+      throw new WsException('Room is not available for your alliance');
+    }
+    if (this.usersService.effectiveMembership(user) !== TeamMembershipStatus.ACTIVE) {
+      throw new WsException('Chat is not available for this account');
+    }
+
+    const key = `chat:${roomId}`;
+    if (
+      client.data.lastJoinedChatRoom &&
+      client.data.lastJoinedChatRoom !== key
+    ) {
+      void client.leave(client.data.lastJoinedChatRoom);
+    }
+    void client.join(key);
+    client.data.lastJoinedChatRoom = key;
+
+    return { event: 'room:joined', data: { roomId } };
   }
 
   @SubscribeMessage('message:send')
@@ -94,19 +133,21 @@ export class ChatGateway {
     if (!client.data.user) {
       throw new WsException('Unauthorized socket connection');
     }
+    if (!payload.roomId?.trim()) {
+      throw new WsException('roomId is required');
+    }
 
-    const allianceId = payload.allianceId ?? DEFAULT_ALLIANCE_ID;
     const message = await this.chatService.createMessage({
-      allianceId,
+      roomId: payload.roomId.trim(),
       text: payload.text,
       author: client.data.user,
     });
 
-    this.broadcastNewMessage(allianceId, message);
+    this.broadcastNewMessage(payload.roomId.trim(), message);
     return { event: 'message:sent', data: message };
   }
 
-  broadcastNewMessage(allianceId: string, message: unknown) {
-    this.server?.to(allianceId).emit('message:new', message);
+  broadcastNewMessage(roomId: string, message: unknown) {
+    this.server?.to(`chat:${roomId}`).emit('message:new', message);
   }
 }

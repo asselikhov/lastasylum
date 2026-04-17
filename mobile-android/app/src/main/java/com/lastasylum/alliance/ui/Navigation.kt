@@ -9,16 +9,19 @@ import androidx.compose.material.icons.outlined.RadioButtonChecked
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -73,13 +76,30 @@ fun AppNavigation(
     val msgRole = stringResource(R.string.admin_ok_role)
     val msgRename = stringResource(R.string.admin_ok_rename)
     val msgDeleted = stringResource(R.string.admin_ok_deleted)
+    val msgRoomCreated = stringResource(R.string.admin_ok_room_created)
+    val msgRoomRenamed = stringResource(R.string.admin_ok_room_renamed)
+    val msgRoomDeleted = stringResource(R.string.admin_ok_room_deleted)
 
     Scaffold(
         modifier = modifier,
+        containerColor = MaterialTheme.colorScheme.background,
+        contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
             TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    actionIconContentColor = MaterialTheme.colorScheme.onSurface,
+                ),
                 title = {
-                    Text(text = stringResource(R.string.nav_title, username, role))
+                    Text(
+                        text = stringResource(R.string.nav_title, username, role),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.titleLarge,
+                    )
                 },
                 actions = {
                     FilledIconButton(onClick = onLogout) {
@@ -92,7 +112,10 @@ fun AppNavigation(
             )
         },
         bottomBar = {
-            NavigationBar {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ) {
                 visibleTabs.forEach { tab ->
                     val isSelected =
                         currentDestination?.hierarchy?.any { it.route == tab.route } == true
@@ -149,6 +172,8 @@ fun AppNavigation(
                     role = role,
                     state = chatState,
                     onSendMessage = chatViewModel::sendMessage,
+                    onSelectRoom = chatViewModel::selectRoom,
+                    onClearError = chatViewModel::clearError,
                 )
             }
             composable(AppTab.OVERLAY.route) {
@@ -191,6 +216,17 @@ fun AppNavigation(
                         adminViewModel.deleteUser(memberId, msgDeleted)
                     },
                     onDismissError = adminViewModel::clearError,
+                    onRefreshRooms = adminViewModel::refreshRooms,
+                    onCreateRoom = { title ->
+                        adminViewModel.createChatRoom(title, msgRoomCreated)
+                    },
+                    onRenameRoom = { roomId, title ->
+                        adminViewModel.renameChatRoom(roomId, title, msgRoomRenamed)
+                    },
+                    onDeleteRoom = { roomId ->
+                        adminViewModel.deleteChatRoom(roomId, msgRoomDeleted)
+                    },
+                    onClearRoomSnack = adminViewModel::clearRoomSnack,
                 )
             }
         }

@@ -1,9 +1,12 @@
 package com.lastasylum.alliance.data.auth
 
+import com.lastasylum.alliance.data.chat.ChatRoomPreferences
+
 class AuthRepository(
     private val authApi: AuthApi,
     private val authorizedAuthApi: AuthApi,
     private val tokenStore: TokenStore,
+    private val chatRoomPreferences: ChatRoomPreferences,
 ) {
     suspend fun register(
         username: String,
@@ -48,5 +51,6 @@ class AuthRepository(
     suspend fun logout() {
         runCatching { authorizedAuthApi.logout() }
         tokenStore.clearTokens()
+        chatRoomPreferences.clear()
     }
 }

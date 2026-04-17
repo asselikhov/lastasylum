@@ -176,6 +176,7 @@ export class AuthService {
         username,
         role,
         membershipStatus,
+        allianceName: full?.allianceName,
       },
     };
   }

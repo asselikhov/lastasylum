@@ -181,7 +181,12 @@ class CombatOverlayService : Service() {
                 showTicker(getString(R.string.overlay_ticker_voice, text))
             }
             .onFailure {
-                updateNotification(getString(R.string.overlay_notif_voice_chat_failed))
+                val msg = if (it.message == "no_room") {
+                    getString(R.string.err_chat_no_room)
+                } else {
+                    getString(R.string.overlay_notif_voice_chat_failed)
+                }
+                updateNotification(msg)
                 pulseBubbleError()
             }
     }

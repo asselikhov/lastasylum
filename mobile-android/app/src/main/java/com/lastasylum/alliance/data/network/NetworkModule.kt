@@ -36,6 +36,8 @@ object NetworkModule {
 
     val authApi: AuthApi = publicRetrofit.create(AuthApi::class.java)
 
+    val mobileApi: MobileApi = publicRetrofit.create(MobileApi::class.java)
+
     fun createAuthorizedClients(tokenStore: TokenStore): AuthorizedClients {
         val authorizedClient = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)

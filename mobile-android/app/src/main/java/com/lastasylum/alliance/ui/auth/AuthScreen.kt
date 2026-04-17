@@ -5,7 +5,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -24,7 +27,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 private enum class AuthMode {
     Login,
@@ -47,18 +54,25 @@ fun AuthScreen(
     var passwordConfirm by remember { mutableStateOf("") }
 
     val scroll = rememberScrollState()
+    val buildTimeStr = remember {
+        SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+            .format(Date(BuildConfig.BUILD_TIME_MS))
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scroll)
-            .padding(20.dp),
+            .navigationBarsPadding()
+            .imePadding()
+            .padding(horizontal = 20.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text(text = stringResource(R.string.auth_brand), style = MaterialTheme.typography.headlineSmall)
         Text(
             text = stringResource(R.string.auth_tagline),
             style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         Row(
@@ -147,7 +161,8 @@ fun AuthScreen(
             if (isLoading) {
                 CircularProgressIndicator(
                     strokeWidth = 2.dp,
-                    modifier = Modifier.padding(vertical = 2.dp),
+                    modifier = Modifier.size(22.dp),
+                    color = MaterialTheme.colorScheme.onPrimary,
                 )
             } else {
                 Text(
@@ -168,7 +183,11 @@ fun AuthScreen(
         }
 
         if (!errorMessage.isNullOrBlank()) {
-            Text(text = errorMessage, color = MaterialTheme.colorScheme.error)
+            Text(
+                text = errorMessage,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
         if (!infoMessage.isNullOrBlank()) {
             Text(
@@ -177,5 +196,17 @@ fun AuthScreen(
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
+
+        Text(
+            text = stringResource(
+                R.string.auth_build_footer,
+                BuildConfig.VERSION_NAME,
+                BuildConfig.VERSION_CODE,
+                buildTimeStr,
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 8.dp),
+        )
     }
 }

@@ -6,13 +6,18 @@ import org.json.JSONObject
 
 class ChatSocketManager {
     private var socket: Socket? = null
+    private var subscribedRoomId: String? = null
 
     fun connect(
         baseUrl: String,
         accessToken: String,
+        roomId: String,
         onNewMessage: (ChatMessage) -> Unit,
     ) {
-        if (socket?.connected() == true) return
+        if (socket?.connected() == true && subscribedRoomId == roomId) return
+
+        disconnect()
+        subscribedRoomId = roomId
 
         val options = IO.Options.builder()
             .setPath("/socket.io/")
@@ -22,17 +27,20 @@ class ChatSocketManager {
             on(Socket.EVENT_CONNECT) {
                 emit(
                     "room:join",
-                    JSONObject().put("allianceId", AllianceDefaults.DEFAULT_ALLIANCE_ID),
+                    JSONObject().put("roomId", roomId),
                 )
             }
             on("message:new") { args ->
                 val payload = args.firstOrNull() as? JSONObject ?: return@on
+                val msgRoom = payload.optString("roomId", "")
+                if (msgRoom.isNotBlank() && msgRoom != roomId) return@on
                 val message = ChatMessage(
-                    _id = payload.optString("_id"),
+                    _id = payload.optString("_id").takeIf { it.isNotBlank() },
                     allianceId = payload.optString(
                         "allianceId",
                         AllianceDefaults.DEFAULT_ALLIANCE_ID,
                     ),
+                    roomId = msgRoom,
                     senderId = payload.optString("senderId"),
                     senderUsername = payload.optString("senderUsername"),
                     senderRole = payload.optString("senderRole"),
@@ -45,11 +53,11 @@ class ChatSocketManager {
         }
     }
 
-    fun sendMessage(text: String, allianceId: String = AllianceDefaults.DEFAULT_ALLIANCE_ID) {
+    fun sendMessage(text: String, roomId: String) {
         socket?.emit(
             "message:send",
             JSONObject()
-                .put("allianceId", allianceId)
+                .put("roomId", roomId)
                 .put("text", text),
         )
     }
@@ -58,5 +66,6 @@ class ChatSocketManager {
         socket?.disconnect()
         socket?.off()
         socket = null
+        subscribedRoomId = null
     }
 }

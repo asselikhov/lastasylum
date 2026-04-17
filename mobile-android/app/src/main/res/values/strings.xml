@@ -17,6 +17,7 @@
     <string name="auth_button_register">Создать аккаунт</string>
     <string name="auth_password_mismatch">Пароли не совпадают</string>
     <string name="auth_register_pending">Аккаунт создан. Дождитесь подтверждения администратора (R5), затем войдите по email и паролю.</string>
+    <string name="auth_build_footer">Сборка %1$s (%2$d) · %3$s</string>
 
     <!-- Navigation -->
     <string name="nav_title">SquadRelay • %1$s (%2$s)</string>
@@ -34,6 +35,9 @@
     <string name="chat_message_header">%1$s %2$s</string>
     <string name="chat_empty_state">Пока нет сообщений — напишите первым.</string>
     <string name="chat_voice_hint">Голос в бою: вкладка «Оверлей» → «Запустить боевой режим». На экране появится пузырёк: удерживайте его пальцем для записи (отпустите — отправится в чат). Короткое касание — быстрые команды.</string>
+    <string name="chat_no_rooms">Нет комнат чата. Попросите администратора (R5) создать комнату.</string>
+    <string name="cd_chat_message">Сообщение от %1$s, роль %2$s: %3$s</string>
+    <string name="err_chat_no_room">Выберите комнату чата в приложении, затем снова запишите голос.</string>
 
     <!-- Overlay screen -->
     <string name="overlay_title">Управление оверлеем</string>
@@ -53,6 +57,15 @@
     <string name="profile_compact_title">Компактный оверлей</string>
     <string name="profile_compact_subtitle">Меньше плавающих кнопок в бою</string>
     <string name="profile_role">Роль: %1$s</string>
+    <string name="profile_build_title">Версия приложения</string>
+    <string name="profile_build_line">%1$s (код %2$d) · собрано %3$s</string>
+    <string name="profile_check_update">Проверить обновление</string>
+    <string name="profile_update_none">Установлена актуальная версия.</string>
+    <string name="profile_update_error">Не удалось проверить обновление. Проверьте интернет.</string>
+    <string name="update_dialog_title">Доступна новая версия</string>
+    <string name="update_dialog_body">Откроется страница загрузки APK. Установите файл поверх текущей версии.</string>
+    <string name="update_dialog_download">Скачать</string>
+    <string name="update_dialog_later">Позже</string>
 
     <!-- Admin (R5) -->
     <string name="admin_title">Админка команды</string>
@@ -82,6 +95,17 @@
     <string name="admin_ok_role">Роль обновлена</string>
     <string name="admin_ok_rename">Никнейм обновлён</string>
     <string name="admin_ok_deleted">Пользователь удалён</string>
+    <string name="admin_rooms_title">Комнаты чата</string>
+    <string name="admin_rooms_subtitle">Создавайте каналы для отрядов и тем. Удаление возможно только у пустой комнаты.</string>
+    <string name="admin_rooms_new_hint">Название новой комнаты</string>
+    <string name="admin_rooms_create">Создать комнату</string>
+    <string name="admin_rooms_rename">Переименовать</string>
+    <string name="admin_rooms_delete">Удалить</string>
+    <string name="admin_rooms_delete_title">Удалить комнату?</string>
+    <string name="admin_rooms_delete_body">Комната «%1$s» будет удалена, если в ней нет сообщений.</string>
+    <string name="admin_ok_room_created">Комната создана</string>
+    <string name="admin_ok_room_renamed">Комната переименована</string>
+    <string name="admin_ok_room_deleted">Комната удалена</string>
 
     <!-- Combat overlay service -->
     <string name="overlay_notif_combat_active">Боевой режим активен</string>

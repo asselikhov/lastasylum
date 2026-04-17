@@ -8,6 +8,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { ChatModule } from './chat/chat.module';
 import { SttModule } from './stt/stt.module';
+import { MobileModule } from './mobile/mobile.module';
 import { UsersModule } from './users/users.module';
 
 @Module({
@@ -32,6 +33,7 @@ import { UsersModule } from './users/users.module';
     UsersModule,
     ChatModule,
     SttModule,
+    MobileModule,
   ],
   controllers: [AppController],
   providers: [
