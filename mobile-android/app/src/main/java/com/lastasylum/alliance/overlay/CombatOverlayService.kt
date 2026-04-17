@@ -250,10 +250,13 @@ class CombatOverlayService : Service() {
     private suspend fun publishRecognizedText(text: String) {
         val container = AppContainer.from(this)
         container.chatRepository.sendSystemVoiceMessage(text)
-            .onSuccess {
-                updateNotification(getString(R.string.overlay_notif_voice_sent))
-                setBubbleUi(OverlayBubbleUi.BubbleState.IDLE)
-                showTicker(getString(R.string.overlay_ticker_voice, text))
+            .onSuccess { sent ->
+                mainHandler.post {
+                    applyLocalSentMessageToStrip(sent)
+                    updateNotification(getString(R.string.overlay_notif_voice_sent))
+                    setBubbleUi(OverlayBubbleUi.BubbleState.IDLE)
+                    showTicker(getString(R.string.overlay_ticker_voice, text))
+                }
             }
             .onFailure {
                 val msg = if (it.message == "no_room") {
@@ -417,6 +420,15 @@ class CombatOverlayService : Service() {
             )
         }
         scrollChatStripToEnd()
+    }
+
+    /**
+     * Исходящее сообщение по HTTP (текст из истории, голос, быстрые команды): сразу обновить ленту оверлея,
+     * как только приходит ответ API (не ждать сокет). Вызывать с главного потока.
+     */
+    private fun applyLocalSentMessageToStrip(sent: ChatMessage) {
+        messageReceivedAt[sent.stableKey()] = Instant.now()
+        processOverlayChatMessage(sent)
     }
 
     private fun processOverlayChatMessage(msg: ChatMessage) {
@@ -1039,9 +1051,10 @@ class CombatOverlayService : Service() {
                             .chatRepository
                             .sendSystemVoiceMessage(command.text)
                         mainHandler.post {
-                            if (result.isSuccess) {
+                            result.onSuccess { sent ->
+                                applyLocalSentMessageToStrip(sent)
                                 showTicker(command.text)
-                            } else {
+                            }.onFailure {
                                 pulseBubbleError()
                             }
                         }
@@ -1212,9 +1225,7 @@ class CombatOverlayService : Service() {
                 result.onSuccess { sent ->
                     input.setText("")
                     showOverlayHistoryStatus(null)
-                    // Время «увидели на устройстве» — effectiveInstant берёт max(сервер, это), иначе кривой createdAt выкидывает карточку из превью.
-                    messageReceivedAt[sent.stableKey()] = Instant.now()
-                    processOverlayChatMessage(sent)
+                    applyLocalSentMessageToStrip(sent)
                 }.onFailure { e ->
                     showOverlayHistoryStatus(
                         getString(R.string.overlay_history_send_failed, e.toUserMessageRu(resources)),
