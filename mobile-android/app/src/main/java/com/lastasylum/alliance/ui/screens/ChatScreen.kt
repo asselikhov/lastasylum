@@ -46,6 +46,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,6 +62,7 @@ import com.lastasylum.alliance.ui.chat.RoleBadge
 import com.lastasylum.alliance.ui.chat.formatChatTime
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.yield
 
 private data class ChatListLoadSignal(
     val lastVisibleIndex: Int,
@@ -101,14 +103,20 @@ fun ChatScreen(
         }
     }
 
-    LaunchedEffect(listState, state.hasMoreOlder, state.isLoadingOlder, state.isLoading) {
+    val listStateRef = rememberUpdatedState(listState)
+    val hasMoreOlderRef = rememberUpdatedState(state.hasMoreOlder)
+    val isLoadingOlderRef = rememberUpdatedState(state.isLoadingOlder)
+    val isLoadingRef = rememberUpdatedState(state.isLoading)
+    val onLoadOlderRef = rememberUpdatedState(onLoadOlder)
+
+    LaunchedEffect(listState) {
         snapshotFlow {
-            val info = listState.layoutInfo
+            val info = listStateRef.value.layoutInfo
             ChatListLoadSignal(
                 lastVisibleIndex = info.visibleItemsInfo.lastOrNull()?.index ?: -1,
                 totalItems = info.totalItemsCount,
-                hasMoreOlder = state.hasMoreOlder,
-                isBusy = state.isLoadingOlder || state.isLoading,
+                hasMoreOlder = hasMoreOlderRef.value,
+                isBusy = isLoadingOlderRef.value || isLoadingRef.value,
             )
         }.distinctUntilChanged()
             .collect { sig ->
@@ -117,22 +125,28 @@ fun ChatScreen(
                     sig.hasMoreOlder &&
                     !sig.isBusy
                 ) {
-                    onLoadOlder()
+                    onLoadOlderRef.value()
                 }
             }
     }
 
     LaunchedEffect(state.newestMessageKey) {
-        if (!state.newestMessageKey.isNullOrBlank() && isNearLatest) {
-            listState.animateScrollToItem(0)
-        }
+        if (state.newestMessageKey.isNullOrBlank()) return@LaunchedEffect
+        if (!isNearLatest) return@LaunchedEffect
+        // Avoid animated scrolling on every new message — it fights IME insets and feels "janky".
+        yield()
+        listState.scrollToItem(0)
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal)
-            .padding(top = SquadRelayDimens.screenTopPadding),
+            .padding(top = SquadRelayDimens.screenTopPadding)
+            // Apply IME insets once at the screen root so the message list doesn't relayout twice
+            // (list + composer), which noticeably worsens keyboard animation smoothness.
+            .navigationBarsPadding()
+            .imePadding(),
     ) {
         ChatRoomsBar(
             rooms = state.rooms,
@@ -374,8 +388,6 @@ private fun ChatComposer(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier
             .fillMaxWidth()
-            .navigationBarsPadding()
-            .imePadding()
             .padding(top = SquadRelayDimens.itemGap),
     ) {
         Column(
