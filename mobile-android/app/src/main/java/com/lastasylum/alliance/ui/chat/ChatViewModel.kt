@@ -186,6 +186,14 @@ class ChatViewModel(
         _state.value = _state.value.copy(draftMessage = value)
     }
 
+    fun appendDraftMessage(suffix: String) {
+        val chunk = suffix.trim()
+        if (chunk.isEmpty()) return
+        val current = _state.value.draftMessage.trimEnd()
+        val next = if (current.isEmpty()) chunk else "$current $chunk"
+        setDraftMessage(next)
+    }
+
     fun beginReplyToMessage(messageId: String) {
         val target = _state.value.messages.find { it._id == messageId } ?: return
         if (target.deletedAt != null) return

@@ -1,5 +1,12 @@
 package com.lastasylum.alliance.ui.screens
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Bundle
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,10 +26,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Reply
 import androidx.compose.material.icons.outlined.Send
 import androidx.compose.material3.AlertDialog
@@ -39,22 +50,34 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.core.content.ContextCompat
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.ui.chat.ChatState
@@ -79,6 +102,7 @@ fun ChatScreen(
     onClearError: () -> Unit,
     onLoadOlder: () -> Unit,
     onDraftChange: (String) -> Unit,
+    onAppendDraft: (String) -> Unit,
     onSendDraft: () -> Unit,
     onReplyToMessage: (String) -> Unit,
     onClearReply: () -> Unit,
@@ -88,6 +112,9 @@ fun ChatScreen(
     onDismissDeleteMessage: () -> Unit,
     onConfirmDeleteMessage: () -> Unit,
 ) {
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+
     val listState = rememberLazyListState()
     val selectedRoomId = state.selectedRoomId
     val activeActionMessage = remember(state.activeActionMessageId, state.messages) {
@@ -142,11 +169,7 @@ fun ChatScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal)
-            .padding(top = SquadRelayDimens.screenTopPadding)
-            // Apply IME insets once at the screen root so the message list doesn't relayout twice
-            // (list + composer), which noticeably worsens keyboard animation smoothness.
-            .navigationBarsPadding()
-            .imePadding(),
+            .padding(top = SquadRelayDimens.screenTopPadding),
     ) {
         ChatRoomsBar(
             rooms = state.rooms,
@@ -297,7 +320,14 @@ fun ChatScreen(
                 replyToMessage = state.replyToMessage,
                 isSending = state.isSending,
                 onDraftChange = onDraftChange,
-                onSendDraft = onSendDraft,
+                onAppendDraft = onAppendDraft,
+                onSendDraft = {
+                    if (!state.draftMessage.isBlank() && !state.isSending) {
+                        keyboardController?.hide()
+                        focusManager.clearFocus(force = true)
+                        onSendDraft()
+                    }
+                },
                 onClearReply = onClearReply,
             )
         }
@@ -378,9 +408,12 @@ private fun ChatComposer(
     replyToMessage: ChatMessage?,
     isSending: Boolean,
     onDraftChange: (String) -> Unit,
+    onAppendDraft: (String) -> Unit,
     onSendDraft: () -> Unit,
     onClearReply: () -> Unit,
 ) {
+    var speechError by remember { mutableStateOf<String?>(null) }
+
     Surface(
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
@@ -388,7 +421,10 @@ private fun ChatComposer(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = SquadRelayDimens.itemGap),
+            .padding(top = SquadRelayDimens.itemGap)
+            // Keep IME padding on the composer only so it sits flush with the keyboard (no “double” inset).
+            .navigationBarsPadding()
+            .imePadding(),
     ) {
         Column(
             modifier = Modifier.padding(SquadRelayDimens.composerInnerPadding),
@@ -433,32 +469,59 @@ private fun ChatComposer(
             }
 
             Row(
-                verticalAlignment = Alignment.Bottom,
+                verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
             ) {
-                TextField(
-                    value = draft,
-                    onValueChange = onDraftChange,
+                PressToTalkMic(
+                    onAppendDraft = onAppendDraft,
+                    onSpeechError = { speechError = it },
+                )
+
+                Surface(
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    tonalElevation = 0.dp,
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = SquadRelayDimens.composerMinHeight),
-                    placeholder = {
-                        Text(stringResource(R.string.chat_message_hint))
-                    },
-                    minLines = 1,
-                    maxLines = 4,
-                    shape = MaterialTheme.shapes.large,
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        focusedIndicatorColor = MaterialTheme.colorScheme.outline,
-                        unfocusedIndicatorColor = MaterialTheme.colorScheme.outlineVariant,
-                    ),
-                )
+                ) {
+                    BasicTextField(
+                        value = draft,
+                        onValueChange = {
+                            speechError = null
+                            onDraftChange(it)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurface,
+                        ),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            keyboardType = KeyboardType.Text,
+                        ),
+                        maxLines = 6,
+                        decorationBox = { inner ->
+                            Box {
+                                if (draft.isBlank()) {
+                                    Text(
+                                        text = stringResource(R.string.chat_message_hint),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                inner()
+                            }
+                        },
+                    )
+                }
+
                 FilledIconButton(
                     onClick = onSendDraft,
                     enabled = draft.isNotBlank() && !isSending,
-                    modifier = Modifier.heightIn(min = SquadRelayDimens.composerMinHeight),
+                    modifier = Modifier.size(44.dp),
                 ) {
                     if (isSending) {
                         CircularProgressIndicator(
@@ -474,6 +537,145 @@ private fun ChatComposer(
                     }
                 }
             }
+
+            if (!speechError.isNullOrBlank()) {
+                Text(
+                    text = speechError.orEmpty(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PressToTalkMic(
+    onAppendDraft: (String) -> Unit,
+    onSpeechError: (String?) -> Unit,
+) {
+    val context = LocalContext.current
+    val onAppendDraftRef = rememberUpdatedState(onAppendDraft)
+    val onSpeechErrorRef = rememberUpdatedState(onSpeechError)
+
+    var isListening by remember { mutableStateOf(false) }
+
+    val recognizerAvailable = remember {
+        SpeechRecognizer.isRecognitionAvailable(context)
+    }
+
+    val speechRecognizer = remember {
+        SpeechRecognizer.createSpeechRecognizer(context)
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (!granted) {
+            onSpeechErrorRef.value(context.getString(R.string.chat_ptt_mic_required))
+        } else {
+            onSpeechErrorRef.value(null)
+        }
+    }
+
+    DisposableEffect(speechRecognizer) {
+        speechRecognizer.setRecognitionListener(
+            object : RecognitionListener {
+                override fun onReadyForSpeech(params: Bundle?) {
+                    isListening = true
+                    onSpeechErrorRef.value(null)
+                }
+
+                override fun onBeginningOfSpeech() {}
+                override fun onRmsChanged(rmsdB: Float) {}
+                override fun onBufferReceived(buffer: ByteArray?) {}
+                override fun onEndOfSpeech() {}
+
+                override fun onError(error: Int) {
+                    isListening = false
+                    onSpeechErrorRef.value(context.getString(R.string.chat_ptt_error))
+                }
+
+                override fun onResults(results: Bundle?) {
+                    isListening = false
+                    val texts = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty()
+                    val best = texts.firstOrNull()?.trim().orEmpty()
+                    if (best.isNotBlank()) {
+                        onAppendDraftRef.value(best)
+                        onSpeechErrorRef.value(null)
+                    }
+                }
+
+                override fun onPartialResults(partialResults: Bundle?) {
+                    // Ignore partial results: keeps the draft stable until release.
+                }
+
+                override fun onEvent(eventType: Int, params: Bundle?) {}
+            },
+        )
+
+        onDispose {
+            runCatching { speechRecognizer.destroy() }
+        }
+    }
+
+    fun hasMicPermission(): Boolean =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+
+    fun startListening() {
+        if (!recognizerAvailable) {
+            onSpeechErrorRef.value(context.getString(R.string.chat_ptt_error))
+            return
+        }
+        if (!hasMicPermission()) {
+            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU")
+        }
+        runCatching { speechRecognizer.startListening(intent) }
+            .onFailure { onSpeechErrorRef.value(context.getString(R.string.chat_ptt_error)) }
+    }
+
+    fun stopListening() {
+        runCatching { speechRecognizer.stopListening() }
+    }
+
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        tonalElevation = 0.dp,
+        modifier = Modifier
+            .size(44.dp)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        startListening()
+                        try {
+                            tryAwaitRelease()
+                        } finally {
+                            stopListening()
+                        }
+                    },
+                )
+            },
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+            Icon(
+                imageVector = Icons.Outlined.Mic,
+                contentDescription = stringResource(R.string.chat_ptt),
+                tint = if (isListening) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
         }
     }
 }

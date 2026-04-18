@@ -181,6 +181,7 @@ fun AppNavigation(
                     onClearError = chatViewModel::clearError,
                     onLoadOlder = chatViewModel::loadOlderMessages,
                     onDraftChange = chatViewModel::setDraftMessage,
+                    onAppendDraft = chatViewModel::appendDraftMessage,
                     onSendDraft = chatViewModel::sendDraftMessage,
                     onReplyToMessage = chatViewModel::beginReplyToMessage,
                     onClearReply = chatViewModel::clearReplyToMessage,

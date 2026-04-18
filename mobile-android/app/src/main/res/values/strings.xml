@@ -40,6 +40,10 @@
     <!-- Chat -->
     <string name="chat_message_hint">Сообщение</string>
     <string name="chat_send">Отправить</string>
+    <string name="chat_ptt">Нажми и говори</string>
+    <string name="chat_ptt_recording">Слушаю…</string>
+    <string name="chat_ptt_error">Не удалось распознать речь</string>
+    <string name="chat_ptt_mic_required">Нужен доступ к микрофону</string>
     <string name="chat_empty_state">Пока нет сообщений — напишите первым.</string>
     <string name="chat_no_rooms">Нет комнат чата. Попросите администратора (R5) создать комнату.</string>
     <string name="cd_chat_message">Сообщение от %1$s, роль %2$s: %3$s</string>
