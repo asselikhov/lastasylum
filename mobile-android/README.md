@@ -1,29 +1,44 @@
 # SquadRelay (Android)
 
 Клиент для голоса, чата и оверлея отряда в SquadRelay:
-- Battle chat feed
-- Overlay control entrypoint
-- Profile/preferences
-- Dark premium design system
+
+- Battle chat feed с поиском по текущей комнате (API `GET /chat/messages/search`), **автоповтор отправки** (до 3 раз) и карточка **«Не отправлено»** с ручным «Повторить»
+- Оверлей поверх игры: FAB, лента, голос, быстрые команды и **быстрые реакции** (emoji)
+- Профиль: тихий режим, компактный оверлей, **пресеты раскладки** (balanced / commander / minimal)
+- JWT + refresh, **EncryptedSharedPreferences** для токенов, Socket.IO для чата
+- Опционально: **FCM** + **Crashlytics** (ручная инициализация Firebase без `google-services.json`), **pinning** сертификата API
 
 ## Stack
 
-- Kotlin
-- Jetpack Compose + Material 3
-- Navigation Compose
+- Kotlin, Jetpack Compose + Material 3, Navigation Compose
+- Retrofit + Moshi, OkHttp, kotlinx-coroutines
+- Foreground service + `TYPE_APPLICATION_OVERLAY`; перетаскивание FAB — [`OverlayWindowDragHelper`](app/src/main/java/com/lastasylum/alliance/overlay/OverlayWindowDragHelper.kt); буфер ленты — [`OverlayChatStripBuffer`](app/src/main/java/com/lastasylum/alliance/overlay/OverlayChatStripBuffer.kt); FGS-уведомление — [`OverlayForegroundNotifications`](app/src/main/java/com/lastasylum/alliance/overlay/OverlayForegroundNotifications.kt); флаги/вырезы окон — [`OverlayWindowLayout`](app/src/main/java/com/lastasylum/alliance/overlay/OverlayWindowLayout.kt)
 
 ## Run
 
-1. Open `mobile-android` in Android Studio.
-2. Sync Gradle files.
-3. Вариант сборки **dev** по умолчанию ходит на Render (`lastasylum-backend.onrender.com`). Для локального Nest задайте в `mobile-android/local.properties` строку `squadrelay.api.baseUrl=http://10.0.2.2:3000/` (эмулятор) или `http://<IP_ПК>:3000/` (телефон в Wi‑Fi).
-4. Run app on Android 9+ device/emulator.
+1. Откройте `mobile-android` в Android Studio и синхронизируйте Gradle.
+2. Вариант **dev** по умолчанию ходит на Render (`lastasylum-backend.onrender.com`). Для локального Nest в `local.properties` (корень репо или `mobile-android/`):
 
-## Next implementation steps
+   `squadrelay.api.baseUrl=http://10.0.2.2:3000/` (эмулятор) или `http://<IP_ПК>:3000/` (телефон в Wi‑Fi).
 
-- Auth flow against backend (`/auth/login`, `/auth/refresh`)
-- Access and refresh token storage via encrypted preferences
-- Realtime chat via Socket.IO
-- Foreground service + floating overlay controls
-- Push-to-talk recording -> local Android speech recognition -> chat message pipeline
-- Role-aware UI (R2/R3/R4/R5)
+3. **Firebase (опционально)** — в `local.properties` добавьте три строки из консоли Firebase (Project settings → Your apps):
+
+   - `squadrelay.firebase.projectId=...`
+   - `squadrelay.firebase.appId=1:...:android:...`
+   - `squadrelay.firebase.apiKey=...`
+
+   После этого приложение инициализирует Firebase в `SquadRelayApplication`, регистрирует FCM-токен на бэкенде (`POST /users/me/push-token`) и получает push при новых сообщениях в альянсе (если на сервере задан `FIREBASE_SERVICE_ACCOUNT_JSON`).
+
+4. **Certificate pinning (опционально)** — `squadrelay.certPins=sha256/AAAA...,sha256/BBBB...` (отпечатки для хоста из `API_BASE_URL`).
+
+5. Запуск на устройстве **Android 9+** (minSdk 28).
+
+## Тесты
+
+```bash
+./gradlew :app:testDevDebugUnitTest
+```
+
+## Роль в UI
+
+Вкладка «Админ» доступна для роли **R5**; остальные экраны — по правам бэкенда.

@@ -265,6 +265,10 @@ export class AuthService {
         role,
         membershipStatus,
         allianceName: full?.allianceName,
+        presenceStatus: full?.presenceStatus ?? null,
+        lastPresenceAt: full?.lastPresenceAt
+          ? full.lastPresenceAt.toISOString()
+          : null,
       },
     };
   }

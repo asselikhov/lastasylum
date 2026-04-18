@@ -19,16 +19,35 @@ class TokenAuthenticator(
             return null
         }
 
-        val refreshToken = tokenStore.getRefreshToken() ?: return null
-        val refreshed = runBlocking {
-            runCatching { authApi.refresh(RefreshRequest(refreshToken)) }.getOrNull()
-        } ?: return null
+        val requestToken = response.request.header("Authorization")
+            ?.removePrefix("Bearer ")
+            ?.trim()
+        val storedAccessToken = tokenStore.getAccessToken()
+        if (!storedAccessToken.isNullOrBlank() && storedAccessToken != requestToken) {
+            return response.request.newBuilder()
+                .header("Authorization", "Bearer $storedAccessToken")
+                .build()
+        }
 
-        tokenStore.saveTokens(refreshed.accessToken, refreshed.refreshToken)
-        runCatching { onAccessTokenRefreshed() }
-        return response.request.newBuilder()
-            .header("Authorization", "Bearer ${refreshed.accessToken}")
-            .build()
+        synchronized(this) {
+            val latestAccessToken = tokenStore.getAccessToken()
+            if (!latestAccessToken.isNullOrBlank() && latestAccessToken != requestToken) {
+                return response.request.newBuilder()
+                    .header("Authorization", "Bearer $latestAccessToken")
+                    .build()
+            }
+
+            val refreshToken = tokenStore.getRefreshToken() ?: return null
+            val refreshed = runBlocking {
+                runCatching { authApi.refresh(RefreshRequest(refreshToken)) }.getOrNull()
+            } ?: return null
+
+            tokenStore.saveTokens(refreshed.accessToken, refreshed.refreshToken)
+            runCatching { onAccessTokenRefreshed() }
+            return response.request.newBuilder()
+                .header("Authorization", "Bearer ${refreshed.accessToken}")
+                .build()
+        }
     }
 
     private fun responseCount(response: Response): Int {

@@ -4,21 +4,20 @@
 
     <!-- Auth -->
     <string name="auth_brand">SquadRelay</string>
-    <string name="auth_tagline">Чат альянса, оверлей и голосовые команды.</string>
+    <string name="auth_tagline">Чат, оверлей, голос.</string>
     <string name="auth_tab_login">Вход</string>
     <string name="auth_tab_register">Регистрация</string>
     <string name="auth_username">Имя в игре</string>
-    <string name="auth_username_helper">Не менее 3 символов</string>
+    <string name="auth_username_helper">Минимум 3 символа</string>
     <string name="auth_email">Email</string>
     <string name="auth_password">Пароль</string>
-    <string name="auth_password_helper">Не менее 8 символов</string>
     <string name="auth_password_confirm">Повтор пароля</string>
     <string name="auth_button_login">Войти</string>
     <string name="auth_button_register">Создать аккаунт</string>
     <string name="auth_password_mismatch">Пароли не совпадают</string>
     <string name="auth_forgot_link">Забыли пароль?</string>
     <string name="auth_forgot_title">Сброс пароля</string>
-    <string name="auth_forgot_hint">Укажите email — пришлём письмо с токеном.</string>
+    <string name="auth_forgot_hint">Письмо с токеном на email.</string>
     <string name="auth_forgot_send">Отправить письмо</string>
     <string name="auth_forgot_sent">Если аккаунт существует, на почту отправлено письмо с токеном.</string>
     <string name="auth_reset_title">Новый пароль</string>
@@ -39,31 +38,46 @@
     <string name="tab_admin">Админ</string>
 
     <!-- Chat -->
-    <string name="chat_title">Боевой чат альянса</string>
-    <string name="chat_logged_in">Вы вошли как %1$s (%2$s)</string>
     <string name="chat_message_hint">Сообщение</string>
     <string name="chat_send">Отправить</string>
-    <string name="chat_message_header">%1$s %2$s</string>
     <string name="chat_empty_state">Пока нет сообщений — напишите первым.</string>
-    <string name="chat_voice_hint">Голос в бою: вкладка «Оверлей» → «Запустить боевой режим». Слева от пузырька — короткая лента чата; удерживайте пузырёк для записи (отпустите — отправится в чат). Короткое касание по пузырьку — быстрые команды.</string>
     <string name="chat_no_rooms">Нет комнат чата. Попросите администратора (R5) создать комнату.</string>
-    <string name="chat_connection_connecting">Подключение к чату…</string>
-    <string name="chat_connection_reconnecting">Потеря связи, переподключение…</string>
-    <string name="chat_connection_offline">Нет соединения с сервером чата</string>
     <string name="cd_chat_message">Сообщение от %1$s, роль %2$s: %3$s</string>
     <string name="err_chat_no_room">Выберите комнату чата в приложении, затем снова запишите голос.</string>
+    <string name="chat_replying_to">Ответ для %1$s</string>
+    <string name="chat_reply_cancel">Отменить ответ</string>
+    <string name="chat_message_deleted">Сообщение удалено</string>
+    <string name="chat_deleting_progress">Удаление…</string>
+    <string name="chat_action_reply">Ответить</string>
+    <string name="chat_action_delete">Удалить сообщение</string>
+    <string name="chat_delete_title">Удалить сообщение?</string>
+    <string name="chat_delete_body">Сообщение исчезнет из чата для всех участников. Действие нельзя отменить.</string>
+    <string name="chat_delete_confirm">Удалить</string>
+    <string name="chat_delete_cancel">Отмена</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_permissions_title">Разрешения для боя</string>
+    <string name="onboarding_permissions_body">Для работы оверлея и голоса нужны системные разрешения.</string>
+    <string name="onboarding_permissions_bullet_mic">Микрофон для голосовых сообщений.</string>
+    <string name="onboarding_permissions_bullet_overlay">Показ поверх других приложений для боевой панели.</string>
+    <string name="onboarding_permissions_bullet_notif">Уведомления для статуса боевого режима на Android 13+.</string>
+    <string name="onboarding_permissions_overlay">К настройкам оверлея</string>
+    <string name="onboarding_permissions_later">Позже</string>
 
     <!-- Overlay screen -->
     <string name="overlay_title">Управление оверлеем</string>
-    <string name="overlay_description">Включите плавающую панель и режим «нажми и говори» перед боем.</string>
-    <string name="overlay_visibility_hint">Панель показывается поверх игры, пока включён боевой режим. Не видно в игре: в настройках приложения включите «поверх других приложений»; на Xiaomi/POCO дополнительно «Всплывающие окна» / «Отображать всплывающие окна при работе в фоне». На Android 12+ часть игр скрывает чужие оверлеи во время матча — тогда панель видна в лаунчере и вне игры.</string>
     <string name="overlay_role_privileges">Права по роли: %1$s</string>
     <string name="overlay_start_combat">Запустить боевой режим</string>
+    <string name="overlay_mic_required_for_fgs">Нужен доступ к микрофону для записи голоса в боевом режиме.</string>
     <string name="overlay_stop_combat">Остановить боевой режим</string>
     <string name="overlay_ptt_start">Начать запись (PTT)</string>
     <string name="overlay_ptt_stop">Остановить запись (PTT)</string>
     <string name="overlay_ptt_caption">НАЖМИ И ГОВОРИ</string>
     <string name="overlay_permission_settings">Разрешение поверх окон</string>
+    <string name="overlay_game_gate_title">Только в игре Last Asylum: Plague</string>
+    <string name="overlay_target_package_label">Пакет игры (applicationId)</string>
+    <string name="overlay_target_package_save">Сохранить пакет</string>
+    <string name="overlay_usage_access_button">Доступ к данным об использовании</string>
 
     <!-- Profile -->
     <string name="profile_title">Профиль и настройки</string>
@@ -72,7 +86,10 @@
     <string name="profile_quiet_subtitle">Меньше второстепенных уведомлений</string>
     <string name="profile_compact_title">Компактный оверлей</string>
     <string name="profile_compact_subtitle">Меньше плавающих кнопок в бою</string>
-    <string name="profile_settings_overlay_hint">Тихий режим и компактный оверлей сохраняются на устройстве. Если боевой режим уже включён, компактный вид применится сразу; иначе — при следующем запуске с вкладки «Оверлей».</string>
+    <string name="profile_overlay_layout_title">Раскладка оверлея</string>
+    <string name="profile_overlay_preset_balanced">Сбалансировано</string>
+    <string name="profile_overlay_preset_commander">Командир</string>
+    <string name="profile_overlay_preset_minimal">Минимум</string>
     <string name="profile_role">Роль: %1$s</string>
     <string name="profile_build_title">Версия приложения</string>
     <string name="profile_build_line">%1$s (код %2$d) · собрано %3$s</string>
@@ -87,7 +104,6 @@
 
     <!-- Admin (R5) -->
     <string name="admin_title">Админка команды</string>
-    <string name="admin_subtitle">Подтверждение новичков, роли, никнеймы и исключение из команды.</string>
     <string name="admin_refresh">Обновить список</string>
     <string name="admin_dismiss_error">Скрыть ошибку</string>
     <string name="admin_status_pending">ожидает подтверждения</string>
@@ -114,7 +130,7 @@
     <string name="admin_ok_rename">Никнейм обновлён</string>
     <string name="admin_ok_deleted">Пользователь удалён</string>
     <string name="admin_rooms_title">Комнаты чата</string>
-    <string name="admin_rooms_subtitle">Создавайте каналы для отрядов и тем. Удаление возможно только у пустой комнаты.</string>
+    <string name="admin_rooms_subtitle">Каналы для отрядов. Удаление — только у пустой комнаты.</string>
     <string name="admin_rooms_new_hint">Название новой комнаты</string>
     <string name="admin_rooms_create">Создать комнату</string>
     <string name="admin_rooms_rename">Переименовать</string>
@@ -127,6 +143,7 @@
     <string name="admin_room_new_title">Новое название комнаты</string>
     <string name="admin_rooms_empty">Комнат пока нет — задайте название выше и нажмите «Создать комнату».</string>
     <string name="admin_members_empty">Участников в списке нет. Нажмите «Обновить список» или проверьте соединение.</string>
+    <string name="admin_members_title">Участники</string>
     <string name="admin_cd_set_role">Назначить роль %1$s</string>
     <string name="admin_cd_rename_room">Переименовать комнату %1$s</string>
     <string name="admin_cd_delete_room">Удалить комнату %1$s</string>
@@ -145,6 +162,8 @@
     <string name="overlay_notif_speech_error">Ошибка распознавания речи</string>
     <string name="overlay_notif_voice_sent">Голосовое сообщение отправлено</string>
     <string name="overlay_notif_voice_chat_failed">Речь распознана, но чат не принял сообщение</string>
+    <string name="overlay_notif_waiting_for_game">Ожидание игры — панель скрыта</string>
+    <string name="overlay_notif_usage_required_for_gate">Включите «Данные об использовании» для SquadRelay в системных настройках</string>
     <string name="overlay_channel_name">Боевой оверлей</string>
     <string name="overlay_notif_title">SquadRelay — боевой режим</string>
     <string name="overlay_bubble_idle">МИК\nудерж.</string>

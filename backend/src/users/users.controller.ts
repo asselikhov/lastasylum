@@ -6,9 +6,11 @@ import {
   NotFoundException,
   Param,
   Patch,
+  Post,
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { DEFAULT_ALLIANCE_ID } from '../common/constants/default-alliance-id';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -18,6 +20,10 @@ import { UpdateMembershipDto } from './dto/update-membership.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { UpdateUsernameDto } from './dto/update-username.dto';
 import { MuteUserDto } from './dto/mute-user.dto';
+import {
+  RegisterPushTokenDto,
+  UpdatePresenceDto,
+} from './dto/register-push-token.dto';
 import { UsersService } from './users.service';
 
 type RequestUser = {
@@ -38,6 +44,35 @@ export class UsersController {
     }
 
     return this.usersService.toSafeUser(user);
+  }
+
+  @Post('me/push-token')
+  @Roles(AllianceRole.R2)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  async registerPushToken(
+    @Req() req: { user: RequestUser },
+    @Body() dto: RegisterPushTokenDto,
+  ) {
+    await this.usersService.registerPushToken(req.user.userId, dto.token);
+    return { success: true };
+  }
+
+  @Delete('me/push-tokens')
+  @Roles(AllianceRole.R2)
+  async clearPushTokens(@Req() req: { user: RequestUser }) {
+    await this.usersService.clearPushTokens(req.user.userId);
+    return { success: true };
+  }
+
+  @Post('me/presence')
+  @Roles(AllianceRole.R2)
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  async updatePresence(
+    @Req() req: { user: RequestUser },
+    @Body() dto: UpdatePresenceDto,
+  ) {
+    await this.usersService.updatePresence(req.user.userId, dto.status);
+    return { success: true };
   }
 
   @Get()

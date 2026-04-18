@@ -47,6 +47,17 @@ export class User {
 
   @Prop({ type: Date, default: null })
   passwordResetExpires: Date | null;
+
+  /** FCM device tokens (max length enforced in service). */
+  @Prop({ type: [String], default: [] })
+  pushFcmTokens: string[];
+
+  @Prop({ type: Date, default: null })
+  lastPresenceAt: Date | null;
+
+  /** ingame | online | away */
+  @Prop({ type: String, default: null })
+  presenceStatus: string | null;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

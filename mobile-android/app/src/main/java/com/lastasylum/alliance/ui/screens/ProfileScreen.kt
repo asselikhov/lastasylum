@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,14 +16,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -38,8 +35,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.CombatOverlayService
+import com.lastasylum.alliance.ui.components.SettingsDivider
+import com.lastasylum.alliance.ui.components.SettingsToggleRow
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.update.fetchNewerApkDownloadUrl
 import com.lastasylum.alliance.update.openApkDownload
@@ -50,6 +50,7 @@ import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ProfileScreen(
     username: String,
@@ -66,6 +67,9 @@ fun ProfileScreen(
     var compactOverlay by remember {
         mutableStateOf(app.userSettingsPreferences.isCompactOverlay())
     }
+    var overlayPreset by remember {
+        mutableStateOf(app.userSettingsPreferences.getOverlayLayoutPreset())
+    }
     val scope = rememberCoroutineScope()
     val buildTimeStr = remember {
         SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
@@ -81,34 +85,25 @@ fun ProfileScreen(
             .fillMaxSize()
             .verticalScroll(scroll)
             .padding(
-                horizontal = SquadRelayDimens.screenPaddingHorizontal - 4.dp,
-                vertical = SquadRelayDimens.screenPaddingVertical,
+                horizontal = SquadRelayDimens.contentPaddingHorizontal,
+                vertical = SquadRelayDimens.screenTopPadding,
             ),
         verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.sectionGap),
     ) {
-        Text(
-            text = stringResource(R.string.profile_title),
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-
-        ElevatedCard(
+        Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.extraLarge,
-            elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
-            colors = CardDefaults.elevatedCardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            ),
+            shape = MaterialTheme.shapes.large,
+            tonalElevation = 0.dp,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
         ) {
             Row(
-                modifier = Modifier.padding(SquadRelayDimens.cardInnerPadding + 4.dp),
+                modifier = Modifier.padding(SquadRelayDimens.panelInnerPadding),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(SquadRelayDimens.blockGap),
             ) {
                 Box(
                     modifier = Modifier
-                        .size(52.dp)
+                        .size(44.dp)
                         .background(
                             color = MaterialTheme.colorScheme.primaryContainer,
                             shape = CircleShape,
@@ -117,19 +112,19 @@ fun ProfileScreen(
                 ) {
                     Text(
                         text = initial,
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.headerSubtitleGap),
                 ) {
                     Text(
                         text = stringResource(R.string.profile_pilot, username),
-                        style = MaterialTheme.typography.titleLarge,
-                        maxLines = 2,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
@@ -141,70 +136,107 @@ fun ProfileScreen(
                             text = stringResource(R.string.profile_role, role),
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                         )
                     }
                 }
             }
         }
 
-        ElevatedCard(
+        Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.extraLarge,
-            elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
-            colors = CardDefaults.elevatedCardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            ),
+            shape = MaterialTheme.shapes.large,
+            tonalElevation = 0.dp,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
         ) {
-            Column(
-                modifier = Modifier.padding(SquadRelayDimens.cardInnerPadding),
-                verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.blockGap),
-            ) {
-                SettingRow(
+            Column(modifier = Modifier.fillMaxWidth()) {
+                SettingsToggleRow(
                     title = stringResource(R.string.profile_quiet_title),
                     subtitle = stringResource(R.string.profile_quiet_subtitle),
                     checked = quietMode,
-                    onToggle = { v ->
+                    onCheckedChange = { v ->
                         quietMode = v
                         app.userSettingsPreferences.setQuietMode(v)
                         CombatOverlayService.refreshQuietNotificationIfRunning(context)
                     },
                 )
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                SettingRow(
+                SettingsDivider()
+                SettingsToggleRow(
                     title = stringResource(R.string.profile_compact_title),
                     subtitle = stringResource(R.string.profile_compact_subtitle),
                     checked = compactOverlay,
-                    onToggle = { v ->
+                    onCheckedChange = { v ->
                         compactOverlay = v
                         app.userSettingsPreferences.setCompactOverlay(v)
                         CombatOverlayService.requestRebuildOverlayIfRunning(context)
                     },
                 )
+                SettingsDivider()
+                Column(
+                    modifier = Modifier.padding(SquadRelayDimens.panelInnerPadding),
+                    verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+                ) {
+                    Text(
+                        text = stringResource(R.string.profile_overlay_layout_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+                        verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+                    ) {
+                        listOf(
+                            UserSettingsPreferences.PRESET_BALANCED to R.string.profile_overlay_preset_balanced,
+                            UserSettingsPreferences.PRESET_COMMANDER to R.string.profile_overlay_preset_commander,
+                            UserSettingsPreferences.PRESET_MINIMAL to R.string.profile_overlay_preset_minimal,
+                        ).forEach { (key, labelRes) ->
+                            val selected = overlayPreset == key
+                            OutlinedButton(
+                                onClick = {
+                                    overlayPreset = key
+                                    app.userSettingsPreferences.setOverlayLayoutPreset(key)
+                                    CombatOverlayService.requestRebuildOverlayIfRunning(context)
+                                },
+                                border = if (selected) {
+                                    BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
+                                } else {
+                                    ButtonDefaults.outlinedButtonBorder(enabled = true)
+                                },
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = if (selected) {
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceContainerHigh
+                                    },
+                                ),
+                            ) {
+                                Text(
+                                    text = stringResource(labelRes),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        Text(
-            text = stringResource(R.string.profile_settings_overlay_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f),
-        )
-
-        ElevatedCard(
+        Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.extraLarge,
-            elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
-            colors = CardDefaults.elevatedCardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            ),
+            shape = MaterialTheme.shapes.large,
+            tonalElevation = 0.dp,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
         ) {
             Column(
-                modifier = Modifier.padding(SquadRelayDimens.cardInnerPadding),
+                modifier = Modifier.padding(SquadRelayDimens.panelInnerPadding),
                 verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
             ) {
                 Text(
                     text = stringResource(R.string.profile_build_title),
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
@@ -245,52 +277,12 @@ fun ProfileScreen(
             onClick = onLogout,
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.large,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.7f)),
             colors = ButtonDefaults.outlinedButtonColors(
                 contentColor = MaterialTheme.colorScheme.error,
             ),
         ) {
             Text(stringResource(R.string.profile_logout))
         }
-    }
-}
-
-@Composable
-private fun SettingRow(
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onToggle: (Boolean) -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(end = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Switch(
-            checked = checked,
-            onCheckedChange = onToggle,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = MaterialTheme.colorScheme.primary,
-                checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
-            ),
-        )
     }
 }

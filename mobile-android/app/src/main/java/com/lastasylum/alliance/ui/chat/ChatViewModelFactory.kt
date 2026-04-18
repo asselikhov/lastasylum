@@ -11,6 +11,7 @@ class ChatViewModelFactory(
     private val repository: ChatRepository,
     private val chatRoomPreferences: ChatRoomPreferences,
     private val currentUserId: String,
+    private val currentUserRole: String,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -20,6 +21,7 @@ class ChatViewModelFactory(
                 repository,
                 chatRoomPreferences,
                 currentUserId,
+                currentUserRole,
             ) as T
         }
         error("Unsupported ViewModel class: ${modelClass.name}")

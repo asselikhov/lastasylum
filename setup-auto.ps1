@@ -19,6 +19,39 @@ function Ask-IfEmpty([string]$value, [string]$prompt) {
 }
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+function Resolve-LocalJdkHome {
+    $candidates = @(
+        (Join-Path $env:ProgramFiles "Eclipse Adoptium\jdk-17.0.18.8-hotspot"),
+        (Join-Path $env:ProgramFiles "Android\Android Studio\jbr")
+    )
+    foreach ($p in $candidates) {
+        $java = Join-Path $p "bin\java.exe"
+        if (Test-Path $java) {
+            return $p
+        }
+    }
+    return ""
+}
+
+function Ensure-AndroidGradleJdk([string]$jdkHome) {
+    if ([string]::IsNullOrWhiteSpace($jdkHome)) { return }
+
+    $androidLocalProps = Join-Path $root "mobile-android\local.properties"
+    if (-not (Test-Path $androidLocalProps)) {
+        return
+    }
+
+    $text = Get-Content -Path $androidLocalProps -Raw -Encoding UTF8
+    if ($text -match "(?m)^org\.gradle\.java\.home\s*=") {
+        return
+    }
+
+    $escaped = $jdkHome.Replace("\", "\\")
+    Add-Content -Path $androidLocalProps -Value "" -Encoding UTF8
+    Add-Content -Path $androidLocalProps -Value "org.gradle.java.home=$escaped" -Encoding UTF8
+}
+
 $backendDir = Join-Path $root "backend"
 $androidGradle = Join-Path $root "mobile-android\app\build.gradle.kts"
 $backendEnv = Join-Path $backendDir ".env"
@@ -71,6 +104,16 @@ $gradleText = [regex]::Replace(
 )
 Set-Content -Path $androidGradle -Value $gradleText -Encoding UTF8
 Write-Host "Обновлен API_BASE_URL в mobile-android/app/build.gradle.kts" -ForegroundColor Green
+
+$jdkHome = Resolve-LocalJdkHome
+if (-not [string]::IsNullOrWhiteSpace($jdkHome)) {
+    $env:JAVA_HOME = $jdkHome
+    $env:Path = (Join-Path $jdkHome "bin") + ";" + $env:Path
+    Ensure-AndroidGradleJdk -jdkHome $jdkHome
+    Write-Host "Настроен JDK для Gradle: $jdkHome" -ForegroundColor Green
+} else {
+    Write-Host "JDK не найден автоматически. Установи Temurin 17 или Android Studio, либо выставь JAVA_HOME." -ForegroundColor Yellow
+}
 
 Push-Location $backendDir
 try {

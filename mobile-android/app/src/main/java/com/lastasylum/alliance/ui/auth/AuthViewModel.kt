@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.auth.AuthRepository
 import com.lastasylum.alliance.data.auth.RegisterResult
+import com.lastasylum.alliance.push.FcmTokenManager
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -104,6 +105,7 @@ class AuthViewModel(
     fun logout() {
         cancelSilentSessionRestore()
         viewModelScope.launch {
+            runCatching { FcmTokenManager.unregister(getApplication()) }
             authRepository.logout()
             _state.value = AuthState(isLoading = false, isAuthenticated = false)
         }

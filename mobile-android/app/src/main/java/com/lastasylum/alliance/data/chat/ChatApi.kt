@@ -31,6 +31,16 @@ interface ChatApi {
         @Query("limit") limit: Int? = null,
     ): List<ChatMessage>
 
+    @GET("chat/messages/search")
+    suspend fun searchMessages(
+        @Query("roomId") roomId: String,
+        @Query("q") query: String,
+        @Query("limit") limit: Int? = null,
+    ): List<ChatMessage>
+
     @POST("chat/messages")
     suspend fun sendMessage(@Body request: SendMessageRequest): ChatMessage
+
+    @DELETE("chat/messages/{messageId}")
+    suspend fun deleteMessage(@Path("messageId") messageId: String): ChatMessage
 }

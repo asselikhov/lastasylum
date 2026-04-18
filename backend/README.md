@@ -51,7 +51,11 @@ npm run start:dev
 - `PATCH /users/role` - change member role (R5)
 - `PATCH /users/mute` - mute player for N minutes (R4+)
 - `GET /chat/messages` - recent alliance messages (JWT)
-- `POST /chat/messages` - create message (JWT) and broadcast `message:new` to the alliance room
+- `GET /chat/messages/search?roomId=&q=&limit=` - search messages in a room (regex, throttled)
+- `POST /chat/messages` - create message (JWT) and broadcast `message:new` to the alliance room; optional FCM to other alliance members (see `FIREBASE_SERVICE_ACCOUNT_JSON`)
+- `POST /users/me/push-token` - register FCM device token (JWT)
+- `DELETE /users/me/push-tokens` - clear all FCM tokens for the user (JWT)
+- `POST /users/me/presence` - update presence heartbeat (`status` string, JWT)
 
 ## WebSocket overview
 

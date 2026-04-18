@@ -19,12 +19,35 @@ data class ChatMessage(
     val senderRole: String,
     val text: String,
     val createdAt: String? = null,
+    val updatedAt: String? = null,
+    val replyToMessageId: String? = null,
+    val replyTo: ChatMessageReplyPreview? = null,
+    val deletedAt: String? = null,
+    val deletedByUserId: String? = null,
 )
 
 data class SendMessageRequest(
     val text: String,
     val roomId: String,
     val allianceId: String? = AllianceDefaults.DEFAULT_ALLIANCE_ID,
+    val replyToMessageId: String? = null,
+)
+
+data class ChatMessageReplyPreview(
+    val _id: String,
+    val senderId: String,
+    val senderUsername: String,
+    val senderRole: String,
+    val text: String,
+    val createdAt: String? = null,
+    val deletedAt: String? = null,
+)
+
+data class ChatMessageDeletedEvent(
+    val messageId: String,
+    val roomId: String,
+    val deletedAt: String? = null,
+    val deletedByUserId: String? = null,
 )
 
 data class CreateChatRoomRequest(

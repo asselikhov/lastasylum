@@ -8,6 +8,7 @@ import com.lastasylum.alliance.data.chat.ChatRoomPreferences
 import com.lastasylum.alliance.data.chat.ChatRoomsRepository
 import com.lastasylum.alliance.data.chat.ChatSocketManager
 import com.lastasylum.alliance.data.network.NetworkModule
+import com.lastasylum.alliance.data.settings.OnboardingPreferences
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.users.UsersRepository
 
@@ -16,6 +17,7 @@ class AppContainer private constructor(context: Context) {
     val tokenStore: TokenStore = TokenStore(appContext)
     val chatRoomPreferences: ChatRoomPreferences = ChatRoomPreferences(appContext)
     val userSettingsPreferences: UserSettingsPreferences = UserSettingsPreferences(appContext)
+    val onboardingPreferences: OnboardingPreferences = OnboardingPreferences(appContext)
     private val chatSocketManager = ChatSocketManager()
 
     private lateinit var chatRepositoryImpl: ChatRepository

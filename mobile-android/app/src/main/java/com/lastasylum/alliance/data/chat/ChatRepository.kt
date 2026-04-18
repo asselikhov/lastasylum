@@ -2,7 +2,7 @@ package com.lastasylum.alliance.data.chat
 
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.data.auth.TokenStore
-import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.delay
 
 class ChatRepository(
     private val chatApi: ChatApi,
@@ -11,9 +11,7 @@ class ChatRepository(
     private val chatRoomPreferences: ChatRoomPreferences,
 ) {
     private var realtimeUiListener: ((ChatMessage) -> Unit)? = null
-
-    val realtimeConnectionState: StateFlow<ChatConnectionState> =
-        socketManager.connectionState
+    private var realtimeDeleteListener: ((ChatMessageDeletedEvent) -> Unit)? = null
 
     suspend fun listRooms(): Result<List<ChatRoomDto>> =
         runCatching { chatApi.listRooms() }
@@ -28,26 +26,69 @@ class ChatRepository(
         }
     }
 
-    suspend fun sendMessage(text: String, roomId: String): Result<ChatMessage> {
+    suspend fun searchMessages(
+        roomId: String,
+        query: String,
+        limit: Int = 25,
+    ): Result<List<ChatMessage>> =
+        runCatching {
+            chatApi.searchMessages(roomId = roomId, query = query, limit = limit)
+        }
+
+    suspend fun sendMessage(
+        text: String,
+        roomId: String,
+        replyToMessageId: String? = null,
+    ): Result<ChatMessage> {
         return runCatching {
             chatApi.sendMessage(
-                SendMessageRequest(text = text, roomId = roomId),
+                SendMessageRequest(
+                    text = text,
+                    roomId = roomId,
+                    replyToMessageId = replyToMessageId,
+                ),
             )
         }
+    }
+
+    /** Несколько попыток с задержкой — для UI и оверлея при нестабильной сети. */
+    suspend fun sendMessageWithRetries(
+        text: String,
+        roomId: String,
+        replyToMessageId: String? = null,
+    ): Result<ChatMessage> {
+        var last: Throwable? = null
+        repeat(3) { attempt ->
+            val r = sendMessage(text, roomId, replyToMessageId)
+            if (r.isSuccess) return r
+            last = r.exceptionOrNull()
+            if (attempt < 2) {
+                delay(listOf(400L, 1200L)[attempt])
+            }
+        }
+        return Result.failure(last ?: IllegalStateException("send_failed"))
     }
 
     suspend fun sendSystemVoiceMessage(text: String): Result<ChatMessage> {
         val roomId = chatRoomPreferences.getSelectedRoomId()
             ?: return Result.failure(IllegalStateException("no_room"))
-        return runCatching {
-            chatApi.sendMessage(SendMessageRequest(text = text.trim(), roomId = roomId))
-        }
+        return sendMessageWithRetries(text.trim(), roomId)
     }
 
-    fun connectRealtime(roomId: String, onMessage: (ChatMessage) -> Unit) {
+    suspend fun deleteMessage(messageId: String): Result<ChatMessage> =
+        runCatching { chatApi.deleteMessage(messageId) }
+
+    fun connectRealtime(
+        roomId: String,
+        onMessage: (ChatMessage) -> Unit,
+        onDeleteMessage: (ChatMessageDeletedEvent) -> Unit = {},
+    ) {
         realtimeUiListener?.let { socketManager.removeMessageListener(it) }
+        realtimeDeleteListener?.let { socketManager.removeMessageDeletedListener(it) }
         realtimeUiListener = onMessage
+        realtimeDeleteListener = onDeleteMessage
         socketManager.addMessageListener(onMessage)
+        socketManager.addMessageDeletedListener(onDeleteMessage)
         socketManager.connect(
             baseUrl = BuildConfig.API_BASE_URL,
             roomId = roomId,
@@ -62,7 +103,9 @@ class ChatRepository(
 
     fun disconnectRealtime() {
         realtimeUiListener?.let { socketManager.removeMessageListener(it) }
+        realtimeDeleteListener?.let { socketManager.removeMessageDeletedListener(it) }
         realtimeUiListener = null
+        realtimeDeleteListener = null
         socketManager.disconnect()
     }
 

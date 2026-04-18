@@ -17,6 +17,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { UsersService } from '../users/users.service';
+import { PushNotificationsService } from '../push/push-notifications.service';
 import { ChatGateway } from './chat.gateway';
 import { ChatRoomsService } from './chat-rooms.service';
 import { ChatService } from './chat.service';
@@ -38,6 +39,7 @@ export class ChatController {
     private readonly chatRoomsService: ChatRoomsService,
     private readonly chatGateway: ChatGateway,
     private readonly usersService: UsersService,
+    private readonly pushNotifications: PushNotificationsService,
   ) {}
 
   @Get('rooms')
@@ -123,6 +125,30 @@ export class ChatController {
     });
   }
 
+  @Get('messages/search')
+  @Roles(AllianceRole.R2)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async searchMessages(
+    @Req() req: { user: RequestUser },
+    @Query('roomId') roomId?: string,
+    @Query('q') q?: string,
+    @Query('limit') limitRaw?: string,
+  ) {
+    if (!roomId?.trim()) {
+      throw new BadRequestException('roomId query parameter is required');
+    }
+    await this.chatService.assertUserMayUseChat(req.user.userId);
+    const user = await this.usersService.findById(req.user.userId);
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+    const parsed = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
+    const limit = Number.isFinite(parsed) ? parsed : undefined;
+    return this.chatService.searchMessages(req.user.userId, roomId, q ?? '', {
+      limit,
+    });
+  }
+
   @Post('messages')
   @Roles(AllianceRole.R2)
   @Throttle({ default: { limit: 8, ttl: 10_000 } })
@@ -134,9 +160,53 @@ export class ChatController {
     const message = await this.chatService.createMessage({
       roomId: dto.roomId,
       text: dto.text,
+      replyToMessageId: dto.replyToMessageId,
       author: req.user,
     });
     this.chatGateway.broadcastNewMessage(dto.roomId, message);
+    const authorUser = await this.usersService.findById(req.user.userId);
+    if (authorUser) {
+      const preview =
+        dto.text.trim().length > 140
+          ? `${dto.text.trim().slice(0, 137)}...`
+          : dto.text.trim();
+      const messageId =
+        typeof (message as { _id?: unknown })._id === 'string'
+          ? (message as { _id: string })._id
+          : typeof (message as { _id?: unknown })._id === 'object' &&
+              (message as { _id?: { toString?: () => string } })._id != null
+            ? (message as { _id: { toString: () => string } })._id.toString()
+            : '';
+      void this.pushNotifications
+        .notifyAllianceChatMessage({
+          allianceId: authorUser.allianceName,
+          excludeUserId: req.user.userId,
+          title: `${req.user.username}`,
+          body: preview,
+          data: {
+            type: 'chat_message',
+            roomId: dto.roomId,
+            messageId,
+          },
+        })
+        .catch(() => undefined);
+    }
     return message;
+  }
+
+  @Delete('messages/:messageId')
+  @Roles(AllianceRole.R2)
+  async deleteMessage(
+    @Req() req: { user: RequestUser },
+    @Param('messageId') messageId: string,
+  ) {
+    const deleted = await this.chatService.deleteMessage(req.user.userId, messageId);
+    this.chatGateway.broadcastMessageDeleted(deleted.roomId, {
+      messageId: deleted._id,
+      roomId: deleted.roomId,
+      deletedAt: deleted.deletedAt,
+      deletedByUserId: deleted.deletedByUserId,
+    });
+    return deleted;
   }
 }

@@ -24,6 +24,15 @@ export class Message {
 
   @Prop({ required: true, trim: true })
   text: string;
+
+  @Prop({ type: Types.ObjectId, ref: Message.name, default: null, index: true })
+  replyToMessageId: Types.ObjectId | null;
+
+  @Prop({ type: Date, default: null, index: true })
+  deletedAt: Date | null;
+
+  @Prop({ type: String, default: null })
+  deletedByUserId: string | null;
 }
 
 export const MessageSchema = SchemaFactory.createForClass(Message);

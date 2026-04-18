@@ -1,6 +1,6 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
 import { User, UserDocument } from './schemas/user.schema';
@@ -12,6 +12,8 @@ export type SafeUser = {
   role: AllianceRole;
   allianceName: string;
   membershipStatus: TeamMembershipStatus;
+  presenceStatus: string | null;
+  lastPresenceAt: string | null;
 };
 
 @Injectable()
@@ -164,6 +166,63 @@ export class UsersService {
       role: user.role,
       allianceName: user.allianceName,
       membershipStatus: this.effectiveMembership(user),
+      presenceStatus: user.presenceStatus ?? null,
+      lastPresenceAt: user.lastPresenceAt
+        ? user.lastPresenceAt.toISOString()
+        : null,
     };
+  }
+
+  async registerPushToken(userId: string, token: string): Promise<void> {
+    const user = await this.findById(userId);
+    if (!user) return;
+    const prev = user.pushFcmTokens ?? [];
+    const merged = [...new Set([...prev, token.trim()])].slice(-10);
+    await this.userModel
+      .updateOne({ _id: userId }, { $set: { pushFcmTokens: merged } })
+      .exec();
+  }
+
+  async clearPushTokens(userId: string): Promise<void> {
+    await this.userModel
+      .updateOne({ _id: userId }, { $set: { pushFcmTokens: [] } })
+      .exec();
+  }
+
+  async updatePresence(userId: string, status: string): Promise<void> {
+    await this.userModel
+      .updateOne(
+        { _id: userId },
+        {
+          $set: {
+            presenceStatus: status.trim().slice(0, 32),
+            lastPresenceAt: new Date(),
+          },
+        },
+      )
+      .exec();
+  }
+
+  async collectPushTokensForAlliance(
+    allianceName: string,
+    excludeUserId: string,
+  ): Promise<string[]> {
+    if (!Types.ObjectId.isValid(excludeUserId)) return [];
+    const users = await this.userModel
+      .find({
+        allianceName,
+        membershipStatus: TeamMembershipStatus.ACTIVE,
+        _id: { $ne: new Types.ObjectId(excludeUserId) },
+        pushFcmTokens: { $exists: true, $ne: [] },
+      })
+      .select('pushFcmTokens')
+      .lean()
+      .exec();
+    const out: string[] = [];
+    for (const u of users) {
+      const arr = (u as { pushFcmTokens?: string[] }).pushFcmTokens;
+      if (Array.isArray(arr)) out.push(...arr);
+    }
+    return out;
   }
 }

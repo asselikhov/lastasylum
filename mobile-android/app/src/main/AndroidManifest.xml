@@ -1,14 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- Боевой оверлей: фоновая синхронизация чата/сокета + уведомление (не тип microphone — иначе API 34
+         требует RECORD_AUDIO и «eligible state» уже при onCreate, что ломает автоперезапуск и часть сценариев). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
+        android:name=".SquadRelayApplication"
         android:allowBackup="false"
         android:icon="@drawable/squadrelay_logo"
         android:label="@string/app_name"
@@ -16,6 +21,11 @@
         android:roundIcon="@drawable/squadrelay_logo"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
+
+        <!-- Без google-services.json авто-провайдер может ронять процесс до Application; инициализация — в SquadRelayApplication. -->
+        <provider
+            android:name="com.google.firebase.provider.FirebaseInitProvider"
+            tools:node="remove" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -31,7 +41,16 @@
             android:name=".overlay.CombatOverlayService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="microphone" />
+            android:foregroundServiceType="dataSync"
+            android:stopWithTask="true" />
+
+        <service
+            android:name=".push.SquadRelayFirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
     </application>
 
 </manifest>

@@ -3,6 +3,15 @@ package com.lastasylum.alliance.data.users
 class UsersRepository(
     private val usersApi: UsersApi,
 ) {
+    suspend fun registerPushToken(token: String): Result<Unit> =
+        runCatching { usersApi.registerPushToken(PushTokenBody(token)) }
+
+    suspend fun clearPushTokens(): Result<Unit> =
+        runCatching { usersApi.clearPushTokens() }
+
+    suspend fun updatePresence(status: String): Result<Unit> =
+        runCatching { usersApi.updatePresence(PresenceBody(status)) }
+
     suspend fun listMembers(): Result<List<TeamMemberDto>> =
         runCatching { usersApi.listMembers() }
 

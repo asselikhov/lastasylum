@@ -31,6 +31,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.di.AppContainer
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import com.lastasylum.alliance.ui.admin.AdminViewModel
 import com.lastasylum.alliance.ui.admin.AdminViewModelFactory
 import com.lastasylum.alliance.ui.chat.ChatViewModel
@@ -58,6 +63,7 @@ fun AppNavigation(
     modifier: Modifier = Modifier,
 ) {
     val activity = LocalContext.current as ComponentActivity
+    val app = remember(activity) { AppContainer.from(activity.applicationContext) }
     val chatViewModel: ChatViewModel = viewModel(
         viewModelStoreOwner = activity,
         key = "alliance_chat",
@@ -65,6 +71,18 @@ fun AppNavigation(
     )
     LaunchedEffect(Unit) {
         chatViewModel.refreshChat()
+    }
+
+    LaunchedEffect(userId) {
+        if (userId.isBlank()) return@LaunchedEffect
+        while (isActive) {
+            delay(45_000)
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    app.usersRepository.updatePresence("online")
+                }
+            }
+        }
     }
 
     val navController = rememberNavController()
@@ -95,9 +113,9 @@ fun AppNavigation(
         contentColor = MaterialTheme.colorScheme.onBackground,
         bottomBar = {
             NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                 contentColor = MaterialTheme.colorScheme.onSurface,
-                tonalElevation = 3.dp,
+                tonalElevation = 0.dp,
             ) {
                 visibleTabs.forEach { tab ->
                     val isSelected =
@@ -107,10 +125,11 @@ fun AppNavigation(
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = MaterialTheme.colorScheme.primary,
                             selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
+                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
                             unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         ),
+                        alwaysShowLabel = false,
                         onClick = {
                             navController.navigate(tab.route) {
                                 popUpTo(navController.graph.findStartDestination().id) {
@@ -158,10 +177,18 @@ fun AppNavigation(
                 val chatState by chatViewModel.state.collectAsStateWithLifecycle()
                 ChatScreen(
                     state = chatState,
-                    onSendMessage = chatViewModel::sendMessage,
                     onSelectRoom = chatViewModel::selectRoom,
                     onClearError = chatViewModel::clearError,
                     onLoadOlder = chatViewModel::loadOlderMessages,
+                    onDraftChange = chatViewModel::setDraftMessage,
+                    onSendDraft = chatViewModel::sendDraftMessage,
+                    onReplyToMessage = chatViewModel::beginReplyToMessage,
+                    onClearReply = chatViewModel::clearReplyToMessage,
+                    onOpenMessageActions = chatViewModel::openMessageActions,
+                    onDismissMessageActions = chatViewModel::dismissMessageActions,
+                    onRequestDeleteMessage = chatViewModel::requestDeleteMessage,
+                    onDismissDeleteMessage = chatViewModel::dismissDeleteMessage,
+                    onConfirmDeleteMessage = chatViewModel::confirmDeleteMessage,
                 )
             }
             composable(AppTab.OVERLAY.route) {

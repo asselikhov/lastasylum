@@ -12,4 +12,8 @@ export class CreateMessageDto {
   @IsOptional()
   @IsString()
   allianceId?: string;
+
+  @IsOptional()
+  @IsMongoId()
+  replyToMessageId?: string;
 }

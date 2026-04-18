@@ -1,8 +1,8 @@
 package com.lastasylum.alliance.ui.chat
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -19,16 +19,20 @@ fun RoleBadge(
 ) {
     val bg = roleAccentColor(role)
     val fg = roleOnAccentColor(role)
-    Text(
-        text = role,
-        modifier = modifier
-            .background(bg, MaterialTheme.shapes.extraSmall)
-            .padding(horizontal = 8.dp, vertical = 3.dp),
-        color = fg,
-        style = MaterialTheme.typography.labelLarge.copy(
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 0.5.sp,
-        ),
-    )
+    Surface(
+        modifier = modifier,
+        shape = MaterialTheme.shapes.extraSmall,
+        color = bg.copy(alpha = 0.9f),
+    ) {
+        Text(
+            text = role,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            color = fg,
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.25.sp,
+            ),
+        )
+    }
 }

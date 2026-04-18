@@ -14,9 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
@@ -36,6 +34,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.ui.components.PrimaryPanel
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -86,31 +85,25 @@ fun AuthScreen(
                 .imePadding()
                 .padding(
                     horizontal = SquadRelayDimens.screenPaddingHorizontal,
-                    vertical = SquadRelayDimens.screenPaddingVertical + 8.dp,
+                    vertical = SquadRelayDimens.screenPaddingVertical,
                 ),
             verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.sectionGap),
         ) {
-            Text(
-                text = stringResource(R.string.auth_brand),
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Text(
-                text = stringResource(R.string.auth_tagline),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.headerSubtitleGap)) {
+                Text(
+                    text = stringResource(R.string.auth_brand),
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+                Text(
+                    text = stringResource(R.string.auth_tagline),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
 
-            ElevatedCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.extraLarge,
-                elevation = CardDefaults.elevatedCardElevation(defaultElevation = 3.dp),
-                colors = CardDefaults.elevatedCardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                ),
-            ) {
+            PrimaryPanel {
                 Column(
-                    modifier = Modifier.padding(SquadRelayDimens.cardInnerPadding + 4.dp),
                     verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.blockGap),
                 ) {
                     when (mode) {
@@ -164,11 +157,6 @@ fun AuthScreen(
                                 text = stringResource(R.string.auth_forgot_title),
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Text(
-                                text = stringResource(R.string.auth_forgot_hint),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             OutlinedTextField(
                                 value = email,
@@ -277,7 +265,6 @@ fun AuthScreen(
                                     value = username,
                                     onValueChange = { username = it.trimStart() },
                                     label = { Text(stringResource(R.string.auth_username)) },
-                                    supportingText = { Text(stringResource(R.string.auth_username_helper)) },
                                     singleLine = true,
                                     modifier = Modifier.fillMaxWidth(),
                                     shape = MaterialTheme.shapes.medium,
@@ -296,7 +283,6 @@ fun AuthScreen(
                                 value = password,
                                 onValueChange = { password = it },
                                 label = { Text(stringResource(R.string.auth_password)) },
-                                supportingText = { Text(stringResource(R.string.auth_password_helper)) },
                                 singleLine = true,
                                 visualTransformation = PasswordVisualTransformation(),
                                 modifier = Modifier.fillMaxWidth(),
@@ -404,7 +390,7 @@ fun AuthScreen(
                     BuildConfig.VERSION_CODE,
                     buildTimeStr,
                 ),
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }

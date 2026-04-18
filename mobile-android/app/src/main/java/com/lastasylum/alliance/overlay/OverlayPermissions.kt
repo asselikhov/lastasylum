@@ -21,4 +21,13 @@ object OverlayPermissions {
         }
         context.startActivity(intent)
     }
+
+    /** Usage access — нужно для режима «оверлей только в игре». */
+    fun openUsageAccessSettings(context: Context) {
+        context.startActivity(
+            Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            },
+        )
+    }
 }

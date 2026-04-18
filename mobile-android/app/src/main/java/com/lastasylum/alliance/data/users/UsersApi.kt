@@ -3,10 +3,20 @@ package com.lastasylum.alliance.data.users
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.POST
 import retrofit2.http.PATCH
 import retrofit2.http.Path
 
 interface UsersApi {
+    @POST("users/me/push-token")
+    suspend fun registerPushToken(@Body body: PushTokenBody): Map<String, Boolean?>
+
+    @DELETE("users/me/push-tokens")
+    suspend fun clearPushTokens(): Map<String, Boolean?>
+
+    @POST("users/me/presence")
+    suspend fun updatePresence(@Body body: PresenceBody): Map<String, Boolean?>
+
     @GET("users")
     suspend fun listMembers(): List<TeamMemberDto>
 

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -17,7 +18,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -70,30 +70,174 @@ fun AdminScreen(
     val context = LocalContext.current
 
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = SquadRelayDimens.screenPaddingHorizontal - 4.dp),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            horizontal = SquadRelayDimens.contentPaddingHorizontal,
+            vertical = SquadRelayDimens.screenTopPadding,
+        ),
         verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.blockGap),
     ) {
         item {
             Text(
                 text = stringResource(R.string.admin_title),
-                style = MaterialTheme.typography.headlineSmall,
+                style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onBackground,
             )
         }
         item {
-            Text(
-                text = stringResource(R.string.admin_subtitle),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Card(
+                shape = MaterialTheme.shapes.large,
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(SquadRelayDimens.cardInnerPadding),
+                    verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.admin_rooms_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        OutlinedButton(
+                            onClick = onRefreshRooms,
+                            enabled = !state.roomsLoading,
+                            shape = MaterialTheme.shapes.large,
+                            modifier = Modifier.semantics {
+                                contentDescription = context.getString(R.string.admin_cd_refresh_rooms)
+                            },
+                        ) {
+                            Text(stringResource(R.string.admin_refresh))
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedTextField(
+                            value = newRoomTitle,
+                            onValueChange = { newRoomTitle = it },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            shape = MaterialTheme.shapes.medium,
+                            label = { Text(stringResource(R.string.admin_rooms_new_hint)) },
+                        )
+                        Button(
+                            onClick = {
+                                onCreateRoom(newRoomTitle)
+                                newRoomTitle = ""
+                            },
+                            enabled = newRoomTitle.isNotBlank(),
+                            shape = MaterialTheme.shapes.large,
+                        ) {
+                            Text(stringResource(R.string.admin_rooms_create))
+                        }
+                    }
+                    if (state.roomsLoading && state.rooms.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator(
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                    state.roomError?.takeIf { it.isNotBlank() }?.let { roomErrorText ->
+                        Text(
+                            text = roomErrorText,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    state.roomSnack?.takeIf { it.isNotBlank() }?.let { roomSnackText ->
+                        Row(
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = roomSnackText,
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = onClearRoomSnack) {
+                                Text(stringResource(R.string.admin_dismiss_error))
+                            }
+                        }
+                    }
+                    if (!state.roomsLoading && state.rooms.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.admin_rooms_empty),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        state.rooms.forEach { room ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = room.title,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    TextButton(
+                                        onClick = {
+                                            renameRoomTarget = room
+                                            renameDraft = room.title
+                                        },
+                                        modifier = Modifier.semantics {
+                                            contentDescription = context.getString(R.string.admin_cd_rename_room, room.title)
+                                        },
+                                    ) {
+                                        Text(stringResource(R.string.admin_rooms_rename))
+                                    }
+                                    TextButton(
+                                        onClick = { deleteRoomTarget = room },
+                                        modifier = Modifier.semantics {
+                                            contentDescription = context.getString(R.string.admin_cd_delete_room, room.title)
+                                        },
+                                    ) {
+                                        Text(
+                                            stringResource(R.string.admin_rooms_delete),
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
         item {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                Text(
+                    text = stringResource(R.string.admin_members_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.weight(1f),
+                )
                 OutlinedButton(
                     onClick = onRefresh,
                     enabled = !state.isLoading,
@@ -106,161 +250,12 @@ fun AdminScreen(
                 }
                 if (state.isLoading) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(26.dp),
+                        modifier = Modifier.size(22.dp),
                         strokeWidth = 2.dp,
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
             }
-        }
-        item {
-            Text(
-                text = stringResource(R.string.admin_rooms_title),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Text(
-                text = stringResource(R.string.admin_rooms_subtitle),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OutlinedTextField(
-                    value = newRoomTitle,
-                    onValueChange = { newRoomTitle = it },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    shape = MaterialTheme.shapes.medium,
-                    label = { Text(stringResource(R.string.admin_rooms_new_hint)) },
-                )
-                Button(
-                    onClick = {
-                        onCreateRoom(newRoomTitle)
-                        newRoomTitle = ""
-                    },
-                    enabled = newRoomTitle.isNotBlank(),
-                    shape = MaterialTheme.shapes.large,
-                ) {
-                    Text(stringResource(R.string.admin_rooms_create))
-                }
-            }
-            OutlinedButton(
-                onClick = onRefreshRooms,
-                enabled = !state.roomsLoading,
-                shape = MaterialTheme.shapes.large,
-                modifier = Modifier
-                    .padding(top = 8.dp)
-                    .semantics {
-                        contentDescription = context.getString(R.string.admin_cd_refresh_rooms)
-                    },
-            ) {
-                Text(stringResource(R.string.admin_refresh))
-            }
-            if (state.roomsLoading && state.rooms.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator(
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-            }
-            val roomErrorText = state.roomError
-            if (!roomErrorText.isNullOrBlank()) {
-                Text(
-                    text = roomErrorText,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            }
-            val roomSnackText = state.roomSnack
-            if (!roomSnackText.isNullOrBlank()) {
-                Row(
-                    modifier = Modifier.padding(top = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = roomSnackText,
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = onClearRoomSnack) {
-                        Text(stringResource(R.string.admin_dismiss_error))
-                    }
-                }
-            }
-        }
-        items(state.rooms, key = { it.id }) { room ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 2.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = room.title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(
-                        onClick = {
-                            renameRoomTarget = room
-                            renameDraft = room.title
-                        },
-                        modifier = Modifier.semantics {
-                            contentDescription = context.getString(R.string.admin_cd_rename_room, room.title)
-                        },
-                    ) {
-                        Text(stringResource(R.string.admin_rooms_rename))
-                    }
-                    TextButton(
-                        onClick = { deleteRoomTarget = room },
-                        modifier = Modifier.semantics {
-                            contentDescription = context.getString(R.string.admin_cd_delete_room, room.title)
-                        },
-                    ) {
-                        Text(
-                            stringResource(R.string.admin_rooms_delete),
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                }
-            }
-        }
-        item {
-            if (!state.roomsLoading && state.rooms.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.admin_rooms_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                )
-            }
-        }
-        item {
-            HorizontalDivider(
-                modifier = Modifier.padding(vertical = SquadRelayDimens.itemGap),
-                color = MaterialTheme.colorScheme.outlineVariant,
-            )
         }
         item {
             when {
@@ -452,7 +447,7 @@ private fun AdminMemberCard(
     Card(
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         ),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -460,13 +455,24 @@ private fun AdminMemberCard(
             modifier = Modifier.padding(SquadRelayDimens.cardInnerPadding - 2.dp),
             verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
         ) {
-            Text(
-                text = member.username,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-            )
+                horizontalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = member.username,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = member.role,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
             Text(
                 text = member.email,
                 style = MaterialTheme.typography.bodySmall,
@@ -476,12 +482,9 @@ private fun AdminMemberCard(
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(
-                text = stringResource(R.string.admin_field_role, member.role),
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Text(
                 text = stringResource(R.string.admin_field_status, statusLabel),
                 style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
@@ -514,10 +517,6 @@ private fun AdminMemberCard(
                 }
             }
 
-            Text(
-                text = stringResource(R.string.admin_role_change),
-                style = MaterialTheme.typography.labelLarge,
-            )
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -536,10 +535,6 @@ private fun AdminMemberCard(
                 }
             }
 
-            Text(
-                text = stringResource(R.string.admin_rename),
-                style = MaterialTheme.typography.labelLarge,
-            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 OutlinedTextField(
                     value = draftName,

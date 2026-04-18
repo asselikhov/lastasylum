@@ -10,6 +10,18 @@ data class TeamMemberDto(
     val role: String,
     val allianceName: String,
     val membershipStatus: String,
+    val presenceStatus: String? = null,
+    val lastPresenceAt: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class PushTokenBody(
+    val token: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class PresenceBody(
+    val status: String,
 )
 
 @JsonClass(generateAdapter = true)

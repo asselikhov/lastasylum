@@ -149,6 +149,7 @@ export class ChatGateway {
     const message = await this.chatService.createMessage({
       roomId: payload.roomId.trim(),
       text: payload.text,
+      replyToMessageId: payload.replyToMessageId,
       author: client.data.user,
     });
 
@@ -158,6 +159,10 @@ export class ChatGateway {
 
   broadcastNewMessage(roomId: string, message: unknown) {
     this.server?.to(`chat:${roomId}`).emit('message:new', message);
+  }
+
+  broadcastMessageDeleted(roomId: string, payload: unknown) {
+    this.server?.to(`chat:${roomId}`).emit('message:deleted', payload);
   }
 
   private assertWsMessageSendRate(userId: string): void {

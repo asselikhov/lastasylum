@@ -1,4 +1,4 @@
-﻿import java.util.Properties
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -15,6 +15,11 @@ val squadRelayLocalProperties = Properties().apply {
         f.inputStream().use { load(it) }
     }
 }
+
+fun propEsc(key: String): String =
+    squadRelayLocalProperties.getProperty(key)?.trim().orEmpty()
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
 
 /** Публичный бэкенд (Render). И prod, и dev по умолчанию — чтобы телефон работал без LAN. */
 val squadRelayPublicBackendUrl = "https://lastasylum-backend.onrender.com/"
@@ -35,6 +40,10 @@ android {
             useSupportLibrary = true
         }
         buildConfigField("long", "BUILD_TIME_MS", "${System.currentTimeMillis()}L")
+        buildConfigField("String", "FIREBASE_PROJECT_ID", "\"${propEsc("squadrelay.firebase.projectId")}\"")
+        buildConfigField("String", "FIREBASE_APP_ID", "\"${propEsc("squadrelay.firebase.appId")}\"")
+        buildConfigField("String", "FIREBASE_API_KEY", "\"${propEsc("squadrelay.firebase.apiKey")}\"")
+        buildConfigField("String", "CERT_PINS", "\"${propEsc("squadrelay.certPins")}\"")
     }
 
     flavorDimensions += "env"
@@ -99,6 +108,12 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 dependencies {
@@ -124,6 +139,14 @@ dependencies {
         exclude(group = "org.json", module = "json")
     }
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
+
+    implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
+    implementation("com.google.firebase:firebase-messaging-ktx")
+    implementation("com.google.firebase:firebase-crashlytics-ktx")
+    implementation("com.google.firebase:firebase-analytics-ktx")
+
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
 
     implementation(composeBom)
     androidTestImplementation(composeBom)
@@ -135,5 +158,10 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    testImplementation("androidx.test:core:1.5.0")
+    testImplementation("org.robolectric:robolectric:4.12.2")
 }
 

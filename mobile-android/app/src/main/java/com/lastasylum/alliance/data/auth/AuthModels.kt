@@ -28,6 +28,8 @@ data class AuthUser(
     val role: String,
     val membershipStatus: String? = null,
     val allianceName: String? = null,
+    val presenceStatus: String? = null,
+    val lastPresenceAt: String? = null,
 )
 
 @JsonClass(generateAdapter = true)
