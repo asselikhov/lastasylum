@@ -186,14 +186,6 @@ class ChatViewModel(
         _state.value = _state.value.copy(draftMessage = value)
     }
 
-    fun appendDraftMessage(suffix: String) {
-        val chunk = suffix.trim()
-        if (chunk.isEmpty()) return
-        val current = _state.value.draftMessage.trimEnd()
-        val next = if (current.isEmpty()) chunk else "$current $chunk"
-        setDraftMessage(next)
-    }
-
     fun beginReplyToMessage(messageId: String) {
         val target = _state.value.messages.find { it._id == messageId } ?: return
         if (target.deletedAt != null) return
@@ -238,9 +230,13 @@ class ChatViewModel(
                 error = null,
             )
             repository.deleteMessage(messageId)
-                .onSuccess { deleted ->
-                    applyIncomingMessage(deleted)
-                    _state.value = _state.value.copy(deletingMessageId = null)
+                .onSuccess { result ->
+                    _state.value = syncSelections(
+                        scrubRemovedMessage(_state.value, result.messageId).copy(
+                            deletingMessageId = null,
+                            error = null,
+                        ),
+                    )
                 }
                 .onFailure { throwable ->
                     _state.value = _state.value.copy(
@@ -264,35 +260,31 @@ class ChatViewModel(
         viewModelScope.launch {
             val roomId = _state.value.selectedRoomId ?: return@launch
             if (event.roomId.isNotBlank() && event.roomId != roomId) return@launch
-            val updated = _state.value.messages.map { message ->
-                when {
-                    message._id == event.messageId ->
-                        message.copy(
-                            text = "",
-                            deletedAt = event.deletedAt,
-                            deletedByUserId = event.deletedByUserId,
-                            updatedAt = event.deletedAt ?: message.updatedAt,
-                        )
-
-                    message.replyTo?._id == event.messageId ->
-                        message.copy(
-                            replyTo = message.replyTo.copy(
-                                text = "",
-                                deletedAt = event.deletedAt,
-                            ),
-                        )
-
-                    else -> message
-                }
-            }
+            val scrubbed = scrubRemovedMessage(_state.value, event.messageId)
             _state.value = syncSelections(
-                _state.value.copy(
-                    messages = updated,
-                    deletingMessageId = if (_state.value.deletingMessageId == event.messageId) null
-                    else _state.value.deletingMessageId,
+                scrubbed.copy(
+                    deletingMessageId = if (scrubbed.deletingMessageId == event.messageId) {
+                        null
+                    } else {
+                        scrubbed.deletingMessageId
+                    },
                 ),
             )
         }
+    }
+
+    private fun scrubRemovedMessage(state: ChatState, removedId: String): ChatState {
+        knownMessageIds.remove(removedId)
+        val nextMessages = state.messages
+            .filterNot { it._id == removedId }
+            .map { message ->
+                if (message.replyTo?._id == removedId) {
+                    message.copy(replyTo = null)
+                } else {
+                    message
+                }
+            }
+        return state.copy(messages = nextMessages)
     }
 
     private fun applyIncomingMessage(
@@ -356,7 +348,7 @@ class ChatViewModel(
     private fun syncSelections(state: ChatState): ChatState {
         val replyId = state.replyToMessage?._id
         val syncedReply = replyId?.let { id ->
-            state.messages.find { it._id == id } ?: state.replyToMessage
+            state.messages.find { it._id == id }
         }?.takeIf { it.deletedAt == null }
         val activeActionExists = state.activeActionMessageId?.let { id ->
             state.messages.any { it._id == id }

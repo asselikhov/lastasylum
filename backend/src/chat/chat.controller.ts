@@ -202,10 +202,8 @@ export class ChatController {
   ) {
     const deleted = await this.chatService.deleteMessage(req.user.userId, messageId);
     this.chatGateway.broadcastMessageDeleted(deleted.roomId, {
-      messageId: deleted._id,
+      messageId: deleted.messageId,
       roomId: deleted.roomId,
-      deletedAt: deleted.deletedAt,
-      deletedByUserId: deleted.deletedByUserId,
     });
     return deleted;
   }

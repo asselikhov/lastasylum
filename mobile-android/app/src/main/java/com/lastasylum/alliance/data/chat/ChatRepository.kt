@@ -75,7 +75,7 @@ class ChatRepository(
         return sendMessageWithRetries(text.trim(), roomId)
     }
 
-    suspend fun deleteMessage(messageId: String): Result<ChatMessage> =
+    suspend fun deleteMessage(messageId: String): Result<ChatMessageDeleteResult> =
         runCatching { chatApi.deleteMessage(messageId) }
 
     fun connectRealtime(

@@ -50,6 +50,11 @@ data class ChatMessageDeletedEvent(
     val deletedByUserId: String? = null,
 )
 
+data class ChatMessageDeleteResult(
+    val messageId: String,
+    val roomId: String,
+)
+
 data class CreateChatRoomRequest(
     val title: String,
     val sortOrder: Int? = null,

@@ -42,5 +42,5 @@ interface ChatApi {
     suspend fun sendMessage(@Body request: SendMessageRequest): ChatMessage
 
     @DELETE("chat/messages/{messageId}")
-    suspend fun deleteMessage(@Path("messageId") messageId: String): ChatMessage
+    suspend fun deleteMessage(@Path("messageId") messageId: String): ChatMessageDeleteResult
 }

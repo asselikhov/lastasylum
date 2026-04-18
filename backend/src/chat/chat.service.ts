@@ -251,6 +251,7 @@ export class ChatService {
     const filter: Record<string, unknown> = {
       allianceId,
       roomId: roomObjectId,
+      deletedAt: null,
     };
     const before = options?.before?.trim();
     if (before) {
@@ -306,7 +307,10 @@ export class ChatService {
     return this.enrichMessages(messages);
   }
 
-  async deleteMessage(userId: string, messageId: string): Promise<ChatMessageView> {
+  async deleteMessage(
+    userId: string,
+    messageId: string,
+  ): Promise<{ messageId: string; roomId: string }> {
     if (!Types.ObjectId.isValid(messageId)) {
       throw new BadRequestException('Invalid message id');
     }
@@ -327,13 +331,16 @@ export class ChatService {
     if (!mayDelete) {
       throw new ForbiddenException('You may only delete your own messages');
     }
-    if (!message.deletedAt) {
-      message.deletedAt = new Date();
-      message.deletedByUserId = userId;
-      await message.save();
+    const roomId = this.asIdString(message.roomId)!;
+    const res = await this.messageModel
+      .deleteOne({
+        _id: new Types.ObjectId(messageId),
+        allianceId: actor.allianceName,
+      })
+      .exec();
+    if (res.deletedCount !== 1) {
+      throw new NotFoundException('Message not found');
     }
-    const plain = message.toObject<MessageLean>();
-    const replyMap = await this.loadReplyMap([plain]);
-    return this.serializeMessage(plain, replyMap);
+    return { messageId, roomId };
   }
 }

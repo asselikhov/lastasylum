@@ -40,17 +40,12 @@
     <!-- Chat -->
     <string name="chat_message_hint">Сообщение</string>
     <string name="chat_send">Отправить</string>
-    <string name="chat_ptt">Нажми и говори</string>
-    <string name="chat_ptt_recording">Слушаю…</string>
-    <string name="chat_ptt_error">Не удалось распознать речь</string>
-    <string name="chat_ptt_mic_required">Нужен доступ к микрофону</string>
     <string name="chat_empty_state">Пока нет сообщений — напишите первым.</string>
     <string name="chat_no_rooms">Нет комнат чата. Попросите администратора (R5) создать комнату.</string>
     <string name="cd_chat_message">Сообщение от %1$s, роль %2$s: %3$s</string>
     <string name="err_chat_no_room">Выберите комнату чата в приложении, затем снова запишите голос.</string>
     <string name="chat_replying_to">Ответ для %1$s</string>
     <string name="chat_reply_cancel">Отменить ответ</string>
-    <string name="chat_message_deleted">Сообщение удалено</string>
     <string name="chat_deleting_progress">Удаление…</string>
     <string name="chat_action_reply">Ответить</string>
     <string name="chat_action_delete">Удалить сообщение</string>
@@ -62,7 +57,7 @@
     <!-- Onboarding -->
     <string name="onboarding_permissions_title">Разрешения для боя</string>
     <string name="onboarding_permissions_body">Для работы оверлея и голоса нужны системные разрешения.</string>
-    <string name="onboarding_permissions_bullet_mic">Микрофон для голосовых сообщений.</string>
+    <string name="onboarding_permissions_bullet_mic">Микрофон — если какая‑то функция приложения запросит запись звука.</string>
     <string name="onboarding_permissions_bullet_overlay">Показ поверх других приложений для боевой панели.</string>
     <string name="onboarding_permissions_bullet_notif">Уведомления для статуса боевого режима на Android 13+.</string>
     <string name="onboarding_permissions_overlay">К настройкам оверлея</string>
