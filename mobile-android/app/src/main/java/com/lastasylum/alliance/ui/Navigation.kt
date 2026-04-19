@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -115,62 +116,67 @@ fun AppNavigation(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground,
-        // adjustNothing + imePadding on chat composer: edge-to-edge breaks plain adjustResize for
-        // IME. Exclude IME from Scaffold so bottom bar/content padding does not stack with imePadding.
+        // adjustNothing + imePadding on chat composer. Exclude IME from Scaffold content insets.
+        // While IME is visible, hide the tab bar so it does not sit between composer and keyboard
+        // (same idea as Telegram: typing uses full width above the keyboard).
         contentWindowInsets = WindowInsets.safeDrawing.exclude(WindowInsets.ime),
         bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-                tonalElevation = 0.dp,
-            ) {
-                visibleTabs.forEach { tab ->
-                    val isSelected =
-                        currentDestination?.hierarchy?.any { it.route == tab.route } == true
-                    NavigationBarItem(
-                        selected = isSelected,
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                            selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        ),
-                        alwaysShowLabel = false,
-                        onClick = {
-                            navController.navigate(tab.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
+            val density = LocalDensity.current
+            val keyboardOpen = WindowInsets.ime.getBottom(density) > 0
+            if (!keyboardOpen) {
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    tonalElevation = 0.dp,
+                ) {
+                    visibleTabs.forEach { tab ->
+                        val isSelected =
+                            currentDestination?.hierarchy?.any { it.route == tab.route } == true
+                        NavigationBarItem(
+                            selected = isSelected,
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
+                            alwaysShowLabel = false,
+                            onClick = {
+                                navController.navigate(tab.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        label = { Text(text = stringResource(tab.titleRes)) },
-                        icon = {
-                            when (tab) {
-                                AppTab.CHAT -> Icon(
-                                    imageVector = Icons.Outlined.ChatBubbleOutline,
-                                    contentDescription = stringResource(tab.titleRes),
-                                )
+                            },
+                            label = { Text(text = stringResource(tab.titleRes)) },
+                            icon = {
+                                when (tab) {
+                                    AppTab.CHAT -> Icon(
+                                        imageVector = Icons.Outlined.ChatBubbleOutline,
+                                        contentDescription = stringResource(tab.titleRes),
+                                    )
 
-                                AppTab.OVERLAY -> Icon(
-                                    imageVector = Icons.Outlined.RadioButtonChecked,
-                                    contentDescription = stringResource(tab.titleRes),
-                                )
+                                    AppTab.OVERLAY -> Icon(
+                                        imageVector = Icons.Outlined.RadioButtonChecked,
+                                        contentDescription = stringResource(tab.titleRes),
+                                    )
 
-                                AppTab.PROFILE -> Icon(
-                                    imageVector = Icons.Outlined.PersonOutline,
-                                    contentDescription = stringResource(tab.titleRes),
-                                )
+                                    AppTab.PROFILE -> Icon(
+                                        imageVector = Icons.Outlined.PersonOutline,
+                                        contentDescription = stringResource(tab.titleRes),
+                                    )
 
-                                AppTab.ADMIN -> Icon(
-                                    imageVector = Icons.Outlined.AdminPanelSettings,
-                                    contentDescription = stringResource(tab.titleRes),
-                                )
-                            }
-                        },
-                    )
+                                    AppTab.ADMIN -> Icon(
+                                        imageVector = Icons.Outlined.AdminPanelSettings,
+                                        contentDescription = stringResource(tab.titleRes),
+                                    )
+                                }
+                            },
+                        )
+                    }
                 }
             }
         },
