@@ -23,10 +23,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Reply
+import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteOutline
-import androidx.compose.material.icons.outlined.Reply
-import androidx.compose.material.icons.outlined.Send
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -501,7 +501,7 @@ private fun ChatComposer(
                         )
                     } else {
                         Icon(
-                            imageVector = Icons.Outlined.Send,
+                            imageVector = Icons.AutoMirrored.Outlined.Send,
                             contentDescription = stringResource(R.string.chat_send),
                         )
                     }
@@ -683,7 +683,7 @@ private fun ChatMessageActionsSheet(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(
-                    imageVector = Icons.Outlined.Reply,
+                    imageVector = Icons.AutoMirrored.Outlined.Reply,
                     contentDescription = null,
                     modifier = Modifier.padding(end = 6.dp),
                 )
