@@ -21,6 +21,7 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import java.time.Instant
 import kotlin.math.abs
 
@@ -284,7 +285,8 @@ object OverlayChatHistoryPanel {
     ) {
         val t = OverlayChatTime.effectiveInstant(msg, receivedAt)
         val timeStr = if (t == Instant.EPOCH) "—" else OverlayChatTime.formatClock(t)
-        val nick = msg.senderUsername.trim().ifBlank { "—" }
+        val nick = chatSenderDisplayWithTag(msg.senderTeamTag, msg.senderUsername).trim()
+            .ifBlank { "—" }
         val role = msg.senderRole.trim()
         val isSelf = !selfUserId.isNullOrBlank() && msg.senderId == selfUserId
         val (accent, bodyMuted) = colorsFor(msg.senderId, nick, selfUserId)

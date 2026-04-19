@@ -32,6 +32,13 @@ export class User {
   @Prop({ type: String, default: null, trim: true })
   teamDisplayName: string | null;
 
+  /**
+   * Three-letter team tag (letters only), shown in chat before the nickname.
+   * Must be set together with teamDisplayName (except both cleared).
+   */
+  @Prop({ type: String, default: null, trim: true })
+  teamTag: string | null;
+
   @Prop({
     type: String,
     required: true,

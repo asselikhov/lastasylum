@@ -200,6 +200,8 @@ class ChatSocketManager {
                         senderId = payload.optString("senderId"),
                         senderUsername = payload.optString("senderUsername"),
                         senderRole = payload.optString("senderRole"),
+                        senderTeamTag = payload.optString("senderTeamTag")
+                            .takeIf { it.isNotBlank() },
                         senderTelegramUsername = payload.optString("senderTelegramUsername")
                             .takeIf { it.isNotBlank() },
                         text = payload.optString("text"),
@@ -283,6 +285,7 @@ private fun JSONObject.toChatReplyPreview(): ChatMessageReplyPreview? {
         senderId = optString("senderId"),
         senderUsername = optString("senderUsername"),
         senderRole = optString("senderRole"),
+        senderTeamTag = optString("senderTeamTag").takeIf { it.isNotBlank() },
         text = optString("text"),
         createdAt = optString("createdAt").takeIf { it.isNotBlank() },
         deletedAt = optString("deletedAt").takeIf { it.isNotBlank() },

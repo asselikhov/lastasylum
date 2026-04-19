@@ -22,6 +22,10 @@ export class Message {
   @Prop({ type: String, required: true, enum: AllianceRole })
   senderRole: AllianceRole;
 
+  /** Snapshot of sender team tag at send time (optional for legacy messages). */
+  @Prop({ type: String, default: null, trim: true })
+  senderTeamTag: string | null;
+
   @Prop({ required: true, trim: true })
   text: string;
 

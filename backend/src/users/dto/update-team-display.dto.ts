@@ -1,9 +1,14 @@
 import { IsOptional, IsString, MaxLength } from 'class-validator';
 
-/** Cosmetic team name shown in profile; omit or empty string clears. */
+/** Full team name + 3-letter tag; both empty clears; both required when setting. */
 export class UpdateTeamDisplayNameDto {
   @IsOptional()
   @IsString()
   @MaxLength(64)
   name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(8)
+  tag?: string;
 }

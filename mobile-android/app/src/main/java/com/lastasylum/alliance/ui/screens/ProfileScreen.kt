@@ -59,8 +59,25 @@ import kotlinx.coroutines.launch
 private enum class ProfileEditDialog { None, DisplayName, Team, Telegram }
 
 private fun teamDisplayValue(profile: MyProfileDto): String {
-    val custom = profile.teamDisplayName?.trim().orEmpty()
-    return if (custom.isNotEmpty()) custom else profile.allianceName
+    val name = profile.teamDisplayName?.trim().orEmpty()
+    val tag = profile.teamTag?.trim().orEmpty()
+    if (name.isNotEmpty() && tag.isNotEmpty()) return "$name [$tag]"
+    if (name.isNotEmpty()) return name
+    return profile.allianceName
+}
+
+private fun isValidThreeLetterTeamTag(raw: String): Boolean {
+    val t = raw.trim()
+    var i = 0
+    var count = 0
+    while (i < t.length) {
+        val cp = t.codePointAt(i)
+        if (!Character.isLetter(cp)) return false
+        count++
+        if (count > 3) return false
+        i += Character.charCount(cp)
+    }
+    return count == 3
 }
 
 @Composable
@@ -143,6 +160,8 @@ fun ProfileScreen(
 
     var dialog by remember { mutableStateOf(ProfileEditDialog.None) }
     var draft by remember { mutableStateOf("") }
+    var teamDraftName by remember { mutableStateOf("") }
+    var teamDraftTag by remember { mutableStateOf("") }
     var dialogError by remember { mutableStateOf<String?>(null) }
     var dialogSaving by remember { mutableStateOf(false) }
 
@@ -322,10 +341,10 @@ fun ProfileScreen(
                         subtitle = stringResource(R.string.profile_team_code_hint, p.allianceName),
                         editable = true,
                         onClick = {
-                            openDialog(
-                                ProfileEditDialog.Team,
-                                p.teamDisplayName?.trim().orEmpty(),
-                            )
+                            teamDraftName = p.teamDisplayName?.trim().orEmpty()
+                            teamDraftTag = p.teamTag?.trim().orEmpty()
+                            dialog = ProfileEditDialog.Team
+                            dialogError = null
                         },
                     )
                     HorizontalDivider(
@@ -439,27 +458,55 @@ fun ProfileScreen(
         }
 
         ProfileEditDialog.Team -> {
+            val canSaveTeam =
+                (teamDraftName.isBlank() && teamDraftTag.isBlank()) ||
+                    (teamDraftName.isNotBlank() && isValidThreeLetterTeamTag(teamDraftTag))
             AlertDialog(
                 onDismissRequest = { if (!dialogSaving) closeDialog() },
                 title = { Text(stringResource(R.string.profile_edit_team_title)) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
-                            value = draft,
+                            value = teamDraftName,
                             onValueChange = {
-                                draft = it
+                                teamDraftName = it.take(48)
                                 dialogError = null
                             },
                             modifier = Modifier.fillMaxWidth(),
+                            label = { Text(stringResource(R.string.profile_field_team_full_name)) },
                             singleLine = true,
                             enabled = !dialogSaving,
                             supportingText = {
-                                Text(stringResource(R.string.profile_hint_team))
+                                Text(stringResource(R.string.profile_hint_team_full))
                             },
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.Words,
                                 keyboardType = KeyboardType.Text,
                             ),
+                        )
+                        OutlinedTextField(
+                            value = teamDraftTag,
+                            onValueChange = { v ->
+                                val letters = v.filter { it.isLetter() }
+                                teamDraftTag = letters.take(3)
+                                dialogError = null
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text(stringResource(R.string.profile_field_team_tag)) },
+                            singleLine = true,
+                            enabled = !dialogSaving,
+                            supportingText = {
+                                Text(stringResource(R.string.profile_hint_team_tag))
+                            },
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Characters,
+                                keyboardType = KeyboardType.Text,
+                            ),
+                        )
+                        Text(
+                            text = stringResource(R.string.profile_hint_team_clear),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         dialogError?.let { e ->
                             Text(e, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -469,10 +516,12 @@ fun ProfileScreen(
                 confirmButton = {
                     Button(
                         onClick = {
+                            val n = teamDraftName.trim()
+                            val tg = teamDraftTag.trim()
                             scope.launch {
                                 dialogSaving = true
                                 dialogError = null
-                                app.usersRepository.updateMyTeamDisplayName(draft.trim())
+                                app.usersRepository.updateMyTeamDisplay(n, tg)
                                     .onSuccess {
                                         profile = it
                                         closeDialog()
@@ -483,7 +532,7 @@ fun ProfileScreen(
                                 dialogSaving = false
                             }
                         },
-                        enabled = !dialogSaving,
+                        enabled = !dialogSaving && canSaveTeam,
                     ) {
                         if (dialogSaving) {
                             CircularProgressIndicator(

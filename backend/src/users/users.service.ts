@@ -16,6 +16,7 @@ export type SafeUser = {
   role: AllianceRole;
   allianceName: string;
   teamDisplayName: string | null;
+  teamTag: string | null;
   membershipStatus: TeamMembershipStatus;
   presenceStatus: string | null;
   lastPresenceAt: string | null;
@@ -172,6 +173,7 @@ export class UsersService {
       role: user.role,
       allianceName: user.allianceName,
       teamDisplayName: user.teamDisplayName ?? null,
+      teamTag: user.teamTag ?? null,
       membershipStatus: this.effectiveMembership(user),
       presenceStatus: user.presenceStatus ?? null,
       lastPresenceAt: user.lastPresenceAt
@@ -210,17 +212,52 @@ export class UsersService {
       .exec();
   }
 
-  async updateMyTeamDisplayName(
+  private normalizeTeamTag(raw: string): string {
+    const chars = [...raw.trim()];
+    if (chars.length !== 3) {
+      throw new BadRequestException('Team tag must be exactly 3 letters');
+    }
+    for (const c of chars) {
+      if (!/\p{L}/u.test(c)) {
+        throw new BadRequestException('Team tag must contain only letters');
+      }
+    }
+    return chars.map((c) => c.toLocaleUpperCase('ru-RU')).join('');
+  }
+
+  /** Set or clear cosmetic team name + 3-letter tag (both required together when setting). */
+  async updateMyTeamDisplay(
     userId: string,
     rawName: string | undefined,
+    rawTag: string | undefined,
   ): Promise<UserDocument | null> {
-    if (rawName === undefined) {
+    if (rawName === undefined && rawTag === undefined) {
       return this.findById(userId);
     }
-    const trimmed = rawName.trim();
-    const value = trimmed.length === 0 ? null : trimmed.slice(0, 48);
+    const nameTrim = (rawName ?? '').trim();
+    const tagTrim = (rawTag ?? '').trim();
+    if (nameTrim.length === 0 && tagTrim.length === 0) {
+      return this.userModel
+        .findByIdAndUpdate(
+          userId,
+          { $set: { teamDisplayName: null, teamTag: null } },
+          { new: true },
+        )
+        .exec();
+    }
+    if (!nameTrim || !tagTrim) {
+      throw new BadRequestException(
+        'Specify both the full team name and a 3-letter tag, or clear both fields',
+      );
+    }
+    const nameVal = nameTrim.slice(0, 48);
+    const tagNorm = this.normalizeTeamTag(tagTrim);
     return this.userModel
-      .findByIdAndUpdate(userId, { $set: { teamDisplayName: value } }, { new: true })
+      .findByIdAndUpdate(
+        userId,
+        { $set: { teamDisplayName: nameVal, teamTag: tagNorm } },
+        { new: true },
+      )
       .exec();
   }
 
@@ -244,6 +281,23 @@ export class UsersService {
     const map = new Map<string, string | null>();
     for (const d of docs) {
       map.set(d._id.toString(), d.telegramUsername ?? null);
+    }
+    return map;
+  }
+
+  async findTeamTagsByIds(ids: string[]): Promise<Map<string, string | null>> {
+    const unique = [...new Set(ids.filter((id) => Types.ObjectId.isValid(id)))];
+    if (!unique.length) {
+      return new Map();
+    }
+    const docs = await this.userModel
+      .find({ _id: { $in: unique.map((id) => new Types.ObjectId(id)) } })
+      .select('_id teamTag')
+      .lean<Array<{ _id: Types.ObjectId; teamTag?: string | null }>>()
+      .exec();
+    const map = new Map<string, string | null>();
+    for (const d of docs) {
+      map.set(d._id.toString(), d.teamTag ?? null);
     }
     return map;
   }

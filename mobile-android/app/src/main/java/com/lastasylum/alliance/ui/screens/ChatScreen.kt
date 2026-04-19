@@ -85,6 +85,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.ui.chat.ChatState
 import com.lastasylum.alliance.ui.chat.canDeleteChatMessage
 import com.lastasylum.alliance.ui.chat.RoleBadge
@@ -697,7 +698,10 @@ private fun ChatComposer(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = stringResource(R.string.chat_replying_to, reply.senderUsername),
+                                text = stringResource(
+                                    R.string.chat_replying_to,
+                                    chatSenderDisplayWithTag(reply.senderTeamTag, reply.senderUsername),
+                                ),
                                 style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.primary,
                             )
@@ -842,9 +846,10 @@ private fun ChatBubbleRow(
     val layoutDirection = LocalLayoutDirection.current
     val swipePx = remember(density) { with(density) { 56.dp.toPx() } }
     val textPreview = remember(message.text) { message.text.take(120) }
+    val senderLine = chatSenderDisplayWithTag(message.senderTeamTag, message.senderUsername)
     val bubbleDescription = stringResource(
         R.string.cd_chat_message,
-        message.senderUsername,
+        senderLine,
         message.senderRole,
         textPreview,
     )
@@ -963,7 +968,7 @@ private fun ChatBubbleRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Text(
-                            text = message.senderUsername,
+                            text = senderLine,
                             style = MaterialTheme.typography.labelLarge,
                             color = if (isMine) {
                                 MaterialTheme.colorScheme.onPrimaryContainer
@@ -1016,7 +1021,10 @@ private fun ChatBubbleRow(
                             ),
                         ) {
                             Text(
-                                text = reply.senderUsername,
+                                text = chatSenderDisplayWithTag(
+                                    reply.senderTeamTag,
+                                    reply.senderUsername,
+                                ),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = if (isMine) {
                                     MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.88f)
@@ -1092,7 +1100,7 @@ private fun ChatMessageActionsSheet(
             verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
         ) {
             Text(
-                text = message.senderUsername,
+                text = chatSenderDisplayWithTag(message.senderTeamTag, message.senderUsername),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurface,
             )

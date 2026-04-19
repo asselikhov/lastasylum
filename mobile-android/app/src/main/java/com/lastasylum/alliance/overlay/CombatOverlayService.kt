@@ -33,6 +33,7 @@ import androidx.core.content.ContextCompat
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.layout.OverlayLayoutDp
 import com.lastasylum.alliance.ui.util.toUserMessageRu
@@ -362,7 +363,7 @@ class CombatOverlayService : Service() {
         val preview = stripBuffer.visibleForPreview()
         val signature = preview.joinToString(separator = "|") { msg ->
             val key = msg._id?.takeIf { it.isNotBlank() } ?: msg.stableKey()
-            "$key:${msg.text.hashCode()}:${msg.senderRole}:${msg.senderId}"
+            "$key:${msg.text.hashCode()}:${msg.senderRole}:${msg.senderId}:${msg.senderTeamTag ?: ""}"
         }
         if (signature == lastStripRenderSignature) return
         val selfId = jwtSubFromAccessToken()
@@ -371,7 +372,7 @@ class CombatOverlayService : Service() {
             OverlayChatStripUi.addLine(
                 this,
                 lines,
-                msg.senderUsername,
+                chatSenderDisplayWithTag(msg.senderTeamTag, msg.senderUsername),
                 msg.text,
                 msg.senderId,
                 msg.senderRole,

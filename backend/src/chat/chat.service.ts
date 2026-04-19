@@ -25,6 +25,7 @@ type MessageLean = {
   senderId: string;
   senderUsername: string;
   senderRole: AllianceRole;
+  senderTeamTag?: string | null;
   text: string;
   replyToMessageId?: Types.ObjectId | string | null;
   deletedAt?: Date | null;
@@ -38,6 +39,7 @@ export type ChatMessageReplyPreview = {
   senderId: string;
   senderUsername: string;
   senderRole: AllianceRole;
+  senderTeamTag: string | null;
   text: string;
   createdAt: string | null;
   deletedAt: string | null;
@@ -50,6 +52,8 @@ export type ChatMessageView = {
   senderId: string;
   senderUsername: string;
   senderRole: AllianceRole;
+  /** Three-letter team tag: stored on message or resolved from sender profile. */
+  senderTeamTag: string | null;
   /** Telegram @handle without @, from sender profile at read time (or at send). */
   senderTelegramUsername: string | null;
   text: string;
@@ -109,12 +113,18 @@ export class ChatService {
     return date ? date.toISOString() : null;
   }
 
-  private serializeReplyPreview(message: MessageLean): ChatMessageReplyPreview {
+  private serializeReplyPreview(
+    message: MessageLean,
+    senderTeamTagMap?: Map<string, string | null>,
+  ): ChatMessageReplyPreview {
+    const senderTeamTag =
+      message.senderTeamTag ?? senderTeamTagMap?.get(message.senderId) ?? null;
     return {
       _id: this.asIdString(message._id)!,
       senderId: message.senderId,
       senderUsername: message.senderUsername,
       senderRole: message.senderRole,
+      senderTeamTag,
       text: message.deletedAt ? '' : message.text,
       createdAt: this.toIso(message.createdAt),
       deletedAt: this.toIso(message.deletedAt),
@@ -125,9 +135,12 @@ export class ChatService {
     message: MessageLean,
     replyMap?: Map<string, MessageLean>,
     senderTelegramMap?: Map<string, string | null>,
+    senderTeamTagMap?: Map<string, string | null>,
   ): ChatMessageView {
     const replyToMessageId = this.asIdString(message.replyToMessageId);
     const replyTarget = replyToMessageId ? replyMap?.get(replyToMessageId) : null;
+    const senderTeamTag =
+      message.senderTeamTag ?? senderTeamTagMap?.get(message.senderId) ?? null;
     return {
       _id: this.asIdString(message._id)!,
       allianceId: message.allianceId,
@@ -135,12 +148,15 @@ export class ChatService {
       senderId: message.senderId,
       senderUsername: message.senderUsername,
       senderRole: message.senderRole,
+      senderTeamTag,
       senderTelegramUsername: senderTelegramMap?.get(message.senderId) ?? null,
       text: message.deletedAt ? '' : message.text,
       createdAt: this.toIso(message.createdAt),
       updatedAt: this.toIso(message.updatedAt),
       replyToMessageId,
-      replyTo: replyTarget ? this.serializeReplyPreview(replyTarget) : null,
+      replyTo: replyTarget
+        ? this.serializeReplyPreview(replyTarget, senderTeamTagMap)
+        : null,
       deletedAt: this.toIso(message.deletedAt),
       deletedByUserId: message.deletedByUserId ?? null,
     };
@@ -166,11 +182,28 @@ export class ChatService {
 
   private async enrichMessages(messages: MessageLean[]): Promise<ChatMessageView[]> {
     const replyMap = await this.loadReplyMap(messages);
-    const senderIds = [...new Set(messages.map((m) => m.senderId))];
+    const replySenderIds: string[] = [];
+    for (const m of messages) {
+      const rid = this.asIdString(m.replyToMessageId);
+      if (rid) {
+        const target = replyMap.get(rid);
+        if (target) replySenderIds.push(target.senderId);
+      }
+    }
+    const senderIds = [
+      ...new Set([...messages.map((m) => m.senderId), ...replySenderIds]),
+    ];
     const senderTelegramMap =
       await this.usersService.findTelegramUsernamesByIds(senderIds);
+    const senderTeamTagMap =
+      await this.usersService.findTeamTagsByIds(senderIds);
     return messages.map((message) =>
-      this.serializeMessage(message, replyMap, senderTelegramMap),
+      this.serializeMessage(
+        message,
+        replyMap,
+        senderTelegramMap,
+        senderTeamTagMap,
+      ),
     );
   }
 
@@ -236,6 +269,7 @@ export class ChatService {
       senderId: input.author.userId,
       senderUsername: input.author.username,
       senderRole: input.author.role,
+      senderTeamTag: authorUser.teamTag ?? null,
       replyToMessageId: replyTarget?._id ?? null,
       deletedAt: null,
       deletedByUserId: null,
@@ -243,10 +277,14 @@ export class ChatService {
     const senderTelegramMap = new Map<string, string | null>([
       [input.author.userId, authorUser.telegramUsername ?? null],
     ]);
+    const senderTeamTagMap = new Map<string, string | null>([
+      [input.author.userId, authorUser.teamTag ?? null],
+    ]);
     return this.serializeMessage(
       created.toObject<MessageLean>(),
       replyTarget ? new Map([[this.asIdString(replyTarget._id)!, replyTarget]]) : undefined,
       senderTelegramMap,
+      senderTeamTagMap,
     );
   }
 

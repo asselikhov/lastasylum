@@ -118,9 +118,10 @@ export class UsersController {
     @Req() req: { user: RequestUser },
     @Body() dto: UpdateTeamDisplayNameDto,
   ) {
-    const updated = await this.usersService.updateMyTeamDisplayName(
+    const updated = await this.usersService.updateMyTeamDisplay(
       req.user.userId,
       dto.name,
+      dto.tag,
     );
     if (!updated) {
       throw new NotFoundException('User not found');
