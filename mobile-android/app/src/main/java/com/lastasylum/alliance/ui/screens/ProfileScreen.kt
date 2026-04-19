@@ -2,11 +2,10 @@ package com.lastasylum.alliance.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,10 +13,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -38,76 +43,135 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.lastasylum.alliance.BuildConfig
 import coil.compose.AsyncImage
 import com.lastasylum.alliance.R
-import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.users.MyProfileDto
 import com.lastasylum.alliance.di.AppContainer
-import com.lastasylum.alliance.overlay.CombatOverlayService
-import com.lastasylum.alliance.ui.components.SettingsDivider
-import com.lastasylum.alliance.ui.components.SettingsToggleRow
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import com.lastasylum.alliance.ui.util.telegramDisplayHandle
-import com.lastasylum.alliance.update.fetchNewerApkDownloadUrl
-import com.lastasylum.alliance.update.openApkDownload
-import com.lastasylum.alliance.update.toastNoUpdateAvailable
-import com.lastasylum.alliance.update.toastUpdateCheckFailed
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalLayoutApi::class)
+private enum class ProfileEditDialog { None, DisplayName, Team, Telegram }
+
+private fun teamDisplayValue(profile: MyProfileDto): String {
+    val custom = profile.teamDisplayName?.trim().orEmpty()
+    return if (custom.isNotEmpty()) custom else profile.allianceName
+}
+
+@Composable
+private fun membershipLabel(status: String): String {
+    return when (status.lowercase()) {
+        "pending" -> stringResource(R.string.admin_status_pending)
+        "active" -> stringResource(R.string.admin_status_active)
+        "removed" -> stringResource(R.string.admin_status_removed)
+        else -> status
+    }
+}
+
+@Composable
+private fun ProfileStatRow(
+    label: String,
+    value: String,
+    subtitle: String? = null,
+    editable: Boolean,
+    onClick: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(
+                if (editable && onClick != null) {
+                    Modifier.clickable(onClick = onClick)
+                } else {
+                    Modifier
+                },
+            )
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            subtitle?.let { s ->
+                Text(
+                    text = s,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+        }
+        if (editable && onClick != null) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
 @Composable
 fun ProfileScreen(
     username: String,
-    role: String,
     onLogout: () -> Unit,
 ) {
     val context = LocalContext.current
-    val app = remember {
-        AppContainer.from(context.applicationContext)
-    }
-    var quietMode by remember {
-        mutableStateOf(app.userSettingsPreferences.isQuietMode())
-    }
-    var compactOverlay by remember {
-        mutableStateOf(app.userSettingsPreferences.isCompactOverlay())
-    }
-    var overlayPreset by remember {
-        mutableStateOf(app.userSettingsPreferences.getOverlayLayoutPreset())
-    }
+    val app = remember { AppContainer.from(context.applicationContext) }
     val scope = rememberCoroutineScope()
-    val buildTimeStr = remember {
-        SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-            .format(Date(BuildConfig.BUILD_TIME_MS))
-    }
     val scroll = rememberScrollState()
+
     var profile by remember { mutableStateOf<MyProfileDto?>(null) }
-    var telegramInput by remember { mutableStateOf("") }
-    var profileLoadError by remember { mutableStateOf<String?>(null) }
-    var telegramSaveError by remember { mutableStateOf<String?>(null) }
-    var telegramSaving by remember { mutableStateOf(false) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+
+    var dialog by remember { mutableStateOf(ProfileEditDialog.None) }
+    var draft by remember { mutableStateOf("") }
+    var dialogError by remember { mutableStateOf<String?>(null) }
+    var dialogSaving by remember { mutableStateOf(false) }
 
     LaunchedEffect(app) {
         app.usersRepository.getMyProfile()
             .onSuccess {
                 profile = it
-                telegramInput = it.telegramUsername?.let { h -> "@$h" } ?: ""
-                profileLoadError = null
+                loadError = null
             }
             .onFailure {
-                profileLoadError = context.getString(R.string.profile_telegram_load_error)
+                loadError = context.getString(R.string.profile_load_error)
             }
     }
 
     val displayName = profile?.username ?: username
     val initialLetter = remember(displayName) {
         displayName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+    }
+
+    fun openDialog(which: ProfileEditDialog, initialDraft: String) {
+        dialog = which
+        draft = initialDraft
+        dialogError = null
+    }
+
+    fun closeDialog() {
+        dialog = ProfileEditDialog.None
+        dialogError = null
+        dialogSaving = false
     }
 
     Column(
@@ -120,31 +184,38 @@ fun ProfileScreen(
             ),
         verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.sectionGap),
     ) {
+        Text(
+            text = stringResource(R.string.profile_header_title),
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.padding(bottom = 4.dp),
+        )
+
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.large,
             tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
             color = MaterialTheme.colorScheme.surfaceContainerLow,
         ) {
             Row(
                 modifier = Modifier.padding(SquadRelayDimens.panelInnerPadding),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(SquadRelayDimens.blockGap),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(64.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primaryContainer),
                 ) {
                     Box(
-                        modifier = Modifier
-                            .fillMaxSize(),
+                        modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
                             text = initialLetter,
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
@@ -161,9 +232,9 @@ fun ProfileScreen(
                 }
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.headerSubtitleGap),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    profileLoadError?.let { err ->
+                    loadError?.let { err ->
                         Text(
                             text = err,
                             style = MaterialTheme.typography.bodySmall,
@@ -172,27 +243,18 @@ fun ProfileScreen(
                     }
                     Text(
                         text = displayName,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleLarge,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
-                    telegramDisplayHandle(profile?.telegramUsername)?.let { handle ->
+                    profile?.email?.let { email ->
                         Text(
-                            text = handle,
+                            text = email,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                    Surface(
-                        shape = MaterialTheme.shapes.small,
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.profile_role, profile?.role ?: role),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -203,227 +265,94 @@ fun ProfileScreen(
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.large,
             tonalElevation = 0.dp,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-        ) {
-            Column(
-                modifier = Modifier.padding(SquadRelayDimens.panelInnerPadding),
-                verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
-            ) {
-                Text(
-                    text = stringResource(R.string.profile_telegram_section),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                OutlinedTextField(
-                    value = telegramInput,
-                    onValueChange = {
-                        telegramSaveError = null
-                        telegramInput = it
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.profile_telegram_field_label)) },
-                    placeholder = { Text(stringResource(R.string.profile_telegram_hint)) },
-                    singleLine = true,
-                    enabled = !telegramSaving,
-                )
-                telegramSaveError?.let { err ->
-                    Text(
-                        text = err,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TextButton(
-                        onClick = {
-                            if (telegramSaving) return@TextButton
-                            scope.launch {
-                                telegramSaving = true
-                                telegramSaveError = null
-                                app.usersRepository.updateMyTelegram("")
-                                    .onSuccess {
-                                        profile = it
-                                        telegramInput = ""
-                                    }
-                                    .onFailure {
-                                        telegramSaveError = context.getString(
-                                            R.string.profile_telegram_save_error,
-                                        )
-                                    }
-                                telegramSaving = false
-                            }
-                        },
-                        enabled = !telegramSaving && profile?.telegramUsername != null,
-                    ) {
-                        Text(stringResource(R.string.profile_telegram_clear))
-                    }
-                    Button(
-                        onClick = {
-                            if (telegramSaving) return@Button
-                            scope.launch {
-                                telegramSaving = true
-                                telegramSaveError = null
-                                val raw = telegramInput.trim().removePrefix("@").trim()
-                                app.usersRepository.updateMyTelegram(raw)
-                                    .onSuccess {
-                                        profile = it
-                                        telegramInput = it.telegramUsername?.let { h -> "@$h" } ?: ""
-                                    }
-                                    .onFailure {
-                                        telegramSaveError = context.getString(
-                                            R.string.profile_telegram_save_error,
-                                        )
-                                    }
-                                telegramSaving = false
-                            }
-                        },
-                        enabled = !telegramSaving,
-                    ) {
-                        if (telegramSaving) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary,
-                            )
-                        } else {
-                            Text(stringResource(R.string.profile_telegram_save))
-                        }
-                    }
-                }
-            }
-        }
-
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.large,
-            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
             color = MaterialTheme.colorScheme.surfaceContainerLow,
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
-                SettingsToggleRow(
-                    title = stringResource(R.string.profile_quiet_title),
-                    subtitle = stringResource(R.string.profile_quiet_subtitle),
-                    checked = quietMode,
-                    onCheckedChange = { v ->
-                        quietMode = v
-                        app.userSettingsPreferences.setQuietMode(v)
-                        CombatOverlayService.refreshQuietNotificationIfRunning(context)
-                    },
-                )
-                SettingsDivider()
-                SettingsToggleRow(
-                    title = stringResource(R.string.profile_compact_title),
-                    subtitle = stringResource(R.string.profile_compact_subtitle),
-                    checked = compactOverlay,
-                    onCheckedChange = { v ->
-                        compactOverlay = v
-                        app.userSettingsPreferences.setCompactOverlay(v)
-                        CombatOverlayService.requestRebuildOverlayIfRunning(context)
-                    },
-                )
-                SettingsDivider()
-                Column(
-                    modifier = Modifier.padding(SquadRelayDimens.panelInnerPadding),
-                    verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
-                ) {
-                    Text(
-                        text = stringResource(R.string.profile_overlay_layout_title),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
-                        verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
-                    ) {
-                        listOf(
-                            UserSettingsPreferences.PRESET_BALANCED to R.string.profile_overlay_preset_balanced,
-                            UserSettingsPreferences.PRESET_COMMANDER to R.string.profile_overlay_preset_commander,
-                            UserSettingsPreferences.PRESET_MINIMAL to R.string.profile_overlay_preset_minimal,
-                        ).forEach { (key, labelRes) ->
-                            val selected = overlayPreset == key
-                            OutlinedButton(
-                                onClick = {
-                                    overlayPreset = key
-                                    app.userSettingsPreferences.setOverlayLayoutPreset(key)
-                                    CombatOverlayService.requestRebuildOverlayIfRunning(context)
-                                },
-                                border = if (selected) {
-                                    BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
-                                } else {
-                                    ButtonDefaults.outlinedButtonBorder(enabled = true)
-                                },
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = if (selected) {
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
-                                    } else {
-                                        MaterialTheme.colorScheme.surfaceContainerHigh
-                                    },
-                                ),
-                            ) {
-                                Text(
-                                    text = stringResource(labelRes),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.large,
-            tonalElevation = 0.dp,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-        ) {
-            Column(
-                modifier = Modifier.padding(SquadRelayDimens.panelInnerPadding),
-                verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
-            ) {
                 Text(
-                    text = stringResource(R.string.profile_build_title),
+                    text = stringResource(R.string.profile_section_account),
                     style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 16.dp, top = 14.dp, end = 16.dp, bottom = 4.dp),
                 )
-                Text(
-                    text = stringResource(
-                        R.string.profile_build_line,
-                        BuildConfig.VERSION_NAME,
-                        BuildConfig.VERSION_CODE,
-                        buildTimeStr,
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                OutlinedButton(
-                    onClick = {
-                        scope.launch {
-                            runCatching { fetchNewerApkDownloadUrl() }
-                                .onSuccess { url ->
-                                    if (url != null) {
-                                        context.openApkDownload(url)
-                                    } else {
-                                        context.toastNoUpdateAvailable()
-                                    }
-                                }
-                                .onFailure {
-                                    context.toastUpdateCheckFailed()
-                                }
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.large,
-                ) {
-                    Text(stringResource(R.string.profile_check_update))
+                profile?.let { p ->
+                    ProfileStatRow(
+                        label = stringResource(R.string.profile_field_ingame_name),
+                        value = p.username,
+                        editable = true,
+                        onClick = { openDialog(ProfileEditDialog.DisplayName, p.username) },
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                    )
+                    ProfileStatRow(
+                        label = stringResource(R.string.profile_field_email),
+                        value = p.email,
+                        editable = false,
+                        onClick = null,
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                    )
+                    ProfileStatRow(
+                        label = stringResource(R.string.profile_field_role),
+                        value = p.role,
+                        editable = false,
+                        onClick = null,
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                    )
+                    ProfileStatRow(
+                        label = stringResource(R.string.profile_field_membership),
+                        value = membershipLabel(p.membershipStatus),
+                        editable = false,
+                        onClick = null,
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                    )
+                    ProfileStatRow(
+                        label = stringResource(R.string.profile_field_team),
+                        value = teamDisplayValue(p),
+                        subtitle = stringResource(R.string.profile_team_code_hint, p.allianceName),
+                        editable = true,
+                        onClick = {
+                            openDialog(
+                                ProfileEditDialog.Team,
+                                p.teamDisplayName?.trim().orEmpty(),
+                            )
+                        },
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                    )
+                    ProfileStatRow(
+                        label = stringResource(R.string.profile_field_telegram),
+                        value = telegramDisplayHandle(p.telegramUsername)
+                            ?: stringResource(R.string.profile_value_not_set),
+                        editable = true,
+                        onClick = {
+                            openDialog(
+                                ProfileEditDialog.Telegram,
+                                p.telegramUsername?.let { h -> "@$h" } ?: "",
+                            )
+                        },
+                    )
+                } ?: run {
+                    Text(
+                        text = stringResource(R.string.profile_load_error),
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
+                Box(Modifier.padding(bottom = 8.dp))
             }
         }
 
@@ -438,5 +367,233 @@ fun ProfileScreen(
         ) {
             Text(stringResource(R.string.profile_logout))
         }
+    }
+
+    when (dialog) {
+        ProfileEditDialog.DisplayName -> {
+            AlertDialog(
+                onDismissRequest = { if (!dialogSaving) closeDialog() },
+                title = { Text(stringResource(R.string.profile_edit_name_title)) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = draft,
+                            onValueChange = {
+                                draft = it
+                                dialogError = null
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            enabled = !dialogSaving,
+                            supportingText = {
+                                Text(stringResource(R.string.profile_hint_ingame_name))
+                            },
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Words,
+                                keyboardType = KeyboardType.Text,
+                            ),
+                        )
+                        dialogError?.let { e ->
+                            Text(e, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val trimmed = draft.trim()
+                            if (trimmed.length < 3) return@Button
+                            scope.launch {
+                                dialogSaving = true
+                                dialogError = null
+                                app.usersRepository.updateMyUsername(trimmed)
+                                    .onSuccess {
+                                        profile = it
+                                        closeDialog()
+                                    }
+                                    .onFailure {
+                                        dialogError = context.getString(R.string.profile_save_error_generic)
+                                    }
+                                dialogSaving = false
+                            }
+                        },
+                        enabled = !dialogSaving && draft.trim().length >= 3,
+                    ) {
+                        if (dialogSaving) {
+                            CircularProgressIndicator(
+                                Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                            )
+                        } else {
+                            Text(stringResource(R.string.profile_action_save))
+                        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { if (!dialogSaving) closeDialog() }) {
+                        Text(stringResource(R.string.profile_action_cancel))
+                    }
+                },
+            )
+        }
+
+        ProfileEditDialog.Team -> {
+            AlertDialog(
+                onDismissRequest = { if (!dialogSaving) closeDialog() },
+                title = { Text(stringResource(R.string.profile_edit_team_title)) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = draft,
+                            onValueChange = {
+                                draft = it
+                                dialogError = null
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            enabled = !dialogSaving,
+                            supportingText = {
+                                Text(stringResource(R.string.profile_hint_team))
+                            },
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Words,
+                                keyboardType = KeyboardType.Text,
+                            ),
+                        )
+                        dialogError?.let { e ->
+                            Text(e, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                dialogSaving = true
+                                dialogError = null
+                                app.usersRepository.updateMyTeamDisplayName(draft.trim())
+                                    .onSuccess {
+                                        profile = it
+                                        closeDialog()
+                                    }
+                                    .onFailure {
+                                        dialogError = context.getString(R.string.profile_save_error_generic)
+                                    }
+                                dialogSaving = false
+                            }
+                        },
+                        enabled = !dialogSaving,
+                    ) {
+                        if (dialogSaving) {
+                            CircularProgressIndicator(
+                                Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                            )
+                        } else {
+                            Text(stringResource(R.string.profile_action_save))
+                        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { if (!dialogSaving) closeDialog() }) {
+                        Text(stringResource(R.string.profile_action_cancel))
+                    }
+                },
+            )
+        }
+
+        ProfileEditDialog.Telegram -> {
+            AlertDialog(
+                onDismissRequest = { if (!dialogSaving) closeDialog() },
+                title = { Text(stringResource(R.string.profile_edit_telegram_title)) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = draft,
+                            onValueChange = {
+                                draft = it
+                                dialogError = null
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            enabled = !dialogSaving,
+                            supportingText = {
+                                Text(stringResource(R.string.profile_hint_telegram))
+                            },
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Text,
+                            ),
+                        )
+                        dialogError?.let { e ->
+                            Text(e, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                },
+                confirmButton = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(
+                            enabled = !dialogSaving && profile?.telegramUsername != null,
+                            onClick = {
+                                scope.launch {
+                                    dialogSaving = true
+                                    dialogError = null
+                                    app.usersRepository.updateMyTelegram("")
+                                        .onSuccess {
+                                            profile = it
+                                            closeDialog()
+                                        }
+                                        .onFailure {
+                                            dialogError =
+                                                context.getString(R.string.profile_save_error_telegram)
+                                        }
+                                    dialogSaving = false
+                                }
+                            },
+                        ) {
+                            Text(stringResource(R.string.profile_action_clear_link))
+                        }
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    dialogSaving = true
+                                    dialogError = null
+                                    val raw = draft.trim().removePrefix("@").trim()
+                                    app.usersRepository.updateMyTelegram(raw)
+                                        .onSuccess {
+                                            profile = it
+                                            closeDialog()
+                                        }
+                                        .onFailure {
+                                            dialogError =
+                                                context.getString(R.string.profile_save_error_telegram)
+                                        }
+                                    dialogSaving = false
+                                }
+                            },
+                            enabled = !dialogSaving,
+                        ) {
+                            if (dialogSaving) {
+                                CircularProgressIndicator(
+                                    Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                )
+                            } else {
+                                Text(stringResource(R.string.profile_action_save))
+                            }
+                        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { if (!dialogSaving) closeDialog() }) {
+                        Text(stringResource(R.string.profile_action_cancel))
+                    }
+                },
+            )
+        }
+
+        ProfileEditDialog.None -> Unit
     }
 }

@@ -15,6 +15,7 @@ export type SafeUser = {
   email: string;
   role: AllianceRole;
   allianceName: string;
+  teamDisplayName: string | null;
   membershipStatus: TeamMembershipStatus;
   presenceStatus: string | null;
   lastPresenceAt: string | null;
@@ -170,6 +171,7 @@ export class UsersService {
       email: user.email,
       role: user.role,
       allianceName: user.allianceName,
+      teamDisplayName: user.teamDisplayName ?? null,
       membershipStatus: this.effectiveMembership(user),
       presenceStatus: user.presenceStatus ?? null,
       lastPresenceAt: user.lastPresenceAt
@@ -205,6 +207,20 @@ export class UsersService {
         { $set: { telegramUsername: normalized } },
         { new: true },
       )
+      .exec();
+  }
+
+  async updateMyTeamDisplayName(
+    userId: string,
+    rawName: string | undefined,
+  ): Promise<UserDocument | null> {
+    if (rawName === undefined) {
+      return this.findById(userId);
+    }
+    const trimmed = rawName.trim();
+    const value = trimmed.length === 0 ? null : trimmed.slice(0, 48);
+    return this.userModel
+      .findByIdAndUpdate(userId, { $set: { teamDisplayName: value } }, { new: true })
       .exec();
   }
 

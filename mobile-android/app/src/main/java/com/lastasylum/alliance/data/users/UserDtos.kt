@@ -9,6 +9,7 @@ data class TeamMemberDto(
     val email: String,
     val role: String,
     val allianceName: String,
+    val teamDisplayName: String? = null,
     val membershipStatus: String,
     val presenceStatus: String? = null,
     val lastPresenceAt: String? = null,
@@ -22,6 +23,7 @@ data class MyProfileDto(
     val email: String,
     val role: String,
     val allianceName: String,
+    val teamDisplayName: String? = null,
     val membershipStatus: String,
     val presenceStatus: String? = null,
     val lastPresenceAt: String? = null,
@@ -31,6 +33,11 @@ data class MyProfileDto(
 @JsonClass(generateAdapter = true)
 data class UpdateTelegramBody(
     val username: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class UpdateTeamDisplayBody(
+    val name: String,
 )
 
 @JsonClass(generateAdapter = true)

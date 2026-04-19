@@ -254,7 +254,6 @@ fun AppNavigation(
             composable(AppTab.PROFILE.route) {
                 ProfileScreen(
                     username = username,
-                    role = role,
                     onLogout = onLogout,
                 )
             }

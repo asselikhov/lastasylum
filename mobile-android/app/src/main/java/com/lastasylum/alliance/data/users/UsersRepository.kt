@@ -9,6 +9,14 @@ class UsersRepository(
     suspend fun updateMyTelegram(username: String): Result<MyProfileDto> =
         runCatching { usersApi.updateMyTelegram(UpdateTelegramBody(username = username)) }
 
+    suspend fun updateMyUsername(username: String): Result<MyProfileDto> =
+        runCatching {
+            usersApi.updateMyUsername(UpdateUsernameBody(username = username.trim()))
+        }
+
+    suspend fun updateMyTeamDisplayName(name: String): Result<MyProfileDto> =
+        runCatching { usersApi.updateMyTeamDisplay(UpdateTeamDisplayBody(name = name)) }
+
     suspend fun registerPushToken(token: String): Result<Unit> =
         runCatching { usersApi.registerPushToken(PushTokenBody(token)) }
 

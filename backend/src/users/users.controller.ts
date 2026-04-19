@@ -20,6 +20,7 @@ import { UpdateMembershipDto } from './dto/update-membership.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { UpdateUsernameDto } from './dto/update-username.dto';
 import { UpdateTelegramDto } from './dto/update-telegram.dto';
+import { UpdateTeamDisplayNameDto } from './dto/update-team-display.dto';
 import { MuteUserDto } from './dto/mute-user.dto';
 import {
   RegisterPushTokenDto,
@@ -86,6 +87,40 @@ export class UsersController {
     const updated = await this.usersService.updateMyTelegramUsername(
       req.user.userId,
       dto.username,
+    );
+    if (!updated) {
+      throw new NotFoundException('User not found');
+    }
+    return this.usersService.toSafeUser(updated);
+  }
+
+  @Patch('me/username')
+  @Roles(AllianceRole.R2)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async updateMyUsername(
+    @Req() req: { user: RequestUser },
+    @Body() dto: UpdateUsernameDto,
+  ) {
+    const updated = await this.usersService.updateUsername(
+      req.user.userId,
+      dto.username,
+    );
+    if (!updated) {
+      throw new NotFoundException('User not found');
+    }
+    return this.usersService.toSafeUser(updated);
+  }
+
+  @Patch('me/team')
+  @Roles(AllianceRole.R2)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  async updateMyTeamDisplayName(
+    @Req() req: { user: RequestUser },
+    @Body() dto: UpdateTeamDisplayNameDto,
+  ) {
+    const updated = await this.usersService.updateMyTeamDisplayName(
+      req.user.userId,
+      dto.name,
     );
     if (!updated) {
       throw new NotFoundException('User not found');

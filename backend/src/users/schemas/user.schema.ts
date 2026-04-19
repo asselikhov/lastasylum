@@ -28,6 +28,10 @@ export class User {
   @Prop({ required: true, default: DEFAULT_ALLIANCE_ID })
   allianceName: string;
 
+  /** Optional display name for the squad / team (does not change alliance routing). */
+  @Prop({ type: String, default: null, trim: true })
+  teamDisplayName: string | null;
+
   @Prop({
     type: String,
     required: true,

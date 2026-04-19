@@ -14,6 +14,12 @@ interface UsersApi {
     @PATCH("users/me/telegram")
     suspend fun updateMyTelegram(@Body body: UpdateTelegramBody): MyProfileDto
 
+    @PATCH("users/me/username")
+    suspend fun updateMyUsername(@Body body: UpdateUsernameBody): MyProfileDto
+
+    @PATCH("users/me/team")
+    suspend fun updateMyTeamDisplay(@Body body: UpdateTeamDisplayBody): MyProfileDto
+
     @POST("users/me/push-token")
     suspend fun registerPushToken(@Body body: PushTokenBody): Map<String, Boolean?>
 
