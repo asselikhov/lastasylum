@@ -21,7 +21,6 @@ data class ChatState(
     val isLoadingOlder: Boolean = false,
     val hasMoreOlder: Boolean = true,
     val isSending: Boolean = false,
-    val draftMessage: String = "",
     val replyToMessage: ChatMessage? = null,
     val activeActionMessageId: String? = null,
     val confirmDeleteMessageId: String? = null,

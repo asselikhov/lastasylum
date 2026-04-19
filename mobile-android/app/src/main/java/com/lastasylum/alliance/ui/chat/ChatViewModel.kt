@@ -34,6 +34,10 @@ class ChatViewModel(
         ),
     )
     val state: StateFlow<ChatState> = _state.asStateFlow()
+
+    /** Isolated from [state] so each keystroke does not recompose the whole chat list. */
+    private val _draftMessage = MutableStateFlow("")
+    val draftMessage: StateFlow<String> = _draftMessage.asStateFlow()
     private val knownMessageIds = LinkedHashSet<String>()
     private val typingPeerJobs = mutableMapOf<String, Job>()
     private var typingEmitJob: Job? = null
@@ -47,6 +51,7 @@ class ChatViewModel(
     private suspend fun bootstrap() {
         _state.value = _state.value.copy(isRoomsLoading = true, error = null)
         val rooms = repository.listRooms().getOrElse { e ->
+            _draftMessage.value = ""
             _state.value = ChatState(
                 isRoomsLoading = false,
                 error = e.toUserMessageRu(res),
@@ -56,6 +61,7 @@ class ChatViewModel(
             return
         }
         if (rooms.isEmpty()) {
+            _draftMessage.value = ""
             _state.value = ChatState(
                 isRoomsLoading = false,
                 currentUserId = currentUserId,
@@ -89,6 +95,7 @@ class ChatViewModel(
         typingPeerJobs.values.forEach { it.cancel() }
         typingPeerJobs.clear()
         knownMessageIds.clear()
+        _draftMessage.value = ""
         _state.value = _state.value.copy(
             isLoading = true,
             isRoomsLoading = false,
@@ -101,7 +108,6 @@ class ChatViewModel(
             hasMoreOlder = true,
             isLoadingOlder = false,
             isSending = false,
-            draftMessage = "",
             replyToMessage = null,
             activeActionMessageId = null,
             confirmDeleteMessageId = null,
@@ -198,7 +204,7 @@ class ChatViewModel(
     }
 
     fun sendDraftMessage() {
-        sendMessage(_state.value.draftMessage.trim())
+        sendMessage(_draftMessage.value.trim())
     }
 
     fun retrySendFailure() {
@@ -212,15 +218,15 @@ class ChatViewModel(
     }
 
     fun setDraftMessage(value: String) {
-        if (_state.value.draftMessage == value) return
-        _state.value = _state.value.copy(draftMessage = value)
+        if (_draftMessage.value == value) return
+        _draftMessage.value = value
         scheduleTypingEmit()
     }
 
     private fun scheduleTypingEmit() {
         typingEmitJob?.cancel()
         val roomId = _state.value.selectedRoomId ?: return
-        if (_state.value.draftMessage.isBlank()) return
+        if (_draftMessage.value.isBlank()) return
         typingEmitJob = viewModelScope.launch {
             try {
                 delay(500)
@@ -371,8 +377,8 @@ class ChatViewModel(
             error = null,
         )
         if (clearComposer) {
+            _draftMessage.value = ""
             nextState = nextState.copy(
-                draftMessage = "",
                 replyToMessage = null,
                 scrollToLatestNonce = nextState.scrollToLatestNonce + 1L,
                 sendFailure = null,

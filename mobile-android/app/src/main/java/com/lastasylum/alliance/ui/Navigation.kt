@@ -182,8 +182,10 @@ fun AppNavigation(
         ) {
             composable(AppTab.CHAT.route) {
                 val chatState by chatViewModel.state.collectAsStateWithLifecycle()
+                val draftMessage by chatViewModel.draftMessage.collectAsStateWithLifecycle()
                 ChatScreen(
                     state = chatState,
+                    draftMessage = draftMessage,
                     onSelectRoom = chatViewModel::selectRoom,
                     onClearError = chatViewModel::clearError,
                     onLoadOlder = chatViewModel::loadOlderMessages,

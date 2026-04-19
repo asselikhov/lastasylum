@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -78,9 +79,10 @@ import com.lastasylum.alliance.ui.chat.ChatState
 import com.lastasylum.alliance.ui.chat.RoleBadge
 import com.lastasylum.alliance.ui.chat.formatChatTime
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.yield
 
 private data class ChatListLoadSignal(
     val lastVisibleIndex: Int,
@@ -89,10 +91,11 @@ private data class ChatListLoadSignal(
     val isBusy: Boolean,
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
 @Composable
 fun ChatScreen(
     state: ChatState,
+    draftMessage: String,
     onSelectRoom: (String) -> Unit,
     onClearError: () -> Unit,
     onLoadOlder: () -> Unit,
@@ -139,7 +142,8 @@ fun ChatScreen(
                 hasMoreOlder = hasMoreOlderRef.value,
                 isBusy = isLoadingOlderRef.value || isLoadingRef.value,
             )
-        }.distinctUntilChanged()
+        }.debounce(48)
+            .distinctUntilChanged()
             .collect { sig ->
                 if (sig.totalItems > 4 &&
                     sig.lastVisibleIndex >= sig.totalItems - 2 &&
@@ -151,17 +155,14 @@ fun ChatScreen(
             }
     }
 
-    LaunchedEffect(state.newestMessageKey) {
-        if (state.newestMessageKey.isNullOrBlank()) return@LaunchedEffect
-        if (!isNearLatest) return@LaunchedEffect
-        // Avoid animated scrolling on every new message — it fights IME insets and feels "janky".
-        yield()
+    LaunchedEffect(state.scrollToLatestNonce) {
+        if (state.scrollToLatestNonce == 0L) return@LaunchedEffect
         listState.scrollToItem(0)
     }
 
-    LaunchedEffect(state.scrollToLatestNonce) {
-        if (state.scrollToLatestNonce == 0L) return@LaunchedEffect
-        yield()
+    LaunchedEffect(state.newestMessageKey) {
+        if (state.newestMessageKey.isNullOrBlank()) return@LaunchedEffect
+        if (!isNearLatest) return@LaunchedEffect
         listState.scrollToItem(0)
     }
 
@@ -282,6 +283,7 @@ fun ChatScreen(
                     items(
                         items = state.messages,
                         key = { msg -> chatMessageKey(msg) },
+                        contentType = { _ -> "chat_message" },
                     ) { message ->
                         ChatBubbleRow(
                             message = message,
@@ -347,60 +349,69 @@ fun ChatScreen(
             }
         }
 
-        state.sendFailure?.let { failure ->
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
-                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f),
+        if (state.sendFailure != null || (selectedRoomId != null && state.rooms.isNotEmpty())) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // Single IME inset for the whole bottom stack (Scaffold excludes IME from content insets).
+                    .imePadding(),
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(
-                            horizontal = SquadRelayDimens.contentPaddingHorizontal,
-                            vertical = SquadRelayDimens.itemGap,
-                        ),
-                    verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
-                ) {
-                    Text(
-                        text = stringResource(R.string.chat_send_failed_title),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                    Text(
-                        text = failure.errorMessage,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                    )
-                    Row(
+                state.sendFailure?.let { failure ->
+                    Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically,
+                        shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f),
                     ) {
-                        TextButton(onClick = onDismissSendFailure) {
-                            Text(stringResource(R.string.chat_send_failed_dismiss))
-                        }
-                        TextButton(onClick = onRetrySendFailure) {
-                            Text(stringResource(R.string.chat_send_failed_retry))
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(
+                                    horizontal = SquadRelayDimens.contentPaddingHorizontal,
+                                    vertical = SquadRelayDimens.itemGap,
+                                ),
+                            verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.chat_send_failed_title),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                            Text(
+                                text = failure.errorMessage,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                TextButton(onClick = onDismissSendFailure) {
+                                    Text(stringResource(R.string.chat_send_failed_dismiss))
+                                }
+                                TextButton(onClick = onRetrySendFailure) {
+                                    Text(stringResource(R.string.chat_send_failed_retry))
+                                }
+                            }
                         }
                     }
                 }
-            }
-        }
 
-        if (selectedRoomId != null && state.rooms.isNotEmpty()) {
-            ChatComposer(
-                draft = state.draftMessage,
-                replyToMessage = state.replyToMessage,
-                isSending = state.isSending,
-                onDraftChange = onDraftChange,
-                onSendDraft = {
-                    if (!state.draftMessage.isBlank() && !state.isSending) {
-                        onSendDraft()
-                    }
-                },
-                onClearReply = onClearReply,
-            )
+                if (selectedRoomId != null && state.rooms.isNotEmpty()) {
+                    ChatComposer(
+                        draft = draftMessage,
+                        replyToMessage = state.replyToMessage,
+                        isSending = state.isSending,
+                        onDraftChange = onDraftChange,
+                        onSendDraft = {
+                            if (!draftMessage.isBlank() && !state.isSending) {
+                                onSendDraft()
+                            }
+                        },
+                        onClearReply = onClearReply,
+                    )
+                }
+            }
         }
     }
 
@@ -491,8 +502,7 @@ private fun ChatComposer(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = SquadRelayDimens.itemGap)
-            // MainActivity uses adjustResize: the window height already ends above the IME.
-            // Adding imePadding() here double-counts the keyboard inset and leaves a large gap.
+            // IME padding is applied on the bottom stack in [ChatScreen] (Scaffold excludes IME).
     ) {
         Column(
             modifier = Modifier
