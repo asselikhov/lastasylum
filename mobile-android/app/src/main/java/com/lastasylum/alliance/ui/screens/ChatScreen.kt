@@ -156,6 +156,37 @@ private sealed interface ChatTimelineEntry {
 }
 
 /**
+ * Newest-first list: true when this bubble sits at the **visual bottom** of a same-sender streak
+ * (newer neighbor in list is missing or another user / another day) — Telegram "tail" corner.
+ */
+private fun chatMessageIsClusterChainBottom(messages: List<ChatMessage>, messageIndex: Int): Boolean {
+    if (messages.isEmpty() || messageIndex !in messages.indices) return true
+    if (messageIndex == 0) return true
+    val m = messages[messageIndex]
+    val newer = messages[messageIndex - 1]
+    val sid = m.senderId.trim()
+    val nid = newer.senderId.trim()
+    if (sid.isEmpty() || nid.isEmpty() || sid != nid) return true
+    val d0 = chatDayKey(m.createdAt)
+    val d1 = chatDayKey(newer.createdAt)
+    if (d0 != null && d1 != null && d0 != d1) return true
+    return false
+}
+
+/** Same streak as the visually newer message (tighter inner top padding). */
+private fun chatMessageClusterTightInnerTop(messages: List<ChatMessage>, messageIndex: Int): Boolean {
+    if (messageIndex <= 0 || messageIndex !in messages.indices) return false
+    val m = messages[messageIndex]
+    val newer = messages[messageIndex - 1]
+    val sid = m.senderId.trim()
+    val nid = newer.senderId.trim()
+    if (sid.isEmpty() || nid.isEmpty() || sid != nid) return false
+    val d0 = chatDayKey(m.createdAt)
+    val d1 = chatDayKey(newer.createdAt)
+    return d0 == null || d1 == null || d0 == d1
+}
+
+/**
  * Telegram-style: show `[TAG] nick` + role row only on the oldest message of a same-sender run
  * (newest-first list). Avatar column is always shown for incoming messages — otherwise at the bottom
  * of the chat every bubble looks like a "continuation" and the photo never appears in view.
@@ -230,6 +261,33 @@ private enum class MediaPickerTab { Stickers, Gif }
 
 private val ChatIncomingAvatarSize = 38.dp
 private val ChatIncomingAvatarEndPad = 6.dp
+
+private val ChatBubbleChainRadius = 18.dp
+private val ChatBubbleTailCorner = 3.dp
+
+private fun bubbleShapeOutgoing(isChainBottom: Boolean): RoundedCornerShape =
+    if (isChainBottom) {
+        RoundedCornerShape(
+            topStart = ChatBubbleChainRadius,
+            topEnd = ChatBubbleChainRadius,
+            bottomStart = ChatBubbleChainRadius,
+            bottomEnd = ChatBubbleTailCorner,
+        )
+    } else {
+        RoundedCornerShape(ChatBubbleChainRadius)
+    }
+
+private fun bubbleShapeIncoming(isChainBottom: Boolean): RoundedCornerShape =
+    if (isChainBottom) {
+        RoundedCornerShape(
+            topStart = ChatBubbleChainRadius,
+            topEnd = ChatBubbleChainRadius,
+            bottomStart = ChatBubbleTailCorner,
+            bottomEnd = ChatBubbleChainRadius,
+        )
+    } else {
+        RoundedCornerShape(ChatBubbleChainRadius)
+    }
 
 private fun readClipboardPlainText(context: Context): String? {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return null
@@ -784,6 +842,8 @@ private fun ChatMessagesLazyList(
                             val showClusterHeader = chatMessageShowsClusterHeader(state.messages, e.messageIndex)
                             val clusterTop = chatBubbleClusterTopSpacing(timeline, idx, message)
                             ChatBubbleRow(
+                                messages = state.messages,
+                                messageIndex = e.messageIndex,
                                 message = message,
                                 isMine = chatMessageIsOwn(message, state.currentUserId),
                                 showClusterHeader = showClusterHeader,
@@ -1399,6 +1459,7 @@ private fun ChatBubbleInnerColumn(
     message: ChatMessage,
     isMine: Boolean,
     showClusterHeader: Boolean,
+    tightClusterTop: Boolean,
     stickerStem: String?,
     senderAccent: Color,
     stemTag: String?,
@@ -1417,7 +1478,7 @@ private fun ChatBubbleInnerColumn(
     val bubblePadH = if (stickerStem != null) 8.dp else 12.dp
     val bubblePadBottom = if (stickerStem != null) 8.dp else 10.dp
     val bubblePadTop = when {
-        !showClusterHeader -> 5.dp
+        tightClusterTop -> if (stickerStem != null) 5.dp else 6.dp
         stickerStem != null -> 8.dp
         else -> 10.dp
     }
@@ -1429,18 +1490,7 @@ private fun ChatBubbleInnerColumn(
             .then(swipeModifier),
         verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
     ) {
-        if (isMine) {
-            if (showClusterHeader) {
-                val tagMuted = ChatTelegramOutgoingOnBubble.copy(alpha = 0.62f)
-                ChatBubbleAuthorHeader(
-                    teamTag = stemTag,
-                    nickname = nickname,
-                    nicknameColor = ChatTelegramOutgoingOnBubble,
-                    tagBracketColor = tagMuted,
-                    senderRole = message.senderRole,
-                )
-            }
-        } else if (showClusterHeader) {
+        if (!isMine && showClusterHeader) {
             val tagMuted = ChatTelegramIncomingOnBubble.copy(alpha = 0.5f)
             ChatBubbleAuthorHeader(
                 teamTag = stemTag,
@@ -1575,6 +1625,8 @@ private fun ChatBubbleInnerColumn(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ChatBubbleRow(
+    messages: List<ChatMessage>,
+    messageIndex: Int,
     message: ChatMessage,
     isMine: Boolean,
     showClusterHeader: Boolean,
@@ -1616,17 +1668,13 @@ private fun ChatBubbleRow(
     val stemTag = message.senderTeamTag?.trim()?.takeIf { it.isNotEmpty() }
     val displayName = message.senderUsername?.trim().orEmpty().ifBlank { senderLine }
     val nickname = message.senderUsername.trim().ifBlank { displayName }
-    val bubbleShapeMine = if (showClusterHeader) {
-        RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 4.dp)
+    val isChainBottom = chatMessageIsClusterChainBottom(messages, messageIndex)
+    val tightClusterTop = chatMessageClusterTightInnerTop(messages, messageIndex)
+    val bubbleShape = if (isMine) {
+        bubbleShapeOutgoing(isChainBottom)
     } else {
-        RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp, bottomStart = 16.dp, bottomEnd = 4.dp)
+        bubbleShapeIncoming(isChainBottom)
     }
-    val bubbleShapeIncoming = if (showClusterHeader) {
-        RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 4.dp, bottomEnd = 16.dp)
-    } else {
-        RoundedCornerShape(topStart = 6.dp, topEnd = 16.dp, bottomStart = 4.dp, bottomEnd = 16.dp)
-    }
-    val bubbleShape = if (isMine) bubbleShapeMine else bubbleShapeIncoming
     val bubbleContext = LocalContext.current
     val formattedTime = formatChatTime(message.createdAt)
 
@@ -1715,16 +1763,6 @@ private fun ChatBubbleRow(
                     .then(bubbleClickModifier)
                     .then(swipeModifier)
                 Column(modifier = floatMod) {
-                    if (showClusterHeader) {
-                        val tagMuted = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
-                        ChatBubbleAuthorHeader(
-                            teamTag = stemTag,
-                            nickname = nickname,
-                            nicknameColor = MaterialTheme.colorScheme.onSurface,
-                            tagBracketColor = tagMuted,
-                            senderRole = message.senderRole,
-                        )
-                    }
                     Box(
                         modifier = Modifier.fillMaxWidth(),
                     ) {
@@ -1738,7 +1776,7 @@ private fun ChatBubbleRow(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(max = 200.dp)
-                                .clip(RoundedCornerShape(12.dp)),
+                                .clip(bubbleShapeOutgoing(isChainBottom)),
                             contentScale = ContentScale.Fit,
                         )
                         if (formattedTime.isNotBlank()) {
@@ -1782,6 +1820,7 @@ private fun ChatBubbleRow(
                         message = message,
                         isMine = isMine,
                         showClusterHeader = showClusterHeader,
+                        tightClusterTop = tightClusterTop,
                         stickerStem = stickerStem,
                         senderAccent = senderAccent,
                         stemTag = stemTag,
@@ -1855,7 +1894,7 @@ private fun ChatBubbleRow(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(max = 200.dp)
-                                .clip(RoundedCornerShape(12.dp)),
+                                .clip(bubbleShapeIncoming(isChainBottom)),
                             contentScale = ContentScale.Fit,
                         )
                         if (formattedTime.isNotBlank()) {
@@ -1899,6 +1938,7 @@ private fun ChatBubbleRow(
                         message = message,
                         isMine = isMine,
                         showClusterHeader = showClusterHeader,
+                        tightClusterTop = tightClusterTop,
                         stickerStem = stickerStem,
                         senderAccent = senderAccent,
                         stemTag = stemTag,
