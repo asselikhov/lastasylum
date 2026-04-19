@@ -44,8 +44,8 @@ object OverlayChatTime {
         val client = receivedAt[msg.stableKey()]
         return when {
             server == null && client == null -> Instant.EPOCH
-            server == null -> client!!
-            client == null -> server!!
+            server == null -> client ?: Instant.EPOCH
+            client == null -> server ?: Instant.EPOCH
             else -> maxOf(server, client)
         }
     }

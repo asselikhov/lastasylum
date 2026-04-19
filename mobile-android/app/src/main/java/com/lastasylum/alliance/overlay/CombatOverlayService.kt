@@ -1012,7 +1012,8 @@ class CombatOverlayService : Service() {
             gravity = Gravity.TOP or Gravity.START
             x = 0
             y = 0
-            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            // ADJUST_RESIZE is deprecated on newer APIs; pan keeps the focused field visible over IME.
+            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
         }
 
         overlayHistoryRoot = panel.root

@@ -73,7 +73,7 @@ class OverlayChatStripBuffer(
                 msg.senderId == selfId -> {
                 receivedAt[key] = Instant.now()
             }
-            else -> receivedAt.putIfAbsent(key, parsed ?: Instant.now())
+            else -> receivedAt.putIfAbsent(key, parsed)
         }
     }
 

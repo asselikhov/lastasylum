@@ -26,11 +26,20 @@ object GameForegroundGate {
     fun hasUsageStatsAccess(context: Context): Boolean {
         return try {
             val appOps = context.getSystemService(AppOpsManager::class.java) ?: return false
-            appOps.checkOpNoThrow(
-                AppOpsManager.OPSTR_GET_USAGE_STATS,
-                Process.myUid(),
-                context.packageName,
-            ) == AppOpsManager.MODE_ALLOWED
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                appOps.unsafeCheckOpNoThrow(
+                    AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    Process.myUid(),
+                    context.packageName,
+                ) == AppOpsManager.MODE_ALLOWED
+            } else {
+                @Suppress("DEPRECATION")
+                appOps.checkOpNoThrow(
+                    AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    Process.myUid(),
+                    context.packageName,
+                ) == AppOpsManager.MODE_ALLOWED
+            }
         } catch (_: Throwable) {
             false
         }
