@@ -63,7 +63,7 @@
     <string name="chat_selection_clear_cd">Снять выделение</string>
     <string name="chat_selection_delete_cd">Удалить выбранные</string>
     <string name="chat_bulk_delete_title">Удалить сообщения?</string>
-    <string name="chat_bulk_delete_body">Будет удалено сообщений: %1$d. Их не будет видно в чате у всех участников. Отменить действие нельзя.</string>
+    <string name="chat_bulk_delete_body">Будут удалены выбранные сообщения (%1$d шт.). Их не будет видно в чате у всех участников. Отменить действие нельзя.</string>
 
     <!-- Onboarding -->
     <string name="onboarding_permissions_title">Разрешения для боя</string>
