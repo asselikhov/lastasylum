@@ -9,6 +9,7 @@ import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
 import { AllianceRegistryService } from './alliance-registry.service';
 import { User, UserDocument } from './schemas/user.schema';
+import { TeamsService } from './teams.service';
 
 export type SafeUser = {
   id: string;
@@ -24,6 +25,12 @@ export type SafeUser = {
   presenceStatus: string | null;
   lastPresenceAt: string | null;
   telegramUsername: string | null;
+  playerTeamId: string | null;
+  playerTeamTag: string | null;
+  playerTeamDisplayName: string | null;
+  playerTeamLeaderUserId: string | null;
+  isPlayerTeamLeader: boolean;
+  pendingPlayerTeamJoinRequests: number;
 };
 
 @Injectable()
@@ -31,6 +38,7 @@ export class UsersService {
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<User>,
     private readonly allianceRegistry: AllianceRegistryService,
+    private readonly teamsService: TeamsService,
   ) {}
 
   effectiveMembership(user: UserDocument): TeamMembershipStatus {
@@ -222,6 +230,7 @@ export class UsersService {
     const flags = await this.allianceRegistry.resolveFlagsByAllianceCode(
       user.allianceName,
     );
+    const teamFields = await this.teamsService.getPlayerTeamProfileFields(user);
     return {
       id: user._id.toString(),
       username: user.username,
@@ -238,6 +247,7 @@ export class UsersService {
         ? user.lastPresenceAt.toISOString()
         : null,
       telegramUsername: user.telegramUsername ?? null,
+      ...teamFields,
     };
   }
 

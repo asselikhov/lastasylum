@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument } from 'mongoose';
+import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 import { DEFAULT_ALLIANCE_ID } from '../../common/constants/default-alliance-id';
 import { AllianceRole } from '../../common/enums/alliance-role.enum';
 import { TeamMembershipStatus } from '../../common/enums/team-membership-status.enum';
@@ -27,6 +27,10 @@ export class User {
 
   @Prop({ required: true, default: DEFAULT_ALLIANCE_ID })
   allianceName: string;
+
+  /** Optional in-app player squad (separate from allianceName / chat routing). */
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'PlayerTeam', default: null })
+  playerTeamId: Types.ObjectId | null;
 
   /** Optional display name for the squad / team (does not change alliance routing). */
   @Prop({ type: String, default: null, trim: true })

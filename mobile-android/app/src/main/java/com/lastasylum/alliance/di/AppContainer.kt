@@ -11,6 +11,7 @@ import com.lastasylum.alliance.data.chat.ChatSocketManager
 import com.lastasylum.alliance.data.network.NetworkModule
 import com.lastasylum.alliance.data.settings.OnboardingPreferences
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
+import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.users.UsersRepository
 
 class AppContainer private constructor(context: Context) {
@@ -49,6 +50,10 @@ class AppContainer private constructor(context: Context) {
 
     val adminRepository: AdminRepository = AdminRepository(
         adminApi = authorizedClients.adminApi,
+    )
+
+    val teamsRepository: TeamsRepository = TeamsRepository(
+        teamsApi = authorizedClients.teamsApi,
     )
 
     init {

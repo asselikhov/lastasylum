@@ -5,6 +5,7 @@ import com.lastasylum.alliance.data.auth.AuthApi
 import com.lastasylum.alliance.data.auth.TokenStore
 import com.lastasylum.alliance.data.chat.ChatApi
 import com.lastasylum.alliance.data.admin.AdminApi
+import com.lastasylum.alliance.data.teams.TeamsApi
 import com.lastasylum.alliance.data.users.UsersApi
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -97,6 +98,7 @@ object NetworkModule {
             authorizedAuthApi = authorizedRetrofit.create(AuthApi::class.java),
             usersApi = authorizedRetrofit.create(UsersApi::class.java),
             adminApi = authorizedRetrofit.create(AdminApi::class.java),
+            teamsApi = authorizedRetrofit.create(TeamsApi::class.java),
         )
     }
 }
@@ -107,4 +109,5 @@ data class AuthorizedClients(
     val authorizedAuthApi: AuthApi,
     val usersApi: UsersApi,
     val adminApi: AdminApi,
+    val teamsApi: TeamsApi,
 )

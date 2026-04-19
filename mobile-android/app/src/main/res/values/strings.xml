@@ -201,6 +201,32 @@
     <string name="admin_cd_refresh_teams">Обновить список команд</string>
     <string name="admin_ok_overlay">Доступ к оверлею обновлён</string>
     <string name="profile_team_public_id">ID команды</string>
+    <string name="profile_team_bracket_cd">Открыть страницу команды</string>
+    <string name="profile_player_team_section">Моя команда</string>
+    <string name="profile_player_team_create">Создать команду</string>
+    <string name="profile_player_team_join">Присоединиться</string>
+    <string name="profile_player_team_create_title">Новая команда</string>
+    <string name="profile_player_team_join_title">Поиск команды</string>
+    <string name="profile_player_team_join_hint">Тег или название</string>
+    <string name="profile_player_team_join_submit">Отправить заявку</string>
+    <string name="profile_player_team_join_sent">Заявка отправлена лидеру</string>
+    <string name="profile_join_inbox_title">Заявки в команду</string>
+    <string name="profile_join_inbox_cd">Заявки на вступление</string>
+    <string name="profile_join_accept">Принять</string>
+    <string name="profile_join_reject">Отклонить</string>
+    <string name="profile_player_team_save_error">Не удалось сохранить. Попробуйте снова.</string>
+    <string name="team_detail_back_cd">Назад</string>
+    <string name="team_detail_title_fmt">%1$s [%2$s]</string>
+    <string name="team_detail_loading_title">Команда</string>
+    <string name="team_col_player">Игрок</string>
+    <string name="team_col_role">Роль</string>
+    <string name="team_col_actions">Действия</string>
+    <string name="team_role_leader">Лидер</string>
+    <string name="team_role_member">Участник</string>
+    <string name="team_add_member_title">Добавить участника</string>
+    <string name="team_add_member_hint">Ник в игре</string>
+    <string name="team_add_member_btn">Добавить</string>
+    <string name="team_remove_member">Исключить</string>
 
     <!-- Combat overlay service -->
     <string name="overlay_notif_combat_active">Боевой режим активен</string>

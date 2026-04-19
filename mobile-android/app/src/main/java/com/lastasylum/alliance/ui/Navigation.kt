@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.exclude
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
@@ -35,12 +36,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavType
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.di.AppContainer
 import kotlinx.coroutines.Dispatchers
@@ -55,6 +58,7 @@ import com.lastasylum.alliance.ui.screens.AdminScreen
 import com.lastasylum.alliance.ui.screens.ChatScreen
 import com.lastasylum.alliance.ui.screens.OverlayControlScreen
 import com.lastasylum.alliance.ui.screens.ProfileScreen
+import com.lastasylum.alliance.ui.screens.TeamDetailScreen
 
 enum class AppTab(val route: String, val titleRes: Int) {
     CHAT("chat", R.string.tab_chat),
@@ -272,10 +276,37 @@ fun AppNavigation(
                 }
             }
             composable(AppTab.PROFILE.route) {
-                ProfileScreen(
-                    username = username,
-                    onLogout = onLogout,
-                )
+                val profileNav = rememberNavController()
+                NavHost(
+                    navController = profileNav,
+                    startDestination = "profile_root",
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    composable("profile_root") {
+                        ProfileScreen(
+                            username = username,
+                            onLogout = onLogout,
+                            onOpenTeam = { teamId ->
+                                profileNav.navigate("profile_team/$teamId")
+                            },
+                            teamsRepository = app.teamsRepository,
+                        )
+                    }
+                    composable(
+                        route = "profile_team/{teamId}",
+                        arguments = listOf(
+                            navArgument("teamId") { type = NavType.StringType },
+                        ),
+                    ) { entry ->
+                        val tid = entry.arguments?.getString("teamId").orEmpty()
+                        TeamDetailScreen(
+                            teamId = tid,
+                            currentUserId = userId,
+                            teamsRepository = app.teamsRepository,
+                            onBack = { profileNav.popBackStack() },
+                        )
+                    }
+                }
             }
             composable(AppTab.ADMIN.route) {
                 val adminViewModel: AdminViewModel = viewModel(factory = adminViewModelFactory)

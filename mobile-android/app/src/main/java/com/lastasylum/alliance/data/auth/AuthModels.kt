@@ -35,6 +35,12 @@ data class AuthUser(
     val presenceStatus: String? = null,
     val lastPresenceAt: String? = null,
     val telegramUsername: String? = null,
+    val playerTeamId: String? = null,
+    val playerTeamTag: String? = null,
+    val playerTeamDisplayName: String? = null,
+    val playerTeamLeaderUserId: String? = null,
+    val isPlayerTeamLeader: Boolean = false,
+    val pendingPlayerTeamJoinRequests: Int = 0,
 )
 
 @JsonClass(generateAdapter = true)
