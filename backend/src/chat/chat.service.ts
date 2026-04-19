@@ -341,6 +341,16 @@ export class ChatService {
     if (res.deletedCount !== 1) {
       throw new NotFoundException('Message not found');
     }
+    await this.messageModel
+      .updateMany(
+        {
+          allianceId: actor.allianceName,
+          roomId: message.roomId,
+          replyToMessageId: new Types.ObjectId(messageId),
+        },
+        { $set: { replyToMessageId: null } },
+      )
+      .exec();
     return { messageId, roomId };
   }
 }
