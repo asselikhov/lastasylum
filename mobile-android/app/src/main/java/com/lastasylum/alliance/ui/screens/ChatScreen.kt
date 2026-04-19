@@ -155,7 +155,11 @@ private sealed interface ChatTimelineEntry {
     data class ChatMessageItem(val message: ChatMessage, val messageIndex: Int) : ChatTimelineEntry
 }
 
-/** Telegram-style: show avatar + header on the oldest message of a same-sender run (newest-first list). */
+/**
+ * Telegram-style: show `[TAG] nick` + role row only on the oldest message of a same-sender run
+ * (newest-first list). Avatar column is always shown for incoming messages — otherwise at the bottom
+ * of the chat every bubble looks like a "continuation" and the photo never appears in view.
+ */
 private fun chatMessageShowsClusterHeader(messages: List<ChatMessage>, messageIndex: Int): Boolean {
     if (messages.isEmpty() || messageIndex !in messages.indices) return true
     if (messageIndex == messages.lastIndex) return true
@@ -226,7 +230,6 @@ private enum class MediaPickerTab { Stickers, Gif }
 
 private val ChatIncomingAvatarSize = 38.dp
 private val ChatIncomingAvatarEndPad = 6.dp
-private val ChatIncomingAvatarSlotWidth = ChatIncomingAvatarSize + ChatIncomingAvatarEndPad
 
 private fun readClipboardPlainText(context: Context): String? {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return null
@@ -1309,6 +1312,11 @@ private fun ChatSenderAvatar(
 ) {
     val ring = MaterialTheme.colorScheme.outlineVariant
     val fill = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f)
+    val trimmed = fallbackName?.trim().orEmpty()
+    val initialChar = trimmed.firstOrNull { it.isLetterOrDigit() }
+        ?: trimmed.firstOrNull()
+    val initial = initialChar?.uppercaseChar()?.toString() ?: "?"
+    val ctx = LocalContext.current
     Surface(
         modifier = modifier.size(size),
         shape = CircleShape,
@@ -1321,25 +1329,23 @@ private fun ChatSenderAvatar(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center,
         ) {
+            Text(
+                text = initial,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             if (!telegramUrl.isNullOrBlank()) {
                 AsyncImage(
-                    model = telegramUrl,
+                    model = ImageRequest.Builder(ctx)
+                        .data(telegramUrl)
+                        .crossfade(220)
+                        .build(),
                     contentDescription = null,
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(CircleShape),
                     contentScale = ContentScale.Crop,
-                )
-            } else {
-                val trimmed = fallbackName?.trim().orEmpty()
-                val initialChar = trimmed.firstOrNull { it.isLetterOrDigit() }
-                    ?: trimmed.firstOrNull()
-                val initial = initialChar?.uppercaseChar()?.toString() ?: "?"
-                Text(
-                    text = initial,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -1813,20 +1819,12 @@ private fun ChatBubbleRow(
                     enabled = !messageId.isNullOrBlank(),
                 )
             }
-            if (showClusterHeader) {
-                ChatSenderAvatar(
-                    telegramUrl = telegramUrl,
-                    size = ChatIncomingAvatarSize,
-                    modifier = Modifier.padding(end = ChatIncomingAvatarEndPad),
-                    fallbackName = displayName,
-                )
-            } else {
-                Spacer(
-                    modifier = Modifier
-                        .width(ChatIncomingAvatarSlotWidth)
-                        .height(ChatIncomingAvatarSize),
-                )
-            }
+            ChatSenderAvatar(
+                telegramUrl = telegramUrl,
+                size = ChatIncomingAvatarSize,
+                modifier = Modifier.padding(end = ChatIncomingAvatarEndPad),
+                fallbackName = displayName,
+            )
             if (floatingSticker) {
                 val floatMod = Modifier
                     .widthIn(max = 232.dp)
