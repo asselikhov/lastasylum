@@ -103,4 +103,53 @@ class ChatListMutationsTest {
         val synced = syncSelections(state)
         assertTrue(synced === state)
     }
+
+    @Test
+    fun syncSelections_prunesStaleSelectionIds() {
+        val state = ChatState(
+            currentUserId = "u1",
+            currentUserRole = "R1",
+            messages = listOf(msg("1")),
+            selectedMessageIds = setOf("1", "ghost"),
+        )
+        val synced = syncSelections(state)
+        assertEquals(setOf("1"), synced.selectedMessageIds)
+    }
+
+    @Test
+    fun syncSelections_dropsOthersMessagesForNonAdminSelection() {
+        val other = msg("2").copy(senderId = "other")
+        val state = ChatState(
+            currentUserId = "u1",
+            currentUserRole = "R1",
+            messages = listOf(msg("1"), other),
+            selectedMessageIds = setOf("1", "2"),
+        )
+        val synced = syncSelections(state)
+        assertEquals(setOf("1"), synced.selectedMessageIds)
+    }
+
+    @Test
+    fun syncSelections_keepsAdminSelectionForOthersMessages() {
+        val other = msg("2").copy(senderId = "other")
+        val state = ChatState(
+            currentUserId = "u1",
+            currentUserRole = "R5",
+            messages = listOf(msg("1"), other),
+            selectedMessageIds = setOf("1", "2"),
+        )
+        val synced = syncSelections(state)
+        assertEquals(setOf("1", "2"), synced.selectedMessageIds)
+    }
+
+    @Test
+    fun syncSelections_clearsOrphanBulkConfirm() {
+        val state = ChatState(
+            messages = listOf(msg("1")),
+            selectedMessageIds = emptySet(),
+            confirmBulkDelete = true,
+        )
+        val synced = syncSelections(state)
+        assertFalse(synced.confirmBulkDelete)
+    }
 }

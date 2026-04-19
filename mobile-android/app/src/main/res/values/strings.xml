@@ -59,6 +59,11 @@
     <string name="chat_send_failed_retry">Повторить</string>
     <string name="chat_send_failed_dismiss">Скрыть</string>
     <string name="chat_quoted_jump_cd">Перейти к цитируемому сообщению</string>
+    <string name="chat_selection_count">Выбрано: %1$d</string>
+    <string name="chat_selection_clear_cd">Снять выделение</string>
+    <string name="chat_selection_delete_cd">Удалить выбранные</string>
+    <string name="chat_bulk_delete_title">Удалить сообщения?</string>
+    <string name="chat_bulk_delete_body">Будет удалено сообщений: %1$d. Их не будет видно в чате у всех участников. Отменить действие нельзя.</string>
 
     <!-- Onboarding -->
     <string name="onboarding_permissions_title">Разрешения для боя</string>

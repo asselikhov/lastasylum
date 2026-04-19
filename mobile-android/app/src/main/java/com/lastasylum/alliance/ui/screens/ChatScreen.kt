@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -35,8 +36,10 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -76,6 +79,7 @@ import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.ui.chat.ChatState
+import com.lastasylum.alliance.ui.chat.canDeleteChatMessage
 import com.lastasylum.alliance.ui.chat.RoleBadge
 import com.lastasylum.alliance.ui.chat.formatChatTime
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
@@ -107,6 +111,12 @@ fun ChatScreen(
     onRequestDeleteMessage: (String) -> Unit,
     onDismissDeleteMessage: () -> Unit,
     onConfirmDeleteMessage: () -> Unit,
+    onBeginMessageSelection: (String) -> Unit,
+    onToggleMessageSelection: (String) -> Unit,
+    onClearMessageSelection: () -> Unit,
+    onRequestBulkDelete: () -> Unit,
+    onDismissBulkDeleteConfirm: () -> Unit,
+    onConfirmDeleteSelectedMessages: () -> Unit,
     onRetrySendFailure: () -> Unit,
     onDismissSendFailure: () -> Unit,
 ) {
@@ -120,6 +130,11 @@ fun ChatScreen(
     }
     val confirmDeleteMessage = remember(state.confirmDeleteMessageId, state.messages) {
         state.messages.find { it._id == state.confirmDeleteMessageId }
+    }
+    val inSelectionMode = state.selectedMessageIds.isNotEmpty()
+
+    BackHandler(enabled = inSelectionMode && !state.isDeletingSelection) {
+        onClearMessageSelection()
     }
     val isNearLatest by remember(listState) {
         derivedStateOf {
@@ -197,6 +212,15 @@ fun ChatScreen(
 
             ChatTypingBanner(typingPeers = typingPeers)
 
+            if (inSelectionMode) {
+                ChatSelectionToolbar(
+                    selectedCount = state.selectedMessageIds.size,
+                    isDeleting = state.isDeletingSelection,
+                    onClear = onClearMessageSelection,
+                    onDelete = onRequestBulkDelete,
+                )
+            }
+
             ChatMessagesLazyList(
                 modifier = Modifier
                     .weight(1f, fill = true)
@@ -207,6 +231,10 @@ fun ChatScreen(
                 onOpenMessageActions = onOpenMessageActions,
                 onReplyToMessage = onReplyToMessage,
                 onClearError = onClearError,
+                inSelectionMode = inSelectionMode,
+                selectedMessageIds = state.selectedMessageIds,
+                onBeginMessageSelection = onBeginMessageSelection,
+                onToggleMessageSelection = onToggleMessageSelection,
             )
         }
 
@@ -277,23 +305,25 @@ fun ChatScreen(
         }
     }
 
-    activeActionMessage?.let { message ->
-        ChatMessageActionsSheet(
-            message = message,
-            canDelete = canDeleteMessage(
+    if (!inSelectionMode) {
+        activeActionMessage?.let { message ->
+            ChatMessageActionsSheet(
                 message = message,
-                currentUserId = state.currentUserId,
-                currentUserRole = state.currentUserRole,
-            ),
-            onDismiss = onDismissMessageActions,
-            onReply = {
-                message._id?.let(onReplyToMessage)
-                onDismissMessageActions()
-            },
-            onDelete = {
-                message._id?.let(onRequestDeleteMessage)
-            },
-        )
+                canDelete = canDeleteChatMessage(
+                    message = message,
+                    currentUserId = state.currentUserId,
+                    currentUserRole = state.currentUserRole,
+                ),
+                onDismiss = onDismissMessageActions,
+                onReply = {
+                    message._id?.let(onReplyToMessage)
+                    onDismissMessageActions()
+                },
+                onDelete = {
+                    message._id?.let(onRequestDeleteMessage)
+                },
+            )
+        }
     }
 
     confirmDeleteMessage?.let {
@@ -315,6 +345,94 @@ fun ChatScreen(
                 }
             },
         )
+    }
+
+    if (state.confirmBulkDelete && state.selectedMessageIds.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = onDismissBulkDeleteConfirm,
+            title = { Text(stringResource(R.string.chat_bulk_delete_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.chat_bulk_delete_body,
+                        state.selectedMessageIds.size,
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = onConfirmDeleteSelectedMessages,
+                    enabled = !state.isDeletingSelection,
+                ) {
+                    Text(
+                        text = stringResource(R.string.chat_delete_confirm),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = onDismissBulkDeleteConfirm,
+                    enabled = !state.isDeletingSelection,
+                ) {
+                    Text(stringResource(R.string.chat_delete_cancel))
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun ChatSelectionToolbar(
+    selectedCount: Int,
+    isDeleting: Boolean,
+    onClear: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = SquadRelayDimens.itemGap),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 0.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onClear, enabled = !isDeleting) {
+                Icon(
+                    imageVector = Icons.Outlined.Close,
+                    contentDescription = stringResource(R.string.chat_selection_clear_cd),
+                )
+            }
+            Text(
+                text = stringResource(R.string.chat_selection_count, selectedCount),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+            )
+            if (isDeleting) {
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .padding(end = 4.dp)
+                        .size(28.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            } else {
+                IconButton(onClick = onDelete, enabled = selectedCount > 0) {
+                    Icon(
+                        imageVector = Icons.Outlined.DeleteOutline,
+                        contentDescription = stringResource(R.string.chat_selection_delete_cd),
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -343,6 +461,10 @@ private fun ChatMessagesLazyList(
     onOpenMessageActions: (String) -> Unit,
     onReplyToMessage: (String) -> Unit,
     onClearError: () -> Unit,
+    inSelectionMode: Boolean,
+    selectedMessageIds: Set<String>,
+    onBeginMessageSelection: (String) -> Unit,
+    onToggleMessageSelection: (String) -> Unit,
 ) {
     LazyColumn(
         state = listState,
@@ -422,13 +544,17 @@ private fun ChatMessagesLazyList(
                     ChatBubbleRow(
                         message = message,
                         isMine = message.senderId == state.currentUserId,
-                        canDelete = canDeleteMessage(
+                        canDelete = canDeleteChatMessage(
                             message = message,
                             currentUserId = state.currentUserId,
                             currentUserRole = state.currentUserRole,
                         ),
                         deleting = state.deletingMessageId == message._id,
+                        inSelectionMode = inSelectionMode,
+                        isSelected = message._id != null && message._id in selectedMessageIds,
                         onOpenActions = { id -> onOpenMessageActions(id) },
+                        onBeginSelection = onBeginMessageSelection,
+                        onToggleSelection = onToggleMessageSelection,
                         onSwipeReply = onReplyToMessage,
                         onJumpToQuotedMessage = jumpToQuotedMessage,
                     )
@@ -655,7 +781,11 @@ private fun ChatBubbleRow(
     isMine: Boolean,
     canDelete: Boolean,
     deleting: Boolean,
+    inSelectionMode: Boolean,
+    isSelected: Boolean,
     onOpenActions: (String) -> Unit,
+    onBeginSelection: (String) -> Unit,
+    onToggleSelection: (String) -> Unit,
     onSwipeReply: (String) -> Unit,
     onJumpToQuotedMessage: (String) -> Unit,
 ) {
@@ -679,7 +809,19 @@ private fun ChatBubbleRow(
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isMine) Arrangement.End else Arrangement.Start,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (inSelectionMode && canDelete && !isMine) {
+            Checkbox(
+                checked = isSelected,
+                onCheckedChange = {
+                    if (!messageId.isNullOrBlank()) {
+                        onToggleSelection(messageId)
+                    }
+                },
+                enabled = !messageId.isNullOrBlank(),
+            )
+        }
         Card(
             modifier = Modifier
                 .widthIn(max = 340.dp)
@@ -688,10 +830,21 @@ private fun ChatBubbleRow(
                     role = Role.Button
                 }
                 .combinedClickable(
-                    onClick = {},
+                    onClick = {
+                        if (inSelectionMode && canDelete && !messageId.isNullOrBlank()) {
+                            onToggleSelection(messageId)
+                        }
+                    },
                     onLongClick = {
-                        if (!messageId.isNullOrBlank()) {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        if (messageId.isNullOrBlank()) return@combinedClickable
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        if (canDelete) {
+                            if (inSelectionMode) {
+                                onToggleSelection(messageId)
+                            } else {
+                                onBeginSelection(messageId)
+                            }
+                        } else {
                             onOpenActions(messageId)
                         }
                     },
@@ -850,6 +1003,17 @@ private fun ChatBubbleRow(
                 }
             }
         }
+        if (inSelectionMode && canDelete && isMine) {
+            Checkbox(
+                checked = isSelected,
+                onCheckedChange = {
+                    if (!messageId.isNullOrBlank()) {
+                        onToggleSelection(messageId)
+                    }
+                },
+                enabled = !messageId.isNullOrBlank(),
+            )
+        }
     }
 }
 
@@ -910,15 +1074,6 @@ private fun ChatMessageActionsSheet(
             }
         }
     }
-}
-
-private fun canDeleteMessage(
-    message: ChatMessage,
-    currentUserId: String,
-    currentUserRole: String,
-): Boolean {
-    if (message._id.isNullOrBlank()) return false
-    return message.senderId == currentUserId || currentUserRole == "R5"
 }
 
 private fun chatMessageKey(message: ChatMessage): String {

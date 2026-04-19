@@ -217,6 +217,12 @@ fun AppNavigation(
                     onRequestDeleteMessage = chatViewModel::requestDeleteMessage,
                     onDismissDeleteMessage = chatViewModel::dismissDeleteMessage,
                     onConfirmDeleteMessage = chatViewModel::confirmDeleteMessage,
+                    onBeginMessageSelection = chatViewModel::beginMessageSelection,
+                    onToggleMessageSelection = chatViewModel::toggleMessageSelection,
+                    onClearMessageSelection = chatViewModel::clearMessageSelection,
+                    onRequestBulkDelete = chatViewModel::requestBulkDelete,
+                    onDismissBulkDeleteConfirm = chatViewModel::dismissBulkDeleteConfirm,
+                    onConfirmDeleteSelectedMessages = chatViewModel::confirmDeleteSelectedMessages,
                     onRetrySendFailure = chatViewModel::retrySendFailure,
                     onDismissSendFailure = chatViewModel::dismissSendFailure,
                 )

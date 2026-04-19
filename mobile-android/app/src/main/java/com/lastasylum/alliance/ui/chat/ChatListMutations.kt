@@ -90,7 +90,9 @@ internal fun scrubMessagesAfterRemove(
 internal fun syncSelections(state: ChatState): ChatState {
     if (state.replyToMessage == null &&
         state.activeActionMessageId == null &&
-        state.confirmDeleteMessageId == null
+        state.confirmDeleteMessageId == null &&
+        state.selectedMessageIds.isEmpty() &&
+        !state.confirmBulkDelete
     ) {
         return state
     }
@@ -103,6 +105,12 @@ internal fun syncSelections(state: ChatState): ChatState {
     val syncedReply = replyId?.let { byId[it] }?.takeIf { it.deletedAt == null }
     val activeActionExists = state.activeActionMessageId?.let { byId.containsKey(it) } == true
     val deleteTargetExists = state.confirmDeleteMessageId?.let { byId.containsKey(it) } == true
+    val syncedSelection = state.selectedMessageIds.filter { id ->
+        byId[id]?.let { m ->
+            m.deletedAt == null && canDeleteChatMessage(m, state.currentUserId, state.currentUserRole)
+        } == true
+    }.toSet()
+    val keepBulkConfirm = state.confirmBulkDelete && syncedSelection.isNotEmpty()
     return state.copy(
         replyToMessage = syncedReply,
         activeActionMessageId = if (activeActionExists) state.activeActionMessageId else null,
@@ -111,5 +119,16 @@ internal fun syncSelections(state: ChatState): ChatState {
         } else {
             null
         },
+        selectedMessageIds = syncedSelection,
+        confirmBulkDelete = keepBulkConfirm,
     )
+}
+
+internal fun canDeleteChatMessage(
+    message: ChatMessage,
+    currentUserId: String,
+    currentUserRole: String,
+): Boolean {
+    if (message._id.isNullOrBlank()) return false
+    return message.senderId == currentUserId || currentUserRole == "R5"
 }

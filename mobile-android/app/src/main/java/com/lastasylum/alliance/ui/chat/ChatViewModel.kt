@@ -136,6 +136,9 @@ class ChatViewModel(
             replyToMessage = null,
             activeActionMessageId = null,
             confirmDeleteMessageId = null,
+            selectedMessageIds = emptySet(),
+            confirmBulkDelete = false,
+            isDeletingSelection = false,
             deletingMessageId = null,
             newestMessageKey = null,
             scrollToLatestNonce = 0L,
@@ -265,6 +268,8 @@ class ChatViewModel(
         _state.value = _state.value.copy(
             replyToMessage = target,
             activeActionMessageId = null,
+            selectedMessageIds = emptySet(),
+            confirmBulkDelete = false,
         )
     }
 
@@ -274,7 +279,11 @@ class ChatViewModel(
     }
 
     fun openMessageActions(messageId: String) {
-        _state.value = _state.value.copy(activeActionMessageId = messageId)
+        _state.value = _state.value.copy(
+            activeActionMessageId = messageId,
+            selectedMessageIds = emptySet(),
+            confirmBulkDelete = false,
+        )
     }
 
     fun dismissMessageActions() {
@@ -286,7 +295,86 @@ class ChatViewModel(
         _state.value = _state.value.copy(
             activeActionMessageId = null,
             confirmDeleteMessageId = messageId,
+            selectedMessageIds = emptySet(),
+            confirmBulkDelete = false,
         )
+    }
+
+    fun beginMessageSelection(messageId: String) {
+        val target = _state.value.messages.find { it._id == messageId } ?: return
+        if (target.deletedAt != null) return
+        if (!canDeleteChatMessage(target, currentUserId, currentUserRole)) return
+        _state.value = _state.value.copy(
+            selectedMessageIds = setOf(messageId),
+            activeActionMessageId = null,
+            confirmDeleteMessageId = null,
+            confirmBulkDelete = false,
+        )
+    }
+
+    fun toggleMessageSelection(messageId: String) {
+        val target = _state.value.messages.find { it._id == messageId } ?: return
+        if (target.deletedAt != null) return
+        if (!canDeleteChatMessage(target, currentUserId, currentUserRole)) return
+        val cur = _state.value.selectedMessageIds
+        if (cur.isEmpty()) return
+        val next = if (messageId in cur) cur - messageId else cur + messageId
+        _state.value = _state.value.copy(selectedMessageIds = next)
+    }
+
+    fun clearMessageSelection() {
+        if (_state.value.selectedMessageIds.isEmpty() &&
+            !_state.value.confirmBulkDelete &&
+            !_state.value.isDeletingSelection
+        ) {
+            return
+        }
+        _state.value = _state.value.copy(
+            selectedMessageIds = emptySet(),
+            confirmBulkDelete = false,
+        )
+    }
+
+    fun requestBulkDelete() {
+        if (_state.value.selectedMessageIds.isEmpty()) return
+        _state.value = _state.value.copy(confirmBulkDelete = true)
+    }
+
+    fun dismissBulkDeleteConfirm() {
+        if (!_state.value.confirmBulkDelete) return
+        _state.value = _state.value.copy(confirmBulkDelete = false)
+    }
+
+    fun confirmDeleteSelectedMessages() {
+        val ids = _state.value.selectedMessageIds.toList()
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            _state.value = _state.value.copy(
+                confirmBulkDelete = false,
+                isDeletingSelection = true,
+                error = null,
+            )
+            var lastFailure: Throwable? = null
+            for (id in ids) {
+                repository.deleteMessage(id)
+                    .onSuccess { result ->
+                        val messageId = result.messageId
+                        _state.value = syncSelections(
+                            scrubRemovedMessage(_state.value, messageId).copy(
+                                isDeletingSelection = true,
+                            ),
+                        )
+                    }
+                    .onFailure { t ->
+                        lastFailure = t
+                    }
+                if (lastFailure != null) break
+            }
+            _state.value = _state.value.copy(
+                isDeletingSelection = false,
+                error = lastFailure?.toUserMessageRu(res),
+            )
+        }
     }
 
     fun dismissDeleteMessage() {

@@ -24,6 +24,10 @@ data class ChatState(
     val replyToMessage: ChatMessage? = null,
     val activeActionMessageId: String? = null,
     val confirmDeleteMessageId: String? = null,
+    /** Multi-select for bulk delete (long-press on a deletable message, then tap more). */
+    val selectedMessageIds: Set<String> = emptySet(),
+    val confirmBulkDelete: Boolean = false,
+    val isDeletingSelection: Boolean = false,
     val deletingMessageId: String? = null,
     val newestMessageKey: String? = null,
     /** Increments after a successful own send so the list scrolls to the latest message. */
