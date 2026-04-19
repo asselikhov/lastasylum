@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -147,30 +146,41 @@ fun ChatScreen(
         listState.scrollToItem(0)
     }
 
+    LaunchedEffect(state.scrollToLatestNonce) {
+        if (state.scrollToLatestNonce == 0L) return@LaunchedEffect
+        yield()
+        listState.scrollToItem(0)
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal)
             .padding(top = SquadRelayDimens.screenTopPadding),
     ) {
-        ChatRoomsBar(
-            rooms = state.rooms,
-            selectedRoomId = selectedRoomId,
-            onSelectRoom = onSelectRoom,
-        )
-
-        LazyColumn(
-            state = listState,
+        Column(
             modifier = Modifier
                 .weight(1f, fill = true)
-                .fillMaxWidth(),
-            reverseLayout = true,
-            verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.blockGap),
-            contentPadding = PaddingValues(
-                top = SquadRelayDimens.itemGap,
-                bottom = SquadRelayDimens.itemGap,
-            ),
+                .fillMaxWidth()
+                .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
         ) {
+            ChatRoomsBar(
+                rooms = state.rooms,
+                selectedRoomId = selectedRoomId,
+                onSelectRoom = onSelectRoom,
+            )
+
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .weight(1f, fill = true)
+                    .fillMaxWidth(),
+                reverseLayout = true,
+                verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.blockGap),
+                contentPadding = PaddingValues(
+                    top = SquadRelayDimens.itemGap,
+                    bottom = SquadRelayDimens.itemGap,
+                ),
+            ) {
             when {
                 state.isRoomsLoading && state.rooms.isEmpty() -> {
                     item {
@@ -294,6 +304,7 @@ fun ChatScreen(
                     }
                 }
             }
+            }
         }
 
         if (selectedRoomId != null && state.rooms.isNotEmpty()) {
@@ -395,13 +406,14 @@ private fun ChatComposer(
     Surface(
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
-        shape = MaterialTheme.shapes.large,
+        // Flush to screen edges; only top corners rounded (tab bar already separates from list).
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = SquadRelayDimens.itemGap)
-            // Keep IME padding on the composer only so it sits flush with the keyboard (no “double” inset).
-            .navigationBarsPadding()
+            // Only IME: Scaffold + bottom nav already reserve bottom inset; extra navigationBarsPadding
+            // duplicates gesture-bar height and leaves a gap above the keyboard on many devices.
             .imePadding(),
     ) {
         Column(

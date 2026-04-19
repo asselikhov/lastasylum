@@ -21,4 +21,6 @@ data class ChatState(
     val confirmDeleteMessageId: String? = null,
     val deletingMessageId: String? = null,
     val newestMessageKey: String? = null,
+    /** Increments after a successful own send so the list scrolls to the latest message. */
+    val scrollToLatestNonce: Long = 0L,
 )

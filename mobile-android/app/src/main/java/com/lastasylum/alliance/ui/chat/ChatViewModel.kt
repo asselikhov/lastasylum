@@ -97,6 +97,7 @@ class ChatViewModel(
             confirmDeleteMessageId = null,
             deletingMessageId = null,
             newestMessageKey = null,
+            scrollToLatestNonce = 0L,
         )
         repository.loadRecentMessages(roomId, beforeMessageId = null, limit = PAGE_SIZE)
             .onSuccess { loaded ->
@@ -304,6 +305,7 @@ class ChatViewModel(
             nextState = nextState.copy(
                 draftMessage = "",
                 replyToMessage = null,
+                scrollToLatestNonce = nextState.scrollToLatestNonce + 1L,
             )
         }
         _state.value = syncSelections(nextState)
