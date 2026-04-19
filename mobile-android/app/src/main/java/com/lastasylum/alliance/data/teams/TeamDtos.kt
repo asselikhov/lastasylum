@@ -18,6 +18,8 @@ data class PlayerTeamMemberDto(
     val userId: String,
     val username: String,
     val isLeader: Boolean,
+    val role: String,
+    val telegramUsername: String?,
 )
 
 @JsonClass(generateAdapter = true)

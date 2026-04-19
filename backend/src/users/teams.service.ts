@@ -28,6 +28,8 @@ export type TeamMemberRow = {
   userId: string;
   username: string;
   isLeader: boolean;
+  role: string;
+  telegramUsername: string | null;
 };
 
 export type TeamJoinRequestRow = {
@@ -172,15 +174,33 @@ export class TeamsService {
     const ids = team.memberUserIds.map((id) => id.toString());
     const users = await this.userModel
       .find({ _id: { $in: team.memberUserIds } })
-      .select('username')
-      .lean<Array<{ _id: Types.ObjectId; username: string }>>()
+      .select('username role telegramUsername')
+      .lean<
+        Array<{
+          _id: Types.ObjectId;
+          username: string;
+          role: string;
+          telegramUsername?: string | null;
+        }>
+      >()
       .exec();
-    const byId = new Map(users.map((u) => [u._id.toString(), u.username]));
+    const byId = new Map(
+      users.map((u) => [
+        u._id.toString(),
+        {
+          username: u.username,
+          role: u.role,
+          telegramUsername: u.telegramUsername ?? null,
+        },
+      ]),
+    );
     const leaderStr = team.leaderUserId.toString();
     const members: TeamMemberRow[] = ids.map((id) => ({
       userId: id,
-      username: byId.get(id) ?? '?',
+      username: byId.get(id)?.username ?? '?',
       isLeader: id === leaderStr,
+      role: byId.get(id)?.role ?? 'R2',
+      telegramUsername: byId.get(id)?.telegramUsername ?? null,
     }));
     return {
       id: team._id.toString(),

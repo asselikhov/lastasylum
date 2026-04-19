@@ -22,10 +22,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -59,15 +56,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.lastasylum.alliance.R
-import com.lastasylum.alliance.data.teams.TeamJoinRequestDto
-import com.lastasylum.alliance.data.teams.TeamSearchResultDto
-import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.users.MyProfileDto
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import com.lastasylum.alliance.ui.util.telegramDisplayHandle
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private enum class ProfileEditDialog { None, DisplayName, Team, Telegram }
@@ -172,8 +165,6 @@ private fun ProfileStatRow(
 fun ProfileScreen(
     username: String,
     onLogout: () -> Unit,
-    onOpenTeam: (String) -> Unit,
-    teamsRepository: TeamsRepository,
 ) {
     val context = LocalContext.current
     val app = remember { AppContainer.from(context.applicationContext) }
@@ -190,34 +181,6 @@ fun ProfileScreen(
     var dialogError by remember { mutableStateOf<String?>(null) }
     var dialogSaving by remember { mutableStateOf(false) }
 
-    var showPlayerTeamCreate by remember { mutableStateOf(false) }
-    var showPlayerTeamJoin by remember { mutableStateOf(false) }
-    var showJoinInbox by remember { mutableStateOf(false) }
-    var createPlayerTeamName by remember { mutableStateOf("") }
-    var createPlayerTeamTag by remember { mutableStateOf("") }
-    var createPlayerTeamError by remember { mutableStateOf<String?>(null) }
-    var createPlayerTeamBusy by remember { mutableStateOf(false) }
-    var joinSearch by remember { mutableStateOf("") }
-    var joinResults by remember { mutableStateOf<List<TeamSearchResultDto>>(emptyList()) }
-    var joinSearchBusy by remember { mutableStateOf(false) }
-    var joinActionBusy by remember { mutableStateOf(false) }
-    var joinFeedback by remember { mutableStateOf<String?>(null) }
-    var inboxRequests by remember { mutableStateOf<List<TeamJoinRequestDto>>(emptyList()) }
-    var inboxBusy by remember { mutableStateOf(false) }
-
-    LaunchedEffect(joinSearch) {
-        delay(400)
-        val q = joinSearch.trim()
-        if (q.length < 1) {
-            joinResults = emptyList()
-            return@LaunchedEffect
-        }
-        joinSearchBusy = true
-        teamsRepository.searchTeams(q)
-            .onSuccess { joinResults = it }
-            .onFailure { joinResults = emptyList() }
-        joinSearchBusy = false
-    }
 
     LaunchedEffect(app) {
         app.usersRepository.getMyProfile()
@@ -325,18 +288,10 @@ fun ProfileScreen(
                         ) {
                             profile?.let { p ->
                                 val bracket = playerTeamShortLabel(p)
-                                val pid = p.playerTeamId?.takeIf { it.isNotBlank() }
                                 if (bracket != null) {
                                     Text(
                                         text = bracket,
                                         modifier = Modifier
-                                            .then(
-                                                if (pid != null) {
-                                                    Modifier.clickable { onOpenTeam(pid) }
-                                                } else {
-                                                    Modifier
-                                                },
-                                            )
                                             .padding(end = 6.dp),
                                         style = MaterialTheme.typography.titleLarge,
                                         color = Color(0xFF5DADE2),
@@ -352,76 +307,6 @@ fun ProfileScreen(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 color = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                        val hasPlayerTeam = profile?.playerTeamId?.isNotBlank() == true
-                        if (profile != null && !hasPlayerTeam) {
-                            Text(
-                                text = stringResource(R.string.profile_player_team_section),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                OutlinedButton(
-                                    onClick = {
-                                        createPlayerTeamName = ""
-                                        createPlayerTeamTag = ""
-                                        createPlayerTeamError = null
-                                        showPlayerTeamCreate = true
-                                    },
-                                    shape = MaterialTheme.shapes.large,
-                                ) {
-                                    Text(stringResource(R.string.profile_player_team_create))
-                                }
-                                OutlinedButton(
-                                    onClick = {
-                                        joinSearch = ""
-                                        joinResults = emptyList()
-                                        joinFeedback = null
-                                        showPlayerTeamJoin = true
-                                    },
-                                    shape = MaterialTheme.shapes.large,
-                                ) {
-                                    Text(stringResource(R.string.profile_player_team_join))
-                                }
-                            }
-                        }
-                    }
-                }
-                val pending = profile?.pendingPlayerTeamJoinRequests ?: 0
-                if (profile?.isPlayerTeamLeader == true && pending > 0) {
-                    BadgedBox(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(top = 4.dp, end = 4.dp),
-                        badge = {
-                            Badge {
-                                Text(
-                                    text = if (pending > 9) "9+" else "$pending",
-                                    style = MaterialTheme.typography.labelSmall,
-                                )
-                            }
-                        },
-                    ) {
-                        IconButton(
-                            onClick = {
-                                showJoinInbox = true
-                                scope.launch {
-                                    inboxBusy = true
-                                    teamsRepository.listPendingJoinRequests()
-                                        .onSuccess { inboxRequests = it }
-                                        .onFailure { inboxRequests = emptyList() }
-                                    inboxBusy = false
-                                }
-                            },
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Inbox,
-                                contentDescription = stringResource(R.string.profile_join_inbox_cd),
-                                tint = MaterialTheme.colorScheme.primary,
                             )
                         }
                     }
@@ -547,247 +432,6 @@ fun ProfileScreen(
         ) {
             Text(stringResource(R.string.profile_logout))
         }
-    }
-
-    if (showPlayerTeamCreate) {
-        AlertDialog(
-            onDismissRequest = { if (!createPlayerTeamBusy) showPlayerTeamCreate = false },
-            title = { Text(stringResource(R.string.profile_player_team_create_title)) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = createPlayerTeamName,
-                        onValueChange = {
-                            createPlayerTeamName = it.take(48)
-                            createPlayerTeamError = null
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(stringResource(R.string.profile_field_team_full_name)) },
-                        singleLine = true,
-                        enabled = !createPlayerTeamBusy,
-                    )
-                    OutlinedTextField(
-                        value = createPlayerTeamTag,
-                        onValueChange = { v ->
-                            val letters = v.filter { it.isLetter() }
-                            createPlayerTeamTag = letters.take(3)
-                            createPlayerTeamError = null
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(stringResource(R.string.profile_field_team_tag)) },
-                        singleLine = true,
-                        enabled = !createPlayerTeamBusy,
-                    )
-                    createPlayerTeamError?.let { e ->
-                        Text(e, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val n = createPlayerTeamName.trim()
-                        val tg = createPlayerTeamTag.trim()
-                        if (n.length < 2 || !isValidThreeLetterTeamTag(tg)) return@Button
-                        scope.launch {
-                            createPlayerTeamBusy = true
-                            createPlayerTeamError = null
-                            teamsRepository.createTeam(n, tg)
-                                .onSuccess { resp ->
-                                    app.usersRepository.getMyProfile()
-                                        .onSuccess { profile = it }
-                                    showPlayerTeamCreate = false
-                                    onOpenTeam(resp.teamId)
-                                }
-                                .onFailure {
-                                    createPlayerTeamError =
-                                        context.getString(R.string.profile_player_team_save_error)
-                                }
-                            createPlayerTeamBusy = false
-                        }
-                    },
-                    enabled = !createPlayerTeamBusy &&
-                        createPlayerTeamName.trim().length >= 2 &&
-                        isValidThreeLetterTeamTag(createPlayerTeamTag),
-                ) {
-                    if (createPlayerTeamBusy) {
-                        CircularProgressIndicator(
-                            Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                        )
-                    } else {
-                        Text(stringResource(R.string.profile_action_save))
-                    }
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { if (!createPlayerTeamBusy) showPlayerTeamCreate = false }) {
-                    Text(stringResource(R.string.profile_action_cancel))
-                }
-            },
-        )
-    }
-
-    if (showPlayerTeamJoin) {
-        AlertDialog(
-            onDismissRequest = { if (!joinActionBusy) showPlayerTeamJoin = false },
-            title = { Text(stringResource(R.string.profile_player_team_join_title)) },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedTextField(
-                        value = joinSearch,
-                        onValueChange = {
-                            joinSearch = it
-                            joinFeedback = null
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(stringResource(R.string.profile_player_team_join_hint)) },
-                        singleLine = true,
-                        enabled = !joinActionBusy,
-                    )
-                    if (joinSearchBusy) {
-                        CircularProgressIndicator(
-                            Modifier
-                                .padding(8.dp)
-                                .size(22.dp),
-                            strokeWidth = 2.dp,
-                        )
-                    }
-                    joinFeedback?.let { f ->
-                        Text(f, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
-                    }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 280.dp),
-                    ) {
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            items(joinResults, key = { it.id }) { t ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Column(Modifier.weight(1f)) {
-                                        Text(
-                                            text = "[${t.tag}] ${t.displayName}",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            maxLines = 2,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                    TextButton(
-                                        enabled = !joinActionBusy,
-                                        onClick = {
-                                            scope.launch {
-                                                joinActionBusy = true
-                                                teamsRepository.submitJoinRequest(t.id)
-                                                    .onSuccess {
-                                                        joinFeedback = context.getString(
-                                                            R.string.profile_player_team_join_sent,
-                                                        )
-                                                    }
-                                                    .onFailure {
-                                                        joinFeedback = context.getString(
-                                                            R.string.profile_player_team_save_error,
-                                                        )
-                                                    }
-                                                joinActionBusy = false
-                                            }
-                                        },
-                                    ) {
-                                        Text(stringResource(R.string.profile_player_team_join_submit))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { if (!joinActionBusy) showPlayerTeamJoin = false }) {
-                    Text(stringResource(R.string.profile_action_cancel))
-                }
-            },
-        )
-    }
-
-    if (showJoinInbox) {
-        AlertDialog(
-            onDismissRequest = { if (!inboxBusy) showJoinInbox = false },
-            title = { Text(stringResource(R.string.profile_join_inbox_title)) },
-            text = {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 360.dp),
-                ) {
-                    if (inboxBusy && inboxRequests.isEmpty()) {
-                        CircularProgressIndicator(Modifier.align(Alignment.Center))
-                    } else {
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(inboxRequests, key = { it.id }) { r ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(
-                                        text = r.requesterUsername,
-                                        modifier = Modifier.weight(1f),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    TextButton(
-                                        onClick = {
-                                            scope.launch {
-                                                inboxBusy = true
-                                                teamsRepository.acceptJoinRequest(r.id)
-                                                    .onSuccess {
-                                                        teamsRepository.listPendingJoinRequests()
-                                                            .onSuccess { inboxRequests = it }
-                                                        app.usersRepository.getMyProfile()
-                                                            .onSuccess { profile = it }
-                                                    }
-                                                inboxBusy = false
-                                            }
-                                        },
-                                    ) {
-                                        Text(stringResource(R.string.profile_join_accept))
-                                    }
-                                    TextButton(
-                                        onClick = {
-                                            scope.launch {
-                                                inboxBusy = true
-                                                teamsRepository.rejectJoinRequest(r.id)
-                                                    .onSuccess {
-                                                        teamsRepository.listPendingJoinRequests()
-                                                            .onSuccess { inboxRequests = it }
-                                                        app.usersRepository.getMyProfile()
-                                                            .onSuccess { profile = it }
-                                                    }
-                                                inboxBusy = false
-                                            }
-                                        },
-                                    ) {
-                                        Text(stringResource(R.string.profile_join_reject))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showJoinInbox = false }) {
-                    Text(stringResource(R.string.profile_action_cancel))
-                }
-            },
-        )
     }
 
     when (dialog) {

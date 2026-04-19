@@ -33,6 +33,7 @@
     <string name="nav_title">SquadRelay • %1$s (%2$s)</string>
     <string name="cd_logout">Выйти</string>
     <string name="tab_chat">Чат</string>
+    <string name="tab_team">Команда</string>
     <string name="tab_overlay">Оверлей</string>
     <string name="tab_profile">Профиль</string>
     <string name="tab_admin">Админ</string>
@@ -227,6 +228,10 @@
     <string name="team_add_member_hint">Ник в игре</string>
     <string name="team_add_member_btn">Добавить</string>
     <string name="team_remove_member">Исключить</string>
+    <string name="team_screen_title">Команда</string>
+    <string name="team_no_team_title">Вы еще не состоите в команде</string>
+    <string name="team_no_team_body">Создайте свою команду или отправьте заявку на вступление в существующую.</string>
+    <string name="team_col_telegram">Telegram</string>
 
     <!-- Combat overlay service -->
     <string name="overlay_notif_combat_active">Боевой режим активен</string>

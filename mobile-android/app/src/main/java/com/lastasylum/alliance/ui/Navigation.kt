@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.exclude
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
@@ -14,6 +13,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.RadioButtonChecked
 import androidx.compose.material3.Icon
@@ -36,14 +36,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavType
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.di.AppContainer
 import kotlinx.coroutines.Dispatchers
@@ -58,10 +56,11 @@ import com.lastasylum.alliance.ui.screens.AdminScreen
 import com.lastasylum.alliance.ui.screens.ChatScreen
 import com.lastasylum.alliance.ui.screens.OverlayControlScreen
 import com.lastasylum.alliance.ui.screens.ProfileScreen
-import com.lastasylum.alliance.ui.screens.TeamDetailScreen
+import com.lastasylum.alliance.ui.screens.TeamScreen
 
 enum class AppTab(val route: String, val titleRes: Int) {
     CHAT("chat", R.string.tab_chat),
+    TEAM("team", R.string.tab_team),
     OVERLAY("overlay", R.string.tab_overlay),
     PROFILE("profile", R.string.tab_profile),
     ADMIN("admin", R.string.tab_admin),
@@ -209,6 +208,16 @@ fun AppNavigation(
                                             MaterialTheme.colorScheme.onSurfaceVariant
                                         },
                                     )
+
+                                    AppTab.TEAM -> Icon(
+                                        imageVector = Icons.Outlined.Groups,
+                                        contentDescription = stringResource(tab.titleRes),
+                                        tint = if (isSelected) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                    )
                                 }
                             }
                         }
@@ -276,37 +285,16 @@ fun AppNavigation(
                 }
             }
             composable(AppTab.PROFILE.route) {
-                val profileNav = rememberNavController()
-                NavHost(
-                    navController = profileNav,
-                    startDestination = "profile_root",
-                    modifier = Modifier.fillMaxSize(),
-                ) {
-                    composable("profile_root") {
-                        ProfileScreen(
-                            username = username,
-                            onLogout = onLogout,
-                            onOpenTeam = { teamId ->
-                                profileNav.navigate("profile_team/$teamId")
-                            },
-                            teamsRepository = app.teamsRepository,
-                        )
-                    }
-                    composable(
-                        route = "profile_team/{teamId}",
-                        arguments = listOf(
-                            navArgument("teamId") { type = NavType.StringType },
-                        ),
-                    ) { entry ->
-                        val tid = entry.arguments?.getString("teamId").orEmpty()
-                        TeamDetailScreen(
-                            teamId = tid,
-                            currentUserId = userId,
-                            teamsRepository = app.teamsRepository,
-                            onBack = { profileNav.popBackStack() },
-                        )
-                    }
-                }
+                ProfileScreen(
+                    username = username,
+                    onLogout = onLogout,
+                )
+            }
+            composable(AppTab.TEAM.route) {
+                TeamScreen(
+                    currentUserId = userId,
+                    teamsRepository = app.teamsRepository,
+                )
             }
             composable(AppTab.ADMIN.route) {
                 val adminViewModel: AdminViewModel = viewModel(factory = adminViewModelFactory)
