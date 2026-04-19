@@ -2,8 +2,7 @@ package com.lastasylum.alliance.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -81,6 +80,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
@@ -791,24 +791,32 @@ private fun ChatComposer(
 private fun ChatSenderAvatar(
     telegramUrl: String?,
     modifier: Modifier = Modifier,
+    size: Dp = 32.dp,
 ) {
     val ring = MaterialTheme.colorScheme.outlineVariant
-    val fill = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
-    Box(
-        modifier = modifier
-            .size(28.dp)
-            .clip(CircleShape)
-            .background(fill)
-            .border(1.dp, ring, CircleShape),
-        contentAlignment = Alignment.Center,
+    val fill = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f)
+    Surface(
+        modifier = modifier.size(size),
+        shape = CircleShape,
+        color = fill,
+        border = BorderStroke(1.dp, ring),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
     ) {
-        if (!telegramUrl.isNullOrBlank()) {
-            AsyncImage(
-                model = telegramUrl,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-            )
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (!telegramUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = telegramUrl,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(CircleShape),
+                    contentScale = ContentScale.Crop,
+                )
+            }
         }
     }
 }
@@ -851,12 +859,6 @@ private fun ChatBubbleRow(
         horizontalArrangement = if (isMine) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (!isMine) {
-            ChatSenderAvatar(
-                telegramUrl = telegramUrl,
-                modifier = Modifier.padding(end = 6.dp),
-            )
-        }
         if (inSelectionMode && canDelete && !isMine) {
             Checkbox(
                 checked = isSelected,
@@ -952,32 +954,39 @@ private fun ChatBubbleRow(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text(
-                        text = message.senderUsername,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = if (isMine) {
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                    ChatSenderAvatar(telegramUrl = telegramUrl)
+                    Row(
                         modifier = Modifier.weight(1f),
-                    )
-                    RoleBadge(role = message.senderRole)
-                    val time = formatChatTime(message.createdAt)
-                    if (time.isNotBlank()) {
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
                         Text(
-                            text = time,
-                            style = MaterialTheme.typography.labelSmall,
+                            text = message.senderUsername,
+                            style = MaterialTheme.typography.labelLarge,
                             color = if (isMine) {
-                                MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.68f)
+                                MaterialTheme.colorScheme.onPrimaryContainer
                             } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
+                                MaterialTheme.colorScheme.onSurface
                             },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
                         )
+                        RoleBadge(role = message.senderRole)
+                        val time = formatChatTime(message.createdAt)
+                        if (time.isNotBlank()) {
+                            Text(
+                                text = time,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isMine) {
+                                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.68f)
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                        }
                     }
                 }
 
@@ -1058,12 +1067,6 @@ private fun ChatBubbleRow(
                     }
                 },
                 enabled = !messageId.isNullOrBlank(),
-            )
-        }
-        if (isMine) {
-            ChatSenderAvatar(
-                telegramUrl = telegramUrl,
-                modifier = Modifier.padding(start = 6.dp),
             )
         }
     }
