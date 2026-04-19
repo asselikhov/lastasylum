@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -78,8 +79,6 @@ import com.lastasylum.alliance.ui.chat.ChatState
 import com.lastasylum.alliance.ui.chat.RoleBadge
 import com.lastasylum.alliance.ui.chat.formatChatTime
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
-import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -90,7 +89,7 @@ private data class ChatListLoadSignal(
     val isBusy: Boolean,
 )
 
-@OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
     state: ChatState,
@@ -135,13 +134,12 @@ fun ChatScreen(
     LaunchedEffect(listState) {
         snapshotFlow {
             val info = listStateRef.value.layoutInfo
-            ChatListLoadSignal(
-                lastVisibleIndex = info.visibleItemsInfo.lastOrNull()?.index ?: -1,
-                totalItems = info.totalItemsCount,
-                hasMoreOlder = hasMoreOlderRef.value,
-                isBusy = isLoadingOlderRef.value || isLoadingRef.value,
-            )
-        }.debounce(48)
+            val lastIdx = info.visibleItemsInfo.lastOrNull()?.index ?: -1
+            val total = info.totalItemsCount
+            val hasMore = hasMoreOlderRef.value
+            val busy = isLoadingOlderRef.value || isLoadingRef.value
+            ChatListLoadSignal(lastIdx, total, hasMore, busy)
+        }
             .distinctUntilChanged()
             .collect { sig ->
                 if (sig.totalItems > 4 &&
@@ -165,9 +163,10 @@ fun ChatScreen(
         listState.scrollToItem(0)
     }
 
-    val jumpToQuotedMessage = remember(scope, listState, state.messages) {
+    val messagesRef = rememberUpdatedState(state.messages)
+    val jumpToQuotedMessage = remember(scope, listState) {
         { targetId: String ->
-            val idx = state.messages.indexOfFirst { it._id == targetId }
+            val idx = messagesRef.value.indexOfFirst { it._id == targetId }
             if (idx >= 0) {
                 scope.launch {
                     listState.scrollToItem(idx)
@@ -350,7 +349,10 @@ fun ChatScreen(
 
         if (state.sendFailure != null || (selectedRoomId != null && state.rooms.isNotEmpty())) {
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // adjustNothing: window does not resize; lift composer above IME (no stack with resize).
+                    .imePadding(),
             ) {
                 state.sendFailure?.let { failure ->
                     Surface(
@@ -498,8 +500,6 @@ private fun ChatComposer(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = SquadRelayDimens.itemGap)
-            // MainActivity uses adjustResize: the window height already ends above the IME; do not add
-            // imePadding() here or it stacks with the resized window and leaves a gap above the keyboard.
     ) {
         Column(
             modifier = Modifier
@@ -631,11 +631,12 @@ private fun ChatBubbleRow(
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
     val swipePx = remember(density) { with(density) { 56.dp.toPx() } }
+    val textPreview = remember(message.text) { message.text.take(120) }
     val bubbleDescription = stringResource(
         R.string.cd_chat_message,
         message.senderUsername,
         message.senderRole,
-        message.text.take(120),
+        textPreview,
     )
     val quotedJumpLabel = stringResource(R.string.chat_quoted_jump_cd)
     val replyQuoteInteraction = remember(message._id, message.replyTo?._id) {

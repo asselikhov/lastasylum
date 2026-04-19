@@ -1,7 +1,9 @@
 package com.lastasylum.alliance.data.chat
 
+import androidx.compose.runtime.Immutable
 import com.squareup.moshi.Json
 
+@Immutable
 data class ChatRoomDto(
     @Json(name = "_id") val id: String,
     val allianceId: String? = null,
@@ -10,6 +12,7 @@ data class ChatRoomDto(
     val archivedAt: String? = null,
 )
 
+@Immutable
 data class ChatMessage(
     val _id: String? = null,
     val allianceId: String,
@@ -33,6 +36,7 @@ data class SendMessageRequest(
     val replyToMessageId: String? = null,
 )
 
+@Immutable
 data class ChatMessageReplyPreview(
     val _id: String,
     val senderId: String,

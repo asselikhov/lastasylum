@@ -39,9 +39,8 @@ class MainActivity : ComponentActivity() {
         WindowCompat.getInsetsController(window, window.decorView).apply {
             systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            // Hiding the status bar together with IME insets tends to amplify keyboard animation jank
-            // in Compose. Keep status/navigation gesture areas stable for IME while still hiding the
-            // on-screen navigation bar (the "arrows" strip).
+            // Manifest uses adjustNothing; IME is handled in Compose (imePadding). Hiding only the
+            // legacy three-button nav strip avoids fighting status+IME animations as much as possible.
             hide(WindowInsetsCompat.Type.navigationBars())
         }
     }
