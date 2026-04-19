@@ -105,6 +105,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -153,6 +154,22 @@ private data class ChatListLoadSignal(
 private sealed interface ChatTimelineEntry {
     data class DaySeparator(val label: String) : ChatTimelineEntry
     data class ChatMessageItem(val message: ChatMessage) : ChatTimelineEntry
+}
+
+/** Own message only when both IDs are non-blank and equal (avoids treating every message as own). */
+private fun chatMessageIsOwn(message: ChatMessage, currentUserId: String): Boolean {
+    val sid = message.senderId.trim()
+    val cid = currentUserId.trim()
+    if (sid.isEmpty() || cid.isEmpty()) return false
+    return sid == cid
+}
+
+private fun chatSenderMetaLineParts(message: ChatMessage): List<String> = buildList {
+    val u = message.senderUsername.trim()
+    if (u.isNotEmpty()) add(u)
+    message.senderTeamTag?.trim()?.takeIf { it.isNotEmpty() }?.let { add(it) }
+    val r = message.senderRole.trim()
+    if (r.isNotEmpty()) add(r)
 }
 
 private fun buildChatTimeline(messages: List<ChatMessage>): List<ChatTimelineEntry> {
@@ -730,7 +747,7 @@ private fun ChatMessagesLazyList(
                             val message = e.message
                             ChatBubbleRow(
                                 message = message,
-                                isMine = message.senderId == state.currentUserId,
+                                isMine = chatMessageIsOwn(message, state.currentUserId),
                                 canDelete = canDeleteChatMessage(
                                     message = message,
                                     currentUserId = state.currentUserId,
@@ -1251,6 +1268,7 @@ private fun ChatSenderAvatar(
     telegramUrl: String?,
     modifier: Modifier = Modifier,
     size: Dp = 32.dp,
+    fallbackName: String? = null,
 ) {
     val ring = MaterialTheme.colorScheme.outlineVariant
     val fill = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f)
@@ -1275,6 +1293,17 @@ private fun ChatSenderAvatar(
                         .clip(CircleShape),
                     contentScale = ContentScale.Crop,
                 )
+            } else {
+                val trimmed = fallbackName?.trim().orEmpty()
+                val initialChar = trimmed.firstOrNull { it.isLetterOrDigit() }
+                    ?: trimmed.firstOrNull()
+                val initial = initialChar?.uppercaseChar()?.toString() ?: "?"
+                Text(
+                    text = initial,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
@@ -1292,14 +1321,17 @@ private fun ChatBubbleAuthorLine(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Text(
-            text = displayName,
-            style = MaterialTheme.typography.labelLarge,
-            color = nameAccent,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        Column(
             modifier = Modifier.weight(1f),
-        )
+        ) {
+            Text(
+                text = displayName,
+                style = MaterialTheme.typography.labelLarge,
+                color = nameAccent,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         if (teamTag != null) {
             Surface(
                 shape = RoundedCornerShape(5.dp),
@@ -1316,6 +1348,176 @@ private fun ChatBubbleAuthorLine(
             }
         }
         RoleBadge(role = senderRole)
+    }
+}
+
+@Composable
+private fun ChatBubbleInnerColumn(
+    message: ChatMessage,
+    isMine: Boolean,
+    stickerStem: String?,
+    senderAccent: Color,
+    stemTag: String?,
+    displayName: String,
+    onBubble: Color,
+    timeMuted: Color,
+    formattedTime: String,
+    swipeModifier: Modifier,
+    bubbleContext: Context,
+    replyQuoteInteraction: MutableInteractionSource,
+    quotedJumpLabel: String,
+    onJumpToQuotedMessage: (String) -> Unit,
+    deleting: Boolean,
+    canDelete: Boolean,
+) {
+    val bubblePadH = if (stickerStem != null) 8.dp else 12.dp
+    val bubblePadV = if (stickerStem != null) 8.dp else 10.dp
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = bubblePadH, vertical = bubblePadV)
+            .then(swipeModifier),
+        verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+    ) {
+        if (isMine) {
+            val metaParts = chatSenderMetaLineParts(message)
+            if (metaParts.isNotEmpty()) {
+                Text(
+                    text = metaParts.joinToString(" · "),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = ChatTelegramOutgoingOnBubble.copy(alpha = 0.78f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        } else {
+            ChatBubbleAuthorLine(
+                displayName = displayName,
+                nameAccent = senderAccent,
+                teamTag = stemTag,
+                senderRole = message.senderRole,
+            )
+        }
+
+        message.replyTo?.let { reply ->
+            Surface(
+                modifier = Modifier
+                    .clickable(
+                        interactionSource = replyQuoteInteraction,
+                        indication = ripple(bounded = true),
+                        onClick = { onJumpToQuotedMessage(reply._id) },
+                    )
+                    .semantics {
+                        contentDescription = quotedJumpLabel
+                        role = Role.Button
+                    },
+                shape = RoundedCornerShape(10.dp),
+                color = if (isMine) {
+                    ChatTelegramOutgoingOnBubble.copy(alpha = 0.14f)
+                } else {
+                    ChatTelegramIncomingOnBubble.copy(alpha = 0.12f)
+                },
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp,
+            ) {
+                Column(
+                    modifier = Modifier.padding(
+                        horizontal = SquadRelayDimens.itemGap,
+                        vertical = SquadRelayDimens.headerSubtitleGap + 2.dp,
+                    ),
+                ) {
+                    Text(
+                        text = chatSenderDisplayWithTag(
+                            reply.senderTeamTag,
+                            reply.senderUsername,
+                        ),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (isMine) {
+                            ChatTelegramOutgoingOnBubble.copy(alpha = 0.92f)
+                        } else {
+                            ChatTelegramIncomingOnBubble.copy(alpha = 0.95f)
+                        },
+                    )
+                    Text(
+                        text = replyPreviewText(reply),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isMine) {
+                            ChatTelegramOutgoingOnBubble.copy(alpha = 0.78f)
+                        } else {
+                            ChatTelegramIncomingOnBubble.copy(alpha = 0.72f)
+                        },
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+
+        if (stickerStem != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                AsyncImage(
+                    model = ImageRequest.Builder(bubbleContext)
+                        .data(ZlobyakaStickerPack.assetUriForStem(stickerStem))
+                        .size(384)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = stringResource(R.string.cd_chat_sticker),
+                    modifier = Modifier
+                        .widthIn(max = 220.dp)
+                        .heightIn(max = 200.dp)
+                        .clip(RoundedCornerShape(12.dp)),
+                    contentScale = ContentScale.Fit,
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                Text(
+                    text = message.text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = onBubble,
+                    modifier = Modifier.weight(1f),
+                )
+                if (formattedTime.isNotBlank()) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = formattedTime,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = timeMuted,
+                        modifier = Modifier.padding(bottom = 1.dp),
+                    )
+                }
+            }
+        }
+
+        if (stickerStem != null && formattedTime.isNotBlank()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                Text(
+                    text = formattedTime,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = timeMuted,
+                )
+            }
+        }
+
+        if (deleting && canDelete) {
+            Text(
+                text = stringResource(R.string.chat_deleting_progress),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
     }
 }
 
@@ -1429,146 +1631,6 @@ private fun ChatBubbleRow(
             },
         )
 
-    @Composable
-    fun BubbleContents() {
-        val bubblePadH = if (stickerStem != null) 8.dp else 12.dp
-        val bubblePadV = if (stickerStem != null) 8.dp else 10.dp
-        Column(
-            modifier = Modifier
-                .padding(horizontal = bubblePadH, vertical = bubblePadV)
-                .then(swipeModifier),
-            verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
-        ) {
-            if (!isMine) {
-                ChatBubbleAuthorLine(
-                    displayName = displayName,
-                    nameAccent = senderAccent,
-                    teamTag = stemTag,
-                    senderRole = message.senderRole,
-                )
-            }
-
-            message.replyTo?.let { reply ->
-                Surface(
-                    modifier = Modifier
-                        .clickable(
-                            interactionSource = replyQuoteInteraction,
-                            indication = ripple(bounded = true),
-                            onClick = { onJumpToQuotedMessage(reply._id) },
-                        )
-                        .semantics {
-                            contentDescription = quotedJumpLabel
-                            role = Role.Button
-                        },
-                    shape = RoundedCornerShape(10.dp),
-                    color = if (isMine) {
-                        ChatTelegramOutgoingOnBubble.copy(alpha = 0.14f)
-                    } else {
-                        ChatTelegramIncomingOnBubble.copy(alpha = 0.12f)
-                    },
-                    tonalElevation = 0.dp,
-                    shadowElevation = 0.dp,
-                ) {
-                    Column(
-                        modifier = Modifier.padding(
-                            horizontal = SquadRelayDimens.itemGap,
-                            vertical = SquadRelayDimens.headerSubtitleGap + 2.dp,
-                        ),
-                    ) {
-                        Text(
-                            text = chatSenderDisplayWithTag(
-                                reply.senderTeamTag,
-                                reply.senderUsername,
-                            ),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (isMine) {
-                                ChatTelegramOutgoingOnBubble.copy(alpha = 0.92f)
-                            } else {
-                                ChatTelegramIncomingOnBubble.copy(alpha = 0.95f)
-                            },
-                        )
-                        Text(
-                            text = replyPreviewText(reply),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (isMine) {
-                                ChatTelegramOutgoingOnBubble.copy(alpha = 0.78f)
-                            } else {
-                                ChatTelegramIncomingOnBubble.copy(alpha = 0.72f)
-                            },
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
-
-            if (stickerStem != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 2.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(bubbleContext)
-                            .data(ZlobyakaStickerPack.assetUriForStem(stickerStem))
-                            .size(384)
-                            .crossfade(true)
-                            .build(),
-                        contentDescription = stringResource(R.string.cd_chat_sticker),
-                        modifier = Modifier
-                            .widthIn(max = 220.dp)
-                            .heightIn(max = 200.dp)
-                            .clip(RoundedCornerShape(12.dp)),
-                        contentScale = ContentScale.Fit,
-                    )
-                }
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.Bottom,
-                ) {
-                    Text(
-                        text = message.text,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = onBubble,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (formattedTime.isNotBlank()) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = formattedTime,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = timeMuted,
-                            modifier = Modifier.padding(bottom = 1.dp),
-                        )
-                    }
-                }
-            }
-
-            if (stickerStem != null && formattedTime.isNotBlank()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                ) {
-                    Text(
-                        text = formattedTime,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = timeMuted,
-                    )
-                }
-            }
-
-            if (deleting && canDelete) {
-                Text(
-                    text = stringResource(R.string.chat_deleting_progress),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-        }
-    }
-
     if (isMine) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1592,6 +1654,17 @@ private fun ChatBubbleRow(
                     .then(bubbleClickModifier)
                     .then(swipeModifier)
                 Column(modifier = floatMod) {
+                    val mineFloatMeta = chatSenderMetaLineParts(message)
+                    if (mineFloatMeta.isNotEmpty()) {
+                        Text(
+                            text = mineFloatMeta.joinToString(" · "),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                     Box(
                         modifier = Modifier.fillMaxWidth(),
                     ) {
@@ -1645,7 +1718,24 @@ private fun ChatBubbleRow(
                     tonalElevation = 0.dp,
                     shadowElevation = 0.dp,
                 ) {
-                    BubbleContents()
+                    ChatBubbleInnerColumn(
+                        message = message,
+                        isMine = isMine,
+                        stickerStem = stickerStem,
+                        senderAccent = senderAccent,
+                        stemTag = stemTag,
+                        displayName = displayName,
+                        onBubble = onBubble,
+                        timeMuted = timeMuted,
+                        formattedTime = formattedTime,
+                        swipeModifier = swipeModifier,
+                        bubbleContext = bubbleContext,
+                        replyQuoteInteraction = replyQuoteInteraction,
+                        quotedJumpLabel = quotedJumpLabel,
+                        onJumpToQuotedMessage = onJumpToQuotedMessage,
+                        deleting = deleting,
+                        canDelete = canDelete,
+                    )
                 }
             }
         }
@@ -1670,6 +1760,7 @@ private fun ChatBubbleRow(
                 telegramUrl = telegramUrl,
                 size = 38.dp,
                 modifier = Modifier.padding(end = 6.dp),
+                fallbackName = displayName,
             )
             if (floatingSticker) {
                 val floatMod = Modifier
@@ -1738,7 +1829,24 @@ private fun ChatBubbleRow(
                     tonalElevation = 0.dp,
                     shadowElevation = 0.dp,
                 ) {
-                    BubbleContents()
+                    ChatBubbleInnerColumn(
+                        message = message,
+                        isMine = isMine,
+                        stickerStem = stickerStem,
+                        senderAccent = senderAccent,
+                        stemTag = stemTag,
+                        displayName = displayName,
+                        onBubble = onBubble,
+                        timeMuted = timeMuted,
+                        formattedTime = formattedTime,
+                        swipeModifier = swipeModifier,
+                        bubbleContext = bubbleContext,
+                        replyQuoteInteraction = replyQuoteInteraction,
+                        quotedJumpLabel = quotedJumpLabel,
+                        onJumpToQuotedMessage = onJumpToQuotedMessage,
+                        deleting = deleting,
+                        canDelete = canDelete,
+                    )
                 }
             }
         }
