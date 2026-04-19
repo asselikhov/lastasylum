@@ -39,8 +39,8 @@ class MainActivity : ComponentActivity() {
         WindowCompat.getInsetsController(window, window.decorView).apply {
             systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            // Manifest uses adjustNothing; IME is handled in Compose (imePadding). Hiding only the
-            // legacy three-button nav strip avoids fighting status+IME animations as much as possible.
+            // Manifest uses adjustResize for flush keyboard; IME is not duplicated in Compose.
+            // Hiding only the legacy three-button nav strip avoids fighting status+IME animations.
             hide(WindowInsetsCompat.Type.navigationBars())
         }
     }
