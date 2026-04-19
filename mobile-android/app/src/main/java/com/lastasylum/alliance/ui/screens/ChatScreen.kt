@@ -14,6 +14,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.rememberScrollState
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -47,13 +49,14 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Keyboard
-import androidx.compose.material.icons.filled.Gif
+import androidx.compose.material.icons.outlined.AttachFile
+import androidx.compose.material.icons.outlined.Mood
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -78,6 +81,8 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -115,8 +120,19 @@ import com.lastasylum.alliance.ui.chat.chatMessageSemanticsPreview
 import com.lastasylum.alliance.ui.chat.replyPreviewText
 import com.lastasylum.alliance.ui.chat.canDeleteChatMessage
 import com.lastasylum.alliance.ui.chat.RoleBadge
+import com.lastasylum.alliance.ui.chat.chatDayKey
+import com.lastasylum.alliance.ui.chat.formatChatDaySeparator
 import com.lastasylum.alliance.ui.chat.formatChatTime
+import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingBubble
+import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingOnBubble
+import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingBubble
+import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingOnBubble
+import com.lastasylum.alliance.ui.theme.ChatTelegramTeamTagBg
+import com.lastasylum.alliance.ui.theme.ChatTelegramTeamTagFg
+import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMuted
+import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMutedIncoming
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
+import com.lastasylum.alliance.ui.theme.roleAccentColor
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -133,6 +149,32 @@ private data class ChatListLoadSignal(
     val hasMoreOlder: Boolean,
     val isBusy: Boolean,
 )
+
+private sealed interface ChatTimelineEntry {
+    data class DaySeparator(val label: String) : ChatTimelineEntry
+    data class ChatMessageItem(val message: ChatMessage) : ChatTimelineEntry
+}
+
+private fun buildChatTimeline(messages: List<ChatMessage>): List<ChatTimelineEntry> {
+    if (messages.isEmpty()) return emptyList()
+    val out = ArrayList<ChatTimelineEntry>(messages.size + 8)
+    for (i in messages.indices) {
+        if (i > 0) {
+            val newer = messages[i - 1]
+            val older = messages[i]
+            val d0 = chatDayKey(newer.createdAt)
+            val d1 = chatDayKey(older.createdAt)
+            if (d0 != null && d1 != null && d0 != d1) {
+                val label = formatChatDaySeparator(older.createdAt)
+                if (label.isNotBlank()) {
+                    out.add(ChatTimelineEntry.DaySeparator(label))
+                }
+            }
+        }
+        out.add(ChatTimelineEntry.ChatMessageItem(messages[i]))
+    }
+    return out
+}
 
 private enum class MediaPickerTab { Stickers, Gif }
 
@@ -525,6 +567,30 @@ private fun ChatSelectionToolbar(
 }
 
 @Composable
+private fun ChatDayDivider(label: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.92f),
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+        ) {
+            Text(
+                text = label,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
 private fun ChatTypingBanner(typingPeers: Map<String, String>) {
     if (typingPeers.isEmpty()) return
     val names = typingPeers.values.distinct().sorted()
@@ -555,11 +621,12 @@ private fun ChatMessagesLazyList(
     onToggleMessageSelection: (String) -> Unit,
 ) {
     val minSystemViewport = (LocalConfiguration.current.screenHeightDp * 0.55f).dp.coerceAtLeast(280.dp)
+    val timeline = remember(state.messages) { buildChatTimeline(state.messages) }
     LazyColumn(
         state = listState,
         modifier = modifier,
         reverseLayout = true,
-        verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.blockGap),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
         contentPadding = PaddingValues(
             top = SquadRelayDimens.itemGap,
             bottom = SquadRelayDimens.itemGap,
@@ -643,27 +710,43 @@ private fun ChatMessagesLazyList(
 
             else -> {
                 items(
-                    items = state.messages,
-                    key = { msg -> chatMessageKey(msg) },
-                    contentType = { _ -> "chat_message" },
-                ) { message ->
-                    ChatBubbleRow(
-                        message = message,
-                        isMine = message.senderId == state.currentUserId,
-                        canDelete = canDeleteChatMessage(
-                            message = message,
-                            currentUserId = state.currentUserId,
-                            currentUserRole = state.currentUserRole,
-                        ),
-                        deleting = state.deletingMessageId == message._id,
-                        inSelectionMode = inSelectionMode,
-                        isSelected = message._id != null && message._id in selectedMessageIds,
-                        onOpenActions = { id -> onOpenMessageActions(id) },
-                        onBeginSelection = onBeginMessageSelection,
-                        onToggleSelection = onToggleMessageSelection,
-                        onSwipeReply = onReplyToMessage,
-                        onJumpToQuotedMessage = jumpToQuotedMessage,
-                    )
+                    count = timeline.size,
+                    key = { idx ->
+                        when (val e = timeline[idx]) {
+                            is ChatTimelineEntry.DaySeparator -> "day:$idx:${e.label}"
+                            is ChatTimelineEntry.ChatMessageItem -> chatMessageKey(e.message)
+                        }
+                    },
+                    contentType = { idx ->
+                        when (timeline[idx]) {
+                            is ChatTimelineEntry.DaySeparator -> "chat_day"
+                            is ChatTimelineEntry.ChatMessageItem -> "chat_message"
+                        }
+                    },
+                ) { idx ->
+                    when (val e = timeline[idx]) {
+                        is ChatTimelineEntry.DaySeparator -> ChatDayDivider(e.label)
+                        is ChatTimelineEntry.ChatMessageItem -> {
+                            val message = e.message
+                            ChatBubbleRow(
+                                message = message,
+                                isMine = message.senderId == state.currentUserId,
+                                canDelete = canDeleteChatMessage(
+                                    message = message,
+                                    currentUserId = state.currentUserId,
+                                    currentUserRole = state.currentUserRole,
+                                ),
+                                deleting = state.deletingMessageId == message._id,
+                                inSelectionMode = inSelectionMode,
+                                isSelected = message._id != null && message._id in selectedMessageIds,
+                                onOpenActions = { id -> onOpenMessageActions(id) },
+                                onBeginSelection = onBeginMessageSelection,
+                                onToggleSelection = onToggleMessageSelection,
+                                onSwipeReply = onReplyToMessage,
+                                onJumpToQuotedMessage = jumpToQuotedMessage,
+                            )
+                        }
+                    }
                 }
                 if (state.isLoadingOlder) {
                     item {
@@ -850,15 +933,16 @@ private fun ChatComposer(
                         .fillMaxWidth()
                         .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     Surface(
-                        shape = MaterialTheme.shapes.large,
+                        shape = RoundedCornerShape(26.dp),
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         tonalElevation = 0.dp,
+                        shadowElevation = 0.dp,
                         modifier = Modifier
                             .weight(1f)
-                            .heightIn(min = SquadRelayDimens.composerMinHeight),
+                            .heightIn(min = SquadRelayDimens.composerMinHeight.coerceAtLeast(48.dp)),
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -874,6 +958,7 @@ private fun ChatComposer(
                                     } else {
                                         focusManager.clearFocus()
                                         keyboard?.hide()
+                                        mediaTab = MediaPickerTab.Stickers
                                         showMediaPanel = true
                                     }
                                 },
@@ -884,7 +969,7 @@ private fun ChatComposer(
                                     imageVector = if (showMediaPanel) {
                                         Icons.Outlined.Keyboard
                                     } else {
-                                        Icons.Filled.Gif
+                                        Icons.Outlined.Mood
                                     },
                                     contentDescription = if (showMediaPanel) {
                                         stringResource(R.string.chat_show_keyboard_cd)
@@ -930,31 +1015,54 @@ private fun ChatComposer(
                                     }
                                 },
                             )
-                            AnimatedVisibility(
-                                visible = draft.isNotBlank() && sendEnabled && !readOnly,
-                                enter = fadeIn(),
-                                exit = fadeOut(),
+                            IconButton(
+                                onClick = {
+                                    if (readOnly) return@IconButton
+                                    focusManager.clearFocus()
+                                    keyboard?.hide()
+                                    mediaTab = MediaPickerTab.Gif
+                                    showMediaPanel = true
+                                },
+                                enabled = !readOnly,
+                                modifier = Modifier.size(44.dp),
                             ) {
-                                IconButton(
-                                    onClick = onSendDraft,
-                                    enabled = !isSending,
-                                    modifier = Modifier.size(44.dp),
-                                ) {
-                                    if (isSending) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(22.dp),
-                                            strokeWidth = 2.dp,
-                                            color = MaterialTheme.colorScheme.primary,
-                                        )
-                                    } else {
-                                        Icon(
-                                            imageVector = Icons.AutoMirrored.Outlined.Send,
-                                            contentDescription = stringResource(R.string.chat_send),
-                                            tint = MaterialTheme.colorScheme.primary,
-                                        )
-                                    }
-                                }
+                                Icon(
+                                    imageVector = Icons.Outlined.AttachFile,
+                                    contentDescription = stringResource(R.string.chat_attach_gif),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
+                        }
+                    }
+                    val fabEnabled = sendEnabled && !readOnly && draft.isNotBlank() && !isSending
+                    FloatingActionButton(
+                        onClick = { if (fabEnabled) onSendDraft() },
+                        modifier = Modifier.size(52.dp),
+                        shape = CircleShape,
+                        containerColor = if (fabEnabled) {
+                            ChatTelegramOutgoingBubble
+                        } else {
+                            ChatTelegramOutgoingBubble.copy(alpha = 0.42f)
+                        },
+                        contentColor = Color.White,
+                        elevation = FloatingActionButtonDefaults.elevation(
+                            defaultElevation = 0.dp,
+                            pressedElevation = 2.dp,
+                            focusedElevation = 0.dp,
+                            hoveredElevation = 0.dp,
+                        ),
+                    ) {
+                        if (isSending) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp,
+                                color = Color.White,
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.Send,
+                                contentDescription = stringResource(R.string.chat_send),
+                            )
                         }
                     }
                 }
@@ -1010,7 +1118,7 @@ private fun ChatComposer(
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                             )
                             LazyVerticalGrid(
-                                columns = GridCells.Fixed(3),
+                                columns = GridCells.Fixed(4),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .heightIn(max = 280.dp)
@@ -1172,6 +1280,45 @@ private fun ChatSenderAvatar(
     }
 }
 
+@Composable
+private fun ChatBubbleAuthorLine(
+    displayName: String,
+    nameAccent: Color,
+    teamTag: String?,
+    senderRole: String,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = displayName,
+            style = MaterialTheme.typography.labelLarge,
+            color = nameAccent,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (teamTag != null) {
+            Surface(
+                shape = RoundedCornerShape(5.dp),
+                color = ChatTelegramTeamTagBg,
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp,
+            ) {
+                Text(
+                    text = teamTag,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = ChatTelegramTeamTagFg,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                )
+            }
+        }
+        RoleBadge(role = senderRole)
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ChatBubbleRow(
@@ -1206,250 +1353,394 @@ private fun ChatBubbleRow(
         MutableInteractionSource()
     }
     val telegramUrl = telegramAvatarUrl(message.senderTelegramUsername)
+    val floatingSticker = stickerStem != null && message.replyTo == null
+    val senderAccent = roleAccentColor(message.senderRole)
+    val bubbleBg = if (isMine) ChatTelegramOutgoingBubble else ChatTelegramIncomingBubble
+    val onBubble = if (isMine) ChatTelegramOutgoingOnBubble else ChatTelegramIncomingOnBubble
+    val timeMuted = if (isMine) ChatTelegramTimeMuted else ChatTelegramTimeMutedIncoming
+    val stemTag = message.senderTeamTag?.trim()?.takeIf { it.isNotEmpty() }
+    val displayName = message.senderUsername?.trim().orEmpty().ifBlank { senderLine }
+    val bubbleShape = RoundedCornerShape(
+        topStart = 16.dp,
+        topEnd = 16.dp,
+        bottomStart = if (isMine) 16.dp else 4.dp,
+        bottomEnd = if (isMine) 4.dp else 16.dp,
+    )
+    val bubbleContext = LocalContext.current
+    val formattedTime = formatChatTime(message.createdAt)
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isMine) Arrangement.End else Arrangement.Start,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (inSelectionMode && canDelete && !isMine) {
-            Checkbox(
-                checked = isSelected,
-                onCheckedChange = {
-                    if (!messageId.isNullOrBlank()) {
-                        onToggleSelection(messageId)
+    val swipeModifier = if (messageId != null) {
+        Modifier.pointerInput(messageId, layoutDirection, swipePx) {
+            var accX = 0f
+            var accY = 0f
+            detectDragGestures(
+                onDragEnd = {
+                    val dominantHorizontal = kotlin.math.abs(accX) > swipePx &&
+                        kotlin.math.abs(accX) > kotlin.math.abs(accY) * 1.15f
+                    if (dominantHorizontal) {
+                        val towardReply = if (layoutDirection == LayoutDirection.Rtl) {
+                            accX < 0
+                        } else {
+                            accX > 0
+                        }
+                        if (towardReply) {
+                            onSwipeReply(messageId)
+                        }
+                    }
+                    accX = 0f
+                    accY = 0f
+                },
+                onDrag = { change, dragAmount ->
+                    accX += dragAmount.x
+                    accY += dragAmount.y
+                    if (kotlin.math.abs(accX) > kotlin.math.abs(accY)) {
+                        change.consume()
                     }
                 },
-                enabled = !messageId.isNullOrBlank(),
             )
         }
-        Card(
-            modifier = Modifier
-                .widthIn(max = if (stickerStem != null) 212.dp else 340.dp)
-                .semantics(mergeDescendants = true) {
-                    contentDescription = bubbleDescription
-                    role = Role.Button
+    } else {
+        Modifier
+    }
+
+    val bubbleClickModifier = Modifier
+        .semantics(mergeDescendants = true) {
+            contentDescription = bubbleDescription
+            role = Role.Button
+        }
+        .combinedClickable(
+            onClick = {
+                if (inSelectionMode && canDelete && !messageId.isNullOrBlank()) {
+                    onToggleSelection(messageId)
                 }
-                .combinedClickable(
-                    onClick = {
-                        if (inSelectionMode && canDelete && !messageId.isNullOrBlank()) {
+            },
+            onLongClick = {
+                if (messageId.isNullOrBlank()) return@combinedClickable
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                if (canDelete) {
+                    if (inSelectionMode) {
+                        onToggleSelection(messageId)
+                    } else {
+                        onBeginSelection(messageId)
+                    }
+                } else {
+                    onOpenActions(messageId)
+                }
+            },
+        )
+
+    @Composable
+    fun BubbleContents() {
+        val bubblePadH = if (stickerStem != null) 8.dp else 12.dp
+        val bubblePadV = if (stickerStem != null) 8.dp else 10.dp
+        Column(
+            modifier = Modifier
+                .padding(horizontal = bubblePadH, vertical = bubblePadV)
+                .then(swipeModifier),
+            verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+        ) {
+            if (!isMine) {
+                ChatBubbleAuthorLine(
+                    displayName = displayName,
+                    nameAccent = senderAccent,
+                    teamTag = stemTag,
+                    senderRole = message.senderRole,
+                )
+            }
+
+            message.replyTo?.let { reply ->
+                Surface(
+                    modifier = Modifier
+                        .clickable(
+                            interactionSource = replyQuoteInteraction,
+                            indication = ripple(bounded = true),
+                            onClick = { onJumpToQuotedMessage(reply._id) },
+                        )
+                        .semantics {
+                            contentDescription = quotedJumpLabel
+                            role = Role.Button
+                        },
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (isMine) {
+                        ChatTelegramOutgoingOnBubble.copy(alpha = 0.14f)
+                    } else {
+                        ChatTelegramIncomingOnBubble.copy(alpha = 0.12f)
+                    },
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp,
+                ) {
+                    Column(
+                        modifier = Modifier.padding(
+                            horizontal = SquadRelayDimens.itemGap,
+                            vertical = SquadRelayDimens.headerSubtitleGap + 2.dp,
+                        ),
+                    ) {
+                        Text(
+                            text = chatSenderDisplayWithTag(
+                                reply.senderTeamTag,
+                                reply.senderUsername,
+                            ),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (isMine) {
+                                ChatTelegramOutgoingOnBubble.copy(alpha = 0.92f)
+                            } else {
+                                ChatTelegramIncomingOnBubble.copy(alpha = 0.95f)
+                            },
+                        )
+                        Text(
+                            text = replyPreviewText(reply),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isMine) {
+                                ChatTelegramOutgoingOnBubble.copy(alpha = 0.78f)
+                            } else {
+                                ChatTelegramIncomingOnBubble.copy(alpha = 0.72f)
+                            },
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+
+            if (stickerStem != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 2.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(bubbleContext)
+                            .data(ZlobyakaStickerPack.assetUriForStem(stickerStem))
+                            .size(384)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = stringResource(R.string.cd_chat_sticker),
+                        modifier = Modifier
+                            .widthIn(max = 220.dp)
+                            .heightIn(max = 200.dp)
+                            .clip(RoundedCornerShape(12.dp)),
+                        contentScale = ContentScale.Fit,
+                    )
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Bottom,
+                ) {
+                    Text(
+                        text = message.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = onBubble,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (formattedTime.isNotBlank()) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = formattedTime,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = timeMuted,
+                            modifier = Modifier.padding(bottom = 1.dp),
+                        )
+                    }
+                }
+            }
+
+            if (stickerStem != null && formattedTime.isNotBlank()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    Text(
+                        text = formattedTime,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = timeMuted,
+                    )
+                }
+            }
+
+            if (deleting && canDelete) {
+                Text(
+                    text = stringResource(R.string.chat_deleting_progress),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+    }
+
+    if (isMine) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            if (inSelectionMode && canDelete) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = {
+                        if (!messageId.isNullOrBlank()) {
                             onToggleSelection(messageId)
                         }
                     },
-                    onLongClick = {
-                        if (messageId.isNullOrBlank()) return@combinedClickable
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        if (canDelete) {
-                            if (inSelectionMode) {
-                                onToggleSelection(messageId)
-                            } else {
-                                onBeginSelection(messageId)
-                            }
-                        } else {
-                            onOpenActions(messageId)
-                        }
-                    },
-                ),
-            shape = RoundedCornerShape(
-                topStart = 18.dp,
-                topEnd = 18.dp,
-                bottomStart = if (isMine) 18.dp else 6.dp,
-                bottomEnd = if (isMine) 6.dp else 18.dp,
-            ),
-            colors = CardDefaults.cardColors(
-                containerColor = if (isMine) {
-                    MaterialTheme.colorScheme.primaryContainer
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainerHigh
-                },
-            ),
-        ) {
-            val bubblePadH = if (stickerStem != null) 8.dp else 12.dp
-            val bubblePadV = if (stickerStem != null) 8.dp else 10.dp
-            Column(
-                modifier = Modifier
-                    .padding(horizontal = bubblePadH, vertical = bubblePadV)
-                    .then(
-                        if (messageId != null) {
-                            Modifier.pointerInput(messageId, layoutDirection, swipePx) {
-                                var accX = 0f
-                                var accY = 0f
-                                detectDragGestures(
-                                    onDragEnd = {
-                                        val dominantHorizontal = kotlin.math.abs(accX) > swipePx &&
-                                            kotlin.math.abs(accX) > kotlin.math.abs(accY) * 1.15f
-                                        if (dominantHorizontal) {
-                                            val towardReply = if (layoutDirection == LayoutDirection.Rtl) {
-                                                accX < 0
-                                            } else {
-                                                accX > 0
-                                            }
-                                            if (towardReply) {
-                                                onSwipeReply(messageId)
-                                            }
-                                        }
-                                        accX = 0f
-                                        accY = 0f
-                                    },
-                                    onDrag = { change, dragAmount ->
-                                        accX += dragAmount.x
-                                        accY += dragAmount.y
-                                        if (kotlin.math.abs(accX) > kotlin.math.abs(accY)) {
-                                            change.consume()
-                                        }
-                                    },
-                                )
-                            }
-                        } else {
-                            Modifier
-                        },
-                    ),
-                verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    ChatSenderAvatar(telegramUrl = telegramUrl)
-                    Row(
-                        modifier = Modifier.weight(1f),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Text(
-                            text = senderLine,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = if (isMine) {
-                                MaterialTheme.colorScheme.onPrimaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            },
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                        )
-                        RoleBadge(role = message.senderRole)
-                        val time = formatChatTime(message.createdAt)
-                        if (time.isNotBlank()) {
-                            Text(
-                                text = time,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (isMine) {
-                                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.68f)
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                            )
-                        }
-                    }
-                }
-
-                message.replyTo?.let { reply ->
-                    Surface(
-                        modifier = Modifier
-                            .clickable(
-                                interactionSource = replyQuoteInteraction,
-                                indication = ripple(bounded = true),
-                                onClick = { onJumpToQuotedMessage(reply._id) },
-                            )
-                            .semantics {
-                                contentDescription = quotedJumpLabel
-                                role = Role.Button
-                            },
-                        shape = MaterialTheme.shapes.medium,
-                        color = if (isMine) {
-                            MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.08f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceContainerHighest
-                        },
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(
-                                horizontal = SquadRelayDimens.itemGap,
-                                vertical = SquadRelayDimens.headerSubtitleGap + 2.dp,
-                            ),
-                        ) {
-                            Text(
-                                text = chatSenderDisplayWithTag(
-                                    reply.senderTeamTag,
-                                    reply.senderUsername,
-                                ),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = if (isMine) {
-                                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.88f)
-                                } else {
-                                    MaterialTheme.colorScheme.primary
-                                },
-                            )
-                            Text(
-                                text = replyPreviewText(reply),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (isMine) {
-                                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f)
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                }
-
-                val bubbleContext = LocalContext.current
-                if (stickerStem != null) {
+                    enabled = !messageId.isNullOrBlank(),
+                )
+            }
+            if (floatingSticker) {
+                val floatMod = Modifier
+                    .widthIn(max = 232.dp)
+                    .then(bubbleClickModifier)
+                    .then(swipeModifier)
+                Column(modifier = floatMod) {
                     Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 2.dp),
-                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
                         AsyncImage(
                             model = ImageRequest.Builder(bubbleContext)
-                                .data(ZlobyakaStickerPack.assetUriForStem(stickerStem))
+                                .data(ZlobyakaStickerPack.assetUriForStem(stickerStem!!))
                                 .size(384)
                                 .crossfade(true)
                                 .build(),
                             contentDescription = stringResource(R.string.cd_chat_sticker),
                             modifier = Modifier
-                                .widthIn(max = 168.dp)
-                                .heightIn(max = 168.dp)
+                                .fillMaxWidth()
+                                .heightIn(max = 200.dp)
                                 .clip(RoundedCornerShape(12.dp)),
                             contentScale = ContentScale.Fit,
                         )
+                        if (formattedTime.isNotBlank()) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = Color.Black.copy(alpha = 0.45f),
+                                tonalElevation = 0.dp,
+                                shadowElevation = 0.dp,
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(6.dp),
+                            ) {
+                                Text(
+                                    text = formattedTime,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                )
+                            }
+                        }
                     }
-                } else {
-                    Text(
-                        text = message.text,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (isMine) {
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        },
-                    )
+                    if (deleting && canDelete) {
+                        Text(
+                            text = stringResource(R.string.chat_deleting_progress),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
-
-                if (deleting && canDelete) {
-                    Text(
-                        text = stringResource(R.string.chat_deleting_progress),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
+            } else {
+                Surface(
+                    modifier = Modifier
+                        .widthIn(max = if (stickerStem != null) 280.dp else 300.dp)
+                        .then(bubbleClickModifier),
+                    shape = bubbleShape,
+                    color = bubbleBg,
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp,
+                ) {
+                    BubbleContents()
                 }
             }
         }
-        if (inSelectionMode && canDelete && isMine) {
-            Checkbox(
-                checked = isSelected,
-                onCheckedChange = {
-                    if (!messageId.isNullOrBlank()) {
-                        onToggleSelection(messageId)
-                    }
-                },
-                enabled = !messageId.isNullOrBlank(),
+    } else {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Start,
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            if (inSelectionMode && canDelete) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = {
+                        if (!messageId.isNullOrBlank()) {
+                            onToggleSelection(messageId)
+                        }
+                    },
+                    enabled = !messageId.isNullOrBlank(),
+                )
+            }
+            ChatSenderAvatar(
+                telegramUrl = telegramUrl,
+                size = 38.dp,
+                modifier = Modifier.padding(end = 6.dp),
             )
+            if (floatingSticker) {
+                val floatMod = Modifier
+                    .widthIn(max = 232.dp)
+                    .then(bubbleClickModifier)
+                    .then(swipeModifier)
+                Column(modifier = floatMod) {
+                    ChatBubbleAuthorLine(
+                        displayName = displayName,
+                        nameAccent = senderAccent,
+                        teamTag = stemTag,
+                        senderRole = message.senderRole,
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 2.dp),
+                    ) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(bubbleContext)
+                                .data(ZlobyakaStickerPack.assetUriForStem(stickerStem!!))
+                                .size(384)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = stringResource(R.string.cd_chat_sticker),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 200.dp)
+                                .clip(RoundedCornerShape(12.dp)),
+                            contentScale = ContentScale.Fit,
+                        )
+                        if (formattedTime.isNotBlank()) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = Color.Black.copy(alpha = 0.45f),
+                                tonalElevation = 0.dp,
+                                shadowElevation = 0.dp,
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(6.dp),
+                            ) {
+                                Text(
+                                    text = formattedTime,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                )
+                            }
+                        }
+                    }
+                    if (deleting && canDelete) {
+                        Text(
+                            text = stringResource(R.string.chat_deleting_progress),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            } else {
+                Surface(
+                    modifier = Modifier
+                        .widthIn(max = if (stickerStem != null) 280.dp else 300.dp)
+                        .then(bubbleClickModifier),
+                    shape = bubbleShape,
+                    color = bubbleBg,
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp,
+                ) {
+                    BubbleContents()
+                }
+            }
         }
     }
 }

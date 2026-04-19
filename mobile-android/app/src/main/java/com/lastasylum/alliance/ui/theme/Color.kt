@@ -34,6 +34,16 @@ val SquadRelayScrim = Color(0xE6000000)
 val SquadRelayMineBubble = Color(0xFF2C2740)
 val SquadRelayMineOnBubble = Color(0xFFF0EAFF)
 
+/** Telegram-like chat bubbles (used only in chat screen). */
+val ChatTelegramOutgoingBubble = Color(0xFF5288C4)
+val ChatTelegramOutgoingOnBubble = Color(0xFFFFFFFF)
+val ChatTelegramIncomingBubble = Color(0xFF1E2C3A)
+val ChatTelegramIncomingOnBubble = Color(0xFFE8EEF5)
+val ChatTelegramTeamTagBg = Color(0xFF2D8A5C)
+val ChatTelegramTeamTagFg = Color(0xFFFFFFFF)
+val ChatTelegramTimeMuted = Color(0x99FFFFFF)
+val ChatTelegramTimeMutedIncoming = Color(0x99A8B5C8)
+
 fun roleAccentColor(role: String): Color = when (role) {
     "R5" -> Color(0xFFFFD54F)
     "R4" -> Color(0xFFD4A5FF)
