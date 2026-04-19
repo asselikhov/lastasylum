@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -214,7 +215,11 @@ fun ChatScreen(
 
         if (state.sendFailure != null || (selectedRoomId != null && state.rooms.isNotEmpty())) {
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // adjustNothing + edge-to-edge: window does not resize; lift composer with IME
+                    // insets only (no adjustResize, so no double gap with this padding).
+                    .imePadding(),
             ) {
                 state.sendFailure?.let { failure ->
                     Surface(
@@ -531,11 +536,10 @@ private fun ChatComposer(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                // Tighter bottom: window uses adjustResize so the panel sits flush on the keyboard;
-                // keep top/side padding for reply row and field.
+                // Tight bottom edge above IME; outer Column uses imePadding (adjustNothing).
                 .padding(
                     top = SquadRelayDimens.composerInnerPadding,
-                    bottom = 6.dp,
+                    bottom = 0.dp,
                 ),
             verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
         ) {

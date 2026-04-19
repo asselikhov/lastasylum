@@ -39,8 +39,8 @@ class MainActivity : ComponentActivity() {
         WindowCompat.getInsetsController(window, window.decorView).apply {
             systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            // Manifest uses adjustResize for flush keyboard; IME is not duplicated in Compose.
-            // Hiding only the legacy three-button nav strip avoids fighting status+IME animations.
+            // Manifest uses adjustNothing; chat uses Compose imePadding (edge-to-edge + adjustResize
+            // often leaves IME drawing over the composer). Hiding only the legacy three-button nav strip.
             hide(WindowInsetsCompat.Type.navigationBars())
         }
     }
