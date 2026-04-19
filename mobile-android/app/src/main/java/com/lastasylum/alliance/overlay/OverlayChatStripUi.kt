@@ -11,12 +11,16 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.graphics.ColorUtils
 import com.google.android.material.card.MaterialCardView
+import coil.Coil
+import coil.request.ImageRequest
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
 import kotlin.math.abs
 
 /**
@@ -87,6 +91,7 @@ object OverlayChatStripUi {
             titleText = title,
             titleColor = Color.parseColor("#F4F0FF"),
             senderRole = null,
+            stickerStem = null,
             bodyText = message.replace("\n", " ").trim(),
             bodyColor = Color.parseColor("#D8D0EC"),
             showDismiss = false,
@@ -103,8 +108,15 @@ object OverlayChatStripUi {
         selfUserId: String?,
         showDismiss: Boolean = true,
     ) {
+        val stickerStem = ZlobyakaStickerPack.parseStem(text)
         val safe = text.replace("\n", " ").trim()
-        val preview = if (safe.length > 160) safe.take(160) + "…" else safe
+        val preview = if (stickerStem != null) {
+            context.getString(R.string.chat_reply_preview_sticker)
+        } else if (safe.length > 160) {
+            safe.take(160) + "…"
+        } else {
+            safe
+        }
         val displayName = sender.trim().take(22).ifBlank { "—" }
         val initial = displayName.first().uppercaseChar()
         val (accent, bodyMuted) = colorsFor(senderId, displayName, selfUserId)
@@ -123,6 +135,7 @@ object OverlayChatStripUi {
             titleText = displayName,
             titleColor = titleColor,
             senderRole = senderRole?.trim()?.take(12)?.takeIf { it.isNotBlank() },
+            stickerStem = stickerStem,
             bodyText = preview,
             bodyColor = bodyColor,
             showDismiss = showDismiss,
@@ -137,6 +150,7 @@ object OverlayChatStripUi {
         titleText: String,
         titleColor: Int,
         senderRole: String?,
+        stickerStem: String?,
         bodyText: String,
         bodyColor: Int,
         showDismiss: Boolean = true,
@@ -190,16 +204,35 @@ object OverlayChatStripUi {
             ).apply { topMargin = dp(context, 1f).toInt() }
         }
 
-        val bodyView = TextView(context).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(context, 3f).toInt() }
-            text = bodyText
-            setTextColor(bodyColor)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-            maxLines = 4
-            ellipsize = TextUtils.TruncateAt.END
+        val stickerSide = dp(context, 64f).toInt()
+        val bodyView: View = if (!stickerStem.isNullOrBlank()) {
+            ImageView(context).apply {
+                layoutParams = LinearLayout.LayoutParams(stickerSide, stickerSide).apply {
+                    topMargin = dp(context, 3f).toInt()
+                }
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                adjustViewBounds = true
+                contentDescription = context.getString(R.string.cd_chat_sticker)
+                Coil.imageLoader(context).enqueue(
+                    ImageRequest.Builder(context)
+                        .data(ZlobyakaStickerPack.assetUriForStem(stickerStem))
+                        .size(160)
+                        .target(this)
+                        .build(),
+                )
+            }
+        } else {
+            TextView(context).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(context, 3f).toInt() }
+                text = bodyText
+                setTextColor(bodyColor)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                maxLines = 4
+                ellipsize = TextUtils.TruncateAt.END
+            }
         }
 
         val textColumn = LinearLayout(context).apply {

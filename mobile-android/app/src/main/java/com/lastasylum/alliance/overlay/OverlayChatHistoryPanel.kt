@@ -9,6 +9,7 @@ import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
+import android.widget.ImageView
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -19,9 +20,12 @@ import com.google.android.material.card.MaterialCardView
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
+import coil.Coil
+import coil.request.ImageRequest
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.ui.chat.ChatStickerFormat
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import java.time.Instant
 import kotlin.math.abs
@@ -339,16 +343,36 @@ object OverlayChatHistoryPanel {
             addView(roleTv)
         }
 
-        val body = TextView(context).apply {
-            text = ChatStickerFormat.humanReadableBody(context, msg.text).trimEnd()
-            setTextColor(bodyColor)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            maxLines = 40
-            ellipsize = TextUtils.TruncateAt.END
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(context, 4f).toInt() }
+        val stickerStem = ZlobyakaStickerPack.parseStem(msg.text)
+        val body: View = if (stickerStem != null) {
+            val side = dp(context, 120f).toInt()
+            ImageView(context).apply {
+                layoutParams = LinearLayout.LayoutParams(side, side).apply {
+                    topMargin = dp(context, 4f).toInt()
+                }
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                adjustViewBounds = true
+                contentDescription = context.getString(R.string.cd_chat_sticker)
+                Coil.imageLoader(context).enqueue(
+                    ImageRequest.Builder(context)
+                        .data(ZlobyakaStickerPack.assetUriForStem(stickerStem))
+                        .size(256)
+                        .target(this)
+                        .build(),
+                )
+            }
+        } else {
+            TextView(context).apply {
+                text = ChatStickerFormat.humanReadableBody(context, msg.text).trimEnd()
+                setTextColor(bodyColor)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                maxLines = 40
+                ellipsize = TextUtils.TruncateAt.END
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(context, 4f).toInt() }
+            }
         }
 
         val accentBar = View(context).apply {

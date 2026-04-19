@@ -24,6 +24,7 @@ import { ChatRoomsService } from './chat-rooms.service';
 import { ChatService } from './chat.service';
 import { CreateChatRoomDto } from './dto/create-chat-room.dto';
 import { CreateMessageDto } from './dto/create-message.dto';
+import { formatChatPushBody } from './zlobyaka-stickers.const';
 import { UpdateChatRoomDto } from './dto/update-chat-room.dto';
 
 type RequestUser = {
@@ -143,10 +144,7 @@ export class ChatController {
     this.chatGateway.broadcastNewMessage(dto.roomId, message);
     const authorUser = await this.usersService.findById(req.user.userId);
     if (authorUser && message.allianceId !== GLOBAL_CHAT_ALLIANCE_ID) {
-      const preview =
-        dto.text.trim().length > 140
-          ? `${dto.text.trim().slice(0, 137)}...`
-          : dto.text.trim();
+      const preview = formatChatPushBody(dto.text);
       const messageId =
         typeof (message as { _id?: unknown })._id === 'string'
           ? (message as { _id: string })._id

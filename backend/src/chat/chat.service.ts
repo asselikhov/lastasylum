@@ -13,6 +13,10 @@ import { UserDocument } from '../users/schemas/user.schema';
 import { UsersService } from '../users/users.service';
 import { ChatRoomsService } from './chat-rooms.service';
 import { Message } from './schemas/message.schema';
+import {
+  parseZlobyakaStickerStem,
+  ZLOBYAKA_STICKER_STEMS,
+} from './zlobyaka-stickers.const';
 
 type MessageAuthor = {
   userId: string;
@@ -221,6 +225,17 @@ export class ChatService {
     );
   }
 
+  /**
+   * If the message is exactly a Zlobyaka sticker wire payload, the stem must be in the catalog.
+   */
+  private assertZlobyakaStickerPayload(text: string): void {
+    const stem = parseZlobyakaStickerStem(text);
+    if (!stem) return;
+    if (!ZLOBYAKA_STICKER_STEMS.has(stem)) {
+      throw new BadRequestException('Unknown sticker');
+    }
+  }
+
   private async getReplyTarget(
     allianceId: string,
     roomObjectId: Types.ObjectId,
@@ -282,10 +297,13 @@ export class ChatService {
       input.replyToMessageId,
     );
 
+    const trimmedText = input.text.trim();
+    this.assertZlobyakaStickerPayload(trimmedText);
+
     const created = await this.messageModel.create({
       allianceId,
       roomId: roomObjectId,
-      text: input.text.trim(),
+      text: trimmedText,
       senderId: input.author.userId,
       senderUsername: input.author.username,
       senderRole: input.author.role,

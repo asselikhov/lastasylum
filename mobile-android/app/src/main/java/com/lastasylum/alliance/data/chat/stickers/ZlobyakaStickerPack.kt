@@ -5,6 +5,7 @@ import android.content.Context
 /**
  * Built-in sticker pack shipped under [ASSET_FOLDER] as PNG files (512×512 source).
  * Wire format: whole message body is exactly `[[zlobyaka:<file_stem>]]` (no .png suffix).
+ * Allowed stems must match the catalog on the server (`zlobyaka-stickers.const.ts`).
  */
 object ZlobyakaStickerPack {
     const val PACK_KEY: String = "zlobyaka"
