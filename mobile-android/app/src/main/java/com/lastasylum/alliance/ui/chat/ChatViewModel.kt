@@ -6,9 +6,13 @@ import androidx.lifecycle.viewModelScope
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatMessageDeletedEvent
 import com.lastasylum.alliance.data.chat.ChatRepository
+import com.lastasylum.alliance.data.chat.ChatTypingEvent
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
 import com.lastasylum.alliance.ui.util.toUserMessageRu
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,6 +35,8 @@ class ChatViewModel(
     )
     val state: StateFlow<ChatState> = _state.asStateFlow()
     private val knownMessageIds = LinkedHashSet<String>()
+    private val typingPeerJobs = mutableMapOf<String, Job>()
+    private var typingEmitJob: Job? = null
 
     private val res get() = getApplication<Application>().resources
 
@@ -78,6 +84,10 @@ class ChatViewModel(
     }
 
     private suspend fun openRoom(roomId: String, rooms: List<ChatRoomDto>) {
+        typingEmitJob?.cancel()
+        typingEmitJob = null
+        typingPeerJobs.values.forEach { it.cancel() }
+        typingPeerJobs.clear()
         knownMessageIds.clear()
         _state.value = _state.value.copy(
             isLoading = true,
@@ -98,6 +108,8 @@ class ChatViewModel(
             deletingMessageId = null,
             newestMessageKey = null,
             scrollToLatestNonce = 0L,
+            sendFailure = null,
+            typingPeers = emptyMap(),
         )
         repository.loadRecentMessages(roomId, beforeMessageId = null, limit = PAGE_SIZE)
             .onSuccess { loaded ->
@@ -113,6 +125,7 @@ class ChatViewModel(
                     roomId = roomId,
                     onMessage = ::onIncomingMessage,
                     onDeleteMessage = ::onDeletedMessage,
+                    onTyping = ::onTypingFromPeer,
                 )
             }
             .onFailure { e ->
@@ -156,23 +169,29 @@ class ChatViewModel(
         }
     }
 
-    fun sendMessage(text: String) {
-        if (text.isBlank()) return
+    fun sendMessage(text: String, replyOverride: String? = null) {
+        val trimmed = text.trim()
+        if (trimmed.isBlank()) return
         val roomId = _state.value.selectedRoomId ?: return
-        val replyToMessageId = _state.value.replyToMessage?._id
+        val replyToMessageId = replyOverride ?: _state.value.replyToMessage?._id
         viewModelScope.launch {
             _state.value = _state.value.copy(
                 isSending = true,
                 error = null,
+                sendFailure = null,
             )
-            repository.sendMessageWithRetries(text, roomId, replyToMessageId)
+            repository.sendMessageWithRetries(trimmed, roomId, replyToMessageId)
                 .onSuccess { sent ->
                     applyIncomingMessage(sent, clearComposer = true)
                 }
                 .onFailure { throwable ->
                     _state.value = _state.value.copy(
                         isSending = false,
-                        error = throwable.toUserMessageRu(res),
+                        sendFailure = ChatSendFailure(
+                            messageText = trimmed,
+                            replyToMessageId = replyToMessageId,
+                            errorMessage = throwable.toUserMessageRu(res),
+                        ),
                     )
                 }
         }
@@ -182,9 +201,34 @@ class ChatViewModel(
         sendMessage(_state.value.draftMessage.trim())
     }
 
+    fun retrySendFailure() {
+        val failure = _state.value.sendFailure ?: return
+        sendMessage(failure.messageText, replyOverride = failure.replyToMessageId)
+    }
+
+    fun dismissSendFailure() {
+        if (_state.value.sendFailure == null) return
+        _state.value = _state.value.copy(sendFailure = null)
+    }
+
     fun setDraftMessage(value: String) {
         if (_state.value.draftMessage == value) return
         _state.value = _state.value.copy(draftMessage = value)
+        scheduleTypingEmit()
+    }
+
+    private fun scheduleTypingEmit() {
+        typingEmitJob?.cancel()
+        val roomId = _state.value.selectedRoomId ?: return
+        if (_state.value.draftMessage.isBlank()) return
+        typingEmitJob = viewModelScope.launch {
+            try {
+                delay(500)
+                repository.emitTypingPing(roomId)
+            } catch (_: CancellationException) {
+                // cancelled by newer keystroke or room switch
+            }
+        }
     }
 
     fun beginReplyToMessage(messageId: String) {
@@ -257,6 +301,31 @@ class ChatViewModel(
         }
     }
 
+    private fun onTypingFromPeer(event: ChatTypingEvent) {
+        viewModelScope.launch {
+            if (event.userId.isBlank() || event.userId == currentUserId) return@launch
+            val roomId = _state.value.selectedRoomId ?: return@launch
+            if (event.roomId.isNotBlank() && event.roomId != roomId) return@launch
+            val username = event.username.ifBlank { "…" }
+            typingPeerJobs[event.userId]?.cancel()
+            typingPeerJobs[event.userId] = launch {
+                try {
+                    val m = _state.value.typingPeers.toMutableMap()
+                    m[event.userId] = username
+                    _state.value = _state.value.copy(typingPeers = m)
+                    delay(3200)
+                    val m2 = _state.value.typingPeers.toMutableMap()
+                    m2.remove(event.userId)
+                    _state.value = _state.value.copy(typingPeers = m2)
+                } catch (_: CancellationException) {
+                    // superseded by a newer typing event for the same user
+                } finally {
+                    typingPeerJobs.remove(event.userId)
+                }
+            }
+        }
+    }
+
     private fun onDeletedMessage(event: ChatMessageDeletedEvent) {
         viewModelScope.launch {
             val roomId = _state.value.selectedRoomId ?: return@launch
@@ -306,6 +375,7 @@ class ChatViewModel(
                 draftMessage = "",
                 replyToMessage = null,
                 scrollToLatestNonce = nextState.scrollToLatestNonce + 1L,
+                sendFailure = null,
             )
         }
         _state.value = syncSelections(nextState)
@@ -374,6 +444,9 @@ class ChatViewModel(
     }
 
     override fun onCleared() {
+        typingEmitJob?.cancel()
+        typingPeerJobs.values.forEach { it.cancel() }
+        typingPeerJobs.clear()
         repository.disconnectRealtime()
         super.onCleared()
     }

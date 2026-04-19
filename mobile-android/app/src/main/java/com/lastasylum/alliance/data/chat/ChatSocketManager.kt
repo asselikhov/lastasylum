@@ -20,6 +20,7 @@ class ChatSocketManager {
     private val messageListeners = CopyOnWriteArrayList<(ChatMessage) -> Unit>()
     private val messageDeletedListeners =
         CopyOnWriteArrayList<(ChatMessageDeletedEvent) -> Unit>()
+    private val typingListeners = CopyOnWriteArrayList<(ChatTypingEvent) -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var reconnectAttempt = 0
     private var intentionalDisconnect = false
@@ -57,9 +58,20 @@ class ChatSocketManager {
         messageDeletedListeners.remove(listener)
     }
 
+    fun addTypingListener(listener: (ChatTypingEvent) -> Unit) {
+        if (!typingListeners.contains(listener)) {
+            typingListeners.add(listener)
+        }
+    }
+
+    fun removeTypingListener(listener: (ChatTypingEvent) -> Unit) {
+        typingListeners.remove(listener)
+    }
+
     fun clearMessageListeners() {
         messageListeners.clear()
         messageDeletedListeners.clear()
+        typingListeners.clear()
     }
 
     fun connect(
@@ -102,6 +114,11 @@ class ChatSocketManager {
         )
     }
 
+    fun emitTyping(roomId: String) {
+        if (roomId.isBlank()) return
+        socket?.emit("typing", JSONObject().put("roomId", roomId))
+    }
+
     fun disconnect() {
         intentionalDisconnect = true
         cancelReconnect()
@@ -113,6 +130,8 @@ class ChatSocketManager {
         cancelReconnect()
         disconnectSocket()
         messageListeners.clear()
+        messageDeletedListeners.clear()
+        typingListeners.clear()
     }
 
     private fun cancelReconnect() {
@@ -207,6 +226,20 @@ class ChatSocketManager {
                     if (event.roomId.isNotBlank() && event.roomId != roomId) return@on
                     if (event.messageId.isBlank()) return@on
                     messageDeletedListeners.forEach { l ->
+                        runCatching { l(event) }
+                    }
+                }
+                on("user:typing") { args ->
+                    val payload = args.firstOrNull() as? JSONObject ?: return@on
+                    val rid = payload.optString("roomId", "")
+                    if (rid.isNotBlank() && rid != roomId) return@on
+                    val event = ChatTypingEvent(
+                        roomId = rid,
+                        userId = payload.optString("userId"),
+                        username = payload.optString("username"),
+                    )
+                    if (event.userId.isBlank()) return@on
+                    typingListeners.forEach { l ->
                         runCatching { l(event) }
                     }
                 }

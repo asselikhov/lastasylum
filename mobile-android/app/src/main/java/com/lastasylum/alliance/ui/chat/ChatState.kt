@@ -3,6 +3,12 @@ package com.lastasylum.alliance.ui.chat
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 
+data class ChatSendFailure(
+    val messageText: String,
+    val replyToMessageId: String?,
+    val errorMessage: String,
+)
+
 data class ChatState(
     val isLoading: Boolean = false,
     val isRoomsLoading: Boolean = true,
@@ -23,4 +29,7 @@ data class ChatState(
     val newestMessageKey: String? = null,
     /** Increments after a successful own send so the list scrolls to the latest message. */
     val scrollToLatestNonce: Long = 0L,
+    val sendFailure: ChatSendFailure? = null,
+    /** userId → display name for typing indicator (ephemeral). */
+    val typingPeers: Map<String, String> = emptyMap(),
 )

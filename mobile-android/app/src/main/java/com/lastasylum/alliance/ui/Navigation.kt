@@ -189,6 +189,8 @@ fun AppNavigation(
                     onRequestDeleteMessage = chatViewModel::requestDeleteMessage,
                     onDismissDeleteMessage = chatViewModel::dismissDeleteMessage,
                     onConfirmDeleteMessage = chatViewModel::confirmDeleteMessage,
+                    onRetrySendFailure = chatViewModel::retrySendFailure,
+                    onDismissSendFailure = chatViewModel::dismissSendFailure,
                 )
             }
             composable(AppTab.OVERLAY.route) {

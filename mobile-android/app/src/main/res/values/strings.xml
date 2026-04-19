@@ -53,6 +53,12 @@
     <string name="chat_delete_body">Сообщение исчезнет из чата для всех участников. Действие нельзя отменить.</string>
     <string name="chat_delete_confirm">Удалить</string>
     <string name="chat_delete_cancel">Отмена</string>
+    <string name="chat_typing_one">%1$s печатает…</string>
+    <string name="chat_typing_many">%1$s печатают…</string>
+    <string name="chat_send_failed_title">Не отправлено</string>
+    <string name="chat_send_failed_retry">Повторить</string>
+    <string name="chat_send_failed_dismiss">Скрыть</string>
+    <string name="chat_quoted_jump_cd">Перейти к цитируемому сообщению</string>
 
     <!-- Onboarding -->
     <string name="onboarding_permissions_title">Разрешения для боя</string>

@@ -1,7 +1,9 @@
 package com.lastasylum.alliance.ui.screens
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -40,11 +43,13 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.derivedStateOf
@@ -52,13 +57,21 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
@@ -67,6 +80,7 @@ import com.lastasylum.alliance.ui.chat.RoleBadge
 import com.lastasylum.alliance.ui.chat.formatChatTime
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
 
 private data class ChatListLoadSignal(
@@ -92,11 +106,11 @@ fun ChatScreen(
     onRequestDeleteMessage: (String) -> Unit,
     onDismissDeleteMessage: () -> Unit,
     onConfirmDeleteMessage: () -> Unit,
+    onRetrySendFailure: () -> Unit,
+    onDismissSendFailure: () -> Unit,
 ) {
-    val focusManager = LocalFocusManager.current
-    val keyboardController = LocalSoftwareKeyboardController.current
-
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     val selectedRoomId = state.selectedRoomId
     val activeActionMessage = remember(state.activeActionMessageId, state.messages) {
         state.messages.find { it._id == state.activeActionMessageId }
@@ -152,6 +166,17 @@ fun ChatScreen(
         listState.scrollToItem(0)
     }
 
+    val jumpToQuotedMessage = remember(scope, listState, state.messages) {
+        { targetId: String ->
+            val idx = state.messages.indexOfFirst { it._id == targetId }
+            if (idx >= 0) {
+                scope.launch {
+                    listState.scrollToItem(idx)
+                }
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -168,6 +193,20 @@ fun ChatScreen(
                 selectedRoomId = selectedRoomId,
                 onSelectRoom = onSelectRoom,
             )
+
+            if (state.typingPeers.isNotEmpty()) {
+                val names = state.typingPeers.values.distinct().sorted()
+                Text(
+                    text = if (names.size == 1) {
+                        stringResource(R.string.chat_typing_one, names.first())
+                    } else {
+                        stringResource(R.string.chat_typing_many, names.joinToString(", "))
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = SquadRelayDimens.itemGap),
+                )
+            }
 
             LazyColumn(
                 state = listState,
@@ -255,6 +294,8 @@ fun ChatScreen(
                             ),
                             deleting = state.deletingMessageId == message._id,
                             onOpenActions = { id -> onOpenMessageActions(id) },
+                            onSwipeReply = onReplyToMessage,
+                            onJumpToQuotedMessage = jumpToQuotedMessage,
                         )
                     }
                     if (state.isLoadingOlder) {
@@ -307,6 +348,47 @@ fun ChatScreen(
             }
         }
 
+        state.sendFailure?.let { failure ->
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = SquadRelayDimens.contentPaddingHorizontal,
+                            vertical = SquadRelayDimens.itemGap,
+                        ),
+                    verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+                ) {
+                    Text(
+                        text = stringResource(R.string.chat_send_failed_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    Text(
+                        text = failure.errorMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextButton(onClick = onDismissSendFailure) {
+                            Text(stringResource(R.string.chat_send_failed_dismiss))
+                        }
+                        TextButton(onClick = onRetrySendFailure) {
+                            Text(stringResource(R.string.chat_send_failed_retry))
+                        }
+                    }
+                }
+            }
+        }
+
         if (selectedRoomId != null && state.rooms.isNotEmpty()) {
             ChatComposer(
                 draft = state.draftMessage,
@@ -315,8 +397,6 @@ fun ChatScreen(
                 onDraftChange = onDraftChange,
                 onSendDraft = {
                     if (!state.draftMessage.isBlank() && !state.isSending) {
-                        keyboardController?.hide()
-                        focusManager.clearFocus(force = true)
                         onSendDraft()
                     }
                 },
@@ -531,8 +611,25 @@ private fun ChatBubbleRow(
     canDelete: Boolean,
     deleting: Boolean,
     onOpenActions: (String) -> Unit,
+    onSwipeReply: (String) -> Unit,
+    onJumpToQuotedMessage: (String) -> Unit,
 ) {
     val messageId = message._id
+    val haptics = LocalHapticFeedback.current
+    val density = LocalDensity.current
+    val layoutDirection = LocalLayoutDirection.current
+    val swipePx = remember(density) { with(density) { 56.dp.toPx() } }
+    val bubbleDescription = stringResource(
+        R.string.cd_chat_message,
+        message.senderUsername,
+        message.senderRole,
+        message.text.take(120),
+    )
+    val quotedJumpLabel = stringResource(R.string.chat_quoted_jump_cd)
+    val replyQuoteInteraction = remember(message._id, message.replyTo?._id) {
+        MutableInteractionSource()
+    }
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isMine) Arrangement.End else Arrangement.Start,
@@ -540,10 +637,15 @@ private fun ChatBubbleRow(
         Card(
             modifier = Modifier
                 .widthIn(max = 340.dp)
+                .semantics(mergeDescendants = true) {
+                    contentDescription = bubbleDescription
+                    role = Role.Button
+                }
                 .combinedClickable(
                     onClick = {},
                     onLongClick = {
                         if (!messageId.isNullOrBlank()) {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             onOpenActions(messageId)
                         }
                     },
@@ -563,7 +665,43 @@ private fun ChatBubbleRow(
             ),
         ) {
             Column(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                modifier = Modifier
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+                    .then(
+                        if (messageId != null) {
+                            Modifier.pointerInput(messageId, layoutDirection, swipePx) {
+                                var accX = 0f
+                                var accY = 0f
+                                detectDragGestures(
+                                    onDragEnd = {
+                                        val dominantHorizontal = kotlin.math.abs(accX) > swipePx &&
+                                            kotlin.math.abs(accX) > kotlin.math.abs(accY) * 1.15f
+                                        if (dominantHorizontal) {
+                                            val towardReply = if (layoutDirection == LayoutDirection.Rtl) {
+                                                accX < 0
+                                            } else {
+                                                accX > 0
+                                            }
+                                            if (towardReply) {
+                                                onSwipeReply(messageId)
+                                            }
+                                        }
+                                        accX = 0f
+                                        accY = 0f
+                                    },
+                                    onDrag = { change, dragAmount ->
+                                        accX += dragAmount.x
+                                        accY += dragAmount.y
+                                        if (kotlin.math.abs(accX) > kotlin.math.abs(accY)) {
+                                            change.consume()
+                                        }
+                                    },
+                                )
+                            }
+                        } else {
+                            Modifier
+                        },
+                    ),
                 verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
             ) {
                 Row(
@@ -600,6 +738,16 @@ private fun ChatBubbleRow(
 
                 message.replyTo?.let { reply ->
                     Surface(
+                        modifier = Modifier
+                            .clickable(
+                                interactionSource = replyQuoteInteraction,
+                                indication = ripple(bounded = true),
+                                onClick = { onJumpToQuotedMessage(reply._id) },
+                            )
+                            .semantics {
+                                contentDescription = quotedJumpLabel
+                                role = Role.Button
+                            },
                         shape = MaterialTheme.shapes.medium,
                         color = if (isMine) {
                             MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.08f)

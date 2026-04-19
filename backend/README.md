@@ -60,7 +60,8 @@ npm run start:dev
 
 Namespace: `/chat`
 
-- `room:join` with `{ allianceId }`
-- `message:send` with `{ allianceId?, text }`
-- server emits `message:new`
+- `room:join` with `{ roomId }`
+- `message:send` with `{ roomId, text, replyToMessageId? }`
+- `typing` with `{ roomId }` — server emits `user:typing` `{ roomId, userId, username }` to others in the room
+- server emits `message:new`, `message:deleted`
 - connect with `auth.token` (Bearer access token)

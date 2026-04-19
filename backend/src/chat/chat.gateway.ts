@@ -157,6 +157,40 @@ export class ChatGateway {
     return { event: 'message:sent', data: message };
   }
 
+  @SubscribeMessage('typing')
+  async notifyTyping(
+    @ConnectedSocket() client: AuthSocket,
+    @MessageBody() body: { roomId?: string },
+  ) {
+    if (!client.data.user) {
+      throw new WsException('Unauthorized websocket connection');
+    }
+    const roomId = typeof body?.roomId === 'string' ? body.roomId.trim() : '';
+    if (!roomId) {
+      throw new WsException('roomId is required');
+    }
+    await this.chatService.assertUserMayUseChat(client.data.user.userId);
+    const user = await this.usersService.findById(client.data.user.userId);
+    const room = await this.chatRoomsService.findById(roomId);
+    if (!user || !room || room.archivedAt) {
+      throw new WsException('Room not found');
+    }
+    if (room.allianceId !== user.allianceName) {
+      throw new WsException('Room is not available for your alliance');
+    }
+    if (this.usersService.effectiveMembership(user) !== TeamMembershipStatus.ACTIVE) {
+      throw new WsException('Chat is not available for this account');
+    }
+    this.server
+      ?.to(`chat:${roomId}`)
+      .except(client.id)
+      .emit('user:typing', {
+        roomId,
+        userId: client.data.user.userId,
+        username: client.data.user.username,
+      });
+  }
+
   broadcastNewMessage(roomId: string, message: unknown) {
     this.server?.to(`chat:${roomId}`).emit('message:new', message);
   }

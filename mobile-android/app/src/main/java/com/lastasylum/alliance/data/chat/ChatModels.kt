@@ -55,6 +55,12 @@ data class ChatMessageDeleteResult(
     val roomId: String,
 )
 
+data class ChatTypingEvent(
+    val roomId: String,
+    val userId: String,
+    val username: String,
+)
+
 data class CreateChatRoomRequest(
     val title: String,
     val sortOrder: Int? = null,

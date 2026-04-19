@@ -12,6 +12,7 @@ class ChatRepository(
 ) {
     private var realtimeUiListener: ((ChatMessage) -> Unit)? = null
     private var realtimeDeleteListener: ((ChatMessageDeletedEvent) -> Unit)? = null
+    private var realtimeTypingListener: ((ChatTypingEvent) -> Unit)? = null
 
     suspend fun listRooms(): Result<List<ChatRoomDto>> =
         runCatching { chatApi.listRooms() }
@@ -73,18 +74,26 @@ class ChatRepository(
         roomId: String,
         onMessage: (ChatMessage) -> Unit,
         onDeleteMessage: (ChatMessageDeletedEvent) -> Unit = {},
+        onTyping: (ChatTypingEvent) -> Unit = {},
     ) {
         realtimeUiListener?.let { socketManager.removeMessageListener(it) }
         realtimeDeleteListener?.let { socketManager.removeMessageDeletedListener(it) }
+        realtimeTypingListener?.let { socketManager.removeTypingListener(it) }
         realtimeUiListener = onMessage
         realtimeDeleteListener = onDeleteMessage
+        realtimeTypingListener = onTyping
         socketManager.addMessageListener(onMessage)
         socketManager.addMessageDeletedListener(onDeleteMessage)
+        socketManager.addTypingListener(onTyping)
         socketManager.connect(
             baseUrl = BuildConfig.API_BASE_URL,
             roomId = roomId,
             tokenProvider = { tokenStore.getAccessToken() },
         )
+    }
+
+    fun emitTypingPing(roomId: String) {
+        socketManager.emitTyping(roomId)
     }
 
     /** Called after OkHttp refreshes access token so the socket re-authenticates. */
@@ -95,8 +104,10 @@ class ChatRepository(
     fun disconnectRealtime() {
         realtimeUiListener?.let { socketManager.removeMessageListener(it) }
         realtimeDeleteListener?.let { socketManager.removeMessageDeletedListener(it) }
+        realtimeTypingListener?.let { socketManager.removeTypingListener(it) }
         realtimeUiListener = null
         realtimeDeleteListener = null
+        realtimeTypingListener = null
         socketManager.disconnect()
     }
 
