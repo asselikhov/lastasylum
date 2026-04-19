@@ -2,6 +2,8 @@ package com.lastasylum.alliance.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -785,6 +787,32 @@ private fun ChatComposer(
     }
 }
 
+@Composable
+private fun ChatSenderAvatar(
+    telegramUrl: String?,
+    modifier: Modifier = Modifier,
+) {
+    val ring = MaterialTheme.colorScheme.outlineVariant
+    val fill = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
+    Box(
+        modifier = modifier
+            .size(28.dp)
+            .clip(CircleShape)
+            .background(fill)
+            .border(1.dp, ring, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (!telegramUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = telegramUrl,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ChatBubbleRow(
@@ -823,15 +851,10 @@ private fun ChatBubbleRow(
         horizontalArrangement = if (isMine) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (!isMine && telegramUrl != null) {
-            AsyncImage(
-                model = telegramUrl,
-                contentDescription = null,
-                modifier = Modifier
-                    .padding(end = 6.dp)
-                    .size(28.dp)
-                    .clip(CircleShape),
-                contentScale = ContentScale.Crop,
+        if (!isMine) {
+            ChatSenderAvatar(
+                telegramUrl = telegramUrl,
+                modifier = Modifier.padding(end = 6.dp),
             )
         }
         if (inSelectionMode && canDelete && !isMine) {
@@ -1037,15 +1060,10 @@ private fun ChatBubbleRow(
                 enabled = !messageId.isNullOrBlank(),
             )
         }
-        if (isMine && telegramUrl != null) {
-            AsyncImage(
-                model = telegramUrl,
-                contentDescription = null,
-                modifier = Modifier
-                    .padding(start = 6.dp)
-                    .size(28.dp)
-                    .clip(CircleShape),
-                contentScale = ContentScale.Crop,
+        if (isMine) {
+            ChatSenderAvatar(
+                telegramUrl = telegramUrl,
+                modifier = Modifier.padding(start = 6.dp),
             )
         }
     }
