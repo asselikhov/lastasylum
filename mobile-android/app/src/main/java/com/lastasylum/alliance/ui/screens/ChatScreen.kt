@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -351,10 +350,7 @@ fun ChatScreen(
 
         if (state.sendFailure != null || (selectedRoomId != null && state.rooms.isNotEmpty())) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    // Single IME inset for the whole bottom stack (Scaffold excludes IME from content insets).
-                    .imePadding(),
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 state.sendFailure?.let { failure ->
                     Surface(
@@ -502,7 +498,8 @@ private fun ChatComposer(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = SquadRelayDimens.itemGap)
-            // IME padding is applied on the bottom stack in [ChatScreen] (Scaffold excludes IME).
+            // MainActivity uses adjustResize: the window height already ends above the IME; do not add
+            // imePadding() here or it stacks with the resized window and leaves a gap above the keyboard.
     ) {
         Column(
             modifier = Modifier

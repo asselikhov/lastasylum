@@ -115,8 +115,9 @@ fun AppNavigation(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground,
-        // MainActivity uses adjustResize: window height already clears the IME. If Scaffold also
-        // applies IME into content insets, bottom padding stacks and the chat composer floats.
+        // MainActivity uses adjustResize: the window shrinks above the IME. Exclude IME from
+        // Scaffold content padding so we do not stack Compose IME padding on top of that resize
+        // (which would leave a large gap above the keyboard on the chat tab).
         contentWindowInsets = WindowInsets.safeDrawing.exclude(WindowInsets.ime),
         bottomBar = {
             NavigationBar(
