@@ -3,6 +3,12 @@ package com.lastasylum.alliance.data.users
 class UsersRepository(
     private val usersApi: UsersApi,
 ) {
+    suspend fun getMyProfile(): Result<MyProfileDto> =
+        runCatching { usersApi.getMyProfile() }
+
+    suspend fun updateMyTelegram(username: String): Result<MyProfileDto> =
+        runCatching { usersApi.updateMyTelegram(UpdateTelegramBody(username = username)) }
+
     suspend fun registerPushToken(token: String): Result<Unit> =
         runCatching { usersApi.registerPushToken(PushTokenBody(token)) }
 

@@ -200,6 +200,8 @@ class ChatSocketManager {
                         senderId = payload.optString("senderId"),
                         senderUsername = payload.optString("senderUsername"),
                         senderRole = payload.optString("senderRole"),
+                        senderTelegramUsername = payload.optString("senderTelegramUsername")
+                            .takeIf { it.isNotBlank() },
                         text = payload.optString("text"),
                         createdAt = payload.optString("createdAt"),
                         updatedAt = payload.optString("updatedAt").takeIf { it.isNotBlank() },

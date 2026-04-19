@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -59,12 +60,16 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -83,6 +88,8 @@ import com.lastasylum.alliance.ui.chat.canDeleteChatMessage
 import com.lastasylum.alliance.ui.chat.RoleBadge
 import com.lastasylum.alliance.ui.chat.formatChatTime
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
+import com.lastasylum.alliance.ui.util.telegramAvatarUrl
+import coil.compose.AsyncImage
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -124,6 +131,8 @@ fun ChatScreen(
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
     val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val selectedRoomId = state.selectedRoomId
     val activeActionMessage = remember(state.activeActionMessageId, state.messages) {
         state.messages.find { it._id == state.activeActionMessageId }
@@ -295,6 +304,8 @@ fun ChatScreen(
                         onDraftChange = onDraftChange,
                         onSendDraft = {
                             if (!draftMessage.isBlank() && !state.isSending) {
+                                focusManager.clearFocus()
+                                keyboardController?.hide()
                                 onSendDraft()
                             }
                         },
@@ -805,12 +816,24 @@ private fun ChatBubbleRow(
     val replyQuoteInteraction = remember(message._id, message.replyTo?._id) {
         MutableInteractionSource()
     }
+    val telegramUrl = telegramAvatarUrl(message.senderTelegramUsername)
 
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isMine) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (!isMine && telegramUrl != null) {
+            AsyncImage(
+                model = telegramUrl,
+                contentDescription = null,
+                modifier = Modifier
+                    .padding(end = 6.dp)
+                    .size(28.dp)
+                    .clip(CircleShape),
+                contentScale = ContentScale.Crop,
+            )
+        }
         if (inSelectionMode && canDelete && !isMine) {
             Checkbox(
                 checked = isSelected,
@@ -1012,6 +1035,17 @@ private fun ChatBubbleRow(
                     }
                 },
                 enabled = !messageId.isNullOrBlank(),
+            )
+        }
+        if (isMine && telegramUrl != null) {
+            AsyncImage(
+                model = telegramUrl,
+                contentDescription = null,
+                modifier = Modifier
+                    .padding(start = 6.dp)
+                    .size(28.dp)
+                    .clip(CircleShape),
+                contentScale = ContentScale.Crop,
             )
         }
     }

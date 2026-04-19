@@ -8,6 +8,12 @@ import retrofit2.http.PATCH
 import retrofit2.http.Path
 
 interface UsersApi {
+    @GET("users/me")
+    suspend fun getMyProfile(): MyProfileDto
+
+    @PATCH("users/me/telegram")
+    suspend fun updateMyTelegram(@Body body: UpdateTelegramBody): MyProfileDto
+
     @POST("users/me/push-token")
     suspend fun registerPushToken(@Body body: PushTokenBody): Map<String, Boolean?>
 

@@ -50,6 +50,8 @@ export type ChatMessageView = {
   senderId: string;
   senderUsername: string;
   senderRole: AllianceRole;
+  /** Telegram @handle without @, from sender profile at read time (or at send). */
+  senderTelegramUsername: string | null;
   text: string;
   createdAt: string | null;
   updatedAt: string | null;
@@ -122,6 +124,7 @@ export class ChatService {
   private serializeMessage(
     message: MessageLean,
     replyMap?: Map<string, MessageLean>,
+    senderTelegramMap?: Map<string, string | null>,
   ): ChatMessageView {
     const replyToMessageId = this.asIdString(message.replyToMessageId);
     const replyTarget = replyToMessageId ? replyMap?.get(replyToMessageId) : null;
@@ -132,6 +135,7 @@ export class ChatService {
       senderId: message.senderId,
       senderUsername: message.senderUsername,
       senderRole: message.senderRole,
+      senderTelegramUsername: senderTelegramMap?.get(message.senderId) ?? null,
       text: message.deletedAt ? '' : message.text,
       createdAt: this.toIso(message.createdAt),
       updatedAt: this.toIso(message.updatedAt),
@@ -162,7 +166,12 @@ export class ChatService {
 
   private async enrichMessages(messages: MessageLean[]): Promise<ChatMessageView[]> {
     const replyMap = await this.loadReplyMap(messages);
-    return messages.map((message) => this.serializeMessage(message, replyMap));
+    const senderIds = [...new Set(messages.map((m) => m.senderId))];
+    const senderTelegramMap =
+      await this.usersService.findTelegramUsernamesByIds(senderIds);
+    return messages.map((message) =>
+      this.serializeMessage(message, replyMap, senderTelegramMap),
+    );
   }
 
   private async getReplyTarget(
@@ -231,9 +240,13 @@ export class ChatService {
       deletedAt: null,
       deletedByUserId: null,
     });
+    const senderTelegramMap = new Map<string, string | null>([
+      [input.author.userId, authorUser.telegramUsername ?? null],
+    ]);
     return this.serializeMessage(
       created.toObject<MessageLean>(),
       replyTarget ? new Map([[this.asIdString(replyTarget._id)!, replyTarget]]) : undefined,
+      senderTelegramMap,
     );
   }
 

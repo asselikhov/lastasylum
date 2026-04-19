@@ -58,6 +58,10 @@ export class User {
   /** ingame | online | away */
   @Prop({ type: String, default: null })
   presenceStatus: string | null;
+
+  /** Telegram @username without leading @, lowercase (optional). */
+  @Prop({ type: String, default: null, trim: true, lowercase: true })
+  telegramUsername: string | null;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

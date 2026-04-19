@@ -91,7 +91,6 @@
 
     <!-- Profile -->
     <string name="profile_title">Профиль и настройки</string>
-    <string name="profile_pilot">Пилот: %1$s</string>
     <string name="profile_quiet_title">Тихий режим</string>
     <string name="profile_quiet_subtitle">Меньше второстепенных уведомлений</string>
     <string name="profile_compact_title">Компактный оверлей</string>
@@ -101,6 +100,14 @@
     <string name="profile_overlay_preset_commander">Командир</string>
     <string name="profile_overlay_preset_minimal">Минимум</string>
     <string name="profile_role">Роль: %1$s</string>
+    <string name="profile_telegram_section">Telegram</string>
+    <string name="profile_telegram_field_label">Ник в Telegram</string>
+    <string name="profile_telegram_hint">username без @</string>
+    <string name="profile_telegram_save">Сохранить</string>
+    <string name="profile_telegram_clear">Убрать</string>
+    <string name="profile_telegram_avatar_cd">Аватар Telegram</string>
+    <string name="profile_telegram_load_error">Не удалось загрузить профиль</string>
+    <string name="profile_telegram_save_error">Не удалось сохранить. Проверьте ник (латиница, цифры, _, 5–32 символа).</string>
     <string name="profile_build_title">Версия приложения</string>
     <string name="profile_build_line">%1$s (код %2$d) · собрано %3$s</string>
     <string name="profile_check_update">Проверить обновление</string>

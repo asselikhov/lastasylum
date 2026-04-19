@@ -15,12 +15,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,19 +33,25 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.BuildConfig
+import coil.compose.AsyncImage
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
+import com.lastasylum.alliance.data.users.MyProfileDto
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.ui.components.SettingsDivider
 import com.lastasylum.alliance.ui.components.SettingsToggleRow
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
+import com.lastasylum.alliance.ui.util.telegramAvatarUrl
+import com.lastasylum.alliance.ui.util.telegramDisplayHandle
 import com.lastasylum.alliance.update.fetchNewerApkDownloadUrl
 import com.lastasylum.alliance.update.openApkDownload
 import com.lastasylum.alliance.update.toastNoUpdateAvailable
@@ -76,8 +87,27 @@ fun ProfileScreen(
             .format(Date(BuildConfig.BUILD_TIME_MS))
     }
     val scroll = rememberScrollState()
-    val initial = remember(username) {
-        username.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+    var profile by remember { mutableStateOf<MyProfileDto?>(null) }
+    var telegramInput by remember { mutableStateOf("") }
+    var profileLoadError by remember { mutableStateOf<String?>(null) }
+    var telegramSaveError by remember { mutableStateOf<String?>(null) }
+    var telegramSaving by remember { mutableStateOf(false) }
+
+    LaunchedEffect(app) {
+        app.usersRepository.getMyProfile()
+            .onSuccess {
+                profile = it
+                telegramInput = it.telegramUsername?.let { h -> "@$h" } ?: ""
+                profileLoadError = null
+            }
+            .onFailure {
+                profileLoadError = context.getString(R.string.profile_telegram_load_error)
+            }
+    }
+
+    val displayName = profile?.username ?: username
+    val initialLetter = remember(displayName) {
+        displayName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "?"
     }
 
     Column(
@@ -104,40 +134,164 @@ fun ProfileScreen(
                 Box(
                     modifier = Modifier
                         .size(44.dp)
-                        .background(
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            shape = CircleShape,
-                        ),
-                    contentAlignment = Alignment.Center,
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
                 ) {
-                    Text(
-                        text = initial,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = initialLetter,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    }
+                    val avatarUrl = telegramAvatarUrl(profile?.telegramUsername)
+                    if (avatarUrl != null) {
+                        AsyncImage(
+                            model = avatarUrl,
+                            contentDescription = stringResource(R.string.profile_telegram_avatar_cd),
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    }
                 }
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.headerSubtitleGap),
                 ) {
+                    profileLoadError?.let { err ->
+                        Text(
+                            text = err,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                     Text(
-                        text = stringResource(R.string.profile_pilot, username),
+                        text = displayName,
                         style = MaterialTheme.typography.titleMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
+                    telegramDisplayHandle(profile?.telegramUsername)?.let { handle ->
+                        Text(
+                            text = handle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                     Surface(
                         shape = MaterialTheme.shapes.small,
                         color = MaterialTheme.colorScheme.secondaryContainer,
                     ) {
                         Text(
-                            text = stringResource(R.string.profile_role, role),
+                            text = stringResource(R.string.profile_role, profile?.role ?: role),
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                         )
+                    }
+                }
+            }
+        }
+
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+            tonalElevation = 0.dp,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+        ) {
+            Column(
+                modifier = Modifier.padding(SquadRelayDimens.panelInnerPadding),
+                verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+            ) {
+                Text(
+                    text = stringResource(R.string.profile_telegram_section),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                OutlinedTextField(
+                    value = telegramInput,
+                    onValueChange = {
+                        telegramSaveError = null
+                        telegramInput = it
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.profile_telegram_field_label)) },
+                    placeholder = { Text(stringResource(R.string.profile_telegram_hint)) },
+                    singleLine = true,
+                    enabled = !telegramSaving,
+                )
+                telegramSaveError?.let { err ->
+                    Text(
+                        text = err,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(
+                        onClick = {
+                            if (telegramSaving) return@TextButton
+                            scope.launch {
+                                telegramSaving = true
+                                telegramSaveError = null
+                                app.usersRepository.updateMyTelegram("")
+                                    .onSuccess {
+                                        profile = it
+                                        telegramInput = ""
+                                    }
+                                    .onFailure {
+                                        telegramSaveError = context.getString(
+                                            R.string.profile_telegram_save_error,
+                                        )
+                                    }
+                                telegramSaving = false
+                            }
+                        },
+                        enabled = !telegramSaving && profile?.telegramUsername != null,
+                    ) {
+                        Text(stringResource(R.string.profile_telegram_clear))
+                    }
+                    Button(
+                        onClick = {
+                            if (telegramSaving) return@Button
+                            scope.launch {
+                                telegramSaving = true
+                                telegramSaveError = null
+                                val raw = telegramInput.trim().removePrefix("@").trim()
+                                app.usersRepository.updateMyTelegram(raw)
+                                    .onSuccess {
+                                        profile = it
+                                        telegramInput = it.telegramUsername?.let { h -> "@$h" } ?: ""
+                                    }
+                                    .onFailure {
+                                        telegramSaveError = context.getString(
+                                            R.string.profile_telegram_save_error,
+                                        )
+                                    }
+                                telegramSaving = false
+                            }
+                        },
+                        enabled = !telegramSaving,
+                    ) {
+                        if (telegramSaving) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                            )
+                        } else {
+                            Text(stringResource(R.string.profile_telegram_save))
+                        }
                     }
                 }
             }

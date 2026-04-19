@@ -12,6 +12,25 @@ data class TeamMemberDto(
     val membershipStatus: String,
     val presenceStatus: String? = null,
     val lastPresenceAt: String? = null,
+    val telegramUsername: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class MyProfileDto(
+    val id: String,
+    val username: String,
+    val email: String,
+    val role: String,
+    val allianceName: String,
+    val membershipStatus: String,
+    val presenceStatus: String? = null,
+    val lastPresenceAt: String? = null,
+    val telegramUsername: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class UpdateTelegramBody(
+    val username: String,
 )
 
 @JsonClass(generateAdapter = true)

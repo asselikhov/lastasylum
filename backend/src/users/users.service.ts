@@ -1,4 +1,8 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
@@ -14,6 +18,7 @@ export type SafeUser = {
   membershipStatus: TeamMembershipStatus;
   presenceStatus: string | null;
   lastPresenceAt: string | null;
+  telegramUsername: string | null;
 };
 
 @Injectable()
@@ -170,7 +175,61 @@ export class UsersService {
       lastPresenceAt: user.lastPresenceAt
         ? user.lastPresenceAt.toISOString()
         : null,
+      telegramUsername: user.telegramUsername ?? null,
     };
+  }
+
+  private normalizeTelegramUsername(raw: string | null | undefined): string | null {
+    if (raw == null) return null;
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    const withoutAt = trimmed.startsWith('@') ? trimmed.slice(1) : trimmed;
+    const lower = withoutAt.toLowerCase();
+    if (!/^[a-z0-9_]{5,32}$/.test(lower)) {
+      throw new BadRequestException('Invalid Telegram username');
+    }
+    return lower;
+  }
+
+  async updateMyTelegramUsername(
+    userId: string,
+    rawUsername: string | undefined,
+  ): Promise<UserDocument | null> {
+    if (rawUsername === undefined) {
+      return this.findById(userId);
+    }
+    const normalized = this.normalizeTelegramUsername(rawUsername);
+    return this.userModel
+      .findByIdAndUpdate(
+        userId,
+        { $set: { telegramUsername: normalized } },
+        { new: true },
+      )
+      .exec();
+  }
+
+  async findTelegramUsernamesByIds(
+    ids: string[],
+  ): Promise<Map<string, string | null>> {
+    const unique = [...new Set(ids.filter((id) => Types.ObjectId.isValid(id)))];
+    if (!unique.length) {
+      return new Map();
+    }
+    const docs = await this.userModel
+      .find({ _id: { $in: unique.map((id) => new Types.ObjectId(id)) } })
+      .select('_id telegramUsername')
+      .lean<
+        Array<{
+          _id: Types.ObjectId;
+          telegramUsername?: string | null;
+        }>
+      >()
+      .exec();
+    const map = new Map<string, string | null>();
+    for (const d of docs) {
+      map.set(d._id.toString(), d.telegramUsername ?? null);
+    }
+    return map;
   }
 
   async registerPushToken(userId: string, token: string): Promise<void> {

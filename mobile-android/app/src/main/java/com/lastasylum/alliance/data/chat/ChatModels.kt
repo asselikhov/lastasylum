@@ -20,6 +20,7 @@ data class ChatMessage(
     val senderId: String,
     val senderUsername: String,
     val senderRole: String,
+    val senderTelegramUsername: String? = null,
     val text: String,
     val createdAt: String? = null,
     val updatedAt: String? = null,
