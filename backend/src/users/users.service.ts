@@ -63,6 +63,29 @@ export class UsersService {
       .exec();
   }
 
+  /**
+   * Label for the alliance-only chat room: latest active member's team display name, else alliance key.
+   */
+  async resolveAllianceChatHubTitle(allianceName: string): Promise<string> {
+    const docs = await this.userModel
+      .find({
+        allianceName,
+        membershipStatus: TeamMembershipStatus.ACTIVE,
+      })
+      .sort({ updatedAt: -1 })
+      .limit(40)
+      .select('teamDisplayName')
+      .lean<Array<{ teamDisplayName?: string | null }>>()
+      .exec();
+    for (const d of docs) {
+      const t = d.teamDisplayName?.trim();
+      if (t && t.length > 0) {
+        return t.slice(0, 64);
+      }
+    }
+    return allianceName;
+  }
+
   async updateRole(
     userId: string,
     role: AllianceRole,

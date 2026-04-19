@@ -75,7 +75,15 @@ class ChatViewModel(
     fun refreshTeamProfileGate() {
         viewModelScope.launch {
             val hasTeam = loadTeamProfileGate()
-            _state.value = _state.value.copy(hasTeamProfileForGlobalChat = hasTeam)
+            val roomsResult = repository.listRooms()
+            _state.value = if (roomsResult.isSuccess) {
+                _state.value.copy(
+                    hasTeamProfileForGlobalChat = hasTeam,
+                    rooms = roomsResult.getOrElse { _state.value.rooms },
+                )
+            } else {
+                _state.value.copy(hasTeamProfileForGlobalChat = hasTeam)
+            }
         }
     }
 

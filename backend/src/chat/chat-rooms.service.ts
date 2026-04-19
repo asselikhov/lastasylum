@@ -6,6 +6,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/global-chat-alliance-id';
+import { UsersService } from '../users/users.service';
 import { ChatRoom, ChatRoomDocument } from './schemas/chat-room.schema';
 import { Message, MessageDocument } from './schemas/message.schema';
 
@@ -14,6 +15,7 @@ export class ChatRoomsService {
   constructor(
     @InjectModel(ChatRoom.name) private readonly roomModel: Model<ChatRoomDocument>,
     @InjectModel(Message.name) private readonly messageModel: Model<MessageDocument>,
+    private readonly usersService: UsersService,
   ) {}
 
   listForAlliance(allianceId: string) {
@@ -25,7 +27,7 @@ export class ChatRoomsService {
   }
 
   /**
-   * Global "Общий" + this alliance's rooms (excludes legacy per-alliance "Общий" rows).
+   * Global "Общая" + this alliance's rooms (excludes legacy per-alliance "Общий"/"Общая" rows).
    */
   async listRoomsVisibleToUser(userAllianceName: string) {
     await this.ensureGlobalGeneralRoom();
@@ -40,7 +42,7 @@ export class ChatRoomsService {
         .find({
           allianceId: userAllianceName,
           archivedAt: null,
-          title: { $ne: 'Общий' },
+          title: { $nin: ['Общий', 'Общая'] },
         })
         .sort({ sortOrder: 1, title: 1 })
         .lean()
@@ -137,39 +139,58 @@ export class ChatRoomsService {
     return created._id as Types.ObjectId;
   }
 
-  /** Cross-alliance lobby: one "Общий" room for everyone. */
+  /** Cross-alliance lobby: one "Общая" room for everyone. */
   async ensureGlobalGeneralRoom(): Promise<void> {
-    const existing = await this.roomModel
+    const current = await this.roomModel
       .findOne({
         allianceId: GLOBAL_CHAT_ALLIANCE_ID,
-        title: 'Общий',
         archivedAt: null,
       })
       .exec();
-    if (existing) return;
-    await this.roomModel.create({
-      allianceId: GLOBAL_CHAT_ALLIANCE_ID,
-      title: 'Общий',
-      sortOrder: 0,
-      archivedAt: null,
-    });
+    if (!current) {
+      await this.roomModel.create({
+        allianceId: GLOBAL_CHAT_ALLIANCE_ID,
+        title: 'Общая',
+        sortOrder: 0,
+        archivedAt: null,
+      });
+      return;
+    }
+    if (current.title !== 'Общая') {
+      current.title = 'Общая';
+      await current.save();
+    }
   }
 
-  /** Internal chat for one alliance (title = alliance key). */
+  /**
+   * Alliance-only room (sortOrder 1): title follows team display name from members, else alliance key.
+   */
   async ensureAllianceHubRoom(allianceId: string): Promise<void> {
-    const existing = await this.roomModel
-      .findOne({
-        allianceId,
-        title: allianceId,
-        archivedAt: null,
-      })
+    const displayTitle =
+      await this.usersService.resolveAllianceChatHubTitle(allianceId);
+    let hub = await this.roomModel
+      .findOne({ allianceId, sortOrder: 1, archivedAt: null })
       .exec();
-    if (existing) return;
-    await this.roomModel.create({
-      allianceId,
-      title: allianceId,
-      sortOrder: 1,
-      archivedAt: null,
-    });
+    if (!hub) {
+      hub = await this.roomModel
+        .findOne({ allianceId, title: allianceId, archivedAt: null })
+        .exec();
+    }
+    if (!hub) {
+      await this.roomModel.create({
+        allianceId,
+        title: displayTitle,
+        sortOrder: 1,
+        archivedAt: null,
+      });
+      return;
+    }
+    if (hub.sortOrder !== 1) {
+      hub.sortOrder = 1;
+    }
+    if (hub.title !== displayTitle) {
+      hub.title = displayTitle;
+    }
+    await hub.save();
   }
 }

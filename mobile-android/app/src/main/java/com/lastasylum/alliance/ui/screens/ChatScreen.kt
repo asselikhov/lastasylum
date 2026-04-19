@@ -66,6 +66,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -509,6 +510,7 @@ private fun ChatMessagesLazyList(
     onBeginMessageSelection: (String) -> Unit,
     onToggleMessageSelection: (String) -> Unit,
 ) {
+    val minSystemViewport = (LocalConfiguration.current.screenHeightDp * 0.55f).dp.coerceAtLeast(280.dp)
     LazyColumn(
         state = listState,
         modifier = modifier,
@@ -525,7 +527,7 @@ private fun ChatMessagesLazyList(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 24.dp),
+                            .heightIn(min = minSystemViewport),
                         contentAlignment = Alignment.Center,
                     ) {
                         CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
@@ -535,19 +537,29 @@ private fun ChatMessagesLazyList(
 
             state.rooms.isEmpty() -> {
                 item {
-                    Text(
-                        text = state.error?.takeIf { it.isNotBlank() }
-                            ?: stringResource(R.string.chat_no_rooms),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.fillMaxWidth(),
-                        textAlign = TextAlign.Center,
-                    )
-                }
-                if (!state.error.isNullOrBlank()) {
-                    item {
-                        TextButton(onClick = onClearError) {
-                            Text(stringResource(R.string.admin_dismiss_error))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = minSystemViewport),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+                        ) {
+                            Text(
+                                text = state.error?.takeIf { it.isNotBlank() }
+                                    ?: stringResource(R.string.chat_no_rooms),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 24.dp),
+                                textAlign = TextAlign.Center,
+                            )
+                            if (!state.error.isNullOrBlank()) {
+                                TextButton(onClick = onClearError) {
+                                    Text(stringResource(R.string.admin_dismiss_error))
+                                }
+                            }
                         }
                     }
                 }
@@ -558,7 +570,7 @@ private fun ChatMessagesLazyList(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 24.dp),
+                            .heightIn(min = minSystemViewport),
                         contentAlignment = Alignment.Center,
                     ) {
                         CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
@@ -568,13 +580,20 @@ private fun ChatMessagesLazyList(
 
             state.messages.isEmpty() -> {
                 item {
-                    Text(
-                        text = stringResource(R.string.chat_empty_state),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.fillMaxWidth(),
-                        textAlign = TextAlign.Center,
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = minSystemViewport),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.chat_empty_state),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 24.dp),
+                            textAlign = TextAlign.Center,
+                        )
+                    }
                 }
             }
 
