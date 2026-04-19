@@ -57,7 +57,7 @@ export class AuthService {
     ) {
       return {
         approvalRequired: true,
-        user: this.usersService.toSafeUser(user),
+        user: await this.usersService.toSafeUser(user),
       };
     }
 
@@ -251,25 +251,16 @@ export class AuthService {
     await this.usersService.updateRefreshTokenHash(userId, refreshTokenHash);
 
     const full = await this.usersService.findById(userId);
-    const membershipStatus = full
-      ? this.usersService.effectiveMembership(full)
-      : TeamMembershipStatus.ACTIVE;
+    if (!full) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const user = await this.usersService.toSafeUser(full);
 
     return {
       accessToken,
       refreshToken,
-      user: {
-        id: userId,
-        email,
-        username,
-        role,
-        membershipStatus,
-        allianceName: full?.allianceName,
-        presenceStatus: full?.presenceStatus ?? null,
-        lastPresenceAt: full?.lastPresenceAt
-          ? full.lastPresenceAt.toISOString()
-          : null,
-      },
+      user,
     };
   }
 }

@@ -28,8 +28,13 @@ data class AuthUser(
     val role: String,
     val membershipStatus: String? = null,
     val allianceName: String? = null,
+    val alliancePublicId: String? = null,
+    val overlayTabVisible: Boolean = false,
+    val teamDisplayName: String? = null,
+    val teamTag: String? = null,
     val presenceStatus: String? = null,
     val lastPresenceAt: String? = null,
+    val telegramUsername: String? = null,
 )
 
 @JsonClass(generateAdapter = true)

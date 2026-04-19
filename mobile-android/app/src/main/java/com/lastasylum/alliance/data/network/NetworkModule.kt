@@ -4,6 +4,7 @@ import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.data.auth.AuthApi
 import com.lastasylum.alliance.data.auth.TokenStore
 import com.lastasylum.alliance.data.chat.ChatApi
+import com.lastasylum.alliance.data.admin.AdminApi
 import com.lastasylum.alliance.data.users.UsersApi
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -95,6 +96,7 @@ object NetworkModule {
             chatApi = authorizedRetrofit.create(ChatApi::class.java),
             authorizedAuthApi = authorizedRetrofit.create(AuthApi::class.java),
             usersApi = authorizedRetrofit.create(UsersApi::class.java),
+            adminApi = authorizedRetrofit.create(AdminApi::class.java),
         )
     }
 }
@@ -104,4 +106,5 @@ data class AuthorizedClients(
     /** Same routes as public [authApi], but sends Bearer token — required for [AuthApi.logout]. */
     val authorizedAuthApi: AuthApi,
     val usersApi: UsersApi,
+    val adminApi: AdminApi,
 )

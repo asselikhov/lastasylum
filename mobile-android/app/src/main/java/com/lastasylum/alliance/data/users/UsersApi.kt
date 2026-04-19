@@ -6,6 +6,7 @@ import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.PATCH
 import retrofit2.http.Path
+import retrofit2.http.Query
 
 interface UsersApi {
     @GET("users/me")
@@ -30,7 +31,12 @@ interface UsersApi {
     suspend fun updatePresence(@Body body: PresenceBody): Map<String, Boolean?>
 
     @GET("users")
-    suspend fun listMembers(): List<TeamMemberDto>
+    suspend fun listMembers(
+        @Query("allianceCode") allianceCode: String? = null,
+        @Query("q") q: String? = null,
+        @Query("skip") skip: Int? = null,
+        @Query("limit") limit: Int? = null,
+    ): List<TeamMemberDto>
 
     @PATCH("users/role")
     suspend fun updateRole(@Body body: UpdateRoleBody): TeamMemberDto

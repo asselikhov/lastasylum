@@ -347,6 +347,18 @@ fun ProfileScreen(
                             dialogError = null
                         },
                     )
+                    p.alliancePublicId?.takeIf { it.isNotBlank() }?.let { teamPublicId ->
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 12.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                        )
+                        ProfileStatRow(
+                            label = stringResource(R.string.profile_team_public_id),
+                            value = teamPublicId,
+                            editable = false,
+                            onClick = null,
+                        )
+                    }
                     HorizontalDivider(
                         modifier = Modifier.padding(horizontal = 12.dp),
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),

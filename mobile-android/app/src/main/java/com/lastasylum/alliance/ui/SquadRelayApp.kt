@@ -99,6 +99,7 @@ fun SquadRelayApp() {
                             userId = authState.user?.id.orEmpty(),
                             username = authState.user?.username.orEmpty(),
                             role = authState.user?.role.orEmpty(),
+                            overlayTabVisible = authState.user?.overlayTabVisible == true,
                             onLogout = authViewModel::logout,
                             chatViewModelFactory = ChatViewModelFactory(
                                 application = application,
@@ -112,6 +113,7 @@ fun SquadRelayApp() {
                                 application = application,
                                 usersRepository = appContainer.usersRepository,
                                 chatRoomsRepository = appContainer.chatRoomsRepository,
+                                adminRepository = appContainer.adminRepository,
                             ),
                         )
                         PermissionOnboardingGate()

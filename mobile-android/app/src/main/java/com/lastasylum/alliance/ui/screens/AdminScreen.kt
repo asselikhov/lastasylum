@@ -1,8 +1,13 @@
 package com.lastasylum.alliance.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -14,14 +19,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -36,20 +44,32 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.data.admin.AllianceAdminDto
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.users.TeamMemberDto
 import com.lastasylum.alliance.ui.admin.AdminUiState
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
+
+private fun copyTeamId(context: Context, text: String) {
+    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    cm.setPrimaryClip(ClipData.newPlainText("team_id", text))
+}
 
 @Composable
 fun AdminScreen(
     currentUserId: String,
     state: AdminUiState,
     onRefresh: () -> Unit,
+    onRefreshAlliances: () -> Unit,
+    onClearAlliancesError: () -> Unit,
+    onSetFilterAlliance: (String?) -> Unit,
+    onMemberSearchChange: (String) -> Unit,
+    onAllianceOverlayChange: (String, Boolean) -> Unit,
     onApprove: (String) -> Unit,
     onRemoveFromTeam: (String) -> Unit,
     onRestorePending: (String) -> Unit,
@@ -69,6 +89,7 @@ fun AdminScreen(
     var renameDraft by remember { mutableStateOf("") }
     var newRoomTitle by remember { mutableStateOf("") }
     val context = LocalContext.current
+    val chipScroll = rememberScrollState()
 
     LazyColumn(
         modifier = Modifier
@@ -78,151 +99,305 @@ fun AdminScreen(
             horizontal = SquadRelayDimens.contentPaddingHorizontal,
             vertical = SquadRelayDimens.screenTopPadding,
         ),
-        verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.blockGap),
+        verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.sectionGap),
     ) {
         item {
             Text(
-                text = stringResource(R.string.admin_title),
-                style = MaterialTheme.typography.titleMedium,
+                text = stringResource(R.string.admin_screen_title),
+                style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onBackground,
             )
         }
+
         item {
-            Card(
-                shape = MaterialTheme.shapes.large,
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                ),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Column(
-                    modifier = Modifier.padding(SquadRelayDimens.cardInnerPadding),
-                    verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+            adminSectionCard {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    Text(
+                        text = stringResource(R.string.admin_section_teams),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    OutlinedButton(
+                        onClick = onRefreshAlliances,
+                        enabled = !state.alliancesLoading,
+                        shape = MaterialTheme.shapes.large,
+                        modifier = Modifier.semantics {
+                            contentDescription = context.getString(R.string.admin_cd_refresh_teams)
+                        },
+                    ) {
+                        Text(stringResource(R.string.admin_refresh))
+                    }
+                }
+                if (state.alliancesLoading && state.alliances.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                state.alliancesError?.takeIf { it.isNotBlank() }?.let { err ->
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = err,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        TextButton(onClick = onClearAlliancesError) {
+                            Text(stringResource(R.string.admin_dismiss_error))
+                        }
+                    }
+                }
+                if (!state.alliancesLoading && state.alliances.isEmpty() && state.alliancesError.isNullOrBlank()) {
+                    Text(
+                        text = stringResource(R.string.admin_members_empty),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    state.alliances.forEachIndexed { index, row ->
+                        if (index > 0) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(vertical = 4.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant,
+                            )
+                        }
+                        AdminAllianceRow(
+                            row = row,
+                            onCopyId = { copyTeamId(context, row.publicId) },
+                            onOverlayChange = { enabled ->
+                                onAllianceOverlayChange(row.publicId, enabled)
+                            },
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            adminSectionCard {
+                Text(
+                    text = stringResource(R.string.admin_section_members),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(chipScroll),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FilterChip(
+                        selected = state.filterAllianceCode == null,
+                        onClick = { onSetFilterAlliance(null) },
+                        label = { Text(stringResource(R.string.admin_filter_all_teams)) },
+                    )
+                    state.alliances.forEach { a ->
+                        FilterChip(
+                            selected = state.filterAllianceCode == a.allianceCode,
+                            onClick = {
+                                onSetFilterAlliance(
+                                    if (state.filterAllianceCode == a.allianceCode) null else a.allianceCode,
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text = a.allianceCode,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            },
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = state.memberSearchQuery,
+                    onValueChange = onMemberSearchChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.medium,
+                    label = { Text(stringResource(R.string.admin_members_search_hint)) },
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.admin_members_title),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedButton(
+                        onClick = onRefresh,
+                        enabled = !state.isLoading,
+                        shape = MaterialTheme.shapes.large,
+                        modifier = Modifier.semantics {
+                            contentDescription = context.getString(R.string.admin_cd_refresh_members)
+                        },
+                    ) {
+                        Text(stringResource(R.string.admin_refresh))
+                    }
+                    if (state.isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .padding(start = 8.dp)
+                                .size(22.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            adminSectionCard {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.admin_rooms_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    OutlinedButton(
+                        onClick = onRefreshRooms,
+                        enabled = !state.roomsLoading,
+                        shape = MaterialTheme.shapes.large,
+                        modifier = Modifier.semantics {
+                            contentDescription = context.getString(R.string.admin_cd_refresh_rooms)
+                        },
+                    ) {
+                        Text(stringResource(R.string.admin_refresh))
+                    }
+                }
+                Text(
+                    text = stringResource(R.string.admin_rooms_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedTextField(
+                        value = newRoomTitle,
+                        onValueChange = { newRoomTitle = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        shape = MaterialTheme.shapes.medium,
+                        label = { Text(stringResource(R.string.admin_rooms_new_hint)) },
+                    )
+                    Button(
+                        onClick = {
+                            onCreateRoom(newRoomTitle)
+                            newRoomTitle = ""
+                        },
+                        enabled = newRoomTitle.isNotBlank(),
+                        shape = MaterialTheme.shapes.large,
+                    ) {
+                        Text(stringResource(R.string.admin_rooms_create))
+                    }
+                }
+                if (state.roomsLoading && state.rooms.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                state.roomError?.takeIf { it.isNotBlank() }?.let { roomErrorText ->
+                    Text(
+                        text = roomErrorText,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                state.roomSnack?.takeIf { it.isNotBlank() }?.let { roomSnackText ->
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = stringResource(R.string.admin_rooms_title),
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        OutlinedButton(
-                            onClick = onRefreshRooms,
-                            enabled = !state.roomsLoading,
-                            shape = MaterialTheme.shapes.large,
-                            modifier = Modifier.semantics {
-                                contentDescription = context.getString(R.string.admin_cd_refresh_rooms)
-                            },
-                        ) {
-                            Text(stringResource(R.string.admin_refresh))
-                        }
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        OutlinedTextField(
-                            value = newRoomTitle,
-                            onValueChange = { newRoomTitle = it },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                            shape = MaterialTheme.shapes.medium,
-                            label = { Text(stringResource(R.string.admin_rooms_new_hint)) },
-                        )
-                        Button(
-                            onClick = {
-                                onCreateRoom(newRoomTitle)
-                                newRoomTitle = ""
-                            },
-                            enabled = newRoomTitle.isNotBlank(),
-                            shape = MaterialTheme.shapes.large,
-                        ) {
-                            Text(stringResource(R.string.admin_rooms_create))
-                        }
-                    }
-                    if (state.roomsLoading && state.rooms.isEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            CircularProgressIndicator(
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
-                    state.roomError?.takeIf { it.isNotBlank() }?.let { roomErrorText ->
-                        Text(
-                            text = roomErrorText,
-                            color = MaterialTheme.colorScheme.error,
+                            text = roomSnackText,
+                            color = MaterialTheme.colorScheme.primary,
                             style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f),
                         )
+                        TextButton(onClick = onClearRoomSnack) {
+                            Text(stringResource(R.string.admin_dismiss_error))
+                        }
                     }
-                    state.roomSnack?.takeIf { it.isNotBlank() }?.let { roomSnackText ->
+                }
+                if (!state.roomsLoading && state.rooms.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.admin_rooms_empty),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    state.rooms.forEach { room ->
                         Row(
+                            modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = roomSnackText,
-                                color = MaterialTheme.colorScheme.primary,
-                                style = MaterialTheme.typography.bodySmall,
+                                text = room.title,
+                                style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.weight(1f),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
                             )
-                            TextButton(onClick = onClearRoomSnack) {
-                                Text(stringResource(R.string.admin_dismiss_error))
-                            }
-                        }
-                    }
-                    if (!state.roomsLoading && state.rooms.isEmpty()) {
-                        Text(
-                            text = stringResource(R.string.admin_rooms_empty),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    } else {
-                        state.rooms.forEach { room ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    text = room.title,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    modifier = Modifier.weight(1f),
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    TextButton(
-                                        onClick = {
-                                            renameRoomTarget = room
-                                            renameDraft = room.title
-                                        },
-                                        modifier = Modifier.semantics {
-                                            contentDescription = context.getString(R.string.admin_cd_rename_room, room.title)
-                                        },
-                                    ) {
-                                        Text(stringResource(R.string.admin_rooms_rename))
-                                    }
-                                    TextButton(
-                                        onClick = { deleteRoomTarget = room },
-                                        modifier = Modifier.semantics {
-                                            contentDescription = context.getString(R.string.admin_cd_delete_room, room.title)
-                                        },
-                                    ) {
-                                        Text(
-                                            stringResource(R.string.admin_rooms_delete),
-                                            color = MaterialTheme.colorScheme.error,
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                TextButton(
+                                    onClick = {
+                                        renameRoomTarget = room
+                                        renameDraft = room.title
+                                    },
+                                    modifier = Modifier.semantics {
+                                        contentDescription = context.getString(
+                                            R.string.admin_cd_rename_room,
+                                            room.title,
                                         )
-                                    }
+                                    },
+                                ) {
+                                    Text(stringResource(R.string.admin_rooms_rename))
+                                }
+                                TextButton(
+                                    onClick = { deleteRoomTarget = room },
+                                    modifier = Modifier.semantics {
+                                        contentDescription = context.getString(
+                                            R.string.admin_cd_delete_room,
+                                            room.title,
+                                        )
+                                    },
+                                ) {
+                                    Text(
+                                        stringResource(R.string.admin_rooms_delete),
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
                                 }
                             }
                         }
@@ -230,36 +405,7 @@ fun AdminScreen(
                 }
             }
         }
-        item {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(R.string.admin_members_title),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.weight(1f),
-                )
-                OutlinedButton(
-                    onClick = onRefresh,
-                    enabled = !state.isLoading,
-                    shape = MaterialTheme.shapes.large,
-                    modifier = Modifier.semantics {
-                        contentDescription = context.getString(R.string.admin_cd_refresh_members)
-                    },
-                ) {
-                    Text(stringResource(R.string.admin_refresh))
-                }
-                if (state.isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(22.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-            }
-        }
+
         item {
             when {
                 state.isLoading && state.members.isEmpty() -> {
@@ -422,6 +568,84 @@ fun AdminScreen(
     }
 }
 
+@Composable
+private fun adminSectionCard(content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            modifier = Modifier.padding(SquadRelayDimens.cardInnerPadding),
+            verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+            content = content,
+        )
+    }
+}
+
+@Composable
+private fun AdminAllianceRow(
+    row: AllianceAdminDto,
+    onCopyId: () -> Unit,
+    onOverlayChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.admin_team_internal_code),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = row.allianceCode,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = stringResource(R.string.admin_team_public_id),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+            Text(
+                text = row.publicId,
+                style = MaterialTheme.typography.bodyMedium,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = stringResource(R.string.admin_team_members_count, row.memberCount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+            TextButton(onClick = onCopyId, modifier = Modifier.padding(top = 2.dp)) {
+                Text(stringResource(R.string.admin_copy_team_id))
+            }
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = stringResource(R.string.admin_overlay_switch),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 4.dp),
+            )
+            Switch(
+                checked = row.overlayEnabled,
+                onCheckedChange = onOverlayChange,
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AdminMemberCard(
@@ -447,15 +671,15 @@ private fun AdminMemberCard(
     val isSelf = member.id == currentUserId
     val context = LocalContext.current
 
-    Card(
+    Surface(
         shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        ),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
-            modifier = Modifier.padding(SquadRelayDimens.cardInnerPadding - 2.dp),
+            modifier = Modifier.padding(SquadRelayDimens.cardInnerPadding),
             verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
         ) {
             Row(
@@ -484,6 +708,17 @@ private fun AdminMemberCard(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth(),
             )
+            val teamId = member.alliancePublicId?.takeIf { it.isNotBlank() }
+            if (teamId != null) {
+                Text(
+                    text = stringResource(R.string.admin_team_public_id) + ": " + teamId,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             Text(
                 text = stringResource(R.string.admin_field_status, statusLabel),
                 style = MaterialTheme.typography.bodySmall,

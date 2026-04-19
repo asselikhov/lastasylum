@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.di
 
 import android.content.Context
+import com.lastasylum.alliance.data.admin.AdminRepository
 import com.lastasylum.alliance.data.auth.AuthRepository
 import com.lastasylum.alliance.data.auth.TokenStore
 import com.lastasylum.alliance.data.chat.ChatRepository
@@ -44,6 +45,10 @@ class AppContainer private constructor(context: Context) {
 
     val usersRepository: UsersRepository = UsersRepository(
         usersApi = authorizedClients.usersApi,
+    )
+
+    val adminRepository: AdminRepository = AdminRepository(
+        adminApi = authorizedClients.adminApi,
     )
 
     init {

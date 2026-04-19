@@ -28,8 +28,20 @@ class UsersRepository(
     suspend fun updatePresence(status: String): Result<Unit> =
         runCatching { usersApi.updatePresence(PresenceBody(status)) }
 
-    suspend fun listMembers(): Result<List<TeamMemberDto>> =
-        runCatching { usersApi.listMembers() }
+    suspend fun listMembers(
+        allianceCode: String? = null,
+        q: String? = null,
+        skip: Int = 0,
+        limit: Int = 300,
+    ): Result<List<TeamMemberDto>> =
+        runCatching {
+            usersApi.listMembers(
+                allianceCode = allianceCode?.takeIf { it.isNotBlank() },
+                q = q?.trim()?.takeIf { it.isNotEmpty() },
+                skip = skip,
+                limit = limit,
+            )
+        }
 
     suspend fun updateMembership(userId: String, status: String): Result<TeamMemberDto> =
         runCatching {

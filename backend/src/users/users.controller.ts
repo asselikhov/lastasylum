@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -26,6 +27,7 @@ import {
   RegisterPushTokenDto,
   UpdatePresenceDto,
 } from './dto/register-push-token.dto';
+import { UserDocument } from './schemas/user.schema';
 import { UsersService } from './users.service';
 
 type RequestUser = {
@@ -45,7 +47,7 @@ export class UsersController {
       throw new NotFoundException('User not found');
     }
 
-    return this.usersService.toSafeUser(user);
+    return await this.usersService.toSafeUser(user);
   }
 
   @Post('me/push-token')
@@ -91,7 +93,7 @@ export class UsersController {
     if (!updated) {
       throw new NotFoundException('User not found');
     }
-    return this.usersService.toSafeUser(updated);
+    return await this.usersService.toSafeUser(updated);
   }
 
   @Patch('me/username')
@@ -108,7 +110,7 @@ export class UsersController {
     if (!updated) {
       throw new NotFoundException('User not found');
     }
-    return this.usersService.toSafeUser(updated);
+    return await this.usersService.toSafeUser(updated);
   }
 
   @Patch('me/team')
@@ -126,14 +128,44 @@ export class UsersController {
     if (!updated) {
       throw new NotFoundException('User not found');
     }
-    return this.usersService.toSafeUser(updated);
+    return await this.usersService.toSafeUser(updated);
   }
 
   @Get()
   @Roles(AllianceRole.R4)
-  async listAllianceMembers() {
-    const users = await this.usersService.listByAlliance(DEFAULT_ALLIANCE_ID);
-    return users.map((user) => this.usersService.toSafeUser(user));
+  async listAllianceMembers(
+    @Req() req: { user: RequestUser },
+    @Query('allianceCode') allianceCode?: string,
+    @Query('q') q?: string,
+    @Query('skip') skipRaw?: string,
+    @Query('limit') limitRaw?: string,
+  ) {
+    const me = await this.usersService.findById(req.user.userId);
+    if (!me) {
+      throw new NotFoundException('User not found');
+    }
+
+    let usersList: UserDocument[];
+    if (me.role === AllianceRole.R5) {
+      const skip = Math.max(0, Number.parseInt(skipRaw ?? '0', 10) || 0);
+      const limit = Math.min(
+        500,
+        Math.max(1, Number.parseInt(limitRaw ?? '200', 10) || 200),
+      );
+      usersList = await this.usersService.listUsersForAdmin({
+        allianceCode: allianceCode?.trim() || undefined,
+        q: q?.trim() || undefined,
+        skip,
+        limit,
+      });
+    } else {
+      const allianceName = me.allianceName?.trim() || DEFAULT_ALLIANCE_ID;
+      usersList = await this.usersService.listByAlliance(allianceName);
+    }
+
+    return Promise.all(
+      usersList.map((user) => this.usersService.toSafeUser(user)),
+    );
   }
 
   @Roles(AllianceRole.R5)
@@ -147,7 +179,7 @@ export class UsersController {
       throw new NotFoundException('User not found');
     }
 
-    return this.usersService.toSafeUser(updatedUser);
+    return await this.usersService.toSafeUser(updatedUser);
   }
 
   /** Must be before :id routes so "mute" is not captured as id. */
@@ -163,7 +195,7 @@ export class UsersController {
       throw new NotFoundException('User not found');
     }
 
-    return this.usersService.toSafeUser(updatedUser);
+    return await this.usersService.toSafeUser(updatedUser);
   }
 
   @Roles(AllianceRole.R5)
@@ -179,7 +211,7 @@ export class UsersController {
     if (!updatedUser) {
       throw new NotFoundException('User not found');
     }
-    return this.usersService.toSafeUser(updatedUser);
+    return await this.usersService.toSafeUser(updatedUser);
   }
 
   @Roles(AllianceRole.R5)
@@ -192,7 +224,7 @@ export class UsersController {
     if (!updatedUser) {
       throw new NotFoundException('User not found');
     }
-    return this.usersService.toSafeUser(updatedUser);
+    return await this.usersService.toSafeUser(updatedUser);
   }
 
   @Roles(AllianceRole.R5)

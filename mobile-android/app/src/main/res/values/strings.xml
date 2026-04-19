@@ -188,6 +188,19 @@
     <string name="admin_cd_delete_room">Удалить комнату %1$s</string>
     <string name="admin_cd_refresh_members">Обновить список участников</string>
     <string name="admin_cd_refresh_rooms">Обновить список комнат</string>
+    <string name="admin_screen_title">Администрирование</string>
+    <string name="admin_section_teams">Команды</string>
+    <string name="admin_section_members">Участники</string>
+    <string name="admin_team_internal_code">Код (маршрутизация)</string>
+    <string name="admin_team_public_id">ID команды</string>
+    <string name="admin_team_members_count">Участников: %1$d</string>
+    <string name="admin_overlay_switch">Оверлей в приложении</string>
+    <string name="admin_filter_all_teams">Все</string>
+    <string name="admin_members_search_hint">Поиск по нику или email</string>
+    <string name="admin_copy_team_id">Копировать ID</string>
+    <string name="admin_cd_refresh_teams">Обновить список команд</string>
+    <string name="admin_ok_overlay">Доступ к оверлею обновлён</string>
+    <string name="profile_team_public_id">ID команды</string>
 
     <!-- Combat overlay service -->
     <string name="overlay_notif_combat_active">Боевой режим активен</string>

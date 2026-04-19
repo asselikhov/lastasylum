@@ -7,6 +7,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
+import { AllianceRegistryService } from './alliance-registry.service';
 import { User, UserDocument } from './schemas/user.schema';
 
 export type SafeUser = {
@@ -15,6 +16,8 @@ export type SafeUser = {
   email: string;
   role: AllianceRole;
   allianceName: string;
+  alliancePublicId: string;
+  overlayTabVisible: boolean;
   teamDisplayName: string | null;
   teamTag: string | null;
   membershipStatus: TeamMembershipStatus;
@@ -27,6 +30,7 @@ export type SafeUser = {
 export class UsersService {
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<User>,
+    private readonly allianceRegistry: AllianceRegistryService,
   ) {}
 
   effectiveMembership(user: UserDocument): TeamMembershipStatus {
@@ -60,6 +64,32 @@ export class UsersService {
     return this.userModel
       .find({ allianceName })
       .sort({ membershipStatus: 1, role: 1, username: 1 })
+      .exec();
+  }
+
+  /** R5 admin: optional alliance filter, optional text search, pagination. */
+  async listUsersForAdmin(opts: {
+    allianceCode?: string;
+    q?: string;
+    skip: number;
+    limit: number;
+  }): Promise<UserDocument[]> {
+    const filter: Record<string, unknown> = {};
+    if (opts.allianceCode?.trim()) {
+      filter.allianceName = opts.allianceCode.trim();
+    }
+    if (opts.q?.trim()) {
+      const esc = opts.q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.$or = [
+        { username: new RegExp(esc, 'i') },
+        { email: new RegExp(esc, 'i') },
+      ];
+    }
+    return this.userModel
+      .find(filter)
+      .sort({ allianceName: 1, membershipStatus: 1, role: 1, username: 1 })
+      .skip(opts.skip)
+      .limit(opts.limit)
       .exec();
   }
 
@@ -188,13 +218,18 @@ export class UsersService {
       .exec();
   }
 
-  toSafeUser(user: UserDocument): SafeUser {
+  async toSafeUser(user: UserDocument): Promise<SafeUser> {
+    const flags = await this.allianceRegistry.resolveFlagsByAllianceCode(
+      user.allianceName,
+    );
     return {
       id: user._id.toString(),
       username: user.username,
       email: user.email,
       role: user.role,
       allianceName: user.allianceName,
+      alliancePublicId: flags.alliancePublicId,
+      overlayTabVisible: flags.overlayTabVisible,
       teamDisplayName: user.teamDisplayName ?? null,
       teamTag: user.teamTag ?? null,
       membershipStatus: this.effectiveMembership(user),

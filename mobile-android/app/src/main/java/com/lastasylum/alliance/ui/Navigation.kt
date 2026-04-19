@@ -68,6 +68,7 @@ fun AppNavigation(
     userId: String,
     username: String,
     role: String,
+    overlayTabVisible: Boolean,
     onLogout: () -> Unit,
     chatViewModelFactory: ChatViewModelFactory,
     adminViewModelFactory: AdminViewModelFactory,
@@ -100,11 +101,13 @@ fun AppNavigation(
     val navBackStackEntry = navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry.value?.destination
 
-    val visibleTabs = remember(role) {
-        if (role == "R5") {
-            AppTab.entries.toList()
-        } else {
-            AppTab.entries.filter { it != AppTab.ADMIN }
+    val visibleTabs = remember(role, overlayTabVisible) {
+        AppTab.entries.filter { tab ->
+            when (tab) {
+                AppTab.ADMIN -> role == "R5"
+                AppTab.OVERLAY -> overlayTabVisible
+                else -> true
+            }
         }
     }
 
@@ -117,6 +120,7 @@ fun AppNavigation(
     val msgRoomCreated = stringResource(R.string.admin_ok_room_created)
     val msgRoomRenamed = stringResource(R.string.admin_ok_room_renamed)
     val msgRoomDeleted = stringResource(R.string.admin_ok_room_deleted)
+    val msgOverlaySaved = stringResource(R.string.admin_ok_overlay)
 
     Scaffold(
         modifier = modifier,
@@ -253,7 +257,19 @@ fun AppNavigation(
                 )
             }
             composable(AppTab.OVERLAY.route) {
-                OverlayControlScreen(role = role)
+                LaunchedEffect(overlayTabVisible) {
+                    if (!overlayTabVisible) {
+                        navController.navigate(AppTab.CHAT.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = false
+                            }
+                            launchSingleTop = true
+                        }
+                    }
+                }
+                if (overlayTabVisible) {
+                    OverlayControlScreen(role = role)
+                }
             }
             composable(AppTab.PROFILE.route) {
                 ProfileScreen(
@@ -268,6 +284,13 @@ fun AppNavigation(
                     currentUserId = userId,
                     state = adminState,
                     onRefresh = adminViewModel::refresh,
+                    onRefreshAlliances = adminViewModel::refreshAlliances,
+                    onClearAlliancesError = adminViewModel::clearAlliancesError,
+                    onSetFilterAlliance = adminViewModel::setFilterAllianceCode,
+                    onMemberSearchChange = adminViewModel::setMemberSearchQuery,
+                    onAllianceOverlayChange = { publicId, enabled ->
+                        adminViewModel.setAllianceOverlayEnabled(publicId, enabled, msgOverlaySaved)
+                    },
                     onApprove = { id ->
                         adminViewModel.setMembership(id, "active", msgApproved)
                     },
