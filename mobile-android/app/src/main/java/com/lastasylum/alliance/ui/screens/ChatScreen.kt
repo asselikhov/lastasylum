@@ -79,8 +79,6 @@ import com.lastasylum.alliance.ui.chat.ChatState
 import com.lastasylum.alliance.ui.chat.RoleBadge
 import com.lastasylum.alliance.ui.chat.formatChatTime
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
-import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -91,7 +89,7 @@ private data class ChatListLoadSignal(
     val isBusy: Boolean,
 )
 
-@OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
     state: ChatState,
@@ -146,7 +144,6 @@ fun ChatScreen(
             ChatListLoadSignal(lastIdx, total, hasMore, busy)
         }
             .distinctUntilChanged()
-            .debounce(48L)
             .collect { sig ->
                 if (sig.totalItems > 4 &&
                     sig.lastVisibleIndex >= sig.totalItems - 2 &&

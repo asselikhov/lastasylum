@@ -23,18 +23,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onWindowFocusChanged(hasFocus: Boolean) {
-        super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) {
-            hideSystemUi()
-        }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        hideSystemUi()
-    }
-
     private fun hideSystemUi() {
         WindowCompat.getInsetsController(window, window.decorView).apply {
             systemBarsBehavior =

@@ -18,8 +18,11 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -122,7 +125,11 @@ fun AppNavigation(
         contentWindowInsets = WindowInsets.safeDrawing.exclude(WindowInsets.ime),
         bottomBar = {
             val density = LocalDensity.current
-            val keyboardOpen = WindowInsets.ime.getBottom(density) > 0
+            val imeInsets = WindowInsets.ime
+            // Boolean only — avoids recomposing the whole bottom bar on every IME animation frame.
+            val keyboardOpen by remember(imeInsets, density) {
+                derivedStateOf { imeInsets.getBottom(density) > 0 }
+            }
             if (!keyboardOpen) {
                 NavigationBar(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -185,6 +192,10 @@ fun AppNavigation(
             navController = navController,
             startDestination = AppTab.CHAT.route,
             modifier = Modifier.padding(contentPadding),
+            enterTransition = { EnterTransition.None },
+            exitTransition = { ExitTransition.None },
+            popEnterTransition = { EnterTransition.None },
+            popExitTransition = { ExitTransition.None },
         ) {
             composable(AppTab.CHAT.route) {
                 val chatState by chatViewModel.state.collectAsStateWithLifecycle()
