@@ -22,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -128,8 +129,6 @@ import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingBubble
 import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingOnBubble
 import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingBubble
 import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingOnBubble
-import com.lastasylum.alliance.ui.theme.ChatTelegramTeamTagBg
-import com.lastasylum.alliance.ui.theme.ChatTelegramTeamTagFg
 import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMuted
 import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMutedIncoming
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
@@ -153,7 +152,45 @@ private data class ChatListLoadSignal(
 
 private sealed interface ChatTimelineEntry {
     data class DaySeparator(val label: String) : ChatTimelineEntry
-    data class ChatMessageItem(val message: ChatMessage) : ChatTimelineEntry
+    data class ChatMessageItem(val message: ChatMessage, val messageIndex: Int) : ChatTimelineEntry
+}
+
+/** Telegram-style: show avatar + header on the oldest message of a same-sender run (newest-first list). */
+private fun chatMessageShowsClusterHeader(messages: List<ChatMessage>, messageIndex: Int): Boolean {
+    if (messages.isEmpty() || messageIndex !in messages.indices) return true
+    if (messageIndex == messages.lastIndex) return true
+    val m = messages[messageIndex]
+    val older = messages[messageIndex + 1]
+    val sid = m.senderId.trim()
+    val oid = older.senderId.trim()
+    if (sid.isEmpty() || oid.isEmpty() || sid != oid) return true
+    val d0 = chatDayKey(m.createdAt)
+    val d1 = chatDayKey(older.createdAt)
+    if (d0 != null && d1 != null && d0 != d1) return true
+    return false
+}
+
+/** Tighter vertical gap when the visually older neighbor is the same sender (Telegram stack). */
+private fun chatBubbleClusterTopSpacing(
+    timeline: List<ChatTimelineEntry>,
+    timelineIndex: Int,
+    message: ChatMessage,
+): Dp {
+    val sid = message.senderId.trim()
+    if (sid.isEmpty()) return 8.dp
+    var i = timelineIndex + 1
+    while (i < timeline.size) {
+        when (val e = timeline[i]) {
+            is ChatTimelineEntry.DaySeparator -> return 10.dp
+            is ChatTimelineEntry.ChatMessageItem -> {
+                val o = e.message
+                val same = o.senderId.trim() == sid && o.senderId.trim().isNotEmpty()
+                return if (same) 1.dp else 10.dp
+            }
+        }
+        i++
+    }
+    return 6.dp
 }
 
 /** Own message only when both IDs are non-blank and equal (avoids treating every message as own). */
@@ -162,14 +199,6 @@ private fun chatMessageIsOwn(message: ChatMessage, currentUserId: String): Boole
     val cid = currentUserId.trim()
     if (sid.isEmpty() || cid.isEmpty()) return false
     return sid == cid
-}
-
-private fun chatSenderMetaLineParts(message: ChatMessage): List<String> = buildList {
-    val u = message.senderUsername.trim()
-    if (u.isNotEmpty()) add(u)
-    message.senderTeamTag?.trim()?.takeIf { it.isNotEmpty() }?.let { add(it) }
-    val r = message.senderRole.trim()
-    if (r.isNotEmpty()) add(r)
 }
 
 private fun buildChatTimeline(messages: List<ChatMessage>): List<ChatTimelineEntry> {
@@ -188,12 +217,16 @@ private fun buildChatTimeline(messages: List<ChatMessage>): List<ChatTimelineEnt
                 }
             }
         }
-        out.add(ChatTimelineEntry.ChatMessageItem(messages[i]))
+        out.add(ChatTimelineEntry.ChatMessageItem(messages[i], i))
     }
     return out
 }
 
 private enum class MediaPickerTab { Stickers, Gif }
+
+private val ChatIncomingAvatarSize = 38.dp
+private val ChatIncomingAvatarEndPad = 6.dp
+private val ChatIncomingAvatarSlotWidth = ChatIncomingAvatarSize + ChatIncomingAvatarEndPad
 
 private fun readClipboardPlainText(context: Context): String? {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return null
@@ -643,7 +676,7 @@ private fun ChatMessagesLazyList(
         state = listState,
         modifier = modifier,
         reverseLayout = true,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
         contentPadding = PaddingValues(
             top = SquadRelayDimens.itemGap,
             bottom = SquadRelayDimens.itemGap,
@@ -745,9 +778,13 @@ private fun ChatMessagesLazyList(
                         is ChatTimelineEntry.DaySeparator -> ChatDayDivider(e.label)
                         is ChatTimelineEntry.ChatMessageItem -> {
                             val message = e.message
+                            val showClusterHeader = chatMessageShowsClusterHeader(state.messages, e.messageIndex)
+                            val clusterTop = chatBubbleClusterTopSpacing(timeline, idx, message)
                             ChatBubbleRow(
                                 message = message,
                                 isMine = chatMessageIsOwn(message, state.currentUserId),
+                                showClusterHeader = showClusterHeader,
+                                clusterTopSpacing = clusterTop,
                                 canDelete = canDeleteChatMessage(
                                     message = message,
                                     currentUserId = state.currentUserId,
@@ -1309,44 +1346,44 @@ private fun ChatSenderAvatar(
     }
 }
 
+/** Telegram-like header: `[TAG]` + nickname on the left, role badge on the right. */
 @Composable
-private fun ChatBubbleAuthorLine(
-    displayName: String,
-    nameAccent: Color,
+private fun ChatBubbleAuthorHeader(
     teamTag: String?,
+    nickname: String,
+    nicknameColor: Color,
+    tagBracketColor: Color,
     senderRole: String,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Column(
+        Row(
             modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text(
-                text = displayName,
-                style = MaterialTheme.typography.labelLarge,
-                color = nameAccent,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        if (teamTag != null) {
-            Surface(
-                shape = RoundedCornerShape(5.dp),
-                color = ChatTelegramTeamTagBg,
-                tonalElevation = 0.dp,
-                shadowElevation = 0.dp,
-            ) {
+            val t = teamTag?.trim()?.takeIf { it.isNotEmpty() }
+            if (t != null) {
                 Text(
-                    text = teamTag,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = ChatTelegramTeamTagFg,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    text = "[$t]",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = tagBracketColor,
+                    maxLines = 1,
                 )
             }
+            Text(
+                text = nickname.trim().ifBlank { "—" },
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = nicknameColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
         }
+        Spacer(modifier = Modifier.width(8.dp))
         RoleBadge(role = senderRole)
     }
 }
@@ -1355,10 +1392,11 @@ private fun ChatBubbleAuthorLine(
 private fun ChatBubbleInnerColumn(
     message: ChatMessage,
     isMine: Boolean,
+    showClusterHeader: Boolean,
     stickerStem: String?,
     senderAccent: Color,
     stemTag: String?,
-    displayName: String,
+    nickname: String,
     onBubble: Color,
     timeMuted: Color,
     formattedTime: String,
@@ -1371,31 +1409,38 @@ private fun ChatBubbleInnerColumn(
     canDelete: Boolean,
 ) {
     val bubblePadH = if (stickerStem != null) 8.dp else 12.dp
-    val bubblePadV = if (stickerStem != null) 8.dp else 10.dp
+    val bubblePadBottom = if (stickerStem != null) 8.dp else 10.dp
+    val bubblePadTop = when {
+        !showClusterHeader -> 5.dp
+        stickerStem != null -> 8.dp
+        else -> 10.dp
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = bubblePadH, vertical = bubblePadV)
+            .padding(horizontal = bubblePadH)
+            .padding(top = bubblePadTop, bottom = bubblePadBottom)
             .then(swipeModifier),
         verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
     ) {
         if (isMine) {
-            val metaParts = chatSenderMetaLineParts(message)
-            if (metaParts.isNotEmpty()) {
-                Text(
-                    text = metaParts.joinToString(" · "),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = ChatTelegramOutgoingOnBubble.copy(alpha = 0.78f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth(),
+            if (showClusterHeader) {
+                val tagMuted = ChatTelegramOutgoingOnBubble.copy(alpha = 0.62f)
+                ChatBubbleAuthorHeader(
+                    teamTag = stemTag,
+                    nickname = nickname,
+                    nicknameColor = ChatTelegramOutgoingOnBubble,
+                    tagBracketColor = tagMuted,
+                    senderRole = message.senderRole,
                 )
             }
-        } else {
-            ChatBubbleAuthorLine(
-                displayName = displayName,
-                nameAccent = senderAccent,
+        } else if (showClusterHeader) {
+            val tagMuted = ChatTelegramIncomingOnBubble.copy(alpha = 0.5f)
+            ChatBubbleAuthorHeader(
                 teamTag = stemTag,
+                nickname = nickname,
+                nicknameColor = senderAccent,
+                tagBracketColor = tagMuted,
                 senderRole = message.senderRole,
             )
         }
@@ -1526,6 +1571,8 @@ private fun ChatBubbleInnerColumn(
 private fun ChatBubbleRow(
     message: ChatMessage,
     isMine: Boolean,
+    showClusterHeader: Boolean,
+    clusterTopSpacing: Dp,
     canDelete: Boolean,
     deleting: Boolean,
     inSelectionMode: Boolean,
@@ -1562,12 +1609,18 @@ private fun ChatBubbleRow(
     val timeMuted = if (isMine) ChatTelegramTimeMuted else ChatTelegramTimeMutedIncoming
     val stemTag = message.senderTeamTag?.trim()?.takeIf { it.isNotEmpty() }
     val displayName = message.senderUsername?.trim().orEmpty().ifBlank { senderLine }
-    val bubbleShape = RoundedCornerShape(
-        topStart = 16.dp,
-        topEnd = 16.dp,
-        bottomStart = if (isMine) 16.dp else 4.dp,
-        bottomEnd = if (isMine) 4.dp else 16.dp,
-    )
+    val nickname = message.senderUsername.trim().ifBlank { displayName }
+    val bubbleShapeMine = if (showClusterHeader) {
+        RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 4.dp)
+    } else {
+        RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp, bottomStart = 16.dp, bottomEnd = 4.dp)
+    }
+    val bubbleShapeIncoming = if (showClusterHeader) {
+        RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 4.dp, bottomEnd = 16.dp)
+    } else {
+        RoundedCornerShape(topStart = 6.dp, topEnd = 16.dp, bottomStart = 4.dp, bottomEnd = 16.dp)
+    }
+    val bubbleShape = if (isMine) bubbleShapeMine else bubbleShapeIncoming
     val bubbleContext = LocalContext.current
     val formattedTime = formatChatTime(message.createdAt)
 
@@ -1633,7 +1686,9 @@ private fun ChatBubbleRow(
 
     if (isMine) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = clusterTopSpacing),
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.Bottom,
         ) {
@@ -1654,15 +1709,14 @@ private fun ChatBubbleRow(
                     .then(bubbleClickModifier)
                     .then(swipeModifier)
                 Column(modifier = floatMod) {
-                    val mineFloatMeta = chatSenderMetaLineParts(message)
-                    if (mineFloatMeta.isNotEmpty()) {
-                        Text(
-                            text = mineFloatMeta.joinToString(" · "),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.fillMaxWidth(),
+                    if (showClusterHeader) {
+                        val tagMuted = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+                        ChatBubbleAuthorHeader(
+                            teamTag = stemTag,
+                            nickname = nickname,
+                            nicknameColor = MaterialTheme.colorScheme.onSurface,
+                            tagBracketColor = tagMuted,
+                            senderRole = message.senderRole,
                         )
                     }
                     Box(
@@ -1721,10 +1775,11 @@ private fun ChatBubbleRow(
                     ChatBubbleInnerColumn(
                         message = message,
                         isMine = isMine,
+                        showClusterHeader = showClusterHeader,
                         stickerStem = stickerStem,
                         senderAccent = senderAccent,
                         stemTag = stemTag,
-                        displayName = displayName,
+                        nickname = nickname,
                         onBubble = onBubble,
                         timeMuted = timeMuted,
                         formattedTime = formattedTime,
@@ -1741,7 +1796,9 @@ private fun ChatBubbleRow(
         }
     } else {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = clusterTopSpacing),
             horizontalArrangement = Arrangement.Start,
             verticalAlignment = Alignment.Bottom,
         ) {
@@ -1756,24 +1813,35 @@ private fun ChatBubbleRow(
                     enabled = !messageId.isNullOrBlank(),
                 )
             }
-            ChatSenderAvatar(
-                telegramUrl = telegramUrl,
-                size = 38.dp,
-                modifier = Modifier.padding(end = 6.dp),
-                fallbackName = displayName,
-            )
+            if (showClusterHeader) {
+                ChatSenderAvatar(
+                    telegramUrl = telegramUrl,
+                    size = ChatIncomingAvatarSize,
+                    modifier = Modifier.padding(end = ChatIncomingAvatarEndPad),
+                    fallbackName = displayName,
+                )
+            } else {
+                Spacer(
+                    modifier = Modifier
+                        .width(ChatIncomingAvatarSlotWidth)
+                        .height(ChatIncomingAvatarSize),
+                )
+            }
             if (floatingSticker) {
                 val floatMod = Modifier
                     .widthIn(max = 232.dp)
                     .then(bubbleClickModifier)
                     .then(swipeModifier)
                 Column(modifier = floatMod) {
-                    ChatBubbleAuthorLine(
-                        displayName = displayName,
-                        nameAccent = senderAccent,
-                        teamTag = stemTag,
-                        senderRole = message.senderRole,
-                    )
+                    if (showClusterHeader) {
+                        ChatBubbleAuthorHeader(
+                            teamTag = stemTag,
+                            nickname = nickname,
+                            nicknameColor = senderAccent,
+                            tagBracketColor = ChatTelegramIncomingOnBubble.copy(alpha = 0.5f),
+                            senderRole = message.senderRole,
+                        )
+                    }
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1832,10 +1900,11 @@ private fun ChatBubbleRow(
                     ChatBubbleInnerColumn(
                         message = message,
                         isMine = isMine,
+                        showClusterHeader = showClusterHeader,
                         stickerStem = stickerStem,
                         senderAccent = senderAccent,
                         stemTag = stemTag,
-                        displayName = displayName,
+                        nickname = nickname,
                         onBubble = onBubble,
                         timeMuted = timeMuted,
                         formattedTime = formattedTime,
