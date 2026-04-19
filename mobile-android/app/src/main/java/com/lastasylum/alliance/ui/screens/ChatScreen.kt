@@ -18,7 +18,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -39,6 +41,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.filled.Gif
 import androidx.compose.material3.AlertDialog
@@ -55,6 +58,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -76,6 +80,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -105,6 +110,10 @@ import com.lastasylum.alliance.ui.chat.formatChatTime
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import coil.compose.AsyncImage
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -115,9 +124,7 @@ private data class ChatListLoadSignal(
     val isBusy: Boolean,
 )
 
-private enum class ChatAttachSheetPage { Menu, Emoji }
-
-private enum class ChatStubDialog { None, Gif, Stickers }
+private enum class ChatAttachSheetPage { Menu, Emoji, Gif, Stickers }
 
 /** Quick-pick emoji appended to the message (no extra dependency). */
 private val CHAT_QUICK_EMOJIS: List<String> = listOf(
@@ -127,7 +134,32 @@ private val CHAT_QUICK_EMOJIS: List<String> = listOf(
     "😯", "😪", "😫", "🥱", "😴", "🤤", "😛", "😜", "🤪", "😇",
     "🥳", "🤝", "👍", "👎", "👌", "✌️", "🤞", "🫶", "👏", "🙏",
     "🔥", "💯", "✨", "⭐", "🎮", "🏆", "🎯", "⚔️", "🛡️", "💀",
+    "😤", "😡", "🤬", "😱", "🤯", "😳", "🥺", "😭", "🤢", "🤮",
+    "💪", "🦾", "🖖", "✋", "🤚", "👋", "🫳", "🫴", "🙌", "🤲",
+    "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "💔", "❣️", "💕",
+    "🐱", "🐶", "🐺", "🦊", "🐻", "🐼", "🐸", "🐵", "🦄", "🐲",
+    "🍕", "🍔", "🍟", "🌮", "🍜", "🍰", "☕", "🍺", "🧃", "🎂",
 )
+
+/** Kaomoji / ASCII-style stickers (no image packs). */
+private val CHAT_KAOMOJI: List<String> = listOf(
+    "(>﹏<)", "(╯°□°)╯︵ ┻━┻", "┬─┬ノ( º _ ºノ)", "(ಠ_ಠ)", "(ಥ﹏ಥ)",
+    "(＾▽＾)", "(￣▽￣)", "(¬‿¬)", "(⊙_⊙)", "(o_O)",
+    "¯\\_(ツ)_/¯", "(ง'̀-'́)ง", "(づ￣ ³￣)づ", "ヽ(ﾟДﾟ)ﾉ", "ヾ(≧▽≦*)o",
+    "(´･ω･`)", "(｡•́︿•̀｡)", "(๑•̀ㅂ•́)و", "(ᵔᴥᵔ)", "(◕‿◕)",
+    "ʕ•ᴥ•ʔ", "(｡♥‿♥｡)", "（＾ω＾）", "(ノಠ益ಠ)ノ", "ಠ╭╮ಠ",
+    "（；´д｀）ゞ", "(´；ω；`)", "(๑˃̵ᴗ˂̵)و", "ヽ(°〇°)ﾉ", "٩(◕‿◕)۶",
+    "(ﾉ´ヮ`)ﾉ*: ･ﾟ", "( ͡° ͜ʖ ͡°)", "(ง •̀_•́)ง", "ᕦ(ò_óˇ)ᕤ", "（￣ー￣）",
+    "m(_ _)m", "(シ_ _)シ", "＼(^o^)／", "ヽ(>∀<☆)ノ", "(๑>◡<๑)",
+    "（*＾3＾）/～♡", "(￣3￣)", "(≧◡≦)", "（＾∀＾）", "（笑）",
+)
+
+private fun readClipboardPlainText(context: Context): String? {
+    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return null
+    val clip = cm.primaryClip ?: return null
+    if (clip.itemCount == 0) return null
+    return clip.getItemAt(0).coerceToText(context)?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -737,44 +769,22 @@ private fun ChatComposer(
 ) {
     var showAttachSheet by remember { mutableStateOf(false) }
     var attachPage by remember { mutableStateOf(ChatAttachSheetPage.Menu) }
-    var stubDialog by remember { mutableStateOf(ChatStubDialog.None) }
+    var gifUrlDraft by remember { mutableStateOf("") }
     val attachSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val keyboard = LocalSoftwareKeyboardController.current
-    val focusManager = LocalFocusManager.current
+    val context = LocalContext.current
 
     LaunchedEffect(showAttachSheet) {
-        if (!showAttachSheet) attachPage = ChatAttachSheetPage.Menu
-    }
-
-    if (stubDialog == ChatStubDialog.Gif) {
-        AlertDialog(
-            onDismissRequest = { stubDialog = ChatStubDialog.None },
-            title = { Text(stringResource(R.string.chat_attach_stub_gif_title)) },
-            text = { Text(stringResource(R.string.chat_attach_stub_gif_body)) },
-            confirmButton = {
-                TextButton(onClick = { stubDialog = ChatStubDialog.None }) {
-                    Text(stringResource(R.string.chat_ok))
-                }
-            },
-        )
-    }
-    if (stubDialog == ChatStubDialog.Stickers) {
-        AlertDialog(
-            onDismissRequest = { stubDialog = ChatStubDialog.None },
-            title = { Text(stringResource(R.string.chat_attach_stub_stickers_title)) },
-            text = { Text(stringResource(R.string.chat_attach_stub_stickers_body)) },
-            confirmButton = {
-                TextButton(onClick = { stubDialog = ChatStubDialog.None }) {
-                    Text(stringResource(R.string.chat_ok))
-                }
-            },
-        )
+        if (!showAttachSheet) {
+            attachPage = ChatAttachSheetPage.Menu
+            gifUrlDraft = ""
+        }
     }
 
     if (showAttachSheet) {
         ModalBottomSheet(
             onDismissRequest = { showAttachSheet = false },
             sheetState = attachSheetState,
+            contentWindowInsets = { WindowInsets.navigationBars },
         ) {
             when (attachPage) {
                 ChatAttachSheetPage.Menu -> {
@@ -796,10 +806,7 @@ private fun ChatComposer(
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
                     TextButton(
-                        onClick = {
-                            showAttachSheet = false
-                            stubDialog = ChatStubDialog.Gif
-                        },
+                        onClick = { attachPage = ChatAttachSheetPage.Gif },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text(
@@ -810,10 +817,7 @@ private fun ChatComposer(
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
                     TextButton(
-                        onClick = {
-                            showAttachSheet = false
-                            stubDialog = ChatStubDialog.Stickers
-                        },
+                        onClick = { attachPage = ChatAttachSheetPage.Stickers },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text(
@@ -849,7 +853,7 @@ private fun ChatComposer(
                         columns = GridCells.Adaptive(48.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 360.dp)
+                            .heightIn(max = 420.dp)
                             .padding(horizontal = 8.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -863,6 +867,150 @@ private fun ChatComposer(
                                 modifier = Modifier.size(48.dp),
                             ) {
                                 Text(text = emoji, style = MaterialTheme.typography.headlineSmall)
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.padding(bottom = 16.dp))
+                }
+
+                ChatAttachSheetPage.Gif -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        IconButton(onClick = { attachPage = ChatAttachSheetPage.Menu }) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                                contentDescription = stringResource(R.string.chat_emoji_back),
+                            )
+                        }
+                        Text(
+                            text = stringResource(R.string.chat_gif_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(start = 4.dp),
+                        )
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        OutlinedTextField(
+                            value = gifUrlDraft,
+                            onValueChange = { gifUrlDraft = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text(stringResource(R.string.chat_gif_hint)) },
+                            singleLine = false,
+                            maxLines = 3,
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    readClipboardPlainText(context)?.let { gifUrlDraft = it }
+                                },
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.ContentPaste,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .padding(end = 6.dp)
+                                        .size(18.dp),
+                                )
+                                Text(
+                                    text = stringResource(R.string.chat_gif_paste),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    context.startActivity(
+                                        Intent(Intent.ACTION_VIEW, Uri.parse("https://giphy.com")),
+                                    )
+                                },
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.chat_gif_open_giphy),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                        TextButton(
+                            onClick = {
+                                val url = gifUrlDraft.trim()
+                                if (url.isEmpty()) return@TextButton
+                                val sep = when {
+                                    draft.isEmpty() -> ""
+                                    draft.endsWith(' ') || draft.endsWith('\n') -> ""
+                                    else -> " "
+                                }
+                                onDraftChange(draft + sep + url)
+                                showAttachSheet = false
+                            },
+                            enabled = gifUrlDraft.trim().isNotEmpty(),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(stringResource(R.string.chat_gif_insert))
+                        }
+                    }
+                    Spacer(modifier = Modifier.padding(bottom = 16.dp))
+                }
+
+                ChatAttachSheetPage.Stickers -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        IconButton(onClick = { attachPage = ChatAttachSheetPage.Menu }) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                                contentDescription = stringResource(R.string.chat_emoji_back),
+                            )
+                        }
+                        Text(
+                            text = stringResource(R.string.chat_stickers_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(start = 4.dp),
+                        )
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = 88.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 420.dp)
+                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        items(CHAT_KAOMOJI) { face ->
+                            TextButton(
+                                onClick = {
+                                    onDraftChange(draft + face)
+                                    showAttachSheet = false
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 44.dp),
+                            ) {
+                                Text(
+                                    text = face,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
                             }
                         }
                     }
@@ -957,8 +1105,6 @@ private fun ChatComposer(
                         IconButton(
                             onClick = {
                                 if (readOnly) return@IconButton
-                                keyboard?.hide()
-                                focusManager.clearFocus()
                                 attachPage = ChatAttachSheetPage.Menu
                                 showAttachSheet = true
                             },

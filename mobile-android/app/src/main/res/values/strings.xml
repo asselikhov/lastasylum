@@ -45,10 +45,12 @@
     <string name="chat_attach_emoji">Эмодзи</string>
     <string name="chat_attach_gif">GIF</string>
     <string name="chat_attach_stickers">Стикеры</string>
-    <string name="chat_attach_stub_gif_title">GIF</string>
-    <string name="chat_attach_stub_gif_body">Поиск и вставка GIF появятся в следующем обновлении.</string>
-    <string name="chat_attach_stub_stickers_title">Стикеры</string>
-    <string name="chat_attach_stub_stickers_body">Стикеры появятся в следующем обновлении.</string>
+    <string name="chat_gif_title">GIF по ссылке</string>
+    <string name="chat_gif_hint">Ссылка на .gif или страницу (Giphy, Tenor…)</string>
+    <string name="chat_gif_paste">Вставить из буфера</string>
+    <string name="chat_gif_insert">Добавить в сообщение</string>
+    <string name="chat_gif_open_giphy">Открыть Giphy</string>
+    <string name="chat_stickers_title">Текстовые стикеры</string>
     <string name="chat_emoji_picker_title">Эмодзи</string>
     <string name="chat_emoji_back">Назад</string>
     <string name="chat_ok">Понятно</string>
