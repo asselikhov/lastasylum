@@ -12,10 +12,12 @@ import com.lastasylum.alliance.data.chat.ChatRoomPreferences
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 private const val PAGE_SIZE = 30
@@ -38,11 +40,29 @@ class ChatViewModel(
     /** Isolated from [state] so each keystroke does not recompose the whole chat list. */
     private val _draftMessage = MutableStateFlow("")
     val draftMessage: StateFlow<String> = _draftMessage.asStateFlow()
+
+    /** Isolated from [state] so typing socket churn does not recompose the message list. */
+    private val _typingPeers = MutableStateFlow<Map<String, String>>(emptyMap())
+    val typingPeers: StateFlow<Map<String, String>> = _typingPeers.asStateFlow()
+
     private val knownMessageIds = LinkedHashSet<String>()
     private val typingPeerJobs = mutableMapOf<String, Job>()
+    private val typingPeerJobsLock = Any()
     private var typingEmitJob: Job? = null
 
+    private val incomingMessages = Channel<ChatMessage>(capacity = Channel.UNLIMITED)
+
     private val res get() = getApplication<Application>().resources
+
+    init {
+        viewModelScope.launch {
+            for (message in incomingMessages) {
+                val roomId = _state.value.selectedRoomId ?: continue
+                if (message.roomId.isNotBlank() && message.roomId != roomId) continue
+                applyIncomingMessage(message)
+            }
+        }
+    }
 
     fun refreshChat() {
         viewModelScope.launch { bootstrap() }
@@ -52,6 +72,7 @@ class ChatViewModel(
         _state.value = _state.value.copy(isRoomsLoading = true, error = null)
         val rooms = repository.listRooms().getOrElse { e ->
             _draftMessage.value = ""
+            _typingPeers.value = emptyMap()
             _state.value = ChatState(
                 isRoomsLoading = false,
                 error = e.toUserMessageRu(res),
@@ -62,6 +83,7 @@ class ChatViewModel(
         }
         if (rooms.isEmpty()) {
             _draftMessage.value = ""
+            _typingPeers.value = emptyMap()
             _state.value = ChatState(
                 isRoomsLoading = false,
                 currentUserId = currentUserId,
@@ -92,10 +114,13 @@ class ChatViewModel(
     private suspend fun openRoom(roomId: String, rooms: List<ChatRoomDto>) {
         typingEmitJob?.cancel()
         typingEmitJob = null
-        typingPeerJobs.values.forEach { it.cancel() }
-        typingPeerJobs.clear()
+        synchronized(typingPeerJobsLock) {
+            typingPeerJobs.values.forEach { it.cancel() }
+            typingPeerJobs.clear()
+        }
         knownMessageIds.clear()
         _draftMessage.value = ""
+        _typingPeers.value = emptyMap()
         _state.value = _state.value.copy(
             isLoading = true,
             isRoomsLoading = false,
@@ -115,15 +140,15 @@ class ChatViewModel(
             newestMessageKey = null,
             scrollToLatestNonce = 0L,
             sendFailure = null,
-            typingPeers = emptyMap(),
         )
         repository.loadRecentMessages(roomId, beforeMessageId = null, limit = PAGE_SIZE)
             .onSuccess { loaded ->
                 knownMessageIds.clear()
                 knownMessageIds.addAll(loaded.mapNotNull { it._id })
+                val capped = capNewestFirst(loaded, CHAT_MAX_MESSAGES_IN_MEMORY)
                 _state.value = _state.value.copy(
                     isLoading = false,
-                    messages = loaded,
+                    messages = capped,
                     selectedRoomId = roomId,
                     hasMoreOlder = loaded.size >= PAGE_SIZE,
                 )
@@ -156,10 +181,7 @@ class ChatViewModel(
                 limit = PAGE_SIZE,
             )
                 .onSuccess { older ->
-                    val merged = _state.value.messages + older.filter { msg ->
-                        val id = msg._id
-                        id == null || knownMessageIds.add(id)
-                    }
+                    val merged = mergeOlderPage(_state.value.messages, older, knownMessageIds)
                     _state.value = _state.value.copy(
                         messages = merged,
                         isLoadingOlder = false,
@@ -299,12 +321,7 @@ class ChatViewModel(
     }
 
     private fun onIncomingMessage(message: ChatMessage) {
-        // Socket.IO вызывает слушателей с рабочего потока движка — обновление UI-состояния только через Main.
-        viewModelScope.launch {
-            val roomId = _state.value.selectedRoomId ?: return@launch
-            if (message.roomId.isNotBlank() && message.roomId != roomId) return@launch
-            applyIncomingMessage(message)
-        }
+        incomingMessages.trySend(message).isSuccess
     }
 
     private fun onTypingFromPeer(event: ChatTypingEvent) {
@@ -313,20 +330,30 @@ class ChatViewModel(
             val roomId = _state.value.selectedRoomId ?: return@launch
             if (event.roomId.isNotBlank() && event.roomId != roomId) return@launch
             val username = event.username.ifBlank { "…" }
-            typingPeerJobs[event.userId]?.cancel()
-            typingPeerJobs[event.userId] = launch {
+            synchronized(typingPeerJobsLock) {
+                typingPeerJobs[event.userId]?.cancel()
+            }
+            val job = launch {
                 try {
-                    val m = _state.value.typingPeers.toMutableMap()
-                    m[event.userId] = username
-                    _state.value = _state.value.copy(typingPeers = m)
+                    _typingPeers.update { current ->
+                        current.toMutableMap().apply { put(event.userId, username) }
+                    }
                     delay(3200)
-                    val m2 = _state.value.typingPeers.toMutableMap()
-                    m2.remove(event.userId)
-                    _state.value = _state.value.copy(typingPeers = m2)
+                    _typingPeers.update { current ->
+                        current.toMutableMap().apply { remove(event.userId) }
+                    }
                 } catch (_: CancellationException) {
                     // superseded by a newer typing event for the same user
-                } finally {
-                    typingPeerJobs.remove(event.userId)
+                }
+            }
+            synchronized(typingPeerJobsLock) {
+                typingPeerJobs[event.userId] = job
+            }
+            job.invokeOnCompletion {
+                synchronized(typingPeerJobsLock) {
+                    if (typingPeerJobs[event.userId] === job) {
+                        typingPeerJobs.remove(event.userId)
+                    }
                 }
             }
         }
@@ -350,16 +377,7 @@ class ChatViewModel(
     }
 
     private fun scrubRemovedMessage(state: ChatState, removedId: String): ChatState {
-        knownMessageIds.remove(removedId)
-        val nextMessages = state.messages
-            .filterNot { it._id == removedId }
-            .map { message ->
-                if (message.replyTo?._id == removedId) {
-                    message.copy(replyTo = null)
-                } else {
-                    message
-                }
-            }
+        val nextMessages = scrubMessagesAfterRemove(state.messages, removedId, knownMessageIds)
         return state.copy(messages = nextMessages)
     }
 
@@ -367,9 +385,10 @@ class ChatViewModel(
         message: ChatMessage,
         clearComposer: Boolean = false,
     ) {
-        val update = upsertMessage(_state.value.messages, message)
+        val update = upsertMessage(_state.value.messages, message, knownMessageIds)
+        val cappedMessages = capNewestFirst(update.messages, CHAT_MAX_MESSAGES_IN_MEMORY)
         var nextState = _state.value.copy(
-            messages = update.messages,
+            messages = cappedMessages,
             newestMessageKey = update.newestMessageKey ?: _state.value.newestMessageKey,
             isSending = false,
             deletingMessageId = if (_state.value.deletingMessageId == message._id) null
@@ -387,83 +406,18 @@ class ChatViewModel(
         _state.value = syncSelections(nextState)
     }
 
-    private fun upsertMessage(
-        current: List<ChatMessage>,
-        incoming: ChatMessage,
-    ): MessageUpsertResult {
-        val id = incoming._id
-        if (id != null) {
-            val existingIndex = current.indexOfFirst { it._id == id }
-            if (existingIndex >= 0) {
-                val updated = current.toMutableList()
-                updated[existingIndex] = incoming
-                return MessageUpsertResult(
-                    messages = updated,
-                    newestMessageKey = null,
-                )
-            }
-            knownMessageIds.add(id)
-            return MessageUpsertResult(
-                messages = listOf(incoming) + current,
-                newestMessageKey = id,
-            )
-        }
-        val exists = current.any {
-            it._id == null &&
-                it.senderId == incoming.senderId &&
-                it.createdAt == incoming.createdAt &&
-                it.text == incoming.text
-        }
-        if (exists) {
-            return MessageUpsertResult(current, null)
-        }
-        return MessageUpsertResult(
-            messages = listOf(incoming) + current,
-            newestMessageKey = fallbackMessageKey(incoming),
-        )
-    }
-
-    private fun syncSelections(state: ChatState): ChatState {
-        val replyId = state.replyToMessage?._id
-        val syncedReply = replyId?.let { id ->
-            state.messages.find { it._id == id }
-        }?.takeIf { it.deletedAt == null }
-        val activeActionExists = state.activeActionMessageId?.let { id ->
-            state.messages.any { it._id == id }
-        } == true
-        val deleteTargetExists = state.confirmDeleteMessageId?.let { id ->
-            state.messages.any { it._id == id }
-        } == true
-        return state.copy(
-            replyToMessage = syncedReply,
-            activeActionMessageId = if (activeActionExists) state.activeActionMessageId else null,
-            confirmDeleteMessageId = if (deleteTargetExists) {
-                state.confirmDeleteMessageId
-            } else {
-                null
-            },
-        )
-    }
-
     fun clearError() {
         _state.value = _state.value.copy(error = null)
     }
 
     override fun onCleared() {
         typingEmitJob?.cancel()
-        typingPeerJobs.values.forEach { it.cancel() }
-        typingPeerJobs.clear()
+        synchronized(typingPeerJobsLock) {
+            typingPeerJobs.values.forEach { it.cancel() }
+            typingPeerJobs.clear()
+        }
+        incomingMessages.close()
         repository.disconnectRealtime()
         super.onCleared()
     }
-}
-
-private data class MessageUpsertResult(
-    val messages: List<ChatMessage>,
-    val newestMessageKey: String?,
-)
-
-private fun fallbackMessageKey(message: ChatMessage): String {
-    return message._id
-        ?: "${message.senderId}_${message.createdAt}_${message.text.hashCode()}"
 }

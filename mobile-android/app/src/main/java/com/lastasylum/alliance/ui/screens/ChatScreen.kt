@@ -18,9 +18,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -79,6 +79,8 @@ import com.lastasylum.alliance.ui.chat.ChatState
 import com.lastasylum.alliance.ui.chat.RoleBadge
 import com.lastasylum.alliance.ui.chat.formatChatTime
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -89,10 +91,11 @@ private data class ChatListLoadSignal(
     val isBusy: Boolean,
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
 @Composable
 fun ChatScreen(
     state: ChatState,
+    typingPeers: Map<String, String>,
     draftMessage: String,
     onSelectRoom: (String) -> Unit,
     onClearError: () -> Unit,
@@ -109,7 +112,9 @@ fun ChatScreen(
     onRetrySendFailure: () -> Unit,
     onDismissSendFailure: () -> Unit,
 ) {
-    val listState = rememberLazyListState()
+    val listState = remember(state.selectedRoomId) {
+        LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+    }
     val scope = rememberCoroutineScope()
     val selectedRoomId = state.selectedRoomId
     val activeActionMessage = remember(state.activeActionMessageId, state.messages) {
@@ -141,6 +146,7 @@ fun ChatScreen(
             ChatListLoadSignal(lastIdx, total, hasMore, busy)
         }
             .distinctUntilChanged()
+            .debounce(48L)
             .collect { sig ->
                 if (sig.totalItems > 4 &&
                     sig.lastVisibleIndex >= sig.totalItems - 2 &&
@@ -192,159 +198,19 @@ fun ChatScreen(
                 onSelectRoom = onSelectRoom,
             )
 
-            if (state.typingPeers.isNotEmpty()) {
-                val names = state.typingPeers.values.distinct().sorted()
-                Text(
-                    text = if (names.size == 1) {
-                        stringResource(R.string.chat_typing_one, names.first())
-                    } else {
-                        stringResource(R.string.chat_typing_many, names.joinToString(", "))
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(bottom = SquadRelayDimens.itemGap),
-                )
-            }
+            ChatTypingBanner(typingPeers = typingPeers)
 
-            LazyColumn(
-                state = listState,
+            ChatMessagesLazyList(
                 modifier = Modifier
                     .weight(1f, fill = true)
                     .fillMaxWidth(),
-                reverseLayout = true,
-                verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.blockGap),
-                contentPadding = PaddingValues(
-                    top = SquadRelayDimens.itemGap,
-                    bottom = SquadRelayDimens.itemGap,
-                ),
-            ) {
-            when {
-                state.isRoomsLoading && state.rooms.isEmpty() -> {
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 24.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                }
-
-                state.rooms.isEmpty() -> {
-                    item {
-                        Text(
-                            text = state.error?.takeIf { it.isNotBlank() }
-                                ?: stringResource(R.string.chat_no_rooms),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-                    if (!state.error.isNullOrBlank()) {
-                        item {
-                            TextButton(onClick = onClearError) {
-                                Text(stringResource(R.string.admin_dismiss_error))
-                            }
-                        }
-                    }
-                }
-
-                state.isLoading -> {
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 24.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                }
-
-                state.messages.isEmpty() -> {
-                    item {
-                        Text(
-                            text = stringResource(R.string.chat_empty_state),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-                }
-
-                else -> {
-                    items(
-                        items = state.messages,
-                        key = { msg -> chatMessageKey(msg) },
-                        contentType = { _ -> "chat_message" },
-                    ) { message ->
-                        ChatBubbleRow(
-                            message = message,
-                            isMine = message.senderId == state.currentUserId,
-                            canDelete = canDeleteMessage(
-                                message = message,
-                                currentUserId = state.currentUserId,
-                                currentUserRole = state.currentUserRole,
-                            ),
-                            deleting = state.deletingMessageId == message._id,
-                            onOpenActions = { id -> onOpenMessageActions(id) },
-                            onSwipeReply = onReplyToMessage,
-                            onJumpToQuotedMessage = jumpToQuotedMessage,
-                        )
-                    }
-                    if (state.isLoadingOlder) {
-                        item {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 12.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.padding(4.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (state.rooms.isNotEmpty() && !state.error.isNullOrBlank()) {
-                item {
-                    Surface(
-                        shape = MaterialTheme.shapes.medium,
-                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(
-                                horizontal = SquadRelayDimens.panelInnerPadding,
-                                vertical = SquadRelayDimens.itemGap,
-                            ),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = state.error.orEmpty(),
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.weight(1f),
-                            )
-                            TextButton(onClick = onClearError) {
-                                Text(stringResource(R.string.admin_dismiss_error))
-                            }
-                        }
-                    }
-                }
-            }
-            }
+                state = state,
+                listState = listState,
+                jumpToQuotedMessage = jumpToQuotedMessage,
+                onOpenMessageActions = onOpenMessageActions,
+                onReplyToMessage = onReplyToMessage,
+                onClearError = onClearError,
+            )
         }
 
         if (state.sendFailure != null || (selectedRoomId != null && state.rooms.isNotEmpty())) {
@@ -451,6 +317,171 @@ fun ChatScreen(
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun ChatTypingBanner(typingPeers: Map<String, String>) {
+    if (typingPeers.isEmpty()) return
+    val names = typingPeers.values.distinct().sorted()
+    Text(
+        text = if (names.size == 1) {
+            stringResource(R.string.chat_typing_one, names.first())
+        } else {
+            stringResource(R.string.chat_typing_many, names.joinToString(", "))
+        },
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(bottom = SquadRelayDimens.itemGap),
+    )
+}
+
+@Composable
+private fun ChatMessagesLazyList(
+    modifier: Modifier = Modifier,
+    state: ChatState,
+    listState: LazyListState,
+    jumpToQuotedMessage: (String) -> Unit,
+    onOpenMessageActions: (String) -> Unit,
+    onReplyToMessage: (String) -> Unit,
+    onClearError: () -> Unit,
+) {
+    LazyColumn(
+        state = listState,
+        modifier = modifier,
+        reverseLayout = true,
+        verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.blockGap),
+        contentPadding = PaddingValues(
+            top = SquadRelayDimens.itemGap,
+            bottom = SquadRelayDimens.itemGap,
+        ),
+    ) {
+        when {
+            state.isRoomsLoading && state.rooms.isEmpty() -> {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+
+            state.rooms.isEmpty() -> {
+                item {
+                    Text(
+                        text = state.error?.takeIf { it.isNotBlank() }
+                            ?: stringResource(R.string.chat_no_rooms),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center,
+                    )
+                }
+                if (!state.error.isNullOrBlank()) {
+                    item {
+                        TextButton(onClick = onClearError) {
+                            Text(stringResource(R.string.admin_dismiss_error))
+                        }
+                    }
+                }
+            }
+
+            state.isLoading -> {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+
+            state.messages.isEmpty() -> {
+                item {
+                    Text(
+                        text = stringResource(R.string.chat_empty_state),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+
+            else -> {
+                items(
+                    items = state.messages,
+                    key = { msg -> chatMessageKey(msg) },
+                    contentType = { _ -> "chat_message" },
+                ) { message ->
+                    ChatBubbleRow(
+                        message = message,
+                        isMine = message.senderId == state.currentUserId,
+                        canDelete = canDeleteMessage(
+                            message = message,
+                            currentUserId = state.currentUserId,
+                            currentUserRole = state.currentUserRole,
+                        ),
+                        deleting = state.deletingMessageId == message._id,
+                        onOpenActions = { id -> onOpenMessageActions(id) },
+                        onSwipeReply = onReplyToMessage,
+                        onJumpToQuotedMessage = jumpToQuotedMessage,
+                    )
+                }
+                if (state.isLoadingOlder) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.padding(4.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (state.rooms.isNotEmpty() && !state.error.isNullOrBlank()) {
+            item {
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(
+                            horizontal = SquadRelayDimens.panelInnerPadding,
+                            vertical = SquadRelayDimens.itemGap,
+                        ),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = state.error.orEmpty(),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = onClearError) {
+                            Text(stringResource(R.string.admin_dismiss_error))
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -29,6 +29,4 @@ data class ChatState(
     /** Increments after a successful own send so the list scrolls to the latest message. */
     val scrollToLatestNonce: Long = 0L,
     val sendFailure: ChatSendFailure? = null,
-    /** userId → display name for typing indicator (ephemeral). */
-    val typingPeers: Map<String, String> = emptyMap(),
 )
