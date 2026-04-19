@@ -40,11 +40,9 @@
     <!-- Chat -->
     <string name="chat_message_hint">Сообщение</string>
     <string name="chat_send">Отправить</string>
-    <string name="chat_attach_cd">Добавить эмодзи, GIF или стикеры</string>
-    <string name="chat_attach_sheet_title">Что добавить</string>
-    <string name="chat_attach_emoji">Эмодзи</string>
+    <string name="chat_open_media_panel_cd">Стикеры и GIF</string>
+    <string name="chat_show_keyboard_cd">Показать клавиатуру</string>
     <string name="chat_attach_gif">GIF</string>
-    <string name="chat_attach_stickers">Стикеры</string>
     <string name="chat_gif_title">GIF по ссылке</string>
     <string name="chat_gif_hint">Ссылка на .gif или страницу (Giphy, Tenor…)</string>
     <string name="chat_gif_paste">Вставить из буфера</string>
@@ -52,11 +50,8 @@
     <string name="chat_gif_open_giphy">Открыть Giphy</string>
     <string name="chat_stickers_title">Стикеры</string>
     <string name="chat_stickers_pack_zlobyaka">Злобяка</string>
-    <string name="chat_stickers_text_section">Текстовые</string>
     <string name="chat_reply_preview_sticker">Стикер «Злобяка»</string>
     <string name="cd_chat_sticker">Стикер «Злобяка»</string>
-    <string name="chat_emoji_picker_title">Эмодзи</string>
-    <string name="chat_emoji_back">Назад</string>
     <string name="chat_ok">Понятно</string>
     <string name="chat_empty_state">Пока нет сообщений — напишите первым.</string>
     <string name="chat_no_rooms">Комнаты чата недоступны. Проверьте сеть или попробуйте позже.</string>

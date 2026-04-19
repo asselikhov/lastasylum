@@ -2,8 +2,10 @@ package com.lastasylum.alliance.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -14,21 +16,19 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -41,12 +41,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.filled.Gif
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -60,7 +60,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -79,6 +78,9 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
@@ -132,35 +134,7 @@ private data class ChatListLoadSignal(
     val isBusy: Boolean,
 )
 
-private enum class ChatAttachSheetPage { Menu, Emoji, Gif, Stickers }
-
-/** Quick-pick emoji appended to the message (no extra dependency). */
-private val CHAT_QUICK_EMOJIS: List<String> = listOf(
-    "😀", "😃", "😄", "😁", "😅", "😂", "🤣", "🥲", "☺️", "😊",
-    "🙂", "😉", "😍", "🥰", "😘", "😗", "😙", "😚", "🤗", "🤩",
-    "🤔", "🫡", "😐", "😑", "🙄", "😏", "😣", "😥", "😮", "🤐",
-    "😯", "😪", "😫", "🥱", "😴", "🤤", "😛", "😜", "🤪", "😇",
-    "🥳", "🤝", "👍", "👎", "👌", "✌️", "🤞", "🫶", "👏", "🙏",
-    "🔥", "💯", "✨", "⭐", "🎮", "🏆", "🎯", "⚔️", "🛡️", "💀",
-    "😤", "😡", "🤬", "😱", "🤯", "😳", "🥺", "😭", "🤢", "🤮",
-    "💪", "🦾", "🖖", "✋", "🤚", "👋", "🫳", "🫴", "🙌", "🤲",
-    "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "💔", "❣️", "💕",
-    "🐱", "🐶", "🐺", "🦊", "🐻", "🐼", "🐸", "🐵", "🦄", "🐲",
-    "🍕", "🍔", "🍟", "🌮", "🍜", "🍰", "☕", "🍺", "🧃", "🎂",
-)
-
-/** Kaomoji / ASCII-style stickers (no image packs). */
-private val CHAT_KAOMOJI: List<String> = listOf(
-    "(>﹏<)", "(╯°□°)╯︵ ┻━┻", "┬─┬ノ( º _ ºノ)", "(ಠ_ಠ)", "(ಥ﹏ಥ)",
-    "(＾▽＾)", "(￣▽￣)", "(¬‿¬)", "(⊙_⊙)", "(o_O)",
-    "¯\\_(ツ)_/¯", "(ง'̀-'́)ง", "(づ￣ ³￣)づ", "ヽ(ﾟДﾟ)ﾉ", "ヾ(≧▽≦*)o",
-    "(´･ω･`)", "(｡•́︿•̀｡)", "(๑•̀ㅂ•́)و", "(ᵔᴥᵔ)", "(◕‿◕)",
-    "ʕ•ᴥ•ʔ", "(｡♥‿♥｡)", "（＾ω＾）", "(ノಠ益ಠ)ノ", "ಠ╭╮ಠ",
-    "（；´д｀）ゞ", "(´；ω；`)", "(๑˃̵ᴗ˂̵)و", "ヽ(°〇°)ﾉ", "٩(◕‿◕)۶",
-    "(ﾉ´ヮ`)ﾉ*: ･ﾟ", "( ͡° ͜ʖ ͡°)", "(ง •̀_•́)ง", "ᕦ(ò_óˇ)ᕤ", "（￣ー￣）",
-    "m(_ _)m", "(シ_ _)シ", "＼(^o^)／", "ヽ(>∀<☆)ノ", "(๑>◡<๑)",
-    "（*＾3＾）/～♡", "(￣3￣)", "(≧◡≦)", "（＾∀＾）", "（笑）",
-)
+private enum class MediaPickerTab { Stickers, Gif }
 
 private fun readClipboardPlainText(context: Context): String? {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return null
@@ -769,7 +743,6 @@ private fun ChatRoomsBar(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun ChatComposer(
     draft: String,
@@ -782,468 +755,379 @@ private fun ChatComposer(
     onSendStickerPayload: (String) -> Unit,
     onClearReply: () -> Unit,
 ) {
-    var showAttachSheet by remember { mutableStateOf(false) }
-    var attachPage by remember { mutableStateOf(ChatAttachSheetPage.Menu) }
+    var showMediaPanel by remember { mutableStateOf(false) }
+    var mediaTab by remember { mutableStateOf(MediaPickerTab.Stickers) }
     var gifUrlDraft by remember { mutableStateOf("") }
-    val attachSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
     val zlobStems = remember(context) { ZlobyakaStickerPack.listSortedStems(context) }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    val focusRequester = remember { FocusRequester() }
+    val gifScroll = rememberScrollState()
 
-    LaunchedEffect(showAttachSheet) {
-        if (!showAttachSheet) {
-            attachPage = ChatAttachSheetPage.Menu
+    LaunchedEffect(showMediaPanel) {
+        if (!showMediaPanel) {
+            mediaTab = MediaPickerTab.Stickers
             gifUrlDraft = ""
         }
     }
 
-    if (showAttachSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showAttachSheet = false },
-            sheetState = attachSheetState,
-            contentWindowInsets = { WindowInsets.navigationBars },
-        ) {
-            when (attachPage) {
-                ChatAttachSheetPage.Menu -> {
-                    Text(
-                        text = stringResource(R.string.chat_attach_sheet_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-                    )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-                    TextButton(
-                        onClick = { attachPage = ChatAttachSheetPage.Emoji },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.chat_attach_emoji),
-                            modifier = Modifier.fillMaxWidth(),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-                    TextButton(
-                        onClick = { attachPage = ChatAttachSheetPage.Gif },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.chat_attach_gif),
-                            modifier = Modifier.fillMaxWidth(),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-                    TextButton(
-                        onClick = { attachPage = ChatAttachSheetPage.Stickers },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.chat_attach_stickers),
-                            modifier = Modifier.fillMaxWidth(),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    }
-                    Spacer(modifier = Modifier.padding(bottom = 24.dp))
-                }
-
-                ChatAttachSheetPage.Emoji -> {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        IconButton(onClick = { attachPage = ChatAttachSheetPage.Menu }) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                                contentDescription = stringResource(R.string.chat_emoji_back),
-                            )
-                        }
-                        Text(
-                            text = stringResource(R.string.chat_emoji_picker_title),
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(start = 4.dp),
-                        )
-                    }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(48.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 420.dp)
-                            .padding(horizontal = 8.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        items(CHAT_QUICK_EMOJIS) { emoji ->
-                            TextButton(
-                                onClick = {
-                                    onDraftChange(draft + emoji)
-                                    showAttachSheet = false
-                                },
-                                modifier = Modifier.size(48.dp),
-                            ) {
-                                Text(text = emoji, style = MaterialTheme.typography.headlineSmall)
-                            }
-                        }
-                    }
-                    Spacer(modifier = Modifier.padding(bottom = 16.dp))
-                }
-
-                ChatAttachSheetPage.Gif -> {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        IconButton(onClick = { attachPage = ChatAttachSheetPage.Menu }) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                                contentDescription = stringResource(R.string.chat_emoji_back),
-                            )
-                        }
-                        Text(
-                            text = stringResource(R.string.chat_gif_title),
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(start = 4.dp),
-                        )
-                    }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        OutlinedTextField(
-                            value = gifUrlDraft,
-                            onValueChange = { gifUrlDraft = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text(stringResource(R.string.chat_gif_hint)) },
-                            singleLine = false,
-                            maxLines = 3,
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            OutlinedButton(
-                                onClick = {
-                                    readClipboardPlainText(context)?.let { gifUrlDraft = it }
-                                },
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.ContentPaste,
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .padding(end = 6.dp)
-                                        .size(18.dp),
-                                )
-                                Text(
-                                    text = stringResource(R.string.chat_gif_paste),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                            OutlinedButton(
-                                onClick = {
-                                    context.startActivity(
-                                        Intent(Intent.ACTION_VIEW, Uri.parse("https://giphy.com")),
-                                    )
-                                },
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.chat_gif_open_giphy),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
-                        TextButton(
-                            onClick = {
-                                val url = gifUrlDraft.trim()
-                                if (url.isEmpty()) return@TextButton
-                                val sep = when {
-                                    draft.isEmpty() -> ""
-                                    draft.endsWith(' ') || draft.endsWith('\n') -> ""
-                                    else -> " "
-                                }
-                                onDraftChange(draft + sep + url)
-                                showAttachSheet = false
-                            },
-                            enabled = gifUrlDraft.trim().isNotEmpty(),
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(stringResource(R.string.chat_gif_insert))
-                        }
-                    }
-                    Spacer(modifier = Modifier.padding(bottom = 16.dp))
-                }
-
-                ChatAttachSheetPage.Stickers -> {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        IconButton(onClick = { attachPage = ChatAttachSheetPage.Menu }) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                                contentDescription = stringResource(R.string.chat_emoji_back),
-                            )
-                        }
-                        Text(
-                            text = stringResource(R.string.chat_stickers_title),
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(start = 4.dp),
-                        )
-                    }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-                    Text(
-                        text = stringResource(R.string.chat_stickers_pack_zlobyaka),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-                    )
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(3),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 380.dp)
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        items(zlobStems, key = { it }) { stem ->
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                modifier = Modifier
-                                    .padding(4.dp)
-                                    .aspectRatio(1f)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .clickable(
-                                        enabled = sendEnabled && !readOnly,
-                                        onClick = {
-                                            onSendStickerPayload(ZlobyakaStickerPack.encode(stem))
-                                            showAttachSheet = false
-                                        },
-                                    ),
-                            ) {
-                                AsyncImage(
-                                    model = ImageRequest.Builder(context)
-                                        .data(ZlobyakaStickerPack.assetUriForStem(stem))
-                                        .size(192)
-                                        .crossfade(true)
-                                        .build(),
-                                    contentDescription = stringResource(R.string.cd_chat_sticker),
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(6.dp)
-                                        .clip(RoundedCornerShape(8.dp)),
-                                    contentScale = ContentScale.Fit,
-                                )
-                            }
-                        }
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 8.dp, bottom = 4.dp),
-                            ) {
-                                HorizontalDivider(
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
-                                )
-                                Text(
-                                    text = stringResource(R.string.chat_stickers_text_section),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                )
-                                FlowRow(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                                ) {
-                                    CHAT_KAOMOJI.forEach { face ->
-                                        TextButton(
-                                            onClick = {
-                                                onDraftChange(draft + face)
-                                                showAttachSheet = false
-                                            },
-                                            modifier = Modifier.heightIn(min = 36.dp),
-                                        ) {
-                                            Text(
-                                                text = face,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                maxLines = 2,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Spacer(modifier = Modifier.padding(bottom = 16.dp))
-                }
-            }
-        }
+    BackHandler(enabled = showMediaPanel) {
+        showMediaPanel = false
     }
 
-    Surface(
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-        // Flush to screen edges; only top corners rounded (tab bar already separates from list).
-        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = SquadRelayDimens.itemGap)
+            .padding(top = SquadRelayDimens.itemGap),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                // Tight bottom edge above IME; outer Column uses imePadding (adjustNothing).
-                .padding(
-                    top = SquadRelayDimens.composerInnerPadding,
-                    bottom = 0.dp,
-                ),
-            verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+        Surface(
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+            shape = RoundedCornerShape(
+                topStart = 20.dp,
+                topEnd = 20.dp,
+                bottomStart = if (showMediaPanel) 0.dp else 20.dp,
+                bottomEnd = if (showMediaPanel) 0.dp else 20.dp,
+            ),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            replyToMessage?.let { reply ->
-                Surface(
-                    shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        top = SquadRelayDimens.composerInnerPadding,
+                        bottom = 0.dp,
+                    ),
+                verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+            ) {
+                replyToMessage?.let { reply ->
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(
+                                horizontal = SquadRelayDimens.itemGap,
+                                vertical = SquadRelayDimens.itemGap,
+                            ),
+                            horizontalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(
+                                        R.string.chat_replying_to,
+                                        chatSenderDisplayWithTag(reply.senderTeamTag, reply.senderUsername),
+                                    ),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                Text(
+                                    text = replyPreviewText(reply.text),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            TextButton(onClick = onClearReply) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Close,
+                                    contentDescription = stringResource(R.string.chat_reply_cancel),
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
                 ) {
-                    Row(
-                        modifier = Modifier.padding(
-                            horizontal = SquadRelayDimens.itemGap,
-                            vertical = SquadRelayDimens.itemGap,
-                        ),
-                        horizontalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
-                        verticalAlignment = Alignment.CenterVertically,
+                    Surface(
+                        shape = MaterialTheme.shapes.large,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = 0.dp,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = SquadRelayDimens.composerMinHeight),
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(
-                                    R.string.chat_replying_to,
-                                    chatSenderDisplayWithTag(reply.senderTeamTag, reply.senderUsername),
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    if (readOnly) return@IconButton
+                                    if (showMediaPanel) {
+                                        showMediaPanel = false
+                                        focusRequester.requestFocus()
+                                        keyboard?.show()
+                                    } else {
+                                        focusManager.clearFocus()
+                                        keyboard?.hide()
+                                        showMediaPanel = true
+                                    }
+                                },
+                                enabled = !readOnly,
+                                modifier = Modifier.size(44.dp),
+                            ) {
+                                Icon(
+                                    imageVector = if (showMediaPanel) {
+                                        Icons.Outlined.Keyboard
+                                    } else {
+                                        Icons.Filled.Gif
+                                    },
+                                    contentDescription = if (showMediaPanel) {
+                                        stringResource(R.string.chat_show_keyboard_cd)
+                                    } else {
+                                        stringResource(R.string.chat_open_media_panel_cd)
+                                    },
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                            BasicTextField(
+                                value = draft,
+                                onValueChange = { if (!readOnly) onDraftChange(it) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(vertical = 10.dp, horizontal = 4.dp)
+                                    .focusRequester(focusRequester)
+                                    .onFocusChanged { fc ->
+                                        if (!readOnly && fc.isFocused && showMediaPanel) {
+                                            showMediaPanel = false
+                                            keyboard?.show()
+                                        }
+                                    },
+                                readOnly = readOnly,
+                                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                    color = MaterialTheme.colorScheme.onSurface,
                                 ),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary,
+                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                keyboardOptions = KeyboardOptions(
+                                    capitalization = KeyboardCapitalization.Sentences,
+                                    keyboardType = KeyboardType.Text,
+                                ),
+                                maxLines = 6,
+                                decorationBox = { inner ->
+                                    Box {
+                                        if (draft.isBlank()) {
+                                            Text(
+                                                text = stringResource(R.string.chat_message_hint),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                        inner()
+                                    }
+                                },
                             )
-                            Text(
-                                text = replyPreviewText(reply.text),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        TextButton(onClick = onClearReply) {
-                            Icon(
-                                imageVector = Icons.Outlined.Close,
-                                contentDescription = stringResource(R.string.chat_reply_cancel),
-                            )
+                            AnimatedVisibility(
+                                visible = draft.isNotBlank() && sendEnabled && !readOnly,
+                                enter = fadeIn(),
+                                exit = fadeOut(),
+                            ) {
+                                IconButton(
+                                    onClick = onSendDraft,
+                                    enabled = !isSending,
+                                    modifier = Modifier.size(44.dp),
+                                ) {
+                                    if (isSending) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(22.dp),
+                                            strokeWidth = 2.dp,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Outlined.Send,
+                                            contentDescription = stringResource(R.string.chat_send),
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
+        }
 
-            Row(
+        AnimatedVisibility(
+            visible = showMediaPanel,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut(),
+        ) {
+            Surface(
+                shape = RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp),
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+                    .navigationBarsPadding(),
             ) {
-                Surface(
-                    shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    tonalElevation = 0.dp,
+                Column(
                     modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = SquadRelayDimens.composerMinHeight),
+                        .fillMaxWidth()
+                        .padding(bottom = 4.dp),
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        IconButton(
-                            onClick = {
-                                if (readOnly) return@IconButton
-                                attachPage = ChatAttachSheetPage.Menu
-                                showAttachSheet = true
-                            },
-                            enabled = !readOnly,
-                            modifier = Modifier.size(44.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Gif,
-                                contentDescription = stringResource(R.string.chat_attach_cd),
-                                tint = MaterialTheme.colorScheme.primary,
+                        FilterChip(
+                            selected = mediaTab == MediaPickerTab.Stickers,
+                            onClick = { mediaTab = MediaPickerTab.Stickers },
+                            label = { Text(stringResource(R.string.chat_stickers_title)) },
+                        )
+                        FilterChip(
+                            selected = mediaTab == MediaPickerTab.Gif,
+                            onClick = { mediaTab = MediaPickerTab.Gif },
+                            label = { Text(stringResource(R.string.chat_attach_gif)) },
+                        )
+                    }
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                    )
+                    when (mediaTab) {
+                        MediaPickerTab.Stickers -> {
+                            Text(
+                                text = stringResource(R.string.chat_stickers_pack_zlobyaka),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                             )
-                        }
-                        BasicTextField(
-                            value = draft,
-                            onValueChange = { if (!readOnly) onDraftChange(it) },
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(vertical = 10.dp, horizontal = 4.dp),
-                            readOnly = readOnly,
-                            textStyle = MaterialTheme.typography.bodyMedium.copy(
-                                color = MaterialTheme.colorScheme.onSurface,
-                            ),
-                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                            keyboardOptions = KeyboardOptions(
-                                capitalization = KeyboardCapitalization.Sentences,
-                                keyboardType = KeyboardType.Text,
-                            ),
-                            maxLines = 6,
-                            decorationBox = { inner ->
-                                Box {
-                                    if (draft.isBlank()) {
-                                        Text(
-                                            text = stringResource(R.string.chat_message_hint),
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(3),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 280.dp)
+                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                items(zlobStems, key = { it }) { stem ->
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                        modifier = Modifier
+                                            .padding(4.dp)
+                                            .aspectRatio(1f)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .clickable(
+                                                enabled = sendEnabled && !readOnly,
+                                                onClick = {
+                                                    onSendStickerPayload(ZlobyakaStickerPack.encode(stem))
+                                                    showMediaPanel = false
+                                                },
+                                            ),
+                                    ) {
+                                        AsyncImage(
+                                            model = ImageRequest.Builder(context)
+                                                .data(ZlobyakaStickerPack.assetUriForStem(stem))
+                                                .size(192)
+                                                .crossfade(true)
+                                                .build(),
+                                            contentDescription = stringResource(R.string.cd_chat_sticker),
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(6.dp)
+                                                .clip(RoundedCornerShape(8.dp)),
+                                            contentScale = ContentScale.Fit,
                                         )
                                     }
-                                    inner()
                                 }
-                            },
-                        )
-                        AnimatedVisibility(
-                            visible = draft.isNotBlank() && sendEnabled && !readOnly,
-                            enter = fadeIn(),
-                            exit = fadeOut(),
-                        ) {
-                            IconButton(
-                                onClick = onSendDraft,
-                                enabled = !isSending,
-                                modifier = Modifier.size(44.dp),
+                            }
+                        }
+
+                        MediaPickerTab.Gif -> {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 280.dp)
+                                    .verticalScroll(gifScroll)
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
                             ) {
-                                if (isSending) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(22.dp),
-                                        strokeWidth = 2.dp,
-                                        color = MaterialTheme.colorScheme.primary,
-                                    )
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Outlined.Send,
-                                        contentDescription = stringResource(R.string.chat_send),
-                                        tint = MaterialTheme.colorScheme.primary,
-                                    )
+                                Text(
+                                    text = stringResource(R.string.chat_gif_title),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                OutlinedTextField(
+                                    value = gifUrlDraft,
+                                    onValueChange = { gifUrlDraft = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    label = { Text(stringResource(R.string.chat_gif_hint)) },
+                                    singleLine = false,
+                                    maxLines = 3,
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            readClipboardPlainText(context)?.let { gifUrlDraft = it }
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.ContentPaste,
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .padding(end = 6.dp)
+                                                .size(18.dp),
+                                        )
+                                        Text(
+                                            text = stringResource(R.string.chat_gif_paste),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                    OutlinedButton(
+                                        onClick = {
+                                            context.startActivity(
+                                                Intent(Intent.ACTION_VIEW, Uri.parse("https://giphy.com")),
+                                            )
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.chat_gif_open_giphy),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                                TextButton(
+                                    onClick = {
+                                        val url = gifUrlDraft.trim()
+                                        if (url.isEmpty()) return@TextButton
+                                        val sep = when {
+                                            draft.isEmpty() -> ""
+                                            draft.endsWith(' ') || draft.endsWith('\n') -> ""
+                                            else -> " "
+                                        }
+                                        onDraftChange(draft + sep + url)
+                                        showMediaPanel = false
+                                    },
+                                    enabled = gifUrlDraft.trim().isNotEmpty(),
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Text(stringResource(R.string.chat_gif_insert))
                                 }
                             }
                         }
