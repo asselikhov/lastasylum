@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -492,19 +491,22 @@ private fun ChatComposer(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = SquadRelayDimens.itemGap)
-            // Only IME: Scaffold + bottom nav already reserve bottom inset; extra navigationBarsPadding
-            // duplicates gesture-bar height and leaves a gap above the keyboard on many devices.
-            .imePadding(),
+            // MainActivity uses adjustResize: the window height already ends above the IME.
+            // Adding imePadding() here double-counts the keyboard inset and leaves a large gap.
     ) {
         Column(
-            modifier = Modifier.padding(SquadRelayDimens.composerInnerPadding),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = SquadRelayDimens.composerInnerPadding),
             verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
         ) {
             replyToMessage?.let { reply ->
                 Surface(
                     shape = MaterialTheme.shapes.medium,
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
                 ) {
                     Row(
                         modifier = Modifier.padding(
@@ -539,6 +541,9 @@ private fun ChatComposer(
             }
 
             Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
             ) {
