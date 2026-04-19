@@ -16,6 +16,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/global-chat-alliance-id';
 import { UsersService } from '../users/users.service';
 import { PushNotificationsService } from '../push/push-notifications.service';
 import { ChatGateway } from './chat.gateway';
@@ -50,7 +51,7 @@ export class ChatController {
     if (!user) {
       throw new BadRequestException('User not found');
     }
-    return this.chatRoomsService.listForAlliance(user.allianceName);
+    return this.chatRoomsService.listRoomsVisibleToUser(user.allianceName);
   }
 
   @Post('rooms')
@@ -141,7 +142,7 @@ export class ChatController {
     });
     this.chatGateway.broadcastNewMessage(dto.roomId, message);
     const authorUser = await this.usersService.findById(req.user.userId);
-    if (authorUser) {
+    if (authorUser && message.allianceId !== GLOBAL_CHAT_ALLIANCE_ID) {
       const preview =
         dto.text.trim().length > 140
           ? `${dto.text.trim().slice(0, 137)}...`

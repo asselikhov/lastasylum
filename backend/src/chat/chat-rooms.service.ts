@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/global-chat-alliance-id';
 import { ChatRoom, ChatRoomDocument } from './schemas/chat-room.schema';
 import { Message, MessageDocument } from './schemas/message.schema';
 
@@ -21,6 +22,31 @@ export class ChatRoomsService {
       .sort({ sortOrder: 1, title: 1 })
       .lean()
       .exec();
+  }
+
+  /**
+   * Global "Общий" + this alliance's rooms (excludes legacy per-alliance "Общий" rows).
+   */
+  async listRoomsVisibleToUser(userAllianceName: string) {
+    await this.ensureGlobalGeneralRoom();
+    await this.ensureAllianceHubRoom(userAllianceName);
+    const [globalRooms, allianceRooms] = await Promise.all([
+      this.roomModel
+        .find({ allianceId: GLOBAL_CHAT_ALLIANCE_ID, archivedAt: null })
+        .sort({ sortOrder: 1, title: 1 })
+        .lean()
+        .exec(),
+      this.roomModel
+        .find({
+          allianceId: userAllianceName,
+          archivedAt: null,
+          title: { $ne: 'Общий' },
+        })
+        .sort({ sortOrder: 1, title: 1 })
+        .lean()
+        .exec(),
+    ]);
+    return [...globalRooms, ...allianceRooms];
   }
 
   findById(roomId: string) {
@@ -109,5 +135,41 @@ export class ChatRoomsService {
       archivedAt: null,
     });
     return created._id as Types.ObjectId;
+  }
+
+  /** Cross-alliance lobby: one "Общий" room for everyone. */
+  async ensureGlobalGeneralRoom(): Promise<void> {
+    const existing = await this.roomModel
+      .findOne({
+        allianceId: GLOBAL_CHAT_ALLIANCE_ID,
+        title: 'Общий',
+        archivedAt: null,
+      })
+      .exec();
+    if (existing) return;
+    await this.roomModel.create({
+      allianceId: GLOBAL_CHAT_ALLIANCE_ID,
+      title: 'Общий',
+      sortOrder: 0,
+      archivedAt: null,
+    });
+  }
+
+  /** Internal chat for one alliance (title = alliance key). */
+  async ensureAllianceHubRoom(allianceId: string): Promise<void> {
+    const existing = await this.roomModel
+      .findOne({
+        allianceId,
+        title: allianceId,
+        archivedAt: null,
+      })
+      .exec();
+    if (existing) return;
+    await this.roomModel.create({
+      allianceId,
+      title: allianceId,
+      sortOrder: 1,
+      archivedAt: null,
+    });
   }
 }

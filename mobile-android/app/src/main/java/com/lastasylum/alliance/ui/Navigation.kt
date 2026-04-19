@@ -219,6 +219,9 @@ fun AppNavigation(
             popExitTransition = { ExitTransition.None },
         ) {
             composable(AppTab.CHAT.route) {
+                LaunchedEffect(Unit) {
+                    chatViewModel.refreshTeamProfileGate()
+                }
                 val chatState by chatViewModel.state.collectAsStateWithLifecycle()
                 val draftMessage by chatViewModel.draftMessage.collectAsStateWithLifecycle()
                 val typingPeers by chatViewModel.typingPeers.collectAsStateWithLifecycle()

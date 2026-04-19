@@ -26,6 +26,8 @@ fun Throwable.toUserMessageRu(resources: Resources): String {
             409 -> resources.getString(R.string.err_email_taken)
             400 -> parsed ?: resources.getString(R.string.err_form_check)
             403 -> when {
+                raw.contains("GLOBAL_CHAT_TEAM_PROFILE_REQUIRED", ignoreCase = true) ->
+                    resources.getString(R.string.chat_global_team_required)
                 raw.contains("Account pending administrator approval", ignoreCase = true) ->
                     resources.getString(R.string.err_pending_approval)
                 else -> resources.getString(R.string.err_forbidden)
@@ -89,5 +91,7 @@ private fun translateKnownServerMessage(english: String, resources: Resources): 
         resources.getString(R.string.err_validation_password)
     english.contains("Username is already taken", ignoreCase = true) ->
         resources.getString(R.string.err_username_taken)
+    english.contains("GLOBAL_CHAT_TEAM_PROFILE_REQUIRED", ignoreCase = true) ->
+        resources.getString(R.string.chat_global_team_required)
     else -> english
 }

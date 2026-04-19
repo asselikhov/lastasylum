@@ -84,6 +84,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.ui.chat.ChatState
@@ -137,6 +138,12 @@ fun ChatScreen(
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val selectedRoomId = state.selectedRoomId
+    val selectedRoom = remember(selectedRoomId, state.rooms) {
+        selectedRoomId?.let { id -> state.rooms.find { it.id == id } }
+    }
+    val showGlobalTeamNotice = selectedRoom?.allianceId == ChatAllianceIds.GLOBAL &&
+        !state.hasTeamProfileForGlobalChat
+    val globalComposerLocked = showGlobalTeamNotice
     val activeActionMessage = remember(state.activeActionMessageId, state.messages) {
         state.messages.find { it._id == state.activeActionMessageId }
     }
@@ -222,6 +229,23 @@ fun ChatScreen(
                 onSelectRoom = onSelectRoom,
             )
 
+            if (showGlobalTeamNotice) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = SquadRelayDimens.itemGap),
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.88f),
+                ) {
+                    Text(
+                        text = stringResource(R.string.chat_global_team_notice),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
+                }
+            }
+
             ChatTypingBanner(typingPeers = typingPeers)
 
             if (inSelectionMode) {
@@ -304,9 +328,14 @@ fun ChatScreen(
                         draft = draftMessage,
                         replyToMessage = state.replyToMessage,
                         isSending = state.isSending,
+                        sendEnabled = !globalComposerLocked,
+                        readOnly = globalComposerLocked,
                         onDraftChange = onDraftChange,
                         onSendDraft = {
-                            if (!draftMessage.isBlank() && !state.isSending) {
+                            if (!globalComposerLocked &&
+                                !draftMessage.isBlank() &&
+                                !state.isSending
+                            ) {
                                 focusManager.clearFocus()
                                 keyboardController?.hide()
                                 onSendDraft()
@@ -656,6 +685,8 @@ private fun ChatComposer(
     draft: String,
     replyToMessage: ChatMessage?,
     isSending: Boolean,
+    sendEnabled: Boolean = true,
+    readOnly: Boolean = false,
     onDraftChange: (String) -> Unit,
     onSendDraft: () -> Unit,
     onClearReply: () -> Unit,
@@ -740,10 +771,11 @@ private fun ChatComposer(
                 ) {
                     BasicTextField(
                         value = draft,
-                        onValueChange = onDraftChange,
+                        onValueChange = { if (!readOnly) onDraftChange(it) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 12.dp, vertical = 10.dp),
+                        readOnly = readOnly,
                         textStyle = MaterialTheme.typography.bodyMedium.copy(
                             color = MaterialTheme.colorScheme.onSurface,
                         ),
@@ -770,7 +802,7 @@ private fun ChatComposer(
 
                 FilledIconButton(
                     onClick = onSendDraft,
-                    enabled = draft.isNotBlank() && !isSending,
+                    enabled = sendEnabled && draft.isNotBlank() && !isSending,
                     modifier = Modifier.size(44.dp),
                 ) {
                     if (isSending) {

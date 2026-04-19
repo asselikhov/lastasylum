@@ -41,7 +41,9 @@
     <string name="chat_message_hint">Сообщение</string>
     <string name="chat_send">Отправить</string>
     <string name="chat_empty_state">Пока нет сообщений — напишите первым.</string>
-    <string name="chat_no_rooms">Нет комнат чата. Попросите администратора (R5) создать комнату.</string>
+    <string name="chat_no_rooms">Комнаты чата недоступны. Проверьте сеть или попробуйте позже.</string>
+    <string name="chat_global_team_notice">Чтобы писать в общий чат всех альянсов, укажите в профиле полное название команды и тег из трёх букв.</string>
+    <string name="chat_global_team_required">Сначала укажите в профиле название команды и трёхбуквенный тег — без этого сообщения в «Общий» недоступны.</string>
     <string name="cd_chat_message">Сообщение от %1$s, роль %2$s: %3$s</string>
     <string name="err_chat_no_room">Выберите комнату чата в приложении, затем снова запишите голос.</string>
     <string name="chat_replying_to">Ответ для %1$s</string>

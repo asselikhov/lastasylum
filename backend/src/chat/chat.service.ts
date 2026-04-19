@@ -6,8 +6,10 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/global-chat-alliance-id';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
+import { UserDocument } from '../users/schemas/user.schema';
 import { UsersService } from '../users/users.service';
 import { ChatRoomsService } from './chat-rooms.service';
 import { Message } from './schemas/message.schema';
@@ -83,6 +85,12 @@ export class ChatService {
     }
   }
 
+  private hasCompleteTeamBranding(user: UserDocument): boolean {
+    const name = user.teamDisplayName?.trim() ?? '';
+    const tag = user.teamTag?.trim() ?? '';
+    return name.length > 0 && tag.length > 0;
+  }
+
   private async assertRoomForUser(
     userId: string,
     roomId: string,
@@ -95,13 +103,19 @@ export class ChatService {
     if (!room || room.archivedAt) {
       throw new ForbiddenException('Room not found');
     }
-    if (room.allianceId !== user.allianceName) {
-      throw new ForbiddenException('Room is not available for your alliance');
+    if (room.allianceId === GLOBAL_CHAT_ALLIANCE_ID) {
+      return {
+        allianceId: GLOBAL_CHAT_ALLIANCE_ID,
+        roomObjectId: room._id as Types.ObjectId,
+      };
     }
-    return {
-      allianceId: user.allianceName,
-      roomObjectId: room._id as Types.ObjectId,
-    };
+    if (room.allianceId === user.allianceName) {
+      return {
+        allianceId: user.allianceName,
+        roomObjectId: room._id as Types.ObjectId,
+      };
+    }
+    throw new ForbiddenException('Room is not available for your alliance');
   }
 
   private asIdString(id: Types.ObjectId | string | null | undefined): string | null {
@@ -256,6 +270,12 @@ export class ChatService {
       input.author.userId,
       input.roomId,
     );
+    if (
+      allianceId === GLOBAL_CHAT_ALLIANCE_ID &&
+      !this.hasCompleteTeamBranding(authorUser)
+    ) {
+      throw new ForbiddenException('GLOBAL_CHAT_TEAM_PROFILE_REQUIRED');
+    }
     const replyTarget = await this.getReplyTarget(
       allianceId,
       roomObjectId,
@@ -336,7 +356,10 @@ export class ChatService {
     if (!message) {
       throw new NotFoundException('Message not found');
     }
-    if (message.allianceId !== actor.allianceName) {
+    if (
+      message.allianceId !== GLOBAL_CHAT_ALLIANCE_ID &&
+      message.allianceId !== actor.allianceName
+    ) {
       throw new ForbiddenException('Message is not available for your alliance');
     }
     const mayDelete =
@@ -348,7 +371,7 @@ export class ChatService {
     const res = await this.messageModel
       .deleteOne({
         _id: new Types.ObjectId(messageId),
-        allianceId: actor.allianceName,
+        allianceId: message.allianceId,
       })
       .exec();
     if (res.deletedCount !== 1) {
@@ -357,7 +380,7 @@ export class ChatService {
     await this.messageModel
       .updateMany(
         {
-          allianceId: actor.allianceName,
+          allianceId: message.allianceId,
           roomId: message.roomId,
           replyToMessageId: new Types.ObjectId(messageId),
         },

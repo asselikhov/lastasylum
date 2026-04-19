@@ -104,6 +104,7 @@ fun SquadRelayApp() {
                                 application = application,
                                 repository = appContainer.chatRepository,
                                 chatRoomPreferences = appContainer.chatRoomPreferences,
+                                usersRepository = appContainer.usersRepository,
                                 currentUserId = authState.user?.id.orEmpty(),
                                 currentUserRole = authState.user?.role.orEmpty(),
                             ),

@@ -3,12 +3,14 @@ package com.lastasylum.alliance.ui.chat
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatMessageDeletedEvent
 import com.lastasylum.alliance.data.chat.ChatRepository
 import com.lastasylum.alliance.data.chat.ChatTypingEvent
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
+import com.lastasylum.alliance.data.users.UsersRepository
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -26,6 +28,7 @@ class ChatViewModel(
     application: Application,
     private val repository: ChatRepository,
     private val chatRoomPreferences: ChatRoomPreferences,
+    private val usersRepository: UsersRepository,
     private val currentUserId: String,
     private val currentUserRole: String,
 ) : AndroidViewModel(application) {
@@ -68,6 +71,20 @@ class ChatViewModel(
         viewModelScope.launch { bootstrap() }
     }
 
+    /** Refresh profile gate when returning from profile or opening chat. */
+    fun refreshTeamProfileGate() {
+        viewModelScope.launch {
+            val hasTeam = loadTeamProfileGate()
+            _state.value = _state.value.copy(hasTeamProfileForGlobalChat = hasTeam)
+        }
+    }
+
+    private suspend fun loadTeamProfileGate(): Boolean {
+        return usersRepository.getMyProfile().getOrNull()?.let { p ->
+            !p.teamDisplayName.isNullOrBlank() && !p.teamTag.isNullOrBlank()
+        } ?: false
+    }
+
     private suspend fun bootstrap() {
         _state.value = _state.value.copy(isRoomsLoading = true, error = null)
         val rooms = repository.listRooms().getOrElse { e ->
@@ -78,6 +95,7 @@ class ChatViewModel(
                 error = e.toUserMessageRu(res),
                 currentUserId = currentUserId,
                 currentUserRole = currentUserRole,
+                hasTeamProfileForGlobalChat = false,
             )
             return
         }
@@ -88,6 +106,7 @@ class ChatViewModel(
                 isRoomsLoading = false,
                 currentUserId = currentUserId,
                 currentUserRole = currentUserRole,
+                hasTeamProfileForGlobalChat = false,
                 error = getApplication<Application>().getString(
                     com.lastasylum.alliance.R.string.chat_no_rooms,
                 ),
@@ -121,11 +140,13 @@ class ChatViewModel(
         knownMessageIds.clear()
         _draftMessage.value = ""
         _typingPeers.value = emptyMap()
+        val hasTeam = loadTeamProfileGate()
         _state.value = _state.value.copy(
             isLoading = true,
             isRoomsLoading = false,
             rooms = rooms,
             selectedRoomId = roomId,
+            hasTeamProfileForGlobalChat = hasTeam,
             error = null,
             messages = emptyList(),
             currentUserId = currentUserId,
@@ -205,6 +226,19 @@ class ChatViewModel(
         if (trimmed.isBlank()) return
         val roomId = _state.value.selectedRoomId ?: return
         val replyToMessageId = replyOverride ?: _state.value.replyToMessage?._id
+        val room = _state.value.rooms.find { it.id == roomId }
+        if (room?.allianceId == ChatAllianceIds.GLOBAL &&
+            !_state.value.hasTeamProfileForGlobalChat
+        ) {
+            _state.value = _state.value.copy(
+                sendFailure = ChatSendFailure(
+                    messageText = trimmed,
+                    replyToMessageId = replyToMessageId,
+                    errorMessage = res.getString(com.lastasylum.alliance.R.string.chat_global_team_required),
+                ),
+            )
+            return
+        }
         viewModelScope.launch {
             _state.value = _state.value.copy(
                 isSending = true,
@@ -251,6 +285,12 @@ class ChatViewModel(
     private fun scheduleTypingEmit() {
         typingEmitJob?.cancel()
         val roomId = _state.value.selectedRoomId ?: return
+        val room = _state.value.rooms.find { it.id == roomId }
+        if (room?.allianceId == ChatAllianceIds.GLOBAL &&
+            !_state.value.hasTeamProfileForGlobalChat
+        ) {
+            return
+        }
         if (_draftMessage.value.isBlank()) return
         typingEmitJob = viewModelScope.launch {
             try {
