@@ -40,6 +40,18 @@
     <!-- Chat -->
     <string name="chat_message_hint">Сообщение</string>
     <string name="chat_send">Отправить</string>
+    <string name="chat_attach_cd">Добавить эмодзи, GIF или стикеры</string>
+    <string name="chat_attach_sheet_title">Что добавить</string>
+    <string name="chat_attach_emoji">Эмодзи</string>
+    <string name="chat_attach_gif">GIF</string>
+    <string name="chat_attach_stickers">Стикеры</string>
+    <string name="chat_attach_stub_gif_title">GIF</string>
+    <string name="chat_attach_stub_gif_body">Поиск и вставка GIF появятся в следующем обновлении.</string>
+    <string name="chat_attach_stub_stickers_title">Стикеры</string>
+    <string name="chat_attach_stub_stickers_body">Стикеры появятся в следующем обновлении.</string>
+    <string name="chat_emoji_picker_title">Эмодзи</string>
+    <string name="chat_emoji_back">Назад</string>
+    <string name="chat_ok">Понятно</string>
     <string name="chat_empty_state">Пока нет сообщений — напишите первым.</string>
     <string name="chat_no_rooms">Комнаты чата недоступны. Проверьте сеть или попробуйте позже.</string>
     <string name="chat_global_team_notice">Чтобы писать в комнате «Общая» (все альянсы), укажите в профиле полное название команды и тег из трёх букв.</string>
