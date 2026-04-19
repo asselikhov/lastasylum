@@ -125,30 +125,6 @@ export class ChatController {
     });
   }
 
-  @Get('messages/search')
-  @Roles(AllianceRole.R2)
-  @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  async searchMessages(
-    @Req() req: { user: RequestUser },
-    @Query('roomId') roomId?: string,
-    @Query('q') q?: string,
-    @Query('limit') limitRaw?: string,
-  ) {
-    if (!roomId?.trim()) {
-      throw new BadRequestException('roomId query parameter is required');
-    }
-    await this.chatService.assertUserMayUseChat(req.user.userId);
-    const user = await this.usersService.findById(req.user.userId);
-    if (!user) {
-      throw new BadRequestException('User not found');
-    }
-    const parsed = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
-    const limit = Number.isFinite(parsed) ? parsed : undefined;
-    return this.chatService.searchMessages(req.user.userId, roomId, q ?? '', {
-      limit,
-    });
-  }
-
   @Post('messages')
   @Roles(AllianceRole.R2)
   @Throttle({ default: { limit: 8, ttl: 10_000 } })

@@ -269,44 +269,6 @@ export class ChatService {
     return this.enrichMessages(messages);
   }
 
-  private escapeRegex(s: string): string {
-    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
-
-  async searchMessages(
-    userId: string,
-    roomId: string,
-    q: string,
-    options?: { limit?: number },
-  ) {
-    const raw = q.trim();
-    if (!raw) {
-      throw new BadRequestException('q query parameter is required');
-    }
-    if (raw.length > 120) {
-      throw new BadRequestException('q is too long');
-    }
-    const rawLimit = options?.limit ?? 30;
-    const limit = Math.min(50, Math.max(1, Math.floor(rawLimit)));
-    const { allianceId, roomObjectId } = await this.assertRoomForUser(
-      userId,
-      roomId,
-    );
-    const pattern = new RegExp(this.escapeRegex(raw), 'i');
-    const messages = await this.messageModel
-      .find({
-        allianceId,
-        roomId: roomObjectId,
-        text: pattern,
-        deletedAt: null,
-      })
-      .sort({ createdAt: -1 })
-      .limit(limit)
-      .lean<MessageLean[]>()
-      .exec();
-    return this.enrichMessages(messages);
-  }
-
   async deleteMessage(
     userId: string,
     messageId: string,

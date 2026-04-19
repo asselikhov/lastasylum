@@ -26,15 +26,6 @@ class ChatRepository(
         }
     }
 
-    suspend fun searchMessages(
-        roomId: String,
-        query: String,
-        limit: Int = 25,
-    ): Result<List<ChatMessage>> =
-        runCatching {
-            chatApi.searchMessages(roomId = roomId, query = query, limit = limit)
-        }
-
     suspend fun sendMessage(
         text: String,
         roomId: String,
