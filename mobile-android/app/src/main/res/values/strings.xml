@@ -50,7 +50,11 @@
     <string name="chat_gif_paste">Вставить из буфера</string>
     <string name="chat_gif_insert">Добавить в сообщение</string>
     <string name="chat_gif_open_giphy">Открыть Giphy</string>
-    <string name="chat_stickers_title">Текстовые стикеры</string>
+    <string name="chat_stickers_title">Стикеры</string>
+    <string name="chat_stickers_pack_zlobyaka">Злобяка</string>
+    <string name="chat_stickers_text_section">Текстовые</string>
+    <string name="chat_reply_preview_sticker">Стикер «Злобяка»</string>
+    <string name="cd_chat_sticker">Стикер «Злобяка»</string>
     <string name="chat_emoji_picker_title">Эмодзи</string>
     <string name="chat_emoji_back">Назад</string>
     <string name="chat_ok">Понятно</string>

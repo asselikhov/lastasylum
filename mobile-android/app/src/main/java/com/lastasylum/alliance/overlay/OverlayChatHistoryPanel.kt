@@ -20,6 +20,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.ui.chat.ChatStickerFormat
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import java.time.Instant
@@ -339,7 +340,7 @@ object OverlayChatHistoryPanel {
         }
 
         val body = TextView(context).apply {
-            text = msg.text.trimEnd()
+            text = ChatStickerFormat.humanReadableBody(context, msg.text).trimEnd()
             setTextColor(bodyColor)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             maxLines = 40

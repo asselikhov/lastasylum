@@ -35,6 +35,7 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.ui.chat.ChatStickerFormat
 import com.lastasylum.alliance.overlay.layout.OverlayLayoutDp
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import org.json.JSONObject
@@ -373,7 +374,7 @@ class CombatOverlayService : Service() {
                 this,
                 lines,
                 chatSenderDisplayWithTag(msg.senderTeamTag, msg.senderUsername),
-                msg.text,
+                ChatStickerFormat.humanReadableBody(this, msg.text),
                 msg.senderId,
                 msg.senderRole,
                 selfId,

@@ -11,6 +11,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -21,10 +22,13 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -102,14 +106,18 @@ import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.ui.chat.ChatState
+import com.lastasylum.alliance.ui.chat.chatMessageSemanticsPreview
+import com.lastasylum.alliance.ui.chat.replyPreviewText
 import com.lastasylum.alliance.ui.chat.canDeleteChatMessage
 import com.lastasylum.alliance.ui.chat.RoleBadge
 import com.lastasylum.alliance.ui.chat.formatChatTime
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -172,6 +180,7 @@ fun ChatScreen(
     onLoadOlder: () -> Unit,
     onDraftChange: (String) -> Unit,
     onSendDraft: () -> Unit,
+    onSendStickerPayload: (String) -> Unit,
     onReplyToMessage: (String) -> Unit,
     onClearReply: () -> Unit,
     onOpenMessageActions: (String) -> Unit,
@@ -396,6 +405,11 @@ fun ChatScreen(
                                 focusManager.clearFocus()
                                 keyboardController?.hide()
                                 onSendDraft()
+                            }
+                        },
+                        onSendStickerPayload = { payload ->
+                            if (!globalComposerLocked && !state.isSending) {
+                                onSendStickerPayload(payload)
                             }
                         },
                         onClearReply = onClearReply,
@@ -755,7 +769,7 @@ private fun ChatRoomsBar(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun ChatComposer(
     draft: String,
@@ -765,6 +779,7 @@ private fun ChatComposer(
     readOnly: Boolean = false,
     onDraftChange: (String) -> Unit,
     onSendDraft: () -> Unit,
+    onSendStickerPayload: (String) -> Unit,
     onClearReply: () -> Unit,
 ) {
     var showAttachSheet by remember { mutableStateOf(false) }
@@ -772,6 +787,7 @@ private fun ChatComposer(
     var gifUrlDraft by remember { mutableStateOf("") }
     val attachSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
+    val zlobStems = remember(context) { ZlobyakaStickerPack.listSortedStems(context) }
 
     LaunchedEffect(showAttachSheet) {
         if (!showAttachSheet) {
@@ -986,31 +1002,91 @@ private fun ChatComposer(
                         )
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+                    Text(
+                        text = stringResource(R.string.chat_stickers_pack_zlobyaka),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                    )
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 88.dp),
+                        columns = GridCells.Fixed(3),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 420.dp)
-                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                            .heightIn(max = 380.dp)
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        items(CHAT_KAOMOJI) { face ->
-                            TextButton(
-                                onClick = {
-                                    onDraftChange(draft + face)
-                                    showAttachSheet = false
-                                },
+                        items(zlobStems, key = { it }) { stem ->
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                modifier = Modifier
+                                    .padding(4.dp)
+                                    .aspectRatio(1f)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable(
+                                        enabled = sendEnabled && !readOnly,
+                                        onClick = {
+                                            onSendStickerPayload(ZlobyakaStickerPack.encode(stem))
+                                            showAttachSheet = false
+                                        },
+                                    ),
+                            ) {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(context)
+                                        .data(ZlobyakaStickerPack.assetUriForStem(stem))
+                                        .size(192)
+                                        .crossfade(true)
+                                        .build(),
+                                    contentDescription = stringResource(R.string.cd_chat_sticker),
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(6.dp)
+                                        .clip(RoundedCornerShape(8.dp)),
+                                    contentScale = ContentScale.Fit,
+                                )
+                            }
+                        }
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(min = 44.dp),
+                                    .padding(top = 8.dp, bottom = 4.dp),
                             ) {
-                                Text(
-                                    text = face,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
                                 )
+                                Text(
+                                    text = stringResource(R.string.chat_stickers_text_section),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                )
+                                FlowRow(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    CHAT_KAOMOJI.forEach { face ->
+                                        TextButton(
+                                            onClick = {
+                                                onDraftChange(draft + face)
+                                                showAttachSheet = false
+                                            },
+                                            modifier = Modifier.heightIn(min = 36.dp),
+                                        ) {
+                                            Text(
+                                                text = face,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1066,7 +1142,7 @@ private fun ChatComposer(
                                 color = MaterialTheme.colorScheme.primary,
                             )
                             Text(
-                                text = replyPreviewText(reply),
+                                text = replyPreviewText(reply.text),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
@@ -1232,7 +1308,8 @@ private fun ChatBubbleRow(
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
     val swipePx = remember(density) { with(density) { 56.dp.toPx() } }
-    val textPreview = remember(message.text) { message.text.take(120) }
+    val stickerStem = remember(message.text) { ZlobyakaStickerPack.parseStem(message.text) }
+    val textPreview = chatMessageSemanticsPreview(message.text)
     val senderLine = chatSenderDisplayWithTag(message.senderTeamTag, message.senderUsername)
     val bubbleDescription = stringResource(
         R.string.cd_chat_message,
@@ -1264,7 +1341,7 @@ private fun ChatBubbleRow(
         }
         Card(
             modifier = Modifier
-                .widthIn(max = 340.dp)
+                .widthIn(max = if (stickerStem != null) 212.dp else 340.dp)
                 .semantics(mergeDescendants = true) {
                     contentDescription = bubbleDescription
                     role = Role.Button
@@ -1303,9 +1380,11 @@ private fun ChatBubbleRow(
                 },
             ),
         ) {
+            val bubblePadH = if (stickerStem != null) 8.dp else 12.dp
+            val bubblePadV = if (stickerStem != null) 8.dp else 10.dp
             Column(
                 modifier = Modifier
-                    .padding(horizontal = 12.dp, vertical = 10.dp)
+                    .padding(horizontal = bubblePadH, vertical = bubblePadV)
                     .then(
                         if (messageId != null) {
                             Modifier.pointerInput(messageId, layoutDirection, swipePx) {
@@ -1434,15 +1513,39 @@ private fun ChatBubbleRow(
                     }
                 }
 
-                Text(
-                    text = message.text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (isMine) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                )
+                val bubbleContext = LocalContext.current
+                if (stickerStem != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 2.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(bubbleContext)
+                                .data(ZlobyakaStickerPack.assetUriForStem(stickerStem))
+                                .size(384)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = stringResource(R.string.cd_chat_sticker),
+                            modifier = Modifier
+                                .widthIn(max = 168.dp)
+                                .heightIn(max = 168.dp)
+                                .clip(RoundedCornerShape(12.dp)),
+                            contentScale = ContentScale.Fit,
+                        )
+                    }
+                } else {
+                    Text(
+                        text = message.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (isMine) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                    )
+                }
 
                 if (deleting && canDelete) {
                     Text(
@@ -1491,13 +1594,44 @@ private fun ChatMessageActionsSheet(
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            Text(
-                text = message.text,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
+            val sheetStickerStem = remember(message.text) { ZlobyakaStickerPack.parseStem(message.text) }
+            val sheetContext = LocalContext.current
+            if (sheetStickerStem != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(sheetContext)
+                            .data(ZlobyakaStickerPack.assetUriForStem(sheetStickerStem))
+                            .size(200)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = stringResource(R.string.cd_chat_sticker),
+                        modifier = Modifier
+                            .size(72.dp)
+                            .clip(RoundedCornerShape(10.dp)),
+                        contentScale = ContentScale.Fit,
+                    )
+                    Text(
+                        text = replyPreviewText(message.text),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            } else {
+                Text(
+                    text = message.text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             OutlinedButton(
                 onClick = onReply,
                 modifier = Modifier.fillMaxWidth(),
@@ -1530,8 +1664,3 @@ private fun chatMessageKey(message: ChatMessage): String {
     return message._id
         ?: "${message.senderId}_${message.createdAt}_${message.text.hashCode()}"
 }
-
-private fun replyPreviewText(message: ChatMessage): String = message.text
-
-private fun replyPreviewText(reply: com.lastasylum.alliance.data.chat.ChatMessageReplyPreview): String =
-    reply.text
