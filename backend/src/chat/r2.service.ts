@@ -9,11 +9,14 @@ export class R2Service {
   private readonly bucket: string;
 
   constructor(private readonly config: ConfigService) {
-    const endpoint = this.config.getOrThrow<string>('R2_ENDPOINT');
-    const accessKeyId = this.config.getOrThrow<string>('R2_ACCESS_KEY_ID');
-    const secretAccessKey = this.config.getOrThrow<string>('R2_SECRET_ACCESS_KEY');
-    this.bucket = this.config.getOrThrow<string>('R2_BUCKET');
-    const region = this.config.get<string>('R2_REGION') ?? 'auto';
+    const endpoint = this.config
+      .getOrThrow<string>('R2_ENDPOINT')
+      .trim()
+      .replace(/\/+$/, '');
+    const accessKeyId = this.config.getOrThrow<string>('R2_ACCESS_KEY_ID').trim();
+    const secretAccessKey = this.config.getOrThrow<string>('R2_SECRET_ACCESS_KEY').trim();
+    this.bucket = this.config.getOrThrow<string>('R2_BUCKET').trim();
+    const region = (this.config.get<string>('R2_REGION') ?? 'auto').trim();
 
     // AWS SDK ≥3.729 may send default request checksum headers that Cloudflare R2 rejects
     // (500 / InternalError on PutObject). Prefer WHEN_REQUIRED for R2 compatibility.
