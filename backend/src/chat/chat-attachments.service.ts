@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { ChatAttachment } from './schemas/chat-attachment.schema';
@@ -13,6 +19,8 @@ export type UploadedChatAttachment = {
 
 @Injectable()
 export class ChatAttachmentsService {
+  private readonly logger = new Logger(ChatAttachmentsService.name);
+
   constructor(
     @InjectModel(ChatAttachment.name)
     private readonly attachmentModel: Model<ChatAttachment>,
@@ -48,12 +56,18 @@ export class ChatAttachmentsService {
     created.key = key;
     await created.save();
 
-    await this.r2.putObject({
-      key,
-      body: buffer,
-      contentType: mimeType,
-      cacheControl: 'private, max-age=31536000, immutable',
-    });
+    try {
+      await this.r2.putObject({
+        key,
+        body: buffer,
+        contentType: mimeType,
+        cacheControl: 'private, max-age=31536000, immutable',
+      });
+    } catch (err) {
+      this.logger.error(`R2 putObject failed key=${key}`, err);
+      await this.attachmentModel.deleteOne({ _id: created._id }).exec().catch(() => undefined);
+      throw new BadGatewayException('CHAT_ATTACHMENT_R2_PUT_FAILED');
+    }
 
     return {
       fileId: created._id.toString(),

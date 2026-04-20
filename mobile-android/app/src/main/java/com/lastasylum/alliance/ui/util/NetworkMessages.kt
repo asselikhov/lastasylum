@@ -33,8 +33,8 @@ fun Throwable.toUserMessageRu(resources: Resources): String {
                 else -> resources.getString(R.string.err_forbidden)
             }
             429 -> resources.getString(R.string.err_rate_limit)
-            502, 503 -> resources.getString(R.string.err_server_temp)
-            in 500..599 -> resources.getString(R.string.err_server_generic)
+            502, 503 -> parsed ?: resources.getString(R.string.err_server_temp)
+            in 500..599 -> parsed ?: resources.getString(R.string.err_server_generic)
             else -> parsed ?: resources.getString(R.string.err_network_with_code, code)
         }
     }
@@ -95,5 +95,7 @@ private fun translateKnownServerMessage(english: String, resources: Resources): 
         resources.getString(R.string.chat_global_team_required)
     english.contains("Only image uploads are supported", ignoreCase = true) ->
         resources.getString(R.string.chat_attachment_only_images_server)
+    english.contains("CHAT_ATTACHMENT_R2_PUT_FAILED", ignoreCase = true) ->
+        resources.getString(R.string.chat_attachment_r2_put_failed)
     else -> english
 }
