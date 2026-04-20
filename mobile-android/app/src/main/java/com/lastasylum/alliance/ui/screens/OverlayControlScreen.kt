@@ -2,8 +2,6 @@ package com.lastasylum.alliance.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,6 +20,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -30,7 +29,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -40,6 +38,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.overlay.CombatOverlayService
@@ -54,6 +53,9 @@ fun OverlayControlScreen() {
     val context = LocalContext.current
     val appContext = context.applicationContext
     val prefs = remember(appContext) { UserSettingsPreferences(appContext) }
+    val squadRelayAppLabel = remember(context) {
+        context.applicationInfo.loadLabel(context.packageManager).toString()
+    }
 
     val overlayRunning by CombatOverlayService.serviceRunning.collectAsStateWithLifecycle()
     var gameGateOnly by remember { mutableStateOf(prefs.isOverlayGameGateEnabled()) }
@@ -73,30 +75,12 @@ fun OverlayControlScreen() {
     fun usageOk(): Boolean = !latestGameGate.value ||
         GameForegroundGate.hasUsageStatsAccess(context)
 
-    val micPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (granted && latestPendingEnable.value) {
-            when {
-                !overlayOk() -> OverlayPermissions.openOverlayPermissionSettings(context)
-                !usageOk() -> OverlayPermissions.openUsageAccessSettings(context)
-                CombatOverlayService.startService(context) -> {
-                    pendingEnable = false
-                }
-                else -> pendingEnable = false
-            }
-        } else if (!granted) {
-            pendingEnable = false
-        }
-    }
-
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 if (latestPendingEnable.value &&
                     !CombatOverlayService.isServiceInstanceActive &&
-                    micOk() &&
                     overlayOk() &&
                     usageOk()
                 ) {
@@ -148,7 +132,6 @@ fun OverlayControlScreen() {
                     if (on) {
                         pendingEnable = true
                         when {
-                            !micOk() -> micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                             !overlayOk() -> OverlayPermissions.openOverlayPermissionSettings(context)
                             !usageOk() -> OverlayPermissions.openUsageAccessSettings(context)
                             CombatOverlayService.startService(context) -> {
@@ -162,6 +145,45 @@ fun OverlayControlScreen() {
                     }
                 },
             )
+
+            if (!overlayOk()) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = stringResource(R.string.overlay_overlay_must_be_squadrelay, squadRelayAppLabel),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                TextButton(
+                    onClick = { OverlayPermissions.openOverlayPermissionSettings(context) },
+                    modifier = Modifier.padding(top = 4.dp),
+                ) {
+                    Text(text = stringResource(R.string.overlay_open_squadrelay_overlay_settings))
+                }
+            }
+
+            if (gameGateOnly && !usageOk()) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = stringResource(R.string.overlay_usage_hint_gate),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(
+                    onClick = { OverlayPermissions.openUsageAccessSettings(context) },
+                    modifier = Modifier.padding(top = 4.dp),
+                ) {
+                    Text(text = stringResource(R.string.overlay_open_usage_settings))
+                }
+            }
+
+            if (!micOk()) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = stringResource(R.string.overlay_mic_optional_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
 
             Spacer(Modifier.height(8.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)

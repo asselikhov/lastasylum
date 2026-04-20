@@ -1,10 +1,8 @@
 package com.lastasylum.alliance.overlay
 
-import android.Manifest
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.Handler
@@ -1160,29 +1158,28 @@ class CombatOverlayService : Service() {
         }
 
         /**
-         * Микрофон нужен для PTT в оверлее; тип FGS в манифесте — dataSync, но без разрешения
-         * запись голоса всё равно не заработает — не пускаем в бой без явного согласия пользователя.
+         * Запуск боевого сервиса и оверлея. Микрофон не обязателен: панель может работать без голоса;
+         * запись голоса запросит разрешение при использовании.
          */
         fun startService(context: Context): Boolean {
             val app = context.applicationContext
-            if (ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO) !=
-                PackageManager.PERMISSION_GRANTED
-            ) {
-                Log.w(TAG, "startService blocked: RECORD_AUDIO not granted (microphone FGS requirement)")
+            return try {
+                val intent = Intent(context, CombatOverlayService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    app.startForegroundService(intent)
+                } else {
+                    app.startService(intent)
+                }
+                true
+            } catch (t: Throwable) {
+                Log.e(TAG, "startService failed", t)
                 Toast.makeText(
                     app,
-                    app.getString(R.string.overlay_mic_required_for_fgs),
+                    app.getString(R.string.overlay_start_service_failed),
                     Toast.LENGTH_LONG,
                 ).show()
-                return false
+                false
             }
-            val intent = Intent(context, CombatOverlayService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
-            return true
         }
 
         fun stopService(context: Context) {

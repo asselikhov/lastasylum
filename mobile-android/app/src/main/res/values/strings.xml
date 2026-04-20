@@ -107,6 +107,12 @@
     <string name="overlay_switch_panel">Показывать панель</string>
     <string name="overlay_switch_game_only">Только когда открыта игра</string>
     <string name="overlay_package_field_label">Пакеты игры (из «Сведения о приложении»)</string>
+    <string name="overlay_overlay_must_be_squadrelay">Чтобы кнопки были поверх игры, включите «Поверх других приложений» для «%1$s» (это приложение SquadRelay). Включение только у игры не даёт панель — её рисует SquadRelay.</string>
+    <string name="overlay_open_squadrelay_overlay_settings">Настройки SquadRelay</string>
+    <string name="overlay_usage_hint_gate">Для режима «только в игре» включите «Данные об использовании» для SquadRelay в системных настройках.</string>
+    <string name="overlay_open_usage_settings">Доступ к статистике</string>
+    <string name="overlay_mic_optional_hint">Микрофон не обязателен для панели; он нужен для голоса.</string>
+    <string name="overlay_start_service_failed">Не удалось запустить панель. Проверьте ограничения фона и уведомления для SquadRelay.</string>
     <string name="overlay_mic_required_for_fgs">Нужен доступ к микрофону для записи голоса в боевом режиме.</string>
     <string name="overlay_ptt_start">Начать запись (PTT)</string>
     <string name="overlay_ptt_stop">Остановить запись (PTT)</string>
