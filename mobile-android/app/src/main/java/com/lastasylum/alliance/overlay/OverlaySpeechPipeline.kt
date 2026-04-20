@@ -136,9 +136,20 @@ class OverlaySpeechPipeline(
         }
     }
 
+    /**
+     * Сброс без финализации результата: гейт/ребилд оверлея или снятие панели во время long-press.
+     * Иначе отложенный [startRecording] или колбэки recognizer могут трогать UI после removeView.
+     */
+    fun cancelActiveSession() {
+        isRecording = false
+        awaitingSpeechResult = false
+        runCatching { speechRecognizer?.cancel() }
+        applyBubbleState(OverlayBubbleUi.BubbleState.IDLE)
+    }
+
     fun destroy() {
-        stopRecording()
-        speechRecognizer?.destroy()
+        cancelActiveSession()
+        runCatching { speechRecognizer?.destroy() }
         speechRecognizer = null
         speechIntent = null
     }

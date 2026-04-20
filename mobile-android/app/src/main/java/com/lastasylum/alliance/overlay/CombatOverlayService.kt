@@ -219,16 +219,21 @@ class CombatOverlayService : Service() {
         gateCheckInFlight = true
         val targets = prefs.getOverlayTargetGamePackages()
         serviceScope.launch {
-            val hasUsageAccess = GameForegroundGate.hasUsageStatsAccess(this@CombatOverlayService)
-            val shouldShow = hasUsageAccess &&
-                GameForegroundGate.shouldShowOverlay(this@CombatOverlayService, targets)
-            mainHandler.post {
-                gateCheckInFlight = false
-                applyGameGateState(
-                    gameGateEnabled = true,
-                    hasUsageAccess = hasUsageAccess,
-                    shouldShow = shouldShow,
-                )
+            try {
+                val hasUsageAccess = GameForegroundGate.hasUsageStatsAccess(this@CombatOverlayService)
+                val shouldShow = hasUsageAccess &&
+                    GameForegroundGate.shouldShowOverlay(this@CombatOverlayService, targets)
+                mainHandler.post {
+                    applyGameGateState(
+                        gameGateEnabled = true,
+                        hasUsageAccess = hasUsageAccess,
+                        shouldShow = shouldShow,
+                    )
+                }
+            } finally {
+                mainHandler.post {
+                    gateCheckInFlight = false
+                }
             }
         }
     }
@@ -1070,6 +1075,9 @@ class CombatOverlayService : Service() {
     }
 
     private fun removeOverlayControl() {
+        recordingStartRunnable?.let { mainHandler.removeCallbacks(it) }
+        recordingStartRunnable = null
+        speechPipeline.cancelActiveSession()
         endOverlayChatSubscription()
         overlayTicker.hideTicker()
         quickCommandsPopover.hide()
