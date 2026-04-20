@@ -261,6 +261,9 @@
     <string name="team_edit_team_name_title">Название команды</string>
     <string name="team_edit_role_title">Роль участника %1$s</string>
     <string name="team_roster_count">В составе: %1$d</string>
+    <string name="team_tg_line">TG: %1$s</string>
+    <string name="team_tg_not_set">—</string>
+    <string name="team_role_section_toggle_cd">Секция роли %1$s: развернуть или свернуть список</string>
 
     <!-- Combat overlay service -->
     <string name="overlay_notif_combat_active">Боевой режим активен</string>
