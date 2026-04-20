@@ -148,7 +148,16 @@ export class TeamsService {
       throw e;
     }
     await this.userModel
-      .updateOne({ _id: userId }, { $set: { playerTeamId: team._id } })
+      .updateOne(
+        { _id: userId },
+        {
+          $set: {
+            playerTeamId: team._id,
+            teamDisplayName: team.displayName,
+            teamTag: team.tag,
+          },
+        },
+      )
       .exec();
     return { teamId: team._id.toString() };
   }
@@ -354,7 +363,16 @@ export class TeamsService {
       .updateOne({ _id: team._id }, { $addToSet: { memberUserIds: rid } })
       .exec();
     await this.userModel
-      .updateOne({ _id: rid }, { $set: { playerTeamId: team._id } })
+      .updateOne(
+        { _id: rid },
+        {
+          $set: {
+            playerTeamId: team._id,
+            teamDisplayName: team.displayName,
+            teamTag: team.tag,
+          },
+        },
+      )
       .exec();
     reqDoc.status = TeamJoinRequestStatus.ACCEPTED;
     await reqDoc.save();
@@ -401,12 +419,25 @@ export class TeamsService {
       .updateOne({ _id: team._id }, { $addToSet: { memberUserIds: tid } })
       .exec();
     await this.userModel
-      .updateOne({ _id: tid }, { $set: { playerTeamId: team._id } })
+      .updateOne(
+        { _id: tid },
+        {
+          $set: {
+            playerTeamId: team._id,
+            teamDisplayName: team.displayName,
+            teamTag: team.tag,
+          },
+        },
+      )
       .exec();
     return { ok: true };
   }
 
-  async removeMember(teamId: string, leaderUserId: string, memberUserId: string) {
+  async removeMember(
+    teamId: string,
+    leaderUserId: string,
+    memberUserId: string,
+  ) {
     const team = await this.assertTeamLeader(teamId, leaderUserId);
     if (team.leaderUserId.toString() === memberUserId) {
       throw new BadRequestException('Cannot remove the team leader');
@@ -419,7 +450,16 @@ export class TeamsService {
       .updateOne({ _id: team._id }, { $pull: { memberUserIds: mid } })
       .exec();
     await this.userModel
-      .updateOne({ _id: mid }, { $set: { playerTeamId: null } })
+      .updateOne(
+        { _id: mid },
+        {
+          $set: {
+            playerTeamId: null,
+            teamDisplayName: null,
+            teamTag: null,
+          },
+        },
+      )
       .exec();
     return { ok: true };
   }
