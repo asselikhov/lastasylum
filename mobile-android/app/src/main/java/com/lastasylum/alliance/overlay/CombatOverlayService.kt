@@ -42,6 +42,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.time.Instant
 
@@ -183,6 +186,7 @@ class CombatOverlayService : Service() {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
         )
         isServiceInstanceActive = true
+        _serviceRunning.value = true
         mainHandler.post(gameGateRunnable)
     }
 
@@ -311,6 +315,7 @@ class CombatOverlayService : Service() {
 
     override fun onDestroy() {
         isServiceInstanceActive = false
+        _serviceRunning.value = false
         gateCheckInFlight = false
         mainHandler.removeCallbacks(gameGateRunnable)
         speechPipeline.destroy()
@@ -1121,6 +1126,11 @@ class CombatOverlayService : Service() {
 
         @Volatile
         var isServiceInstanceActive: Boolean = false
+
+        private val _serviceRunning = MutableStateFlow(false)
+
+        /** Для UI вкладки «Оверлей»: синхронно с жизненным циклом сервиса (без гонки с [isServiceInstanceActive]). */
+        val serviceRunning: StateFlow<Boolean> = _serviceRunning.asStateFlow()
 
         /** Re-layout overlay (e.g. compact mode) while combat service is running. */
         fun requestRebuildOverlayIfRunning(context: Context) {

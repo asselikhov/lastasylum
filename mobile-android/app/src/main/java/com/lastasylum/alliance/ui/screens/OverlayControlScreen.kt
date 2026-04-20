@@ -30,6 +30,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -54,7 +55,7 @@ fun OverlayControlScreen() {
     val appContext = context.applicationContext
     val prefs = remember(appContext) { UserSettingsPreferences(appContext) }
 
-    var overlayRunning by remember { mutableStateOf(CombatOverlayService.isServiceInstanceActive) }
+    val overlayRunning by CombatOverlayService.serviceRunning.collectAsStateWithLifecycle()
     var gameGateOnly by remember { mutableStateOf(prefs.isOverlayGameGateEnabled()) }
     var targetPkg by remember { mutableStateOf(prefs.getOverlayTargetGamePackage()) }
     var pendingEnable by remember { mutableStateOf(false) }
@@ -80,7 +81,6 @@ fun OverlayControlScreen() {
                 !overlayOk() -> OverlayPermissions.openOverlayPermissionSettings(context)
                 !usageOk() -> OverlayPermissions.openUsageAccessSettings(context)
                 CombatOverlayService.startService(context) -> {
-                    overlayRunning = true
                     pendingEnable = false
                 }
                 else -> pendingEnable = false
@@ -94,10 +94,13 @@ fun OverlayControlScreen() {
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                overlayRunning = CombatOverlayService.isServiceInstanceActive
-                if (latestPendingEnable.value && !overlayRunning && micOk() && overlayOk() && usageOk()) {
+                if (latestPendingEnable.value &&
+                    !CombatOverlayService.isServiceInstanceActive &&
+                    micOk() &&
+                    overlayOk() &&
+                    usageOk()
+                ) {
                     if (CombatOverlayService.startService(context)) {
-                        overlayRunning = true
                         pendingEnable = false
                     }
                 }
@@ -149,7 +152,6 @@ fun OverlayControlScreen() {
                             !overlayOk() -> OverlayPermissions.openOverlayPermissionSettings(context)
                             !usageOk() -> OverlayPermissions.openUsageAccessSettings(context)
                             CombatOverlayService.startService(context) -> {
-                                overlayRunning = true
                                 pendingEnable = false
                             }
                             else -> pendingEnable = false
@@ -157,7 +159,6 @@ fun OverlayControlScreen() {
                     } else {
                         pendingEnable = false
                         CombatOverlayService.stopService(context)
-                        overlayRunning = false
                     }
                 },
             )
