@@ -29,6 +29,7 @@ import android.widget.Toast
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.google.android.material.floatingactionbutton.FloatingActionButton
+import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
@@ -159,6 +160,7 @@ class CombatOverlayService : Service() {
     private var lastStripRenderSignature: String? = null
     @Volatile
     private var gateCheckInFlight = false
+    private var lastGateDiagLogMs: Long = 0L
 
     private val gameGateRunnable = object : Runnable {
         override fun run() {
@@ -224,6 +226,18 @@ class CombatOverlayService : Service() {
                 val shouldShow = hasUsageAccess &&
                     GameForegroundGate.shouldShowOverlay(this@CombatOverlayService, targets)
                 mainHandler.post {
+                    if (BuildConfig.DEBUG && hasUsageAccess && !shouldShow) {
+                        val nowMs = System.currentTimeMillis()
+                        if (nowMs - lastGateDiagLogMs >= 20_000L) {
+                            lastGateDiagLogMs = nowMs
+                            val hinted = GameForegroundGate.lastResumedPackage(this@CombatOverlayService)
+                            Log.d(
+                                TAG,
+                                "Game gate hide: targets=${targets.joinToString()} hinted=$hinted " +
+                                    "(filter logcat tag $TAG; MIUI needs Usage access for SquadRelay)",
+                            )
+                        }
+                    }
                     applyGameGateState(
                         gameGateEnabled = true,
                         hasUsageAccess = hasUsageAccess,

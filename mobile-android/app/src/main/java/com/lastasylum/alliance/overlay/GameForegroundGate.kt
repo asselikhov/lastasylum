@@ -7,6 +7,7 @@ import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.os.Build
 import android.os.Process
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.max
 
 /**
@@ -17,6 +18,12 @@ object GameForegroundGate {
     /** Default CSV: Google Play RU (`com.phs.global`) + com.lastasylum.plague*; override in settings. */
     const val DEFAULT_TARGET_GAME_PACKAGES_CSV =
         "com.phs.global,com.lastasylum.plague,com.lastasylum.plague.debug"
+
+    private val ttfLock = Any()
+    private val observedTotalTimeForeground = ConcurrentHashMap<String, Long>()
+    @Volatile
+    private var ttfWatchTargetsKey: String = ""
+
     @Volatile
     private var cachedForeground: CachedForeground? = null
 
@@ -138,7 +145,9 @@ object GameForegroundGate {
         val begin = endMs - lookbackMs
         val best = usm.queryUsageStats(UsageStatsManager.INTERVAL_BEST, begin, endMs)
         if (!best.isNullOrEmpty()) return best
-        return usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, begin, endMs).orEmpty()
+        val daily = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, begin, endMs).orEmpty()
+        if (daily.isNotEmpty()) return daily
+        return usm.queryUsageStats(UsageStatsManager.INTERVAL_WEEKLY, begin, endMs).orEmpty()
     }
 
     /**
@@ -169,9 +178,47 @@ object GameForegroundGate {
         ) {
             return true
         }
-        return targets.any { target ->
-            isTargetUsageNearLeader(usm, end, target, USAGE_STATS_LOOKBACK_MS, TARGET_USAGE_TIE_SLOP_MS)
+        val stats = runCatching {
+            queryUsageStatsMerged(usm, end, USAGE_STATS_LOOKBACK_MS)
+        }.getOrDefault(emptyList())
+        // MIUI/HyperOS: события и lastTimeUsed часто «молчат» в Unity; TTF между тиками гейта растёт только в фокусе.
+        if (targetForegroundByGrowingTotalTime(stats, targetSet)) {
+            return true
         }
+        if (stats.isEmpty()) return false
+        val effectiveMap = stats.associate { it.packageName to effectiveUsageTimestamp(it) }
+        return targets.any { target ->
+            isTargetLastUsedNearLeader(effectiveMap, target, TARGET_USAGE_TIE_SLOP_MS)
+        }
+    }
+
+    /**
+     * Сравнивает [UsageStats.getTotalTimeInForeground] между последовательными вызовами [shouldShowOverlay]
+     * для тех же целевых пакетов: в фокусе время накапливается, в фоне — нет.
+     */
+    internal fun totalTimeForegroundIncreased(prev: Long?, now: Long): Boolean =
+        prev != null && now > prev
+
+    private fun targetForegroundByGrowingTotalTime(
+        stats: List<UsageStats>,
+        targets: Set<String>,
+    ): Boolean = synchronized(ttfLock) {
+        val key = targets.sorted().joinToString(",")
+        if (key != ttfWatchTargetsKey) {
+            observedTotalTimeForeground.clear()
+            ttfWatchTargetsKey = key
+        }
+        var grown = false
+        for (t in targets) {
+            val stat = stats.find { it.packageName == t } ?: continue
+            val ttf = stat.totalTimeInForeground
+            val prev = observedTotalTimeForeground[t]
+            observedTotalTimeForeground[t] = ttf
+            if (totalTimeForegroundIncreased(prev, ttf)) {
+                grown = true
+            }
+        }
+        grown
     }
 
     /**
@@ -187,19 +234,6 @@ object GameForegroundGate {
         val t = lastUsedByPackage[target] ?: return false
         val maxLast = lastUsedByPackage.values.maxOrNull() ?: return false
         return t >= maxLast - slopMs
-    }
-
-    private fun isTargetUsageNearLeader(
-        usm: UsageStatsManager,
-        endMs: Long,
-        target: String,
-        lookbackMs: Long,
-        slopMs: Long,
-    ): Boolean {
-        val stats = queryUsageStatsMerged(usm, endMs, lookbackMs)
-        if (stats.isEmpty()) return false
-        val map = stats.associate { it.packageName to effectiveUsageTimestamp(it) }
-        return isTargetLastUsedNearLeader(map, target, slopMs)
     }
 
     /** API 29+: учитываем [UsageStats.getLastTimeVisible] — при длительной игре он часто свежее [getLastTimeUsed]. */

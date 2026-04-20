@@ -160,4 +160,19 @@ class GameForegroundGateTest {
             ),
         )
     }
+
+    @Test
+    fun totalTimeForegroundIncreased_whenGrowing() {
+        assertTrue(GameForegroundGate.totalTimeForegroundIncreased(100L, 200L))
+    }
+
+    @Test
+    fun totalTimeForegroundIncreased_falseOnFirstSample() {
+        assertFalse(GameForegroundGate.totalTimeForegroundIncreased(null, 200L))
+    }
+
+    @Test
+    fun totalTimeForegroundIncreased_falseWhenFlat() {
+        assertFalse(GameForegroundGate.totalTimeForegroundIncreased(200L, 200L))
+    }
 }
