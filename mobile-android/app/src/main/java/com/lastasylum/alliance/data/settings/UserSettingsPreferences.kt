@@ -47,9 +47,25 @@ class UserSettingsPreferences(context: Context) {
     }
 
     /** applicationId игры (например com.lastasylum.plague). Несколько — через запятую. */
-    fun getOverlayTargetGamePackage(): String =
-        prefs.getString(KEY_OVERLAY_TARGET_PACKAGE, DEFAULT_TARGET_GAME_PACKAGE)
-            ?: DEFAULT_TARGET_GAME_PACKAGE
+    fun getOverlayTargetGamePackage(): String {
+        var raw = prefs.getString(KEY_OVERLAY_TARGET_PACKAGE, DEFAULT_TARGET_GAME_PACKAGES_CSV)
+            ?.trim()
+            .orEmpty()
+        if (raw.isEmpty()) raw = DEFAULT_TARGET_GAME_PACKAGES_CSV
+        if (!prefs.getBoolean(KEY_OVERLAY_TARGET_LEGACY_MIGRATED, false)) {
+            when {
+                raw == LEGACY_SINGLE_TARGET_PACKAGE -> {
+                    raw = DEFAULT_TARGET_GAME_PACKAGES_CSV
+                    prefs.edit()
+                        .putString(KEY_OVERLAY_TARGET_PACKAGE, raw)
+                        .putBoolean(KEY_OVERLAY_TARGET_LEGACY_MIGRATED, true)
+                        .apply()
+                }
+                else -> prefs.edit().putBoolean(KEY_OVERLAY_TARGET_LEGACY_MIGRATED, true).apply()
+            }
+        }
+        return raw
+    }
 
     /** Пакеты игры для гейта оверлея: один или несколько через запятую (release / debug и т.д.). */
     fun getOverlayTargetGamePackages(): List<String> =
@@ -75,8 +91,12 @@ class UserSettingsPreferences(context: Context) {
         private const val KEY_OVERLAY_LAYOUT_PRESET = "overlay_layout_preset"
         private const val KEY_OVERLAY_GAME_GATE = "overlay_game_gate"
         private const val KEY_OVERLAY_TARGET_PACKAGE = "overlay_target_game_package"
+        private const val KEY_OVERLAY_TARGET_LEGACY_MIGRATED = "overlay_target_legacy_migrated_v1"
 
-        /** Должен совпадать с [com.lastasylum.alliance.overlay.GameForegroundGate.DEFAULT_TARGET_GAME_PACKAGE]. */
-        private const val DEFAULT_TARGET_GAME_PACKAGE = "com.lastasylum.plague"
+        /** По умолчанию release и debug Plague — иначе гейт «только в игре» не совпадает с debug-сборкой игры. */
+        private const val DEFAULT_TARGET_GAME_PACKAGES_CSV =
+            "com.lastasylum.plague,com.lastasylum.plague.debug"
+
+        private const val LEGACY_SINGLE_TARGET_PACKAGE = "com.lastasylum.plague"
     }
 }
