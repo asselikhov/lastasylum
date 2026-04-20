@@ -64,6 +64,18 @@ class UserSettingsPreferences(context: Context) {
                 else -> prefs.edit().putBoolean(KEY_OVERLAY_TARGET_LEGACY_MIGRATED, true).apply()
             }
         }
+        if (!prefs.getBoolean(KEY_OVERLAY_TARGET_PLAY_MIGRATED, false)) {
+            when {
+                raw == LEGACY_PRESETS_WITHOUT_PHS || raw == LEGACY_SINGLE_TARGET_PACKAGE -> {
+                    raw = DEFAULT_TARGET_GAME_PACKAGES_CSV
+                    prefs.edit()
+                        .putString(KEY_OVERLAY_TARGET_PACKAGE, raw)
+                        .putBoolean(KEY_OVERLAY_TARGET_PLAY_MIGRATED, true)
+                        .apply()
+                }
+                else -> prefs.edit().putBoolean(KEY_OVERLAY_TARGET_PLAY_MIGRATED, true).apply()
+            }
+        }
         return raw
     }
 
@@ -92,11 +104,18 @@ class UserSettingsPreferences(context: Context) {
         private const val KEY_OVERLAY_GAME_GATE = "overlay_game_gate"
         private const val KEY_OVERLAY_TARGET_PACKAGE = "overlay_target_game_package"
         private const val KEY_OVERLAY_TARGET_LEGACY_MIGRATED = "overlay_target_legacy_migrated_v1"
+        private const val KEY_OVERLAY_TARGET_PLAY_MIGRATED = "overlay_target_play_migrated_v2"
 
-        /** По умолчанию release и debug Plague — иначе гейт «только в игре» не совпадает с debug-сборкой игры. */
+        /**
+         * Google Play (RU): `com.phs.global` — см. сведения об игре; также варианты com.lastasylum.plague*.
+         */
         private const val DEFAULT_TARGET_GAME_PACKAGES_CSV =
-            "com.lastasylum.plague,com.lastasylum.plague.debug"
+            "com.phs.global,com.lastasylum.plague,com.lastasylum.plague.debug"
 
         private const val LEGACY_SINGLE_TARGET_PACKAGE = "com.lastasylum.plague"
+
+        /** Старый дефолт без Google Play-пакета — дополняем до [DEFAULT_TARGET_GAME_PACKAGES_CSV]. */
+        private const val LEGACY_PRESETS_WITHOUT_PHS =
+            "com.lastasylum.plague,com.lastasylum.plague.debug"
     }
 }

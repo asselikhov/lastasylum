@@ -13,8 +13,9 @@ import android.os.Process
  * Requires the user to grant **Settings → Special app access → Usage access** for SquadRelay.
  */
 object GameForegroundGate {
-    /** Default CSV for «Last Asylum: Plague» (release + debug); override in settings. */
-    const val DEFAULT_TARGET_GAME_PACKAGES_CSV = "com.lastasylum.plague,com.lastasylum.plague.debug"
+    /** Default CSV: Google Play RU (`com.phs.global`) + com.lastasylum.plague*; override in settings. */
+    const val DEFAULT_TARGET_GAME_PACKAGES_CSV =
+        "com.phs.global,com.lastasylum.plague,com.lastasylum.plague.debug"
     @Volatile
     private var cachedForeground: CachedForeground? = null
 

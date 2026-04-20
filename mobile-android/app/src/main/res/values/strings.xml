@@ -106,7 +106,7 @@
     <string name="overlay_title">Оверлей</string>
     <string name="overlay_switch_panel">Показывать панель</string>
     <string name="overlay_switch_game_only">Только когда открыта игра</string>
-    <string name="overlay_package_field_label">Пакеты игры</string>
+    <string name="overlay_package_field_label">Пакеты игры (из «Сведения о приложении»)</string>
     <string name="overlay_mic_required_for_fgs">Нужен доступ к микрофону для записи голоса в боевом режиме.</string>
     <string name="overlay_ptt_start">Начать запись (PTT)</string>
     <string name="overlay_ptt_stop">Остановить запись (PTT)</string>
