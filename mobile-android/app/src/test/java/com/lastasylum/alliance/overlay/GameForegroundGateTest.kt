@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.overlay
 
+import android.app.usage.UsageEvents
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -174,5 +175,38 @@ class GameForegroundGateTest {
     @Test
     fun totalTimeForegroundIncreased_falseWhenFlat() {
         assertFalse(GameForegroundGate.totalTimeForegroundIncreased(200L, 200L))
+    }
+
+    @Test
+    fun packageEventSequence_trueWhenLastIsResume() {
+        assertTrue(
+            GameForegroundGate.foregroundStateAfterPackageEventTypes(
+                listOf(UsageEvents.Event.ACTIVITY_RESUMED),
+            ),
+        )
+    }
+
+    @Test
+    fun packageEventSequence_falseWhenPausedLast() {
+        assertFalse(
+            GameForegroundGate.foregroundStateAfterPackageEventTypes(
+                listOf(
+                    UsageEvents.Event.ACTIVITY_RESUMED,
+                    UsageEvents.Event.ACTIVITY_PAUSED,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun packageEventSequence_trueWhenResumedAfterPause() {
+        assertTrue(
+            GameForegroundGate.foregroundStateAfterPackageEventTypes(
+                listOf(
+                    UsageEvents.Event.ACTIVITY_PAUSED,
+                    UsageEvents.Event.ACTIVITY_RESUMED,
+                ),
+            ),
+        )
     }
 }

@@ -41,8 +41,7 @@
             android:name=".overlay.CombatOverlayService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="dataSync"
-            android:stopWithTask="true" />
+            android:foregroundServiceType="dataSync" />
 
         <service
             android:name=".push.SquadRelayFirebaseMessagingService"

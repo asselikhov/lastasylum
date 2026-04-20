@@ -226,16 +226,25 @@ class CombatOverlayService : Service() {
                 val shouldShow = hasUsageAccess &&
                     GameForegroundGate.shouldShowOverlay(this@CombatOverlayService, targets)
                 mainHandler.post {
-                    if (BuildConfig.DEBUG && hasUsageAccess && !shouldShow) {
+                    if (BuildConfig.DEBUG) {
                         val nowMs = System.currentTimeMillis()
                         if (nowMs - lastGateDiagLogMs >= 20_000L) {
-                            lastGateDiagLogMs = nowMs
-                            val hinted = GameForegroundGate.lastResumedPackage(this@CombatOverlayService)
-                            Log.d(
-                                TAG,
-                                "Game gate hide: targets=${targets.joinToString()} hinted=$hinted " +
-                                    "(filter logcat tag $TAG; MIUI needs Usage access for SquadRelay)",
-                            )
+                            if (!hasUsageAccess) {
+                                lastGateDiagLogMs = nowMs
+                                Log.d(
+                                    TAG,
+                                    "Game gate: usage stats access denied (AppOps). " +
+                                        "Settings → Special app access → Usage access → enable for this app.",
+                                )
+                            } else if (!shouldShow) {
+                                lastGateDiagLogMs = nowMs
+                                val hinted = GameForegroundGate.lastResumedPackage(this@CombatOverlayService)
+                                Log.d(
+                                    TAG,
+                                    "Game gate hide: targets=${targets.joinToString()} hinted=$hinted " +
+                                        "(tag $TAG; HyperOS: battery unrestricted + autostart for SquadRelay)",
+                                )
+                            }
                         }
                     }
                     applyGameGateState(

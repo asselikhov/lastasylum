@@ -36,23 +36,43 @@ object GameForegroundGate {
     fun hasUsageStatsAccess(context: Context): Boolean {
         return try {
             val appOps = context.getSystemService(AppOpsManager::class.java) ?: return false
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val uid = Process.myUid()
+            val pkg = context.packageName
+            val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 appOps.unsafeCheckOpNoThrow(
                     AppOpsManager.OPSTR_GET_USAGE_STATS,
-                    Process.myUid(),
-                    context.packageName,
-                ) == AppOpsManager.MODE_ALLOWED
+                    uid,
+                    pkg,
+                )
             } else {
                 @Suppress("DEPRECATION")
                 appOps.checkOpNoThrow(
                     AppOpsManager.OPSTR_GET_USAGE_STATS,
-                    Process.myUid(),
-                    context.packageName,
-                ) == AppOpsManager.MODE_ALLOWED
+                    uid,
+                    pkg,
+                )
+            }
+            when (mode) {
+                AppOpsManager.MODE_ALLOWED -> true
+                // HyperOS/MIUI: при включённом доступе иногда MODE_DEFAULT, хотя query* уже отдаёт данные.
+                AppOpsManager.MODE_DEFAULT -> usageStatsProbeReturnsData(context)
+                else -> false
             }
         } catch (_: Throwable) {
             false
         }
+    }
+
+    /** Реально ли отвечает UsageStatsManager (важно для MODE_DEFAULT на части прошивок). */
+    private fun usageStatsProbeReturnsData(context: Context): Boolean {
+        return runCatching {
+            val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
+                ?: return@runCatching false
+            val end = System.currentTimeMillis()
+            val begin = end - 86_400_000L
+            val list = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, begin, end)
+            !list.isNullOrEmpty()
+        }.getOrDefault(false)
     }
 
     /**
@@ -147,7 +167,9 @@ object GameForegroundGate {
         if (!best.isNullOrEmpty()) return best
         val daily = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, begin, endMs).orEmpty()
         if (daily.isNotEmpty()) return daily
-        return usm.queryUsageStats(UsageStatsManager.INTERVAL_WEEKLY, begin, endMs).orEmpty()
+        val weekly = usm.queryUsageStats(UsageStatsManager.INTERVAL_WEEKLY, begin, endMs).orEmpty()
+        if (weekly.isNotEmpty()) return weekly
+        return usm.queryUsageStats(UsageStatsManager.INTERVAL_MONTHLY, begin, endMs).orEmpty()
     }
 
     /**
@@ -170,6 +192,12 @@ object GameForegroundGate {
         if (hinted != null && targetSet.contains(hinted)) return true
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return false
         val end = System.currentTimeMillis()
+        // API 28+: события только по пакету игры — на MIUI глобальный queryEvents часто пуст/обрезан.
+        for (t in targets) {
+            if (runCatching { targetForegroundFromPackageOnlyEvents(usm, t, end) }.getOrDefault(false)) {
+                return true
+            }
+        }
         // На части прошивок «последний» RESUME — не игра, а лаунчер/сервис; lastTimeUsed при долгой сессии
         // в Unity не обновляется. Сравниваем макс. время RESUME цели с прочими (кроме декора и SquadRelay).
         if (runCatching {
@@ -349,4 +377,77 @@ object GameForegroundGate {
      * Должно перекрывать типичную сессию без смены активности.
      */
     private const val RESUME_VS_RESUME_WINDOW_MS = 10 * 60 * 1000L
+
+    /** Окно [UsageStatsManager.queryEventsForPackage] — только события выбранного пакета. */
+    private const val PACKAGE_ONLY_EVENTS_WINDOW_MS = 30 * 60 * 1000L
+
+    /**
+     * Состояние «на экране» по хронологии событий одного пакета ([UsageStatsManager.queryEventsForPackage]).
+     */
+    internal fun foregroundStateAfterPackageEventTypes(chronologicalTypes: List<Int>): Boolean {
+        var seen = false
+        var inFg = false
+        for (type in chronologicalTypes) {
+            seen = true
+            when {
+                isForegroundEnterEvent(type) -> inFg = true
+                isForegroundLeaveEvent(type) -> inFg = false
+            }
+        }
+        return seen && inFg
+    }
+
+    private fun isForegroundEnterEvent(type: Int): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            return type == UsageEvents.Event.ACTIVITY_RESUMED ||
+                type == UsageEvents.Event.MOVE_TO_FOREGROUND
+        }
+        @Suppress("DEPRECATION")
+        return type == UsageEvents.Event.MOVE_TO_FOREGROUND
+    }
+
+    private fun isForegroundLeaveEvent(type: Int): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            return type == UsageEvents.Event.ACTIVITY_PAUSED ||
+                type == UsageEvents.Event.MOVE_TO_BACKGROUND
+        }
+        @Suppress("DEPRECATION")
+        return type == UsageEvents.Event.MOVE_TO_BACKGROUND
+    }
+
+    /**
+     * [UsageStatsManager.queryEventsForPackage] (API 28+) — вызов через reflection из‑за несовпадения stubs в toolchain.
+     */
+    private fun queryEventsForPackageCompat(
+        usm: UsageStatsManager,
+        beginMs: Long,
+        endMs: Long,
+        packageName: String,
+    ): UsageEvents? {
+        return runCatching {
+            val m = UsageStatsManager::class.java.getMethod(
+                "queryEventsForPackage",
+                java.lang.Long.TYPE,
+                java.lang.Long.TYPE,
+                String::class.java,
+            )
+            m.invoke(usm, beginMs, endMs, packageName) as UsageEvents
+        }.getOrNull()
+    }
+
+    private fun targetForegroundFromPackageOnlyEvents(
+        usm: UsageStatsManager,
+        target: String,
+        endMs: Long,
+    ): Boolean {
+        val begin = endMs - PACKAGE_ONLY_EVENTS_WINDOW_MS
+        val events = queryEventsForPackageCompat(usm, begin, endMs, target) ?: return false
+        val ev = UsageEvents.Event()
+        val types = ArrayList<Int>(32)
+        while (events.hasNextEvent()) {
+            events.getNextEvent(ev)
+            types.add(ev.eventType)
+        }
+        return foregroundStateAfterPackageEventTypes(types)
+    }
 }
