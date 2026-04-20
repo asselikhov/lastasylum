@@ -1,7 +1,24 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
+import { PlayerTeamMemberRole } from '../../common/enums/player-team-member-role.enum';
 
 export type PlayerTeamDocument = HydratedDocument<PlayerTeam>;
+
+const SquadMemberSchema = new MongooseSchema(
+  {
+    userId: {
+      type: MongooseSchema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    role: {
+      type: String,
+      enum: Object.values(PlayerTeamMemberRole),
+      required: true,
+    },
+  },
+  { _id: false },
+);
 
 @Schema({ timestamps: true, collection: 'playerteams' })
 export class PlayerTeam {
@@ -15,10 +32,19 @@ export class PlayerTeam {
   displayName: string;
 
   @Prop({
-    type: [{ type: MongooseSchema.Types.ObjectId, ref: 'User' }],
+    type: [SquadMemberSchema],
     default: [],
   })
-  memberUserIds: Types.ObjectId[];
+  squadMembers: { userId: Types.ObjectId; role: PlayerTeamMemberRole }[];
+
+  /**
+   * @deprecated Legacy membership list; migrated to `squadMembers` on read.
+   */
+  @Prop({
+    type: [{ type: MongooseSchema.Types.ObjectId, ref: 'User' }],
+    required: false,
+  })
+  memberUserIds?: Types.ObjectId[];
 }
 
 export const PlayerTeamSchema = SchemaFactory.createForClass(PlayerTeam);

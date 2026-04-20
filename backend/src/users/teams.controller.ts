@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -15,6 +16,8 @@ import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { AddTeamMemberDto } from './dto/add-team-member.dto';
 import { CreatePlayerTeamDto } from './dto/create-player-team.dto';
+import { UpdatePlayerTeamDisplayNameDto } from './dto/update-player-team-display.dto';
+import { UpdateSquadMemberRoleDto } from './dto/update-squad-member-role.dto';
 import { TeamsService } from './teams.service';
 
 type RequestUser = {
@@ -68,11 +71,38 @@ export class TeamsController {
 
   @Get(':teamId')
   @Roles(AllianceRole.R2)
-  getTeam(
+  getTeam(@Req() req: { user: RequestUser }, @Param('teamId') teamId: string) {
+    return this.teams.getTeamDetailForUser(teamId, req.user.userId);
+  }
+
+  @Patch(':teamId/display')
+  @Roles(AllianceRole.R2)
+  updateTeamDisplayName(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
+    @Body() dto: UpdatePlayerTeamDisplayNameDto,
   ) {
-    return this.teams.getTeamDetailForUser(teamId, req.user.userId);
+    return this.teams.updateTeamDisplayName(
+      teamId,
+      req.user.userId,
+      dto.displayName,
+    );
+  }
+
+  @Patch(':teamId/members/:memberUserId/role')
+  @Roles(AllianceRole.R2)
+  updateMemberSquadRole(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Param('memberUserId') memberUserId: string,
+    @Body() dto: UpdateSquadMemberRoleDto,
+  ) {
+    return this.teams.updateMemberSquadRole(
+      teamId,
+      req.user.userId,
+      memberUserId,
+      dto.role,
+    );
   }
 
   @Post(':teamId/join-requests')

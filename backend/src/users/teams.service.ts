@@ -7,6 +7,10 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import {
+  PlayerTeamMemberRole,
+  SQUAD_ROLES_ASSIGNABLE_BY_LEADER,
+} from '../common/enums/player-team-member-role.enum';
 import { User, UserDocument } from './schemas/user.schema';
 import { PlayerTeam, PlayerTeamDocument } from './schemas/player-team.schema';
 import {
@@ -28,7 +32,8 @@ export type TeamMemberRow = {
   userId: string;
   username: string;
   isLeader: boolean;
-  role: string;
+  allianceRole: string;
+  teamRole: string;
   telegramUsername: string | null;
 };
 
@@ -38,6 +43,23 @@ export type TeamJoinRequestRow = {
   requesterUsername: string;
   createdAt: string;
 };
+
+function squadRoleRank(role: string): number {
+  switch (role) {
+    case PlayerTeamMemberRole.R5:
+      return 5;
+    case PlayerTeamMemberRole.R4:
+      return 4;
+    case PlayerTeamMemberRole.R3:
+      return 3;
+    case PlayerTeamMemberRole.R2:
+      return 2;
+    case PlayerTeamMemberRole.R1:
+      return 1;
+    default:
+      return 0;
+  }
+}
 
 @Injectable()
 export class TeamsService {
@@ -62,6 +84,57 @@ export class TeamsService {
     return chars.map((c) => c.toLocaleUpperCase('ru-RU')).join('');
   }
 
+  /**
+   * Ensures `squadMembers` is populated (migrates legacy `memberUserIds` if needed).
+   * Mutates the passed `team` document in memory when migration runs.
+   */
+  private async migrateLegacyIfNeeded(team: PlayerTeamDocument): Promise<void> {
+    const hasSquad =
+      Array.isArray(team.squadMembers) && team.squadMembers.length > 0;
+    const legacy =
+      Array.isArray(team.memberUserIds) && team.memberUserIds.length > 0;
+
+    if (hasSquad && legacy) {
+      await this.teamModel
+        .updateOne({ _id: team._id }, { $unset: { memberUserIds: 1 } })
+        .exec();
+      team.memberUserIds = undefined;
+      return;
+    }
+
+    if (hasSquad && !legacy) {
+      return;
+    }
+
+    if (legacy) {
+      const squadMembers = team.memberUserIds!.map((userId) => ({
+        userId,
+        role: userId.equals(team.leaderUserId)
+          ? PlayerTeamMemberRole.R5
+          : PlayerTeamMemberRole.R1,
+      }));
+      await this.teamModel
+        .updateOne(
+          { _id: team._id },
+          { $set: { squadMembers }, $unset: { memberUserIds: 1 } },
+        )
+        .exec();
+      team.squadMembers = squadMembers as PlayerTeamDocument['squadMembers'];
+      team.memberUserIds = undefined;
+      return;
+    }
+
+    // No squad list and no legacy: repair with leader only
+    const leaderOid = team.leaderUserId;
+    const squadMembers = [
+      { userId: leaderOid, role: PlayerTeamMemberRole.R5 },
+    ];
+    await this.teamModel
+      .updateOne({ _id: team._id }, { $set: { squadMembers } })
+      .exec();
+    team.squadMembers = squadMembers as PlayerTeamDocument['squadMembers'];
+  }
+
   async getPlayerTeamProfileFields(
     user: UserDocument,
   ): Promise<PlayerTeamProfileFields> {
@@ -75,7 +148,7 @@ export class TeamsService {
         pendingPlayerTeamJoinRequests: 0,
       };
     }
-    const team = await this.teamModel.findById(user.playerTeamId).lean().exec();
+    const team = await this.teamModel.findById(user.playerTeamId).exec();
     if (!team) {
       return {
         playerTeamId: null,
@@ -86,6 +159,7 @@ export class TeamsService {
         pendingPlayerTeamJoinRequests: 0,
       };
     }
+    await this.migrateLegacyIfNeeded(team);
     const leaderId = team.leaderUserId.toString();
     const uid = user._id.toString();
     const isLeader = leaderId === uid;
@@ -108,7 +182,7 @@ export class TeamsService {
 
   private assertMember(team: PlayerTeamDocument, userId: string): void {
     const uid = new Types.ObjectId(userId);
-    const ok = team.memberUserIds.some((id) => id.equals(uid));
+    const ok = team.squadMembers.some((m) => m.userId.equals(uid));
     if (!ok) {
       throw new ForbiddenException('Not a member of this team');
     }
@@ -138,7 +212,9 @@ export class TeamsService {
         leaderUserId: leaderOid,
         tag,
         displayName: nameTrim.slice(0, 48),
-        memberUserIds: [leaderOid],
+        squadMembers: [
+          { userId: leaderOid, role: PlayerTeamMemberRole.R5 },
+        ],
       });
     } catch (e: unknown) {
       const code = (e as { code?: number })?.code;
@@ -179,10 +255,15 @@ export class TeamsService {
     if (!team) {
       throw new NotFoundException('Team not found');
     }
+    await this.migrateLegacyIfNeeded(team);
     this.assertMember(team, requesterUserId);
-    const ids = team.memberUserIds.map((id) => id.toString());
+
+    const ids = team.squadMembers.map((m) => m.userId.toString());
+    const roleByUserId = new Map(
+      team.squadMembers.map((m) => [m.userId.toString(), m.role]),
+    );
     const users = await this.userModel
-      .find({ _id: { $in: team.memberUserIds } })
+      .find({ _id: { $in: team.squadMembers.map((m) => m.userId) } })
       .select('username role telegramUsername')
       .lean<
         Array<{
@@ -204,13 +285,28 @@ export class TeamsService {
       ]),
     );
     const leaderStr = team.leaderUserId.toString();
-    const members: TeamMemberRow[] = ids.map((id) => ({
-      userId: id,
-      username: byId.get(id)?.username ?? '?',
-      isLeader: id === leaderStr,
-      role: byId.get(id)?.role ?? 'R2',
-      telegramUsername: byId.get(id)?.telegramUsername ?? null,
-    }));
+    const members: TeamMemberRow[] = ids.map((id) => {
+      const teamRole =
+        roleByUserId.get(id) ??
+        (id === leaderStr ? PlayerTeamMemberRole.R5 : PlayerTeamMemberRole.R1);
+      return {
+        userId: id,
+        username: byId.get(id)?.username ?? '?',
+        isLeader: id === leaderStr,
+        allianceRole: byId.get(id)?.role ?? 'R2',
+        teamRole,
+        telegramUsername: byId.get(id)?.telegramUsername ?? null,
+      };
+    });
+    members.sort((a, b) => {
+      const dr = squadRoleRank(b.teamRole) - squadRoleRank(a.teamRole);
+      if (dr !== 0) {
+        return dr;
+      }
+      return a.username.localeCompare(b.username, 'ru', {
+        sensitivity: 'base',
+      });
+    });
     return {
       id: team._id.toString(),
       tag: team.tag,
@@ -250,6 +346,7 @@ export class TeamsService {
     if (!team) {
       throw new NotFoundException('Team not found');
     }
+    await this.migrateLegacyIfNeeded(team);
     const requester = await this.userModel.findById(requesterUserId).exec();
     if (!requester) {
       throw new NotFoundException('User not found');
@@ -258,7 +355,7 @@ export class TeamsService {
       throw new ConflictException('You already belong to a team');
     }
     const rid = new Types.ObjectId(requesterUserId);
-    if (team.memberUserIds.some((id) => id.equals(rid))) {
+    if (team.squadMembers.some((m) => m.userId.equals(rid))) {
       throw new ConflictException('Already a member');
     }
     const dup = await this.joinRequestModel.findOne({
@@ -330,6 +427,7 @@ export class TeamsService {
     if (!team.leaderUserId.equals(new Types.ObjectId(leaderUserId))) {
       throw new ForbiddenException('Only the team leader can do this');
     }
+    await this.migrateLegacyIfNeeded(team);
     return team;
   }
 
@@ -354,13 +452,23 @@ export class TeamsService {
       throw new ConflictException('User already joined another team');
     }
     const rid = new Types.ObjectId(requesterId);
-    if (team.memberUserIds.some((id) => id.equals(rid))) {
+    if (team.squadMembers.some((m) => m.userId.equals(rid))) {
       reqDoc.status = TeamJoinRequestStatus.ACCEPTED;
       await reqDoc.save();
       return { ok: true };
     }
     await this.teamModel
-      .updateOne({ _id: team._id }, { $addToSet: { memberUserIds: rid } })
+      .updateOne(
+        { _id: team._id },
+        {
+          $push: {
+            squadMembers: {
+              userId: rid,
+              role: PlayerTeamMemberRole.R1,
+            },
+          },
+        },
+      )
       .exec();
     await this.userModel
       .updateOne(
@@ -412,11 +520,21 @@ export class TeamsService {
       throw new ConflictException('User already belongs to a team');
     }
     const tid = new Types.ObjectId(target._id.toString());
-    if (team.memberUserIds.some((id) => id.equals(tid))) {
+    if (team.squadMembers.some((m) => m.userId.equals(tid))) {
       throw new ConflictException('Already a member');
     }
     await this.teamModel
-      .updateOne({ _id: team._id }, { $addToSet: { memberUserIds: tid } })
+      .updateOne(
+        { _id: team._id },
+        {
+          $push: {
+            squadMembers: {
+              userId: tid,
+              role: PlayerTeamMemberRole.R1,
+            },
+          },
+        },
+      )
       .exec();
     await this.userModel
       .updateOne(
@@ -443,11 +561,11 @@ export class TeamsService {
       throw new BadRequestException('Cannot remove the team leader');
     }
     const mid = new Types.ObjectId(memberUserId);
-    if (!team.memberUserIds.some((id) => id.equals(mid))) {
+    if (!team.squadMembers.some((m) => m.userId.equals(mid))) {
       throw new NotFoundException('Member not on this team');
     }
     await this.teamModel
-      .updateOne({ _id: team._id }, { $pull: { memberUserIds: mid } })
+      .updateOne({ _id: team._id }, { $pull: { squadMembers: { userId: mid } } })
       .exec();
     await this.userModel
       .updateOne(
@@ -461,6 +579,66 @@ export class TeamsService {
         },
       )
       .exec();
+    return { ok: true };
+  }
+
+  async updateTeamDisplayName(
+    teamId: string,
+    leaderUserId: string,
+    rawName: string,
+  ): Promise<{ ok: true }> {
+    const team = await this.assertTeamLeader(teamId, leaderUserId);
+    const nameTrim = rawName.trim();
+    if (nameTrim.length < 2) {
+      throw new BadRequestException('Team name is too short');
+    }
+    const nameVal = nameTrim.slice(0, 48);
+    await this.teamModel
+      .updateOne({ _id: team._id }, { $set: { displayName: nameVal } })
+      .exec();
+    await this.userModel
+      .updateMany(
+        { playerTeamId: team._id },
+        { $set: { teamDisplayName: nameVal } },
+      )
+      .exec();
+    return { ok: true };
+  }
+
+  async updateMemberSquadRole(
+    teamId: string,
+    leaderUserId: string,
+    targetUserId: string,
+    rawRole: string,
+  ): Promise<{ ok: true }> {
+    const team = await this.assertTeamLeader(teamId, leaderUserId);
+    if (team.leaderUserId.toString() === targetUserId) {
+      throw new BadRequestException('Cannot change the leader squad role');
+    }
+    const roleNorm = rawRole.trim().toUpperCase();
+    if (
+      !SQUAD_ROLES_ASSIGNABLE_BY_LEADER.includes(
+        roleNorm as PlayerTeamMemberRole,
+      )
+    ) {
+      throw new BadRequestException('Invalid squad role');
+    }
+    const tid = new Types.ObjectId(targetUserId);
+    if (!team.squadMembers.some((m) => m.userId.equals(tid))) {
+      throw new NotFoundException('Member not on this team');
+    }
+    const res = await this.teamModel
+      .updateOne(
+        { _id: team._id },
+        { $set: { 'squadMembers.$[m].role': roleNorm } },
+        {
+          arrayFilters: [{ 'm.userId': tid }],
+        },
+      )
+      .exec();
+    if (res.matchedCount !== 1) {
+      throw new NotFoundException('Member not on this team');
+    }
     return { ok: true };
   }
 }

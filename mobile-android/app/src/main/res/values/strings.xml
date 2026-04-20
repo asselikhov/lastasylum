@@ -243,6 +243,22 @@
     <string name="team_no_team_title">Вы еще не состоите в команде</string>
     <string name="team_no_team_body">Создайте свою команду или отправьте заявку на вступление в существующую.</string>
     <string name="team_col_telegram">Telegram</string>
+    <string name="team_col_squad_role">Роль в команде</string>
+    <string name="team_squad_r5_label">R5 · Лидер</string>
+    <string name="team_squad_r4_label">R4 · Старейшина</string>
+    <string name="team_squad_r3_label">R3 · Костяк</string>
+    <string name="team_squad_r2_label">R2 · Актив</string>
+    <string name="team_squad_r1_label">R1 · Новичок</string>
+    <string name="team_squad_pick_r4">R4 — старейшины команды</string>
+    <string name="team_squad_pick_r3">R3 — основные участники / ветераны</string>
+    <string name="team_squad_pick_r2">R2 — активные участники</string>
+    <string name="team_squad_pick_r1">R1 — новички (адаптация)</string>
+    <string name="team_edit_member_role_cd">Изменить роль в команде</string>
+    <string name="team_cd_add_member">Добавить участника по нику</string>
+    <string name="team_cd_edit_team_name">Изменить название команды</string>
+    <string name="team_add_member_dialog_title">Добавить участника</string>
+    <string name="team_edit_team_name_title">Название команды</string>
+    <string name="team_edit_role_title">Роль участника %1$s</string>
 
     <!-- Combat overlay service -->
     <string name="overlay_notif_combat_active">Боевой режим активен</string>

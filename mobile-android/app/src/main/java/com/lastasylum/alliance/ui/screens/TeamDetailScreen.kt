@@ -5,15 +5,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -61,6 +62,11 @@ fun TeamDetailScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var addNameDraft by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    var showAddMemberDialog by remember { mutableStateOf(false) }
+    var showEditTeamNameDialog by remember { mutableStateOf(false) }
+    var editTeamNameDraft by remember { mutableStateOf("") }
+    var editNameBusy by remember { mutableStateOf(false) }
+    var roleEditMember by remember { mutableStateOf<PlayerTeamMemberDto?>(null) }
 
     fun reload() {
         scope.launch {
@@ -121,6 +127,32 @@ fun TeamDetailScreen(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                if (isLeader && detail != null) {
+                    IconButton(
+                        onClick = {
+                            addNameDraft = ""
+                            showAddMemberDialog = true
+                        },
+                        enabled = !busy,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.PersonAdd,
+                            contentDescription = stringResource(R.string.team_cd_add_member),
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            editTeamNameDraft = detail!!.displayName.trim()
+                            showEditTeamNameDialog = true
+                        },
+                        enabled = !busy && !editNameBusy,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Edit,
+                            contentDescription = stringResource(R.string.team_cd_edit_team_name),
+                        )
+                    }
+                }
             }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -160,98 +192,24 @@ fun TeamDetailScreen(
                             verticalArrangement = Arrangement.spacedBy(0.dp),
                         ) {
                             item {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                ) {
-                                    Text(
-                                        stringResource(R.string.team_col_player),
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.weight(1.2f),
-                                    )
-                                    Text(
-                                        stringResource(R.string.team_col_role),
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.weight(0.7f),
-                                    )
-                                    if (isLeader) {
-                                        Text(
-                                            stringResource(R.string.team_col_actions),
-                                            style = MaterialTheme.typography.labelLarge,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.weight(0.9f),
-                                        )
-                                    }
-                                }
-                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                TeamTableHeader(showRoleEditColumn = isLeader)
                             }
                             items(d.members, key = { it.userId }) { m ->
                                 TeamMemberTableRow(
                                     member = m,
-                                    isLeader = isLeader,
+                                    isSquadLeader = isLeader,
                                     currentUserId = currentUserId,
                                     teamId = teamId,
                                     busy = busy,
                                     onBusyChange = { busy = it },
                                     onReload = { reload() },
+                                    onError = { msg -> error = msg },
                                     teamsRepository = teamsRepository,
+                                    onRequestEditMemberRole = { x -> roleEditMember = x },
                                 )
                                 HorizontalDivider(
                                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                                 )
-                            }
-                            if (isLeader) {
-                                item {
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(top = 16.dp),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                                    ) {
-                                        Text(
-                                            text = stringResource(R.string.team_add_member_title),
-                                            style = MaterialTheme.typography.titleSmall,
-                                        )
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
-                                            OutlinedTextField(
-                                                value = addNameDraft,
-                                                onValueChange = { addNameDraft = it },
-                                                modifier = Modifier.weight(1f),
-                                                singleLine = true,
-                                                enabled = !busy,
-                                                label = { Text(stringResource(R.string.team_add_member_hint)) },
-                                            )
-                                            Button(
-                                                onClick = {
-                                                    val u = addNameDraft.trim()
-                                                    if (u.length < 3) return@Button
-                                                    scope.launch {
-                                                        busy = true
-                                                        teamsRepository.addMember(teamId, u)
-                                                            .onSuccess {
-                                                                addNameDraft = ""
-                                                                reload()
-                                                            }
-                                                            .onFailure { e ->
-                                                                error = e.toUserMessageRu(res)
-                                                            }
-                                                        busy = false
-                                                    }
-                                                },
-                                                enabled = !busy && addNameDraft.trim().length >= 3,
-                                            ) {
-                                                Text(stringResource(R.string.team_add_member_btn))
-                                            }
-                                        }
-                                    }
-                                }
                             }
                         }
                     }
@@ -259,73 +217,102 @@ fun TeamDetailScreen(
             }
         }
     }
-}
 
-@Composable
-private fun TeamMemberTableRow(
-    member: PlayerTeamMemberDto,
-    isLeader: Boolean,
-    currentUserId: String,
-    teamId: String,
-    busy: Boolean,
-    onBusyChange: (Boolean) -> Unit,
-    onReload: () -> Unit,
-    teamsRepository: TeamsRepository,
-) {
-    val scope = rememberCoroutineScope()
-    val roleLabel = if (member.isLeader) {
-        stringResource(R.string.team_role_leader)
-    } else {
-        stringResource(R.string.team_role_member)
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = member.username,
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.weight(1.2f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = roleLabel,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(0.7f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        if (isLeader) {
-            Row(
-                modifier = Modifier.weight(0.9f),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                if (!member.isLeader && member.userId != currentUserId) {
-                    TextButton(
-                        onClick = {
-                            scope.launch {
-                                onBusyChange(true)
-                                teamsRepository.removeMember(teamId, member.userId)
-                                    .onSuccess { onReload() }
-                                    .onFailure { /* silent; row refresh on success */ }
-                                onBusyChange(false)
-                            }
-                        },
-                        enabled = !busy,
-                    ) {
-                        Text(
-                            stringResource(R.string.team_remove_member),
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                } else {
-                    Spacer(Modifier.width(1.dp))
+    if (showAddMemberDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!busy) showAddMemberDialog = false },
+            title = { Text(stringResource(R.string.team_add_member_dialog_title)) },
+            text = {
+                OutlinedTextField(
+                    value = addNameDraft,
+                    onValueChange = { addNameDraft = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    enabled = !busy,
+                    label = { Text(stringResource(R.string.team_add_member_hint)) },
+                )
+            },
+            confirmButton = {
+                Button(
+                    enabled = !busy && addNameDraft.trim().length >= 3,
+                    onClick = {
+                        val u = addNameDraft.trim()
+                        if (u.length < 3) return@Button
+                        scope.launch {
+                            busy = true
+                            teamsRepository.addMember(teamId, u)
+                                .onSuccess {
+                                    addNameDraft = ""
+                                    showAddMemberDialog = false
+                                    reload()
+                                }
+                                .onFailure { e -> error = e.toUserMessageRu(res) }
+                            busy = false
+                        }
+                    },
+                ) {
+                    Text(stringResource(R.string.team_add_member_btn))
                 }
-            }
-        }
+            },
+            dismissButton = {
+                TextButton(onClick = { if (!busy) showAddMemberDialog = false }) {
+                    Text(stringResource(R.string.profile_action_cancel))
+                }
+            },
+        )
+    }
+
+    if (showEditTeamNameDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!editNameBusy) showEditTeamNameDialog = false },
+            title = { Text(stringResource(R.string.team_edit_team_name_title)) },
+            text = {
+                OutlinedTextField(
+                    value = editTeamNameDraft,
+                    onValueChange = { editTeamNameDraft = it.take(48) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    enabled = !editNameBusy,
+                    label = { Text(stringResource(R.string.profile_field_team_full_name)) },
+                )
+            },
+            confirmButton = {
+                Button(
+                    enabled = !editNameBusy && editTeamNameDraft.trim().length >= 2,
+                    onClick = {
+                        val n = editTeamNameDraft.trim()
+                        if (n.length < 2) return@Button
+                        scope.launch {
+                            editNameBusy = true
+                            teamsRepository.updateTeamDisplayName(teamId, n)
+                                .onSuccess {
+                                    showEditTeamNameDialog = false
+                                    reload()
+                                }
+                                .onFailure { e -> error = e.toUserMessageRu(res) }
+                            editNameBusy = false
+                        }
+                    },
+                ) {
+                    Text(stringResource(R.string.profile_action_save))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { if (!editNameBusy) showEditTeamNameDialog = false }) {
+                    Text(stringResource(R.string.profile_action_cancel))
+                }
+            },
+        )
+    }
+
+    roleEditMember?.let { member ->
+        SquadMemberRoleEditDialog(
+            member = member,
+            onDismiss = { roleEditMember = null },
+            onSaved = { reload() },
+            teamId = teamId,
+            teamsRepository = teamsRepository,
+            onError = { msg -> error = msg },
+        )
     }
 }

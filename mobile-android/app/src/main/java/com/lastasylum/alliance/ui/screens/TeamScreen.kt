@@ -1,29 +1,26 @@
 package com.lastasylum.alliance.ui.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Inbox
+import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -41,13 +38,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
 import com.lastasylum.alliance.data.teams.TeamDetailDto
@@ -57,8 +51,6 @@ import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.users.MyProfileDto
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
-import com.lastasylum.alliance.ui.util.telegramAvatarUrl
-import com.lastasylum.alliance.ui.util.telegramDisplayHandle
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -111,6 +103,11 @@ fun TeamScreen(
     var inboxBusy by remember { mutableStateOf(false) }
     var membersBusy by remember { mutableStateOf(false) }
     var addNameDraft by remember { mutableStateOf("") }
+    var showAddMemberDialog by remember { mutableStateOf(false) }
+    var showEditTeamNameDialog by remember { mutableStateOf(false) }
+    var editTeamNameDraft by remember { mutableStateOf("") }
+    var editNameBusy by remember { mutableStateOf(false) }
+    var roleEditMember by remember { mutableStateOf<PlayerTeamMemberDto?>(null) }
 
     fun reloadProfileAndTeam() {
         scope.launch {
@@ -177,41 +174,12 @@ fun TeamScreen(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
                     text = stringResource(R.string.team_screen_title),
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.onBackground,
                 )
-                if (isLeader && pending > 0) {
-                    BadgedBox(
-                        badge = {
-                            Badge {
-                                Text(if (pending > 9) "9+" else "$pending")
-                            }
-                        },
-                    ) {
-                        IconButton(
-                            onClick = {
-                                showJoinInbox = true
-                                scope.launch {
-                                    inboxBusy = true
-                                    teamsRepository.listPendingJoinRequests()
-                                        .onSuccess { inboxRequests = it }
-                                        .onFailure { inboxRequests = emptyList() }
-                                    inboxBusy = false
-                                }
-                            },
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Inbox,
-                                contentDescription = stringResource(R.string.profile_join_inbox_cd),
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
-                }
             }
 
             if (loading && profile == null) {
@@ -282,11 +250,76 @@ fun TeamScreen(
                         color = MaterialTheme.colorScheme.surfaceContainerLow,
                     ) {
                         Column(modifier = Modifier.fillMaxWidth()) {
-                            Text(
-                                text = "${team.displayName} [${team.tag}]",
-                                style = MaterialTheme.typography.titleMedium,
-                                modifier = Modifier.padding(start = 16.dp, top = 14.dp, end = 16.dp, bottom = 4.dp),
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 12.dp, top = 10.dp, end = 4.dp, bottom = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = "${team.displayName} [${team.tag}]",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                if (isLeader) {
+                                    IconButton(
+                                        onClick = {
+                                            addNameDraft = ""
+                                            showAddMemberDialog = true
+                                        },
+                                        enabled = !membersBusy,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.PersonAdd,
+                                            contentDescription = stringResource(R.string.team_cd_add_member),
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            editTeamNameDraft = team.displayName.trim()
+                                            showEditTeamNameDialog = true
+                                        },
+                                        enabled = !membersBusy && !editNameBusy,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Edit,
+                                            contentDescription = stringResource(R.string.team_cd_edit_team_name),
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                }
+                                if (isLeader && pending > 0) {
+                                    BadgedBox(
+                                        badge = {
+                                            Badge {
+                                                Text(if (pending > 9) "9+" else "$pending")
+                                            }
+                                        },
+                                    ) {
+                                        IconButton(
+                                            onClick = {
+                                                showJoinInbox = true
+                                                scope.launch {
+                                                    inboxBusy = true
+                                                    teamsRepository.listPendingJoinRequests()
+                                                        .onSuccess { inboxRequests = it }
+                                                        .onFailure { inboxRequests = emptyList() }
+                                                    inboxBusy = false
+                                                }
+                                            },
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Inbox,
+                                                contentDescription = stringResource(R.string.profile_join_inbox_cd),
+                                                tint = MaterialTheme.colorScheme.primary,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                             LazyColumn(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -295,61 +328,21 @@ fun TeamScreen(
                                 verticalArrangement = Arrangement.spacedBy(2.dp),
                             ) {
                                 item {
-                                    TeamTableHeader()
+                                    TeamTableHeader(showRoleEditColumn = isLeader)
                                 }
                                 items(team.members, key = { it.userId }) { member ->
                                     TeamMemberTableRow(
                                         member = member,
-                                        isLeader = isLeader,
+                                        isSquadLeader = isLeader,
                                         currentUserId = currentUserId,
                                         teamId = team.id,
                                         busy = membersBusy,
                                         onBusyChange = { membersBusy = it },
                                         onReload = { reloadProfileAndTeam() },
+                                        onError = { msg -> error = msg },
                                         teamsRepository = teamsRepository,
+                                        onRequestEditMemberRole = { m -> roleEditMember = m },
                                     )
-                                }
-                                if (isLeader) {
-                                    item {
-                                        HorizontalDivider(
-                                            modifier = Modifier.padding(top = 8.dp, bottom = 10.dp),
-                                            color = MaterialTheme.colorScheme.outlineVariant,
-                                        )
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
-                                            OutlinedTextField(
-                                                value = addNameDraft,
-                                                onValueChange = { addNameDraft = it },
-                                                modifier = Modifier.weight(1f),
-                                                singleLine = true,
-                                                enabled = !membersBusy,
-                                                label = { Text(stringResource(R.string.team_add_member_hint)) },
-                                            )
-                                            Button(
-                                                enabled = !membersBusy && addNameDraft.trim().length >= 3,
-                                                onClick = {
-                                                    val username = addNameDraft.trim()
-                                                    if (username.length < 3) return@Button
-                                                    scope.launch {
-                                                        membersBusy = true
-                                                        teamsRepository.addMember(team.id, username)
-                                                            .onSuccess {
-                                                                addNameDraft = ""
-                                                                reloadProfileAndTeam()
-                                                            }
-                                                            .onFailure { e ->
-                                                                error = e.toUserMessageRu(res)
-                                                            }
-                                                        membersBusy = false
-                                                    }
-                                                },
-                                            ) {
-                                                Text(stringResource(R.string.team_add_member_btn))
-                                            }
-                                        }
-                                    }
                                 }
                             }
                         }
@@ -589,150 +582,107 @@ fun TeamScreen(
             },
         )
     }
-}
 
-@Composable
-private fun TeamTableHeader() {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = stringResource(R.string.team_col_player),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.weight(1.3f),
-        )
-        Text(
-            text = stringResource(R.string.team_col_role),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.weight(0.8f),
-        )
-        Text(
-            text = stringResource(R.string.team_col_telegram),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.weight(1f),
-        )
-    }
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-}
-
-@Composable
-private fun TeamMemberTableRow(
-    member: PlayerTeamMemberDto,
-    isLeader: Boolean,
-    currentUserId: String,
-    teamId: String,
-    busy: Boolean,
-    onBusyChange: (Boolean) -> Unit,
-    onReload: () -> Unit,
-    teamsRepository: TeamsRepository,
-) {
-    val scope = rememberCoroutineScope()
-    val avatar = telegramAvatarUrl(member.telegramUsername)
-    val telegram = telegramDisplayHandle(member.telegramUsername)
-    val roleLabel = if (member.isLeader) {
-        stringResource(R.string.team_role_leader)
-    } else {
-        member.role
-    }
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(MaterialTheme.shapes.medium)
-                .background(MaterialTheme.colorScheme.surface),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Row(
-                modifier = Modifier
-                    .weight(1.3f)
-                    .padding(horizontal = 8.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (avatar != null) {
-                        AsyncImage(
-                            model = avatar,
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                        )
-                    } else {
-                        Text(
-                            text = member.username.firstOrNull()?.uppercase() ?: "?",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                    }
-                }
-                Text(
-                    text = member.username,
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Text(
-                text = roleLabel,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .weight(0.8f)
-                    .padding(horizontal = 6.dp),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = telegram ?: "—",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(end = 8.dp),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        if (isLeader && !member.isLeader && member.userId != currentUserId) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(
-                    onClick = {
-                        scope.launch {
-                            onBusyChange(true)
-                            teamsRepository.removeMember(teamId, member.userId)
-                                .onSuccess { onReload() }
-                                .onFailure { /* keep current state */ }
-                            onBusyChange(false)
-                        }
-                    },
-                    enabled = !busy,
-                ) {
-                    Text(
-                        text = stringResource(R.string.team_remove_member),
-                        color = MaterialTheme.colorScheme.error,
+    val teamIdForDialogs = teamDetail?.id
+    if (showAddMemberDialog && teamIdForDialogs != null) {
+        AlertDialog(
+            onDismissRequest = { if (!membersBusy) showAddMemberDialog = false },
+            title = { Text(stringResource(R.string.team_add_member_dialog_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = addNameDraft,
+                        onValueChange = { addNameDraft = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        enabled = !membersBusy,
+                        label = { Text(stringResource(R.string.team_add_member_hint)) },
                     )
                 }
-                Spacer(Modifier.width(2.dp))
-            }
+            },
+            confirmButton = {
+                Button(
+                    enabled = !membersBusy && addNameDraft.trim().length >= 3,
+                    onClick = {
+                        val username = addNameDraft.trim()
+                        if (username.length < 3) return@Button
+                        scope.launch {
+                            membersBusy = true
+                            teamsRepository.addMember(teamIdForDialogs, username)
+                                .onSuccess {
+                                    addNameDraft = ""
+                                    showAddMemberDialog = false
+                                    reloadProfileAndTeam()
+                                }
+                                .onFailure { e -> error = e.toUserMessageRu(res) }
+                            membersBusy = false
+                        }
+                    },
+                ) {
+                    Text(stringResource(R.string.team_add_member_btn))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { if (!membersBusy) showAddMemberDialog = false }) {
+                    Text(stringResource(R.string.profile_action_cancel))
+                }
+            },
+        )
+    }
+
+    if (showEditTeamNameDialog && teamIdForDialogs != null) {
+        AlertDialog(
+            onDismissRequest = { if (!editNameBusy) showEditTeamNameDialog = false },
+            title = { Text(stringResource(R.string.team_edit_team_name_title)) },
+            text = {
+                OutlinedTextField(
+                    value = editTeamNameDraft,
+                    onValueChange = { editTeamNameDraft = it.take(48) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    enabled = !editNameBusy,
+                    label = { Text(stringResource(R.string.profile_field_team_full_name)) },
+                )
+            },
+            confirmButton = {
+                Button(
+                    enabled = !editNameBusy && editTeamNameDraft.trim().length >= 2,
+                    onClick = {
+                        val n = editTeamNameDraft.trim()
+                        if (n.length < 2) return@Button
+                        scope.launch {
+                            editNameBusy = true
+                            teamsRepository.updateTeamDisplayName(teamIdForDialogs, n)
+                                .onSuccess {
+                                    showEditTeamNameDialog = false
+                                    reloadProfileAndTeam()
+                                }
+                                .onFailure { e -> error = e.toUserMessageRu(res) }
+                            editNameBusy = false
+                        }
+                    },
+                ) {
+                    Text(stringResource(R.string.profile_action_save))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { if (!editNameBusy) showEditTeamNameDialog = false }) {
+                    Text(stringResource(R.string.profile_action_cancel))
+                }
+            },
+        )
+    }
+
+    roleEditMember?.let { member ->
+        if (teamIdForDialogs != null) {
+            SquadMemberRoleEditDialog(
+                member = member,
+                onDismiss = { roleEditMember = null },
+                onSaved = { reloadProfileAndTeam() },
+                teamId = teamIdForDialogs,
+                teamsRepository = teamsRepository,
+                onError = { msg -> error = msg },
+            )
         }
     }
 }

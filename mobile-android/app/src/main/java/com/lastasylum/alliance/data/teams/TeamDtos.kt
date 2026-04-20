@@ -18,7 +18,10 @@ data class PlayerTeamMemberDto(
     val userId: String,
     val username: String,
     val isLeader: Boolean,
-    val role: String,
+    /** Alliance / app role (R2–R5 in backend). */
+    val allianceRole: String = "R2",
+    /** Squad role R1–R5 (R5 = leader). */
+    val teamRole: String = "R1",
     val telegramUsername: String?,
 )
 
@@ -54,6 +57,16 @@ data class AddTeamMemberBody(
 @JsonClass(generateAdapter = true)
 data class OkResponse(
     val ok: Boolean? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class UpdateTeamDisplayBody(
+    val displayName: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class UpdateSquadMemberRoleBody(
+    val role: String,
 )
 
 @JsonClass(generateAdapter = true)
