@@ -14,11 +14,17 @@ export class R2Service {
     this.bucket = this.config.getOrThrow<string>('R2_BUCKET');
     const region = this.config.get<string>('R2_REGION') ?? 'auto';
 
+    // AWS SDK ≥3.729 may send default request checksum headers that Cloudflare R2 rejects
+    // (500 / InternalError on PutObject). Prefer WHEN_REQUIRED for R2 compatibility.
+    // See: https://community.cloudflare.com/t/aws-sdk-client-s3-v3-729-0-breaks-uploadpart-and-putobject-r2-s3-api-compatibility/758637
+    // Cast avoids TS mismatch when typings lag behind runtime @aws-sdk options.
     this.s3 = new S3Client({
       region,
       endpoint,
       credentials: { accessKeyId, secretAccessKey },
-    });
+      requestChecksumCalculation: 'WHEN_REQUIRED',
+      responseChecksumValidation: 'WHEN_REQUIRED',
+    } as never);
   }
 
   async putObject(input: {

@@ -93,5 +93,7 @@ private fun translateKnownServerMessage(english: String, resources: Resources): 
         resources.getString(R.string.err_username_taken)
     english.contains("GLOBAL_CHAT_TEAM_PROFILE_REQUIRED", ignoreCase = true) ->
         resources.getString(R.string.chat_global_team_required)
+    english.contains("Only image uploads are supported", ignoreCase = true) ->
+        resources.getString(R.string.chat_attachment_only_images_server)
     else -> english
 }

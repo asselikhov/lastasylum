@@ -23,6 +23,11 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -140,7 +145,11 @@ fun AppNavigation(
             val keyboardOpen by remember(imeInsets, density) {
                 derivedStateOf { imeInsets.getBottom(density) > 0 }
             }
-            if (!keyboardOpen) {
+            AnimatedVisibility(
+                visible = !keyboardOpen,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically(),
+            ) {
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     tonalElevation = 0.dp,

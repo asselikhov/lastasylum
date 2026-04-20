@@ -49,6 +49,10 @@
     <string name="chat_attachments_sheet_title">Вложения</string>
     <string name="chat_attachments_open">Открыть</string>
     <string name="chat_attachments_remove">Убрать</string>
+    <string name="chat_attachment_prepare_failed">Файл изображения пустой или повреждён. Попробуйте выбрать другой файл.</string>
+    <string name="chat_attachment_read_failed">Не удалось прочитать изображение (нет доступа к файлу или он недоступен). Попробуйте выбрать снова через «Прикрепить».</string>
+    <string name="chat_attachment_unsupported">Формат файла не распознан как изображение. Выберите JPEG, PNG, GIF или WebP.</string>
+    <string name="chat_attachment_only_images_server">Сервер принимает только изображения (JPEG, PNG и т.д.).</string>
     <string name="chat_gif_title">GIF по ссылке</string>
     <string name="chat_gif_hint">Ссылка на .gif или страницу (Giphy, Tenor…)</string>
     <string name="chat_gif_paste">Вставить из буфера</string>

@@ -202,6 +202,9 @@ export class ChatController {
     const roomId = body.roomId?.trim() ?? '';
     if (!roomId) throw new BadRequestException('roomId is required');
     if (!file) throw new BadRequestException('file is required');
+    if (!file.buffer?.length) {
+      throw new BadRequestException('file buffer is empty (multipart parse failed?)');
+    }
     await this.chatService.assertUserMayUseChat(req.user.userId);
 
     // Use the same access logic as message send: user must be able to join this room.

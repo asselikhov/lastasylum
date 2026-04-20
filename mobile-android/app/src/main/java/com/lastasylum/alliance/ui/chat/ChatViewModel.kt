@@ -1,8 +1,9 @@
 package com.lastasylum.alliance.ui.chat
 
 import android.app.Application
+import android.content.ContentResolver
 import android.net.Uri
-import android.webkit.MimeTypeMap
+import android.os.ParcelFileDescriptor
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lastasylum.alliance.data.chat.ChatAllianceIds
@@ -23,7 +24,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.InputStream
+import java.util.Locale
 import java.util.UUID
 
 private const val PAGE_SIZE = 30
@@ -48,7 +53,7 @@ class ChatViewModel(
     private val _draftMessage = MutableStateFlow("")
     val draftMessage: StateFlow<String> = _draftMessage.asStateFlow()
 
-    /** Picked images for composer (UI only; backend currently sends text). */
+    /** Picked images for composer; uploaded then referenced as attachment ids on send. */
     private val _pickedImageUris = MutableStateFlow<List<Uri>>(emptyList())
     val pickedImageUris: StateFlow<List<Uri>> = _pickedImageUris.asStateFlow()
 
@@ -290,7 +295,17 @@ class ChatViewModel(
             val uploadedIds = ArrayList<String>(uris.size)
             try {
                 for (uri in uris) {
-                    val uploadedId = uploadOneImage(roomId, uri) ?: continue
+                    val uploadedId = uploadOneImage(roomId, uri).getOrElse { t ->
+                        _state.value = _state.value.copy(
+                            isSending = false,
+                            sendFailure = ChatSendFailure(
+                                messageText = text,
+                                replyToMessageId = replyToMessageId,
+                                errorMessage = t.toUserMessageRu(res),
+                            ),
+                        )
+                        return@launch
+                    }
                     uploadedIds.add(uploadedId)
                 }
                 repository.sendMessageWithRetries(
@@ -325,22 +340,57 @@ class ChatViewModel(
         }
     }
 
-    private suspend fun uploadOneImage(roomId: String, uri: Uri): String? {
-        val ctx = getApplication<Application>()
-        val cr = ctx.contentResolver
-        val mime = cr.getType(uri)?.trim().orEmpty().ifBlank { "image/*" }
-        val ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)?.takeIf { it.isNotBlank() }
-        val tmp = File(ctx.cacheDir, "chat_upload_${UUID.randomUUID()}${if (ext != null) ".$ext" else ""}")
-        cr.openInputStream(uri)?.use { input ->
-            tmp.outputStream().use { out -> input.copyTo(out) }
-        } ?: return null
-        return try {
-            repository.uploadImageFile(roomId, tmp, mime)
-                .getOrNull()
-                ?.fileId
-        } finally {
-            runCatching { tmp.delete() }
+    private suspend fun uploadOneImage(roomId: String, uri: Uri): Result<String> =
+        withContext(Dispatchers.IO) {
+            val ctx = getApplication<Application>()
+            val cr = ctx.contentResolver
+            val tmp = File.createTempFile("chat_upload_${UUID.randomUUID()}", ".part", ctx.cacheDir)
+            try {
+                val input = openUriInputStream(cr, uri)
+                    ?: return@withContext Result.failure(
+                        IllegalStateException(
+                            ctx.getString(com.lastasylum.alliance.R.string.chat_attachment_read_failed),
+                        ),
+                    )
+                input.use { inp ->
+                    tmp.outputStream().use { out -> inp.copyTo(out) }
+                }
+                if (tmp.length() == 0L) {
+                    return@withContext Result.failure(
+                        IllegalStateException(
+                            ctx.getString(com.lastasylum.alliance.R.string.chat_attachment_prepare_failed),
+                        ),
+                    )
+                }
+                val header = ByteArray(32)
+                tmp.inputStream().use { it.read(header) }
+                val sniffed = sniffImageMimeFromHeader(header)
+                val declared = cr.getType(uri)?.trim().orEmpty()
+                val mime = resolveUploadImageMime(declared, sniffed)
+                    ?: return@withContext Result.failure(
+                        IllegalStateException(
+                            ctx.getString(com.lastasylum.alliance.R.string.chat_attachment_unsupported),
+                        ),
+                    )
+                repository.uploadImageFile(roomId, tmp, mime).map { it.fileId }
+            } finally {
+                runCatching { tmp.delete() }
+            }
         }
+
+    private fun openUriInputStream(cr: ContentResolver, uri: Uri): InputStream? {
+        runCatching { cr.openInputStream(uri) }.getOrNull()?.let { return it }
+        val pfd = runCatching { cr.openFileDescriptor(uri, "r") }.getOrNull()
+        if (pfd != null) {
+            runCatching { return ParcelFileDescriptor.AutoCloseInputStream(pfd) }
+            runCatching { pfd.close() }
+        }
+        val afd = runCatching { cr.openAssetFileDescriptor(uri, "r") }.getOrNull()
+        if (afd != null) {
+            runCatching { return afd.createInputStream() }
+            runCatching { afd.close() }
+        }
+        return null
     }
 
     fun retrySendFailure() {
@@ -643,5 +693,65 @@ class ChatViewModel(
         incomingMessages.close()
         repository.disconnectRealtime()
         super.onCleared()
+    }
+}
+
+private fun ByteArray.hasPrefix(prefix: ByteArray): Boolean {
+    if (size < prefix.size) return false
+    for (i in prefix.indices) {
+        if (this[i] != prefix[i]) return false
+    }
+    return true
+}
+
+private fun sniffImageMimeFromHeader(header: ByteArray): String? {
+    if (header.size < 12) return null
+    val jpeg = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte())
+    if (header.hasPrefix(jpeg)) return "image/jpeg"
+    val png = byteArrayOf(
+        0x89.toByte(),
+        0x50,
+        0x4E,
+        0x47,
+        0x0D,
+        0x0A,
+        0x1A,
+        0x0A,
+    )
+    if (header.hasPrefix(png)) return "image/png"
+    if (header.size >= 6) {
+        val gif = String(header, 0, 6, Charsets.US_ASCII)
+        if (gif == "GIF87a" || gif == "GIF89a") return "image/gif"
+    }
+    val riff = String(header, 0, 4, Charsets.US_ASCII)
+    val webp = String(header, 8, 4, Charsets.US_ASCII)
+    if (riff == "RIFF" && webp == "WEBP") return "image/webp"
+    if (header.size >= 2 && header[0] == 0x42.toByte() && header[1] == 0x4D.toByte()) return "image/bmp"
+    if (header.size >= 12 &&
+        header[4] == 'f'.code.toByte() &&
+        header[5] == 't'.code.toByte() &&
+        header[6] == 'y'.code.toByte() &&
+        header[7] == 'p'.code.toByte()
+    ) {
+        val brand = String(header, 8, 4, Charsets.US_ASCII)
+        if (brand.equals("heic", ignoreCase = true) ||
+            brand.equals("heix", ignoreCase = true) ||
+            brand.equals("mif1", ignoreCase = true) ||
+            brand.equals("msf1", ignoreCase = true)
+        ) {
+            return "image/heic"
+        }
+    }
+    return null
+}
+
+private fun resolveUploadImageMime(declared: String, sniffed: String?): String? {
+    val d = declared.trim()
+    val dl = d.lowercase(Locale.ROOT)
+    return when {
+        dl.startsWith("image/") && dl != "image/*" -> d
+        dl == "image/*" -> sniffed ?: "image/jpeg"
+        sniffed != null -> sniffed
+        else -> null
     }
 }

@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.ui.auth
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -77,19 +79,25 @@ fun AuthScreen(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(scroll)
                 .navigationBarsPadding()
                 .imePadding()
                 .padding(
                     horizontal = SquadRelayDimens.screenPaddingHorizontal,
                     vertical = SquadRelayDimens.screenPaddingVertical,
                 ),
-            verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.sectionGap),
+            contentAlignment = Alignment.Center,
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.headerSubtitleGap)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 420.dp)
+                    .verticalScroll(scroll),
+                verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.sectionGap),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.headerSubtitleGap)) {
                 Text(
                     text = stringResource(R.string.auth_brand),
                     style = MaterialTheme.typography.headlineSmall,
@@ -100,58 +108,58 @@ fun AuthScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
+                }
 
-            PrimaryPanel {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.blockGap),
-                ) {
-                    when (mode) {
-                        AuthMode.Login, AuthMode.Register -> {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                FilterChip(
-                                    selected = mode == AuthMode.Login,
+                PrimaryPanel {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.blockGap),
+                    ) {
+                        when (mode) {
+                            AuthMode.Login, AuthMode.Register -> {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    FilterChip(
+                                        selected = mode == AuthMode.Login,
+                                        onClick = {
+                                            mode = AuthMode.Login
+                                            onClearError()
+                                        },
+                                        label = { Text(stringResource(R.string.auth_tab_login)) },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f),
+                                            selectedLabelColor = MaterialTheme.colorScheme.primary,
+                                        ),
+                                    )
+                                    FilterChip(
+                                        selected = mode == AuthMode.Register,
+                                        onClick = {
+                                            mode = AuthMode.Register
+                                            onClearError()
+                                        },
+                                        label = { Text(stringResource(R.string.auth_tab_register)) },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f),
+                                            selectedLabelColor = MaterialTheme.colorScheme.primary,
+                                        ),
+                                    )
+                                }
+                            }
+                            else -> {
+                                TextButton(
                                     onClick = {
                                         mode = AuthMode.Login
                                         onClearError()
                                     },
-                                    label = { Text(stringResource(R.string.auth_tab_login)) },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f),
-                                        selectedLabelColor = MaterialTheme.colorScheme.primary,
-                                    ),
-                                )
-                                FilterChip(
-                                    selected = mode == AuthMode.Register,
-                                    onClick = {
-                                        mode = AuthMode.Register
-                                        onClearError()
-                                    },
-                                    label = { Text(stringResource(R.string.auth_tab_register)) },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f),
-                                        selectedLabelColor = MaterialTheme.colorScheme.primary,
-                                    ),
-                                )
+                                ) {
+                                    Text(stringResource(R.string.auth_back_to_login))
+                                }
                             }
                         }
-                        else -> {
-                            TextButton(
-                                onClick = {
-                                    mode = AuthMode.Login
-                                    onClearError()
-                                },
-                            ) {
-                                Text(stringResource(R.string.auth_back_to_login))
-                            }
-                        }
-                    }
 
-                    when (mode) {
+                        when (mode) {
                         AuthMode.Forgot -> {
                             Text(
                                 text = stringResource(R.string.auth_forgot_title),
@@ -362,37 +370,38 @@ fun AuthScreen(
                                 )
                             }
                         }
-                    }
+                        }
 
-                    if (!errorMessage.isNullOrBlank()) {
-                        Text(
-                            text = errorMessage,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                    if (!infoMessage.isNullOrBlank()) {
-                        Text(
-                            text = infoMessage,
-                            color = MaterialTheme.colorScheme.secondary,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
+                        if (!errorMessage.isNullOrBlank()) {
+                            Text(
+                                text = errorMessage,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        if (!infoMessage.isNullOrBlank()) {
+                            Text(
+                                text = infoMessage,
+                                color = MaterialTheme.colorScheme.secondary,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = stringResource(
+                        R.string.auth_build_footer,
+                        BuildConfig.VERSION_NAME,
+                        BuildConfig.VERSION_CODE,
+                        buildTimeStr,
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = stringResource(
-                    R.string.auth_build_footer,
-                    BuildConfig.VERSION_NAME,
-                    BuildConfig.VERSION_CODE,
-                    buildTimeStr,
-                ),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }

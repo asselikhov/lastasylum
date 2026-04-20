@@ -2,6 +2,7 @@ package com.lastasylum.alliance.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -542,7 +543,7 @@ fun ChatScreen(
                         onDraftChange = onDraftChange,
                         onSendDraft = {
                             if (!globalComposerLocked &&
-                                !draftMessage.isBlank() &&
+                                (!draftMessage.isBlank() || pickedImageUris.isNotEmpty()) &&
                                 !state.isSending
                             ) {
                                 focusManager.clearFocus()
@@ -995,7 +996,7 @@ private fun ChatComposer(
     val focusRequester = remember { FocusRequester() }
     val gifScroll = rememberScrollState()
     val pickImagesLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetMultipleContents(),
+        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 12),
         onResult = { uris ->
             if (!readOnly && uris.isNotEmpty()) {
                 onPickImages(uris)
@@ -1130,7 +1131,7 @@ private fun ChatComposer(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = SquadRelayDimens.itemGap),
+            .padding(vertical = SquadRelayDimens.itemGap),
     ) {
         Surface(
             tonalElevation = 0.dp,
@@ -1149,7 +1150,7 @@ private fun ChatComposer(
                     .fillMaxWidth()
                     .padding(
                         top = SquadRelayDimens.composerInnerPadding,
-                        bottom = 0.dp,
+                        bottom = if (showMediaPanel) 2.dp else SquadRelayDimens.composerInnerPadding,
                     ),
                 verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
             ) {
@@ -1299,7 +1300,7 @@ private fun ChatComposer(
                         .fillMaxWidth()
                         .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(0.dp),
                 ) {
                     Surface(
                         shape = RoundedCornerShape(26.dp),
@@ -1311,7 +1312,9 @@ private fun ChatComposer(
                             .heightIn(min = SquadRelayDimens.composerMinHeight.coerceAtLeast(48.dp)),
                     ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 2.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             IconButton(
@@ -1350,7 +1353,7 @@ private fun ChatComposer(
                                 onValueChange = { if (!readOnly) onDraftChange(it) },
                                 modifier = Modifier
                                     .weight(1f)
-                                    .padding(vertical = 10.dp, horizontal = 4.dp)
+                                    .padding(vertical = 10.dp, horizontal = 6.dp)
                                     .focusRequester(focusRequester)
                                     .onFocusChanged { fc ->
                                         if (!readOnly && fc.isFocused && showMediaPanel) {
@@ -1381,45 +1384,60 @@ private fun ChatComposer(
                                     }
                                 },
                             )
-                            val showInlineSend = sendEnabled && !readOnly && draft.isNotBlank()
-                            AnimatedVisibility(visible = showInlineSend || isSending) {
-                                IconButton(
-                                    onClick = { if (!isSending && showInlineSend) onSendDraft() },
-                                    enabled = showInlineSend && !isSending,
-                                    modifier = Modifier.size(44.dp),
-                                ) {
-                                    if (isSending) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(20.dp),
-                                            strokeWidth = 2.dp,
-                                            color = MaterialTheme.colorScheme.primary,
-                                        )
+                            val canSend = sendEnabled &&
+                                !readOnly &&
+                                (draft.isNotBlank() || pickedImageUris.isNotEmpty())
+                            val sendButtonEnabled = canSend && !isSending
+
+                            IconButton(
+                                onClick = {
+                                    if (readOnly) return@IconButton
+                                    focusManager.clearFocus()
+                                    keyboard?.hide()
+                                    pickImagesLauncher.launch(
+                                        PickVisualMediaRequest(
+                                            ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                        ),
+                                    )
+                                },
+                                enabled = !readOnly && !isSending,
+                                modifier = Modifier.size(44.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.AttachFile,
+                                    contentDescription = stringResource(R.string.chat_attach_gif),
+                                    tint = if (!readOnly && !isSending) {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
                                     } else {
-                                        Icon(
-                                            imageVector = Icons.AutoMirrored.Outlined.Send,
-                                            contentDescription = stringResource(R.string.chat_send),
-                                            tint = MaterialTheme.colorScheme.primary,
-                                        )
-                                    }
+                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                                    },
+                                )
+                            }
+
+                            IconButton(
+                                onClick = { if (sendButtonEnabled) onSendDraft() },
+                                enabled = sendButtonEnabled || isSending,
+                                modifier = Modifier.size(44.dp),
+                            ) {
+                                if (isSending) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Outlined.Send,
+                                        contentDescription = stringResource(R.string.chat_send),
+                                        tint = if (canSend) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                                        },
+                                    )
                                 }
                             }
                         }
-                    }
-                    IconButton(
-                        onClick = {
-                            if (readOnly) return@IconButton
-                            focusManager.clearFocus()
-                            keyboard?.hide()
-                            pickImagesLauncher.launch("image/*")
-                        },
-                        enabled = !readOnly && !isSending,
-                        modifier = Modifier.size(44.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.AttachFile,
-                            contentDescription = stringResource(R.string.chat_attach_gif),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                     }
                 }
             }
