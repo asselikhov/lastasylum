@@ -42,12 +42,9 @@ object OverlayChatTime {
     fun effectiveInstant(msg: ChatMessage, receivedAt: Map<String, Instant>): Instant {
         val server = parseInstant(msg.createdAt)
         val client = receivedAt[msg.stableKey()]
-        return when {
-            server == null && client == null -> Instant.EPOCH
-            server == null -> client ?: Instant.EPOCH
-            client == null -> server ?: Instant.EPOCH
-            else -> maxOf(server, client)
-        }
+        if (server == null) return client ?: Instant.EPOCH
+        if (client == null) return server
+        return maxOf(server, client)
     }
 
     fun formatClock(instant: Instant): String =

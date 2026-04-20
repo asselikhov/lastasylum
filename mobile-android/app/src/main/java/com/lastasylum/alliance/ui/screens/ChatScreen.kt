@@ -215,13 +215,12 @@ private fun chatBubbleClusterTopSpacing(
     if (sid.isEmpty()) return 8.dp
     var i = timelineIndex + 1
     while (i < timeline.size) {
-        when (val e = timeline[i]) {
-            is ChatTimelineEntry.DaySeparator -> return 10.dp
-            is ChatTimelineEntry.ChatMessageItem -> {
-                val o = e.message
-                val same = o.senderId.trim() == sid && o.senderId.trim().isNotEmpty()
-                return if (same) 1.dp else 10.dp
-            }
+        val e = timeline[i]
+        if (e is ChatTimelineEntry.DaySeparator) return 10.dp
+        if (e is ChatTimelineEntry.ChatMessageItem) {
+            val o = e.message
+            val same = o.senderId.trim() == sid && o.senderId.trim().isNotEmpty()
+            return if (same) 1.dp else 10.dp
         }
         i++
     }
@@ -1666,7 +1665,7 @@ private fun ChatBubbleRow(
     val onBubble = if (isMine) ChatTelegramOutgoingOnBubble else ChatTelegramIncomingOnBubble
     val timeMuted = if (isMine) ChatTelegramTimeMuted else ChatTelegramTimeMutedIncoming
     val stemTag = message.senderTeamTag?.trim()?.takeIf { it.isNotEmpty() }
-    val displayName = message.senderUsername?.trim().orEmpty().ifBlank { senderLine }
+    val displayName = message.senderUsername.trim().ifBlank { senderLine }
     val nickname = message.senderUsername.trim().ifBlank { displayName }
     val isChainBottom = chatMessageIsClusterChainBottom(messages, messageIndex)
     val tightClusterTop = chatMessageClusterTightInnerTop(messages, messageIndex)
