@@ -281,6 +281,8 @@ fun AppNavigation(
                     onConfirmDeleteSelectedMessages = chatViewModel::confirmDeleteSelectedMessages,
                     onRetrySendFailure = chatViewModel::retrySendFailure,
                     onDismissSendFailure = chatViewModel::dismissSendFailure,
+                    onChatVoiceHoldStart = chatViewModel::startChatVoiceInput,
+                    onChatVoiceHoldEnd = chatViewModel::stopChatVoiceInput,
                 )
             }
             composable(AppTab.OVERLAY.route) {

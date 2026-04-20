@@ -3,6 +3,12 @@ package com.lastasylum.alliance.ui.chat
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 
+enum class ChatVoicePhase {
+    Idle,
+    Listening,
+    Sending,
+}
+
 data class ChatSendFailure(
     val messageText: String,
     val replyToMessageId: String?,
@@ -35,4 +41,5 @@ data class ChatState(
     /** Increments after a successful own send so the list scrolls to the latest message. */
     val scrollToLatestNonce: Long = 0L,
     val sendFailure: ChatSendFailure? = null,
+    val chatVoicePhase: ChatVoicePhase = ChatVoicePhase.Idle,
 )

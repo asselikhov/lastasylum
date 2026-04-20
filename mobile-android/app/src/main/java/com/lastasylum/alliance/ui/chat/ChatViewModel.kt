@@ -3,6 +3,8 @@ package com.lastasylum.alliance.ui.chat
 import android.app.Application
 import android.content.ContentResolver
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelFileDescriptor
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -26,6 +28,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import android.widget.Toast
 import java.io.File
 import java.io.InputStream
 import java.util.Locale
@@ -67,6 +70,9 @@ class ChatViewModel(
     private var typingEmitJob: Job? = null
 
     private val incomingMessages = Channel<ChatMessage>(capacity = Channel.UNLIMITED)
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var chatVoiceRecognizer: ChatVoiceRecognizer? = null
 
     private val res get() = getApplication<Application>().resources
 
@@ -684,7 +690,37 @@ class ChatViewModel(
         _state.value = _state.value.copy(error = null)
     }
 
+    private fun ensureChatVoiceRecognizer(): ChatVoiceRecognizer {
+        chatVoiceRecognizer?.let { return it }
+        val app = getApplication<Application>()
+        val r = ChatVoiceRecognizer(
+            context = app,
+            mainHandler = mainHandler,
+            scope = viewModelScope,
+            setPhase = { phase -> _state.update { it.copy(chatVoicePhase = phase) } },
+            onRecognizedText = { text -> sendMessage(text) },
+            onNotify = { msg ->
+                mainHandler.post {
+                    Toast.makeText(app, msg, Toast.LENGTH_SHORT).show()
+                }
+            },
+        )
+        r.initIfAvailable()
+        chatVoiceRecognizer = r
+        return r
+    }
+
+    fun startChatVoiceInput() {
+        ensureChatVoiceRecognizer().startRecording()
+    }
+
+    fun stopChatVoiceInput() {
+        chatVoiceRecognizer?.stopRecording()
+    }
+
     override fun onCleared() {
+        chatVoiceRecognizer?.destroy()
+        chatVoiceRecognizer = null
         typingEmitJob?.cancel()
         synchronized(typingPeerJobsLock) {
             typingPeerJobs.values.forEach { it.cancel() }

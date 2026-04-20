@@ -1,9 +1,14 @@
 package com.lastasylum.alliance.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -58,6 +63,7 @@ import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.AttachFile
+import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.Mood
 import androidx.compose.material3.AlertDialog
@@ -79,6 +85,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -102,6 +109,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -130,6 +141,7 @@ import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.ui.chat.ChatState
+import com.lastasylum.alliance.ui.chat.ChatVoicePhase
 import com.lastasylum.alliance.ui.chat.chatMessageSemanticsPreview
 import com.lastasylum.alliance.ui.chat.replyPreviewText
 import com.lastasylum.alliance.ui.chat.canDeleteChatMessage
@@ -354,7 +366,37 @@ fun ChatScreen(
     onConfirmDeleteSelectedMessages: () -> Unit,
     onRetrySendFailure: () -> Unit,
     onDismissSendFailure: () -> Unit,
+    onChatVoiceHoldStart: () -> Unit,
+    onChatVoiceHoldEnd: () -> Unit,
 ) {
+    val context = LocalContext.current
+    var hasMicPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.RECORD_AUDIO,
+            ) == PackageManager.PERMISSION_GRANTED,
+        )
+    }
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        hasMicPermission = granted
+    }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasMicPermission = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.RECORD_AUDIO,
+                ) == PackageManager.PERMISSION_GRANTED
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     val listState = remember(state.selectedRoomId) {
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
@@ -554,8 +596,15 @@ fun ChatScreen(
                         pickedImageUris = pickedImageUris,
                         replyToMessage = state.replyToMessage,
                         isSending = state.isSending,
+                        chatVoicePhase = state.chatVoicePhase,
                         sendEnabled = !globalComposerLocked,
                         readOnly = globalComposerLocked,
+                        hasMicPermission = hasMicPermission,
+                        onRequestMicPermission = {
+                            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        },
+                        onChatVoiceHoldStart = onChatVoiceHoldStart,
+                        onChatVoiceHoldEnd = onChatVoiceHoldEnd,
                         onDraftChange = onDraftChange,
                         onSendDraft = {
                             if (!globalComposerLocked &&
@@ -990,8 +1039,13 @@ private fun ChatComposer(
     pickedImageUris: List<Uri>,
     replyToMessage: ChatMessage?,
     isSending: Boolean,
+    chatVoicePhase: ChatVoicePhase,
     sendEnabled: Boolean = true,
     readOnly: Boolean = false,
+    hasMicPermission: Boolean,
+    onRequestMicPermission: () -> Unit,
+    onChatVoiceHoldStart: () -> Unit,
+    onChatVoiceHoldEnd: () -> Unit,
     onDraftChange: (String) -> Unit,
     onSendDraft: () -> Unit,
     onSendStickerPayload: (String) -> Unit,
@@ -1427,6 +1481,44 @@ private fun ChatComposer(
                                     } else {
                                         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
                                     },
+                                )
+                            }
+
+                            val voiceMicTint = when {
+                                readOnly || isSending ->
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                                chatVoicePhase == ChatVoicePhase.Listening ||
+                                    chatVoicePhase == ChatVoicePhase.Sending ->
+                                    MaterialTheme.colorScheme.primary
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .pointerInput(readOnly, isSending, hasMicPermission) {
+                                        awaitEachGesture {
+                                            awaitFirstDown(requireUnconsumed = false)
+                                            if (readOnly || isSending) return@awaitEachGesture
+                                            if (!hasMicPermission) {
+                                                onRequestMicPermission()
+                                                return@awaitEachGesture
+                                            }
+                                            try {
+                                                focusManager.clearFocus()
+                                                keyboard?.hide()
+                                                onChatVoiceHoldStart()
+                                                waitForUpOrCancellation()
+                                            } finally {
+                                                onChatVoiceHoldEnd()
+                                            }
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Mic,
+                                    contentDescription = stringResource(R.string.chat_voice_mic_cd),
+                                    tint = voiceMicTint,
                                 )
                             }
 
