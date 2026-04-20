@@ -13,6 +13,9 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
@@ -91,6 +94,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -115,6 +119,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatMessage
@@ -979,7 +984,7 @@ private fun ChatComposer(
     var mediaTab by remember { mutableStateOf(MediaPickerTab.Stickers) }
     var gifUrlDraft by remember { mutableStateOf("") }
     var showAttachmentsSheet by remember { mutableStateOf(false) }
-    var previewUri by remember { mutableStateOf<Uri?>(null) }
+    var previewIndex by remember { mutableStateOf<Int?>(null) }
     val context = LocalContext.current
     val zlobStems = remember(context) { ZlobyakaStickerPack.listSortedStems(context) }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -1006,11 +1011,34 @@ private fun ChatComposer(
         showMediaPanel = false
     }
 
-    BackHandler(enabled = showAttachmentsSheet || previewUri != null) {
+    BackHandler(enabled = showAttachmentsSheet || previewIndex != null) {
         when {
-            previewUri != null -> previewUri = null
+            previewIndex != null -> previewIndex = null
             showAttachmentsSheet -> showAttachmentsSheet = false
         }
+    }
+
+    previewIndex?.let { idx ->
+        AttachmentPreviewDialog(
+            uris = pickedImageUris,
+            startIndex = idx,
+            onDismiss = { previewIndex = null },
+            onOpenExternal = { uri ->
+                val i = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "image/*")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                context.startActivity(i)
+            },
+            onRemove = { uri ->
+                onRemovePickedImage(uri)
+                if (pickedImageUris.size <= 1) {
+                    previewIndex = null
+                } else {
+                    previewIndex = previewIndex?.coerceAtMost(pickedImageUris.lastIndex)
+                }
+            },
+        )
     }
 
     if (showAttachmentsSheet) {
@@ -1056,7 +1084,7 @@ private fun ChatComposer(
                                 .aspectRatio(1f)
                                 .clip(RoundedCornerShape(14.dp))
                                 .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                                .clickable { previewUri = uri },
+                                .clickable { previewIndex = pickedImageUris.indexOf(uri).takeIf { it >= 0 } },
                         ) {
                             AsyncImage(
                                 model = ImageRequest.Builder(context)
@@ -1092,66 +1120,6 @@ private fun ChatComposer(
                         }
                     }
                 }
-            }
-        }
-    }
-
-    previewUri?.let { uri ->
-        ModalBottomSheet(onDismissRequest = { previewUri = null }) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
-                verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    tonalElevation = 0.dp,
-                    shadowElevation = 0.dp,
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 520.dp),
-                ) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(context)
-                            .data(uri)
-                            .crossfade(true)
-                            .build(),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Fit,
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    OutlinedButton(
-                        onClick = {
-                            val i = Intent(Intent.ACTION_VIEW).apply {
-                                setDataAndType(uri, "image/*")
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            context.startActivity(i)
-                        },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(stringResource(R.string.chat_attachments_open))
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            onRemovePickedImage(uri)
-                            previewUri = null
-                        },
-                        enabled = !readOnly && !isSending,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(stringResource(R.string.chat_attachments_remove))
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
             }
         }
     }
@@ -1246,7 +1214,13 @@ private fun ChatComposer(
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .clickable { showAttachmentsSheet = true },
+                                        .clickable {
+                                            if (extraCount > 0 && uri == visibleThumbs.last()) {
+                                                showAttachmentsSheet = true
+                                            } else {
+                                                previewIndex = pickedImageUris.indexOf(uri).takeIf { it >= 0 }
+                                            }
+                                        },
                                 )
                                 IconButton(
                                     onClick = { onRemovePickedImage(uri) },
@@ -1618,6 +1592,122 @@ private fun ChatComposer(
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AttachmentPreviewDialog(
+    uris: List<Uri>,
+    startIndex: Int,
+    onDismiss: () -> Unit,
+    onOpenExternal: (Uri) -> Unit,
+    onRemove: (Uri) -> Unit,
+) {
+    if (uris.isEmpty()) return
+    var index by remember(startIndex, uris) {
+        mutableStateOf(startIndex.coerceIn(0, uris.lastIndex))
+    }
+    val uri = uris.getOrNull(index) ?: uris.first()
+
+    var scale by remember(uri) { mutableStateOf(1f) }
+    var offsetX by remember(uri) { mutableStateOf(0f) }
+    var offsetY by remember(uri) { mutableStateOf(0f) }
+
+    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+        val nextScale = (scale * zoomChange).coerceIn(1f, 4f)
+        val factor = nextScale / scale
+        scale = nextScale
+        if (factor != 1f) {
+            offsetX *= factor
+            offsetY *= factor
+        }
+        if (scale > 1f) {
+            offsetX += panChange.x
+            offsetY += panChange.y
+        } else {
+            offsetX = 0f
+            offsetY = 0f
+        }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(uris, index, scale) {
+                        detectHorizontalDragGestures(
+                            onDragEnd = { /* noop */ },
+                            onHorizontalDrag = { change, dragAmount ->
+                                if (scale > 1f) return@detectHorizontalDragGestures
+                                change.consume()
+                                if (kotlin.math.abs(dragAmount) < 14f) return@detectHorizontalDragGestures
+                                if (dragAmount > 0 && index > 0) index -= 1
+                                if (dragAmount < 0 && index < uris.lastIndex) index += 1
+                            },
+                        )
+                    }
+                    .transformable(state = transformState),
+            ) {
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(uri)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                            translationX = offsetX
+                            translationY = offsetY
+                        },
+                    contentScale = ContentScale.Fit,
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.45f))
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                    .align(Alignment.TopCenter),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.Outlined.Close,
+                        contentDescription = null,
+                        tint = Color.White,
+                    )
+                }
+                Text(
+                    text = "${index + 1}/${uris.size}",
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    TextButton(onClick = { onOpenExternal(uri) }) {
+                        Text(
+                            text = stringResource(R.string.chat_attachments_open),
+                            color = Color.White,
+                        )
+                    }
+                    TextButton(onClick = { onRemove(uri) }) {
+                        Text(
+                            text = stringResource(R.string.chat_attachments_remove),
+                            color = Color.White,
+                        )
                     }
                 }
             }
