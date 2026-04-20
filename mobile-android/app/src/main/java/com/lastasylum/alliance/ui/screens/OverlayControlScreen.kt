@@ -81,8 +81,7 @@ fun OverlayControlScreen() {
             if (event == Lifecycle.Event.ON_RESUME) {
                 if (latestPendingEnable.value &&
                     !CombatOverlayService.isServiceInstanceActive &&
-                    overlayOk() &&
-                    usageOk()
+                    overlayOk()
                 ) {
                     if (CombatOverlayService.startService(context)) {
                         pendingEnable = false
@@ -133,7 +132,6 @@ fun OverlayControlScreen() {
                         pendingEnable = true
                         when {
                             !overlayOk() -> OverlayPermissions.openOverlayPermissionSettings(context)
-                            !usageOk() -> OverlayPermissions.openUsageAccessSettings(context)
                             CombatOverlayService.startService(context) -> {
                                 pendingEnable = false
                             }
