@@ -14,6 +14,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
@@ -1616,6 +1617,7 @@ private fun AttachmentPreviewDialog(
     var scale by remember(uri) { mutableStateOf(1f) }
     var offsetX by remember(uri) { mutableStateOf(0f) }
     var offsetY by remember(uri) { mutableStateOf(0f) }
+    val context = LocalContext.current
 
     val transformState = rememberTransformableState { zoomChange, panChange, _ ->
         val nextScale = (scale * zoomChange).coerceIn(1f, 4f)
@@ -1644,6 +1646,17 @@ private fun AttachmentPreviewDialog(
                 modifier = Modifier
                     .fillMaxSize()
                     .pointerInput(uris, index, scale) {
+                        detectTapGestures(
+                            onDoubleTap = {
+                                if (scale > 1f) {
+                                    scale = 1f
+                                    offsetX = 0f
+                                    offsetY = 0f
+                                } else {
+                                    scale = 2.5f
+                                }
+                            },
+                        )
                         detectHorizontalDragGestures(
                             onDragEnd = { /* noop */ },
                             onHorizontalDrag = { change, dragAmount ->
@@ -1658,7 +1671,7 @@ private fun AttachmentPreviewDialog(
                     .transformable(state = transformState),
             ) {
                 AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current)
+                    model = ImageRequest.Builder(context)
                         .data(uri)
                         .crossfade(true)
                         .build(),
@@ -1708,6 +1721,50 @@ private fun AttachmentPreviewDialog(
                             text = stringResource(R.string.chat_attachments_remove),
                             color = Color.White,
                         )
+                    }
+                }
+            }
+
+            if (uris.size > 1) {
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .background(Color.Black.copy(alpha = 0.35f))
+                        .navigationBarsPadding()
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(uris, key = { it.toString() }) { u ->
+                        val i = uris.indexOf(u)
+                        val isActive = i == index
+                        val border = if (isActive) BorderStroke(2.dp, Color.White) else null
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            border = border,
+                            tonalElevation = 0.dp,
+                            shadowElevation = 0.dp,
+                            color = Color.Transparent,
+                            modifier = Modifier
+                                .size(54.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable {
+                                    index = i
+                                    scale = 1f
+                                    offsetX = 0f
+                                    offsetY = 0f
+                                },
+                        ) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .data(u)
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                            )
+                        }
                     }
                 }
             }
