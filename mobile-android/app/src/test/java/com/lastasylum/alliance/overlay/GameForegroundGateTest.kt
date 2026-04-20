@@ -107,4 +107,57 @@ class GameForegroundGateTest {
             ),
         )
     }
+
+    @Test
+    fun resumeTimeline_true_whenOnlyGameResumes() {
+        assertTrue(
+            GameForegroundGate.targetWinsResumeTimelineFromPairs(
+                listOf(100L to "com.phs.global"),
+                targets = setOf("com.phs.global"),
+                alliance = "com.lastasylum.alliance",
+            ),
+        )
+    }
+
+    @Test
+    fun resumeTimeline_false_whenOtherAppResumedAfterGame() {
+        assertFalse(
+            GameForegroundGate.targetWinsResumeTimelineFromPairs(
+                listOf(
+                    100L to "com.phs.global",
+                    200L to "com.android.chrome",
+                ),
+                targets = setOf("com.phs.global"),
+                alliance = "com.lastasylum.alliance",
+            ),
+        )
+    }
+
+    @Test
+    fun resumeTimeline_true_whenGameResumedAfterOther() {
+        assertTrue(
+            GameForegroundGate.targetWinsResumeTimelineFromPairs(
+                listOf(
+                    100L to "com.android.chrome",
+                    200L to "com.phs.global",
+                ),
+                targets = setOf("com.phs.global"),
+                alliance = "com.lastasylum.alliance",
+            ),
+        )
+    }
+
+    @Test
+    fun resumeTimeline_skipsAllianceInOtherTrack() {
+        assertTrue(
+            GameForegroundGate.targetWinsResumeTimelineFromPairs(
+                listOf(
+                    100L to "com.phs.global",
+                    150L to "com.lastasylum.alliance",
+                ),
+                targets = setOf("com.phs.global"),
+                alliance = "com.lastasylum.alliance",
+            ),
+        )
+    }
 }

@@ -155,11 +155,20 @@ object GameForegroundGate {
         if (targets.isEmpty()) return false
         if (!hasUsageStatsAccess(context)) return false
         val alliance = context.packageName
+        val targetSet = targets.toSet()
         val hinted = lastResumedPackage(context)
         if (hinted == alliance) return true
-        if (hinted != null && targets.contains(hinted)) return true
+        if (hinted != null && targetSet.contains(hinted)) return true
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return false
         val end = System.currentTimeMillis()
+        // На части прошивок «последний» RESUME — не игра, а лаунчер/сервис; lastTimeUsed при долгой сессии
+        // в Unity не обновляется. Сравниваем макс. время RESUME цели с прочими (кроме декора и SquadRelay).
+        if (runCatching {
+                targetWinsResumeTimeline(usm, end, RESUME_VS_RESUME_WINDOW_MS, targetSet, alliance)
+            }.getOrDefault(false)
+        ) {
+            return true
+        }
         return targets.any { target ->
             isTargetUsageNearLeader(usm, end, target, USAGE_STATS_LOOKBACK_MS, TARGET_USAGE_TIE_SLOP_MS)
         }
@@ -189,8 +198,76 @@ object GameForegroundGate {
     ): Boolean {
         val stats = queryUsageStatsMerged(usm, endMs, lookbackMs)
         if (stats.isEmpty()) return false
-        val map = stats.associate { it.packageName to it.lastTimeUsed }
+        val map = stats.associate { it.packageName to effectiveUsageTimestamp(it) }
         return isTargetLastUsedNearLeader(map, target, slopMs)
+    }
+
+    /** API 29+: учитываем [UsageStats.getLastTimeVisible] — при длительной игре он часто свежее [getLastTimeUsed]. */
+    private fun effectiveUsageTimestamp(stat: UsageStats): Long {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            return max(stat.lastTimeUsed, stat.lastTimeVisible)
+        }
+        return stat.lastTimeUsed
+    }
+
+    /**
+     * True, если среди RESUME в окне у целевой игры метка времени не меньше, чем у любого «чужого»
+     * приложения (не SquadRelay, не декор). Так видно «кто реально выиграл фокус», даже если
+     * [selectMeaningfulForegroundResume] вернул не пакет игры.
+     */
+    private fun targetWinsResumeTimeline(
+        usm: UsageStatsManager,
+        endMs: Long,
+        windowMs: Long,
+        targets: Set<String>,
+        alliance: String,
+    ): Boolean {
+        val pairs = collectResumePairs(usm, endMs - windowMs, endMs)
+        return targetWinsResumeTimelineFromPairs(pairs, targets, alliance)
+    }
+
+    private fun collectResumePairs(
+        usm: UsageStatsManager,
+        beginMs: Long,
+        endMs: Long,
+    ): List<Pair<Long, String>> {
+        val events = usm.queryEvents(beginMs, endMs)
+        val ev = UsageEvents.Event()
+        return buildList {
+            while (events.hasNextEvent()) {
+                events.getNextEvent(ev)
+                val type = ev.eventType
+                val isResume = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    type == UsageEvents.Event.ACTIVITY_RESUMED
+                } else {
+                    @Suppress("DEPRECATION")
+                    type == UsageEvents.Event.MOVE_TO_FOREGROUND
+                }
+                if (isResume) {
+                    val p = ev.packageName ?: continue
+                    add(ev.timeStamp to p)
+                }
+            }
+        }
+    }
+
+    internal fun targetWinsResumeTimelineFromPairs(
+        resumesChronological: List<Pair<Long, String>>,
+        targets: Set<String>,
+        alliance: String,
+    ): Boolean {
+        var lastTargetTs = Long.MIN_VALUE
+        var lastOtherTs = Long.MIN_VALUE
+        for ((ts, p) in resumesChronological) {
+            when {
+                p in RESUME_DECOR_PACKAGES -> continue
+                p in targets -> lastTargetTs = maxOf(lastTargetTs, ts)
+                p == alliance -> continue
+                else -> lastOtherTs = maxOf(lastOtherTs, ts)
+            }
+        }
+        if (lastTargetTs == Long.MIN_VALUE) return false
+        return lastTargetTs >= lastOtherTs
     }
 
     /** Pure helper for unit tests. */
@@ -231,5 +308,11 @@ object GameForegroundGate {
      * How much the game's [UsageStats.getLastTimeUsed] may lag behind the global leader (e.g. System UI)
      * while the user is still effectively in-game.
      */
-    private const val TARGET_USAGE_TIE_SLOP_MS = 20_000L
+    private const val TARGET_USAGE_TIE_SLOP_MS = 45_000L
+
+    /**
+     * Окно для сравнения «последний RESUME игры» vs «последний RESUME другого приложения».
+     * Должно перекрывать типичную сессию без смены активности.
+     */
+    private const val RESUME_VS_RESUME_WINDOW_MS = 10 * 60 * 1000L
 }
