@@ -1,7 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { InjectConnection } from '@nestjs/mongoose';
-import { GridFSBucket, ObjectId } from 'mongodb';
-import { Connection, Types } from 'mongoose';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
+import { ChatAttachment } from './schemas/chat-attachment.schema';
+import { R2Service } from './r2.service';
 
 export type UploadedChatAttachment = {
   fileId: string;
@@ -12,17 +13,11 @@ export type UploadedChatAttachment = {
 
 @Injectable()
 export class ChatAttachmentsService {
-  private readonly bucket: GridFSBucket;
-
-  constructor(@InjectConnection() private readonly connection: Connection) {
-    const db = this.connection.db;
-    if (!db) {
-      throw new Error('MongoDB connection is not ready');
-    }
-    this.bucket = new GridFSBucket(db, {
-      bucketName: 'chat_attachments',
-    });
-  }
+  constructor(
+    @InjectModel(ChatAttachment.name)
+    private readonly attachmentModel: Model<ChatAttachment>,
+    private readonly r2: R2Service,
+  ) {}
 
   async uploadImage(input: {
     buffer: Buffer;
@@ -37,51 +32,62 @@ export class ChatAttachmentsService {
     if (!mimeType.startsWith('image/')) {
       throw new BadRequestException('Only image uploads are supported');
     }
-    const safeName = filename?.trim() || 'image';
-    const uploadStream = this.bucket.openUploadStream(safeName, {
-      metadata: {
-        kind: 'image',
-        allianceId: input.allianceId,
-        roomId: input.roomId,
-        uploaderUserId: input.uploaderUserId,
-        mimeType,
-        size,
-      },
+    const created = await this.attachmentModel.create({
+      allianceId: input.allianceId,
+      roomId: input.roomId,
+      uploaderUserId: input.uploaderUserId,
+      kind: 'image',
+      key: '', // set below after key is computed
+      mimeType,
+      size,
     });
-    uploadStream.end(buffer);
 
-    const fileId = await new Promise<ObjectId>((resolve, reject) => {
-      uploadStream.on('finish', (file) => resolve(file._id as ObjectId));
-      uploadStream.on('error', reject);
+    const ext = mimeType.split('/')[1]?.trim() || 'bin';
+    const safeExt = ext.replace(/[^a-zA-Z0-9]+/g, '').slice(0, 8) || 'bin';
+    const key = `chat/${input.allianceId}/${input.roomId.toString()}/${created._id.toString()}.${safeExt}`;
+    created.key = key;
+    await created.save();
+
+    await this.r2.putObject({
+      key,
+      body: buffer,
+      contentType: mimeType,
+      cacheControl: 'private, max-age=31536000, immutable',
     });
 
     return {
-      fileId: fileId.toString(),
-      url: `/chat/attachments/${fileId.toString()}`,
+      fileId: created._id.toString(),
+      url: `/chat/attachments/${created._id.toString()}`,
       mimeType,
       size,
     };
   }
 
-  openDownloadStream(fileId: string) {
-    if (!ObjectId.isValid(fileId)) {
-      throw new BadRequestException('Invalid attachment id');
-    }
-    return this.bucket.openDownloadStream(new ObjectId(fileId));
+  async findAttachment(fileId: string): Promise<ChatAttachment | null> {
+    if (!Types.ObjectId.isValid(fileId)) return null;
+    return this.attachmentModel
+      .findById(new Types.ObjectId(fileId))
+      .lean<ChatAttachment | null>()
+      .exec();
   }
 
-  async findFileMeta(fileId: string): Promise<{
-    _id: ObjectId;
-    contentType?: string;
-    length?: number;
-    metadata?: Record<string, unknown>;
-  } | null> {
-    if (!ObjectId.isValid(fileId)) return null;
-    const files = await this.bucket
-      .find({ _id: new ObjectId(fileId) })
-      .limit(1)
-      .toArray();
-    return files[0] ?? null;
+  async openR2Download(fileId: string): Promise<{
+    stream: NodeJS.ReadableStream;
+    mimeType: string;
+    size: number;
+    roomId: Types.ObjectId;
+    allianceId: string;
+  }> {
+    const doc = await this.findAttachment(fileId);
+    if (!doc) throw new NotFoundException('Attachment not found');
+    const res = await this.r2.getObjectStream(doc.key);
+    return {
+      stream: res.body,
+      mimeType: doc.mimeType,
+      size: doc.size,
+      roomId: doc.roomId,
+      allianceId: doc.allianceId,
+    };
   }
 }
 

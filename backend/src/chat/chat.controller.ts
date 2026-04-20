@@ -236,14 +236,8 @@ export class ChatController {
     @Res() res: Response,
   ) {
     await this.chatService.assertUserMayUseChat(req.user.userId);
-    const meta = await this.attachmentsService.findFileMeta(fileId);
-    if (!meta) {
-      res.status(404).end();
-      return;
-    }
-
-    const m = (meta.metadata ?? {}) as { roomId?: Types.ObjectId };
-    if (!m.roomId) {
+    const doc = await this.attachmentsService.findAttachment(fileId);
+    if (!doc) {
       res.status(404).end();
       return;
     }
@@ -254,16 +248,12 @@ export class ChatController {
         roomId: string,
       ) => Promise<{ allianceId: string; roomObjectId: Types.ObjectId }>;
     };
-    await anyChat.assertRoomForUser(req.user.userId, m.roomId.toString());
+    await anyChat.assertRoomForUser(req.user.userId, doc.roomId.toString());
 
-    const metaMime =
-      typeof (meta.metadata as { mimeType?: unknown } | undefined)?.mimeType === 'string'
-        ? ((meta.metadata as { mimeType: string }).mimeType as string)
-        : undefined;
-    res.setHeader('Content-Type', metaMime ?? 'application/octet-stream');
-    const stream = this.attachmentsService.openDownloadStream(fileId);
-    stream.on('error', () => res.status(404).end());
-    stream.pipe(res);
+    res.setHeader('Content-Type', doc.mimeType ?? 'application/octet-stream');
+    const download = await this.attachmentsService.openR2Download(fileId);
+    download.stream.on('error', () => res.status(404).end());
+    download.stream.pipe(res);
   }
 
   @Delete('messages/:messageId')
