@@ -295,7 +295,7 @@ fun AppNavigation(
                     }
                 }
                 if (overlayTabVisible) {
-                    OverlayControlScreen(role = role)
+                    OverlayControlScreen()
                 }
             }
             composable(AppTab.PROFILE.route) {

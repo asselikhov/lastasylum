@@ -7,27 +7,29 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -40,50 +42,81 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.overlay.CombatOverlayService
+import com.lastasylum.alliance.overlay.GameForegroundGate
 import com.lastasylum.alliance.overlay.OverlayPermissions
+import com.lastasylum.alliance.ui.components.PrimaryPanel
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
+import kotlinx.coroutines.delay
 
 @Composable
-fun OverlayControlScreen(
-    role: String,
-) {
+fun OverlayControlScreen() {
     val context = LocalContext.current
-    val isRecording = remember { mutableStateOf(false) }
-    val hasMicPermission = remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.RECORD_AUDIO,
-            ) == PackageManager.PERMISSION_GRANTED,
-        )
-    }
+    val appContext = context.applicationContext
+    val prefs = remember(appContext) { UserSettingsPreferences(appContext) }
+
+    var overlayRunning by remember { mutableStateOf(CombatOverlayService.isServiceInstanceActive) }
+    var gameGateOnly by remember { mutableStateOf(prefs.isOverlayGameGateEnabled()) }
+    var targetPkg by remember { mutableStateOf(prefs.getOverlayTargetGamePackage()) }
+    var pendingEnable by remember { mutableStateOf(false) }
+
+    val latestPendingEnable = rememberUpdatedState(pendingEnable)
+    val latestGameGate = rememberUpdatedState(gameGateOnly)
+
+    fun micOk(): Boolean = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.RECORD_AUDIO,
+    ) == PackageManager.PERMISSION_GRANTED
+
+    fun overlayOk(): Boolean = OverlayPermissions.canDrawOverlays(context)
+
+    fun usageOk(): Boolean = !latestGameGate.value ||
+        GameForegroundGate.hasUsageStatsAccess(context)
+
     val micPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        hasMicPermission.value = granted
+        if (granted && latestPendingEnable.value) {
+            when {
+                !overlayOk() -> OverlayPermissions.openOverlayPermissionSettings(context)
+                !usageOk() -> OverlayPermissions.openUsageAccessSettings(context)
+                CombatOverlayService.startService(context) -> {
+                    overlayRunning = true
+                    pendingEnable = false
+                }
+                else -> pendingEnable = false
+            }
+        } else if (!granted) {
+            pendingEnable = false
+        }
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                hasMicPermission.value = ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.RECORD_AUDIO,
-                ) == PackageManager.PERMISSION_GRANTED
+                overlayRunning = CombatOverlayService.isServiceInstanceActive
+                if (latestPendingEnable.value && !overlayRunning && micOk() && overlayOk() && usageOk()) {
+                    if (CombatOverlayService.startService(context)) {
+                        overlayRunning = true
+                        pendingEnable = false
+                    }
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val scroll = rememberScrollState()
-    val appContext = context.applicationContext
-    val userPrefs = remember(appContext) {
-        UserSettingsPreferences(appContext)
+    LaunchedEffect(targetPkg) {
+        delay(450)
+        val trimmed = targetPkg.trim()
+        if (trimmed.isEmpty()) return@LaunchedEffect
+        if (trimmed == prefs.getOverlayTargetGamePackage()) return@LaunchedEffect
+        prefs.setOverlayTargetGamePackage(trimmed)
+        CombatOverlayService.requestGateRecheckIfRunning(context)
     }
-    var gameGate by remember { mutableStateOf(userPrefs.isOverlayGameGateEnabled()) }
-    var targetPkg by remember { mutableStateOf(userPrefs.getOverlayTargetGamePackage()) }
+
+    val scroll = rememberScrollState()
 
     Column(
         modifier = Modifier
@@ -97,161 +130,93 @@ fun OverlayControlScreen(
             ),
         verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.sectionGap),
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.large,
-            tonalElevation = 0.dp,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-        ) {
-            Column(
-                modifier = Modifier.padding(SquadRelayDimens.panelInnerPadding),
-                verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.blockGap),
-            ) {
-                Text(
-                    text = stringResource(R.string.overlay_title),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = stringResource(R.string.overlay_role_privileges, role),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.large,
-                    onClick = {
-                        val micOk = ContextCompat.checkSelfPermission(
-                            context,
-                            Manifest.permission.RECORD_AUDIO,
-                        ) == PackageManager.PERMISSION_GRANTED
-                        hasMicPermission.value = micOk
-                        if (!micOk) {
-                            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                            return@Button
-                        }
-                        if (OverlayPermissions.canDrawOverlays(context)) {
-                            CombatOverlayService.startService(context)
-                        } else {
-                            OverlayPermissions.openOverlayPermissionSettings(context)
-                        }
-                    },
-                ) {
-                    Text(text = stringResource(R.string.overlay_start_combat))
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
-                ) {
-                    OutlinedButton(
-                        modifier = Modifier.weight(1f),
-                        shape = MaterialTheme.shapes.large,
-                        onClick = { CombatOverlayService.stopService(context) },
-                    ) {
-                        Text(text = stringResource(R.string.overlay_stop_combat))
-                    }
-                    OutlinedButton(
-                        modifier = Modifier.weight(1f),
-                        shape = MaterialTheme.shapes.large,
-                        onClick = { OverlayPermissions.openOverlayPermissionSettings(context) },
-                    ) {
-                        Text(text = stringResource(R.string.overlay_permission_settings))
-                    }
-                }
-                OutlinedButton(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.large,
-                    onClick = {
-                        val micOk = ContextCompat.checkSelfPermission(
-                            context,
-                            Manifest.permission.RECORD_AUDIO,
-                        ) == PackageManager.PERMISSION_GRANTED
-                        hasMicPermission.value = micOk
-                        if (!micOk) {
-                            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                            return@OutlinedButton
-                        }
-                        if (!isRecording.value) {
-                            CombatOverlayService.startRecording(context)
-                        } else {
-                            CombatOverlayService.stopRecording(context)
-                        }
-                        isRecording.value = !isRecording.value
-                    },
-                    colors = ButtonDefaults.outlinedButtonColors(),
-                ) {
-                    Text(
-                        text = if (isRecording.value) {
-                            stringResource(R.string.overlay_ptt_stop)
-                        } else {
-                            stringResource(R.string.overlay_ptt_start)
-                        },
-                    )
-                }
-            }
-        }
+        PrimaryPanel {
+            Text(
+                text = stringResource(R.string.overlay_title),
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.height(20.dp))
 
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.large,
-            tonalElevation = 0.dp,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-        ) {
-            Column(
-                modifier = Modifier.padding(SquadRelayDimens.panelInnerPadding),
-                verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.blockGap),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(SquadRelayDimens.blockGap),
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.overlay_game_gate_title),
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
+            OverlaySwitchRow(
+                title = stringResource(R.string.overlay_switch_panel),
+                checked = overlayRunning,
+                onCheckedChange = { on ->
+                    if (on) {
+                        pendingEnable = true
+                        when {
+                            !micOk() -> micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            !overlayOk() -> OverlayPermissions.openOverlayPermissionSettings(context)
+                            !usageOk() -> OverlayPermissions.openUsageAccessSettings(context)
+                            CombatOverlayService.startService(context) -> {
+                                overlayRunning = true
+                                pendingEnable = false
+                            }
+                            else -> pendingEnable = false
+                        }
+                    } else {
+                        pendingEnable = false
+                        CombatOverlayService.stopService(context)
+                        overlayRunning = false
                     }
-                    Switch(
-                        checked = gameGate,
-                        onCheckedChange = { v ->
-                            gameGate = v
-                            userPrefs.setOverlayGameGateEnabled(v)
-                            CombatOverlayService.requestGateRecheckIfRunning(context)
-                        },
-                    )
-                }
+                },
+            )
+
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Spacer(Modifier.height(8.dp))
+
+            OverlaySwitchRow(
+                title = stringResource(R.string.overlay_switch_game_only),
+                checked = gameGateOnly,
+                onCheckedChange = { v ->
+                    gameGateOnly = v
+                    prefs.setOverlayGameGateEnabled(v)
+                    CombatOverlayService.requestGateRecheckIfRunning(context)
+                },
+            )
+
+            if (gameGateOnly) {
+                Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
                     modifier = Modifier.fillMaxWidth(),
                     value = targetPkg,
                     onValueChange = { targetPkg = it },
                     singleLine = true,
-                    label = { Text(stringResource(R.string.overlay_target_package_label)) },
+                    label = { Text(stringResource(R.string.overlay_package_field_label)) },
+                    textStyle = MaterialTheme.typography.bodyMedium,
                 )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
-                ) {
-                    OutlinedButton(
-                        modifier = Modifier.weight(1f),
-                        shape = MaterialTheme.shapes.large,
-                        onClick = {
-                            userPrefs.setOverlayTargetGamePackage(targetPkg)
-                            CombatOverlayService.requestGateRecheckIfRunning(context)
-                        },
-                    ) {
-                        Text(text = stringResource(R.string.overlay_target_package_save))
-                    }
-                    OutlinedButton(
-                        modifier = Modifier.weight(1f),
-                        shape = MaterialTheme.shapes.large,
-                        onClick = { OverlayPermissions.openUsageAccessSettings(context) },
-                    ) {
-                        Text(text = stringResource(R.string.overlay_usage_access_button))
-                    }
-                }
             }
         }
+    }
+}
+
+@Composable
+private fun OverlaySwitchRow(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 16.dp),
+        )
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                checkedTrackColor = MaterialTheme.colorScheme.primary,
+            ),
+        )
     }
 }
