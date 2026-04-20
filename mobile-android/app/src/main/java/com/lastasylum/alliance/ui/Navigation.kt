@@ -252,6 +252,7 @@ fun AppNavigation(
                     onDraftChange = chatViewModel::setDraftMessage,
                     onSendDraft = chatViewModel::sendDraftMessage,
                     onSendStickerPayload = { body -> chatViewModel.sendMessage(body) },
+                    onPickImages = chatViewModel::onImagesPicked,
                     onReplyToMessage = chatViewModel::beginReplyToMessage,
                     onClearReply = chatViewModel::clearReplyToMessage,
                     onOpenMessageActions = chatViewModel::openMessageActions,

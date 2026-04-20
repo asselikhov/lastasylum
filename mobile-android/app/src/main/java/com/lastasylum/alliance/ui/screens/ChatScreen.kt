@@ -1,6 +1,8 @@
 package com.lastasylum.alliance.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -307,6 +309,7 @@ fun ChatScreen(
     onDraftChange: (String) -> Unit,
     onSendDraft: () -> Unit,
     onSendStickerPayload: (String) -> Unit,
+    onPickImages: (List<Uri>) -> Unit,
     onReplyToMessage: (String) -> Unit,
     onClearReply: () -> Unit,
     onOpenMessageActions: (String) -> Unit,
@@ -472,7 +475,8 @@ fun ChatScreen(
                     .fillMaxWidth()
                     // adjustNothing + edge-to-edge: window does not resize; lift composer with IME
                     // insets only (no adjustResize, so no double gap with this padding).
-                    .imePadding(),
+                    .imePadding()
+                    .padding(bottom = 6.dp),
             ) {
                 state.sendFailure?.let { failure ->
                     Surface(
@@ -536,6 +540,11 @@ fun ChatScreen(
                         onSendStickerPayload = { payload ->
                             if (!globalComposerLocked && !state.isSending) {
                                 onSendStickerPayload(payload)
+                            }
+                        },
+                        onPickImages = { uris ->
+                            if (!globalComposerLocked && !state.isSending) {
+                                onPickImages(uris)
                             }
                         },
                         onClearReply = onClearReply,
@@ -952,6 +961,7 @@ private fun ChatComposer(
     onDraftChange: (String) -> Unit,
     onSendDraft: () -> Unit,
     onSendStickerPayload: (String) -> Unit,
+    onPickImages: (List<Uri>) -> Unit,
     onClearReply: () -> Unit,
 ) {
     var showMediaPanel by remember { mutableStateOf(false) }
@@ -963,6 +973,14 @@ private fun ChatComposer(
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
     val gifScroll = rememberScrollState()
+    val pickImagesLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents(),
+        onResult = { uris ->
+            if (!readOnly && uris.isNotEmpty()) {
+                onPickImages(uris)
+            }
+        },
+    )
 
     LaunchedEffect(showMediaPanel) {
         if (!showMediaPanel) {
@@ -1131,55 +1149,45 @@ private fun ChatComposer(
                                     }
                                 },
                             )
-                            IconButton(
-                                onClick = {
-                                    if (readOnly) return@IconButton
-                                    focusManager.clearFocus()
-                                    keyboard?.hide()
-                                    mediaTab = MediaPickerTab.Gif
-                                    showMediaPanel = true
-                                },
-                                enabled = !readOnly,
-                                modifier = Modifier.size(44.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.AttachFile,
-                                    contentDescription = stringResource(R.string.chat_attach_gif),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                            val showInlineSend = sendEnabled && !readOnly && draft.isNotBlank()
+                            AnimatedVisibility(visible = showInlineSend || isSending) {
+                                IconButton(
+                                    onClick = { if (!isSending && showInlineSend) onSendDraft() },
+                                    enabled = showInlineSend && !isSending,
+                                    modifier = Modifier.size(44.dp),
+                                ) {
+                                    if (isSending) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(20.dp),
+                                            strokeWidth = 2.dp,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Outlined.Send,
+                                            contentDescription = stringResource(R.string.chat_send),
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
-                    val fabEnabled = sendEnabled && !readOnly && draft.isNotBlank() && !isSending
-                    FloatingActionButton(
-                        onClick = { if (fabEnabled) onSendDraft() },
-                        modifier = Modifier.size(52.dp),
-                        shape = CircleShape,
-                        containerColor = if (fabEnabled) {
-                            ChatTelegramOutgoingBubble
-                        } else {
-                            ChatTelegramOutgoingBubble.copy(alpha = 0.42f)
+                    IconButton(
+                        onClick = {
+                            if (readOnly) return@IconButton
+                            focusManager.clearFocus()
+                            keyboard?.hide()
+                            pickImagesLauncher.launch("image/*")
                         },
-                        contentColor = Color.White,
-                        elevation = FloatingActionButtonDefaults.elevation(
-                            defaultElevation = 0.dp,
-                            pressedElevation = 2.dp,
-                            focusedElevation = 0.dp,
-                            hoveredElevation = 0.dp,
-                        ),
+                        enabled = !readOnly && !isSending,
+                        modifier = Modifier.size(44.dp),
                     ) {
-                        if (isSending) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                strokeWidth = 2.dp,
-                                color = Color.White,
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Outlined.Send,
-                                contentDescription = stringResource(R.string.chat_send),
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Outlined.AttachFile,
+                            contentDescription = stringResource(R.string.chat_attach_gif),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }

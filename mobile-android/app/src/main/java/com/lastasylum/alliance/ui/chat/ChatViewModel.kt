@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.ui.chat
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lastasylum.alliance.data.chat.ChatAllianceIds
@@ -288,6 +289,13 @@ class ChatViewModel(
         if (_draftMessage.value == value) return
         _draftMessage.value = value
         scheduleTypingEmit()
+    }
+
+    fun onImagesPicked(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        val payload = uris.joinToString(separator = "\n") { it.toString() }
+        val sep = if (_draftMessage.value.isBlank()) "" else "\n"
+        setDraftMessage(_draftMessage.value + sep + payload)
     }
 
     private fun scheduleTypingEmit() {
