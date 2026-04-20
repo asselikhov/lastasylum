@@ -29,32 +29,34 @@ export class ChatAttachmentsService {
 
   async uploadImage(input: {
     buffer: Buffer;
-    filename: string;
+    filename?: string;
     mimeType: string;
     size: number;
     allianceId: string;
     roomId: Types.ObjectId;
     uploaderUserId: string;
   }): Promise<UploadedChatAttachment> {
-    const { buffer, filename, mimeType, size } = input;
+    const { buffer, mimeType, size } = input;
     if (!mimeType.startsWith('image/')) {
       throw new BadRequestException('Only image uploads are supported');
     }
-    const created = await this.attachmentModel.create({
+
+    const ext = mimeType.split('/')[1]?.trim() || 'bin';
+    const safeExt = ext.replace(/[^a-zA-Z0-9]+/g, '').slice(0, 8) || 'bin';
+    // `key` is required in the schema — cannot create with "" (Mongoose rejects empty string on create).
+    const fileId = new Types.ObjectId();
+    const key = `chat/${input.allianceId}/${input.roomId.toString()}/${fileId.toString()}.${safeExt}`;
+
+    await this.attachmentModel.create({
+      _id: fileId,
       allianceId: input.allianceId,
       roomId: input.roomId,
       uploaderUserId: input.uploaderUserId,
       kind: 'image',
-      key: '', // set below after key is computed
+      key,
       mimeType,
       size,
     });
-
-    const ext = mimeType.split('/')[1]?.trim() || 'bin';
-    const safeExt = ext.replace(/[^a-zA-Z0-9]+/g, '').slice(0, 8) || 'bin';
-    const key = `chat/${input.allianceId}/${input.roomId.toString()}/${created._id.toString()}.${safeExt}`;
-    created.key = key;
-    await created.save();
 
     try {
       await this.r2.putObject({
@@ -65,13 +67,13 @@ export class ChatAttachmentsService {
       });
     } catch (err) {
       this.logger.error(`R2 putObject failed key=${key}`, err);
-      await this.attachmentModel.deleteOne({ _id: created._id }).exec().catch(() => undefined);
+      await this.attachmentModel.deleteOne({ _id: fileId }).exec().catch(() => undefined);
       throw new BadGatewayException('CHAT_ATTACHMENT_R2_PUT_FAILED');
     }
 
     return {
-      fileId: created._id.toString(),
-      url: `/chat/attachments/${created._id.toString()}`,
+      fileId: fileId.toString(),
+      url: `/chat/attachments/${fileId.toString()}`,
       mimeType,
       size,
     };
