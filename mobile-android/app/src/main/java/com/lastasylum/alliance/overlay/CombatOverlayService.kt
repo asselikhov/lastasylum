@@ -29,7 +29,6 @@ import android.widget.Toast
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.google.android.material.floatingactionbutton.FloatingActionButton
-import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
@@ -193,6 +192,7 @@ class CombatOverlayService : Service() {
     /** Показать оверлей при наличии разрешения «поверх окон» (после проверки режима «только в игре»). */
     private fun ensureOverlayIfPermitted() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            Log.w(TAG, "ensureOverlayIfPermitted: SYSTEM_ALERT_WINDOW not granted for ${packageName}")
             updateNotification(getString(R.string.overlay_notif_permission_required))
             return
         }
@@ -226,25 +226,16 @@ class CombatOverlayService : Service() {
                 val shouldShow = hasUsageAccess &&
                     GameForegroundGate.shouldShowOverlay(this@CombatOverlayService, targets)
                 mainHandler.post {
-                    if (BuildConfig.DEBUG) {
-                        val nowMs = System.currentTimeMillis()
-                        if (nowMs - lastGateDiagLogMs >= 20_000L) {
-                            if (!hasUsageAccess) {
-                                lastGateDiagLogMs = nowMs
-                                Log.d(
-                                    TAG,
-                                    "Game gate: usage stats access denied (AppOps). " +
-                                        "Settings → Special app access → Usage access → enable for this app.",
-                                )
-                            } else if (!shouldShow) {
-                                lastGateDiagLogMs = nowMs
-                                val hinted = GameForegroundGate.lastResumedPackage(this@CombatOverlayService)
-                                Log.d(
-                                    TAG,
-                                    "Game gate hide: targets=${targets.joinToString()} hinted=$hinted " +
-                                        "(tag $TAG; HyperOS: battery unrestricted + autostart for SquadRelay)",
-                                )
-                            }
+                    val nowMs = System.currentTimeMillis()
+                    if (prefs.isOverlayGameGateEnabled() && nowMs - lastGateDiagLogMs >= 25_000L) {
+                        lastGateDiagLogMs = nowMs
+                        val draw = canDrawOverlaysNow()
+                        if (!hasUsageAccess || !shouldShow || !draw || overlayView == null) {
+                            Log.i(
+                                TAG,
+                                "overlayGate usage=$hasUsageAccess inGame=$shouldShow drawOverlays=$draw " +
+                                    "overlayAttached=${overlayView != null} targets=${targets.joinToString()}",
+                            )
                         }
                     }
                     applyGameGateState(
@@ -771,7 +762,16 @@ class CombatOverlayService : Service() {
         chatStripScroll = stripScroll
         chatStripLines = stripLines
 
-        manager.addView(overlayView, overlayWindowLayoutParams)
+        val attach = runCatching { manager.addView(overlayView, overlayWindowLayoutParams) }
+        if (attach.isFailure) {
+            Log.e(TAG, "WindowManager.addView(overlay) failed", attach.exceptionOrNull())
+            overlayView = null
+            overlayBubble = null
+            chatStripScroll = null
+            chatStripLines = null
+            overlayHistoryFab = null
+            return
+        }
         windowManager = manager
         ensureToggleButton()
         ensureLockButton()

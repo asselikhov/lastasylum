@@ -52,18 +52,29 @@ object GameForegroundGate {
                     pkg,
                 )
             }
-            when (mode) {
-                AppOpsManager.MODE_ALLOWED -> true
-                // HyperOS/MIUI: при включённом доступе иногда MODE_DEFAULT, хотя query* уже отдаёт данные.
-                AppOpsManager.MODE_DEFAULT -> usageStatsProbeReturnsData(context)
-                else -> false
+            // MODE_ALLOWED — доверяем. Иначе (DEFAULT / IGNORED на HyperOS) — пробуем реальные query*:
+            if (mode == AppOpsManager.MODE_ALLOWED) {
+                true
+            } else {
+                usageStatsProbeReturnsAny(context)
             }
         } catch (_: Throwable) {
             false
         }
     }
 
-    /** Реально ли отвечает UsageStatsManager (важно для MODE_DEFAULT на части прошивок). */
+    /** Есть ли фактический доступ: непустая статистика или поток событий за последние 5 мин. */
+    private fun usageStatsProbeReturnsAny(context: Context): Boolean {
+        if (usageStatsProbeReturnsData(context)) return true
+        return runCatching {
+            val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
+                ?: return@runCatching false
+            val end = System.currentTimeMillis()
+            val events = usm.queryEvents(end - 5 * 60_000L, end)
+            events.hasNextEvent()
+        }.getOrDefault(false)
+    }
+
     private fun usageStatsProbeReturnsData(context: Context): Boolean {
         return runCatching {
             val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
@@ -384,17 +395,22 @@ object GameForegroundGate {
     /**
      * Состояние «на экране» по хронологии событий одного пакета ([UsageStatsManager.queryEventsForPackage]).
      */
+    /**
+     * Последнее «вход в fg» должно быть позже последнего «выхода», иначе Unity может слать только часть типов.
+     */
     internal fun foregroundStateAfterPackageEventTypes(chronologicalTypes: List<Int>): Boolean {
-        var seen = false
-        var inFg = false
-        for (type in chronologicalTypes) {
-            seen = true
+        if (chronologicalTypes.isEmpty()) return false
+        var lastEnterIndex = -1
+        var lastLeaveIndex = -1
+        for (i in chronologicalTypes.indices) {
+            val type = chronologicalTypes[i]
             when {
-                isForegroundEnterEvent(type) -> inFg = true
-                isForegroundLeaveEvent(type) -> inFg = false
+                isForegroundEnterEvent(type) -> lastEnterIndex = i
+                isForegroundLeaveEvent(type) -> lastLeaveIndex = i
             }
         }
-        return seen && inFg
+        if (lastEnterIndex < 0) return false
+        return lastEnterIndex > lastLeaveIndex
     }
 
     private fun isForegroundEnterEvent(type: Int): Boolean {
