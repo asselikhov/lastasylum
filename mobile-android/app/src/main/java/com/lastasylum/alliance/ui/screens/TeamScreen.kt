@@ -3,7 +3,6 @@ package com.lastasylum.alliance.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,6 +20,7 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -187,26 +187,32 @@ fun TeamScreen(
                     CircularProgressIndicator(strokeWidth = 2.dp)
                 }
             } else {
-                error?.let { err ->
-                    Text(
-                        text = err,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                ) {
+                    error?.let { err ->
+                        Text(
+                            text = err,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(bottom = 8.dp),
+                        )
+                    }
 
-                if (profile?.playerTeamId.isNullOrBlank()) {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = MaterialTheme.shapes.large,
-                        color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                    if (profile?.playerTeamId.isNullOrBlank()) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.large,
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
                         ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
                             Text(
                                 text = stringResource(R.string.team_no_team_title),
                                 style = MaterialTheme.typography.titleMedium,
@@ -240,110 +246,117 @@ fun TeamScreen(
                                     Text(stringResource(R.string.profile_player_team_join))
                                 }
                             }
+                            }
                         }
-                    }
-                } else if (teamDetail != null) {
-                    val team = teamDetail!!
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = MaterialTheme.shapes.large,
-                        color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    ) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = 12.dp, top = 10.dp, end = 4.dp, bottom = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    text = "${team.displayName} [${team.tag}]",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    modifier = Modifier.weight(1f),
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                if (isLeader) {
-                                    IconButton(
-                                        onClick = {
-                                            addNameDraft = ""
-                                            showAddMemberDialog = true
-                                        },
-                                        enabled = !membersBusy,
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Outlined.PersonAdd,
-                                            contentDescription = stringResource(R.string.team_cd_add_member),
-                                            tint = MaterialTheme.colorScheme.primary,
+                    } else if (teamDetail != null) {
+                        val team = teamDetail!!
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f, fill = true)
+                                .fillMaxWidth(),
+                            shape = MaterialTheme.shapes.large,
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        ) {
+                            Column(Modifier.fillMaxSize()) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(start = 14.dp, top = 12.dp, end = 6.dp, bottom = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            text = "${team.displayName} [${team.tag}]",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        Text(
+                                            text = stringResource(
+                                                R.string.team_roster_count,
+                                                team.members.size,
+                                            ),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
-                                    IconButton(
-                                        onClick = {
-                                            editTeamNameDraft = team.displayName.trim()
-                                            showEditTeamNameDialog = true
-                                        },
-                                        enabled = !membersBusy && !editNameBusy,
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Outlined.Edit,
-                                            contentDescription = stringResource(R.string.team_cd_edit_team_name),
-                                            tint = MaterialTheme.colorScheme.primary,
-                                        )
-                                    }
-                                }
-                                if (isLeader && pending > 0) {
-                                    BadgedBox(
-                                        badge = {
-                                            Badge {
-                                                Text(if (pending > 9) "9+" else "$pending")
-                                            }
-                                        },
-                                    ) {
+                                    if (isLeader) {
                                         IconButton(
                                             onClick = {
-                                                showJoinInbox = true
-                                                scope.launch {
-                                                    inboxBusy = true
-                                                    teamsRepository.listPendingJoinRequests()
-                                                        .onSuccess { inboxRequests = it }
-                                                        .onFailure { inboxRequests = emptyList() }
-                                                    inboxBusy = false
-                                                }
+                                                addNameDraft = ""
+                                                showAddMemberDialog = true
                                             },
+                                            enabled = !membersBusy,
                                         ) {
                                             Icon(
-                                                imageVector = Icons.Outlined.Inbox,
-                                                contentDescription = stringResource(R.string.profile_join_inbox_cd),
+                                                imageVector = Icons.Outlined.PersonAdd,
+                                                contentDescription = stringResource(R.string.team_cd_add_member),
+                                                tint = MaterialTheme.colorScheme.primary,
+                                            )
+                                        }
+                                        IconButton(
+                                            onClick = {
+                                                editTeamNameDraft = team.displayName.trim()
+                                                showEditTeamNameDialog = true
+                                            },
+                                            enabled = !membersBusy && !editNameBusy,
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Edit,
+                                                contentDescription = stringResource(R.string.team_cd_edit_team_name),
                                                 tint = MaterialTheme.colorScheme.primary,
                                             )
                                         }
                                     }
+                                    if (isLeader && pending > 0) {
+                                        BadgedBox(
+                                            badge = {
+                                                Badge {
+                                                    Text(if (pending > 9) "9+" else "$pending")
+                                                }
+                                            },
+                                        ) {
+                                            IconButton(
+                                                onClick = {
+                                                    showJoinInbox = true
+                                                    scope.launch {
+                                                        inboxBusy = true
+                                                        teamsRepository.listPendingJoinRequests()
+                                                            .onSuccess { inboxRequests = it }
+                                                            .onFailure { inboxRequests = emptyList() }
+                                                        inboxBusy = false
+                                                    }
+                                                },
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.Inbox,
+                                                    contentDescription = stringResource(R.string.profile_join_inbox_cd),
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
-                            }
-                            LazyColumn(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 520.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(2.dp),
-                            ) {
-                                item {
-                                    TeamTableHeader(showRoleEditColumn = isLeader)
-                                }
-                                items(team.members, key = { it.userId }) { member ->
-                                    TeamMemberTableRow(
-                                        member = member,
-                                        isSquadLeader = isLeader,
-                                        currentUserId = currentUserId,
-                                        teamId = team.id,
-                                        busy = membersBusy,
-                                        onBusyChange = { membersBusy = it },
-                                        onReload = { reloadProfileAndTeam() },
-                                        onError = { msg -> error = msg },
-                                        teamsRepository = teamsRepository,
-                                        onRequestEditMemberRole = { m -> roleEditMember = m },
-                                    )
-                                }
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 8.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                                )
+                                SquadTeamRoster(
+                                    members = team.members,
+                                    isSquadLeader = isLeader,
+                                    currentUserId = currentUserId,
+                                    teamId = team.id,
+                                    busy = membersBusy,
+                                    onBusyChange = { membersBusy = it },
+                                    onReload = { reloadProfileAndTeam() },
+                                    onError = { msg -> error = msg },
+                                    teamsRepository = teamsRepository,
+                                    onRequestEditMemberRole = { m -> roleEditMember = m },
+                                    modifier = Modifier
+                                        .weight(1f, fill = true)
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                                )
                             }
                         }
                     }

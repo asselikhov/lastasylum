@@ -3,13 +3,10 @@ package com.lastasylum.alliance.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Edit
@@ -183,35 +180,24 @@ fun TeamDetailScreen(
                     }
                     detail != null -> {
                         val d = detail!!
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(
-                                horizontal = SquadRelayDimens.contentPaddingHorizontal,
-                                vertical = 12.dp,
-                            ),
-                            verticalArrangement = Arrangement.spacedBy(0.dp),
-                        ) {
-                            item {
-                                TeamTableHeader(showRoleEditColumn = isLeader)
-                            }
-                            items(d.members, key = { it.userId }) { m ->
-                                TeamMemberTableRow(
-                                    member = m,
-                                    isSquadLeader = isLeader,
-                                    currentUserId = currentUserId,
-                                    teamId = teamId,
-                                    busy = busy,
-                                    onBusyChange = { busy = it },
-                                    onReload = { reload() },
-                                    onError = { msg -> error = msg },
-                                    teamsRepository = teamsRepository,
-                                    onRequestEditMemberRole = { x -> roleEditMember = x },
-                                )
-                                HorizontalDivider(
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                                )
-                            }
-                        }
+                        SquadTeamRoster(
+                            members = d.members,
+                            isSquadLeader = isLeader,
+                            currentUserId = currentUserId,
+                            teamId = teamId,
+                            busy = busy,
+                            onBusyChange = { busy = it },
+                            onReload = { reload() },
+                            onError = { msg -> error = msg },
+                            teamsRepository = teamsRepository,
+                            onRequestEditMemberRole = { x -> roleEditMember = x },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(
+                                    horizontal = SquadRelayDimens.contentPaddingHorizontal,
+                                    vertical = 12.dp,
+                                ),
+                        )
                     }
                 }
             }

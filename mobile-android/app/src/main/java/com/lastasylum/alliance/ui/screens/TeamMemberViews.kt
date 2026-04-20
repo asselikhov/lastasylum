@@ -1,19 +1,30 @@
 package com.lastasylum.alliance.ui.screens
 
-import android.content.Context
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ManageAccounts
+import androidx.compose.material.icons.outlined.PersonRemove
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
@@ -35,12 +46,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import coil.compose.AsyncImage
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
@@ -50,56 +60,162 @@ import com.lastasylum.alliance.ui.util.telegramDisplayHandle
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.launch
 
-fun squadRoleCellLabel(context: Context, member: PlayerTeamMemberDto): String {
-    return if (member.isLeader) {
-        context.getString(R.string.team_squad_r5_label)
-    } else {
-        when (member.teamRole) {
-            "R5" -> context.getString(R.string.team_squad_r5_label)
-            "R4" -> context.getString(R.string.team_squad_r4_label)
-            "R3" -> context.getString(R.string.team_squad_r3_label)
-            "R2" -> context.getString(R.string.team_squad_r2_label)
-            else -> context.getString(R.string.team_squad_r1_label)
+private object SquadTableTokens {
+    val avatarCol: Dp = 44.dp
+    val roleCol: Dp = 52.dp
+    val telegramCol: Dp = 152.dp
+    /** Manage role + remove member for leader */
+    val actionCol: Dp = 104.dp
+    val rowHeight: Dp = 56.dp
+    val cellPadH: Dp = 8.dp
+    val cellPadV: Dp = 6.dp
+}
+
+/** Width so the longest nickname in the roster fits on one line (approx. glyph width). */
+fun squadNicknameColumnWidth(members: List<PlayerTeamMemberDto>): Dp {
+    val longest = members.maxOfOrNull { it.username.length }?.coerceIn(1, 72) ?: 6
+    return (longest * 13 + 36).dp.coerceIn(112.dp, 400.dp)
+}
+
+fun squadRoleCode(member: PlayerTeamMemberDto): String {
+    val raw = member.teamRole.trim().uppercase().takeIf { it.isNotEmpty() } ?: "R1"
+    return if (member.isLeader) "R5" else raw
+}
+
+@Composable
+fun SquadTeamRoster(
+    members: List<PlayerTeamMemberDto>,
+    isSquadLeader: Boolean,
+    currentUserId: String,
+    teamId: String,
+    busy: Boolean,
+    onBusyChange: (Boolean) -> Unit,
+    onReload: () -> Unit,
+    onError: (String?) -> Unit,
+    teamsRepository: TeamsRepository,
+    onRequestEditMemberRole: (PlayerTeamMemberDto) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val nickW = remember(members) { squadNicknameColumnWidth(members) }
+    val actionW = if (isSquadLeader) SquadTableTokens.actionCol else 0.dp
+    val tableInnerWidth =
+        SquadTableTokens.avatarCol + nickW + SquadTableTokens.roleCol +
+            SquadTableTokens.telegramCol + actionW + SquadTableTokens.cellPadH * 2
+    val hScroll = rememberScrollState()
+
+    BoxWithConstraints(modifier = modifier) {
+        val useScroll = tableInnerWidth > maxWidth
+        val columnWidth = maxOf(tableInnerWidth, maxWidth)
+
+        @Composable
+        fun rosterColumn(modifierForColumn: Modifier) {
+            Column(
+                modifier = modifierForColumn
+                    .width(columnWidth)
+                    .fillMaxHeight(),
+            ) {
+                TeamTableHeader(
+                    nicknameColumnWidth = nickW,
+                    showRoleEditColumn = isSquadLeader,
+                )
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                )
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp),
+                ) {
+                    items(members, key = { it.userId }) { member ->
+                        TeamMemberTableRow(
+                            member = member,
+                            nicknameColumnWidth = nickW,
+                            isSquadLeader = isSquadLeader,
+                            currentUserId = currentUserId,
+                            teamId = teamId,
+                            busy = busy,
+                            onBusyChange = onBusyChange,
+                            onReload = onReload,
+                            onError = onError,
+                            teamsRepository = teamsRepository,
+                            onRequestEditMemberRole = onRequestEditMemberRole,
+                        )
+                        HorizontalDivider(
+                            thickness = 0.5.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                        )
+                    }
+                }
+            }
+        }
+
+        if (useScroll) {
+            Row(
+                Modifier
+                    .fillMaxSize()
+                    .horizontalScroll(hScroll),
+            ) {
+                rosterColumn(Modifier)
+            }
+        } else {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                rosterColumn(Modifier)
+            }
         }
     }
 }
 
 @Composable
-fun TeamTableHeader(showRoleEditColumn: Boolean) {
+fun TeamTableHeader(
+    nicknameColumnWidth: Dp,
+    showRoleEditColumn: Boolean,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 8.dp),
+            .height(SquadTableTokens.rowHeight)
+            .padding(horizontal = SquadTableTokens.cellPadH, vertical = SquadTableTokens.cellPadV),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Spacer(Modifier.width(SquadTableTokens.avatarCol))
         Text(
             text = stringResource(R.string.team_col_player),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.weight(1.15f),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.width(nicknameColumnWidth),
+            maxLines = 1,
+            overflow = TextOverflow.Clip,
         )
         Text(
             text = stringResource(R.string.team_col_squad_role),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.weight(0.72f),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.width(SquadTableTokens.roleCol),
+            maxLines = 1,
         )
         Text(
             text = stringResource(R.string.team_col_telegram),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.weight(0.95f),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.width(SquadTableTokens.telegramCol),
+            maxLines = 1,
         )
         if (showRoleEditColumn) {
-            Spacer(Modifier.width(40.dp))
+            Spacer(Modifier.width(SquadTableTokens.actionCol))
         }
     }
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 }
 
 @Composable
 fun TeamMemberTableRow(
     member: PlayerTeamMemberDto,
+    nicknameColumnWidth: Dp,
     isSquadLeader: Boolean,
     currentUserId: String,
     teamId: String,
@@ -111,92 +227,87 @@ fun TeamMemberTableRow(
     onRequestEditMemberRole: (PlayerTeamMemberDto) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
-    val res = context.resources
+    val res = LocalContext.current.resources
     val avatar = telegramAvatarUrl(member.telegramUsername)
     val telegram = telegramDisplayHandle(member.telegramUsername)
-    val roleLabel = squadRoleCellLabel(context, member)
+    val roleCode = squadRoleCode(member)
     val canEditThisMemberRole =
         isSquadLeader && !member.isLeader && member.userId != currentUserId
+    val canRemove = isSquadLeader && !member.isLeader && member.userId != currentUserId
 
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .height(SquadTableTokens.rowHeight)
+            .clip(MaterialTheme.shapes.small)
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+            .padding(horizontal = SquadTableTokens.cellPadH, vertical = SquadTableTokens.cellPadV),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(MaterialTheme.shapes.medium)
-                .background(MaterialTheme.colorScheme.surface),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Row(
+            Box(
                 modifier = Modifier
-                    .weight(1.15f)
-                    .padding(horizontal = 8.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center,
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (avatar != null) {
-                        AsyncImage(
-                            model = avatar,
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                        )
-                    } else {
-                        Text(
-                            text = member.username.firstOrNull()?.uppercase() ?: "?",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                    }
+                if (avatar != null) {
+                    AsyncImage(
+                        model = avatar,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    Text(
+                        text = member.username.firstOrNull()?.uppercase() ?: "?",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
                 }
+            }
+            Spacer(Modifier.width(SquadTableTokens.avatarCol - 36.dp))
+            Box(
+                modifier = Modifier.width(nicknameColumnWidth),
+                contentAlignment = Alignment.Center,
+            ) {
                 Text(
                     text = member.username,
                     style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Center,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    overflow = TextOverflow.Clip,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
             Text(
-                text = roleLabel,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .weight(0.72f)
-                    .padding(horizontal = 4.dp),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+                text = roleCode,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                modifier = Modifier.width(SquadTableTokens.roleCol),
             )
             Text(
                 text = telegram ?: "—",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .weight(0.95f)
-                    .padding(end = 4.dp),
+                textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.width(SquadTableTokens.telegramCol),
             )
             if (isSquadLeader) {
-                Box(
-                    modifier = Modifier.width(40.dp),
-                    contentAlignment = Alignment.Center,
+                Row(
+                    modifier = Modifier.width(SquadTableTokens.actionCol),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (canEditThisMemberRole) {
                         IconButton(
                             onClick = { onRequestEditMemberRole(member) },
                             enabled = !busy,
-                            modifier = Modifier.size(40.dp),
+                            modifier = Modifier.size(44.dp),
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.ManageAccounts,
@@ -204,35 +315,34 @@ fun TeamMemberTableRow(
                                 tint = MaterialTheme.colorScheme.primary,
                             )
                         }
+                    } else {
+                        Spacer(Modifier.width(44.dp))
+                    }
+                    if (canRemove) {
+                        IconButton(
+                            onClick = {
+                                scope.launch {
+                                    onBusyChange(true)
+                                    teamsRepository.removeMember(teamId, member.userId)
+                                        .onSuccess { onReload() }
+                                        .onFailure { e -> onError(e.toUserMessageRu(res)) }
+                                    onBusyChange(false)
+                                }
+                            },
+                            enabled = !busy,
+                            modifier = Modifier.size(44.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.PersonRemove,
+                                contentDescription = stringResource(R.string.team_remove_member_cd),
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    } else {
+                        Spacer(Modifier.width(44.dp))
                     }
                 }
             }
-        }
-        if (isSquadLeader && !member.isLeader && member.userId != currentUserId) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(
-                    onClick = {
-                        scope.launch {
-                            onBusyChange(true)
-                            teamsRepository.removeMember(teamId, member.userId)
-                                .onSuccess { onReload() }
-                                .onFailure { e -> onError(e.toUserMessageRu(res)) }
-                            onBusyChange(false)
-                        }
-                    },
-                    enabled = !busy,
-                ) {
-                    Text(
-                        text = stringResource(R.string.team_remove_member),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-                Spacer(Modifier.width(2.dp))
-            }
-        }
     }
 }
 
