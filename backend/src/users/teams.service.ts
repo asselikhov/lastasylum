@@ -84,6 +84,35 @@ export class TeamsService {
     return chars.map((c) => c.toLocaleUpperCase('ru-RU')).join('');
   }
 
+  private escapeRegex(s: string): string {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private async findTeamByDisplayNameCaseInsensitive(
+    displayName: string,
+    excludeId?: Types.ObjectId,
+  ): Promise<PlayerTeamDocument | null> {
+    const esc = this.escapeRegex(displayName.trim());
+    const filter: Record<string, unknown> = {
+      displayName: new RegExp(`^${esc}$`, 'i'),
+    };
+    if (excludeId) {
+      filter._id = { $ne: excludeId };
+    }
+    return this.teamModel.findOne(filter).exec();
+  }
+
+  private async findTeamByTag(
+    tag: string,
+    excludeId?: Types.ObjectId,
+  ): Promise<PlayerTeamDocument | null> {
+    const filter: Record<string, unknown> = { tag };
+    if (excludeId) {
+      filter._id = { $ne: excludeId };
+    }
+    return this.teamModel.findOne(filter).exec();
+  }
+
   /**
    * Ensures `squadMembers` is populated (migrates legacy `memberUserIds` if needed).
    * Mutates the passed `team` document in memory when migration runs.
@@ -204,6 +233,14 @@ export class TeamsService {
     const nameTrim = displayName.trim();
     if (nameTrim.length < 2) {
       throw new BadRequestException('Team name is too short');
+    }
+    const nameTaken = await this.findTeamByDisplayNameCaseInsensitive(nameTrim);
+    if (nameTaken) {
+      throw new ConflictException('This team name is already taken');
+    }
+    const tagTaken = await this.findTeamByTag(tag);
+    if (tagTaken) {
+      throw new ConflictException('This team tag is already taken');
     }
     const leaderOid = new Types.ObjectId(userId);
     let team: PlayerTeamDocument;
@@ -582,10 +619,11 @@ export class TeamsService {
     return { ok: true };
   }
 
-  async updateTeamDisplayName(
+  async updateTeamBranding(
     teamId: string,
     leaderUserId: string,
     rawName: string,
+    rawTag: string,
   ): Promise<{ ok: true }> {
     const team = await this.assertTeamLeader(teamId, leaderUserId);
     const nameTrim = rawName.trim();
@@ -593,13 +631,30 @@ export class TeamsService {
       throw new BadRequestException('Team name is too short');
     }
     const nameVal = nameTrim.slice(0, 48);
+    const tagNorm = this.normalizeTag(rawTag);
+
+    const nameOther = await this.findTeamByDisplayNameCaseInsensitive(
+      nameVal,
+      team._id as Types.ObjectId,
+    );
+    if (nameOther) {
+      throw new ConflictException('This team name is already taken');
+    }
+    const tagOther = await this.findTeamByTag(tagNorm, team._id as Types.ObjectId);
+    if (tagOther) {
+      throw new ConflictException('This team tag is already taken');
+    }
+
     await this.teamModel
-      .updateOne({ _id: team._id }, { $set: { displayName: nameVal } })
+      .updateOne(
+        { _id: team._id },
+        { $set: { displayName: nameVal, tag: tagNorm } },
+      )
       .exec();
     await this.userModel
       .updateMany(
         { playerTeamId: team._id },
-        { $set: { teamDisplayName: nameVal } },
+        { $set: { teamDisplayName: nameVal, teamTag: tagNorm } },
       )
       .exec();
     return { ok: true };

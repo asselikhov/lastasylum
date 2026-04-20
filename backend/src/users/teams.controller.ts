@@ -77,15 +77,16 @@ export class TeamsController {
 
   @Patch(':teamId/display')
   @Roles(AllianceRole.R2)
-  updateTeamDisplayName(
+  updateTeamBranding(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
     @Body() dto: UpdatePlayerTeamDisplayNameDto,
   ) {
-    return this.teams.updateTeamDisplayName(
+    return this.teams.updateTeamBranding(
       teamId,
       req.user.userId,
       dto.displayName,
+      dto.tag,
     );
   }
 

@@ -43,6 +43,20 @@ import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.launch
 
+private fun isValidThreeLetterTeamTag(raw: String): Boolean {
+    val t = raw.trim()
+    var i = 0
+    var count = 0
+    while (i < t.length) {
+        val cp = t.codePointAt(i)
+        if (!Character.isLetter(cp)) return false
+        count++
+        if (count > 3) return false
+        i += Character.charCount(cp)
+    }
+    return count == 3
+}
+
 @Composable
 fun TeamDetailScreen(
     teamId: String,
@@ -62,6 +76,7 @@ fun TeamDetailScreen(
     var showAddMemberDialog by remember { mutableStateOf(false) }
     var showEditTeamNameDialog by remember { mutableStateOf(false) }
     var editTeamNameDraft by remember { mutableStateOf("") }
+    var editTeamTagDraft by remember { mutableStateOf("") }
     var editNameBusy by remember { mutableStateOf(false) }
     var roleEditMember by remember { mutableStateOf<PlayerTeamMemberDto?>(null) }
 
@@ -140,6 +155,7 @@ fun TeamDetailScreen(
                     IconButton(
                         onClick = {
                             editTeamNameDraft = detail!!.displayName.trim()
+                            editTeamTagDraft = detail!!.tag.trim()
                             showEditTeamNameDialog = true
                         },
                         enabled = !busy && !editNameBusy,
@@ -253,24 +269,39 @@ fun TeamDetailScreen(
             onDismissRequest = { if (!editNameBusy) showEditTeamNameDialog = false },
             title = { Text(stringResource(R.string.team_edit_team_name_title)) },
             text = {
-                OutlinedTextField(
-                    value = editTeamNameDraft,
-                    onValueChange = { editTeamNameDraft = it.take(48) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    enabled = !editNameBusy,
-                    label = { Text(stringResource(R.string.profile_field_team_full_name)) },
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = editTeamNameDraft,
+                        onValueChange = { editTeamNameDraft = it.take(48) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        enabled = !editNameBusy,
+                        label = { Text(stringResource(R.string.profile_field_team_full_name)) },
+                    )
+                    OutlinedTextField(
+                        value = editTeamTagDraft,
+                        onValueChange = { v ->
+                            editTeamTagDraft = v.filter { it.isLetter() }.take(3)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        enabled = !editNameBusy,
+                        label = { Text(stringResource(R.string.profile_field_team_tag)) },
+                    )
+                }
             },
             confirmButton = {
                 Button(
-                    enabled = !editNameBusy && editTeamNameDraft.trim().length >= 2,
+                    enabled = !editNameBusy &&
+                        editTeamNameDraft.trim().length >= 2 &&
+                        isValidThreeLetterTeamTag(editTeamTagDraft),
                     onClick = {
                         val n = editTeamNameDraft.trim()
-                        if (n.length < 2) return@Button
+                        val tg = editTeamTagDraft.trim()
+                        if (n.length < 2 || !isValidThreeLetterTeamTag(tg)) return@Button
                         scope.launch {
                             editNameBusy = true
-                            teamsRepository.updateTeamDisplayName(teamId, n)
+                            teamsRepository.updateTeamBranding(teamId, n, tg)
                                 .onSuccess {
                                     showEditTeamNameDialog = false
                                     reload()

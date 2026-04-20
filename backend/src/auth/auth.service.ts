@@ -9,11 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import {
-  createHash,
-  randomBytes,
-  timingSafeEqual,
-} from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { StringValue } from 'ms';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
@@ -41,6 +37,10 @@ export class AuthService {
     const existingUser = await this.usersService.findByEmail(dto.email);
     if (existingUser) {
       throw new ConflictException('Email is already in use');
+    }
+    const existingUsername = await this.usersService.findByUsername(dto.username);
+    if (existingUsername) {
+      throw new ConflictException('Username is already taken');
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
@@ -136,9 +136,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
     if (status === TeamMembershipStatus.PENDING) {
-      throw new ForbiddenException(
-        'Account pending administrator approval',
-      );
+      throw new ForbiddenException('Account pending administrator approval');
     }
   }
 
@@ -159,7 +157,9 @@ export class AuthService {
         TeamMembershipStatus.ACTIVE
     ) {
       const token = randomBytes(32).toString('hex');
-      const tokenHash = createHash('sha256').update(token, 'utf8').digest('hex');
+      const tokenHash = createHash('sha256')
+        .update(token, 'utf8')
+        .digest('hex');
       const expires = new Date(Date.now() + RESET_TOKEN_TTL_MS);
       await this.usersService.setPasswordResetToken(email, tokenHash, expires);
       const appName =

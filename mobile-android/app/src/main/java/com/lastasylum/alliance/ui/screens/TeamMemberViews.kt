@@ -77,17 +77,6 @@ private fun groupMembersBySquadRole(
 }
 
 @Composable
-private fun squadRoleSubtitle(roleCode: String): String {
-    return when (roleCode) {
-        "R5" -> stringResource(R.string.team_squad_r5_label)
-        "R4" -> stringResource(R.string.team_squad_r4_label)
-        "R3" -> stringResource(R.string.team_squad_r3_label)
-        "R2" -> stringResource(R.string.team_squad_r2_label)
-        else -> stringResource(R.string.team_squad_r1_label)
-    }
-}
-
-@Composable
 fun SquadTeamRoster(
     members: List<PlayerTeamMemberDto>,
     isSquadLeader: Boolean,
@@ -183,36 +172,28 @@ private fun SquadRoleSectionHeader(
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
             )
-            Column(Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+            Row(
+                Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = roleCode,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
                 ) {
                     Text(
-                        text = roleCode,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        text = memberCount.toString(),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                     )
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                    ) {
-                        Text(
-                            text = memberCount.toString(),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                        )
-                    }
                 }
-                Text(
-                    text = squadRoleSubtitle(roleCode),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
             }
         }
     }

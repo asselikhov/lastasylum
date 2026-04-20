@@ -14,11 +14,6 @@ class UsersRepository(
             usersApi.updateMyUsername(UpdateUsernameBody(username = username.trim()))
         }
 
-    suspend fun updateMyTeamDisplay(name: String, tag: String): Result<MyProfileDto> =
-        runCatching {
-            usersApi.updateMyTeamDisplay(UpdateTeamDisplayBody(name = name, tag = tag))
-        }
-
     suspend fun registerPushToken(token: String): Result<Unit> =
         runCatching { usersApi.registerPushToken(PushTokenBody(token)) }
 

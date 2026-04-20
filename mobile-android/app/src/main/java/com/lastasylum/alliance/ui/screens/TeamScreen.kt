@@ -106,6 +106,7 @@ fun TeamScreen(
     var showAddMemberDialog by remember { mutableStateOf(false) }
     var showEditTeamNameDialog by remember { mutableStateOf(false) }
     var editTeamNameDraft by remember { mutableStateOf("") }
+    var editTeamTagDraft by remember { mutableStateOf("") }
     var editNameBusy by remember { mutableStateOf(false) }
     var roleEditMember by remember { mutableStateOf<PlayerTeamMemberDto?>(null) }
 
@@ -297,6 +298,7 @@ fun TeamScreen(
                                         IconButton(
                                             onClick = {
                                                 editTeamNameDraft = team.displayName.trim()
+                                                editTeamTagDraft = team.tag.trim()
                                                 showEditTeamNameDialog = true
                                             },
                                             enabled = !membersBusy && !editNameBusy,
@@ -413,8 +415,8 @@ fun TeamScreen(
                                     showCreate = false
                                     reloadProfileAndTeam()
                                 }
-                                .onFailure {
-                                    createError = context.getString(R.string.profile_player_team_save_error)
+                                .onFailure { e ->
+                                    createError = e.toUserMessageRu(res)
                                 }
                             createBusy = false
                         }
@@ -648,24 +650,39 @@ fun TeamScreen(
             onDismissRequest = { if (!editNameBusy) showEditTeamNameDialog = false },
             title = { Text(stringResource(R.string.team_edit_team_name_title)) },
             text = {
-                OutlinedTextField(
-                    value = editTeamNameDraft,
-                    onValueChange = { editTeamNameDraft = it.take(48) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    enabled = !editNameBusy,
-                    label = { Text(stringResource(R.string.profile_field_team_full_name)) },
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = editTeamNameDraft,
+                        onValueChange = { editTeamNameDraft = it.take(48) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        enabled = !editNameBusy,
+                        label = { Text(stringResource(R.string.profile_field_team_full_name)) },
+                    )
+                    OutlinedTextField(
+                        value = editTeamTagDraft,
+                        onValueChange = { v ->
+                            editTeamTagDraft = v.filter { it.isLetter() }.take(3)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        enabled = !editNameBusy,
+                        label = { Text(stringResource(R.string.profile_field_team_tag)) },
+                    )
+                }
             },
             confirmButton = {
                 Button(
-                    enabled = !editNameBusy && editTeamNameDraft.trim().length >= 2,
+                    enabled = !editNameBusy &&
+                        editTeamNameDraft.trim().length >= 2 &&
+                        isValidThreeLetterTeamTag(editTeamTagDraft),
                     onClick = {
                         val n = editTeamNameDraft.trim()
-                        if (n.length < 2) return@Button
+                        val tg = editTeamTagDraft.trim()
+                        if (n.length < 2 || !isValidThreeLetterTeamTag(tg)) return@Button
                         scope.launch {
                             editNameBusy = true
-                            teamsRepository.updateTeamDisplayName(teamIdForDialogs, n)
+                            teamsRepository.updateTeamBranding(teamIdForDialogs, n, tg)
                                 .onSuccess {
                                     showEditTeamNameDialog = false
                                     reloadProfileAndTeam()

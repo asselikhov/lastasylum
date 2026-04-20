@@ -34,11 +34,18 @@ class TeamsRepository(
     suspend fun removeMember(teamId: String, userId: String): Result<Unit> =
         runCatching { teamsApi.removeMember(teamId, userId).let { } }
 
-    suspend fun updateTeamDisplayName(teamId: String, displayName: String): Result<Unit> =
+    suspend fun updateTeamBranding(
+        teamId: String,
+        displayName: String,
+        tag: String,
+    ): Result<Unit> =
         runCatching {
             teamsApi.updateTeamDisplay(
                 teamId,
-                UpdateTeamDisplayBody(displayName = displayName.trim()),
+                UpdateTeamDisplayBody(
+                    displayName = displayName.trim(),
+                    tag = tag.trim(),
+                ),
             ).let { }
         }
 

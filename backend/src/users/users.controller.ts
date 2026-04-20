@@ -21,7 +21,6 @@ import { UpdateMembershipDto } from './dto/update-membership.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { UpdateUsernameDto } from './dto/update-username.dto';
 import { UpdateTelegramDto } from './dto/update-telegram.dto';
-import { UpdateTeamDisplayNameDto } from './dto/update-team-display.dto';
 import { MuteUserDto } from './dto/mute-user.dto';
 import {
   RegisterPushTokenDto,
@@ -106,24 +105,6 @@ export class UsersController {
     const updated = await this.usersService.updateUsername(
       req.user.userId,
       dto.username,
-    );
-    if (!updated) {
-      throw new NotFoundException('User not found');
-    }
-    return await this.usersService.toSafeUser(updated);
-  }
-
-  @Patch('me/team')
-  @Roles(AllianceRole.R2)
-  @Throttle({ default: { limit: 20, ttl: 60_000 } })
-  async updateMyTeamDisplayName(
-    @Req() req: { user: RequestUser },
-    @Body() dto: UpdateTeamDisplayNameDto,
-  ) {
-    const updated = await this.usersService.updateMyTeamDisplay(
-      req.user.userId,
-      dto.name,
-      dto.tag,
     );
     if (!updated) {
       throw new NotFoundException('User not found');
@@ -216,7 +197,10 @@ export class UsersController {
 
   @Roles(AllianceRole.R5)
   @Patch(':id/username')
-  async updateUsername(@Param('id') id: string, @Body() dto: UpdateUsernameDto) {
+  async updateUsername(
+    @Param('id') id: string,
+    @Body() dto: UpdateUsernameDto,
+  ) {
     const updatedUser = await this.usersService.updateUsername(
       id,
       dto.username,

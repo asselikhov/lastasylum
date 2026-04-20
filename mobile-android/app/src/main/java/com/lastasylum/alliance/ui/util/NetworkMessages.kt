@@ -23,7 +23,7 @@ fun Throwable.toUserMessageRu(resources: Resources): String {
                     resources.getString(R.string.err_session_refresh)
                 else -> parsed ?: resources.getString(R.string.err_auth_with_code, code)
             }
-            409 -> resources.getString(R.string.err_email_taken)
+            409 -> parsed ?: resources.getString(R.string.err_duplicate_value)
             400 -> parsed ?: resources.getString(R.string.err_form_check)
             403 -> when {
                 raw.contains("GLOBAL_CHAT_TEAM_PROFILE_REQUIRED", ignoreCase = true) ->
@@ -91,6 +91,10 @@ private fun translateKnownServerMessage(english: String, resources: Resources): 
         resources.getString(R.string.err_validation_password)
     english.contains("Username is already taken", ignoreCase = true) ->
         resources.getString(R.string.err_username_taken)
+    english.contains("This team name is already taken", ignoreCase = true) ->
+        resources.getString(R.string.err_team_name_taken)
+    english.contains("This team tag is already taken", ignoreCase = true) ->
+        resources.getString(R.string.err_team_tag_taken)
     english.contains("GLOBAL_CHAT_TEAM_PROFILE_REQUIRED", ignoreCase = true) ->
         resources.getString(R.string.chat_global_team_required)
     english.contains("Only image uploads are supported", ignoreCase = true) ->

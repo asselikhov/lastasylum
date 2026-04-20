@@ -62,6 +62,7 @@ data class OkResponse(
 @JsonClass(generateAdapter = true)
 data class UpdateTeamDisplayBody(
     val displayName: String,
+    val tag: String,
 )
 
 @JsonClass(generateAdapter = true)

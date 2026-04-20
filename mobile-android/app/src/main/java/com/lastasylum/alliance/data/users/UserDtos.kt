@@ -48,12 +48,6 @@ data class UpdateTelegramBody(
 )
 
 @JsonClass(generateAdapter = true)
-data class UpdateTeamDisplayBody(
-    val name: String,
-    val tag: String,
-)
-
-@JsonClass(generateAdapter = true)
 data class PushTokenBody(
     val token: String,
 )
