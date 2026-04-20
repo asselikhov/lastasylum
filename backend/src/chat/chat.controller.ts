@@ -4,13 +4,18 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Param,
   Patch,
   Post,
   Query,
   Req,
+  Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -22,10 +27,13 @@ import { PushNotificationsService } from '../push/push-notifications.service';
 import { ChatGateway } from './chat.gateway';
 import { ChatRoomsService } from './chat-rooms.service';
 import { ChatService } from './chat.service';
+import { ChatAttachmentsService } from './chat-attachments.service';
 import { CreateChatRoomDto } from './dto/create-chat-room.dto';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { formatChatPushBody } from './zlobyaka-stickers.const';
 import { UpdateChatRoomDto } from './dto/update-chat-room.dto';
+import type { Response } from 'express';
+import { Types } from 'mongoose';
 
 type RequestUser = {
   userId: string;
@@ -42,6 +50,7 @@ export class ChatController {
     private readonly chatGateway: ChatGateway,
     private readonly usersService: UsersService,
     private readonly pushNotifications: PushNotificationsService,
+    private readonly attachmentsService: ChatAttachmentsService,
   ) {}
 
   @Get('rooms')
@@ -135,11 +144,20 @@ export class ChatController {
     @Body() dto: CreateMessageDto,
   ) {
     await this.chatService.assertUserMayUseChat(req.user.userId);
+    const attachmentIds =
+      dto.attachments?.slice(0, 8).filter((id) => Types.ObjectId.isValid(id)) ?? [];
     const message = await this.chatService.createMessage({
       roomId: dto.roomId,
       text: dto.text,
       replyToMessageId: dto.replyToMessageId,
       author: req.user,
+      attachments: attachmentIds.map((id) => ({
+        kind: 'image' as const,
+        fileId: new Types.ObjectId(id),
+        // mime/size are taken from GridFS metadata at read time; stored values are best-effort.
+        mimeType: 'image/*',
+        size: 0,
+      })),
     });
     this.chatGateway.broadcastNewMessage(dto.roomId, message);
     const authorUser = await this.usersService.findById(req.user.userId);
@@ -167,6 +185,85 @@ export class ChatController {
         .catch(() => undefined);
     }
     return message;
+  }
+
+  @Post('attachments')
+  @Roles(AllianceRole.R2)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 8 * 1024 * 1024 },
+    }),
+  )
+  async uploadAttachment(
+    @Req() req: { user: RequestUser },
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body() body: { roomId?: string },
+  ) {
+    const roomId = body.roomId?.trim() ?? '';
+    if (!roomId) throw new BadRequestException('roomId is required');
+    if (!file) throw new BadRequestException('file is required');
+    await this.chatService.assertUserMayUseChat(req.user.userId);
+
+    // Use the same access logic as message send: user must be able to join this room.
+    const anyChat = this.chatService as unknown as {
+      assertRoomForUser: (
+        userId: string,
+        roomId: string,
+      ) => Promise<{ allianceId: string; roomObjectId: Types.ObjectId }>;
+    };
+    const { allianceId, roomObjectId } = await anyChat.assertRoomForUser(
+      req.user.userId,
+      roomId,
+    );
+
+    return this.attachmentsService.uploadImage({
+      buffer: file.buffer,
+      filename: file.originalname,
+      mimeType: file.mimetype,
+      size: file.size,
+      allianceId,
+      roomId: roomObjectId,
+      uploaderUserId: req.user.userId,
+    });
+  }
+
+  @Get('attachments/:fileId')
+  @Roles(AllianceRole.R2)
+  @Header('Cache-Control', 'private, max-age=3600')
+  async getAttachment(
+    @Req() req: { user: RequestUser },
+    @Param('fileId') fileId: string,
+    @Res() res: Response,
+  ) {
+    await this.chatService.assertUserMayUseChat(req.user.userId);
+    const meta = await this.attachmentsService.findFileMeta(fileId);
+    if (!meta) {
+      res.status(404).end();
+      return;
+    }
+
+    const m = (meta.metadata ?? {}) as { roomId?: Types.ObjectId };
+    if (!m.roomId) {
+      res.status(404).end();
+      return;
+    }
+
+    const anyChat = this.chatService as unknown as {
+      assertRoomForUser: (
+        userId: string,
+        roomId: string,
+      ) => Promise<{ allianceId: string; roomObjectId: Types.ObjectId }>;
+    };
+    await anyChat.assertRoomForUser(req.user.userId, m.roomId.toString());
+
+    const metaMime =
+      typeof (meta.metadata as { mimeType?: unknown } | undefined)?.mimeType === 'string'
+        ? ((meta.metadata as { mimeType: string }).mimeType as string)
+        : undefined;
+    res.setHeader('Content-Type', metaMime ?? 'application/octet-stream');
+    const stream = this.attachmentsService.openDownloadStream(fileId);
+    stream.on('error', () => res.status(404).end());
+    stream.pipe(res);
   }
 
   @Delete('messages/:messageId')

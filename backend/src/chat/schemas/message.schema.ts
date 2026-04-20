@@ -5,6 +5,13 @@ import { ChatRoom } from './chat-room.schema';
 
 export type MessageDocument = HydratedDocument<Message>;
 
+export type MessageAttachment = {
+  kind: 'image';
+  fileId: Types.ObjectId;
+  mimeType: string;
+  size: number;
+};
+
 @Schema({ timestamps: true })
 export class Message {
   @Prop({ required: true, index: true })
@@ -28,6 +35,19 @@ export class Message {
 
   @Prop({ required: true, trim: true })
   text: string;
+
+  @Prop({
+    type: [
+      {
+        kind: { type: String, required: true },
+        fileId: { type: Types.ObjectId, required: true },
+        mimeType: { type: String, required: true },
+        size: { type: Number, required: true },
+      },
+    ],
+    default: [],
+  })
+  attachments: MessageAttachment[];
 
   @Prop({ type: Types.ObjectId, ref: Message.name, default: null, index: true })
   replyToMessageId: Types.ObjectId | null;

@@ -33,6 +33,7 @@ type MessageLean = {
   senderRole: AllianceRole;
   senderTeamTag?: string | null;
   text: string;
+  attachments?: { kind: 'image'; fileId: Types.ObjectId; mimeType: string; size: number }[];
   replyToMessageId?: Types.ObjectId | string | null;
   deletedAt?: Date | null;
   deletedByUserId?: string | null;
@@ -63,6 +64,7 @@ export type ChatMessageView = {
   /** Telegram @handle without @, from sender profile at read time (or at send). */
   senderTelegramUsername: string | null;
   text: string;
+  attachments: { kind: 'image'; url: string; mimeType: string; size: number }[];
   createdAt: string | null;
   updatedAt: string | null;
   replyToMessageId: string | null;
@@ -159,6 +161,15 @@ export class ChatService {
     const replyTarget = replyToMessageId ? replyMap?.get(replyToMessageId) : null;
     const senderTeamTag =
       message.senderTeamTag ?? senderTeamTagMap?.get(message.senderId) ?? null;
+    const attachments =
+      message.deletedAt
+        ? []
+        : (message.attachments ?? []).map((a) => ({
+            kind: 'image' as const,
+            url: `/chat/attachments/${a.fileId.toString()}`,
+            mimeType: a.mimeType,
+            size: a.size,
+          }));
     return {
       _id: this.asIdString(message._id)!,
       allianceId: message.allianceId,
@@ -169,6 +180,7 @@ export class ChatService {
       senderTeamTag,
       senderTelegramUsername: senderTelegramMap?.get(message.senderId) ?? null,
       text: message.deletedAt ? '' : message.text,
+      attachments,
       createdAt: this.toIso(message.createdAt),
       updatedAt: this.toIso(message.updatedAt),
       replyToMessageId,
@@ -265,6 +277,7 @@ export class ChatService {
     author: MessageAuthor;
     roomId: string;
     replyToMessageId?: string;
+    attachments?: { kind: 'image'; fileId: Types.ObjectId; mimeType: string; size: number }[];
   }): Promise<ChatMessageView> {
     const authorUser = await this.usersService.findById(input.author.userId);
     if (
@@ -304,6 +317,7 @@ export class ChatService {
       allianceId,
       roomId: roomObjectId,
       text: trimmedText,
+      attachments: input.attachments ?? [],
       senderId: input.author.userId,
       senderUsername: input.author.username,
       senderRole: input.author.role,

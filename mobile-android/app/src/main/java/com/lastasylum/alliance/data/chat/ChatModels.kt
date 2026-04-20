@@ -23,6 +23,7 @@ data class ChatMessage(
     val senderTeamTag: String? = null,
     val senderTelegramUsername: String? = null,
     val text: String,
+    val attachments: List<ChatAttachment> = emptyList(),
     val createdAt: String? = null,
     val updatedAt: String? = null,
     val replyToMessageId: String? = null,
@@ -31,11 +32,27 @@ data class ChatMessage(
     val deletedByUserId: String? = null,
 )
 
+@Immutable
+data class ChatAttachment(
+    val kind: String,
+    val url: String,
+    val mimeType: String? = null,
+    val size: Long? = null,
+)
+
 data class SendMessageRequest(
     val text: String,
     val roomId: String,
     val allianceId: String? = AllianceDefaults.DEFAULT_ALLIANCE_ID,
     val replyToMessageId: String? = null,
+    val attachments: List<String>? = null,
+)
+
+data class UploadChatAttachmentResponse(
+    val fileId: String,
+    val url: String,
+    val mimeType: String,
+    val size: Long,
 )
 
 @Immutable

@@ -2,6 +2,7 @@ package com.lastasylum.alliance.ui.chat
 
 import android.app.Application
 import android.net.Uri
+import android.webkit.MimeTypeMap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lastasylum.alliance.data.chat.ChatAllianceIds
@@ -22,6 +23,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
+import java.util.UUID
 
 private const val PAGE_SIZE = 30
 
@@ -277,15 +280,67 @@ class ChatViewModel(
 
     fun sendDraftMessage() {
         val text = _draftMessage.value.trim()
-        val attachments = _pickedImageUris.value
-        val combined = buildString {
-            append(text)
-            if (attachments.isNotEmpty()) {
-                if (text.isNotBlank()) append('\n')
-                append(attachments.joinToString(separator = "\n") { it.toString() })
+        if (text.isBlank() && _pickedImageUris.value.isEmpty()) return
+        val roomId = _state.value.selectedRoomId ?: return
+        val replyToMessageId = _state.value.replyToMessage?._id
+        val uris = _pickedImageUris.value
+
+        viewModelScope.launch {
+            _state.value = _state.value.copy(isSending = true, error = null, sendFailure = null)
+            val uploadedIds = ArrayList<String>(uris.size)
+            try {
+                for (uri in uris) {
+                    val uploadedId = uploadOneImage(roomId, uri) ?: continue
+                    uploadedIds.add(uploadedId)
+                }
+                repository.sendMessageWithRetries(
+                    text = text.ifBlank { " " },
+                    roomId = roomId,
+                    replyToMessageId = replyToMessageId,
+                    attachments = uploadedIds.takeIf { it.isNotEmpty() },
+                )
+                    .onSuccess { sent ->
+                        applyIncomingMessage(sent, clearComposer = true)
+                    }
+                    .onFailure { throwable ->
+                        _state.value = _state.value.copy(
+                            isSending = false,
+                            sendFailure = ChatSendFailure(
+                                messageText = text,
+                                replyToMessageId = replyToMessageId,
+                                errorMessage = throwable.toUserMessageRu(res),
+                            ),
+                        )
+                    }
+            } catch (t: Throwable) {
+                _state.value = _state.value.copy(
+                    isSending = false,
+                    sendFailure = ChatSendFailure(
+                        messageText = text,
+                        replyToMessageId = replyToMessageId,
+                        errorMessage = t.toUserMessageRu(res),
+                    ),
+                )
             }
         }
-        sendMessage(combined)
+    }
+
+    private suspend fun uploadOneImage(roomId: String, uri: Uri): String? {
+        val ctx = getApplication<Application>()
+        val cr = ctx.contentResolver
+        val mime = cr.getType(uri)?.trim().orEmpty().ifBlank { "image/*" }
+        val ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)?.takeIf { it.isNotBlank() }
+        val tmp = File(ctx.cacheDir, "chat_upload_${UUID.randomUUID()}${if (ext != null) ".$ext" else ""}")
+        cr.openInputStream(uri)?.use { input ->
+            tmp.outputStream().use { out -> input.copyTo(out) }
+        } ?: return null
+        return try {
+            repository.uploadImageFile(roomId, tmp, mime)
+                .getOrNull()
+                ?.fileId
+        } finally {
+            runCatching { tmp.delete() }
+        }
     }
 
     fun retrySendFailure() {

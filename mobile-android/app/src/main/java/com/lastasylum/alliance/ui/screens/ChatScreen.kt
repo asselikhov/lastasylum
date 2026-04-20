@@ -122,9 +122,11 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
+import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.ui.chat.ChatState
 import com.lastasylum.alliance.ui.chat.chatMessageSemanticsPreview
@@ -1986,6 +1988,63 @@ private fun ChatBubbleInnerColumn(
                 )
             }
         } else {
+            if (message.attachments.isNotEmpty()) {
+                val attachments = message.attachments.filter { it.kind == "image" && it.url.isNotBlank() }
+                if (attachments.isNotEmpty()) {
+                    val maxInBubble = 4
+                    val shown = attachments.take(maxInBubble)
+                    val extra = (attachments.size - shown.size).coerceAtLeast(0)
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        items(shown, key = { it.url }) { a ->
+                            Box(
+                                modifier = Modifier
+                                    .size(160.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color.Black.copy(alpha = 0.06f)),
+                            ) {
+                                val abs = if (a.url.startsWith("http")) {
+                                    a.url
+                                } else {
+                                    BuildConfig.API_BASE_URL.trimEnd('/') + "/" + a.url.trimStart('/')
+                                }
+                                AsyncImage(
+                                    model = ImageRequest.Builder(bubbleContext)
+                                        .data(abs)
+                                        .apply {
+                                            val token = AppContainer.from(bubbleContext).tokenStore.getAccessToken()
+                                            if (!token.isNullOrBlank()) {
+                                                addHeader("Authorization", "Bearer $token")
+                                            }
+                                        }
+                                        .crossfade(true)
+                                        .build(),
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                )
+                                if (extra > 0 && a == shown.last()) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Color.Black.copy(alpha = 0.35f)),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            text = "+$extra",
+                                            color = Color.White,
+                                            style = MaterialTheme.typography.titleLarge,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Bottom,

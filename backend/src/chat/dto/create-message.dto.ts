@@ -1,4 +1,11 @@
-import { IsMongoId, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsArray,
+  IsMongoId,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 export class CreateMessageDto {
   @IsString()
@@ -16,4 +23,10 @@ export class CreateMessageDto {
   @IsOptional()
   @IsMongoId()
   replyToMessageId?: string;
+
+  /** GridFS file ids returned by POST /chat/attachments (images only for now). */
+  @IsOptional()
+  @IsArray()
+  @IsMongoId({ each: true })
+  attachments?: string[];
 }

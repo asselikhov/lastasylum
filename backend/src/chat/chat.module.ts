@@ -7,6 +7,7 @@ import { ChatRoomsService } from './chat-rooms.service';
 import { ChatController } from './chat.controller';
 import { ChatGateway } from './chat.gateway';
 import { ChatService } from './chat.service';
+import { ChatAttachmentsService } from './chat-attachments.service';
 import { ChatRoom, ChatRoomSchema } from './schemas/chat-room.schema';
 import { Message, MessageSchema } from './schemas/message.schema';
 
@@ -21,7 +22,7 @@ import { Message, MessageSchema } from './schemas/message.schema';
     ]),
   ],
   controllers: [ChatController],
-  providers: [ChatService, ChatGateway, ChatRoomsService],
+  providers: [ChatService, ChatGateway, ChatRoomsService, ChatAttachmentsService],
   exports: [ChatService, ChatRoomsService],
 })
 export class ChatModule {}
