@@ -1030,6 +1030,9 @@ private fun ChatComposer(
                 verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
             ) {
                 if (pickedImageUris.isNotEmpty()) {
+                    val maxThumbs = 4
+                    val visibleThumbs = pickedImageUris.take(maxThumbs)
+                    val extraCount = (pickedImageUris.size - visibleThumbs.size).coerceAtLeast(0)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1056,7 +1059,7 @@ private fun ChatComposer(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         contentPadding = PaddingValues(vertical = 2.dp),
                     ) {
-                        items(pickedImageUris, key = { it.toString() }) { uri ->
+                        items(visibleThumbs, key = { it.toString() }) { uri ->
                             Box(
                                 modifier = Modifier
                                     .size(64.dp)
@@ -1072,6 +1075,21 @@ private fun ChatComposer(
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop,
                                 )
+                                if (extraCount > 0 && uri == visibleThumbs.last()) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Color.Black.copy(alpha = 0.45f)),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            text = "+$extraCount",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = Color.White,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
+                                    }
+                                }
                                 IconButton(
                                     onClick = { onRemovePickedImage(uri) },
                                     enabled = !readOnly && !isSending,
@@ -1080,11 +1098,19 @@ private fun ChatComposer(
                                         .size(28.dp)
                                         .padding(2.dp),
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Cancel,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                    )
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = Color.Black.copy(alpha = 0.38f),
+                                        tonalElevation = 0.dp,
+                                        shadowElevation = 0.dp,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Cancel,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.padding(4.dp),
+                                        )
+                                    }
                                 }
                             }
                         }
