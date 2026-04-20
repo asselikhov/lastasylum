@@ -1,17 +1,21 @@
+import { Transform } from 'class-transformer';
 import {
   IsArray,
   IsMongoId,
   IsOptional,
   IsString,
   MaxLength,
-  MinLength,
 } from 'class-validator';
 
 export class CreateMessageDto {
+  /** Omitted or blank when sending image-only (requires `attachments`). */
+  @Transform(({ value }) =>
+    typeof value === 'string' && value.trim() === '' ? undefined : value,
+  )
+  @IsOptional()
   @IsString()
-  @MinLength(1)
   @MaxLength(1200)
-  text: string;
+  text?: string;
 
   @IsMongoId()
   roomId: string;

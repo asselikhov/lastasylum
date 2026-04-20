@@ -150,7 +150,7 @@ export class ChatController {
       dto.attachments?.slice(0, 8).filter((id) => Types.ObjectId.isValid(id)) ?? [];
     const message = await this.chatService.createMessage({
       roomId: dto.roomId,
-      text: dto.text,
+      text: dto.text ?? '',
       replyToMessageId: dto.replyToMessageId,
       author: req.user,
       attachments: attachmentIds.map((id) => ({
@@ -164,7 +164,12 @@ export class ChatController {
     this.chatGateway.broadcastNewMessage(dto.roomId, message);
     const authorUser = await this.usersService.findById(req.user.userId);
     if (authorUser && message.allianceId !== GLOBAL_CHAT_ALLIANCE_ID) {
-      const preview = formatChatPushBody(dto.text);
+      const preview =
+        dto.text?.trim()
+          ? formatChatPushBody(dto.text)
+          : attachmentIds.length > 0
+            ? 'Фото'
+            : '';
       const messageId =
         typeof (message as { _id?: unknown })._id === 'string'
           ? (message as { _id: string })._id

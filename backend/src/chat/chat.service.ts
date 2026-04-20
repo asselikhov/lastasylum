@@ -273,7 +273,7 @@ export class ChatService {
   }
 
   async createMessage(input: {
-    text: string;
+    text?: string;
     author: MessageAuthor;
     roomId: string;
     replyToMessageId?: string;
@@ -310,7 +310,13 @@ export class ChatService {
       input.replyToMessageId,
     );
 
-    const trimmedText = input.text.trim();
+    const trimmedText = (input.text ?? '').trim();
+    const hasAttachments = (input.attachments?.length ?? 0) > 0;
+    if (!trimmedText && !hasAttachments) {
+      throw new BadRequestException(
+        'Message must include non-empty text or at least one attachment',
+      );
+    }
     this.assertZlobyakaStickerPayload(trimmedText);
 
     const created = await this.messageModel.create({

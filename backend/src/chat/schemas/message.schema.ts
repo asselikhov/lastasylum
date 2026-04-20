@@ -33,7 +33,8 @@ export class Message {
   @Prop({ type: String, default: null, trim: true })
   senderTeamTag: string | null;
 
-  @Prop({ required: true, trim: true })
+  /** May be empty when the message is image-only (`attachments` non-empty). */
+  @Prop({ type: String, required: false, trim: true, default: '' })
   text: string;
 
   @Prop({
