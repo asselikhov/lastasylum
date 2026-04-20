@@ -46,10 +46,18 @@ class UserSettingsPreferences(context: Context) {
         prefs.edit().putBoolean(KEY_OVERLAY_GAME_GATE, value).apply()
     }
 
-    /** applicationId игры (например com.lastasylum.plague). */
+    /** applicationId игры (например com.lastasylum.plague). Несколько — через запятую. */
     fun getOverlayTargetGamePackage(): String =
         prefs.getString(KEY_OVERLAY_TARGET_PACKAGE, DEFAULT_TARGET_GAME_PACKAGE)
             ?: DEFAULT_TARGET_GAME_PACKAGE
+
+    /** Пакеты игры для гейта оверлея: один или несколько через запятую (release / debug и т.д.). */
+    fun getOverlayTargetGamePackages(): List<String> =
+        getOverlayTargetGamePackage()
+            .split(',')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
 
     fun setOverlayTargetGamePackage(value: String) {
         prefs.edit().putString(KEY_OVERLAY_TARGET_PACKAGE, value.trim()).apply()

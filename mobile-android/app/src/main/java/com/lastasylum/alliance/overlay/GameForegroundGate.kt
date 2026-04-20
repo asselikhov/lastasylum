@@ -2,6 +2,7 @@ package com.lastasylum.alliance.overlay
 
 import android.app.AppOpsManager
 import android.app.usage.UsageEvents
+import android.app.usage.UsageStats
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.os.Build
@@ -102,26 +103,72 @@ object GameForegroundGate {
         endMs: Long,
         lookbackMs: Long,
     ): String? {
-        val begin = endMs - lookbackMs
-        val stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_BEST, begin, endMs) ?: return null
+        val stats = queryUsageStatsMerged(usm, endMs, lookbackMs)
         if (stats.isEmpty()) return null
         return stats.maxByOrNull { it.lastTimeUsed }?.packageName
+    }
+
+    private fun queryUsageStatsMerged(
+        usm: UsageStatsManager,
+        endMs: Long,
+        lookbackMs: Long,
+    ): List<UsageStats> {
+        val begin = endMs - lookbackMs
+        val best = usm.queryUsageStats(UsageStatsManager.INTERVAL_BEST, begin, endMs)
+        if (!best.isNullOrEmpty()) return best
+        return usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, begin, endMs).orEmpty()
     }
 
     /**
      * Show overlay when the target game is in foreground, or when the user is touching our app
      * (overlay / launcher) so the strip does not disappear while interacting with SquadRelay.
+     *
+     * [targetGamePackages] — один или несколько applicationId (например release и debug через запятую в настройках).
      */
     fun shouldShowOverlay(
         context: Context,
-        targetGamePackage: String,
+        targetGamePackages: Collection<String>,
     ): Boolean {
-        val target = targetGamePackage.trim()
-        if (target.isEmpty()) return false
-        val last = lastResumedPackage(context) ?: return false
+        val targets = targetGamePackages.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (targets.isEmpty()) return false
+        if (!hasUsageStatsAccess(context)) return false
         val alliance = context.packageName
-        if (last == alliance) return true
-        return last == target
+        val hinted = lastResumedPackage(context)
+        if (hinted == alliance) return true
+        if (hinted != null && targets.contains(hinted)) return true
+        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return false
+        val end = System.currentTimeMillis()
+        return targets.any { target ->
+            isTargetUsageNearLeader(usm, end, target, USAGE_STATS_LOOKBACK_MS, TARGET_USAGE_TIE_SLOP_MS)
+        }
+    }
+
+    /**
+     * True if [target]'s last-used timestamp is within [slopMs] of the global maximum in [lastUsedByPackage].
+     * Handles Unity/in-game sessions where UsageEvents name System UI, but the game still has an up-to-date
+     * [UsageStats.getLastTimeUsed].
+     */
+    internal fun isTargetLastUsedNearLeader(
+        lastUsedByPackage: Map<String, Long>,
+        target: String,
+        slopMs: Long,
+    ): Boolean {
+        val t = lastUsedByPackage[target] ?: return false
+        val maxLast = lastUsedByPackage.values.maxOrNull() ?: return false
+        return t >= maxLast - slopMs
+    }
+
+    private fun isTargetUsageNearLeader(
+        usm: UsageStatsManager,
+        endMs: Long,
+        target: String,
+        lookbackMs: Long,
+        slopMs: Long,
+    ): Boolean {
+        val stats = queryUsageStatsMerged(usm, endMs, lookbackMs)
+        if (stats.isEmpty()) return false
+        val map = stats.associate { it.packageName to it.lastTimeUsed }
+        return isTargetLastUsedNearLeader(map, target, slopMs)
     }
 
     /** Pure helper for unit tests. */
@@ -141,4 +188,10 @@ object GameForegroundGate {
 
     /** Long lookback for [UsageStatsManager.queryUsageStats] when the resume-event stream is empty. */
     private const val USAGE_STATS_LOOKBACK_MS = 60 * 60 * 1000L
+
+    /**
+     * How much the game's [UsageStats.getLastTimeUsed] may lag behind the global leader (e.g. System UI)
+     * while the user is still effectively in-game.
+     */
+    private const val TARGET_USAGE_TIE_SLOP_MS = 3_000L
 }

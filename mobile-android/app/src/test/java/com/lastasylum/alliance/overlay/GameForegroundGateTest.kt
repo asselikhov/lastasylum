@@ -48,4 +48,32 @@ class GameForegroundGateTest {
             ),
         )
     }
+
+    @Test
+    fun targetNearLeader_whenTiedWithinSlop() {
+        assertTrue(
+            GameForegroundGate.isTargetLastUsedNearLeader(
+                lastUsedByPackage = mapOf(
+                    "com.android.systemui" to 1000L,
+                    "com.lastasylum.plague" to 998L,
+                ),
+                target = "com.lastasylum.plague",
+                slopMs = 5L,
+            ),
+        )
+    }
+
+    @Test
+    fun targetNotNearLeader_whenFarBehind() {
+        assertFalse(
+            GameForegroundGate.isTargetLastUsedNearLeader(
+                lastUsedByPackage = mapOf(
+                    "com.android.chrome" to 10_000L,
+                    "com.lastasylum.plague" to 100L,
+                ),
+                target = "com.lastasylum.plague",
+                slopMs = 5L,
+            ),
+        )
+    }
 }

@@ -215,11 +215,11 @@ class CombatOverlayService : Service() {
         }
         if (gateCheckInFlight) return
         gateCheckInFlight = true
-        val target = prefs.getOverlayTargetGamePackage()
+        val targets = prefs.getOverlayTargetGamePackages()
         serviceScope.launch {
             val hasUsageAccess = GameForegroundGate.hasUsageStatsAccess(this@CombatOverlayService)
             val shouldShow = hasUsageAccess &&
-                GameForegroundGate.shouldShowOverlay(this@CombatOverlayService, target)
+                GameForegroundGate.shouldShowOverlay(this@CombatOverlayService, targets)
             mainHandler.post {
                 gateCheckInFlight = false
                 applyGameGateState(

@@ -112,7 +112,7 @@
     <string name="overlay_ptt_caption">НАЖМИ И ГОВОРИ</string>
     <string name="overlay_permission_settings">Разрешение поверх окон</string>
     <string name="overlay_game_gate_title">Только в игре Last Asylum: Plague</string>
-    <string name="overlay_target_package_label">Пакет игры (applicationId)</string>
+    <string name="overlay_target_package_label">Пакет игры (applicationId); несколько — через запятую</string>
     <string name="overlay_target_package_save">Сохранить пакет</string>
     <string name="overlay_usage_access_button">Доступ к данным об использовании</string>
 
