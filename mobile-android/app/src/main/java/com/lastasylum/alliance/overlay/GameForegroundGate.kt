@@ -18,7 +18,7 @@ object GameForegroundGate {
     private var cachedForeground: CachedForeground? = null
 
     private data class CachedForeground(
-        val windowMs: Long,
+        val eventWindowMs: Long,
         val cachedAtMs: Long,
         val packageName: String?,
     )
@@ -46,44 +46,66 @@ object GameForegroundGate {
     }
 
     /**
-     * Last package that received ACTIVITY_RESUMED / MOVE_TO_FOREGROUND in a short window.
-     * Returns null if usage access is missing or query failed.
+     * Last package that received ACTIVITY_RESUMED / MOVE_TO_FOREGROUND in [windowMs],
+     * or — if there were no resume events in that window — the package with the greatest
+     * [UsageStats.getLastTimeUsed] over [USAGE_STATS_LOOKBACK_MS] (steady gameplay otherwise
+     * produced no events in a short window and the overlay gate hid the UI).
      */
     fun lastResumedPackage(context: Context, windowMs: Long = 20_000L): String? {
         if (!hasUsageStatsAccess(context)) return null
         val now = System.currentTimeMillis()
         cachedForeground?.takeIf {
-            it.windowMs == windowMs && now - it.cachedAtMs <= FOREGROUND_CACHE_MS
+            it.eventWindowMs == windowMs && now - it.cachedAtMs <= FOREGROUND_CACHE_MS
         }?.let { return it.packageName }
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return null
-        val end = now
-        val begin = end - windowMs
         return try {
-            val events = usm.queryEvents(begin, end)
-            val ev = UsageEvents.Event()
-            var last: String? = null
-            while (events.hasNextEvent()) {
-                events.getNextEvent(ev)
-                val type = ev.eventType
-                val isResume = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    type == UsageEvents.Event.ACTIVITY_RESUMED
-                } else {
-                    @Suppress("DEPRECATION")
-                    type == UsageEvents.Event.MOVE_TO_FOREGROUND
-                }
-                if (isResume) {
-                    last = ev.packageName
-                }
-            }
+            val fromEvents = lastPackageFromResumeEvents(usm, now, windowMs)
+            val resolved = fromEvents ?: mostRecentPackageByLastTimeUsed(usm, now, USAGE_STATS_LOOKBACK_MS)
             cachedForeground = CachedForeground(
-                windowMs = windowMs,
+                eventWindowMs = windowMs,
                 cachedAtMs = now,
-                packageName = last,
+                packageName = resolved,
             )
-            last
+            resolved
         } catch (_: Throwable) {
             null
         }
+    }
+
+    private fun lastPackageFromResumeEvents(
+        usm: UsageStatsManager,
+        endMs: Long,
+        windowMs: Long,
+    ): String? {
+        val begin = endMs - windowMs
+        val events = usm.queryEvents(begin, endMs)
+        val ev = UsageEvents.Event()
+        var last: String? = null
+        while (events.hasNextEvent()) {
+            events.getNextEvent(ev)
+            val type = ev.eventType
+            val isResume = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                type == UsageEvents.Event.ACTIVITY_RESUMED
+            } else {
+                @Suppress("DEPRECATION")
+                type == UsageEvents.Event.MOVE_TO_FOREGROUND
+            }
+            if (isResume) {
+                last = ev.packageName
+            }
+        }
+        return last
+    }
+
+    private fun mostRecentPackageByLastTimeUsed(
+        usm: UsageStatsManager,
+        endMs: Long,
+        lookbackMs: Long,
+    ): String? {
+        val begin = endMs - lookbackMs
+        val stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_BEST, begin, endMs) ?: return null
+        if (stats.isEmpty()) return null
+        return stats.maxByOrNull { it.lastTimeUsed }?.packageName
     }
 
     /**
@@ -116,4 +138,7 @@ object GameForegroundGate {
     }
 
     private const val FOREGROUND_CACHE_MS = 1_500L
+
+    /** Long lookback for [UsageStatsManager.queryUsageStats] when the resume-event stream is empty. */
+    private const val USAGE_STATS_LOOKBACK_MS = 60 * 60 * 1000L
 }
