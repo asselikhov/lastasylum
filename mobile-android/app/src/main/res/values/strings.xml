@@ -230,12 +230,6 @@
     <string name="team_detail_back_cd">Назад</string>
     <string name="team_detail_title_fmt">%1$s [%2$s]</string>
     <string name="team_detail_loading_title">Команда</string>
-    <string name="team_col_player">Никнейм</string>
-    <string name="team_col_role">Роль</string>
-    <string name="team_col_actions">Действия</string>
-    <string name="team_role_leader">Лидер</string>
-    <string name="team_role_member">Участник</string>
-    <string name="team_add_member_title">Добавить участника</string>
     <string name="team_add_member_hint">Ник в игре</string>
     <string name="team_add_member_btn">Добавить</string>
     <string name="team_remove_member">Исключить</string>
@@ -243,8 +237,6 @@
     <string name="team_screen_title">Команда</string>
     <string name="team_no_team_title">Вы еще не состоите в команде</string>
     <string name="team_no_team_body">Создайте свою команду или отправьте заявку на вступление в существующую.</string>
-    <string name="team_col_telegram">Telegram</string>
-    <string name="team_col_squad_role">Роль</string>
     <string name="team_squad_r5_label">R5 · Лидер</string>
     <string name="team_squad_r4_label">R4 · Старейшина</string>
     <string name="team_squad_r3_label">R3 · Костяк</string>
