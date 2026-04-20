@@ -33,6 +33,18 @@ ANDROID_APK_VERSION_CODE=2
 ANDROID_APK_DOWNLOAD_URL=
 ```
 
+### Chat image uploads (Cloudflare R2)
+
+Chat image attachments are stored in Cloudflare R2 (S3-compatible). Configure the following env vars:
+
+```bash
+R2_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+R2_ACCESS_KEY_ID=...
+R2_SECRET_ACCESS_KEY=...
+R2_BUCKET=...
+R2_REGION=auto
+```
+
 ## Run locally
 
 ```bash
