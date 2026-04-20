@@ -958,6 +958,7 @@ private fun ChatRoomsBar(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChatComposer(
     draft: String,
@@ -977,6 +978,8 @@ private fun ChatComposer(
     var showMediaPanel by remember { mutableStateOf(false) }
     var mediaTab by remember { mutableStateOf(MediaPickerTab.Stickers) }
     var gifUrlDraft by remember { mutableStateOf("") }
+    var showAttachmentsSheet by remember { mutableStateOf(false) }
+    var previewUri by remember { mutableStateOf<Uri?>(null) }
     val context = LocalContext.current
     val zlobStems = remember(context) { ZlobyakaStickerPack.listSortedStems(context) }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -1001,6 +1004,156 @@ private fun ChatComposer(
 
     BackHandler(enabled = showMediaPanel) {
         showMediaPanel = false
+    }
+
+    BackHandler(enabled = showAttachmentsSheet || previewUri != null) {
+        when {
+            previewUri != null -> previewUri = null
+            showAttachmentsSheet -> showAttachmentsSheet = false
+        }
+    }
+
+    if (showAttachmentsSheet) {
+        ModalBottomSheet(onDismissRequest = { showAttachmentsSheet = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        horizontal = SquadRelayDimens.contentPaddingHorizontal,
+                        vertical = SquadRelayDimens.itemGap,
+                    ),
+                verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.chat_attachments_sheet_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    TextButton(
+                        onClick = onClearPickedImages,
+                        enabled = !readOnly && !isSending,
+                    ) {
+                        Text(stringResource(R.string.chat_attachments_clear))
+                    }
+                }
+
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 92.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(pickedImageUris, key = { it.toString() }) { uri ->
+                        Box(
+                            modifier = Modifier
+                                .aspectRatio(1f)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                                .clickable { previewUri = uri },
+                        ) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .data(uri)
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                            )
+                            IconButton(
+                                onClick = { onRemovePickedImage(uri) },
+                                enabled = !readOnly && !isSending,
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .size(32.dp)
+                                    .padding(4.dp),
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Color.Black.copy(alpha = 0.38f),
+                                    tonalElevation = 0.dp,
+                                    shadowElevation = 0.dp,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Cancel,
+                                        contentDescription = stringResource(R.string.chat_attachments_remove),
+                                        tint = Color.White,
+                                        modifier = Modifier.padding(5.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    previewUri?.let { uri ->
+        ModalBottomSheet(onDismissRequest = { previewUri = null }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
+                verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp,
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 520.dp),
+                ) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(uri)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit,
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            val i = Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(uri, "image/*")
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(i)
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(stringResource(R.string.chat_attachments_open))
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            onRemovePickedImage(uri)
+                            previewUri = null
+                        },
+                        enabled = !readOnly && !isSending,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(stringResource(R.string.chat_attachments_remove))
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+        }
     }
 
     Column(
@@ -1090,6 +1243,11 @@ private fun ChatComposer(
                                         )
                                     }
                                 }
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clickable { showAttachmentsSheet = true },
+                                )
                                 IconButton(
                                     onClick = { onRemovePickedImage(uri) },
                                     enabled = !readOnly && !isSending,
