@@ -16,6 +16,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -32,6 +33,7 @@ import { CreateChatRoomDto } from './dto/create-chat-room.dto';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { formatChatPushBody } from './zlobyaka-stickers.const';
 import { UpdateChatRoomDto } from './dto/update-chat-room.dto';
+import { UploadChatAttachmentDto } from './dto/upload-chat-attachment.dto';
 import type { Response } from 'express';
 import { Types } from 'mongoose';
 
@@ -191,15 +193,16 @@ export class ChatController {
   @Roles(AllianceRole.R2)
   @UseInterceptors(
     FileInterceptor('file', {
+      storage: memoryStorage(),
       limits: { fileSize: 8 * 1024 * 1024 },
     }),
   )
   async uploadAttachment(
     @Req() req: { user: RequestUser },
     @UploadedFile() file: Express.Multer.File | undefined,
-    @Body() body: { roomId?: string },
+    @Body() dto: UploadChatAttachmentDto,
   ) {
-    const roomId = body.roomId?.trim() ?? '';
+    const roomId = dto.roomId.trim();
     if (!roomId) throw new BadRequestException('roomId is required');
     if (!file) throw new BadRequestException('file is required');
     if (!file.buffer?.length) {

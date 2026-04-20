@@ -1,3 +1,4 @@
+import '../common/aws-r2-sdk-env';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
