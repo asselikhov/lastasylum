@@ -7,6 +7,7 @@ import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.os.Build
 import android.os.Process
+import kotlin.math.max
 
 /**
  * Detects whether the user is likely in the target game using [UsageStatsManager].
@@ -48,23 +49,24 @@ object GameForegroundGate {
     }
 
     /**
-     * Last package that received ACTIVITY_RESUMED / MOVE_TO_FOREGROUND in [windowMs],
-     * or — if there were no resume events in that window — the package with the greatest
+     * Last package that received ACTIVITY_RESUMED / MOVE_TO_FOREGROUND in an effective window
+     * (at least [RESUME_EVENTS_WINDOW_MS]), or — if there were no resume events — the package with the greatest
      * [UsageStats.getLastTimeUsed] over [USAGE_STATS_LOOKBACK_MS] (steady gameplay otherwise
      * produced no events in a short window and the overlay gate hid the UI).
      */
-    fun lastResumedPackage(context: Context, windowMs: Long = 20_000L): String? {
+    fun lastResumedPackage(context: Context, windowMs: Long = RESUME_EVENTS_WINDOW_MS): String? {
         if (!hasUsageStatsAccess(context)) return null
         val now = System.currentTimeMillis()
+        val effectiveWindow = max(windowMs, RESUME_EVENTS_WINDOW_MS)
         cachedForeground?.takeIf {
-            it.eventWindowMs == windowMs && now - it.cachedAtMs <= FOREGROUND_CACHE_MS
+            it.eventWindowMs == effectiveWindow && now - it.cachedAtMs <= FOREGROUND_CACHE_MS
         }?.let { return it.packageName }
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return null
         return try {
-            val fromEvents = lastPackageFromResumeEvents(usm, now, windowMs)
+            val fromEvents = lastMeaningfulResumePackageFromEvents(usm, now, effectiveWindow)
             val resolved = fromEvents ?: mostRecentPackageByLastTimeUsed(usm, now, USAGE_STATS_LOOKBACK_MS)
             cachedForeground = CachedForeground(
-                eventWindowMs = windowMs,
+                eventWindowMs = effectiveWindow,
                 cachedAtMs = now,
                 packageName = resolved,
             )
@@ -74,7 +76,12 @@ object GameForegroundGate {
         }
     }
 
-    private fun lastPackageFromResumeEvents(
+    /**
+     * Последний пакет с RESUME в окне, но игнорируя «шум» (System UI и т.п.),
+     * иначе последнее событие часто оказывается [com.android.systemui] при жестах/шторке —
+     * гейт думает, что игра не на экране, хотя пользователь в игре.
+     */
+    private fun lastMeaningfulResumePackageFromEvents(
         usm: UsageStatsManager,
         endMs: Long,
         windowMs: Long,
@@ -82,7 +89,7 @@ object GameForegroundGate {
         val begin = endMs - windowMs
         val events = usm.queryEvents(begin, endMs)
         val ev = UsageEvents.Event()
-        var last: String? = null
+        val resumes = ArrayList<Pair<Long, String>>(48)
         while (events.hasNextEvent()) {
             events.getNextEvent(ev)
             val type = ev.eventType
@@ -93,10 +100,24 @@ object GameForegroundGate {
                 type == UsageEvents.Event.MOVE_TO_FOREGROUND
             }
             if (isResume) {
-                last = ev.packageName
+                resumes.add(ev.timeStamp to ev.packageName)
             }
         }
-        return last
+        if (resumes.isEmpty()) return null
+        return selectMeaningfulForegroundResume(resumes.map { it.second })
+    }
+
+    /**
+     * Из хронологического списка RESUME (старые → новые) — последний пакет не из [RESUME_DECOR_PACKAGES].
+     * Для тестов и для [lastMeaningfulResumePackageFromEvents].
+     */
+    internal fun selectMeaningfulForegroundResume(resumePackagesChronologicalOrder: List<String>): String? {
+        if (resumePackagesChronologicalOrder.isEmpty()) return null
+        for (pkg in resumePackagesChronologicalOrder.asReversed()) {
+            if (pkg in RESUME_DECOR_PACKAGES) continue
+            return pkg
+        }
+        return resumePackagesChronologicalOrder.last()
     }
 
     private fun mostRecentPackageByLastTimeUsed(
@@ -187,12 +208,28 @@ object GameForegroundGate {
 
     private const val FOREGROUND_CACHE_MS = 1_500L
 
+    /**
+     * Окно поиска RESUME-событий: при длинной сессии в игре новых событий может не быть долго;
+     * слишком короткое окно даёт пустой поток и слабый fallback по [lastTimeUsed].
+     */
+    private const val RESUME_EVENTS_WINDOW_MS = 120_000L
+
     /** Long lookback for [UsageStatsManager.queryUsageStats] when the resume-event stream is empty. */
     private const val USAGE_STATS_LOOKBACK_MS = 60 * 60 * 1000L
+
+    /**
+     * Пакеты, чей MOVE_TO_FOREGROUND не должен «перебивать» игру для гейта оверлея.
+     */
+    private val RESUME_DECOR_PACKAGES: Set<String> = setOf(
+        "android",
+        "com.android.systemui",
+        "com.android.permissioncontroller",
+        "com.google.android.permissioncontroller",
+    )
 
     /**
      * How much the game's [UsageStats.getLastTimeUsed] may lag behind the global leader (e.g. System UI)
      * while the user is still effectively in-game.
      */
-    private const val TARGET_USAGE_TIE_SLOP_MS = 3_000L
+    private const val TARGET_USAGE_TIE_SLOP_MS = 20_000L
 }

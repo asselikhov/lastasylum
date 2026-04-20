@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.overlay
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -73,6 +74,36 @@ class GameForegroundGateTest {
                 ),
                 target = "com.lastasylum.plague",
                 slopMs = 5L,
+            ),
+        )
+    }
+
+    @Test
+    fun meaningfulResume_prefersGameOverTrailingSystemUi() {
+        assertEquals(
+            "com.phs.global",
+            GameForegroundGate.selectMeaningfulForegroundResume(
+                listOf("com.phs.global", "com.android.systemui"),
+            ),
+        )
+    }
+
+    @Test
+    fun meaningfulResume_whenOnlyDecor_returnsLastDecor() {
+        assertEquals(
+            "com.android.systemui",
+            GameForegroundGate.selectMeaningfulForegroundResume(
+                listOf("com.android.systemui", "com.android.systemui"),
+            ),
+        )
+    }
+
+    @Test
+    fun meaningfulResume_launcherAfterGame_isLauncher() {
+        assertEquals(
+            "com.miui.home",
+            GameForegroundGate.selectMeaningfulForegroundResume(
+                listOf("com.phs.global", "com.miui.home"),
             ),
         )
     }
