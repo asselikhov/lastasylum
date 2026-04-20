@@ -36,11 +36,13 @@ class UserSettingsPreferences(context: Context) {
     }
 
     /**
-     * Если включено — боевой оверлей показывается только когда в фоне открыт пакет игры
-     * ([getOverlayTargetGamePackage]) и выдан доступ «Данные об использовании».
+     * Если включено — боевой оверлей в идеале только при открытой игре ([getOverlayTargetGamePackage]).
+     * На части прошивок без «Данных об использовании» гейт не может это проверить — тогда панель всё равно
+     * показывается (см. CombatOverlayService).
+     * По умолчанию выключено, чтобы после установки панель работала на любом устройстве без системных настроек.
      */
     fun isOverlayGameGateEnabled(): Boolean =
-        prefs.getBoolean(KEY_OVERLAY_GAME_GATE, true)
+        prefs.getBoolean(KEY_OVERLAY_GAME_GATE, false)
 
     fun setOverlayGameGateEnabled(value: Boolean) {
         prefs.edit().putBoolean(KEY_OVERLAY_GAME_GATE, value).apply()

@@ -109,7 +109,7 @@
     <string name="overlay_package_field_label">Пакеты игры (из «Сведения о приложении»)</string>
     <string name="overlay_overlay_must_be_squadrelay">Чтобы кнопки были поверх игры, включите «Поверх других приложений» для «%1$s» (это приложение SquadRelay). Включение только у игры не даёт панель — её рисует SquadRelay.</string>
     <string name="overlay_open_squadrelay_overlay_settings">Настройки SquadRelay</string>
-    <string name="overlay_usage_hint_gate">Для режима «только в игре» включите «Данные об использовании» для SquadRelay в системных настройках.</string>
+    <string name="overlay_usage_hint_gate">Для строгого режима «только в игре» включите «Данные об использовании» для SquadRelay. Если система не отдаёт статистику, панель всё равно будет показана — фильтр по игре в таком случае недоступен.</string>
     <string name="overlay_open_usage_settings">Доступ к статистике</string>
     <string name="overlay_mic_optional_hint">Микрофон не обязателен для панели; он нужен для голоса.</string>
     <string name="overlay_start_service_failed">Не удалось запустить панель. Проверьте ограничения фона и уведомления для SquadRelay.</string>
@@ -258,7 +258,7 @@
     <string name="overlay_notif_voice_sent">Голосовое сообщение отправлено</string>
     <string name="overlay_notif_voice_chat_failed">Речь распознана, но чат не принял сообщение</string>
     <string name="overlay_notif_waiting_for_game">Ожидание игры — панель скрыта</string>
-    <string name="overlay_notif_usage_required_for_gate">Включите «Данные об использовании» для SquadRelay в системных настройках</string>
+    <string name="overlay_notif_game_gate_no_usage_fallback">Боевой режим: статистика использования недоступна — панель показывается всегда. Для скрытия вне игры включите доступ в настройках для SquadRelay.</string>
     <string name="overlay_channel_name">Боевой оверлей</string>
     <string name="overlay_notif_title">SquadRelay — боевой режим</string>
     <string name="overlay_bubble_idle">МИК\nудерж.</string>

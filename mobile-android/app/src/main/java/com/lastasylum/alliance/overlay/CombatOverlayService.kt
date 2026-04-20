@@ -223,8 +223,12 @@ class CombatOverlayService : Service() {
         serviceScope.launch {
             try {
                 val hasUsageAccess = GameForegroundGate.hasUsageStatsAccess(this@CombatOverlayService)
-                val shouldShow = hasUsageAccess &&
+                // Без usage stats на части OEM нельзя узнать foreground игры — не скрываем панель навсегда.
+                val shouldShow = if (hasUsageAccess) {
                     GameForegroundGate.shouldShowOverlay(this@CombatOverlayService, targets)
+                } else {
+                    true
+                }
                 mainHandler.post {
                     val nowMs = System.currentTimeMillis()
                     if (prefs.isOverlayGameGateEnabled() && nowMs - lastGateDiagLogMs >= 25_000L) {
@@ -233,8 +237,8 @@ class CombatOverlayService : Service() {
                         if (!hasUsageAccess || !shouldShow || !draw || overlayView == null) {
                             Log.i(
                                 TAG,
-                                "overlayGate usage=$hasUsageAccess inGame=$shouldShow drawOverlays=$draw " +
-                                    "overlayAttached=${overlayView != null} targets=${targets.joinToString()}",
+                                "overlayGate usage=$hasUsageAccess inGame=$shouldShow noUsageFallback=${!hasUsageAccess} " +
+                                    "drawOverlays=$draw overlayAttached=${overlayView != null} targets=${targets.joinToString()}",
                             )
                         }
                     }
@@ -267,10 +271,12 @@ class CombatOverlayService : Service() {
             return
         }
         if (!hasUsageAccess) {
-            notifyGateThrottled(getString(R.string.overlay_notif_usage_required_for_gate))
-            if (overlayView != null) {
-                removeOverlayControl()
+            if (!canDrawOverlaysNow()) {
+                updateNotification(getString(R.string.overlay_notif_permission_required))
+                return
             }
+            ensureOverlayIfPermitted()
+            notifyGateThrottled(getString(R.string.overlay_notif_game_gate_no_usage_fallback))
             return
         }
         if (!shouldShow) {
