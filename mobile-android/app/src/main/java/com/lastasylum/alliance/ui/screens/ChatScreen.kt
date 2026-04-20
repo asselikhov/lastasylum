@@ -155,6 +155,22 @@ import android.net.Uri
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
+private fun resolvedChatAttachmentImageUrl(raw: String): String =
+    if (raw.startsWith("http", ignoreCase = true)) raw.trim()
+    else BuildConfig.API_BASE_URL.trimEnd('/') + "/" + raw.trimStart('/')
+
+private fun chatAuthedImageRequest(context: Context, url: String): ImageRequest =
+    ImageRequest.Builder(context)
+        .data(url)
+        .apply {
+            val token = AppContainer.from(context).tokenStore.getAccessToken()
+            if (!token.isNullOrBlank()) {
+                addHeader("Authorization", "Bearer $token")
+            }
+        }
+        .crossfade(true)
+        .build()
+
 private data class ChatListLoadSignal(
     val lastVisibleIndex: Int,
     val totalItems: Int,
@@ -1792,6 +1808,162 @@ private fun AttachmentPreviewDialog(
     }
 }
 
+/** Full-screen viewer for chat message images (same gestures as draft preview: zoom, swipe). */
+@Composable
+private fun RemoteChatImagesPreviewDialog(
+    urls: List<String>,
+    startIndex: Int,
+    onDismiss: () -> Unit,
+) {
+    if (urls.isEmpty()) return
+    var index by remember(startIndex, urls) {
+        mutableStateOf(startIndex.coerceIn(0, urls.lastIndex))
+    }
+    val url = urls.getOrNull(index) ?: urls.first()
+
+    var scale by remember(url) { mutableStateOf(1f) }
+    var offsetX by remember(url) { mutableStateOf(0f) }
+    var offsetY by remember(url) { mutableStateOf(0f) }
+    val context = LocalContext.current
+
+    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+        val nextScale = (scale * zoomChange).coerceIn(1f, 4f)
+        val factor = nextScale / scale
+        scale = nextScale
+        if (factor != 1f) {
+            offsetX *= factor
+            offsetY *= factor
+        }
+        if (scale > 1f) {
+            offsetX += panChange.x
+            offsetY += panChange.y
+        } else {
+            offsetX = 0f
+            offsetY = 0f
+        }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        BackHandler(onBack = onDismiss)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(urls, index, scale) {
+                        detectTapGestures(
+                            onDoubleTap = {
+                                if (scale > 1f) {
+                                    scale = 1f
+                                    offsetX = 0f
+                                    offsetY = 0f
+                                } else {
+                                    scale = 2.5f
+                                }
+                            },
+                        )
+                        detectHorizontalDragGestures(
+                            onDragEnd = { /* noop */ },
+                            onHorizontalDrag = { change, dragAmount ->
+                                if (scale > 1f) return@detectHorizontalDragGestures
+                                change.consume()
+                                if (kotlin.math.abs(dragAmount) < 14f) return@detectHorizontalDragGestures
+                                if (dragAmount > 0 && index > 0) index -= 1
+                                if (dragAmount < 0 && index < urls.lastIndex) index += 1
+                            },
+                        )
+                    }
+                    .transformable(state = transformState),
+            ) {
+                AsyncImage(
+                    model = chatAuthedImageRequest(context, url),
+                    contentDescription = stringResource(R.string.cd_chat_message_image),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                            translationX = offsetX
+                            translationY = offsetY
+                        },
+                    contentScale = ContentScale.Fit,
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.45f))
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                    .align(Alignment.TopCenter),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.Outlined.Close,
+                        contentDescription = null,
+                        tint = Color.White,
+                    )
+                }
+                Text(
+                    text = "${index + 1}/${urls.size}",
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                Spacer(modifier = Modifier.width(48.dp))
+            }
+
+            if (urls.size > 1) {
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .background(Color.Black.copy(alpha = 0.35f))
+                        .navigationBarsPadding()
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(
+                        count = urls.size,
+                        key = { it },
+                    ) { i ->
+                        val u = urls[i]
+                        val isActive = i == index
+                        val border = if (isActive) BorderStroke(2.dp, Color.White) else null
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            border = border,
+                            tonalElevation = 0.dp,
+                            shadowElevation = 0.dp,
+                            color = Color.Transparent,
+                            modifier = Modifier
+                                .size(54.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable {
+                                    index = i
+                                    scale = 1f
+                                    offsetX = 0f
+                                    offsetY = 0f
+                                },
+                        ) {
+                            AsyncImage(
+                                model = chatAuthedImageRequest(context, u),
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun ChatSenderAvatar(
     telegramUrl: String?,
@@ -1904,6 +2076,9 @@ private fun ChatBubbleInnerColumn(
     deleting: Boolean,
     canDelete: Boolean,
 ) {
+    var remoteImageViewer by remember(message._id) {
+        mutableStateOf<Pair<List<String>, Int>?>(null)
+    }
     val bubblePadH = if (stickerStem != null) 8.dp else 12.dp
     val bubblePadBottom = if (stickerStem != null) 8.dp else 10.dp
     val bubblePadTop = when {
@@ -1911,6 +2086,7 @@ private fun ChatBubbleInnerColumn(
         stickerStem != null -> 8.dp
         else -> 10.dp
     }
+    val messageImageTapLabel = stringResource(R.string.cd_chat_message_image)
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -2007,38 +2183,36 @@ private fun ChatBubbleInnerColumn(
             }
         } else {
             if (message.attachments.isNotEmpty()) {
-                val attachments = message.attachments.filter { it.kind == "image" && it.url.isNotBlank() }
-                if (attachments.isNotEmpty()) {
+                val imageAttachments =
+                    message.attachments.filter { it.kind == "image" && it.url.isNotBlank() }
+                if (imageAttachments.isNotEmpty()) {
+                    val fullResolvedUrls =
+                        imageAttachments.map { resolvedChatAttachmentImageUrl(it.url) }
                     val maxInBubble = 4
-                    val shown = attachments.take(maxInBubble)
-                    val extra = (attachments.size - shown.size).coerceAtLeast(0)
+                    val shown = imageAttachments.take(maxInBubble)
+                    val extra = (imageAttachments.size - shown.size).coerceAtLeast(0)
                     LazyRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         items(shown, key = { it.url }) { a ->
+                            val openIndex = imageAttachments.indexOf(a).coerceAtLeast(0)
                             Box(
                                 modifier = Modifier
                                     .size(160.dp)
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(Color.Black.copy(alpha = 0.06f)),
+                                    .background(Color.Black.copy(alpha = 0.06f))
+                                    .semantics {
+                                        contentDescription = messageImageTapLabel
+                                        role = Role.Button
+                                    }
+                                    .clickable {
+                                        remoteImageViewer = fullResolvedUrls to openIndex
+                                    },
                             ) {
-                                val abs = if (a.url.startsWith("http")) {
-                                    a.url
-                                } else {
-                                    BuildConfig.API_BASE_URL.trimEnd('/') + "/" + a.url.trimStart('/')
-                                }
+                                val abs = resolvedChatAttachmentImageUrl(a.url)
                                 AsyncImage(
-                                    model = ImageRequest.Builder(bubbleContext)
-                                        .data(abs)
-                                        .apply {
-                                            val token = AppContainer.from(bubbleContext).tokenStore.getAccessToken()
-                                            if (!token.isNullOrBlank()) {
-                                                addHeader("Authorization", "Bearer $token")
-                                            }
-                                        }
-                                        .crossfade(true)
-                                        .build(),
+                                    model = chatAuthedImageRequest(bubbleContext, abs),
                                     contentDescription = null,
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop,
@@ -2103,6 +2277,16 @@ private fun ChatBubbleInnerColumn(
                 text = stringResource(R.string.chat_deleting_progress),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+
+    remoteImageViewer?.let { (urls, start) ->
+        if (urls.isNotEmpty()) {
+            RemoteChatImagesPreviewDialog(
+                urls = urls,
+                startIndex = start,
+                onDismiss = { remoteImageViewer = null },
             )
         }
     }
