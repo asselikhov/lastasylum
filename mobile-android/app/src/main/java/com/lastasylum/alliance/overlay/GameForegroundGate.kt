@@ -27,18 +27,40 @@ object GameForegroundGate {
     @Volatile
     private var cachedForeground: CachedForeground? = null
 
+    @Volatile
+    private var usageAccessCacheAtMs: Long = 0L
+
+    @Volatile
+    private var usageAccessCacheValue: Boolean = false
+
     private data class CachedForeground(
         val eventWindowMs: Long,
         val cachedAtMs: Long,
         val packageName: String?,
     )
 
+    /** Сброс кэша после возврата из «Доступ к данным об использовании» и т.п. */
+    fun invalidateUsageAccessCache() {
+        usageAccessCacheAtMs = 0L
+    }
+
     fun hasUsageStatsAccess(context: Context): Boolean {
+        val now = System.currentTimeMillis()
+        if (now - usageAccessCacheAtMs < USAGE_ACCESS_CACHE_MS) {
+            return usageAccessCacheValue
+        }
+        val v = computeHasUsageStatsAccess(context)
+        usageAccessCacheAtMs = now
+        usageAccessCacheValue = v
+        return v
+    }
+
+    private fun computeHasUsageStatsAccess(context: Context): Boolean {
         return try {
             val appOps = context.getSystemService(AppOpsManager::class.java) ?: return false
             val uid = Process.myUid()
             val pkg = context.packageName
-            val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val modeUnsafe = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 appOps.unsafeCheckOpNoThrow(
                     AppOpsManager.OPSTR_GET_USAGE_STATS,
                     uid,
@@ -52,8 +74,15 @@ object GameForegroundGate {
                     pkg,
                 )
             }
-            // MODE_ALLOWED — доверяем. Иначе (DEFAULT / IGNORED на HyperOS) — пробуем реальные query*:
-            if (mode == AppOpsManager.MODE_ALLOWED) {
+            val modeCheck = runCatching {
+                @Suppress("DEPRECATION")
+                appOps.checkOpNoThrow(
+                    AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    uid,
+                    pkg,
+                )
+            }.getOrElse { modeUnsafe }
+            if (isUsageStatsOpAllowed(modeUnsafe) || isUsageStatsOpAllowed(modeCheck)) {
                 true
             } else {
                 usageStatsProbeReturnsAny(context)
@@ -63,15 +92,27 @@ object GameForegroundGate {
         }
     }
 
-    /** Есть ли фактический доступ: непустая статистика или поток событий за последние 5 мин. */
+    /** MODE_FOREGROUND (API 29+): доступ пока приложение на переднем плане — для FGS оверлея это ок. */
+    private fun isUsageStatsOpAllowed(mode: Int): Boolean {
+        if (mode == AppOpsManager.MODE_ALLOWED) return true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && mode == AppOpsManager.MODE_FOREGROUND) {
+            return true
+        }
+        return false
+    }
+
+    /** Есть ли фактический доступ: непустая статистика или поток событий. */
     private fun usageStatsProbeReturnsAny(context: Context): Boolean {
         if (usageStatsProbeReturnsData(context)) return true
+        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return false
+        val end = System.currentTimeMillis()
+        if (usageEventsProbeHasAny(usm, end, 5 * 60_000L)) return true
+        return usageEventsProbeHasAny(usm, end, 24 * 60 * 60 * 1000L)
+    }
+
+    private fun usageEventsProbeHasAny(usm: UsageStatsManager, endMs: Long, windowMs: Long): Boolean {
         return runCatching {
-            val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
-                ?: return@runCatching false
-            val end = System.currentTimeMillis()
-            val events = usm.queryEvents(end - 5 * 60_000L, end)
-            events.hasNextEvent()
+            usm.queryEvents(endMs - windowMs, endMs).hasNextEvent()
         }.getOrDefault(false)
     }
 
@@ -80,9 +121,17 @@ object GameForegroundGate {
             val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
                 ?: return@runCatching false
             val end = System.currentTimeMillis()
-            val begin = end - 86_400_000L
-            val list = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, begin, end)
-            !list.isNullOrEmpty()
+            val spans = listOf(
+                86_400_000L to UsageStatsManager.INTERVAL_DAILY,
+                7 * 86_400_000L to UsageStatsManager.INTERVAL_WEEKLY,
+                90 * 86_400_000L to UsageStatsManager.INTERVAL_MONTHLY,
+            )
+            for ((spanMs, interval) in spans) {
+                val begin = end - spanMs
+                val list = usm.queryUsageStats(interval, begin, end)
+                if (!list.isNullOrEmpty()) return@runCatching true
+            }
+            false
         }.getOrDefault(false)
     }
 
@@ -357,6 +406,8 @@ object GameForegroundGate {
     }
 
     private const val FOREGROUND_CACHE_MS = 1_500L
+
+    private const val USAGE_ACCESS_CACHE_MS = 15_000L
 
     /**
      * Окно поиска RESUME-событий: при длинной сессии в игре новых событий может не быть долго;

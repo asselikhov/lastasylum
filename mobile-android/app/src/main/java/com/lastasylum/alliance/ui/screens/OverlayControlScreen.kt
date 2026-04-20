@@ -79,6 +79,8 @@ fun OverlayControlScreen() {
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
+                GameForegroundGate.invalidateUsageAccessCache()
+                CombatOverlayService.requestGateRecheckIfRunning(context)
                 if (latestPendingEnable.value &&
                     !CombatOverlayService.isServiceInstanceActive &&
                     overlayOk()
