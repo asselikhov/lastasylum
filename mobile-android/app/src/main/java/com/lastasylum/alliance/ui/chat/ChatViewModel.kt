@@ -45,6 +45,10 @@ class ChatViewModel(
     private val _draftMessage = MutableStateFlow("")
     val draftMessage: StateFlow<String> = _draftMessage.asStateFlow()
 
+    /** Picked images for composer (UI only; backend currently sends text). */
+    private val _pickedImageUris = MutableStateFlow<List<Uri>>(emptyList())
+    val pickedImageUris: StateFlow<List<Uri>> = _pickedImageUris.asStateFlow()
+
     /** Isolated from [state] so typing socket churn does not recompose the message list. */
     private val _typingPeers = MutableStateFlow<Map<String, String>>(emptyMap())
     val typingPeers: StateFlow<Map<String, String>> = _typingPeers.asStateFlow()
@@ -272,7 +276,16 @@ class ChatViewModel(
     }
 
     fun sendDraftMessage() {
-        sendMessage(_draftMessage.value.trim())
+        val text = _draftMessage.value.trim()
+        val attachments = _pickedImageUris.value
+        val combined = buildString {
+            append(text)
+            if (attachments.isNotEmpty()) {
+                if (text.isNotBlank()) append('\n')
+                append(attachments.joinToString(separator = "\n") { it.toString() })
+            }
+        }
+        sendMessage(combined)
     }
 
     fun retrySendFailure() {
@@ -293,9 +306,20 @@ class ChatViewModel(
 
     fun onImagesPicked(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        val payload = uris.joinToString(separator = "\n") { it.toString() }
-        val sep = if (_draftMessage.value.isBlank()) "" else "\n"
-        setDraftMessage(_draftMessage.value + sep + payload)
+        val current = _pickedImageUris.value
+        val merged = (current + uris).distinct()
+        _pickedImageUris.value = merged.take(12)
+    }
+
+    fun removePickedImage(uri: Uri) {
+        val next = _pickedImageUris.value.filterNot { it == uri }
+        if (next.size == _pickedImageUris.value.size) return
+        _pickedImageUris.value = next
+    }
+
+    fun clearPickedImages() {
+        if (_pickedImageUris.value.isEmpty()) return
+        _pickedImageUris.value = emptyList()
     }
 
     private fun scheduleTypingEmit() {
@@ -541,6 +565,7 @@ class ChatViewModel(
         )
         if (clearComposer) {
             _draftMessage.value = ""
+            _pickedImageUris.value = emptyList()
             nextState = nextState.copy(
                 replyToMessage = null,
                 scrollToLatestNonce = nextState.scrollToLatestNonce + 1L,

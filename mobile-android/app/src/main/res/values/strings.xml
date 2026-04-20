@@ -44,6 +44,8 @@
     <string name="chat_open_media_panel_cd">Стикеры и GIF</string>
     <string name="chat_show_keyboard_cd">Показать клавиатуру</string>
     <string name="chat_attach_gif">GIF</string>
+    <string name="chat_attachments_label">Вложения (%1$d)</string>
+    <string name="chat_attachments_clear">Очистить</string>
     <string name="chat_gif_title">GIF по ссылке</string>
     <string name="chat_gif_hint">Ссылка на .gif или страницу (Giphy, Tenor…)</string>
     <string name="chat_gif_paste">Вставить из буфера</string>

@@ -53,6 +53,7 @@ import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.AttachFile
+import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.Mood
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -303,6 +304,7 @@ fun ChatScreen(
     state: ChatState,
     typingPeers: Map<String, String>,
     draftMessage: String,
+    pickedImageUris: List<Uri>,
     onSelectRoom: (String) -> Unit,
     onClearError: () -> Unit,
     onLoadOlder: () -> Unit,
@@ -310,6 +312,8 @@ fun ChatScreen(
     onSendDraft: () -> Unit,
     onSendStickerPayload: (String) -> Unit,
     onPickImages: (List<Uri>) -> Unit,
+    onRemovePickedImage: (Uri) -> Unit,
+    onClearPickedImages: () -> Unit,
     onReplyToMessage: (String) -> Unit,
     onClearReply: () -> Unit,
     onOpenMessageActions: (String) -> Unit,
@@ -522,6 +526,7 @@ fun ChatScreen(
                 if (selectedRoomId != null && state.rooms.isNotEmpty()) {
                     ChatComposer(
                         draft = draftMessage,
+                        pickedImageUris = pickedImageUris,
                         replyToMessage = state.replyToMessage,
                         isSending = state.isSending,
                         sendEnabled = !globalComposerLocked,
@@ -547,6 +552,8 @@ fun ChatScreen(
                                 onPickImages(uris)
                             }
                         },
+                        onRemovePickedImage = onRemovePickedImage,
+                        onClearPickedImages = onClearPickedImages,
                         onClearReply = onClearReply,
                     )
                 }
@@ -954,6 +961,7 @@ private fun ChatRoomsBar(
 @Composable
 private fun ChatComposer(
     draft: String,
+    pickedImageUris: List<Uri>,
     replyToMessage: ChatMessage?,
     isSending: Boolean,
     sendEnabled: Boolean = true,
@@ -962,6 +970,8 @@ private fun ChatComposer(
     onSendDraft: () -> Unit,
     onSendStickerPayload: (String) -> Unit,
     onPickImages: (List<Uri>) -> Unit,
+    onRemovePickedImage: (Uri) -> Unit,
+    onClearPickedImages: () -> Unit,
     onClearReply: () -> Unit,
 ) {
     var showMediaPanel by remember { mutableStateOf(false) }
@@ -1019,6 +1029,67 @@ private fun ChatComposer(
                     ),
                 verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
             ) {
+                if (pickedImageUris.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.chat_attachments_label, pickedImageUris.size),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        TextButton(
+                            onClick = onClearPickedImages,
+                            enabled = !readOnly && !isSending,
+                        ) {
+                            Text(stringResource(R.string.chat_attachments_clear))
+                        }
+                    }
+                    LazyRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(vertical = 2.dp),
+                    ) {
+                        items(pickedImageUris, key = { it.toString() }) { uri ->
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                            ) {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(context)
+                                        .data(uri)
+                                        .crossfade(true)
+                                        .build(),
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                )
+                                IconButton(
+                                    onClick = { onRemovePickedImage(uri) },
+                                    enabled = !readOnly && !isSending,
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .size(28.dp)
+                                        .padding(2.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Cancel,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
                 replyToMessage?.let { reply ->
                     Surface(
                         shape = MaterialTheme.shapes.medium,
