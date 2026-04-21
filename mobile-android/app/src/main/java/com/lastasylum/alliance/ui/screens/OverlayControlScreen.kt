@@ -69,6 +69,11 @@ fun OverlayControlScreen() {
     val latestPendingEnable = rememberUpdatedState(pendingEnable)
     val latestGameGate = rememberUpdatedState(gameGateOnly)
 
+    val userId = remember {
+        // Multi-user (XSpace/Work profile): uid = userId * 100000 + appId
+        (android.os.Process.myUid() / 100000)
+    }
+
     fun micOk(): Boolean = ContextCompat.checkSelfPermission(
         context,
         Manifest.permission.RECORD_AUDIO,
@@ -146,6 +151,14 @@ fun OverlayControlScreen() {
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
             )
+            if (userId != 0) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = "XSpace/профиль (userId=$userId): переключатель здесь не управляет панелью основного профиля.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
             Spacer(Modifier.height(20.dp))
 
             OverlaySwitchRow(
