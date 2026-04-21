@@ -105,9 +105,6 @@ fun OverlayControlScreen() {
         } else {
             pendingDisable = false
         }
-        if (!pendingEnable && !pendingDisable) {
-            desiredOverlayOn = overlayRunning
-        }
     }
 
     LaunchedEffect(Unit) {
