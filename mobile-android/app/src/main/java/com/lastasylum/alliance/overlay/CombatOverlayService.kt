@@ -1265,6 +1265,8 @@ class CombatOverlayService : Service() {
             runCatching { UserSettingsPreferences(app).setOverlayPanelEnabled(enabled) }
             // If we are disabling and the service is not running, do not start it just to stop it.
             if (!enabled && !isServiceInstanceActive) {
+                // Also try a hard stop in case the process is alive but state is stale.
+                runCatching { app.stopService(Intent(app, CombatOverlayService::class.java)) }
                 return true
             }
             return try {
@@ -1272,7 +1274,12 @@ class CombatOverlayService : Service() {
                     action = ACTION_SET_ENABLED
                     putExtra(EXTRA_ENABLED, enabled)
                 }
-                if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (!enabled) {
+                    // Immediate stop: do not wait for onStartCommand delivery on OEM ROMs.
+                    runCatching { app.stopService(Intent(app, CombatOverlayService::class.java)) }
+                    // Best-effort: still deliver the action for cleanup if the service is alive.
+                    app.startService(intent)
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     app.startForegroundService(intent)
                 } else {
                     app.startService(intent)
