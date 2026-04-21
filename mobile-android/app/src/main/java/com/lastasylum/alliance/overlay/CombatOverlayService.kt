@@ -261,7 +261,10 @@ class CombatOverlayService : Service() {
             try {
                 val hasUsageAccess = GameForegroundGate.hasUsageStatsAccess(this@CombatOverlayService)
                 val shouldShow = if (hasUsageAccess) {
-                    GameForegroundGate.shouldShowOverlay(this@CombatOverlayService, targets)
+                    // While the user is interacting with the overlay chat UI, do not hide the overlay.
+                    // Some OEM ROMs may report SquadRelay as "resumed" when touching overlay windows.
+                    if (overlayHistoryVisible) true
+                    else GameForegroundGate.shouldShowOverlay(this@CombatOverlayService, targets)
                 } else {
                     false
                 }
