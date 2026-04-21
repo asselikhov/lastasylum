@@ -59,14 +59,11 @@ fun OverlayControlScreen() {
         context.applicationInfo.loadLabel(context.packageManager).toString()
     }
 
-    val overlayRunning by CombatOverlayService.serviceRunning.collectAsStateWithLifecycle()
+    val overlayVisible by CombatOverlayService.overlayVisible.collectAsStateWithLifecycle()
     var gameGateOnly by remember { mutableStateOf(prefs.isOverlayGameGateEnabled()) }
     var targetPkg by remember { mutableStateOf(prefs.getOverlayTargetGamePackage()) }
-    var pendingEnable by remember { mutableStateOf(false) }
-    var pendingDisable by remember { mutableStateOf(false) }
-    var desiredOverlayOn by remember { mutableStateOf(false) }
+    var overlayEnabled by remember { mutableStateOf(prefs.isOverlayPanelEnabled()) }
 
-    val latestPendingEnable = rememberUpdatedState(pendingEnable)
     val latestGameGate = rememberUpdatedState(gameGateOnly)
 
     val userId = remember {
@@ -90,36 +87,15 @@ fun OverlayControlScreen() {
             if (event == Lifecycle.Event.ON_RESUME) {
                 GameForegroundGate.invalidateUsageAccessCache()
                 CombatOverlayService.requestGateRecheckIfRunning(context)
-                if (latestPendingEnable.value &&
-                    !CombatOverlayService.isServiceInstanceActive &&
-                    overlayOk()
-                ) {
-                    if (CombatOverlayService.startService(context)) {
-                        pendingEnable = false
-                    }
-                }
+                overlayEnabled = prefs.isOverlayPanelEnabled()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    LaunchedEffect(overlayRunning) {
-        if (overlayRunning) {
-            pendingEnable = false
-        } else {
-            pendingDisable = false
-        }
-    }
-
     LaunchedEffect(Unit) {
-        desiredOverlayOn = overlayRunning
-    }
-
-    LaunchedEffect(pendingDisable) {
-        if (!pendingDisable) return@LaunchedEffect
-        delay(1500)
-        pendingDisable = false
+        overlayEnabled = prefs.isOverlayPanelEnabled()
     }
 
     LaunchedEffect(targetPkg) {
@@ -163,40 +139,40 @@ fun OverlayControlScreen() {
 
             OverlaySwitchRow(
                 title = stringResource(R.string.overlay_switch_panel),
-                checked = desiredOverlayOn,
+                checked = overlayEnabled,
                 enabled = true,
                 onCheckedChange = { on ->
                     if (on) {
-                        desiredOverlayOn = true
-                        pendingDisable = false
-                        pendingEnable = true
+                        overlayEnabled = true
                         when {
                             !overlayOk() -> {
-                                pendingEnable = false
-                                desiredOverlayOn = false
+                                overlayEnabled = false
                                 OverlayPermissions.openOverlayPermissionSettings(context)
                             }
                             latestGameGate.value && !usageOk() -> {
-                                pendingEnable = false
-                                desiredOverlayOn = false
+                                overlayEnabled = false
                                 OverlayPermissions.openUsageAccessSettings(context)
                             }
-                            CombatOverlayService.startService(context) -> {
-                                pendingEnable = false
-                            }
-                            else -> {
-                                pendingEnable = false
-                                desiredOverlayOn = false
-                            }
+                            else -> Unit
+                        }
+                        if (!CombatOverlayService.setEnabled(context, true)) {
+                            overlayEnabled = false
                         }
                     } else {
-                        desiredOverlayOn = false
-                        pendingEnable = false
-                        pendingDisable = true
-                        CombatOverlayService.stopService(context)
+                        overlayEnabled = false
+                        CombatOverlayService.setEnabled(context, false)
                     }
                 },
             )
+
+            if (overlayEnabled && !overlayVisible && latestGameGate.value) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Панель включена, но сейчас скрыта (ожидание игры).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
 
             if (!overlayOk()) {
                 Spacer(Modifier.height(10.dp))
@@ -244,7 +220,7 @@ fun OverlayControlScreen() {
             OverlaySwitchRow(
                 title = stringResource(R.string.overlay_switch_game_only),
                 checked = gameGateOnly,
-                enabled = !pendingEnable && !pendingDisable,
+                enabled = true,
                 onCheckedChange = { v ->
                     if (v) {
                         GameForegroundGate.invalidateUsageAccessCache()

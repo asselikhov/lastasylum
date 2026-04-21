@@ -7,6 +7,13 @@ class UserSettingsPreferences(context: Context) {
     private val prefs =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    /** Главный переключатель "Показывать панель" (источник истины для сервиса и UI). */
+    fun isOverlayPanelEnabled(): Boolean = prefs.getBoolean(KEY_OVERLAY_PANEL_ENABLED, true)
+
+    fun setOverlayPanelEnabled(value: Boolean) {
+        prefs.edit().putBoolean(KEY_OVERLAY_PANEL_ENABLED, value).apply()
+    }
+
     fun isQuietMode(): Boolean = prefs.getBoolean(KEY_QUIET, false)
 
     fun setQuietMode(value: Boolean) {
@@ -103,6 +110,7 @@ class UserSettingsPreferences(context: Context) {
         private const val KEY_COMPACT_OVERLAY = "compact_overlay"
         private const val KEY_OVERLAY_DRAG_LOCK = "overlay_drag_lock"
         private const val KEY_OVERLAY_LAYOUT_PRESET = "overlay_layout_preset"
+        private const val KEY_OVERLAY_PANEL_ENABLED = "overlay_panel_enabled"
         private const val KEY_OVERLAY_GAME_GATE = "overlay_game_gate"
         private const val KEY_OVERLAY_TARGET_PACKAGE = "overlay_target_game_package"
         private const val KEY_OVERLAY_TARGET_LEGACY_MIGRATED = "overlay_target_legacy_migrated_v1"

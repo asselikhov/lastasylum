@@ -186,6 +186,7 @@ class CombatOverlayService : Service() {
         )
         isServiceInstanceActive = true
         _serviceRunning.value = true
+        _overlayVisible.value = false
         mainHandler.post(gameGateRunnable)
     }
 
@@ -209,6 +210,13 @@ class CombatOverlayService : Service() {
 
     private fun tickGameGate() {
         val prefs = AppContainer.from(this).userSettingsPreferences
+        if (!prefs.isOverlayPanelEnabled()) {
+            gateNotifyKey = ""
+            if (overlayView != null) {
+                removeOverlayControl()
+            }
+            return
+        }
         if (!prefs.isOverlayGameGateEnabled()) {
             applyGameGateState(
                 gameGateEnabled = false,
@@ -302,7 +310,27 @@ class CombatOverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val prefs = AppContainer.from(this).userSettingsPreferences
         when (intent?.action) {
+            ACTION_SET_ENABLED -> {
+                val enabled = intent.getBooleanExtra(EXTRA_ENABLED, true)
+                prefs.setOverlayPanelEnabled(enabled)
+                if (!enabled) {
+                    // Stop must be reliable: immediately remove overlay windows and prevent sticky restart.
+                    gateCheckInFlight = false
+                    mainHandler.removeCallbacks(gameGateRunnable)
+                    runCatching { removeOverlayControl() }
+                    runCatching { overlayTicker.hideTicker() }
+                    runCatching { quickCommandsPopover.hide() }
+                    runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+                    isServiceInstanceActive = false
+                    _serviceRunning.value = false
+                    stopSelfResult(startId)
+                    return START_NOT_STICKY
+                }
+                tickGameGate()
+                return START_STICKY
+            }
             ACTION_STOP_SERVICE -> {
                 // Stop must be reliable: immediately remove overlay windows and prevent sticky restart.
                 gateCheckInFlight = false
@@ -313,6 +341,7 @@ class CombatOverlayService : Service() {
                 runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
                 isServiceInstanceActive = false
                 _serviceRunning.value = false
+                prefs.setOverlayPanelEnabled(false)
                 stopSelfResult(startId)
                 return START_NOT_STICKY
             }
@@ -332,6 +361,14 @@ class CombatOverlayService : Service() {
                 return START_STICKY
             }
             else -> {
+                if (!prefs.isOverlayPanelEnabled()) {
+                    runCatching { removeOverlayControl() }
+                    runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+                    isServiceInstanceActive = false
+                    _serviceRunning.value = false
+                    stopSelfResult(startId)
+                    return START_NOT_STICKY
+                }
                 tickGameGate()
                 when (intent?.action) {
                     ACTION_START_RECORDING -> speechPipeline.startRecording()
@@ -784,6 +821,7 @@ class CombatOverlayService : Service() {
             overlayHistoryFab = null
             return
         }
+        _overlayVisible.value = true
         windowManager = manager
         ensureToggleButton()
         ensureLockButton()
@@ -1124,6 +1162,7 @@ class CombatOverlayService : Service() {
             manager.removeView(view)
         }
         overlayView = null
+        _overlayVisible.value = false
         overlayBubble = null
         overlayHistoryFab = null
         chatStripScroll = null
@@ -1161,17 +1200,22 @@ class CombatOverlayService : Service() {
         const val ACTION_START_RECORDING = "com.squadrelay.action.START_RECORDING"
         const val ACTION_STOP_RECORDING = "com.squadrelay.action.STOP_RECORDING"
         const val ACTION_STOP_SERVICE = "com.squadrelay.action.STOP_SERVICE"
+        const val ACTION_SET_ENABLED = "com.squadrelay.action.SET_ENABLED"
         const val ACTION_REBUILD_OVERLAY = "com.squadrelay.action.REBUILD_OVERLAY"
         const val ACTION_REFRESH_NOTIFICATION = "com.squadrelay.action.REFRESH_NOTIFICATION"
         const val ACTION_TICK_GAME_GATE = "com.squadrelay.action.TICK_GAME_GATE"
+        private const val EXTRA_ENABLED = "enabled"
 
         @Volatile
         var isServiceInstanceActive: Boolean = false
 
         private val _serviceRunning = MutableStateFlow(false)
+        private val _overlayVisible = MutableStateFlow(false)
 
         /** Для UI вкладки «Оверлей»: синхронно с жизненным циклом сервиса (без гонки с [isServiceInstanceActive]). */
         val serviceRunning: StateFlow<Boolean> = _serviceRunning.asStateFlow()
+        /** True when the overlay windows are attached (panel visible on screen). */
+        val overlayVisible: StateFlow<Boolean> = _overlayVisible.asStateFlow()
 
         /** Re-layout overlay (e.g. compact mode) while combat service is running. */
         fun requestRebuildOverlayIfRunning(context: Context) {
@@ -1204,10 +1248,13 @@ class CombatOverlayService : Service() {
          * Запуск боевого сервиса и оверлея. Микрофон не обязателен: панель может работать без голоса;
          * запись голоса запросит разрешение при использовании.
          */
-        fun startService(context: Context): Boolean {
+        fun setEnabled(context: Context, enabled: Boolean): Boolean {
             val app = context.applicationContext
             return try {
-                val intent = Intent(context, CombatOverlayService::class.java)
+                val intent = Intent(context, CombatOverlayService::class.java).apply {
+                    action = ACTION_SET_ENABLED
+                    putExtra(EXTRA_ENABLED, enabled)
+                }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     app.startForegroundService(intent)
                 } else {
@@ -1215,7 +1262,7 @@ class CombatOverlayService : Service() {
                 }
                 true
             } catch (t: Throwable) {
-                Log.e(TAG, "startService failed", t)
+                Log.e(TAG, "setEnabled failed", t)
                 Toast.makeText(
                     app,
                     app.getString(R.string.overlay_start_service_failed),
@@ -1225,13 +1272,10 @@ class CombatOverlayService : Service() {
             }
         }
 
+        fun startService(context: Context): Boolean = setEnabled(context, true)
+
         fun stopService(context: Context) {
-            val app = context.applicationContext
-            val intent = Intent(context, CombatOverlayService::class.java).apply {
-                action = ACTION_STOP_SERVICE
-            }
-            runCatching { app.startService(intent) }
-            runCatching { app.stopService(Intent(app, CombatOverlayService::class.java)) }
+            setEnabled(context, false)
         }
 
         fun startRecording(context: Context) {
