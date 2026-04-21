@@ -249,6 +249,9 @@ object GameForegroundGate {
         val alliance = context.packageName
         val targetSet = targets.toSet()
         val hinted = lastResumedPackage(context)
+        // If the OS tells us the user most recently resumed some other app (launcher/settings/etc),
+        // treat it as "not in game" to avoid leaving the overlay on screen after the game is minimized.
+        if (hinted != null && hinted != alliance && !targetSet.contains(hinted)) return false
         if (hinted != null && targetSet.contains(hinted)) return true
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return false
         val end = System.currentTimeMillis()
