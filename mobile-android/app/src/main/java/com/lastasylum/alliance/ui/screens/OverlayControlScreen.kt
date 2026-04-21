@@ -165,12 +165,6 @@ fun OverlayControlScreen() {
                     } else {
                         overlayEnabled = false
                         prefs.setOverlayPanelEnabled(false)
-                        // Immediate stop: avoid waiting for service intent delivery.
-                        runCatching {
-                            appContext.stopService(
-                                android.content.Intent(appContext, CombatOverlayService::class.java),
-                            )
-                        }
                         CombatOverlayService.setEnabled(context, false)
                     }
                 },

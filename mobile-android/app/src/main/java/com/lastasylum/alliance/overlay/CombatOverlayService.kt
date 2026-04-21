@@ -1275,10 +1275,10 @@ class CombatOverlayService : Service() {
                     putExtra(EXTRA_ENABLED, enabled)
                 }
                 if (!enabled) {
-                    // Immediate stop: do not wait for onStartCommand delivery on OEM ROMs.
+                    // First, ask the running service to detach overlay windows immediately.
+                    // Then force-stop the service so we don't wait on OEM delayed teardown.
+                    runCatching { app.startService(intent) }
                     runCatching { app.stopService(Intent(app, CombatOverlayService::class.java)) }
-                    // Best-effort: still deliver the action for cleanup if the service is alive.
-                    app.startService(intent)
                 } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     app.startForegroundService(intent)
                 } else {
