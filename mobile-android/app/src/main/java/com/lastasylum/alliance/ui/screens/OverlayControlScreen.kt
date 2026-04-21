@@ -211,6 +211,14 @@ fun OverlayControlScreen() {
                 checked = gameGateOnly,
                 enabled = !pendingEnable && !pendingDisable,
                 onCheckedChange = { v ->
+                    if (v) {
+                        GameForegroundGate.invalidateUsageAccessCache()
+                        if (!GameForegroundGate.hasUsageStatsAccess(context)) {
+                            // Без usage access строгий режим "только в игре" не сможет показать панель.
+                            OverlayPermissions.openUsageAccessSettings(context)
+                            return@OverlaySwitchRow
+                        }
+                    }
                     gameGateOnly = v
                     prefs.setOverlayGameGateEnabled(v)
                     CombatOverlayService.requestGateRecheckIfRunning(context)
