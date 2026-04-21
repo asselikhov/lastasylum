@@ -133,6 +133,7 @@ class CombatOverlayService : Service() {
     }
     private var recordingStartRunnable: Runnable? = null
     private var overlayCollapsed = false
+    private var messageExpanded = false
     private var chatStripScroll: ScrollView? = null
     private var chatStripLines: LinearLayout? = null
     private var overlayMessageListener: ((ChatMessage) -> Unit)? = null
@@ -612,7 +613,6 @@ class CombatOverlayService : Service() {
 
     private fun showOverlayControl() {
         if (overlayView != null) return
-        val compact = AppContainer.from(this).userSettingsPreferences.isCompactOverlay()
         val manager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -629,9 +629,9 @@ class CombatOverlayService : Service() {
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
-            gravity = Gravity.TOP or Gravity.START
+            gravity = Gravity.BOTTOM or Gravity.START
             x = dp(18)
-            y = dp(280)
+            y = dp(140)
         }
 
         var initialX = 0
@@ -639,206 +639,232 @@ class CombatOverlayService : Service() {
         var startTouchX = 0f
         var startTouchY = 0f
         var isDragging = false
+        var dragArmed = false
+        var dragArmRunnable: Runnable? = null
         var startedRecording = false
         val dragThreshold = OverlayWindowDragHelper.dragSlopPx(this)
-        val pressDelayMs = 100L
+        val fabCtx = OverlayTickerUi.themedFabContext(this@CombatOverlayService)
+        fun makeMiniFab(iconRes: Int, cd: String): FloatingActionButton =
+            FloatingActionButton(fabCtx).apply {
+                // Smaller than before; consistent circular buttons
+                OverlayTickerUi.styleOverlayFab(fabCtx, this, 42f)
+                setImageResource(iconRes)
+                contentDescription = cd
+            }
 
-        val lines = OverlayChatStripUi.createLinesContainer(this@CombatOverlayService)
-        val stripScroll = ScrollView(this).apply {
-            OverlayChatStripUi.styleStripScroll(this@CombatOverlayService, this)
-            addView(
-                lines,
-                ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                ),
-            )
+        val btnCollapse = makeMiniFab(
+            iconRes = R.drawable.ic_overlay_ui_collapse,
+            cd = getString(R.string.overlay_cd_toggle_hide_ui),
+        )
+        val btnMessage = makeMiniFab(
+            iconRes = R.drawable.ic_overlay_history,
+            cd = getString(R.string.overlay_cd_history),
+        )
+        val btnMic = makeMiniFab(
+            iconRes = R.drawable.ic_overlay_mic,
+            cd = getString(R.string.overlay_ptt_start),
+        )
+
+        val lockIcon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_overlay_lock_open)
+            contentDescription = getString(R.string.overlay_cd_lock_positions)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            isClickable = true
+            isFocusable = true
         }
-        val stripLines = lines
-        if (compact) {
-            stripScroll.visibility = View.GONE
+
+        val subAttack = makeMiniFab(iconRes = R.drawable.ic_overlay_send, cd = "Атака").apply {
+            // Placeholder
+            setOnClickListener { Toast.makeText(this@CombatOverlayService, "Атака (заглушка)", Toast.LENGTH_SHORT).show() }
+        }
+        val subDefense = makeMiniFab(iconRes = R.drawable.ic_overlay_send, cd = "Защита").apply {
+            setOnClickListener { Toast.makeText(this@CombatOverlayService, "Защита (заглушка)", Toast.LENGTH_SHORT).show() }
+        }
+        val subChat = makeMiniFab(iconRes = R.drawable.ic_overlay_history, cd = "Чат").apply {
+            setOnClickListener { showOverlayHistoryPanel() }
+        }
+
+        val subRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            visibility = View.GONE
+            setPadding(dp(8), 0, 0, 0)
+            addView(subAttack, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(6) })
+            addView(subDefense, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(6) })
+            addView(subChat, LinearLayout.LayoutParams(dp(44), dp(44)))
+        }
+
+        val messageRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(btnMessage, LinearLayout.LayoutParams(dp(44), dp(44)))
+            addView(subRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        }
+
+        val buttonStack = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.START
+            addView(btnCollapse, LinearLayout.LayoutParams(dp(44), dp(44)).apply { bottomMargin = dp(8) })
+            addView(messageRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
+            addView(btnMic, LinearLayout.LayoutParams(dp(44), dp(44)))
+            addView(lockIcon, LinearLayout.LayoutParams(dp(22), dp(22)).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                topMargin = dp(4)
+            })
         }
 
         lateinit var windowRoot: FrameLayout
-
-        val micSize = if (compact) dp(26) else dp(30)
-        val mic = ImageView(this).apply {
-            setImageDrawable(
-                ContextCompat.getDrawable(
-                    this@CombatOverlayService,
-                    R.drawable.ic_overlay_mic,
-                ),
-            )
-            scaleType = ImageView.ScaleType.FIT_CENTER
-        }
-        val bubble = FrameLayout(this).apply {
-            OverlayBubbleUi.applyBubbleStyle(
-                this@CombatOverlayService,
-                this,
-                OverlayBubbleUi.BubbleState.IDLE,
-                compact,
-                iconOnly = true,
-            )
-            addView(
-                mic,
-                FrameLayout.LayoutParams(micSize, micSize).apply {
-                    gravity = Gravity.CENTER
-                },
-            )
-            setOnTouchListener { bubbleView, event ->
-                val dragLocked = AppContainer.from(this@CombatOverlayService)
-                    .userSettingsPreferences
-                    .isOverlayDragLocked()
-                when (event.action) {
-                    MotionEvent.ACTION_DOWN -> {
-                        (bubbleView.parent as? ViewGroup)?.requestDisallowInterceptTouchEvent(true)
-                        quickCommandsPopover.hide()
-                        initialX = overlayWindowLayoutParams.x
-                        initialY = overlayWindowLayoutParams.y
-                        startTouchX = event.rawX
-                        startTouchY = event.rawY
-                        isDragging = false
-                        startedRecording = false
-                        val delayedStart = Runnable {
-                            startedRecording = true
-                            speechPipeline.startRecording()
-                        }
-                        recordingStartRunnable = delayedStart
-                        mainHandler.postDelayed(delayedStart, pressDelayMs)
-                        true
-                    }
-
-                    MotionEvent.ACTION_MOVE -> {
-                        val deltaX = (event.rawX - startTouchX).toInt()
-                        val deltaY = (event.rawY - startTouchY).toInt()
-                        if (!isDragging &&
-                            (kotlin.math.abs(deltaX) > dragThreshold ||
-                                kotlin.math.abs(deltaY) > dragThreshold)
-                        ) {
-                            isDragging = true
-                            recordingStartRunnable?.let { mainHandler.removeCallbacks(it) }
-                            recordingStartRunnable = null
-                            if (startedRecording) {
-                                speechPipeline.stopRecording()
-                                startedRecording = false
-                            }
-                        }
-
-                        if (isDragging && !dragLocked) {
-                            val screenWidth = resources.displayMetrics.widthPixels
-                            val screenHeight = resources.displayMetrics.heightPixels
-                            val rootW = windowRoot.width.takeIf { it > 0 }?.coerceAtLeast(dp(48)) ?: dp(260)
-                            val rootH = windowRoot.height.takeIf { it > 0 }?.coerceAtLeast(dp(48)) ?: dp(120)
-                            val nextX = (initialX + deltaX).coerceIn(0, screenWidth - rootW)
-                            val nextY = (initialY + deltaY).coerceIn(0, screenHeight - rootH)
-                            overlayWindowLayoutParams.x = nextX
-                            overlayWindowLayoutParams.y = nextY
-                            manager.updateViewLayout(windowRoot, overlayWindowLayoutParams)
-                            overlayTicker.syncTickerPosition()
-                        }
-                        true
-                    }
-
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        recordingStartRunnable?.let { mainHandler.removeCallbacks(it) }
-                        recordingStartRunnable = null
-                        if (!isDragging && startedRecording) {
-                            speechPipeline.stopRecording()
-                        } else if (!isDragging && event.action != MotionEvent.ACTION_CANCEL) {
-                            val loc = IntArray(2)
-                            bubbleView.getLocationOnScreen(loc)
-                            quickCommandsPopover.toggle(loc[0], loc[1])
-                        }
-                        startedRecording = false
-                        isDragging = false
-                        true
-                    }
-
-                    else -> false
-                }
-            }
-        }
-
-        val stripLp = LinearLayout.LayoutParams(dp(280), dp(200)).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            marginEnd = dp(8)
-        }
-        val bubbleLp = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-        ).apply {
-            gravity = Gravity.CENTER_VERTICAL
-        }
-
-        val fabCtx = OverlayTickerUi.themedFabContext(this@CombatOverlayService)
-        val historyFab = FloatingActionButton(fabCtx).apply {
-            OverlayTickerUi.styleOverlayFab(fabCtx, this, 40f)
-            setImageResource(R.drawable.ic_overlay_history)
-            contentDescription = getString(R.string.overlay_cd_history)
-            isClickable = false
-            isFocusable = false
-        }
-        val historyHit = FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(54), dp(54)).apply {
-                gravity = Gravity.CENTER_VERTICAL
-                marginEnd = dp(4)
-            }
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { toggleOverlayHistoryPanel() }
-            addView(
-                historyFab,
-                FrameLayout.LayoutParams(dp(40), dp(40), Gravity.CENTER),
-            )
-        }
-
-        val stripLpActual = if (compact) {
-            LinearLayout.LayoutParams(0, 0).apply {
-                gravity = Gravity.CENTER_VERTICAL
-            }
-        } else {
-            stripLp
-        }
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, 0)
-            addView(stripScroll, stripLpActual)
-            addView(historyHit)
-            addView(bubble, bubbleLp)
-        }
-        overlayHistoryFab = historyFab
-
         windowRoot = FrameLayout(this).apply {
             elevation = 22f
             setBackgroundColor(Color.TRANSPARENT)
             @Suppress("DEPRECATION")
             fitsSystemWindows = false
-            addView(row)
+            addView(buttonStack)
         }
 
-        overlayBubble = bubble
+        fun refreshLockIcon() {
+            val locked = AppContainer.from(this@CombatOverlayService).userSettingsPreferences.isOverlayDragLocked()
+            lockIcon.setImageResource(if (locked) R.drawable.ic_overlay_lock_locked else R.drawable.ic_overlay_lock_open)
+            lockIcon.contentDescription = getString(if (locked) R.string.overlay_cd_unlock_positions else R.string.overlay_cd_lock_positions)
+        }
+
+        fun applyControlsVisibility() {
+            if (overlayCollapsed) {
+                messageRow.visibility = View.GONE
+                btnMic.visibility = View.GONE
+                lockIcon.visibility = View.GONE
+                subRow.visibility = View.GONE
+                messageExpanded = false
+                btnCollapse.setImageResource(R.drawable.ic_overlay_ui_expand)
+                btnCollapse.contentDescription = getString(R.string.overlay_cd_toggle_show_ui)
+            } else {
+                messageRow.visibility = View.VISIBLE
+                btnMic.visibility = View.VISIBLE
+                lockIcon.visibility = View.VISIBLE
+                btnCollapse.setImageResource(R.drawable.ic_overlay_ui_collapse)
+                btnCollapse.contentDescription = getString(R.string.overlay_cd_toggle_hide_ui)
+                subRow.visibility = if (messageExpanded) View.VISIBLE else View.GONE
+            }
+        }
+
+        refreshLockIcon()
+        overlayCollapsed = false
+        messageExpanded = false
+        applyControlsVisibility()
+
+        btnCollapse.setOnClickListener {
+            overlayCollapsed = !overlayCollapsed
+            applyControlsVisibility()
+        }
+
+        btnMessage.setOnClickListener {
+            if (overlayCollapsed) return@setOnClickListener
+            messageExpanded = !messageExpanded
+            applyControlsVisibility()
+        }
+
+        lockIcon.setOnClickListener {
+            val prefs = AppContainer.from(this@CombatOverlayService).userSettingsPreferences
+            prefs.setOverlayDragLocked(!prefs.isOverlayDragLocked())
+            refreshLockIcon()
+        }
+
+        btnMic.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    startedRecording = false
+                    val delayedStart = Runnable {
+                        startedRecording = true
+                        speechPipeline.startRecording()
+                    }
+                    recordingStartRunnable = delayedStart
+                    mainHandler.postDelayed(delayedStart, 100L)
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    recordingStartRunnable?.let { mainHandler.removeCallbacks(it) }
+                    recordingStartRunnable = null
+                    if (startedRecording) {
+                        speechPipeline.stopRecording()
+                    }
+                    startedRecording = false
+                    true
+                }
+                else -> false
+            }
+        }
+
+        btnCollapse.setOnTouchListener { v, event ->
+            val dragLocked = AppContainer.from(this@CombatOverlayService).userSettingsPreferences.isOverlayDragLocked()
+            if (dragLocked) return@setOnTouchListener false
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    (v.parent as? ViewGroup)?.requestDisallowInterceptTouchEvent(true)
+                    initialX = overlayWindowLayoutParams.x
+                    initialY = overlayWindowLayoutParams.y
+                    startTouchX = event.rawX
+                    startTouchY = event.rawY
+                    isDragging = false
+                    dragArmed = false
+                    dragArmRunnable?.let { mainHandler.removeCallbacks(it) }
+                    val arm = Runnable { dragArmed = true }
+                    dragArmRunnable = arm
+                    mainHandler.postDelayed(arm, 180L)
+                    false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val deltaX = (event.rawX - startTouchX).toInt()
+                    val deltaY = (event.rawY - startTouchY).toInt()
+                    if (!isDragging && dragArmed &&
+                        (kotlin.math.abs(deltaX) > dragThreshold || kotlin.math.abs(deltaY) > dragThreshold)
+                    ) {
+                        isDragging = true
+                    }
+                    if (isDragging) {
+                        val screenWidth = resources.displayMetrics.widthPixels
+                        val screenHeight = resources.displayMetrics.heightPixels
+                        val rootW = windowRoot.width.takeIf { it > 0 }?.coerceAtLeast(dp(48)) ?: dp(120)
+                        val rootH = windowRoot.height.takeIf { it > 0 }?.coerceAtLeast(dp(48)) ?: dp(180)
+                        val nextX = (initialX + deltaX).coerceIn(0, screenWidth - rootW)
+                        val nextY = (initialY - deltaY).coerceIn(0, screenHeight - rootH) // gravity=BOTTOM
+                        overlayWindowLayoutParams.x = nextX
+                        overlayWindowLayoutParams.y = nextY
+                        manager.updateViewLayout(windowRoot, overlayWindowLayoutParams)
+                        overlayTicker.syncTickerPosition()
+                        true
+                    } else {
+                        false
+                    }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    dragArmRunnable?.let { mainHandler.removeCallbacks(it) }
+                    dragArmRunnable = null
+                    val consumed = isDragging
+                    isDragging = false
+                    dragArmed = false
+                    consumed
+                }
+                else -> false
+            }
+        }
+
+        overlayBubble = null
         overlayView = windowRoot
-        chatStripScroll = stripScroll
-        chatStripLines = stripLines
+        chatStripScroll = null
+        chatStripLines = null
+        overlayHistoryFab = null
 
         val attach = runCatching { manager.addView(overlayView, overlayWindowLayoutParams) }
         if (attach.isFailure) {
             Log.e(TAG, "WindowManager.addView(overlay) failed", attach.exceptionOrNull())
             overlayView = null
-            overlayBubble = null
             chatStripScroll = null
             chatStripLines = null
-            overlayHistoryFab = null
             return
         }
         _overlayVisible.value = true
         windowManager = manager
-        ensureToggleButton()
-        ensureLockButton()
         overlayTicker.ensureTicker()
         overlayTicker.syncTickerPosition()
-        beginOverlayChatSubscription()
     }
 
     private fun ensureToggleButton() {
