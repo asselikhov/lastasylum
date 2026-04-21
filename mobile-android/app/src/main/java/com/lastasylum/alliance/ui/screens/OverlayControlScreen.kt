@@ -2,6 +2,7 @@ package com.lastasylum.alliance.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -29,6 +30,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -134,6 +136,10 @@ fun OverlayControlScreen() {
                         pendingEnable = true
                         when {
                             !overlayOk() -> OverlayPermissions.openOverlayPermissionSettings(context)
+                            latestGameGate.value && !usageOk() -> {
+                                pendingEnable = false
+                                OverlayPermissions.openUsageAccessSettings(context)
+                            }
                             CombatOverlayService.startService(context) -> {
                                 pendingEnable = false
                             }
@@ -221,7 +227,13 @@ private fun OverlaySwitchRow(
     onCheckedChange: (Boolean) -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                role = Role.Switch,
+                onClick = { onCheckedChange(!checked) },
+            )
+            .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
@@ -235,7 +247,7 @@ private fun OverlaySwitchRow(
         )
         Switch(
             checked = checked,
-            onCheckedChange = onCheckedChange,
+            onCheckedChange = null,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                 checkedTrackColor = MaterialTheme.colorScheme.primary,
