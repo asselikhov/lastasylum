@@ -64,6 +64,7 @@ fun OverlayControlScreen() {
     var targetPkg by remember { mutableStateOf(prefs.getOverlayTargetGamePackage()) }
     var pendingEnable by remember { mutableStateOf(false) }
     var pendingDisable by remember { mutableStateOf(false) }
+    var desiredOverlayOn by remember { mutableStateOf(false) }
 
     val latestPendingEnable = rememberUpdatedState(pendingEnable)
     val latestGameGate = rememberUpdatedState(gameGateOnly)
@@ -104,6 +105,19 @@ fun OverlayControlScreen() {
         } else {
             pendingDisable = false
         }
+        if (!pendingEnable && !pendingDisable) {
+            desiredOverlayOn = overlayRunning
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        desiredOverlayOn = overlayRunning
+    }
+
+    LaunchedEffect(pendingDisable) {
+        if (!pendingDisable) return@LaunchedEffect
+        delay(1500)
+        pendingDisable = false
     }
 
     LaunchedEffect(targetPkg) {
@@ -139,23 +153,34 @@ fun OverlayControlScreen() {
 
             OverlaySwitchRow(
                 title = stringResource(R.string.overlay_switch_panel),
-                checked = overlayRunning || pendingEnable,
-                enabled = !pendingEnable && !pendingDisable,
+                checked = desiredOverlayOn,
+                enabled = true,
                 onCheckedChange = { on ->
                     if (on) {
+                        desiredOverlayOn = true
+                        pendingDisable = false
                         pendingEnable = true
                         when {
-                            !overlayOk() -> OverlayPermissions.openOverlayPermissionSettings(context)
+                            !overlayOk() -> {
+                                pendingEnable = false
+                                desiredOverlayOn = false
+                                OverlayPermissions.openOverlayPermissionSettings(context)
+                            }
                             latestGameGate.value && !usageOk() -> {
                                 pendingEnable = false
+                                desiredOverlayOn = false
                                 OverlayPermissions.openUsageAccessSettings(context)
                             }
                             CombatOverlayService.startService(context) -> {
                                 pendingEnable = false
                             }
-                            else -> pendingEnable = false
+                            else -> {
+                                pendingEnable = false
+                                desiredOverlayOn = false
+                            }
                         }
                     } else {
+                        desiredOverlayOn = false
                         pendingEnable = false
                         pendingDisable = true
                         CombatOverlayService.stopService(context)
