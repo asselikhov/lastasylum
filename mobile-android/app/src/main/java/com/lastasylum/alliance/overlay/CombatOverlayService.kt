@@ -304,8 +304,17 @@ class CombatOverlayService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP_SERVICE -> {
-                stopSelf()
-                return START_STICKY
+                // Stop must be reliable: immediately remove overlay windows and prevent sticky restart.
+                gateCheckInFlight = false
+                mainHandler.removeCallbacks(gameGateRunnable)
+                runCatching { removeOverlayControl() }
+                runCatching { overlayTicker.hideTicker() }
+                runCatching { quickCommandsPopover.hide() }
+                runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+                isServiceInstanceActive = false
+                _serviceRunning.value = false
+                stopSelfResult(startId)
+                return START_NOT_STICKY
             }
             ACTION_REBUILD_OVERLAY -> {
                 if (overlayView != null) {
