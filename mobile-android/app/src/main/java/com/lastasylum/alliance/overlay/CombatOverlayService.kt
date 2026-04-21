@@ -32,6 +32,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
+import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.layout.OverlayLayoutDp
 import com.lastasylum.alliance.ui.util.toUserMessageRu
@@ -170,6 +171,16 @@ class CombatOverlayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        // If the user has disabled the panel, do not spin up the FGS at all.
+        // This avoids slow enable/disable cycles on OEM ROMs (HyperOS/MIUI) caused by starting an FGS
+        // just to immediately stop it.
+        if (!AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()) {
+            isServiceInstanceActive = false
+            _serviceRunning.value = false
+            _overlayVisible.value = false
+            stopSelf()
+            return
+        }
         speechPipeline.initIfAvailable()
         OverlayForegroundNotifications.ensureChannel(this)
         val notification = OverlayForegroundNotifications.build(
@@ -1250,12 +1261,18 @@ class CombatOverlayService : Service() {
          */
         fun setEnabled(context: Context, enabled: Boolean): Boolean {
             val app = context.applicationContext
+            // Persist desired state first (single source of truth).
+            runCatching { UserSettingsPreferences(app).setOverlayPanelEnabled(enabled) }
+            // If we are disabling and the service is not running, do not start it just to stop it.
+            if (!enabled && !isServiceInstanceActive) {
+                return true
+            }
             return try {
                 val intent = Intent(context, CombatOverlayService::class.java).apply {
                     action = ACTION_SET_ENABLED
                     putExtra(EXTRA_ENABLED, enabled)
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     app.startForegroundService(intent)
                 } else {
                     app.startService(intent)

@@ -144,22 +144,27 @@ fun OverlayControlScreen() {
                 onCheckedChange = { on ->
                     if (on) {
                         overlayEnabled = true
+                        prefs.setOverlayPanelEnabled(true)
                         when {
                             !overlayOk() -> {
                                 overlayEnabled = false
+                                prefs.setOverlayPanelEnabled(false)
                                 OverlayPermissions.openOverlayPermissionSettings(context)
                             }
                             latestGameGate.value && !usageOk() -> {
                                 overlayEnabled = false
+                                prefs.setOverlayPanelEnabled(false)
                                 OverlayPermissions.openUsageAccessSettings(context)
                             }
                             else -> Unit
                         }
                         if (!CombatOverlayService.setEnabled(context, true)) {
                             overlayEnabled = false
+                            prefs.setOverlayPanelEnabled(false)
                         }
                     } else {
                         overlayEnabled = false
+                        prefs.setOverlayPanelEnabled(false)
                         CombatOverlayService.setEnabled(context, false)
                     }
                 },
