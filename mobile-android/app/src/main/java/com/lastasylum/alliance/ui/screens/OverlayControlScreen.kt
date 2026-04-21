@@ -63,6 +63,7 @@ fun OverlayControlScreen() {
     var gameGateOnly by remember { mutableStateOf(prefs.isOverlayGameGateEnabled()) }
     var targetPkg by remember { mutableStateOf(prefs.getOverlayTargetGamePackage()) }
     var pendingEnable by remember { mutableStateOf(false) }
+    var pendingDisable by remember { mutableStateOf(false) }
 
     val latestPendingEnable = rememberUpdatedState(pendingEnable)
     val latestGameGate = rememberUpdatedState(gameGateOnly)
@@ -95,6 +96,14 @@ fun OverlayControlScreen() {
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(overlayRunning) {
+        if (overlayRunning) {
+            pendingEnable = false
+        } else {
+            pendingDisable = false
+        }
     }
 
     LaunchedEffect(targetPkg) {
@@ -130,7 +139,8 @@ fun OverlayControlScreen() {
 
             OverlaySwitchRow(
                 title = stringResource(R.string.overlay_switch_panel),
-                checked = overlayRunning,
+                checked = overlayRunning || pendingEnable,
+                enabled = !pendingEnable && !pendingDisable,
                 onCheckedChange = { on ->
                     if (on) {
                         pendingEnable = true
@@ -147,6 +157,7 @@ fun OverlayControlScreen() {
                         }
                     } else {
                         pendingEnable = false
+                        pendingDisable = true
                         CombatOverlayService.stopService(context)
                     }
                 },
@@ -198,6 +209,7 @@ fun OverlayControlScreen() {
             OverlaySwitchRow(
                 title = stringResource(R.string.overlay_switch_game_only),
                 checked = gameGateOnly,
+                enabled = !pendingEnable && !pendingDisable,
                 onCheckedChange = { v ->
                     gameGateOnly = v
                     prefs.setOverlayGameGateEnabled(v)
@@ -224,12 +236,14 @@ fun OverlayControlScreen() {
 private fun OverlaySwitchRow(
     title: String,
     checked: Boolean,
+    enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(
+                enabled = enabled,
                 role = Role.Switch,
                 onClick = { onCheckedChange(!checked) },
             )
@@ -248,6 +262,7 @@ private fun OverlaySwitchRow(
         Switch(
             checked = checked,
             onCheckedChange = null,
+            enabled = enabled,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                 checkedTrackColor = MaterialTheme.colorScheme.primary,
