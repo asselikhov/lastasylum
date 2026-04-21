@@ -305,10 +305,16 @@ private fun OverlaySwitchRow(
         Switch(
             checked = checked,
             onCheckedChange = null,
-            enabled = enabled,
+            // Important: Switch can consume taps even with onCheckedChange=null.
+            // Keep all interaction on the row, but preserve the visual style.
+            enabled = false,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                 checkedTrackColor = MaterialTheme.colorScheme.primary,
+                disabledCheckedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                disabledCheckedTrackColor = MaterialTheme.colorScheme.primary,
+                disabledUncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                disabledUncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
             ),
         )
     }
