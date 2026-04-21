@@ -49,6 +49,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.overlay.CombatOverlayService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -91,6 +92,12 @@ fun AppNavigation(
     )
     LaunchedEffect(Unit) {
         chatViewModel.refreshChat()
+    }
+
+    LaunchedEffect(overlayTabVisible) {
+        if (!overlayTabVisible) {
+            CombatOverlayService.stopService(activity.applicationContext)
+        }
     }
 
     LaunchedEffect(userId) {

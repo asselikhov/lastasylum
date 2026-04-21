@@ -258,7 +258,7 @@
     <string name="overlay_notif_voice_sent">Голосовое сообщение отправлено</string>
     <string name="overlay_notif_voice_chat_failed">Речь распознана, но чат не принял сообщение</string>
     <string name="overlay_notif_waiting_for_game">Ожидание игры — панель скрыта</string>
-    <string name="overlay_notif_game_gate_no_usage_fallback">Боевой режим: статистика использования недоступна — панель показывается всегда. Для скрытия вне игры включите доступ в настройках для SquadRelay.</string>
+    <string name="overlay_notif_game_gate_no_usage_fallback">Боевой режим: статистика использования недоступна — панель скрыта. Для показа только в игре включите доступ «Данные об использовании» для SquadRelay.</string>
     <string name="overlay_channel_name">Боевой оверлей</string>
     <string name="overlay_notif_title">SquadRelay — боевой режим</string>
     <string name="overlay_bubble_idle">МИК\nудерж.</string>

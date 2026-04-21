@@ -233,8 +233,9 @@ object GameForegroundGate {
     }
 
     /**
-     * Show overlay when the target game is in foreground, or when the user is touching our app
-     * (overlay / launcher) so the strip does not disappear while interacting with SquadRelay.
+     * Показывать оверлей только когда в фокусе целевая игра (или по эвристикам usage stats ниже).
+     * Раньше при `lastResumedPackage == SquadRelay` всегда возвращали true — из‑за этого при открытом
+     * приложении SquadRelay снова появлялись все кнопки оверлея даже в режиме «только в игре».
      *
      * [targetGamePackages] — один или несколько applicationId (например release и debug через запятую в настройках).
      */
@@ -248,7 +249,6 @@ object GameForegroundGate {
         val alliance = context.packageName
         val targetSet = targets.toSet()
         val hinted = lastResumedPackage(context)
-        if (hinted == alliance) return true
         if (hinted != null && targetSet.contains(hinted)) return true
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return false
         val end = System.currentTimeMillis()
@@ -464,21 +464,21 @@ object GameForegroundGate {
         return lastEnterIndex > lastLeaveIndex
     }
 
+    @Suppress("DEPRECATION")
     private fun isForegroundEnterEvent(type: Int): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             return type == UsageEvents.Event.ACTIVITY_RESUMED ||
                 type == UsageEvents.Event.MOVE_TO_FOREGROUND
         }
-        @Suppress("DEPRECATION")
         return type == UsageEvents.Event.MOVE_TO_FOREGROUND
     }
 
+    @Suppress("DEPRECATION")
     private fun isForegroundLeaveEvent(type: Int): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             return type == UsageEvents.Event.ACTIVITY_PAUSED ||
                 type == UsageEvents.Event.MOVE_TO_BACKGROUND
         }
-        @Suppress("DEPRECATION")
         return type == UsageEvents.Event.MOVE_TO_BACKGROUND
     }
 

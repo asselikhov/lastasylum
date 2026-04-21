@@ -223,11 +223,10 @@ class CombatOverlayService : Service() {
         serviceScope.launch {
             try {
                 val hasUsageAccess = GameForegroundGate.hasUsageStatsAccess(this@CombatOverlayService)
-                // Без usage stats на части OEM нельзя узнать foreground игры — не скрываем панель навсегда.
                 val shouldShow = if (hasUsageAccess) {
                     GameForegroundGate.shouldShowOverlay(this@CombatOverlayService, targets)
                 } else {
-                    true
+                    false
                 }
                 mainHandler.post {
                     val nowMs = System.currentTimeMillis()
@@ -237,7 +236,7 @@ class CombatOverlayService : Service() {
                         if (!hasUsageAccess || !shouldShow || !draw || overlayView == null) {
                             Log.i(
                                 TAG,
-                                "overlayGate usage=$hasUsageAccess inGame=$shouldShow noUsageFallback=${!hasUsageAccess} " +
+                                "overlayGate usage=$hasUsageAccess inGame=$shouldShow " +
                                     "drawOverlays=$draw overlayAttached=${overlayView != null} targets=${targets.joinToString()}",
                             )
                         }
@@ -271,12 +270,10 @@ class CombatOverlayService : Service() {
             return
         }
         if (!hasUsageAccess) {
-            if (!canDrawOverlaysNow()) {
-                updateNotification(getString(R.string.overlay_notif_permission_required))
-                return
+            notifyGateThrottled(getString(R.string.overlay_notif_waiting_for_game))
+            if (overlayView != null) {
+                removeOverlayControl()
             }
-            ensureOverlayIfPermitted()
-            notifyGateThrottled(getString(R.string.overlay_notif_game_gate_no_usage_fallback))
             return
         }
         if (!shouldShow) {
@@ -1220,10 +1217,12 @@ class CombatOverlayService : Service() {
         }
 
         fun stopService(context: Context) {
+            val app = context.applicationContext
             val intent = Intent(context, CombatOverlayService::class.java).apply {
                 action = ACTION_STOP_SERVICE
             }
-            context.startService(intent)
+            runCatching { app.startService(intent) }
+            runCatching { app.stopService(Intent(app, CombatOverlayService::class.java)) }
         }
 
         fun startRecording(context: Context) {
