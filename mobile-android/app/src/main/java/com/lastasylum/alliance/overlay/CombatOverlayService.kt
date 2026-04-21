@@ -28,6 +28,19 @@ import android.widget.ImageView
 import android.widget.Toast
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
@@ -35,6 +48,9 @@ import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.layout.OverlayLayoutDp
+import com.lastasylum.alliance.ui.screens.ChatScreen
+import com.lastasylum.alliance.ui.chat.ChatViewModel
+import com.lastasylum.alliance.ui.theme.SquadRelayTheme
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import org.json.JSONObject
 import kotlinx.coroutines.CoroutineScope
@@ -149,6 +165,7 @@ class CombatOverlayService : Service() {
     private var overlayHistorySend: FloatingActionButton? = null
     private var overlayHistoryStatus: TextView? = null
     private val overlayHistoryDedupeIds = mutableSetOf<String>()
+    private var overlayChatViewModel: ChatViewModel? = null
 
     private val stripTickRunnable = Runnable {
         stripBuffer.prune()
@@ -729,10 +746,11 @@ class CombatOverlayService : Service() {
 
         fun applyControlsVisibility() {
             if (overlayCollapsed) {
-                messageRow.visibility = View.GONE
-                btnMic.visibility = View.GONE
-                lockIcon.visibility = View.GONE
-                subRow.visibility = View.GONE
+                // Keep layout size stable so the stack doesn't "jump" when collapsed/expanded.
+                messageRow.visibility = View.INVISIBLE
+                btnMic.visibility = View.INVISIBLE
+                lockIcon.visibility = View.INVISIBLE
+                subRow.visibility = View.INVISIBLE
                 messageExpanded = false
                 btnCollapse.setImageResource(R.drawable.ic_overlay_ui_expand)
                 btnCollapse.contentDescription = getString(R.string.overlay_cd_toggle_show_ui)
@@ -742,7 +760,7 @@ class CombatOverlayService : Service() {
                 lockIcon.visibility = View.VISIBLE
                 btnCollapse.setImageResource(R.drawable.ic_overlay_ui_collapse)
                 btnCollapse.contentDescription = getString(R.string.overlay_cd_toggle_hide_ui)
-                subRow.visibility = if (messageExpanded) View.VISIBLE else View.GONE
+                subRow.visibility = if (messageExpanded) View.VISIBLE else View.INVISIBLE
             }
         }
 
@@ -1115,8 +1133,77 @@ class CombatOverlayService : Service() {
             WindowManager.LayoutParams.TYPE_PHONE
         }
 
-        val panel = OverlayChatHistoryPanel.create(this) {
-            hideOverlayHistoryPanel()
+        // Full chat UI (same as in-app ChatScreen) rendered inside overlay window.
+        val compose = ComposeView(this).apply {
+            setContent {
+                val container = remember { AppContainer.from(this@CombatOverlayService) }
+                val app = this@CombatOverlayService.applicationContext as android.app.Application
+                val userId = remember { jwtSubFromAccessToken().orEmpty() }
+                val vm = remember {
+                    overlayChatViewModel ?: ChatViewModel(
+                        application = app,
+                        repository = container.chatRepository,
+                        chatRoomPreferences = container.chatRoomPreferences,
+                        usersRepository = container.usersRepository,
+                        currentUserId = userId,
+                        currentUserRole = "",
+                    ).also {
+                        overlayChatViewModel = it
+                        it.refreshChat()
+                    }
+                }
+                val chatState by vm.state.collectAsState()
+                val draftMessage by vm.draftMessage.collectAsState()
+                val pickedImageUris by vm.pickedImageUris.collectAsState()
+                val typingPeers by vm.typingPeers.collectAsState()
+
+                SquadRelayTheme {
+                    Box(Modifier.fillMaxSize()) {
+                        ChatScreen(
+                            state = chatState,
+                            typingPeers = typingPeers,
+                            draftMessage = draftMessage,
+                            pickedImageUris = pickedImageUris,
+                            onSelectRoom = vm::selectRoom,
+                            onClearError = vm::clearError,
+                            onLoadOlder = vm::loadOlderMessages,
+                            onDraftChange = vm::setDraftMessage,
+                            onSendDraft = vm::sendDraftMessage,
+                            onSendStickerPayload = { body -> vm.sendMessage(body) },
+                            onPickImages = vm::onImagesPicked,
+                            onRemovePickedImage = vm::removePickedImage,
+                            onClearPickedImages = vm::clearPickedImages,
+                            onReplyToMessage = vm::beginReplyToMessage,
+                            onClearReply = vm::clearReplyToMessage,
+                            onOpenMessageActions = vm::openMessageActions,
+                            onDismissMessageActions = vm::dismissMessageActions,
+                            onRequestDeleteMessage = vm::requestDeleteMessage,
+                            onDismissDeleteMessage = vm::dismissDeleteMessage,
+                            onConfirmDeleteMessage = vm::confirmDeleteMessage,
+                            onBeginMessageSelection = vm::beginMessageSelection,
+                            onToggleMessageSelection = vm::toggleMessageSelection,
+                            onClearMessageSelection = vm::clearMessageSelection,
+                            onRequestBulkDelete = vm::requestBulkDelete,
+                            onDismissBulkDeleteConfirm = vm::dismissBulkDeleteConfirm,
+                            onConfirmDeleteSelectedMessages = vm::confirmDeleteSelectedMessages,
+                            onRetrySendFailure = vm::retrySendFailure,
+                            onDismissSendFailure = vm::dismissSendFailure,
+                            onChatVoiceHoldStart = vm::startChatVoiceInput,
+                            onChatVoiceHoldEnd = vm::stopChatVoiceInput,
+                        )
+                        IconButton(
+                            onClick = { hideOverlayHistoryPanel() },
+                            modifier = Modifier.align(Alignment.TopEnd),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Close,
+                                contentDescription = getString(R.string.overlay_history_close_cd),
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         val params = WindowManager.LayoutParams(
@@ -1134,49 +1221,21 @@ class CombatOverlayService : Service() {
             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
         }
 
-        overlayHistoryRoot = panel.root
-        overlayHistoryScroll = panel.scroll
-        overlayHistoryLines = panel.lines
-        overlayHistoryInput = panel.input
-        overlayHistorySend = panel.sendButton
-        overlayHistoryStatus = panel.statusView
+        val root = FrameLayout(this).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            addView(
+                compose,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                ),
+            )
+        }
+
+        overlayHistoryRoot = root
         overlayHistoryParams = params
         overlayHistoryVisible = true
-        runCatching { manager.addView(panel.root, params) }
-
-        panel.sendButton.setOnClickListener { attemptSendOverlayHistoryMessage() }
-        panel.input.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_SEND) {
-                attemptSendOverlayHistoryMessage()
-                true
-            } else {
-                false
-            }
-        }
-
-        serviceScope.launch {
-            val container = AppContainer.from(this@CombatOverlayService)
-            val roomId = container.chatRoomPreferences.getSelectedRoomId() ?: return@launch
-            val result = container.chatRepository.loadRecentMessages(roomId, null, OVERLAY_HISTORY_LOAD)
-            mainHandler.post {
-                val targetLines = overlayHistoryLines ?: return@post
-                result.onSuccess { list ->
-                    OverlayChatHistoryPanel.populate(
-                        this@CombatOverlayService,
-                        targetLines,
-                        list,
-                        jwtSubFromAccessToken(),
-                        stripBuffer.receivedAtMap(),
-                        overlayHistoryDedupeIds,
-                    )
-                    overlayHistoryScroll?.post {
-                        overlayHistoryScroll?.fullScroll(View.FOCUS_DOWN)
-                    }
-                }.onFailure {
-                    showOverlayHistoryStatus(getString(R.string.overlay_strip_history_failed))
-                }
-            }
-        }
+        runCatching { manager.addView(root, params) }
     }
 
     private fun dp(value: Int): Int {
