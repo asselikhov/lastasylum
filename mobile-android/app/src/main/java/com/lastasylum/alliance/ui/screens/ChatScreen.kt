@@ -3,6 +3,8 @@ package com.lastasylum.alliance.ui.screens
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivityResultRegistryOwner
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -133,7 +135,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatMessage
@@ -370,6 +374,8 @@ fun ChatScreen(
     onChatVoiceHoldEnd: () -> Unit,
 ) {
     val context = LocalContext.current
+    val activityResultOwner = LocalActivityResultRegistryOwner.current
+    val canHandleBack = LocalOnBackPressedDispatcherOwner.current != null
     var hasMicPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -378,10 +384,14 @@ fun ChatScreen(
             ) == PackageManager.PERMISSION_GRANTED,
         )
     }
-    val micPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        hasMicPermission = granted
+    val micPermissionLauncher = if (activityResultOwner != null) {
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission(),
+        ) { granted ->
+            hasMicPermission = granted
+        }
+    } else {
+        null
     }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -418,8 +428,10 @@ fun ChatScreen(
     }
     val inSelectionMode = state.selectedMessageIds.isNotEmpty()
 
-    BackHandler(enabled = inSelectionMode && !state.isDeletingSelection) {
-        onClearMessageSelection()
+    if (canHandleBack) {
+        BackHandler(enabled = inSelectionMode && !state.isDeletingSelection) {
+            onClearMessageSelection()
+        }
     }
     val isNearLatest by remember(listState) {
         derivedStateOf {
@@ -601,7 +613,7 @@ fun ChatScreen(
                         readOnly = globalComposerLocked,
                         hasMicPermission = hasMicPermission,
                         onRequestMicPermission = {
-                            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            micPermissionLauncher?.launch(Manifest.permission.RECORD_AUDIO)
                         },
                         onChatVoiceHoldStart = onChatVoiceHoldStart,
                         onChatVoiceHoldEnd = onChatVoiceHoldEnd,
@@ -1060,19 +1072,25 @@ private fun ChatComposer(
     var showAttachmentsSheet by remember { mutableStateOf(false) }
     var previewIndex by remember { mutableStateOf<Int?>(null) }
     val context = LocalContext.current
+    val activityResultOwner = LocalActivityResultRegistryOwner.current
+    val canHandleBack = LocalOnBackPressedDispatcherOwner.current != null
     val zlobStems = remember(context) { ZlobyakaStickerPack.listSortedStems(context) }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
     val gifScroll = rememberScrollState()
-    val pickImagesLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 12),
-        onResult = { uris ->
-            if (!readOnly && uris.isNotEmpty()) {
-                onPickImages(uris)
-            }
-        },
-    )
+    val pickImagesLauncher = if (activityResultOwner != null) {
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 12),
+            onResult = { uris ->
+                if (!readOnly && uris.isNotEmpty()) {
+                    onPickImages(uris)
+                }
+            },
+        )
+    } else {
+        null
+    }
 
     LaunchedEffect(showMediaPanel) {
         if (!showMediaPanel) {
@@ -1081,14 +1099,18 @@ private fun ChatComposer(
         }
     }
 
-    BackHandler(enabled = showMediaPanel) {
-        showMediaPanel = false
+    if (canHandleBack) {
+        BackHandler(enabled = showMediaPanel) {
+            showMediaPanel = false
+        }
     }
 
-    BackHandler(enabled = showAttachmentsSheet || previewIndex != null) {
-        when {
-            previewIndex != null -> previewIndex = null
-            showAttachmentsSheet -> showAttachmentsSheet = false
+    if (canHandleBack) {
+        BackHandler(enabled = showAttachmentsSheet || previewIndex != null) {
+            when {
+                previewIndex != null -> previewIndex = null
+                showAttachmentsSheet -> showAttachmentsSheet = false
+            }
         }
     }
 
@@ -1464,7 +1486,7 @@ private fun ChatComposer(
                                     if (readOnly) return@IconButton
                                     focusManager.clearFocus()
                                     keyboard?.hide()
-                                    pickImagesLauncher.launch(
+                                    pickImagesLauncher?.launch(
                                         PickVisualMediaRequest(
                                             ActivityResultContracts.PickVisualMedia.ImageOnly,
                                         ),
@@ -1764,7 +1786,17 @@ private fun AttachmentPreviewDialog(
         }
     }
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        ),
+    ) {
+        DisposableEffect(Unit) {
+            OverlayChatInteractionHold.suppressGameForegroundGate = true
+            onDispose { OverlayChatInteractionHold.suppressGameForegroundGate = false }
+        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -1935,7 +1967,17 @@ private fun RemoteChatImagesPreviewDialog(
         }
     }
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        ),
+    ) {
+        DisposableEffect(Unit) {
+            OverlayChatInteractionHold.suppressGameForegroundGate = true
+            onDispose { OverlayChatInteractionHold.suppressGameForegroundGate = false }
+        }
         BackHandler(onBack = onDismiss)
         Box(
             modifier = Modifier

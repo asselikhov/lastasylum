@@ -199,6 +199,7 @@ class CombatOverlayService : Service() {
     private var overlayHistoryLines: LinearLayout? = null
     private var overlayHistoryParams: WindowManager.LayoutParams? = null
     private var overlayHistoryFab: FloatingActionButton? = null
+    @Volatile
     private var overlayHistoryVisible = false
     private var overlayHistoryInput: com.google.android.material.textfield.TextInputEditText? = null
     private var overlayHistorySend: FloatingActionButton? = null
@@ -417,8 +418,13 @@ class CombatOverlayService : Service() {
                 val shouldShow = if (hasUsageAccess) {
                     // While the user is interacting with the overlay chat UI, do not hide the overlay.
                     // Some OEM ROMs may report SquadRelay as "resumed" when touching overlay windows.
-                    if (overlayHistoryVisible) true
-                    else GameForegroundGate.shouldShowOverlay(this@CombatOverlayService, targets)
+                    // [overlayHistoryVisible] is @Volatile so IO reads see main-thread updates; full-screen image
+                    // dialogs set [OverlayChatInteractionHold] while open (Compose Dialog window timing).
+                    if (overlayHistoryVisible || OverlayChatInteractionHold.suppressGameForegroundGate) {
+                        true
+                    } else {
+                        GameForegroundGate.shouldShowOverlay(this@CombatOverlayService, targets)
+                    }
                 } else {
                     false
                 }
