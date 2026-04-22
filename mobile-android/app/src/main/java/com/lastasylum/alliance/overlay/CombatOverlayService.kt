@@ -2,8 +2,12 @@ package com.lastasylum.alliance.overlay
 
 import android.app.Service
 import android.content.Context
+import android.content.IntentFilter
+import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.content.ClipData
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -26,6 +30,13 @@ import android.util.Base64
 import android.util.Log
 import android.widget.ImageView
 import android.widget.Toast
+import androidx.activity.OnBackPressedDispatcher
+import androidx.activity.OnBackPressedDispatcherOwner
+import androidx.activity.result.ActivityResultRegistry
+import androidx.activity.result.ActivityResultRegistryOwner
+import androidx.activity.compose.LocalActivityResultRegistryOwner
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import androidx.core.app.ActivityOptionsCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Box
@@ -35,6 +46,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -52,6 +64,16 @@ import com.lastasylum.alliance.ui.screens.ChatScreen
 import com.lastasylum.alliance.ui.chat.ChatViewModel
 import com.lastasylum.alliance.ui.theme.SquadRelayTheme
 import com.lastasylum.alliance.ui.util.toUserMessageRu
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.savedstate.SavedStateRegistry
+import androidx.savedstate.SavedStateRegistryController
+import androidx.savedstate.SavedStateRegistryOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalSavedStateRegistryOwner
 import org.json.JSONObject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -166,6 +188,103 @@ class CombatOverlayService : Service() {
     private var overlayHistoryStatus: TextView? = null
     private val overlayHistoryDedupeIds = mutableSetOf<String>()
     private var overlayChatViewModel: ChatViewModel? = null
+    private var overlayChatOwner: OverlayChatComposeOwner? = null
+
+    private val overlaySystemResultReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val owner = overlayChatOwner ?: return
+            val i = intent ?: return
+            val requestCode = i.getIntExtra(OverlaySystemDialogActivity.EXTRA_REQUEST_CODE, -1)
+            if (requestCode < 0) return
+
+            when (i.action) {
+                OverlaySystemDialogActivity.ACTION_OVERLAY_PICK_IMAGES_RESULT -> {
+                    val uris = i.getParcelableArrayListExtra<Uri>(OverlaySystemDialogActivity.EXTRA_URIS).orEmpty()
+                    // Build intent payload compatible with PickMultipleVisualMedia contract parsing:
+                    // ActivityResultContracts.PickMultipleVisualMedia -> GetMultipleContents.getClipDataUris(intent)
+                    val data = Intent().apply {
+                        if (uris.isNotEmpty()) {
+                            val clip = ClipData.newRawUri("images", uris.first())
+                            uris.drop(1).forEach { clip.addItem(ClipData.Item(it)) }
+                            clipData = clip
+                        }
+                    }
+                    owner.activityResultRegistry.dispatchResult(requestCode, android.app.Activity.RESULT_OK, data)
+                }
+                OverlaySystemDialogActivity.ACTION_OVERLAY_MIC_PERMISSION_RESULT -> {
+                    val granted = i.getBooleanExtra(OverlaySystemDialogActivity.EXTRA_GRANTED, false)
+                    val data = Intent().apply {
+                        putExtra(
+                            "androidx.activity.result.contract.extra.PERMISSION_GRANT_RESULTS",
+                            intArrayOf(if (granted) 0 else -1),
+                        )
+                    }
+                    owner.activityResultRegistry.dispatchResult(requestCode, android.app.Activity.RESULT_OK, data)
+                }
+            }
+        }
+    }
+
+    private inner class OverlayChatComposeOwner :
+        LifecycleOwner,
+        ViewModelStoreOwner,
+        SavedStateRegistryOwner,
+        OnBackPressedDispatcherOwner,
+        ActivityResultRegistryOwner {
+        private val lifecycleRegistry = LifecycleRegistry(this)
+        private val store = ViewModelStore()
+        private val savedStateController = SavedStateRegistryController.create(this)
+        private val backDispatcher = OnBackPressedDispatcher()
+
+        private val registry = object : ActivityResultRegistry() {
+            override fun <I, O> onLaunch(
+                requestCode: Int,
+                contract: androidx.activity.result.contract.ActivityResultContract<I, O>,
+                input: I,
+                options: ActivityOptionsCompat?,
+            ) {
+                val kind = when (contract) {
+                    is androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia ->
+                        OverlaySystemDialogActivity.KIND_PICK_IMAGES
+                    is androidx.activity.result.contract.ActivityResultContracts.RequestPermission ->
+                        OverlaySystemDialogActivity.KIND_REQUEST_MIC
+                    else -> null
+                }
+                if (kind == null) {
+                    Toast.makeText(
+                        this@CombatOverlayService,
+                        "Действие недоступно в оверлее",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    return
+                }
+                val i = Intent(this@CombatOverlayService, OverlaySystemDialogActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    putExtra(OverlaySystemDialogActivity.EXTRA_KIND, kind)
+                    putExtra(OverlaySystemDialogActivity.EXTRA_REQUEST_CODE, requestCode)
+                }
+                startActivity(i)
+            }
+        }
+
+        init {
+            savedStateController.performAttach()
+            // Required before composition uses SaveableState / bottom sheets tied to saved state.
+            savedStateController.performRestore(null)
+            lifecycleRegistry.currentState = Lifecycle.State.RESUMED
+        }
+
+        override val lifecycle: Lifecycle get() = lifecycleRegistry
+        override val viewModelStore: ViewModelStore get() = store
+        override val savedStateRegistry: SavedStateRegistry get() = savedStateController.savedStateRegistry
+        override val onBackPressedDispatcher: OnBackPressedDispatcher get() = backDispatcher
+        override val activityResultRegistry: ActivityResultRegistry get() = registry
+
+        fun destroy() {
+            lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
+            store.clear()
+        }
+    }
 
     private val stripTickRunnable = Runnable {
         stripBuffer.prune()
@@ -219,6 +338,23 @@ class CombatOverlayService : Service() {
         mainHandler.post(gameGateRunnable)
     }
 
+    /**
+     * Система (OEM / нехватка памяти) может снять overlay с экрана, оставив ссылки на View.
+     * Тогда [showOverlayControl] выходит по `overlayView != null` и панель не появляется, пока
+     * пользователь не перезапустит сервис тумблером.
+     */
+    private fun repairDetachedOverlayShellIfNeeded() {
+        val v = overlayView ?: return
+        val wm = windowManager
+        if (wm != null && !v.isAttachedToWindow) {
+            Log.w(TAG, "repairDetachedOverlayShellIfNeeded: overlay shell was detached, rebuilding")
+            removeOverlayControl()
+        }
+    }
+
+    private fun systemWindowManager(): WindowManager? =
+        runCatching { getSystemService(Context.WINDOW_SERVICE) as WindowManager }.getOrNull()
+
     /** Показать оверлей при наличии разрешения «поверх окон» (после проверки режима «только в игре»). */
     private fun ensureOverlayIfPermitted() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
@@ -226,6 +362,7 @@ class CombatOverlayService : Service() {
             updateNotification(getString(R.string.overlay_notif_permission_required))
             return
         }
+        repairDetachedOverlayShellIfNeeded()
         if (overlayView == null) {
             showOverlayControl()
         }
@@ -331,14 +468,31 @@ class CombatOverlayService : Service() {
             }
             return
         }
-        if (overlayView == null) {
-            ensureOverlayIfPermitted()
-        }
+        ensureOverlayIfPermitted()
         updateNotification(getString(R.string.overlay_notif_combat_active))
     }
 
     private fun canDrawOverlaysNow(): Boolean {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)
+    }
+
+    /**
+     * Tear down overlay windows + FGS without touching [UserSettingsPreferences.isOverlayPanelEnabled].
+     * Used for app-policy stops (hidden overlay tab, logout) — must not flip the user's "Показывать панель" toggle.
+     */
+    private fun shutdownRuntimeOnly(startId: Int): Int {
+        gateCheckInFlight = false
+        mainHandler.removeCallbacks(gameGateRunnable)
+        runCatching { hideOverlayHistoryPanel() }
+        runCatching { overlayTicker.hideTicker() }
+        runCatching { quickCommandsPopover.hide() }
+        runCatching { removeOverlayControl() }
+        runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+        isServiceInstanceActive = false
+        _serviceRunning.value = false
+        _overlayVisible.value = false
+        stopSelfResult(startId)
+        return START_NOT_STICKY
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -348,34 +502,19 @@ class CombatOverlayService : Service() {
                 val enabled = intent.getBooleanExtra(EXTRA_ENABLED, true)
                 prefs.setOverlayPanelEnabled(enabled)
                 if (!enabled) {
-                    // Stop must be reliable: immediately remove overlay windows and prevent sticky restart.
-                    gateCheckInFlight = false
-                    mainHandler.removeCallbacks(gameGateRunnable)
-                    runCatching { removeOverlayControl() }
-                    runCatching { overlayTicker.hideTicker() }
-                    runCatching { quickCommandsPopover.hide() }
-                    runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
-                    isServiceInstanceActive = false
-                    _serviceRunning.value = false
-                    stopSelfResult(startId)
-                    return START_NOT_STICKY
+                    return shutdownRuntimeOnly(startId)
                 }
                 tickGameGate()
                 return START_STICKY
             }
             ACTION_STOP_SERVICE -> {
-                // Stop must be reliable: immediately remove overlay windows and prevent sticky restart.
-                gateCheckInFlight = false
-                mainHandler.removeCallbacks(gameGateRunnable)
-                runCatching { removeOverlayControl() }
-                runCatching { overlayTicker.hideTicker() }
-                runCatching { quickCommandsPopover.hide() }
-                runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
-                isServiceInstanceActive = false
-                _serviceRunning.value = false
-                prefs.setOverlayPanelEnabled(false)
-                stopSelfResult(startId)
-                return START_NOT_STICKY
+                // Legacy stop intent: tear down runtime only. Do NOT clear the user's "show panel" preference.
+                return shutdownRuntimeOnly(startId)
+            }
+            ACTION_RUNTIME_SHUTDOWN -> {
+                // Used when the app UI policy requires stopping the FGS (e.g. overlay tab hidden / logout),
+                // but the user did NOT explicitly disable "Показывать панель".
+                return shutdownRuntimeOnly(startId)
             }
             ACTION_REBUILD_OVERLAY -> {
                 if (overlayView != null) {
@@ -632,6 +771,15 @@ class CombatOverlayService : Service() {
     }
 
     private fun showOverlayControl() {
+        repairDetachedOverlayShellIfNeeded()
+        if (overlayView != null && windowManager == null) {
+            Log.w(TAG, "showOverlayControl: clearing orphan overlayView (no WindowManager)")
+            overlayView = null
+            chatStripScroll = null
+            chatStripLines = null
+            overlayBubble = null
+            overlayHistoryFab = null
+        }
         if (overlayView != null) return
         val manager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -1063,11 +1211,13 @@ class CombatOverlayService : Service() {
     }
 
     private fun hideOverlayHistoryPanel() {
-        val root = overlayHistoryRoot ?: return
+        val root = overlayHistoryRoot
         overlayHistoryVisible = false
         overlayHistoryInput?.let { hideOverlayIme(it) }
-        val manager = windowManager ?: return
-        runCatching { manager.removeView(root) }
+        val manager = windowManager ?: systemWindowManager()
+        if (root != null && manager != null) {
+            runCatching { manager.removeView(root) }
+        }
         overlayHistoryRoot = null
         overlayHistoryScroll = null
         overlayHistoryLines = null
@@ -1076,6 +1226,10 @@ class CombatOverlayService : Service() {
         overlayHistorySend = null
         overlayHistoryStatus = null
         overlayHistoryDedupeIds.clear()
+        overlayChatViewModel = null
+        runCatching { unregisterReceiver(overlaySystemResultReceiver) }
+        overlayChatOwner?.destroy()
+        overlayChatOwner = null
     }
 
     private fun hideOverlayIme(view: View) {
@@ -1137,6 +1291,19 @@ class CombatOverlayService : Service() {
         }
 
         // Full chat UI (same as in-app ChatScreen) rendered inside overlay window.
+        val owner = overlayChatOwner ?: OverlayChatComposeOwner().also { overlayChatOwner = it }
+        runCatching { unregisterReceiver(overlaySystemResultReceiver) }
+        runCatching {
+            ContextCompat.registerReceiver(
+                this@CombatOverlayService,
+                overlaySystemResultReceiver,
+                IntentFilter().apply {
+                    addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_PICK_IMAGES_RESULT)
+                    addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_MIC_PERMISSION_RESULT)
+                },
+                ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
+        }
         val compose = ComposeView(this).apply {
             setContent {
                 val container = remember { AppContainer.from(this@CombatOverlayService) }
@@ -1160,49 +1327,56 @@ class CombatOverlayService : Service() {
                 val pickedImageUris by vm.pickedImageUris.collectAsState()
                 val typingPeers by vm.typingPeers.collectAsState()
 
-                SquadRelayTheme {
-                    Box(Modifier.fillMaxSize()) {
-                        ChatScreen(
-                            state = chatState,
-                            typingPeers = typingPeers,
-                            draftMessage = draftMessage,
-                            pickedImageUris = pickedImageUris,
-                            onSelectRoom = vm::selectRoom,
-                            onClearError = vm::clearError,
-                            onLoadOlder = vm::loadOlderMessages,
-                            onDraftChange = vm::setDraftMessage,
-                            onSendDraft = vm::sendDraftMessage,
-                            onSendStickerPayload = { body -> vm.sendMessage(body) },
-                            onPickImages = vm::onImagesPicked,
-                            onRemovePickedImage = vm::removePickedImage,
-                            onClearPickedImages = vm::clearPickedImages,
-                            onReplyToMessage = vm::beginReplyToMessage,
-                            onClearReply = vm::clearReplyToMessage,
-                            onOpenMessageActions = vm::openMessageActions,
-                            onDismissMessageActions = vm::dismissMessageActions,
-                            onRequestDeleteMessage = vm::requestDeleteMessage,
-                            onDismissDeleteMessage = vm::dismissDeleteMessage,
-                            onConfirmDeleteMessage = vm::confirmDeleteMessage,
-                            onBeginMessageSelection = vm::beginMessageSelection,
-                            onToggleMessageSelection = vm::toggleMessageSelection,
-                            onClearMessageSelection = vm::clearMessageSelection,
-                            onRequestBulkDelete = vm::requestBulkDelete,
-                            onDismissBulkDeleteConfirm = vm::dismissBulkDeleteConfirm,
-                            onConfirmDeleteSelectedMessages = vm::confirmDeleteSelectedMessages,
-                            onRetrySendFailure = vm::retrySendFailure,
-                            onDismissSendFailure = vm::dismissSendFailure,
-                            onChatVoiceHoldStart = vm::startChatVoiceInput,
-                            onChatVoiceHoldEnd = vm::stopChatVoiceInput,
-                        )
-                        IconButton(
-                            onClick = { hideOverlayHistoryPanel() },
-                            modifier = Modifier.align(Alignment.TopEnd),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Close,
-                                contentDescription = getString(R.string.overlay_history_close_cd),
-                                tint = MaterialTheme.colorScheme.onSurface,
+                CompositionLocalProvider(
+                    LocalActivityResultRegistryOwner provides owner,
+                    LocalOnBackPressedDispatcherOwner provides owner,
+                    LocalLifecycleOwner provides owner,
+                    LocalSavedStateRegistryOwner provides owner,
+                ) {
+                    SquadRelayTheme {
+                        Box(Modifier.fillMaxSize()) {
+                            ChatScreen(
+                                state = chatState,
+                                typingPeers = typingPeers,
+                                draftMessage = draftMessage,
+                                pickedImageUris = pickedImageUris,
+                                onSelectRoom = vm::selectRoom,
+                                onClearError = vm::clearError,
+                                onLoadOlder = vm::loadOlderMessages,
+                                onDraftChange = vm::setDraftMessage,
+                                onSendDraft = vm::sendDraftMessage,
+                                onSendStickerPayload = { body -> vm.sendMessage(body) },
+                                onPickImages = vm::onImagesPicked,
+                                onRemovePickedImage = vm::removePickedImage,
+                                onClearPickedImages = vm::clearPickedImages,
+                                onReplyToMessage = vm::beginReplyToMessage,
+                                onClearReply = vm::clearReplyToMessage,
+                                onOpenMessageActions = vm::openMessageActions,
+                                onDismissMessageActions = vm::dismissMessageActions,
+                                onRequestDeleteMessage = vm::requestDeleteMessage,
+                                onDismissDeleteMessage = vm::dismissDeleteMessage,
+                                onConfirmDeleteMessage = vm::confirmDeleteMessage,
+                                onBeginMessageSelection = vm::beginMessageSelection,
+                                onToggleMessageSelection = vm::toggleMessageSelection,
+                                onClearMessageSelection = vm::clearMessageSelection,
+                                onRequestBulkDelete = vm::requestBulkDelete,
+                                onDismissBulkDeleteConfirm = vm::dismissBulkDeleteConfirm,
+                                onConfirmDeleteSelectedMessages = vm::confirmDeleteSelectedMessages,
+                                onRetrySendFailure = vm::retrySendFailure,
+                                onDismissSendFailure = vm::dismissSendFailure,
+                                onChatVoiceHoldStart = vm::startChatVoiceInput,
+                                onChatVoiceHoldEnd = vm::stopChatVoiceInput,
                             )
+                            IconButton(
+                                onClick = { hideOverlayHistoryPanel() },
+                                modifier = Modifier.align(Alignment.TopEnd),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Close,
+                                    contentDescription = getString(R.string.overlay_history_close_cd),
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
                         }
                     }
                 }
@@ -1235,10 +1409,30 @@ class CombatOverlayService : Service() {
             )
         }
 
+        val attachResult = runCatching { manager.addView(root, params) }
+        if (attachResult.isFailure) {
+            Log.e(TAG, "showOverlayHistoryPanel: failed to attach overlay chat", attachResult.exceptionOrNull())
+            Toast.makeText(
+                this,
+                "Не удалось открыть чат в оверлее (ошибка окна). Проверьте разрешение «Поверх других приложений».",
+                Toast.LENGTH_LONG,
+            ).show()
+            // Do not leave the service in a "chat visible" state if we failed to attach the window.
+            overlayHistoryRoot = null
+            overlayHistoryParams = null
+            overlayHistoryVisible = false
+            runCatching { unregisterReceiver(overlaySystemResultReceiver) }
+            // Owner/VM are safe to keep; they will be recreated next time if needed.
+            // Some ROMs leave the main overlay in a bad state after a failed second window; rebuild shell.
+            mainHandler.post {
+                requestRebuildOverlayIfRunning(this@CombatOverlayService)
+            }
+            return
+        }
+
         overlayHistoryRoot = root
         overlayHistoryParams = params
         overlayHistoryVisible = true
-        runCatching { manager.addView(root, params) }
     }
 
     private fun dp(value: Int): Int {
@@ -1253,12 +1447,12 @@ class CombatOverlayService : Service() {
         endOverlayChatSubscription()
         overlayTicker.hideTicker()
         quickCommandsPopover.hide()
-        removeLockButton()
-        removeToggleButton()
-        val manager = windowManager ?: return
-        val view = overlayView ?: return
-        runCatching {
-            manager.removeView(view)
+        val wm = windowManager ?: systemWindowManager()
+        removeLockButton(wm)
+        removeToggleButton(wm)
+        val view = overlayView
+        if (view != null && wm != null) {
+            runCatching { wm.removeView(view) }
         }
         overlayView = null
         _overlayVisible.value = false
@@ -1269,8 +1463,8 @@ class CombatOverlayService : Service() {
         windowManager = null
     }
 
-    private fun removeToggleButton() {
-        val manager = windowManager ?: return
+    private fun removeToggleButton(forManager: WindowManager? = null) {
+        val manager = forManager ?: windowManager ?: return
         val host = toggleHost ?: return
         runCatching { manager.removeView(host) }
         toggleHost = null
@@ -1278,8 +1472,8 @@ class CombatOverlayService : Service() {
         toggleParams = null
     }
 
-    private fun removeLockButton() {
-        val manager = windowManager ?: return
+    private fun removeLockButton(forManager: WindowManager? = null) {
+        val manager = forManager ?: windowManager ?: return
         val host = lockHost ?: return
         runCatching { manager.removeView(host) }
         lockHost = null
@@ -1299,6 +1493,8 @@ class CombatOverlayService : Service() {
         const val ACTION_START_RECORDING = "com.squadrelay.action.START_RECORDING"
         const val ACTION_STOP_RECORDING = "com.squadrelay.action.STOP_RECORDING"
         const val ACTION_STOP_SERVICE = "com.squadrelay.action.STOP_SERVICE"
+        /** Stops overlay runtime without clearing the user's "show panel" preference. */
+        const val ACTION_RUNTIME_SHUTDOWN = "com.squadrelay.action.RUNTIME_SHUTDOWN"
         const val ACTION_SET_ENABLED = "com.squadrelay.action.SET_ENABLED"
         const val ACTION_REBUILD_OVERLAY = "com.squadrelay.action.REBUILD_OVERLAY"
         const val ACTION_REFRESH_NOTIFICATION = "com.squadrelay.action.REFRESH_NOTIFICATION"
@@ -1386,8 +1582,24 @@ class CombatOverlayService : Service() {
 
         fun startService(context: Context): Boolean = setEnabled(context, true)
 
+        /**
+         * Stops the foreground overlay service without flipping [UserSettingsPreferences.isOverlayPanelEnabled].
+         * Use this for app navigation / logout flows. User-facing disable must use [setEnabled](..., false).
+         */
+        fun stopRuntime(context: Context) {
+            val app = context.applicationContext
+            if (!isServiceInstanceActive) {
+                runCatching { app.stopService(Intent(app, CombatOverlayService::class.java)) }
+                return
+            }
+            val intent = Intent(app, CombatOverlayService::class.java).apply {
+                action = ACTION_RUNTIME_SHUTDOWN
+            }
+            runCatching { app.startService(intent) }
+        }
+
         fun stopService(context: Context) {
-            setEnabled(context, false)
+            stopRuntime(context)
         }
 
         fun startRecording(context: Context) {
