@@ -183,6 +183,15 @@ class CombatOverlayService : Service() {
     private var chatStripScroll: ScrollView? = null
     private var chatStripLines: LinearLayout? = null
     private var overlayMessageListener: ((ChatMessage) -> Unit)? = null
+    /** Параметры главного окна оверлея (перетаскивание + определение «у правого края»). */
+    private var overlayMainWindowParams: WindowManager.LayoutParams? = null
+    /** Горизонтальный ряд: лента чата + колонка кнопок (порядок меняется у правого края). */
+    private var overlayOuterRow: LinearLayout? = null
+    private var overlayControlsStack: LinearLayout? = null
+    private var overlayMessageRow: LinearLayout? = null
+    private var overlaySubRow: LinearLayout? = null
+    private var overlayBtnMessageFab: FloatingActionButton? = null
+    private var overlayPanelAnchoredEnd: Boolean = false
 
     private val stripBuffer = OverlayChatStripBuffer()
     private var overlayHistoryRoot: FrameLayout? = null
@@ -778,6 +787,76 @@ class CombatOverlayService : Service() {
         }
     }
 
+    /**
+     * У правого края экрана: лента чата слева от колонки кнопок; выпадающий ряд (атака/защита/чат) — слева от кнопки истории.
+     */
+    private fun syncOverlayPanelEdgeLayout() {
+        val params = overlayMainWindowParams ?: return
+        val root = overlayView ?: return
+        val outer = overlayOuterRow ?: return
+        val strip = chatStripScroll ?: return
+        val controls = overlayControlsStack ?: return
+        val msgRow = overlayMessageRow ?: return
+        val sub = overlaySubRow ?: return
+        val btnMsg = overlayBtnMessageFab ?: return
+        val w = root.width
+        if (w <= 0) {
+            root.post { syncOverlayPanelEdgeLayout() }
+            return
+        }
+        val screenW = resources.displayMetrics.widthPixels
+        val anchoredEnd = params.x + w / 2 >= screenW / 2
+        val outerOk = outer.childCount == 2 &&
+            (
+                (anchoredEnd && outer.getChildAt(0) === strip && outer.getChildAt(1) === controls) ||
+                    (!anchoredEnd && outer.getChildAt(0) === controls && outer.getChildAt(1) === strip)
+                )
+        val msgOk = msgRow.childCount == 2 &&
+            (
+                (anchoredEnd && msgRow.getChildAt(0) === sub && msgRow.getChildAt(1) === btnMsg) ||
+                    (!anchoredEnd && msgRow.getChildAt(0) === btnMsg && msgRow.getChildAt(1) === sub)
+                )
+        if (outerOk && msgOk && anchoredEnd == overlayPanelAnchoredEnd) return
+        overlayPanelAnchoredEnd = anchoredEnd
+
+        val stripLp = LinearLayout.LayoutParams(0, dp(200), 1f).apply {
+            gravity = Gravity.BOTTOM
+            if (anchoredEnd) {
+                marginEnd = dp(8)
+                marginStart = 0
+            } else {
+                marginStart = dp(8)
+                marginEnd = 0
+            }
+        }
+        val controlsLp = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply { gravity = Gravity.BOTTOM }
+        outer.removeAllViews()
+        if (anchoredEnd) {
+            outer.addView(strip, stripLp)
+            outer.addView(controls, controlsLp)
+        } else {
+            outer.addView(controls, controlsLp)
+            outer.addView(strip, stripLp)
+        }
+
+        msgRow.removeAllViews()
+        if (anchoredEnd) {
+            sub.setPadding(0, 0, dp(8), 0)
+            msgRow.addView(sub, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+            msgRow.addView(
+                btnMsg,
+                LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginStart = dp(8) },
+            )
+        } else {
+            sub.setPadding(dp(8), 0, 0, 0)
+            msgRow.addView(btnMsg, LinearLayout.LayoutParams(dp(44), dp(44)))
+            msgRow.addView(sub, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        }
+    }
+
     private fun showOverlayControl() {
         repairDetachedOverlayShellIfNeeded()
         if (overlayView != null && windowManager == null) {
@@ -787,6 +866,13 @@ class CombatOverlayService : Service() {
             chatStripLines = null
             overlayBubble = null
             overlayHistoryFab = null
+            overlayMainWindowParams = null
+            overlayOuterRow = null
+            overlayControlsStack = null
+            overlayMessageRow = null
+            overlaySubRow = null
+            overlayBtnMessageFab = null
+            overlayPanelAnchoredEnd = false
         }
         if (overlayView != null) return
         val manager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -797,7 +883,7 @@ class CombatOverlayService : Service() {
             WindowManager.LayoutParams.TYPE_PHONE
         }
 
-        val overlayWindowLayoutParams = WindowManager.LayoutParams(
+        overlayMainWindowParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             type,
@@ -876,16 +962,59 @@ class CombatOverlayService : Service() {
             addView(subRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         }
 
+        val micLockColumn = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            addView(btnMic, LinearLayout.LayoutParams(dp(44), dp(44)))
+            addView(
+                lockIcon,
+                LinearLayout.LayoutParams(dp(44), dp(44)).apply {
+                    topMargin = dp(6)
+                    gravity = Gravity.CENTER_HORIZONTAL
+                },
+            )
+        }
+        lockIcon.setPadding(dp(8), dp(8), dp(8), dp(8))
+
         val buttonStack = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.START
             addView(btnCollapse, LinearLayout.LayoutParams(dp(44), dp(44)).apply { bottomMargin = dp(8) })
             addView(messageRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
-            addView(btnMic, LinearLayout.LayoutParams(dp(44), dp(44)))
-            addView(lockIcon, LinearLayout.LayoutParams(dp(22), dp(22)).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-                topMargin = dp(4)
-            })
+            addView(
+                micLockColumn,
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                    gravity = Gravity.CENTER_HORIZONTAL
+                },
+            )
+        }
+
+        val stripLines = OverlayChatStripUi.createLinesContainer(this)
+        val stripScroll = ScrollView(this).apply {
+            OverlayChatStripUi.styleStripScroll(this@CombatOverlayService, this)
+            isFillViewport = false
+            addView(
+                stripLines,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+        }
+        chatStripScroll = stripScroll
+        chatStripLines = stripLines
+
+        val outerRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.BOTTOM
+            addView(buttonStack, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+            addView(
+                stripScroll,
+                LinearLayout.LayoutParams(0, dp(200), 1f).apply {
+                    gravity = Gravity.BOTTOM
+                    marginStart = dp(8)
+                },
+            )
         }
 
         lateinit var windowRoot: FrameLayout
@@ -894,8 +1023,20 @@ class CombatOverlayService : Service() {
             setBackgroundColor(Color.TRANSPARENT)
             @Suppress("DEPRECATION")
             fitsSystemWindows = false
-            addView(buttonStack)
+            addView(
+                outerRow,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
         }
+
+        overlayOuterRow = outerRow
+        overlayControlsStack = buttonStack
+        overlayMessageRow = messageRow
+        overlaySubRow = subRow
+        overlayBtnMessageFab = btnMessage
 
         fun refreshLockIcon() {
             val locked = AppContainer.from(this@CombatOverlayService).userSettingsPreferences.isOverlayDragLocked()
@@ -976,8 +1117,8 @@ class CombatOverlayService : Service() {
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     (v.parent as? ViewGroup)?.requestDisallowInterceptTouchEvent(true)
-                    initialX = overlayWindowLayoutParams.x
-                    initialY = overlayWindowLayoutParams.y
+                    initialX = overlayMainWindowParams!!.x
+                    initialY = overlayMainWindowParams!!.y
                     startTouchX = event.rawX
                     startTouchY = event.rawY
                     isDragging = false
@@ -1003,10 +1144,11 @@ class CombatOverlayService : Service() {
                         val rootH = windowRoot.height.takeIf { it > 0 }?.coerceAtLeast(dp(48)) ?: dp(180)
                         val nextX = (initialX + deltaX).coerceIn(0, screenWidth - rootW)
                         val nextY = (initialY - deltaY).coerceIn(0, screenHeight - rootH) // gravity=BOTTOM
-                        overlayWindowLayoutParams.x = nextX
-                        overlayWindowLayoutParams.y = nextY
-                        manager.updateViewLayout(windowRoot, overlayWindowLayoutParams)
+                        overlayMainWindowParams!!.x = nextX
+                        overlayMainWindowParams!!.y = nextY
+                        manager.updateViewLayout(windowRoot, overlayMainWindowParams)
                         overlayTicker.syncTickerPosition()
+                        syncOverlayPanelEdgeLayout()
                         true
                     } else {
                         false
@@ -1015,6 +1157,9 @@ class CombatOverlayService : Service() {
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     dragArmRunnable?.let { mainHandler.removeCallbacks(it) }
                     dragArmRunnable = null
+                    if (isDragging) {
+                        syncOverlayPanelEdgeLayout()
+                    }
                     val consumed = isDragging
                     isDragging = false
                     dragArmed = false
@@ -1026,16 +1171,20 @@ class CombatOverlayService : Service() {
 
         overlayBubble = null
         overlayView = windowRoot
-        chatStripScroll = null
-        chatStripLines = null
         overlayHistoryFab = null
 
-        val attach = runCatching { manager.addView(overlayView, overlayWindowLayoutParams) }
+        val attach = runCatching { manager.addView(overlayView, overlayMainWindowParams) }
         if (attach.isFailure) {
             Log.e(TAG, "WindowManager.addView(overlay) failed", attach.exceptionOrNull())
             overlayView = null
             chatStripScroll = null
             chatStripLines = null
+            overlayMainWindowParams = null
+            overlayOuterRow = null
+            overlayControlsStack = null
+            overlayMessageRow = null
+            overlaySubRow = null
+            overlayBtnMessageFab = null
             return
         }
         _overlayVisible.value = true
@@ -1043,6 +1192,10 @@ class CombatOverlayService : Service() {
         overlayTicker.ensureTicker()
         overlayTicker.syncTickerPosition()
         rebalanceOverlayChatWindowZOrder()
+        windowRoot.post {
+            syncOverlayPanelEdgeLayout()
+            beginOverlayChatSubscription()
+        }
     }
 
     private fun ensureToggleButton() {
@@ -1506,6 +1659,13 @@ class CombatOverlayService : Service() {
         overlayHistoryFab = null
         chatStripScroll = null
         chatStripLines = null
+        overlayMainWindowParams = null
+        overlayOuterRow = null
+        overlayControlsStack = null
+        overlayMessageRow = null
+        overlaySubRow = null
+        overlayBtnMessageFab = null
+        overlayPanelAnchoredEnd = false
         windowManager = null
     }
 

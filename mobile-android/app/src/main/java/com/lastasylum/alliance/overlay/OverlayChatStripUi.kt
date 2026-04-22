@@ -39,8 +39,8 @@ object OverlayChatStripUi {
     )
     private val selfNameColor = Color.parseColor("#C4B5FD")
     private val selfTextColor = Color.parseColor("#E8DFFF")
-    private val cardFill = Color.parseColor("#D835285A")
-    private val cardStroke = Color.parseColor("#809B7CFF")
+    private val cardFill = Color.parseColor("#E8141828")
+    private val cardStroke = Color.parseColor("#AA9B7CFF")
     private val noticeAvatarFill = Color.parseColor("#9B7CFF")
 
     fun styleStripScroll(context: Context, scroll: ScrollView) {
@@ -156,7 +156,7 @@ object OverlayChatStripUi {
         showDismiss: Boolean = true,
     ) {
         val avatarSide = dp(context, 36f).toInt()
-        val cornerCard = dp(context, 16f)
+        val cornerCard = dp(context, 18f)
         val cornerAvatar = dp(context, 8f)
 
         val avatar = TextView(context).apply {
@@ -284,9 +284,9 @@ object OverlayChatStripUi {
                 bottomMargin = dp(context, 5f).toInt()
             }
             radius = cornerCard
-            cardElevation = dp(context, 3f)
-            maxCardElevation = dp(context, 6f)
-            strokeWidth = dp(context, 1f).toInt().coerceAtLeast(1)
+            cardElevation = dp(context, 5f)
+            maxCardElevation = dp(context, 10f)
+            strokeWidth = dp(context, 1.25f).toInt().coerceAtLeast(1)
             setStrokeColor(ColorStateList.valueOf(cardStroke))
             setCardBackgroundColor(ColorStateList.valueOf(cardFill))
             setUseCompatPadding(true)
