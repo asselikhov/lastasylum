@@ -189,6 +189,7 @@ class CombatOverlayService : Service() {
     private var overlayOuterRow: LinearLayout? = null
     private var overlayControlsStack: LinearLayout? = null
     private var overlayMessageRow: LinearLayout? = null
+    private var overlayMessageFabColumn: LinearLayout? = null
     private var overlaySubRow: LinearLayout? = null
     private var overlayBtnMessageFab: FloatingActionButton? = null
     private var overlayPanelAnchoredEnd: Boolean = false
@@ -794,7 +795,7 @@ class CombatOverlayService : Service() {
     }
 
     /**
-     * У правого края экрана: лента чата слева от колонки кнопок; выпадающий ряд (атака/защита/чат) — слева от кнопки истории.
+     * У правого края экрана: лента чата слева от колонки кнопок; выпадающий ряд (атака/защита/чат) — слева от колонки истории (история + мик + замок).
      */
     private fun syncOverlayPanelEdgeLayout() {
         val params = overlayMainWindowParams ?: return
@@ -804,7 +805,7 @@ class CombatOverlayService : Service() {
         val controls = overlayControlsStack ?: return
         val msgRow = overlayMessageRow ?: return
         val sub = overlaySubRow ?: return
-        val btnMsg = overlayBtnMessageFab ?: return
+        val fabCol = overlayMessageFabColumn ?: return
         val w = root.width
         if (w <= 0) {
             root.post { syncOverlayPanelEdgeLayout() }
@@ -819,8 +820,8 @@ class CombatOverlayService : Service() {
                 )
         val msgOk = msgRow.childCount == 2 &&
             (
-                (anchoredEnd && msgRow.getChildAt(0) === sub && msgRow.getChildAt(1) === btnMsg) ||
-                    (!anchoredEnd && msgRow.getChildAt(0) === btnMsg && msgRow.getChildAt(1) === sub)
+                (anchoredEnd && msgRow.getChildAt(0) === sub && msgRow.getChildAt(1) === fabCol) ||
+                    (!anchoredEnd && msgRow.getChildAt(0) === fabCol && msgRow.getChildAt(1) === sub)
                 )
         if (outerOk && msgOk && anchoredEnd == overlayPanelAnchoredEnd) return
         overlayPanelAnchoredEnd = anchoredEnd
@@ -853,12 +854,17 @@ class CombatOverlayService : Service() {
             sub.setPadding(0, 0, dp(8), 0)
             msgRow.addView(sub, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
             msgRow.addView(
-                btnMsg,
-                LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginStart = dp(8) },
+                fabCol,
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                    marginStart = dp(8)
+                },
             )
         } else {
             sub.setPadding(dp(8), 0, 0, 0)
-            msgRow.addView(btnMsg, LinearLayout.LayoutParams(dp(44), dp(44)))
+            msgRow.addView(
+                fabCol,
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT),
+            )
             msgRow.addView(sub, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         }
     }
@@ -876,6 +882,7 @@ class CombatOverlayService : Service() {
             overlayOuterRow = null
             overlayControlsStack = null
             overlayMessageRow = null
+            overlayMessageFabColumn = null
             overlaySubRow = null
             overlayBtnMessageFab = null
             overlayPanelAnchoredEnd = false
@@ -961,17 +968,17 @@ class CombatOverlayService : Service() {
             addView(subChat, LinearLayout.LayoutParams(dp(44), dp(44)))
         }
 
-        val messageRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            addView(btnMessage, LinearLayout.LayoutParams(dp(44), dp(44)))
-            addView(subRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-        }
-
-        val micLockColumn = LinearLayout(this).apply {
+        lockIcon.setPadding(dp(8), dp(8), dp(8), dp(8))
+        val messageFabColumn = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            addView(btnMic, LinearLayout.LayoutParams(dp(44), dp(44)))
+            addView(btnMessage, LinearLayout.LayoutParams(dp(44), dp(44)))
+            addView(
+                btnMic,
+                LinearLayout.LayoutParams(dp(44), dp(44)).apply {
+                    topMargin = dp(6)
+                },
+            )
             addView(
                 lockIcon,
                 LinearLayout.LayoutParams(dp(44), dp(44)).apply {
@@ -980,17 +987,25 @@ class CombatOverlayService : Service() {
                 },
             )
         }
-        lockIcon.setPadding(dp(8), dp(8), dp(8), dp(8))
+
+        val messageRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(
+                messageFabColumn,
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT),
+            )
+            addView(subRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        }
 
         val buttonStack = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.START
             addView(btnCollapse, LinearLayout.LayoutParams(dp(44), dp(44)).apply { bottomMargin = dp(8) })
-            addView(messageRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
             addView(
-                micLockColumn,
+                messageRow,
                 LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                    gravity = Gravity.CENTER_HORIZONTAL
+                    bottomMargin = dp(8)
                 },
             )
         }
@@ -1041,6 +1056,7 @@ class CombatOverlayService : Service() {
         overlayOuterRow = outerRow
         overlayControlsStack = buttonStack
         overlayMessageRow = messageRow
+        overlayMessageFabColumn = messageFabColumn
         overlaySubRow = subRow
         overlayBtnMessageFab = btnMessage
 
@@ -1189,6 +1205,7 @@ class CombatOverlayService : Service() {
             overlayOuterRow = null
             overlayControlsStack = null
             overlayMessageRow = null
+            overlayMessageFabColumn = null
             overlaySubRow = null
             overlayBtnMessageFab = null
             return
@@ -1669,6 +1686,7 @@ class CombatOverlayService : Service() {
         overlayOuterRow = null
         overlayControlsStack = null
         overlayMessageRow = null
+        overlayMessageFabColumn = null
         overlaySubRow = null
         overlayBtnMessageFab = null
         overlayPanelAnchoredEnd = false

@@ -87,8 +87,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -99,6 +101,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusRequester
@@ -134,8 +137,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.BuildConfig
@@ -339,6 +340,9 @@ private fun readClipboardPlainText(context: Context): String? {
     return clip.getItemAt(0).coerceToText(context)?.toString()?.trim()?.takeIf { it.isNotEmpty() }
 }
 
+private val LocalOpenRemoteChatImagePreview =
+    staticCompositionLocalOf<(List<String>, Int) -> Unit> { { _, _ -> } }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
@@ -428,9 +432,28 @@ fun ChatScreen(
     }
     val inSelectionMode = state.selectedMessageIds.isNotEmpty()
 
+    var remoteChatImagePreview by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
+    var attachmentPreviewStartIndex by remember { mutableStateOf<Int?>(null) }
+
+    LaunchedEffect(attachmentPreviewStartIndex, pickedImageUris.isEmpty()) {
+        if (attachmentPreviewStartIndex != null && pickedImageUris.isEmpty()) {
+            attachmentPreviewStartIndex = null
+        }
+    }
+
     if (canHandleBack) {
         BackHandler(enabled = inSelectionMode && !state.isDeletingSelection) {
             onClearMessageSelection()
+        }
+    }
+    if (canHandleBack) {
+        BackHandler(
+            enabled = remoteChatImagePreview != null || attachmentPreviewStartIndex != null,
+        ) {
+            when {
+                remoteChatImagePreview != null -> remoteChatImagePreview = null
+                attachmentPreviewStartIndex != null -> attachmentPreviewStartIndex = null
+            }
         }
     }
     val isNearLatest by remember(listState) {
@@ -490,17 +513,23 @@ fun ChatScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(top = SquadRelayDimens.screenTopPadding),
+    CompositionLocalProvider(
+        LocalOpenRemoteChatImagePreview provides { urls, idx ->
+            remoteChatImagePreview = urls to idx
+        },
     ) {
-        Column(
-            modifier = Modifier
-                .weight(1f, fill = true)
-                .fillMaxWidth()
-                .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
-        ) {
+        Box(Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = SquadRelayDimens.screenTopPadding),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f, fill = true)
+                        .fillMaxWidth()
+                        .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
+                ) {
             ChatRoomsBar(
                 rooms = state.rooms,
                 selectedRoomId = selectedRoomId,
@@ -641,6 +670,7 @@ fun ChatScreen(
                         onRemovePickedImage = onRemovePickedImage,
                         onClearPickedImages = onClearPickedImages,
                         onClearReply = onClearReply,
+                        onOpenAttachmentPreview = { idx -> attachmentPreviewStartIndex = idx },
                     )
                 }
             }
@@ -721,6 +751,50 @@ fun ChatScreen(
                 }
             },
         )
+    }
+
+            remoteChatImagePreview?.let { (urls, start) ->
+                if (urls.isNotEmpty()) {
+                    RemoteChatImagesPreviewOverlay(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .zIndex(8f),
+                        urls = urls,
+                        startIndex = start,
+                        onDismiss = { remoteChatImagePreview = null },
+                    )
+                }
+            }
+            attachmentPreviewStartIndex?.let { start ->
+                if (pickedImageUris.isNotEmpty()) {
+                    val ctx = LocalContext.current
+                    AttachmentPreviewOverlay(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .zIndex(8f),
+                        uris = pickedImageUris,
+                        startIndex = start,
+                        onDismiss = { attachmentPreviewStartIndex = null },
+                        onOpenExternal = { uri ->
+                            val i = Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(uri, "image/*")
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            ctx.startActivity(i)
+                        },
+                        onRemove = { uri ->
+                            onRemovePickedImage(uri)
+                            if (pickedImageUris.size <= 1) {
+                                attachmentPreviewStartIndex = null
+                            } else {
+                                attachmentPreviewStartIndex =
+                                    attachmentPreviewStartIndex?.coerceAtMost(pickedImageUris.lastIndex)
+                            }
+                        },
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -1065,12 +1139,12 @@ private fun ChatComposer(
     onRemovePickedImage: (Uri) -> Unit,
     onClearPickedImages: () -> Unit,
     onClearReply: () -> Unit,
+    onOpenAttachmentPreview: (Int) -> Unit = {},
 ) {
     var showMediaPanel by remember { mutableStateOf(false) }
     var mediaTab by remember { mutableStateOf(MediaPickerTab.Stickers) }
     var gifUrlDraft by remember { mutableStateOf("") }
     var showAttachmentsSheet by remember { mutableStateOf(false) }
-    var previewIndex by remember { mutableStateOf<Int?>(null) }
     val context = LocalContext.current
     val activityResultOwner = LocalActivityResultRegistryOwner.current
     val canHandleBack = LocalOnBackPressedDispatcherOwner.current != null
@@ -1106,35 +1180,9 @@ private fun ChatComposer(
     }
 
     if (canHandleBack) {
-        BackHandler(enabled = showAttachmentsSheet || previewIndex != null) {
-            when {
-                previewIndex != null -> previewIndex = null
-                showAttachmentsSheet -> showAttachmentsSheet = false
-            }
+        BackHandler(enabled = showAttachmentsSheet) {
+            showAttachmentsSheet = false
         }
-    }
-
-    previewIndex?.let { idx ->
-        AttachmentPreviewDialog(
-            uris = pickedImageUris,
-            startIndex = idx,
-            onDismiss = { previewIndex = null },
-            onOpenExternal = { uri ->
-                val i = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "image/*")
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                context.startActivity(i)
-            },
-            onRemove = { uri ->
-                onRemovePickedImage(uri)
-                if (pickedImageUris.size <= 1) {
-                    previewIndex = null
-                } else {
-                    previewIndex = previewIndex?.coerceAtMost(pickedImageUris.lastIndex)
-                }
-            },
-        )
     }
 
     if (showAttachmentsSheet) {
@@ -1180,7 +1228,9 @@ private fun ChatComposer(
                                 .aspectRatio(1f)
                                 .clip(RoundedCornerShape(14.dp))
                                 .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                                .clickable { previewIndex = pickedImageUris.indexOf(uri).takeIf { it >= 0 } },
+                                .clickable {
+                                    pickedImageUris.indexOf(uri).takeIf { it >= 0 }?.let(onOpenAttachmentPreview)
+                                },
                         ) {
                             AsyncImage(
                                 model = ImageRequest.Builder(context)
@@ -1314,7 +1364,8 @@ private fun ChatComposer(
                                             if (extraCount > 0 && uri == visibleThumbs.last()) {
                                                 showAttachmentsSheet = true
                                             } else {
-                                                previewIndex = pickedImageUris.indexOf(uri).takeIf { it >= 0 }
+                                                pickedImageUris.indexOf(uri).takeIf { it >= 0 }
+                                                    ?.let(onOpenAttachmentPreview)
                                             }
                                         },
                                 )
@@ -1751,7 +1802,8 @@ private fun ChatComposer(
 }
 
 @Composable
-private fun AttachmentPreviewDialog(
+private fun AttachmentPreviewOverlay(
+    modifier: Modifier = Modifier,
     uris: List<Uri>,
     startIndex: Int,
     onDismiss: () -> Unit,
@@ -1786,22 +1838,16 @@ private fun AttachmentPreviewDialog(
         }
     }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false,
-        ),
+    DisposableEffect(Unit) {
+        OverlayChatInteractionHold.suppressGameForegroundGate = true
+        onDispose { OverlayChatInteractionHold.suppressGameForegroundGate = false }
+    }
+    BackHandler(onBack = onDismiss)
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Black),
     ) {
-        DisposableEffect(Unit) {
-            OverlayChatInteractionHold.suppressGameForegroundGate = true
-            onDispose { OverlayChatInteractionHold.suppressGameForegroundGate = false }
-        }
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black),
-        ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1929,12 +1975,12 @@ private fun AttachmentPreviewDialog(
                 }
             }
         }
-    }
 }
 
 /** Full-screen viewer for chat message images (same gestures as draft preview: zoom, swipe). */
 @Composable
-private fun RemoteChatImagesPreviewDialog(
+private fun RemoteChatImagesPreviewOverlay(
+    modifier: Modifier = Modifier,
     urls: List<String>,
     startIndex: Int,
     onDismiss: () -> Unit,
@@ -1967,23 +2013,16 @@ private fun RemoteChatImagesPreviewDialog(
         }
     }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false,
-        ),
+    DisposableEffect(Unit) {
+        OverlayChatInteractionHold.suppressGameForegroundGate = true
+        onDispose { OverlayChatInteractionHold.suppressGameForegroundGate = false }
+    }
+    BackHandler(onBack = onDismiss)
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Black),
     ) {
-        DisposableEffect(Unit) {
-            OverlayChatInteractionHold.suppressGameForegroundGate = true
-            onDispose { OverlayChatInteractionHold.suppressGameForegroundGate = false }
-        }
-        BackHandler(onBack = onDismiss)
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black),
-        ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -2095,7 +2134,6 @@ private fun RemoteChatImagesPreviewDialog(
                 }
             }
         }
-    }
 }
 
 @Composable
@@ -2210,9 +2248,7 @@ private fun ChatBubbleInnerColumn(
     deleting: Boolean,
     canDelete: Boolean,
 ) {
-    var remoteImageViewer by remember(message._id) {
-        mutableStateOf<Pair<List<String>, Int>?>(null)
-    }
+    val openRemoteChatImagePreview = LocalOpenRemoteChatImagePreview.current
     val bubblePadH = if (stickerStem != null) 8.dp else 12.dp
     val bubblePadBottom = if (stickerStem != null) 8.dp else 10.dp
     val bubblePadTop = when {
@@ -2341,7 +2377,7 @@ private fun ChatBubbleInnerColumn(
                                         role = Role.Button
                                     }
                                     .clickable {
-                                        remoteImageViewer = fullResolvedUrls to openIndex
+                                        openRemoteChatImagePreview(fullResolvedUrls, openIndex)
                                     },
                             ) {
                                 val abs = resolvedChatAttachmentImageUrl(a.url)
@@ -2411,16 +2447,6 @@ private fun ChatBubbleInnerColumn(
                 text = stringResource(R.string.chat_deleting_progress),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.error,
-            )
-        }
-    }
-
-    remoteImageViewer?.let { (urls, start) ->
-        if (urls.isNotEmpty()) {
-            RemoteChatImagesPreviewDialog(
-                urls = urls,
-                startIndex = start,
-                onDismiss = { remoteImageViewer = null },
             )
         }
     }
