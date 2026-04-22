@@ -16,6 +16,8 @@ class OverlayTickerWindow(
     private val mainHandler: Handler,
     private val dp: (Int) -> Int,
     private val tickerYDp: () -> Int,
+    /** Вызывается после [addView] тикера — чтобы поднять полноэкранный чат поверх вспомогательных overlay-окон. */
+    private val onTickerWindowAttached: () -> Unit = {},
 ) {
     private var tickerView: TextView? = null
     private var tickerParams: WindowManager.LayoutParams? = null
@@ -56,6 +58,7 @@ class OverlayTickerWindow(
         tickerView = ticker
         tickerParams = params
         manager.addView(ticker, params)
+        onTickerWindowAttached()
     }
 
     fun showTicker(message: String) {

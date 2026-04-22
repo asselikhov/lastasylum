@@ -24,6 +24,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.graphics.Color
+import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.view.ViewGroup
 import android.util.Base64
@@ -47,6 +48,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -54,6 +56,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
@@ -113,6 +116,7 @@ class CombatOverlayService : Service() {
                     AppContainer.from(this@CombatOverlayService).userSettingsPreferences.getOverlayLayoutPreset(),
                 ).tickerY
             },
+            onTickerWindowAttached = { rebalanceOverlayChatWindowZOrder() },
         )
     }
     private val speechPipeline by lazy {
@@ -1038,6 +1042,7 @@ class CombatOverlayService : Service() {
         windowManager = manager
         overlayTicker.ensureTicker()
         overlayTicker.syncTickerPosition()
+        rebalanceOverlayChatWindowZOrder()
     }
 
     private fun ensureToggleButton() {
@@ -1203,6 +1208,7 @@ class CombatOverlayService : Service() {
             toggle?.setImageResource(R.drawable.ic_overlay_ui_collapse)
             toggle?.contentDescription = getString(R.string.overlay_cd_toggle_hide_ui)
             overlayTicker.ensureTicker()
+            rebalanceOverlayChatWindowZOrder()
         }
     }
 
@@ -1284,6 +1290,24 @@ class CombatOverlayService : Service() {
         }
     }
 
+    /**
+     * У нескольких [TYPE_APPLICATION_OVERLAY] окон порядок «кто выше» на OEM может не совпадать с порядком
+     * addView; remove+add поднимает окно чата поверх панели и тикера.
+     */
+    private fun rebalanceOverlayChatWindowZOrder() {
+        if (!overlayHistoryVisible) return
+        val root = overlayHistoryRoot ?: return
+        val mgr = windowManager ?: return
+        val p = overlayHistoryParams ?: return
+        if (!root.isAttachedToWindow) return
+        runCatching {
+            mgr.removeView(root)
+            mgr.addView(root, p)
+        }.onFailure { e ->
+            Log.w(TAG, "rebalanceOverlayChatWindowZOrder failed", e)
+        }
+    }
+
     private fun showOverlayHistoryPanel() {
         if (overlayHistoryVisible) return
         val manager = windowManager ?: return
@@ -1338,48 +1362,53 @@ class CombatOverlayService : Service() {
                     LocalSavedStateRegistryOwner provides owner,
                 ) {
                     SquadRelayTheme {
-                        Box(Modifier.fillMaxSize()) {
-                            ChatScreen(
-                                state = chatState,
-                                typingPeers = typingPeers,
-                                draftMessage = draftMessage,
-                                pickedImageUris = pickedImageUris,
-                                onSelectRoom = vm::selectRoom,
-                                onClearError = vm::clearError,
-                                onLoadOlder = vm::loadOlderMessages,
-                                onDraftChange = vm::setDraftMessage,
-                                onSendDraft = vm::sendDraftMessage,
-                                onSendStickerPayload = { body -> vm.sendMessage(body) },
-                                onPickImages = vm::onImagesPicked,
-                                onRemovePickedImage = vm::removePickedImage,
-                                onClearPickedImages = vm::clearPickedImages,
-                                onReplyToMessage = vm::beginReplyToMessage,
-                                onClearReply = vm::clearReplyToMessage,
-                                onOpenMessageActions = vm::openMessageActions,
-                                onDismissMessageActions = vm::dismissMessageActions,
-                                onRequestDeleteMessage = vm::requestDeleteMessage,
-                                onDismissDeleteMessage = vm::dismissDeleteMessage,
-                                onConfirmDeleteMessage = vm::confirmDeleteMessage,
-                                onBeginMessageSelection = vm::beginMessageSelection,
-                                onToggleMessageSelection = vm::toggleMessageSelection,
-                                onClearMessageSelection = vm::clearMessageSelection,
-                                onRequestBulkDelete = vm::requestBulkDelete,
-                                onDismissBulkDeleteConfirm = vm::dismissBulkDeleteConfirm,
-                                onConfirmDeleteSelectedMessages = vm::confirmDeleteSelectedMessages,
-                                onRetrySendFailure = vm::retrySendFailure,
-                                onDismissSendFailure = vm::dismissSendFailure,
-                                onChatVoiceHoldStart = vm::startChatVoiceInput,
-                                onChatVoiceHoldEnd = vm::stopChatVoiceInput,
-                            )
-                            IconButton(
-                                onClick = { hideOverlayHistoryPanel() },
-                                modifier = Modifier.align(Alignment.TopEnd),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Close,
-                                    contentDescription = getString(R.string.overlay_history_close_cd),
-                                    tint = MaterialTheme.colorScheme.onSurface,
+                        Surface(
+                            modifier = Modifier.fillMaxSize(),
+                            color = MaterialTheme.colorScheme.surface,
+                        ) {
+                            Box(Modifier.fillMaxSize()) {
+                                ChatScreen(
+                                    state = chatState,
+                                    typingPeers = typingPeers,
+                                    draftMessage = draftMessage,
+                                    pickedImageUris = pickedImageUris,
+                                    onSelectRoom = vm::selectRoom,
+                                    onClearError = vm::clearError,
+                                    onLoadOlder = vm::loadOlderMessages,
+                                    onDraftChange = vm::setDraftMessage,
+                                    onSendDraft = vm::sendDraftMessage,
+                                    onSendStickerPayload = { body -> vm.sendMessage(body) },
+                                    onPickImages = vm::onImagesPicked,
+                                    onRemovePickedImage = vm::removePickedImage,
+                                    onClearPickedImages = vm::clearPickedImages,
+                                    onReplyToMessage = vm::beginReplyToMessage,
+                                    onClearReply = vm::clearReplyToMessage,
+                                    onOpenMessageActions = vm::openMessageActions,
+                                    onDismissMessageActions = vm::dismissMessageActions,
+                                    onRequestDeleteMessage = vm::requestDeleteMessage,
+                                    onDismissDeleteMessage = vm::dismissDeleteMessage,
+                                    onConfirmDeleteMessage = vm::confirmDeleteMessage,
+                                    onBeginMessageSelection = vm::beginMessageSelection,
+                                    onToggleMessageSelection = vm::toggleMessageSelection,
+                                    onClearMessageSelection = vm::clearMessageSelection,
+                                    onRequestBulkDelete = vm::requestBulkDelete,
+                                    onDismissBulkDeleteConfirm = vm::dismissBulkDeleteConfirm,
+                                    onConfirmDeleteSelectedMessages = vm::confirmDeleteSelectedMessages,
+                                    onRetrySendFailure = vm::retrySendFailure,
+                                    onDismissSendFailure = vm::dismissSendFailure,
+                                    onChatVoiceHoldStart = vm::startChatVoiceInput,
+                                    onChatVoiceHoldEnd = vm::stopChatVoiceInput,
                                 )
+                                IconButton(
+                                    onClick = { hideOverlayHistoryPanel() },
+                                    modifier = Modifier.align(Alignment.TopEnd),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Close,
+                                        contentDescription = getString(R.string.overlay_history_close_cd),
+                                        tint = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                }
                             }
                         }
                     }
@@ -1392,7 +1421,7 @@ class CombatOverlayService : Service() {
             WindowManager.LayoutParams.MATCH_PARENT,
             type,
             OverlayWindowLayout.historyPanelWindowFlags(),
-            android.graphics.PixelFormat.TRANSLUCENT,
+            PixelFormat.OPAQUE,
         ).apply {
             OverlayWindowLayout.applyHistoryLayoutCompat(this)
             gravity = Gravity.TOP or Gravity.START
@@ -1402,9 +1431,16 @@ class CombatOverlayService : Service() {
             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
         }
 
+        val overlayUiContext = OverlayTickerUi.themedFabContext(this)
+        val surfaceArgb = MaterialColors.getColor(
+            overlayUiContext,
+            com.google.android.material.R.attr.colorSurface,
+            Color.parseColor("#10141E"),
+        )
         // Compose resolves WindowRecomposer from the View tree before composition runs; locals alone are not enough.
         val root = FrameLayout(this).apply {
-            setBackgroundColor(Color.TRANSPARENT)
+            setBackgroundColor(surfaceArgb)
+            elevation = 48f
             setViewTreeLifecycleOwner(owner)
             setViewTreeViewModelStoreOwner(owner)
             setViewTreeSavedStateRegistryOwner(owner)
@@ -1442,6 +1478,7 @@ class CombatOverlayService : Service() {
         overlayHistoryRoot = root
         overlayHistoryParams = params
         overlayHistoryVisible = true
+        rebalanceOverlayChatWindowZOrder()
     }
 
     private fun dp(value: Int): Int {
