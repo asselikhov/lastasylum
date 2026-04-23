@@ -190,8 +190,11 @@ class CombatOverlayService : Service() {
     private var overlayBtnMessageFab: FloatingActionButton? = null
     private var overlayPanelAnchoredEnd: Boolean = false
 
-    // Keep more than 3 in buffer for scroll; UI height shows ~3.
-    private val stripBuffer = OverlayChatStripBuffer(maxPreviewMessages = 24)
+    /** Лента: короткий TTL и мало строк превью — компактная полоса у края. */
+    private val stripBuffer = OverlayChatStripBuffer(
+        messageTtlSeconds = OverlayChatStripBuffer.DEFAULT_MESSAGE_TTL_SECONDS,
+        maxPreviewMessages = 5,
+    )
     private var overlayHistoryRoot: FrameLayout? = null
     private var overlayHistoryScroll: ScrollView? = null
     private var overlayHistoryLines: LinearLayout? = null
@@ -626,7 +629,9 @@ class CombatOverlayService : Service() {
         val preview = stripBuffer.visibleForPreview()
         val signature = preview.joinToString(separator = "|") { msg ->
             val key = msg._id?.takeIf { it.isNotBlank() } ?: msg.stableKey()
-            "$key:${msg.text.hashCode()}:${msg.senderRole}:${msg.senderId}:${msg.senderTeamTag ?: ""}"
+            val att = msg.attachments.joinToString(";") { a -> "${a.kind}:${a.url}:${a.mimeType ?: ""}" }
+            "$key:${msg.text.hashCode()}:${msg.senderRole}:${msg.senderId}:" +
+                "${msg.senderTeamTag ?: ""}:${msg.senderTelegramUsername ?: ""}:$att"
         }
         if (signature == lastStripRenderSignature) return
         val selfId = jwtSubFromAccessToken()
@@ -640,7 +645,9 @@ class CombatOverlayService : Service() {
                 msg.text,
                 msg.senderId,
                 msg.senderRole,
-                selfId,
+                senderTelegramUsername = msg.senderTelegramUsername,
+                attachments = msg.attachments,
+                selfUserId = selfId,
                 showDismiss = false,
             )
         }
@@ -1573,7 +1580,8 @@ class CombatOverlayService : Service() {
     }
 
     companion object {
-        private const val STRIP_TICK_MS = 45_000L
+        /** Частый prune ленты относительно TTL ~10 с. */
+        private const val STRIP_TICK_MS = 2_500L
         /** Реже дергать UsageStats — меньше нагрузки на CPU/binder рядом с игрой; скрытие оверлея после выхода из игры — до ~4s. */
         private const val GAME_GATE_POLL_MS = 4_000L
         private const val OVERLAY_HISTORY_LOAD = 150

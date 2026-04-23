@@ -9,7 +9,8 @@ import java.time.temporal.ChronoUnit
  * Карта «время прихода» используется и панелью истории ([OverlayChatTime.effectiveInstant]).
  */
 class OverlayChatStripBuffer(
-    private val maxAgeMinutes: Long = DEFAULT_MAX_AGE_MINUTES,
+    /** Сколько секунд сообщение остаётся в превью ленты (после [OverlayChatTime.effectiveInstant]). */
+    private val messageTtlSeconds: Long = DEFAULT_MESSAGE_TTL_SECONDS,
     private val bufferCap: Int = DEFAULT_BUFFER_CAP,
     private val maxPreviewMessages: Int = DEFAULT_MAX_PREVIEW,
 ) {
@@ -40,7 +41,7 @@ class OverlayChatStripBuffer(
 
     fun prune() {
         if (messages.isEmpty()) return
-        val cutoff = Instant.now().minus(maxAgeMinutes, ChronoUnit.MINUTES)
+        val cutoff = Instant.now().minus(messageTtlSeconds, ChronoUnit.SECONDS)
         messages.removeAll {
             OverlayChatTime.effectiveInstant(it, receivedAt).isBefore(cutoff)
         }
@@ -51,7 +52,7 @@ class OverlayChatStripBuffer(
     }
 
     fun visibleForPreview(): List<ChatMessage> {
-        val cutoff = Instant.now().minus(maxAgeMinutes, ChronoUnit.MINUTES)
+        val cutoff = Instant.now().minus(messageTtlSeconds, ChronoUnit.SECONDS)
         return messages
             .filter { !OverlayChatTime.effectiveInstant(it, receivedAt).isBefore(cutoff) }
             .sortedBy { OverlayChatTime.effectiveInstant(it, receivedAt) }
@@ -65,7 +66,7 @@ class OverlayChatStripBuffer(
     fun mergeReceiveTimeline(msg: ChatMessage, selfId: String?) {
         val key = msg.stableKey()
         val parsed = OverlayChatTime.parseInstant(msg.createdAt)
-        val cutoff = Instant.now().minus(maxAgeMinutes, ChronoUnit.MINUTES)
+        val cutoff = Instant.now().minus(messageTtlSeconds, ChronoUnit.SECONDS)
         when {
             parsed == null -> receivedAt.putIfAbsent(key, Instant.now())
             parsed.isBefore(cutoff) &&
@@ -89,8 +90,8 @@ class OverlayChatStripBuffer(
     }
 
     companion object {
-        const val DEFAULT_MAX_AGE_MINUTES = 5L
+        const val DEFAULT_MESSAGE_TTL_SECONDS = 10L
         const val DEFAULT_BUFFER_CAP = 80
-        const val DEFAULT_MAX_PREVIEW = 3
+        const val DEFAULT_MAX_PREVIEW = 5
     }
 }

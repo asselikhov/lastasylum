@@ -10,7 +10,7 @@ class OverlayChatStripBufferTest {
     @Test
     fun seedFromHistory_thenVisibleForPreview() {
         val buffer = OverlayChatStripBuffer(
-            maxAgeMinutes = 60,
+            messageTtlSeconds = 3600,
             bufferCap = 100,
             maxPreviewMessages = 3,
         )
@@ -49,5 +49,45 @@ class OverlayChatStripBufferTest {
         )
         buffer.clear()
         assertTrue(buffer.visibleForPreview().isEmpty())
+    }
+
+    @Test
+    fun prune_drops_messages_older_than_ttl_by_effective_instant() {
+        val ttl = OverlayChatStripBuffer.DEFAULT_MESSAGE_TTL_SECONDS
+        val buffer = OverlayChatStripBuffer(
+            messageTtlSeconds = ttl,
+            bufferCap = 100,
+            maxPreviewMessages = 10,
+        )
+        val oldCreated = Instant.now().minusSeconds(ttl + 30).toString()
+        val newCreated = Instant.now().toString()
+        buffer.seedFromHistory(
+            listOf(
+                ChatMessage(
+                    _id = "old1",
+                    allianceId = "a",
+                    roomId = "r",
+                    senderId = "u-old",
+                    senderUsername = "Old",
+                    senderRole = "R2",
+                    text = "stale",
+                    createdAt = oldCreated,
+                ),
+                ChatMessage(
+                    _id = "new1",
+                    allianceId = "a",
+                    roomId = "r",
+                    senderId = "u-new",
+                    senderUsername = "New",
+                    senderRole = "R3",
+                    text = "fresh",
+                    createdAt = newCreated,
+                ),
+            ),
+        )
+        buffer.prune()
+        val visible = buffer.visibleForPreview()
+        assertEquals(1, visible.size)
+        assertEquals("fresh", visible.first().text)
     }
 }
