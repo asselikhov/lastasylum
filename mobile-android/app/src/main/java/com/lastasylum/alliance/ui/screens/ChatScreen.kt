@@ -2574,12 +2574,10 @@ private fun ChatBubbleRow(
     val swipeModifier = if (messageId != null) {
         Modifier.pointerInput(messageId, layoutDirection, swipePx) {
             var accX = 0f
-            var accY = 0f
-            detectDragGestures(
+            detectHorizontalDragGestures(
                 onDragEnd = {
-                    val dominantHorizontal = kotlin.math.abs(accX) > swipePx &&
-                        kotlin.math.abs(accX) > kotlin.math.abs(accY) * 1.15f
-                    if (dominantHorizontal) {
+                    val fired = kotlin.math.abs(accX) > swipePx
+                    if (fired) {
                         val towardReply = if (layoutDirection == LayoutDirection.Rtl) {
                             accX < 0
                         } else {
@@ -2590,14 +2588,10 @@ private fun ChatBubbleRow(
                         }
                     }
                     accX = 0f
-                    accY = 0f
                 },
-                onDrag = { change, dragAmount ->
-                    accX += dragAmount.x
-                    accY += dragAmount.y
-                    if (kotlin.math.abs(accX) > kotlin.math.abs(accY)) {
-                        change.consume()
-                    }
+                onHorizontalDrag = { change, dragAmount ->
+                    accX += dragAmount
+                    change.consume()
                 },
             )
         }
