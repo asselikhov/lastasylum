@@ -1099,23 +1099,12 @@ class CombatOverlayService : Service() {
         }
 
         fun applyControlsVisibility() {
-            if (overlayCollapsed) {
-                // Keep layout size stable so the stack doesn't "jump" when collapsed/expanded.
-                messageRow.visibility = View.INVISIBLE
-                btnMic.visibility = View.INVISIBLE
-                lockIcon.visibility = View.INVISIBLE
-                subRow.visibility = View.INVISIBLE
-                messageExpanded = false
-                btnCollapse.setImageResource(R.drawable.ic_overlay_ui_expand)
-                btnCollapse.contentDescription = getString(R.string.overlay_cd_toggle_show_ui)
-            } else {
-                messageRow.visibility = View.VISIBLE
-                btnMic.visibility = View.VISIBLE
-                lockIcon.visibility = View.VISIBLE
-                btnCollapse.setImageResource(R.drawable.ic_overlay_ui_collapse)
-                btnCollapse.contentDescription = getString(R.string.overlay_cd_toggle_hide_ui)
-                subRow.visibility = if (messageExpanded) View.VISIBLE else View.INVISIBLE
-            }
+            // Within the expanded panel, only sub-actions are toggled.
+            subRow.visibility = if (!overlayCollapsed && messageExpanded) View.VISIBLE else View.INVISIBLE
+            btnCollapse.setImageResource(if (overlayCollapsed) R.drawable.ic_overlay_ui_expand else R.drawable.ic_overlay_ui_collapse)
+            btnCollapse.contentDescription = getString(
+                if (overlayCollapsed) R.string.overlay_cd_toggle_show_ui else R.string.overlay_cd_toggle_hide_ui,
+            )
         }
 
         refreshLockIcon()
@@ -1126,6 +1115,8 @@ class CombatOverlayService : Service() {
 
         btnCollapse.setOnClickListener {
             overlayCollapsed = !overlayCollapsed
+            // Use global visibility handler (panel vs floating toggle).
+            applyOverlayVisibilityState()
             applyControlsVisibility()
         }
 
