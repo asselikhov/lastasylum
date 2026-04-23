@@ -27,7 +27,8 @@ class OverlayTickerWindow(
 
     private val tickerHideRunnable = Runnable { removeTickerFromWindowSync() }
 
-    fun ensureTicker() {
+    /** Окно тикера создаётся только при первом показе — иначе широкая полоска с alpha=0 перехватывала тапы по игре сверху. */
+    private fun attachTickerWindowIfNeeded() {
         if (tickerHost != null) return
         val manager = windowManagerProvider() ?: return
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -77,7 +78,7 @@ class OverlayTickerWindow(
 
     fun showTicker(message: String) {
         mainHandler.post {
-            ensureTicker()
+            attachTickerWindowIfNeeded()
             val ticker = tickerView ?: return@post
             ticker.text = message
             ticker.animate().alpha(1f).setDuration(SHOW_ALPHA_MS).start()

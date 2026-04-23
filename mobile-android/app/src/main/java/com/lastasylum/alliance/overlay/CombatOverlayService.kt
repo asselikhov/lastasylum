@@ -1244,7 +1244,6 @@ class CombatOverlayService : Service() {
         }
         _overlayVisible.value = true
         windowManager = manager
-        overlayTicker.ensureTicker()
         overlayTicker.syncTickerPosition()
         rebalanceOverlayChatWindowZOrder()
         applyOverlayVisibilityState()
@@ -1262,7 +1261,6 @@ class CombatOverlayService : Service() {
         bubbleContainer?.alpha = 1f
         bubbleContainer?.scaleX = 1f
         bubbleContainer?.scaleY = 1f
-        overlayTicker.ensureTicker()
         rebalanceOverlayChatWindowZOrder()
     }
 

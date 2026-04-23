@@ -12,7 +12,8 @@ import android.view.WindowManager
  *   корень [OverlayPassthroughMultitouchFrameLayout] — при pinch (>1 пальца) окно не участвует в dispatch (зум карты).
  * - **Лента чата**: отдельное окно; ширина по контенту + центр, не на весь экран; [OverlayStripScrollView] не
  *   перехватывает вертикаль, если прокрутка не нужна.
- * - **Тикер**: узкая полоса сверху, те же флаги `popupWindowFlags`, корень [OverlayPassthroughMultitouchFrameLayout].
+ * - **Тикер**: окно создаётся только при первом [OverlayTickerWindow.showTicker], чтобы не держать
+ *   невидимую полоску на всю ширину экрана между сообщениями.
  * - **Quick commands**: маленькие `WRAP_CONTENT` окна у пузыря, тот же корень для pinch.
  * - **Полноэкранный чат**: свои флаги [historyPanelWindowFlags] (фокус + IME), без NOT_TOUCH_MODAL — окно
  *   должно полностью перехватыть ввод, пока открыт чат.
@@ -20,14 +21,15 @@ import android.view.WindowManager
 object OverlayWindowLayout {
     /**
      * Флаги для TYPE_APPLICATION_OVERLAY: полноэкранные игры и вырезы.
-     * [FLAG_NOT_TOUCH_MODAL] — касания вне прямоугольника оверлей-окна уходят в приложение под ним;
-     * без него при «раздутой» по ширине панели игра теряет свайпы/тапы по пустым зонам внизу экрана.
+     * - [FLAG_NOT_TOUCH_MODAL] — касания вне прямоугольника окна уходят в приложение под ним.
+     * - [FLAG_SPLIT_TOUCH] — корректнее раздавать ввод между оверлеем и игрой при нескольких окнах.
+     * Без [FLAG_LAYOUT_NO_LIMITS]: на части прошивок он раздувает область hit-теста за пределы видимого UI.
      */
     fun popupWindowFlags(): Int =
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.FLAG_SPLIT_TOUCH or
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
 
     /** Полноэкранная панель истории: без NOT_FOCUSABLE — нужны поле ввода и IME. */
