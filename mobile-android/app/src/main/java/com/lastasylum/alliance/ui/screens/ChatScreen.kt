@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -123,6 +124,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -1120,7 +1123,7 @@ private fun ChatRoomsBar(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun ChatComposer(
     draft: String,
@@ -1153,6 +1156,7 @@ private fun ChatComposer(
     val zlobStems = remember(context) { ZlobyakaStickerPack.listSortedStems(context) }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+    val imeVisible = WindowInsets.isImeVisible
     val focusRequester = remember { FocusRequester() }
     val gifScroll = rememberScrollState()
     val pickImagesLauncher = if (activityResultOwner != null) {
@@ -1626,10 +1630,13 @@ private fun ChatComposer(
             }
         }
 
+        // IME animation in overlay can be janky on OEM ROMs; avoid size animations while keyboard moves.
+        val panelEnter = if (imeVisible) fadeIn() else (expandVertically() + fadeIn())
+        val panelExit = if (imeVisible) fadeOut() else (shrinkVertically() + fadeOut())
         AnimatedVisibility(
             visible = showMediaPanel,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut(),
+            enter = panelEnter,
+            exit = panelExit,
         ) {
             Surface(
                 shape = RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp),
