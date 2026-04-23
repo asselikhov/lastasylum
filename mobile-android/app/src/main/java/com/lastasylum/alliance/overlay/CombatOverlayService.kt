@@ -174,7 +174,7 @@ class CombatOverlayService : Service() {
     /** True: только кнопка разворота; по нажатию — остальные кнопки панели. */
     private var panelCollapsed = false
     private var messageExpanded = false
-    private var chatStripScroll: ScrollView? = null
+    private var chatStripClipRoot: FrameLayout? = null
     private var chatStripLines: LinearLayout? = null
     private var chatStripHost: FrameLayout? = null
     private var chatStripParams: WindowManager.LayoutParams? = null
@@ -652,7 +652,6 @@ class CombatOverlayService : Service() {
             )
         }
         lastStripRenderSignature = signature
-        scrollChatStripToEnd()
     }
 
     /**
@@ -726,19 +725,13 @@ class CombatOverlayService : Service() {
         }
     }
 
-    private fun scrollChatStripToEnd() {
-        chatStripScroll?.post {
-            chatStripScroll?.fullScroll(View.FOCUS_DOWN)
-        }
-    }
-
     private fun removeChatStripWindow(forManager: WindowManager? = null) {
         val mgr = forManager ?: windowManager ?: systemWindowManager() ?: return
         val host = chatStripHost ?: return
         runCatching { mgr.removeView(host) }
         chatStripHost = null
         chatStripParams = null
-        chatStripScroll = null
+        chatStripClipRoot = null
         chatStripLines = null
     }
 
@@ -767,15 +760,15 @@ class CombatOverlayService : Service() {
         }
 
         val stripLines = OverlayChatStripUi.createLinesContainer(this)
-        val stripScroll = OverlayStripScrollView(this).apply {
-            OverlayChatStripUi.styleStripScroll(this@CombatOverlayService, this)
-            isFillViewport = true
-            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+        val clipRoot = FrameLayout(this).apply {
+            clipChildren = true
+            OverlayChatStripUi.styleStripContainer(this@CombatOverlayService, this)
             addView(
                 stripLines,
                 FrameLayout.LayoutParams(
-                    stripMaxWidth,
+                    FrameLayout.LayoutParams.MATCH_PARENT,
                     FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.BOTTOM,
                 ),
             )
         }
@@ -785,9 +778,9 @@ class CombatOverlayService : Service() {
             setPadding(dp(10), 0, dp(10), 0)
             setBackgroundColor(Color.TRANSPARENT)
             addView(
-                stripScroll,
+                clipRoot,
                 FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    stripMaxWidth,
                     dp(210),
                 ),
             )
@@ -800,7 +793,7 @@ class CombatOverlayService : Service() {
         }
         chatStripHost = host
         chatStripParams = params
-        chatStripScroll = stripScroll
+        chatStripClipRoot = clipRoot
         chatStripLines = stripLines
     }
 
@@ -923,7 +916,7 @@ class CombatOverlayService : Service() {
         if (overlayView != null && windowManager == null) {
             Log.w(TAG, "showOverlayControl: clearing orphan overlayView (no WindowManager)")
             overlayView = null
-            chatStripScroll = null
+            chatStripClipRoot = null
             chatStripLines = null
             overlayBubble = null
             overlayHistoryFab = null
@@ -1566,7 +1559,7 @@ class CombatOverlayService : Service() {
         _overlayVisible.value = false
         overlayBubble = null
         overlayHistoryFab = null
-        chatStripScroll = null
+        chatStripClipRoot = null
         chatStripLines = null
         overlayMainWindowParams = null
         overlayOuterRow = null

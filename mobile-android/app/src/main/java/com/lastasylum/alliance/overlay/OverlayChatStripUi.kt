@@ -16,7 +16,6 @@ import androidx.core.view.setPadding
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.graphics.ColorUtils
 import com.google.android.material.card.MaterialCardView
@@ -50,16 +49,15 @@ object OverlayChatStripUi {
     private val cardStroke = Color.parseColor("#889B7CFF")
     private val noticeAvatarFill = Color.parseColor("#9B7CFF")
 
-    fun styleStripScroll(context: Context, scroll: ScrollView) {
-        scroll.isVerticalScrollBarEnabled = true
-        scroll.isScrollbarFadingEnabled = false
-        scroll.setPadding(
+    /** Корень области ленты (без ScrollView — клип по высоте в сервисе). */
+    fun styleStripContainer(context: Context, root: View) {
+        root.setPadding(
             dp(context, 4f).toInt(),
-            dp(context, 3f).toInt(),
+            dp(context, 2f).toInt(),
             dp(context, 4f).toInt(),
-            dp(context, 3f).toInt(),
+            dp(context, 2f).toInt(),
         )
-        scroll.background = null
+        root.background = null
     }
 
     fun createLinesContainer(context: Context): LinearLayout {
@@ -69,12 +67,7 @@ object OverlayChatStripUi {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             )
-            setPadding(
-                dp(context, 2f).toInt(),
-                dp(context, 1f).toInt(),
-                dp(context, 2f).toInt(),
-                dp(context, 1f).toInt(),
-            )
+            setPadding(0, 0, 0, 0)
         }
     }
 
@@ -96,7 +89,7 @@ object OverlayChatStripUi {
             titleColor = Color.parseColor("#F4F0FF"),
             senderRole = null,
             stickerStem = null,
-            bodyText = message.replace("\n", " ").trim(),
+            bodyText = message.trimEnd(),
             bodyColor = Color.parseColor("#D8D0EC"),
             showDismiss = false,
         )
@@ -116,13 +109,13 @@ object OverlayChatStripUi {
         showDismiss: Boolean = true,
     ) {
         val stickerStem = ZlobyakaStickerPack.parseStem(text)
-        val safe = text.replace("\n", " ").trim()
+        val rawBody = text.trimEnd()
         val hasImage = firstImageAttachment(attachments) != null
         val preview = when {
             stickerStem != null -> context.getString(R.string.chat_reply_preview_sticker)
-            hasImage && safe.isBlank() -> ""
-            safe.length > 160 -> safe.take(160) + "…"
-            else -> safe
+            hasImage && rawBody.isBlank() -> ""
+            rawBody.length > STRIP_TEXT_MAX_CHARS -> truncateStripText(rawBody, STRIP_TEXT_MAX_CHARS)
+            else -> rawBody
         }
         val safeName = username.trim().take(22).ifBlank { "—" }
         val initial = safeName.first().uppercaseChar()
@@ -357,7 +350,7 @@ object OverlayChatStripUi {
                             text = bodyText
                             setTextColor(bodyColor)
                             setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
-                            maxLines = 3
+                            maxLines = 6
                             ellipsize = TextUtils.TruncateAt.END
                         },
                     )
@@ -372,7 +365,7 @@ object OverlayChatStripUi {
                 text = bodyText
                 setTextColor(bodyColor)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
-                maxLines = 4
+                maxLines = 10
                 ellipsize = TextUtils.TruncateAt.END
             }
         }
@@ -422,7 +415,7 @@ object OverlayChatStripUi {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ).apply {
-                bottomMargin = dp(context, 3f).toInt()
+                bottomMargin = dp(context, 1f).toInt()
             }
             radius = cornerCard
             cardElevation = dp(context, 1.5f)
@@ -476,5 +469,13 @@ object OverlayChatStripUi {
             value,
             context.resources.displayMetrics,
         )
+    }
+
+    /** Лимит символов в превью; переносы строк сохраняются до обрезки. */
+    private const val STRIP_TEXT_MAX_CHARS = 220
+
+    private fun truncateStripText(s: String, maxChars: Int): String {
+        if (s.length <= maxChars) return s
+        return s.take(maxChars).trimEnd() + "…"
     }
 }
