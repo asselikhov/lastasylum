@@ -1075,7 +1075,7 @@ class CombatOverlayService : Service() {
             addView(
                 outerRow,
                 FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
                     FrameLayout.LayoutParams.WRAP_CONTENT,
                 ),
             )

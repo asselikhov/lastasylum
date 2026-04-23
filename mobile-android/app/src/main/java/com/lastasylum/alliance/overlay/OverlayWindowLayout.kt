@@ -9,10 +9,12 @@ import android.view.WindowManager
 object OverlayWindowLayout {
     /**
      * Флаги для TYPE_APPLICATION_OVERLAY: полноэкранные игры и вырезы.
-     * Без [WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL]: иначе игра часто «забирает» касания у FAB.
+     * [FLAG_NOT_TOUCH_MODAL] — касания вне прямоугольника оверлей-окна уходят в приложение под ним;
+     * без него при «раздутой» по ширине панели игра теряет свайпы/тапы по пустым зонам внизу экрана.
      */
     fun popupWindowFlags(): Int =
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
             WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
