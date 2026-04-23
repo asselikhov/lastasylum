@@ -44,6 +44,11 @@ object GameForegroundGate {
         usageAccessCacheAtMs = 0L
     }
 
+    /** Сброс кэша [lastResumedPackage], чтобы гейт не держал игру «на экране» 1.5s после смены приложения. */
+    fun invalidateForegroundHintCache() {
+        cachedForeground = null
+    }
+
     fun hasUsageStatsAccess(context: Context): Boolean {
         val now = System.currentTimeMillis()
         if (now - usageAccessCacheAtMs < USAGE_ACCESS_CACHE_MS) {
@@ -248,6 +253,7 @@ object GameForegroundGate {
         if (!hasUsageStatsAccess(context)) return false
         val alliance = context.packageName
         val targetSet = targets.toSet()
+        invalidateForegroundHintCache()
         val hinted = lastResumedPackage(context)
         // Never show the overlay while the SquadRelay app itself is in foreground.
         // Otherwise, after minimizing the game and opening SquadRelay, heuristics (TTF/lastUsed)
@@ -283,9 +289,28 @@ object GameForegroundGate {
         }
         if (stats.isEmpty()) return false
         val effectiveMap = stats.associate { it.packageName to effectiveUsageTimestamp(it) }
+        // Без этого: после сворачивания игры lastTimeUsed игры долго остаётся «рядом с лидером» (до ~45s slop),
+        // и оверлей не убирался, хотя lastResumed уже лаунчер/другое приложение.
+        if (!allowLastUsedNearLeaderFallback(hinted, targetSet, alliance)) return false
         return targets.any { target ->
             isTargetLastUsedNearLeader(effectiveMap, target, TARGET_USAGE_TIE_SLOP_MS)
         }
+    }
+
+    /**
+     * Слабый fallback по lastTimeUsed имеет смысл только пока нет явного «другого приложения» на переднем плане.
+     * (Иначе после minimize игры usage ещё долго «лидерит» пакет игры.)
+     */
+    internal fun allowLastUsedNearLeaderFallback(
+        lastForegroundPackageHint: String?,
+        targetPackages: Set<String>,
+        alliancePackage: String,
+    ): Boolean {
+        val hinted = lastForegroundPackageHint ?: return true
+        if (hinted in targetPackages) return true
+        if (hinted == alliancePackage) return true
+        if (hinted in RESUME_DECOR_PACKAGES) return true
+        return false
     }
 
     /**

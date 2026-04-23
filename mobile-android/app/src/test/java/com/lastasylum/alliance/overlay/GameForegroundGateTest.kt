@@ -199,6 +199,39 @@ class GameForegroundGateTest {
     }
 
     @Test
+    fun lastUsedFallbackAllowed_whenNoForegroundHint() {
+        assertTrue(
+            GameForegroundGate.allowLastUsedNearLeaderFallback(
+                lastForegroundPackageHint = null,
+                targetPackages = setOf("com.phs.global"),
+                alliancePackage = "com.lastasylum.alliance",
+            ),
+        )
+    }
+
+    @Test
+    fun lastUsedFallbackDisallowed_whenLauncherHinted() {
+        assertFalse(
+            GameForegroundGate.allowLastUsedNearLeaderFallback(
+                lastForegroundPackageHint = "com.miui.home",
+                targetPackages = setOf("com.phs.global"),
+                alliancePackage = "com.lastasylum.alliance",
+            ),
+        )
+    }
+
+    @Test
+    fun lastUsedFallbackAllowed_whenTargetHinted() {
+        assertTrue(
+            GameForegroundGate.allowLastUsedNearLeaderFallback(
+                lastForegroundPackageHint = "com.phs.global",
+                targetPackages = setOf("com.phs.global"),
+                alliancePackage = "com.lastasylum.alliance",
+            ),
+        )
+    }
+
+    @Test
     fun packageEventSequence_trueWhenResumedAfterPause() {
         assertTrue(
             GameForegroundGate.foregroundStateAfterPackageEventTypes(
