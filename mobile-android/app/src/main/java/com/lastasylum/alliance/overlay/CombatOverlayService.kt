@@ -178,7 +178,10 @@ class CombatOverlayService : Service() {
         )
     }
     private var recordingStartRunnable: Runnable? = null
-    private var overlayCollapsed = false
+    /** Global hidden state: only floating toggle is visible. */
+    private var overlayHidden = false
+    /** Collapsed state of controls inside the panel window (toggle button stays visible). */
+    private var panelCollapsed = false
     private var messageExpanded = false
     private var chatStripScroll: ScrollView? = null
     private var chatStripLines: LinearLayout? = null
@@ -1099,29 +1102,39 @@ class CombatOverlayService : Service() {
         }
 
         fun applyControlsVisibility() {
-            // Within the expanded panel, only sub-actions are toggled.
-            subRow.visibility = if (!overlayCollapsed && messageExpanded) View.VISIBLE else View.INVISIBLE
-            btnCollapse.setImageResource(if (overlayCollapsed) R.drawable.ic_overlay_ui_expand else R.drawable.ic_overlay_ui_collapse)
+            // Panel-level collapse: hide everything except the collapse button.
+            if (panelCollapsed) {
+                messageRow.visibility = View.INVISIBLE
+                btnMic.visibility = View.INVISIBLE
+                lockIcon.visibility = View.INVISIBLE
+                subRow.visibility = View.INVISIBLE
+                messageExpanded = false
+            } else {
+                messageRow.visibility = View.VISIBLE
+                btnMic.visibility = View.VISIBLE
+                lockIcon.visibility = View.VISIBLE
+                subRow.visibility = if (messageExpanded) View.VISIBLE else View.INVISIBLE
+            }
+            btnCollapse.setImageResource(if (panelCollapsed) R.drawable.ic_overlay_ui_expand else R.drawable.ic_overlay_ui_collapse)
             btnCollapse.contentDescription = getString(
-                if (overlayCollapsed) R.string.overlay_cd_toggle_show_ui else R.string.overlay_cd_toggle_hide_ui,
+                if (panelCollapsed) R.string.overlay_cd_toggle_show_ui else R.string.overlay_cd_toggle_hide_ui,
             )
         }
 
         refreshLockIcon()
-        // Start hidden: only toggle button remains visible.
-        overlayCollapsed = true
+        // Start hidden globally; and keep panel collapsed when it becomes visible.
+        overlayHidden = true
+        panelCollapsed = true
         messageExpanded = false
         applyControlsVisibility()
 
         btnCollapse.setOnClickListener {
-            overlayCollapsed = !overlayCollapsed
-            // Use global visibility handler (panel vs floating toggle).
-            applyOverlayVisibilityState()
+            panelCollapsed = !panelCollapsed
             applyControlsVisibility()
         }
 
         btnMessage.setOnClickListener {
-            if (overlayCollapsed) return@setOnClickListener
+            if (panelCollapsed) return@setOnClickListener
             messageExpanded = !messageExpanded
             applyControlsVisibility()
         }
@@ -1302,7 +1315,10 @@ class CombatOverlayService : Service() {
                 AppContainer.from(this@CombatOverlayService).userSettingsPreferences.isOverlayDragLocked()
             },
             onTap = {
-                overlayCollapsed = !overlayCollapsed
+                overlayHidden = !overlayHidden
+                if (!overlayHidden) {
+                    panelCollapsed = false
+                }
                 applyOverlayVisibilityState()
             },
         )
@@ -1389,7 +1405,7 @@ class CombatOverlayService : Service() {
         val bubbleContainer = overlayView
         val toggle = toggleFab
         val lock = lockFab
-        if (overlayCollapsed) {
+        if (overlayHidden) {
             hideOverlayHistoryPanel()
             quickCommandsPopover.hide()
             overlayTicker.hideTicker()
