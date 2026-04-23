@@ -1003,16 +1003,16 @@ class CombatOverlayService : Service() {
         val btnCollapse = ImageView(this).apply {
             setImageResource(R.drawable.ic_overlay_ui_collapse)
             contentDescription = getString(R.string.overlay_cd_toggle_hide_ui)
-            scaleType = ImageView.ScaleType.FIT_CENTER
             isClickable = true
             isFocusable = true
         }
+        OverlayTickerUi.styleOverlayIconButton(fabCtx, btnCollapse, sideDp = 42f)
         val btnMessage = makeMiniFab(
             iconRes = R.drawable.ic_overlay_history,
             cd = getString(R.string.overlay_cd_history),
         )
         val btnChat = makeMiniFab(
-            iconRes = R.drawable.ic_overlay_send,
+            iconRes = R.drawable.ic_overlay_chat,
             cd = "Чат",
         )
         val btnMic = makeMiniFab(
@@ -1023,7 +1023,6 @@ class CombatOverlayService : Service() {
         val lockIcon = ImageView(this).apply {
             setImageResource(R.drawable.ic_overlay_lock_open)
             contentDescription = getString(R.string.overlay_cd_lock_positions)
-            scaleType = ImageView.ScaleType.FIT_CENTER
             isClickable = true
             isFocusable = true
         }
@@ -1045,7 +1044,7 @@ class CombatOverlayService : Service() {
             addView(subDefense, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(6) })
         }
 
-        lockIcon.setPadding(dp(8), dp(8), dp(8), dp(8))
+        OverlayTickerUi.styleOverlayIconButton(fabCtx, lockIcon, sideDp = 42f)
         val messageFabColumn = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL

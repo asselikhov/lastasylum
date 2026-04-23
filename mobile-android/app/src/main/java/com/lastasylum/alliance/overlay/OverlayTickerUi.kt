@@ -74,10 +74,38 @@ object OverlayTickerUi {
         fab.setCustomSize(side)
         fab.size = FloatingActionButton.SIZE_AUTO
         fab.scaleType = ImageView.ScaleType.CENTER
+        // Compact, game-friendly style: slightly transparent, minimal elevation.
         fab.imageTintList = ColorStateList.valueOf(Color.parseColor("#F4F0FF"))
-        fab.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#E6282548"))
-        fab.elevation = dp(context, 5f)
-        fab.alpha = 0.98f
+        fab.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#D61A1F2B"))
+        fab.elevation = dp(context, 2.5f)
+        fab.alpha = 0.96f
+    }
+
+    /** Compact circular icon button styling for plain [ImageView] controls inside overlay panel. */
+    @JvmOverloads
+    fun styleOverlayIconButton(
+        context: Context,
+        view: ImageView,
+        sideDp: Float = 42f,
+    ) {
+        val side = dp(context, sideDp).toInt()
+        view.layoutParams = view.layoutParams ?: android.view.ViewGroup.LayoutParams(side, side)
+        view.minimumWidth = side
+        view.minimumHeight = side
+        view.scaleType = ImageView.ScaleType.CENTER
+        view.imageTintList = ColorStateList.valueOf(Color.parseColor("#F4F0FF"))
+        view.alpha = 0.96f
+        view.setPadding(
+            dp(context, 9f).toInt(),
+            dp(context, 9f).toInt(),
+            dp(context, 9f).toInt(),
+            dp(context, 9f).toInt(),
+        )
+        view.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.parseColor("#D61A1F2B"))
+            setStroke(dp(context, 1.25f).toInt().coerceAtLeast(1), Color.parseColor("#559B7CFF"))
+        }
     }
 
     private fun dp(context: Context, value: Float): Float {
