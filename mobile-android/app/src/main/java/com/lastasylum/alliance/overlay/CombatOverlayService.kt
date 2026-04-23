@@ -1098,23 +1098,27 @@ class CombatOverlayService : Service() {
         }
 
         fun applyControlsVisibility() {
-            // Panel-level collapse: hide everything except the collapse button.
+            // GONE (не INVISIBLE): иначе ряд с FAB остаётся в разметке по ширине и окно перехватывает карту справа от кнопок.
             if (panelCollapsed) {
-                messageRow.visibility = View.INVISIBLE
-                btnMic.visibility = View.INVISIBLE
-                lockIcon.visibility = View.INVISIBLE
-                subRow.visibility = View.INVISIBLE
                 messageExpanded = false
+                messageRow.visibility = View.GONE
+                subRow.visibility = View.GONE
             } else {
                 messageRow.visibility = View.VISIBLE
                 btnMic.visibility = View.VISIBLE
                 lockIcon.visibility = View.VISIBLE
-                subRow.visibility = if (messageExpanded) View.VISIBLE else View.INVISIBLE
+                subRow.visibility = if (messageExpanded) View.VISIBLE else View.GONE
             }
             btnCollapse.setImageResource(if (panelCollapsed) R.drawable.ic_overlay_ui_expand else R.drawable.ic_overlay_ui_collapse)
             btnCollapse.contentDescription = getString(
                 if (panelCollapsed) R.string.overlay_cd_toggle_show_ui else R.string.overlay_cd_toggle_hide_ui,
             )
+            windowRoot.post {
+                if (!windowRoot.isAttachedToWindow) return@post
+                val p = overlayMainWindowParams ?: return@post
+                runCatching { manager.updateViewLayout(windowRoot, p) }
+                syncOverlayPanelEdgeLayout()
+            }
         }
 
         refreshLockIcon()
