@@ -868,13 +868,12 @@ class CombatOverlayService : Service() {
     }
 
     /**
-     * У правого края экрана: лента чата слева от колонки кнопок; выпадающий ряд (атака/защита/чат) — слева от колонки истории (история + мик + замок).
+     * У правого края экрана: выпадающий ряд (атака/защита) — слева от колонки истории (история + чат + мик + замок),
+     * у левого края — справа. Верхняя чат-лента теперь в отдельном overlay-окне и здесь не участвует.
      */
     private fun syncOverlayPanelEdgeLayout() {
         val params = overlayMainWindowParams ?: return
         val root = overlayView ?: return
-        val outer = overlayOuterRow ?: return
-        val strip = chatStripScroll ?: return
         val controls = overlayControlsStack ?: return
         val msgRow = overlayMessageRow ?: return
         val sub = overlaySubRow ?: return
@@ -886,42 +885,15 @@ class CombatOverlayService : Service() {
         }
         val screenW = resources.displayMetrics.widthPixels
         val anchoredEnd = params.x + w / 2 >= screenW / 2
-        val outerOk = outer.childCount == 2 &&
-            (
-                (anchoredEnd && outer.getChildAt(0) === strip && outer.getChildAt(1) === controls) ||
-                    (!anchoredEnd && outer.getChildAt(0) === controls && outer.getChildAt(1) === strip)
-                )
         val msgOk = msgRow.childCount == 2 &&
             (
                 (anchoredEnd && msgRow.getChildAt(0) === sub && msgRow.getChildAt(1) === fabCol) ||
                     (!anchoredEnd && msgRow.getChildAt(0) === fabCol && msgRow.getChildAt(1) === sub)
                 )
-        if (outerOk && msgOk && anchoredEnd == overlayPanelAnchoredEnd) return
+        if (msgOk && anchoredEnd == overlayPanelAnchoredEnd) return
         overlayPanelAnchoredEnd = anchoredEnd
 
-        val stripLp = LinearLayout.LayoutParams(0, dp(200), 1f).apply {
-            gravity = Gravity.BOTTOM
-            if (anchoredEnd) {
-                marginEnd = dp(8)
-                marginStart = 0
-            } else {
-                marginStart = dp(8)
-                marginEnd = 0
-            }
-        }
-        val controlsLp = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-        ).apply { gravity = Gravity.BOTTOM }
-        outer.removeAllViews()
-        if (anchoredEnd) {
-            outer.addView(strip, stripLp)
-            outer.addView(controls, controlsLp)
-        } else {
-            outer.addView(controls, controlsLp)
-            outer.addView(strip, stripLp)
-        }
-
+        // Controls stack itself is always inside the main overlay window; only re-order inside message row.
         msgRow.removeAllViews()
         if (anchoredEnd) {
             sub.setPadding(0, 0, dp(8), 0)
