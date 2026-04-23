@@ -1277,6 +1277,9 @@ class CombatOverlayService : Service() {
         overlayTicker.ensureTicker()
         overlayTicker.syncTickerPosition()
         rebalanceOverlayChatWindowZOrder()
+        // Ensure floating controls exist before applying "collapsed" visibility state.
+        ensureToggleButton()
+        ensureLockButton()
         // Start in collapsed state on launch.
         applyOverlayVisibilityState()
         windowRoot.post {
