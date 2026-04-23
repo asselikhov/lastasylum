@@ -8,11 +8,12 @@ import android.view.WindowManager
  *
  * **Конфликты с игрой (аудит поверхностей):**
  * - **Панель кнопок** ([CombatOverlayService]): `WRAP_CONTENT` окно, без `MATCH_PARENT` по ширине у контента;
- *   [FLAG_NOT_TOUCH_MODAL] — касания вне прямоугольника окна уходят в игру.
+ *   [FLAG_NOT_TOUCH_MODAL] — касания вне прямоугольника окна уходят в игру;
+ *   корень [OverlayPassthroughMultitouchFrameLayout] — при pinch (>1 пальца) окно не участвует в dispatch (зум карты).
  * - **Лента чата**: отдельное окно; ширина по контенту + центр, не на весь экран; [OverlayStripScrollView] не
  *   перехватывает вертикаль, если прокрутка не нужна.
- * - **Тикер**: узкая полоса сверху, те же флаги `popupWindowFlags`.
- * - **Quick commands**: только маленькие `WRAP_CONTENT` окна у пузыря.
+ * - **Тикер**: узкая полоса сверху, те же флаги `popupWindowFlags`, корень [OverlayPassthroughMultitouchFrameLayout].
+ * - **Quick commands**: маленькие `WRAP_CONTENT` окна у пузыря, тот же корень для pinch.
  * - **Полноэкранный чат**: свои флаги [historyPanelWindowFlags] (фокус + IME), без NOT_TOUCH_MODAL — окно
  *   должно полностью перехватыть ввод, пока открыт чат.
  */

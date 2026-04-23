@@ -773,7 +773,7 @@ class CombatOverlayService : Service() {
             )
         }
 
-        val host = FrameLayout(this).apply {
+        val host = OverlayPassthroughMultitouchFrameLayout(this).apply {
             elevation = 18f
             setPadding(dp(10), 0, dp(10), 0)
             setBackgroundColor(Color.TRANSPARENT)
@@ -1070,7 +1070,7 @@ class CombatOverlayService : Service() {
         }
 
         lateinit var windowRoot: FrameLayout
-        windowRoot = FrameLayout(this).apply {
+        windowRoot = OverlayPassthroughMultitouchFrameLayout(this).apply {
             elevation = 22f
             setBackgroundColor(Color.TRANSPARENT)
             @Suppress("DEPRECATION")

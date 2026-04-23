@@ -19,11 +19,13 @@ internal class OverlayStripScrollView(context: Context) : ScrollView(context) {
     }
 
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.pointerCount > 1) return false
         if (!contentTallerThanViewport()) return false
         return super.onInterceptTouchEvent(ev)
     }
 
     override fun onTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.pointerCount > 1) return false
         if (!contentTallerThanViewport()) return false
         return super.onTouchEvent(ev)
     }

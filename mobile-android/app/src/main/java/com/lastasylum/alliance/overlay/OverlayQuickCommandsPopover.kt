@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.Handler
 import android.view.Gravity
 import android.view.WindowManager
+import android.widget.FrameLayout
 import android.widget.TextView
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
@@ -24,16 +25,17 @@ class OverlayQuickCommandsPopover(
     private val onSendSuccess: (ChatMessage, String) -> Unit,
     private val onSendFailure: () -> Unit,
 ) {
-    private val views = mutableListOf<TextView>()
+    private val views = mutableListOf<OverlayPassthroughMultitouchFrameLayout>()
 
     fun isShowing(): Boolean = views.isNotEmpty()
 
     fun hide() {
         val manager = windowManagerProvider() ?: return
         if (views.isEmpty()) return
-        views.forEach { view ->
-            view.animate().cancel()
-            runCatching { manager.removeView(view) }
+        views.forEach { shell ->
+            shell.getChildAt(0)?.animate()?.cancel()
+            shell.animate().cancel()
+            runCatching { manager.removeView(shell) }
         }
         views.clear()
     }
@@ -114,6 +116,15 @@ class OverlayQuickCommandsPopover(
                     hide()
                 }
             }
+            val shell = OverlayPassthroughMultitouchFrameLayout(context).apply {
+                addView(
+                    action,
+                    FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                    ),
+                )
+            }
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
@@ -126,7 +137,7 @@ class OverlayQuickCommandsPopover(
                 x = bubbleX + offsets[index].first
                 y = bubbleY + offsets[index].second
             }
-            manager.addView(action, params)
+            manager.addView(shell, params)
             action.animate()
                 .alpha(1f)
                 .scaleX(1f)
@@ -134,7 +145,7 @@ class OverlayQuickCommandsPopover(
                 .setStartDelay(index * 22L)
                 .setDuration(150L)
                 .start()
-            views.add(action)
+            views.add(shell)
         }
 
         val step = dp(44)
@@ -164,6 +175,15 @@ class OverlayQuickCommandsPopover(
                     hide()
                 }
             }
+            val shell = OverlayPassthroughMultitouchFrameLayout(context).apply {
+                addView(
+                    action,
+                    FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                    ),
+                )
+            }
             val rParams = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
@@ -176,7 +196,7 @@ class OverlayQuickCommandsPopover(
                 x = bubbleX + rowStart + index * step
                 y = bubbleY + dp(108)
             }
-            manager.addView(action, rParams)
+            manager.addView(shell, rParams)
             action.animate()
                 .alpha(1f)
                 .scaleX(1f)
@@ -184,7 +204,7 @@ class OverlayQuickCommandsPopover(
                 .setStartDelay((commands.size + index) * 22L)
                 .setDuration(150L)
                 .start()
-            views.add(action)
+            views.add(shell)
         }
     }
 

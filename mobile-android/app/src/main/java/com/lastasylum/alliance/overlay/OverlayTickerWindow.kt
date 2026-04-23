@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.Handler
 import android.view.Gravity
 import android.view.WindowManager
+import android.widget.FrameLayout
 import android.widget.TextView
 
 /**
@@ -19,13 +20,15 @@ class OverlayTickerWindow(
     /** Вызывается после [addView] тикера — чтобы поднять полноэкранный чат поверх вспомогательных overlay-окон. */
     private val onTickerWindowAttached: () -> Unit = {},
 ) {
+    /** Корень окна (вешается на [WindowManager]); текст — дочерний [TextView]. */
+    private var tickerHost: OverlayPassthroughMultitouchFrameLayout? = null
     private var tickerView: TextView? = null
     private var tickerParams: WindowManager.LayoutParams? = null
 
     private val tickerHideRunnable = Runnable { removeTickerFromWindowSync() }
 
     fun ensureTicker() {
-        if (tickerView != null) return
+        if (tickerHost != null) return
         val manager = windowManagerProvider() ?: return
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -55,9 +58,20 @@ class OverlayTickerWindow(
             OverlayTickerUi.applyTickerStyle(context, this)
         }
 
+        val host = OverlayPassthroughMultitouchFrameLayout(context).apply {
+            addView(
+                ticker,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+        }
+
+        tickerHost = host
         tickerView = ticker
         tickerParams = params
-        manager.addView(ticker, params)
+        manager.addView(host, params)
         onTickerWindowAttached()
     }
 
@@ -79,16 +93,17 @@ class OverlayTickerWindow(
     fun syncTickerPosition() {
         val manager = windowManagerProvider() ?: return
         val params = tickerParams ?: return
-        val ticker = tickerView ?: return
+        val host = tickerHost ?: return
         params.x = dp(HORIZONTAL_MARGIN_DP)
         params.y = dp(tickerYDp())
-        runCatching { manager.updateViewLayout(ticker, params) }
+        runCatching { manager.updateViewLayout(host, params) }
     }
 
     private fun removeTickerFromWindowSync() {
         val manager = windowManagerProvider() ?: return
-        val ticker = tickerView ?: return
-        runCatching { manager.removeView(ticker) }
+        val host = tickerHost ?: return
+        runCatching { manager.removeView(host) }
+        tickerHost = null
         tickerView = null
         tickerParams = null
         mainHandler.removeCallbacks(tickerHideRunnable)
