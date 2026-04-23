@@ -254,8 +254,9 @@ object GameForegroundGate {
         // may still think the game "wins" and bring the overlay back on top of the app.
         if (hinted == alliance) return false
         // If the OS tells us the user most recently resumed some other app (launcher/settings/etc),
-        // treat it as "not in game" to avoid leaving the overlay on screen after the game is minimized.
-        if (hinted != null && hinted != alliance && !targetSet.contains(hinted)) return false
+        // do NOT immediately return false: on some ROMs (MIUI/HyperOS), resume events may temporarily
+        // point to launcher/system while the game is still on screen. Instead, fall through to the
+        // rest of heuristics (package-only events, resume timeline, TTF growth, lastUsed tie).
         if (hinted != null && targetSet.contains(hinted)) return true
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return false
         val end = System.currentTimeMillis()
