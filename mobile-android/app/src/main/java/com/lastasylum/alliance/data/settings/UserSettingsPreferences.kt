@@ -20,8 +20,8 @@ class UserSettingsPreferences(context: Context) {
         prefs.edit().putBoolean(KEY_QUIET, value).apply()
     }
 
-    /** Fewer floating controls: no chat strip on overlay, slightly smaller mic bubble. */
-    fun isCompactOverlay(): Boolean = prefs.getBoolean(KEY_COMPACT_OVERLAY, true)
+    /** Slightly smaller mic bubble in overlay; chat strip is always shown. */
+    fun isCompactOverlay(): Boolean = prefs.getBoolean(KEY_COMPACT_OVERLAY, false)
 
     fun setCompactOverlay(value: Boolean) {
         prefs.edit().putBoolean(KEY_COMPACT_OVERLAY, value).apply()

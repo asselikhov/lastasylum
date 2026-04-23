@@ -96,9 +96,6 @@ class CombatOverlayService : Service() {
     private var windowManager: WindowManager? = null
     private var overlayView: FrameLayout? = null
     private var overlayBubble: FrameLayout? = null
-    private var lockHost: FrameLayout? = null
-    private var lockFab: FloatingActionButton? = null
-    private var lockParams: WindowManager.LayoutParams? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val overlayTicker by lazy {
@@ -1007,6 +1004,7 @@ class CombatOverlayService : Service() {
 
         val subRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             visibility = View.GONE
             setPadding(dp(8), 0, 0, 0)
             addView(subAttack, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(6) })
@@ -1041,7 +1039,8 @@ class CombatOverlayService : Service() {
 
         val messageRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+            // TOP: «Атака/Защита» в одной линии с верхней кнопкой колонки (история), а не по центру всей колонки.
+            gravity = Gravity.TOP
             addView(
                 messageFabColumn,
                 LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT),
@@ -1245,7 +1244,6 @@ class CombatOverlayService : Service() {
         overlayTicker.ensureTicker()
         overlayTicker.syncTickerPosition()
         rebalanceOverlayChatWindowZOrder()
-        ensureLockButton()
         applyOverlayVisibilityState()
         windowRoot.post {
             syncOverlayPanelEdgeLayout()
@@ -1253,90 +1251,14 @@ class CombatOverlayService : Service() {
         }
     }
 
-    private fun ensureLockButton() {
-        if (lockHost != null) return
-        val manager = windowManager ?: return
-        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
-
-        val touchSide = dp(64)
-        val fabSide = dp(48)
-        val params = WindowManager.LayoutParams(
-            touchSide,
-            touchSide,
-            type,
-            OverlayWindowLayout.popupWindowFlags(),
-            android.graphics.PixelFormat.TRANSLUCENT,
-        ).apply {
-            OverlayWindowLayout.applyPopupLayoutCompat(this)
-            gravity = Gravity.TOP or Gravity.START
-            val layout = OverlayLayoutDp.forPreset(
-                AppContainer.from(this@CombatOverlayService).userSettingsPreferences.getOverlayLayoutPreset(),
-            )
-            x = dp(layout.lockX)
-            y = dp(layout.lockY)
-        }
-
-        val lockCtx = OverlayTickerUi.themedFabContext(this)
-        val fab = FloatingActionButton(lockCtx).apply {
-            OverlayTickerUi.styleOverlayFab(lockCtx, this, 48f)
-            refreshLockFabIcon(this)
-        }
-        val host = FrameLayout(this).apply {
-            isClickable = true
-            addView(
-                fab,
-                FrameLayout.LayoutParams(fabSide, fabSide, Gravity.CENTER),
-            )
-        }
-        val wmLock = windowManager ?: return
-        OverlayWindowDragHelper.attachDraggableFab(
-            this,
-            wmLock,
-            host,
-            params,
-            isDragLocked = {
-                AppContainer.from(this@CombatOverlayService).userSettingsPreferences.isOverlayDragLocked()
-            },
-            onTap = {
-                val prefs = AppContainer.from(this@CombatOverlayService).userSettingsPreferences
-                prefs.setOverlayDragLocked(!prefs.isOverlayDragLocked())
-                refreshLockFabIcon(fab)
-            },
-        )
-
-        lockHost = host
-        lockFab = fab
-        lockParams = params
-        manager.addView(host, params)
-    }
-
-    private fun refreshLockFabIcon(button: FloatingActionButton) {
-        val locked = AppContainer.from(this).userSettingsPreferences.isOverlayDragLocked()
-        button.setImageResource(
-            if (locked) R.drawable.ic_overlay_lock_locked else R.drawable.ic_overlay_lock_open,
-        )
-        button.contentDescription = getString(
-            if (locked) R.string.overlay_cd_unlock_positions else R.string.overlay_cd_lock_positions,
-        )
-    }
-
     private fun applyOverlayVisibilityState() {
         val bubbleContainer = overlayView
-        val lock = lockFab
-        val compactStrip = AppContainer.from(this).userSettingsPreferences.isCompactOverlay()
-        chatStripHost?.visibility = if (compactStrip) View.GONE else View.VISIBLE
+        chatStripHost?.visibility = View.VISIBLE
         bubbleContainer?.animate()?.cancel()
         bubbleContainer?.visibility = View.VISIBLE
         bubbleContainer?.alpha = 1f
         bubbleContainer?.scaleX = 1f
         bubbleContainer?.scaleY = 1f
-        lockHost?.visibility = View.VISIBLE
-        lock?.let { refreshLockFabIcon(it) }
         overlayTicker.ensureTicker()
         rebalanceOverlayChatWindowZOrder()
     }
@@ -1623,7 +1545,6 @@ class CombatOverlayService : Service() {
         overlayTicker.hideTicker()
         quickCommandsPopover.hide()
         val wm = windowManager ?: systemWindowManager()
-        removeLockButton(wm)
         removeChatStripWindow(wm)
         val view = overlayView
         if (view != null && wm != null) {
@@ -1644,15 +1565,6 @@ class CombatOverlayService : Service() {
         overlayBtnMessageFab = null
         overlayPanelAnchoredEnd = false
         windowManager = null
-    }
-
-    private fun removeLockButton(forManager: WindowManager? = null) {
-        val manager = forManager ?: windowManager ?: return
-        val host = lockHost ?: return
-        runCatching { manager.removeView(host) }
-        lockHost = null
-        lockFab = null
-        lockParams = null
     }
 
     companion object {
