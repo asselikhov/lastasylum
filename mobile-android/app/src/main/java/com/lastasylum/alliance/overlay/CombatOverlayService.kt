@@ -744,27 +744,30 @@ class CombatOverlayService : Service() {
             WindowManager.LayoutParams.TYPE_PHONE
         }
 
+        val stripMaxWidth =
+            (resources.displayMetrics.widthPixels - dp(20)).coerceAtLeast(dp(220))
         val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             type,
             OverlayWindowLayout.popupWindowFlags(),
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
-            gravity = Gravity.TOP or Gravity.START
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             x = 0
             y = dp(12)
         }
 
         val stripLines = OverlayChatStripUi.createLinesContainer(this)
-        val stripScroll = ScrollView(this).apply {
+        val stripScroll = OverlayStripScrollView(this).apply {
             OverlayChatStripUi.styleStripScroll(this@CombatOverlayService, this)
             isFillViewport = true
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
             addView(
                 stripLines,
                 FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    stripMaxWidth,
                     FrameLayout.LayoutParams.WRAP_CONTENT,
                 ),
             )
@@ -777,7 +780,7 @@ class CombatOverlayService : Service() {
             addView(
                 stripScroll,
                 FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
                     dp(210),
                 ),
             )
