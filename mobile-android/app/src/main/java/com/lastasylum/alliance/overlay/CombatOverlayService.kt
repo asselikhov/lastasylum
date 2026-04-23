@@ -1574,7 +1574,8 @@ class CombatOverlayService : Service() {
 
     companion object {
         private const val STRIP_TICK_MS = 45_000L
-        private const val GAME_GATE_POLL_MS = 2_000L
+        /** Реже дергать UsageStats — меньше нагрузки на CPU/binder рядом с игрой; скрытие оверлея после выхода из игры — до ~4s. */
+        private const val GAME_GATE_POLL_MS = 4_000L
         private const val OVERLAY_HISTORY_LOAD = 150
         /** Matches backend / user schema: ingame | online | away */
         private const val OVERLAY_PRESENCE_INGAME = "ingame"

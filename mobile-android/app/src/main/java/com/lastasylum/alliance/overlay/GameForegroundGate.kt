@@ -253,7 +253,8 @@ object GameForegroundGate {
         if (!hasUsageStatsAccess(context)) return false
         val alliance = context.packageName
         val targetSet = targets.toSet()
-        invalidateForegroundHintCache()
+        // Не вызывать invalidateForegroundHintCache() здесь: каждый тик гейта сбрасывал кэш lastResumed (~1.5s)
+        // и лишний раз гонял queryEvents/UsageStats — лишняя нагрузка на binder при активной игре.
         val hinted = lastResumedPackage(context)
         // Never show the overlay while the SquadRelay app itself is in foreground.
         // Otherwise, after minimizing the game and opening SquadRelay, heuristics (TTF/lastUsed)
