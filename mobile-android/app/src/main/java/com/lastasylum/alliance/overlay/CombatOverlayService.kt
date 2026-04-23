@@ -196,7 +196,8 @@ class CombatOverlayService : Service() {
     private var overlayBtnMessageFab: FloatingActionButton? = null
     private var overlayPanelAnchoredEnd: Boolean = false
 
-    private val stripBuffer = OverlayChatStripBuffer()
+    // Keep more than 3 in buffer for scroll; UI height shows ~3.
+    private val stripBuffer = OverlayChatStripBuffer(maxPreviewMessages = 24)
     private var overlayHistoryRoot: FrameLayout? = null
     private var overlayHistoryScroll: ScrollView? = null
     private var overlayHistoryLines: LinearLayout? = null
@@ -765,7 +766,7 @@ class CombatOverlayService : Service() {
         val stripLines = OverlayChatStripUi.createLinesContainer(this)
         val stripScroll = ScrollView(this).apply {
             OverlayChatStripUi.styleStripScroll(this@CombatOverlayService, this)
-            isFillViewport = false
+            isFillViewport = true
             addView(
                 stripLines,
                 FrameLayout.LayoutParams(
@@ -783,7 +784,7 @@ class CombatOverlayService : Service() {
                 stripScroll,
                 FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    dp(210),
                 ),
             )
         }
@@ -1147,7 +1148,8 @@ class CombatOverlayService : Service() {
         }
 
         refreshLockIcon()
-        overlayCollapsed = false
+        // Start hidden: only toggle button remains visible.
+        overlayCollapsed = true
         messageExpanded = false
         applyControlsVisibility()
 
@@ -1276,6 +1278,8 @@ class CombatOverlayService : Service() {
         overlayTicker.ensureTicker()
         overlayTicker.syncTickerPosition()
         rebalanceOverlayChatWindowZOrder()
+        // Start in collapsed state on launch.
+        applyOverlayVisibilityState()
         windowRoot.post {
             syncOverlayPanelEdgeLayout()
             beginOverlayChatSubscription()
