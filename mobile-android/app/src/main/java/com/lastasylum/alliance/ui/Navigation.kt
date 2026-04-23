@@ -24,10 +24,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -96,7 +95,8 @@ fun AppNavigation(
 
     LaunchedEffect(overlayTabVisible) {
         if (!overlayTabVisible) {
-            CombatOverlayService.stopService(activity.applicationContext)
+            // Must not clear the user's "show panel" preference — only stop the runtime FGS.
+            CombatOverlayService.stopRuntime(activity.applicationContext)
         }
     }
 
@@ -152,10 +152,11 @@ fun AppNavigation(
             val keyboardOpen by remember(imeInsets, density) {
                 derivedStateOf { imeInsets.getBottom(density) > 0 }
             }
+            // Только короткий fade: expand/shrink вместе с imePadding даёт рывки при открытии клавиатуры.
             AnimatedVisibility(
                 visible = !keyboardOpen,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically(),
+                enter = fadeIn(animationSpec = tween(45)),
+                exit = fadeOut(animationSpec = tween(35)),
             ) {
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceContainerLow,

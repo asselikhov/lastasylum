@@ -12,10 +12,9 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -124,8 +123,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -1156,7 +1153,6 @@ private fun ChatComposer(
     val zlobStems = remember(context) { ZlobyakaStickerPack.listSortedStems(context) }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
-    val imeVisible = WindowInsets.isImeVisible
     val focusRequester = remember { FocusRequester() }
     val gifScroll = rememberScrollState()
     val pickImagesLauncher = if (activityResultOwner != null) {
@@ -1281,27 +1277,20 @@ private fun ChatComposer(
             .fillMaxWidth()
             .padding(vertical = SquadRelayDimens.itemGap),
     ) {
-        Surface(
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp,
-            shape = RoundedCornerShape(
-                topStart = 20.dp,
-                topEnd = 20.dp,
-                bottomStart = if (showMediaPanel) 0.dp else 20.dp,
-                bottomEnd = if (showMediaPanel) 0.dp else 20.dp,
-            ),
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-            modifier = Modifier.fillMaxWidth(),
+        HorizontalDivider(
+            modifier = Modifier.padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
+            thickness = 0.5.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    top = 8.dp,
+                    bottom = if (showMediaPanel) 2.dp else SquadRelayDimens.composerInnerPadding,
+                ),
+            verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        top = SquadRelayDimens.composerInnerPadding,
-                        bottom = if (showMediaPanel) 2.dp else SquadRelayDimens.composerInnerPadding,
-                    ),
-                verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
-            ) {
                 if (pickedImageUris.isNotEmpty()) {
                     val maxThumbs = 4
                     val visibleThumbs = pickedImageUris.take(maxThumbs)
@@ -1337,12 +1326,14 @@ private fun ChatComposer(
                                 modifier = Modifier
                                     .size(64.dp)
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                                    .background(
+                                        MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.55f),
+                                    ),
                             ) {
                                 AsyncImage(
                                     model = ImageRequest.Builder(context)
                                         .data(uri)
-                                        .crossfade(true)
+                                        .crossfade(false)
                                         .build(),
                                     contentDescription = null,
                                     modifier = Modifier.fillMaxSize(),
@@ -1404,7 +1395,9 @@ private fun ChatComposer(
                 replyToMessage?.let { reply ->
                     Surface(
                         shape = MaterialTheme.shapes.medium,
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f),
+                        tonalElevation = 0.dp,
+                        shadowElevation = 0.dp,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
@@ -1453,7 +1446,11 @@ private fun ChatComposer(
                 ) {
                     Surface(
                         shape = RoundedCornerShape(26.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        color = Color.Transparent,
+                        border = BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                        ),
                         tonalElevation = 0.dp,
                         shadowElevation = 0.dp,
                         modifier = Modifier
@@ -1628,25 +1625,23 @@ private fun ChatComposer(
                     }
                 }
             }
-        }
 
-        // IME animation in overlay can be janky on OEM ROMs; avoid size animations while keyboard moves.
-        val panelEnter = if (imeVisible) fadeIn() else (expandVertically() + fadeIn())
-        val panelExit = if (imeVisible) fadeOut() else (shrinkVertically() + fadeOut())
+        // Короткий fade без изменения высоты — меньше конфликтов с imePadding при клавиатуре.
         AnimatedVisibility(
             visible = showMediaPanel,
-            enter = panelEnter,
-            exit = panelExit,
+            enter = fadeIn(animationSpec = tween(90)),
+            exit = fadeOut(animationSpec = tween(70)),
         ) {
-            Surface(
-                shape = RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp),
-                tonalElevation = 0.dp,
-                shadowElevation = 0.dp,
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .navigationBarsPadding(),
+                    .navigationBarsPadding()
+                    .clip(RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp)),
             ) {
+                HorizontalDivider(
+                    thickness = 0.5.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                )
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()

@@ -138,6 +138,7 @@ object OverlayChatHistoryPanel {
 
         val inputLayout = TextInputLayout(themed).apply {
             boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_OUTLINE
+            setBoxBackgroundColorStateList(ColorStateList.valueOf(Color.TRANSPARENT))
             defaultHintTextColor = ColorStateList.valueOf(Color.parseColor("#B8B4C9"))
             setHintTextColor(ColorStateList.valueOf(Color.parseColor("#B8B4C9")))
             hint = context.getString(R.string.overlay_history_input_hint)
@@ -195,7 +196,11 @@ object OverlayChatHistoryPanel {
             setPadding(padH, dp(context, 8f).toInt(), padH, dp(context, 10f).toInt())
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
-                setColor(Color.parseColor("#F0121018"))
+                setColor(Color.TRANSPARENT)
+                setStroke(
+                    dp(context, 1f).toInt().coerceAtLeast(1),
+                    Color.parseColor("#408899CC"),
+                )
             }
             addView(inputLayout)
             addView(send)
