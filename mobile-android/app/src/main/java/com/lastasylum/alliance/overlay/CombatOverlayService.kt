@@ -1667,8 +1667,8 @@ class CombatOverlayService : Service() {
             gravity = Gravity.TOP or Gravity.START
             x = 0
             y = 0
-            // ADJUST_RESIZE is deprecated on newer APIs; pan keeps the focused field visible over IME.
-            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
+            // In overlay, ADJUST_PAN often looks janky; RESIZE is smoother for Compose layouts.
+            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
         }
 
         val overlayUiContext = OverlayTickerUi.themedFabContext(this)

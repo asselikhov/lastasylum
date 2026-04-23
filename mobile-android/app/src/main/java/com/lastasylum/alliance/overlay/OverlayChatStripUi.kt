@@ -10,6 +10,7 @@ import android.content.res.ColorStateList
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.view.setPadding
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -42,6 +43,8 @@ object OverlayChatStripUi {
     private val cardFill = Color.parseColor("#E8141828")
     private val cardStroke = Color.parseColor("#AA9B7CFF")
     private val noticeAvatarFill = Color.parseColor("#9B7CFF")
+    private val rolePillFill = Color.parseColor("#2BFFFFFF")
+    private val rolePillStroke = Color.parseColor("#409B7CFF")
 
     fun styleStripScroll(context: Context, scroll: ScrollView) {
         scroll.isVerticalScrollBarEnabled = true
@@ -222,14 +225,23 @@ object OverlayChatStripUi {
             val r = senderRole.orEmpty()
             visibility = if (r.isNotBlank()) View.VISIBLE else View.GONE
             text = r
-            setTextColor(Color.parseColor("#9AA3C4"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f)
+            setTextColor(Color.parseColor("#E8EAEF"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
+            typeface = Typeface.DEFAULT_BOLD
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
             layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(context, 1f).toInt() }
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(context, 4f).toInt() }
+            setPadding(dp(context, 8f).toInt(), dp(context, 3f).toInt(), dp(context, 8f).toInt(), dp(context, 3f).toInt())
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(context, 999f)
+                setColor(rolePillFill)
+                setStroke(dp(context, 1f).toInt().coerceAtLeast(1), rolePillStroke)
+            }
+            alpha = 0.92f
         }
 
         val stickerSide = dp(context, 64f).toInt()
@@ -293,10 +305,10 @@ object OverlayChatStripUi {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(
+                dp(context, 12f).toInt(),
+                dp(context, 9f).toInt(),
                 dp(context, 10f).toInt(),
-                dp(context, 7f).toInt(),
-                dp(context, 8f).toInt(),
-                dp(context, 7f).toInt(),
+                dp(context, 9f).toInt(),
             )
             addView(avatar)
             addView(textColumn)
@@ -311,9 +323,9 @@ object OverlayChatStripUi {
             ).apply {
                 bottomMargin = dp(context, 5f).toInt()
             }
-            radius = cornerCard
-            cardElevation = dp(context, 5f)
-            maxCardElevation = dp(context, 10f)
+            radius = dp(context, 20f)
+            cardElevation = dp(context, 2.5f)
+            maxCardElevation = dp(context, 6f)
             strokeWidth = dp(context, 1.25f).toInt().coerceAtLeast(1)
             setStrokeColor(ColorStateList.valueOf(cardStroke))
             setCardBackgroundColor(ColorStateList.valueOf(cardFill))

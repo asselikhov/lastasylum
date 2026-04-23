@@ -48,6 +48,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -2358,53 +2360,11 @@ private fun ChatBubbleInnerColumn(
                 if (imageAttachments.isNotEmpty()) {
                     val fullResolvedUrls =
                         imageAttachments.map { resolvedChatAttachmentImageUrl(it.url) }
-                    val maxInBubble = 4
-                    val shown = imageAttachments.take(maxInBubble)
-                    val extra = (imageAttachments.size - shown.size).coerceAtLeast(0)
-                    LazyRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        items(shown, key = { it.url }) { a ->
-                            val openIndex = imageAttachments.indexOf(a).coerceAtLeast(0)
-                            Box(
-                                modifier = Modifier
-                                    .size(160.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(Color.Black.copy(alpha = 0.06f))
-                                    .semantics {
-                                        contentDescription = messageImageTapLabel
-                                        role = Role.Button
-                                    }
-                                    .clickable {
-                                        openRemoteChatImagePreview(fullResolvedUrls, openIndex)
-                                    },
-                            ) {
-                                val abs = resolvedChatAttachmentImageUrl(a.url)
-                                AsyncImage(
-                                    model = chatAuthedImageRequest(bubbleContext, abs),
-                                    contentDescription = null,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop,
-                                )
-                                if (extra > 0 && a == shown.last()) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(Color.Black.copy(alpha = 0.35f)),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(
-                                            text = "+$extra",
-                                            color = Color.White,
-                                            style = MaterialTheme.typography.titleLarge,
-                                            fontWeight = FontWeight.SemiBold,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    TelegramLikeAttachmentsGrid(
+                        urls = fullResolvedUrls,
+                        contentDescription = messageImageTapLabel,
+                        onOpen = { idx -> openRemoteChatImagePreview(fullResolvedUrls, idx) },
+                    )
                 }
             }
             Row(
@@ -2448,6 +2408,109 @@ private fun ChatBubbleInnerColumn(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.error,
             )
+        }
+    }
+}
+
+@Composable
+private fun TelegramLikeAttachmentsGrid(
+    urls: List<String>,
+    contentDescription: String,
+    onOpen: (Int) -> Unit,
+) {
+    if (urls.isEmpty()) return
+    val maxShown = 4
+    val shown = urls.take(maxShown)
+    val extra = (urls.size - shown.size).coerceAtLeast(0)
+    val shape = RoundedCornerShape(16.dp)
+    val gap = 4.dp
+
+    @Composable
+    fun tile(idx: Int, modifier: Modifier) {
+        val u = shown.getOrNull(idx) ?: return
+        Box(
+            modifier = modifier
+                .clip(shape)
+                .background(Color.Black.copy(alpha = 0.06f))
+                .semantics {
+                    this.contentDescription = contentDescription
+                    role = Role.Button
+                }
+                .clickable { onOpen(idx) },
+        ) {
+            val ctx = LocalContext.current
+            AsyncImage(
+                model = chatAuthedImageRequest(ctx, u),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+            if (extra > 0 && idx == shown.lastIndex) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.38f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "+$extra",
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+        }
+    }
+
+    when (shown.size) {
+        1 -> tile(0, Modifier.fillMaxWidth().heightIn(min = 140.dp, max = 280.dp))
+        2 -> Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(190.dp),
+            horizontalArrangement = Arrangement.spacedBy(gap),
+        ) {
+            tile(0, Modifier.weight(1f).fillMaxHeight())
+            tile(1, Modifier.weight(1f).fillMaxHeight())
+        }
+        3 -> Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(220.dp),
+            horizontalArrangement = Arrangement.spacedBy(gap),
+        ) {
+            tile(0, Modifier.weight(1.3f).fillMaxHeight())
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(gap),
+            ) {
+                tile(1, Modifier.weight(1f).fillMaxWidth())
+                tile(2, Modifier.weight(1f).fillMaxWidth())
+            }
+        }
+        else -> Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(240.dp),
+            verticalArrangement = Arrangement.spacedBy(gap),
+        ) {
+            Row(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(gap),
+            ) {
+                tile(0, Modifier.weight(1f).fillMaxHeight())
+                tile(1, Modifier.weight(1f).fillMaxHeight())
+            }
+            Row(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(gap),
+            ) {
+                tile(2, Modifier.weight(1f).fillMaxHeight())
+                tile(3, Modifier.weight(1f).fillMaxHeight())
+            }
         }
     }
 }
