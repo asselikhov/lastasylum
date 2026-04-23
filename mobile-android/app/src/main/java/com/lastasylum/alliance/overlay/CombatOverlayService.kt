@@ -215,36 +215,80 @@ class CombatOverlayService : Service() {
     private var overlayChatViewModel: ChatViewModel? = null
     private var overlayChatOwner: OverlayChatComposeOwner? = null
 
+    private data class OverlayWindowFlagSnap(
+        val view: View,
+        val params: WindowManager.LayoutParams,
+        val prevFlags: Int,
+    )
+
+    /** Снимок флагов окон overlay на время системного пикера/permission (иначе они выше Activity и блокируют ввод). */
+    private val overlayTouchPassthroughSnaps = mutableListOf<OverlayWindowFlagSnap>()
+
+    private fun suspendOverlayWindowsForSystemActivity() {
+        if (overlayTouchPassthroughSnaps.isNotEmpty()) return
+        val mgr = windowManager ?: return
+        fun snap(params: WindowManager.LayoutParams?, view: View?) {
+            if (params == null || view == null || !view.isAttachedToWindow) return
+            overlayTouchPassthroughSnaps.add(OverlayWindowFlagSnap(view, params, params.flags))
+            val with = params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            if (params.flags != with) {
+                params.flags = with
+                runCatching { mgr.updateViewLayout(view, params) }
+            }
+        }
+        snap(overlayMainWindowParams, overlayView)
+        snap(overlayHistoryParams, overlayHistoryRoot)
+        snap(chatStripParams, chatStripHost)
+        overlayTicker.applyTouchPassthrough(true)
+        quickCommandsPopover.hide()
+    }
+
+    private fun resumeOverlayWindowsAfterSystemActivity() {
+        val mgr = windowManager
+        if (overlayTouchPassthroughSnaps.isNotEmpty() && mgr != null) {
+            for (snap in overlayTouchPassthroughSnaps) {
+                snap.params.flags = snap.prevFlags
+                if (snap.view.isAttachedToWindow) {
+                    runCatching { mgr.updateViewLayout(snap.view, snap.params) }
+                }
+            }
+            overlayTouchPassthroughSnaps.clear()
+        }
+        overlayTicker.applyTouchPassthrough(false)
+    }
+
     private val overlaySystemResultReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            val owner = overlayChatOwner ?: return
             val i = intent ?: return
             val requestCode = i.getIntExtra(OverlaySystemDialogActivity.EXTRA_REQUEST_CODE, -1)
             if (requestCode < 0) return
-
-            when (i.action) {
-                OverlaySystemDialogActivity.ACTION_OVERLAY_PICK_IMAGES_RESULT -> {
-                    val uris = i.getParcelableArrayListExtra<Uri>(OverlaySystemDialogActivity.EXTRA_URIS).orEmpty()
-                    // Build intent payload compatible with PickMultipleVisualMedia contract parsing:
-                    // ActivityResultContracts.PickMultipleVisualMedia -> GetMultipleContents.getClipDataUris(intent)
-                    val data = Intent().apply {
-                        if (uris.isNotEmpty()) {
-                            val clip = ClipData.newRawUri("images", uris.first())
-                            uris.drop(1).forEach { clip.addItem(ClipData.Item(it)) }
-                            clipData = clip
+            mainHandler.post {
+                resumeOverlayWindowsAfterSystemActivity()
+                val owner = overlayChatOwner ?: return@post
+                when (i.action) {
+                    OverlaySystemDialogActivity.ACTION_OVERLAY_PICK_IMAGES_RESULT -> {
+                        val uris = i.getParcelableArrayListExtra<Uri>(OverlaySystemDialogActivity.EXTRA_URIS).orEmpty()
+                        // Build intent payload compatible with PickMultipleVisualMedia contract parsing:
+                        // ActivityResultContracts.PickMultipleVisualMedia -> GetMultipleContents.getClipDataUris(intent)
+                        val data = Intent().apply {
+                            if (uris.isNotEmpty()) {
+                                val clip = ClipData.newRawUri("images", uris.first())
+                                uris.drop(1).forEach { clip.addItem(ClipData.Item(it)) }
+                                clipData = clip
+                            }
                         }
+                        owner.activityResultRegistry.dispatchResult(requestCode, android.app.Activity.RESULT_OK, data)
                     }
-                    owner.activityResultRegistry.dispatchResult(requestCode, android.app.Activity.RESULT_OK, data)
-                }
-                OverlaySystemDialogActivity.ACTION_OVERLAY_MIC_PERMISSION_RESULT -> {
-                    val granted = i.getBooleanExtra(OverlaySystemDialogActivity.EXTRA_GRANTED, false)
-                    val data = Intent().apply {
-                        putExtra(
-                            "androidx.activity.result.contract.extra.PERMISSION_GRANT_RESULTS",
-                            intArrayOf(if (granted) 0 else -1),
-                        )
+                    OverlaySystemDialogActivity.ACTION_OVERLAY_MIC_PERMISSION_RESULT -> {
+                        val granted = i.getBooleanExtra(OverlaySystemDialogActivity.EXTRA_GRANTED, false)
+                        val data = Intent().apply {
+                            putExtra(
+                                "androidx.activity.result.contract.extra.PERMISSION_GRANT_RESULTS",
+                                intArrayOf(if (granted) 0 else -1),
+                            )
+                        }
+                        owner.activityResultRegistry.dispatchResult(requestCode, android.app.Activity.RESULT_OK, data)
                     }
-                    owner.activityResultRegistry.dispatchResult(requestCode, android.app.Activity.RESULT_OK, data)
                 }
             }
         }
@@ -288,7 +332,18 @@ class CombatOverlayService : Service() {
                     putExtra(OverlaySystemDialogActivity.EXTRA_KIND, kind)
                     putExtra(OverlaySystemDialogActivity.EXTRA_REQUEST_CODE, requestCode)
                 }
-                startActivity(i)
+                suspendOverlayWindowsForSystemActivity()
+                try {
+                    startActivity(i)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Overlay system dialog start failed", e)
+                    resumeOverlayWindowsAfterSystemActivity()
+                    Toast.makeText(
+                        this@CombatOverlayService,
+                        e.toUserMessageRu(resources),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
             }
         }
 
@@ -1294,6 +1349,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun hideOverlayHistoryPanel() {
+        resumeOverlayWindowsAfterSystemActivity()
         val root = overlayHistoryRoot
         overlayHistoryVisible = false
         overlayHistoryInput?.let { hideOverlayIme(it) }
@@ -1560,6 +1616,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun removeOverlayControl() {
+        resumeOverlayWindowsAfterSystemActivity()
         recordingStartRunnable?.let { mainHandler.removeCallbacks(it) }
         recordingStartRunnable = null
         speechPipeline.cancelActiveSession()

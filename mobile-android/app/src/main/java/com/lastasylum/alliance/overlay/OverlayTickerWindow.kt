@@ -24,6 +24,8 @@ class OverlayTickerWindow(
     private var tickerHost: OverlayPassthroughMultitouchFrameLayout? = null
     private var tickerView: TextView? = null
     private var tickerParams: WindowManager.LayoutParams? = null
+    /** Сохранённые флаги до [applyTouchPassthrough], чтобы восстановить после системного пикера. */
+    private var tickerFlagsBeforePassthrough: Int? = null
 
     private val tickerHideRunnable = Runnable { removeTickerFromWindowSync() }
 
@@ -100,6 +102,34 @@ class OverlayTickerWindow(
         runCatching { manager.updateViewLayout(host, params) }
     }
 
+    /**
+     * Пока открыта Activity с системным пикером/разрешениями, overlay-окна остаются выше неё по Z-order.
+     * [FLAG_NOT_TOUCHABLE] на тикере (если окно есть) пропускает тапы к Activity под оверлеем.
+     */
+    fun applyTouchPassthrough(enable: Boolean) {
+        mainHandler.post {
+            val manager = windowManagerProvider() ?: return@post
+            val params = tickerParams ?: return@post
+            val host = tickerHost ?: return@post
+            if (!host.isAttachedToWindow) return@post
+            if (enable) {
+                if (tickerFlagsBeforePassthrough == null) {
+                    tickerFlagsBeforePassthrough = params.flags
+                }
+                val with = params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                if (params.flags != with) {
+                    params.flags = with
+                    runCatching { manager.updateViewLayout(host, params) }
+                }
+            } else {
+                val saved = tickerFlagsBeforePassthrough ?: return@post
+                tickerFlagsBeforePassthrough = null
+                params.flags = saved
+                runCatching { manager.updateViewLayout(host, params) }
+            }
+        }
+    }
+
     private fun removeTickerFromWindowSync() {
         val manager = windowManagerProvider() ?: return
         val host = tickerHost ?: return
@@ -107,6 +137,7 @@ class OverlayTickerWindow(
         tickerHost = null
         tickerView = null
         tickerParams = null
+        tickerFlagsBeforePassthrough = null
         mainHandler.removeCallbacks(tickerHideRunnable)
     }
 
