@@ -20,7 +20,6 @@ object OverlayWindowLayout {
     /** Полноэкранная панель истории: без NOT_FOCUSABLE — нужны поле ввода и IME. */
     fun historyPanelWindowFlags(): Int =
         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
 
     fun applyPopupLayoutCompat(params: WindowManager.LayoutParams) {

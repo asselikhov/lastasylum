@@ -1633,8 +1633,8 @@ class CombatOverlayService : Service() {
             gravity = Gravity.TOP or Gravity.START
             x = 0
             y = 0
-            // In overlay, ADJUST_PAN often looks janky; RESIZE is smoother for Compose layouts.
-            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            // Let Compose handle IME insets (ChatScreen uses imePadding); avoids double-adjust jank.
+            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
         }
 
         val overlayUiContext = OverlayTickerUi.themedFabContext(this)
