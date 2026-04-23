@@ -88,6 +88,7 @@ object OverlayChatStripUi {
                 ColorUtils.blendARGB(noticeAvatarFill, Color.BLACK, 0.25f),
                 noticeAvatarFill,
             ),
+            teamTag = null,
             titleText = title,
             titleColor = Color.parseColor("#F4F0FF"),
             senderRole = null,
@@ -101,7 +102,8 @@ object OverlayChatStripUi {
     fun addLine(
         context: Context,
         container: LinearLayout,
-        sender: String,
+        teamTag: String?,
+        username: String,
         text: String,
         senderId: String?,
         senderRole: String?,
@@ -117,9 +119,9 @@ object OverlayChatStripUi {
         } else {
             safe
         }
-        val displayName = sender.trim().take(22).ifBlank { "—" }
-        val initial = displayName.first().uppercaseChar()
-        val (accent, bodyMuted) = colorsFor(senderId, displayName, selfUserId)
+        val safeName = username.trim().take(22).ifBlank { "—" }
+        val initial = safeName.first().uppercaseChar()
+        val (accent, bodyMuted) = colorsFor(senderId, safeName, selfUserId)
         val isSelf = !selfUserId.isNullOrBlank() && senderId == selfUserId
         val titleColor = if (isSelf) selfNameColor else Color.parseColor("#F4F0FF")
         val bodyColor = if (isSelf) selfTextColor else bodyMuted
@@ -132,7 +134,8 @@ object OverlayChatStripUi {
             container = container,
             avatarLetter = initial.toString(),
             avatarGradient = avatarColors,
-            titleText = displayName,
+            teamTag = teamTag?.trim()?.takeIf { it.isNotBlank() }?.take(8),
+            titleText = safeName,
             titleColor = titleColor,
             senderRole = senderRole?.trim()?.take(12)?.takeIf { it.isNotBlank() },
             stickerStem = stickerStem,
@@ -147,6 +150,7 @@ object OverlayChatStripUi {
         container: LinearLayout,
         avatarLetter: String,
         avatarGradient: IntArray,
+        teamTag: String?,
         titleText: String,
         titleColor: Int,
         senderRole: String?,
@@ -177,6 +181,23 @@ object OverlayChatStripUi {
             }
         }
 
+        val tagView = TextView(context).apply {
+            val t = teamTag.orEmpty()
+            visibility = if (t.isNotBlank()) View.VISIBLE else View.GONE
+            text = "[$t]"
+            setTextColor(Color.parseColor("#C4B5FD"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            typeface = Typeface.DEFAULT_BOLD
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                marginEnd = dp(context, 6f).toInt()
+            }
+        }
+
         val titleView = TextView(context).apply {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -188,6 +209,13 @@ object OverlayChatStripUi {
             typeface = Typeface.DEFAULT_BOLD
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
+        }
+
+        val titleRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(tagView)
+            addView(titleView)
         }
 
         val roleView = TextView(context).apply {
@@ -242,7 +270,7 @@ object OverlayChatStripUi {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 1f,
             )
-            addView(titleView)
+            addView(titleRow)
             addView(roleView)
             addView(bodyView)
         }

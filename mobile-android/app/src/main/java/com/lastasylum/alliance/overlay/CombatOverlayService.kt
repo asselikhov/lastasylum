@@ -182,6 +182,8 @@ class CombatOverlayService : Service() {
     private var messageExpanded = false
     private var chatStripScroll: ScrollView? = null
     private var chatStripLines: LinearLayout? = null
+    private var chatStripHost: FrameLayout? = null
+    private var chatStripParams: WindowManager.LayoutParams? = null
     private var overlayMessageListener: ((ChatMessage) -> Unit)? = null
     /** Параметры главного окна оверлея (перетаскивание + определение «у правого края»). */
     private var overlayMainWindowParams: WindowManager.LayoutParams? = null
@@ -638,7 +640,8 @@ class CombatOverlayService : Service() {
             OverlayChatStripUi.addLine(
                 this,
                 lines,
-                chatSenderDisplayWithTag(msg.senderTeamTag, msg.senderUsername),
+                teamTag = msg.senderTeamTag,
+                username = msg.senderUsername,
                 msg.text,
                 msg.senderId,
                 msg.senderRole,
@@ -725,6 +728,75 @@ class CombatOverlayService : Service() {
         chatStripScroll?.post {
             chatStripScroll?.fullScroll(View.FOCUS_DOWN)
         }
+    }
+
+    private fun removeChatStripWindow(forManager: WindowManager? = null) {
+        val mgr = forManager ?: windowManager ?: systemWindowManager() ?: return
+        val host = chatStripHost ?: return
+        runCatching { mgr.removeView(host) }
+        chatStripHost = null
+        chatStripParams = null
+        chatStripScroll = null
+        chatStripLines = null
+    }
+
+    private fun ensureChatStripWindow(manager: WindowManager) {
+        if (chatStripHost != null) return
+        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else {
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
+        }
+
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            type,
+            OverlayWindowLayout.popupWindowFlags(),
+            android.graphics.PixelFormat.TRANSLUCENT,
+        ).apply {
+            OverlayWindowLayout.applyPopupLayoutCompat(this)
+            gravity = Gravity.TOP or Gravity.START
+            x = 0
+            y = dp(12)
+        }
+
+        val stripLines = OverlayChatStripUi.createLinesContainer(this)
+        val stripScroll = ScrollView(this).apply {
+            OverlayChatStripUi.styleStripScroll(this@CombatOverlayService, this)
+            isFillViewport = false
+            addView(
+                stripLines,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+        }
+
+        val host = FrameLayout(this).apply {
+            elevation = 18f
+            setPadding(dp(10), 0, dp(10), 0)
+            setBackgroundColor(Color.TRANSPARENT)
+            addView(
+                stripScroll,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+        }
+
+        val attach = runCatching { manager.addView(host, params) }
+        if (attach.isFailure) {
+            Log.e(TAG, "WindowManager.addView(chatStrip) failed", attach.exceptionOrNull())
+            return
+        }
+        chatStripHost = host
+        chatStripParams = params
+        chatStripScroll = stripScroll
+        chatStripLines = stripLines
     }
 
     private fun beginOverlayChatSubscription() {
@@ -927,13 +999,20 @@ class CombatOverlayService : Service() {
                 contentDescription = cd
             }
 
-        val btnCollapse = makeMiniFab(
-            iconRes = R.drawable.ic_overlay_ui_collapse,
-            cd = getString(R.string.overlay_cd_toggle_hide_ui),
-        )
+        val btnCollapse = ImageView(this).apply {
+            setImageResource(R.drawable.ic_overlay_ui_collapse)
+            contentDescription = getString(R.string.overlay_cd_toggle_hide_ui)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            isClickable = true
+            isFocusable = true
+        }
         val btnMessage = makeMiniFab(
             iconRes = R.drawable.ic_overlay_history,
             cd = getString(R.string.overlay_cd_history),
+        )
+        val btnChat = makeMiniFab(
+            iconRes = R.drawable.ic_overlay_send,
+            cd = "Чат",
         )
         val btnMic = makeMiniFab(
             iconRes = R.drawable.ic_overlay_mic,
@@ -955,9 +1034,7 @@ class CombatOverlayService : Service() {
         val subDefense = makeMiniFab(iconRes = R.drawable.ic_overlay_send, cd = "Защита").apply {
             setOnClickListener { Toast.makeText(this@CombatOverlayService, "Защита (заглушка)", Toast.LENGTH_SHORT).show() }
         }
-        val subChat = makeMiniFab(iconRes = R.drawable.ic_overlay_history, cd = "Чат").apply {
-            setOnClickListener { showOverlayHistoryPanel() }
-        }
+        btnChat.setOnClickListener { showOverlayHistoryPanel() }
 
         val subRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -965,7 +1042,6 @@ class CombatOverlayService : Service() {
             setPadding(dp(8), 0, 0, 0)
             addView(subAttack, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(6) })
             addView(subDefense, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(6) })
-            addView(subChat, LinearLayout.LayoutParams(dp(44), dp(44)))
         }
 
         lockIcon.setPadding(dp(8), dp(8), dp(8), dp(8))
@@ -973,6 +1049,12 @@ class CombatOverlayService : Service() {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             addView(btnMessage, LinearLayout.LayoutParams(dp(44), dp(44)))
+            addView(
+                btnChat,
+                LinearLayout.LayoutParams(dp(44), dp(44)).apply {
+                    topMargin = dp(6)
+                },
+            )
             addView(
                 btnMic,
                 LinearLayout.LayoutParams(dp(44), dp(44)).apply {
@@ -1010,32 +1092,10 @@ class CombatOverlayService : Service() {
             )
         }
 
-        val stripLines = OverlayChatStripUi.createLinesContainer(this)
-        val stripScroll = ScrollView(this).apply {
-            OverlayChatStripUi.styleStripScroll(this@CombatOverlayService, this)
-            isFillViewport = false
-            addView(
-                stripLines,
-                FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                ),
-            )
-        }
-        chatStripScroll = stripScroll
-        chatStripLines = stripLines
-
         val outerRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.BOTTOM
             addView(buttonStack, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-            addView(
-                stripScroll,
-                LinearLayout.LayoutParams(0, dp(200), 1f).apply {
-                    gravity = Gravity.BOTTOM
-                    marginStart = dp(8)
-                },
-            )
         }
 
         lateinit var windowRoot: FrameLayout
@@ -1195,12 +1255,13 @@ class CombatOverlayService : Service() {
         overlayView = windowRoot
         overlayHistoryFab = null
 
+        ensureChatStripWindow(manager)
+
         val attach = runCatching { manager.addView(overlayView, overlayMainWindowParams) }
         if (attach.isFailure) {
             Log.e(TAG, "WindowManager.addView(overlay) failed", attach.exceptionOrNull())
             overlayView = null
-            chatStripScroll = null
-            chatStripLines = null
+            removeChatStripWindow(manager)
             overlayMainWindowParams = null
             overlayOuterRow = null
             overlayControlsStack = null
@@ -1363,7 +1424,7 @@ class CombatOverlayService : Service() {
             hideOverlayHistoryPanel()
             quickCommandsPopover.hide()
             overlayTicker.hideTicker()
-            chatStripScroll?.visibility = View.GONE
+            chatStripHost?.visibility = View.GONE
             bubbleContainer?.animate()?.cancel()
             bubbleContainer?.visibility = View.GONE
             lockHost?.visibility = View.GONE
@@ -1372,7 +1433,7 @@ class CombatOverlayService : Service() {
             toggle?.contentDescription = getString(R.string.overlay_cd_toggle_show_ui)
         } else {
             val compactStrip = AppContainer.from(this).userSettingsPreferences.isCompactOverlay()
-            chatStripScroll?.visibility = if (compactStrip) View.GONE else View.VISIBLE
+            chatStripHost?.visibility = if (compactStrip) View.GONE else View.VISIBLE
             bubbleContainer?.animate()?.cancel()
             bubbleContainer?.visibility = View.VISIBLE
             bubbleContainer?.alpha = 1f
@@ -1672,6 +1733,7 @@ class CombatOverlayService : Service() {
         val wm = windowManager ?: systemWindowManager()
         removeLockButton(wm)
         removeToggleButton(wm)
+        removeChatStripWindow(wm)
         val view = overlayView
         if (view != null && wm != null) {
             runCatching { wm.removeView(view) }
