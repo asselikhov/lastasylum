@@ -2366,6 +2366,7 @@ private fun ChatBubbleInnerColumn(
                         urls = fullResolvedUrls,
                         contentDescription = messageImageTapLabel,
                         onOpen = { idx -> openRemoteChatImagePreview(fullResolvedUrls, idx) },
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
@@ -2419,12 +2420,13 @@ private fun TelegramLikeAttachmentsGrid(
     urls: List<String>,
     contentDescription: String,
     onOpen: (Int) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     if (urls.isEmpty()) return
     val maxShown = 4
     val shown = urls.take(maxShown)
     val extra = (urls.size - shown.size).coerceAtLeast(0)
-    val shape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(12.dp)
     val gap = 4.dp
 
     @Composable
@@ -2433,19 +2435,19 @@ private fun TelegramLikeAttachmentsGrid(
         Box(
             modifier = modifier
                 .clip(shape)
-                .background(Color.Black.copy(alpha = 0.06f))
                 .semantics {
                     this.contentDescription = contentDescription
                     role = Role.Button
                 }
                 .clickable { onOpen(idx) },
+            contentAlignment = Alignment.Center,
         ) {
             val ctx = LocalContext.current
             AsyncImage(
                 model = chatAuthedImageRequest(ctx, u),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
+                contentScale = ContentScale.Fit,
             )
             if (extra > 0 && idx == shown.lastIndex) {
                 Box(
@@ -2465,8 +2467,9 @@ private fun TelegramLikeAttachmentsGrid(
         }
     }
 
-    when (shown.size) {
-        1 -> tile(0, Modifier.fillMaxWidth().heightIn(min = 140.dp, max = 280.dp))
+    Column(modifier = modifier) {
+        when (shown.size) {
+        1 -> tile(0, Modifier.fillMaxWidth().heightIn(max = 260.dp))
         2 -> Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -2514,6 +2517,86 @@ private fun TelegramLikeAttachmentsGrid(
                 tile(3, Modifier.weight(1f).fillMaxHeight())
             }
         }
+        }
+    }
+}
+
+/** Сообщение только с фото: без «пузыря», как стикер; тап — полноэкранный просмотр. */
+@Composable
+private fun ChatFloatingImageAttachmentsBlock(
+    urls: List<String>,
+    isMine: Boolean,
+    showClusterHeader: Boolean,
+    stemTag: String?,
+    nickname: String,
+    senderAccent: Color,
+    message: ChatMessage,
+    isChainBottom: Boolean,
+    formattedTime: String,
+    bubbleClickModifier: Modifier,
+    swipeModifier: Modifier,
+    deleting: Boolean,
+    canDelete: Boolean,
+) {
+    val openRemote = LocalOpenRemoteChatImagePreview.current
+    val label = stringResource(R.string.cd_chat_message_image)
+    val floatMod = Modifier
+        .widthIn(max = 280.dp)
+        .then(bubbleClickModifier)
+        .then(swipeModifier)
+    val clipShape = if (isMine) {
+        bubbleShapeOutgoing(isChainBottom)
+    } else {
+        bubbleShapeIncoming(isChainBottom)
+    }
+    Column(modifier = floatMod) {
+        if (!isMine && showClusterHeader) {
+            ChatBubbleAuthorHeader(
+                teamTag = stemTag,
+                nickname = nickname,
+                nicknameColor = senderAccent,
+                tagBracketColor = ChatTelegramIncomingOnBubble.copy(alpha = 0.5f),
+                senderRole = message.senderRole,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = if (!isMine && showClusterHeader) 2.dp else 0.dp)
+                .clip(clipShape),
+        ) {
+            TelegramLikeAttachmentsGrid(
+                urls = urls,
+                contentDescription = label,
+                onOpen = { idx -> openRemote(urls, idx) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (formattedTime.isNotBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color.Black.copy(alpha = 0.45f),
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(6.dp),
+                ) {
+                    Text(
+                        text = formattedTime,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                    )
+                }
+            }
+        }
+        if (deleting && canDelete) {
+            Text(
+                text = stringResource(R.string.chat_deleting_progress),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
     }
 }
 
@@ -2556,6 +2639,16 @@ private fun ChatBubbleRow(
     }
     val telegramUrl = telegramAvatarUrl(message.senderTelegramUsername)
     val floatingSticker = stickerStem != null && message.replyTo == null
+    val imageAttachments = remember(message.attachments) {
+        message.attachments.filter { it.kind == "image" && it.url.isNotBlank() }
+    }
+    val resolvedImageUrls = remember(imageAttachments) {
+        imageAttachments.map { resolvedChatAttachmentImageUrl(it.url) }
+    }
+    val floatingImages = stickerStem == null &&
+        resolvedImageUrls.isNotEmpty() &&
+        message.text.isBlank() &&
+        message.replyTo == null
     val senderAccent = roleAccentColor(message.senderRole)
     val bubbleBg = if (isMine) ChatTelegramOutgoingBubble else ChatTelegramIncomingBubble
     val onBubble = if (isMine) ChatTelegramOutgoingOnBubble else ChatTelegramIncomingOnBubble
@@ -2695,6 +2788,22 @@ private fun ChatBubbleRow(
                         )
                     }
                 }
+            } else if (floatingImages) {
+                ChatFloatingImageAttachmentsBlock(
+                    urls = resolvedImageUrls,
+                    isMine = true,
+                    showClusterHeader = false,
+                    stemTag = stemTag,
+                    nickname = nickname,
+                    senderAccent = senderAccent,
+                    message = message,
+                    isChainBottom = isChainBottom,
+                    formattedTime = formattedTime,
+                    bubbleClickModifier = bubbleClickModifier,
+                    swipeModifier = swipeModifier,
+                    deleting = deleting,
+                    canDelete = canDelete,
+                )
             } else {
                 Surface(
                     modifier = Modifier
@@ -2813,6 +2922,22 @@ private fun ChatBubbleRow(
                         )
                     }
                 }
+            } else if (floatingImages) {
+                ChatFloatingImageAttachmentsBlock(
+                    urls = resolvedImageUrls,
+                    isMine = false,
+                    showClusterHeader = showClusterHeader,
+                    stemTag = stemTag,
+                    nickname = nickname,
+                    senderAccent = senderAccent,
+                    message = message,
+                    isChainBottom = isChainBottom,
+                    formattedTime = formattedTime,
+                    bubbleClickModifier = bubbleClickModifier,
+                    swipeModifier = swipeModifier,
+                    deleting = deleting,
+                    canDelete = canDelete,
+                )
             } else {
                 Surface(
                     modifier = Modifier

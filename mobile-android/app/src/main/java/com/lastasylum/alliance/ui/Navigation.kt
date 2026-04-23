@@ -23,19 +23,13 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -141,36 +135,22 @@ fun AppNavigation(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground,
-        // adjustNothing + imePadding on chat composer. Exclude IME from Scaffold content insets.
-        // While IME is visible, hide the tab bar so it does not sit between composer and keyboard
-        // (same idea as Telegram: typing uses full width above the keyboard).
+        // adjustNothing + imePadding в чате. Вкладки не скрываем при IME — иначе лишняя анимация.
         contentWindowInsets = WindowInsets.safeDrawing.exclude(WindowInsets.ime),
         bottomBar = {
-            val density = LocalDensity.current
-            val imeInsets = WindowInsets.ime
-            // Boolean only — avoids recomposing the whole bottom bar on every IME animation frame.
-            val keyboardOpen by remember(imeInsets, density) {
-                derivedStateOf { imeInsets.getBottom(density) > 0 }
-            }
-            // Только короткий fade: expand/shrink вместе с imePadding даёт рывки при открытии клавиатуры.
-            AnimatedVisibility(
-                visible = !keyboardOpen,
-                enter = fadeIn(animationSpec = tween(45)),
-                exit = fadeOut(animationSpec = tween(35)),
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp,
             ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    tonalElevation = 0.dp,
-                    shadowElevation = 0.dp,
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                    ) {
-                        visibleTabs.forEach { tab ->
+                    visibleTabs.forEach { tab ->
                             val isSelected =
                                 currentDestination?.hierarchy?.any { it.route == tab.route } == true
                             IconButton(
@@ -240,7 +220,6 @@ fun AppNavigation(
                         }
                     }
                 }
-            }
         },
     ) { contentPadding ->
         NavHost(
