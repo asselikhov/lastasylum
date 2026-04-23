@@ -189,6 +189,12 @@ class CombatOverlayService : Service() {
     private var overlaySubRow: LinearLayout? = null
     private var overlayBtnMessageFab: FloatingActionButton? = null
     private var overlayPanelAnchoredEnd: Boolean = false
+    /**
+     * Ширина главного окна оверлея в развёрнутом виде. Нужна для [syncOverlayPanelEdgeLayout]:
+     * при сворачивании [overlayView] становится узким — без этого «центр» окна смещается и якорь
+     * левый/правый переключается, из‑за чего панель визуально «уезжает».
+     */
+    private var overlayPanelStableAnchorWidthPx: Int = 0
 
     /** Лента: короткий TTL и мало строк превью — компактная полоса у края. */
     private val stripBuffer = OverlayChatStripBuffer(
@@ -881,7 +887,8 @@ class CombatOverlayService : Service() {
             return
         }
         val screenW = resources.displayMetrics.widthPixels
-        val anchoredEnd = params.x + w / 2 >= screenW / 2
+        val wAnchor = maxOf(w, maxOf(overlayPanelStableAnchorWidthPx, dp(160)))
+        val anchoredEnd = params.x + wAnchor / 2 >= screenW / 2
         val msgOk = msgRow.childCount == 2 &&
             (
                 (anchoredEnd && msgRow.getChildAt(0) === sub && msgRow.getChildAt(1) === fabCol) ||
@@ -928,6 +935,7 @@ class CombatOverlayService : Service() {
             overlaySubRow = null
             overlayBtnMessageFab = null
             overlayPanelAnchoredEnd = false
+            overlayPanelStableAnchorWidthPx = 0
         }
         if (overlayView != null) return
         val manager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -1117,7 +1125,16 @@ class CombatOverlayService : Service() {
                 if (!windowRoot.isAttachedToWindow) return@post
                 val p = overlayMainWindowParams ?: return@post
                 runCatching { manager.updateViewLayout(windowRoot, p) }
-                syncOverlayPanelEdgeLayout()
+                // После смены размеров измеряем ширину, чтобы якорь края не «прыгал» при следующем сворачивании.
+                windowRoot.post {
+                    if (!panelCollapsed && windowRoot.width > 0) {
+                        overlayPanelStableAnchorWidthPx = kotlin.math.max(
+                            overlayPanelStableAnchorWidthPx,
+                            windowRoot.width,
+                        )
+                    }
+                    syncOverlayPanelEdgeLayout()
+                }
             }
         }
 
@@ -1569,6 +1586,7 @@ class CombatOverlayService : Service() {
         overlaySubRow = null
         overlayBtnMessageFab = null
         overlayPanelAnchoredEnd = false
+        overlayPanelStableAnchorWidthPx = 0
         windowManager = null
     }
 
