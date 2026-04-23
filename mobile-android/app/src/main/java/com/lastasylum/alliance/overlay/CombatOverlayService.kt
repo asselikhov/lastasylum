@@ -96,10 +96,6 @@ class CombatOverlayService : Service() {
     private var windowManager: WindowManager? = null
     private var overlayView: FrameLayout? = null
     private var overlayBubble: FrameLayout? = null
-    /** Корневое окно кнопки (расширенная зона касания); сам FAB внутри. */
-    private var toggleHost: FrameLayout? = null
-    private var toggleFab: FloatingActionButton? = null
-    private var toggleParams: WindowManager.LayoutParams? = null
     private var lockHost: FrameLayout? = null
     private var lockFab: FloatingActionButton? = null
     private var lockParams: WindowManager.LayoutParams? = null
@@ -178,9 +174,7 @@ class CombatOverlayService : Service() {
         )
     }
     private var recordingStartRunnable: Runnable? = null
-    /** Global hidden state: only floating toggle is visible. */
-    private var overlayHidden = false
-    /** Collapsed state of controls inside the panel window (toggle button stays visible). */
+    /** True: только кнопка разворота; по нажатию — остальные кнопки панели. */
     private var panelCollapsed = false
     private var messageExpanded = false
     private var chatStripScroll: ScrollView? = null
@@ -1122,8 +1116,6 @@ class CombatOverlayService : Service() {
         }
 
         refreshLockIcon()
-        // Start hidden globally; and keep panel collapsed when it becomes visible.
-        overlayHidden = true
         panelCollapsed = true
         messageExpanded = false
         applyControlsVisibility()
@@ -1253,80 +1245,12 @@ class CombatOverlayService : Service() {
         overlayTicker.ensureTicker()
         overlayTicker.syncTickerPosition()
         rebalanceOverlayChatWindowZOrder()
-        // Ensure floating controls exist before applying "collapsed" visibility state.
-        ensureToggleButton()
         ensureLockButton()
-        // Start in collapsed state on launch.
         applyOverlayVisibilityState()
         windowRoot.post {
             syncOverlayPanelEdgeLayout()
             beginOverlayChatSubscription()
         }
-    }
-
-    private fun ensureToggleButton() {
-        if (toggleHost != null) return
-        val manager = windowManager ?: return
-        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
-
-        val touchSide = dp(64)
-        val fabSide = dp(48)
-        val params = WindowManager.LayoutParams(
-            touchSide,
-            touchSide,
-            type,
-            OverlayWindowLayout.popupWindowFlags(),
-            android.graphics.PixelFormat.TRANSLUCENT,
-        ).apply {
-            OverlayWindowLayout.applyPopupLayoutCompat(this)
-            gravity = Gravity.TOP or Gravity.START
-            val layout = OverlayLayoutDp.forPreset(
-                AppContainer.from(this@CombatOverlayService).userSettingsPreferences.getOverlayLayoutPreset(),
-            )
-            x = dp(layout.toggleX)
-            y = dp(layout.toggleY)
-        }
-
-        val toggleCtx = OverlayTickerUi.themedFabContext(this)
-        val fab = FloatingActionButton(toggleCtx).apply {
-            OverlayTickerUi.styleOverlayFab(toggleCtx, this, 48f)
-            setImageResource(R.drawable.ic_overlay_ui_collapse)
-            contentDescription = getString(R.string.overlay_cd_toggle_hide_ui)
-        }
-        val host = FrameLayout(this).apply {
-            isClickable = true
-            addView(
-                fab,
-                FrameLayout.LayoutParams(fabSide, fabSide, Gravity.CENTER),
-            )
-        }
-        val wmFab = windowManager ?: return
-        OverlayWindowDragHelper.attachDraggableFab(
-            this,
-            wmFab,
-            host,
-            params,
-            isDragLocked = {
-                AppContainer.from(this@CombatOverlayService).userSettingsPreferences.isOverlayDragLocked()
-            },
-            onTap = {
-                overlayHidden = !overlayHidden
-                if (!overlayHidden) {
-                    panelCollapsed = false
-                }
-                applyOverlayVisibilityState()
-            },
-        )
-
-        toggleHost = host
-        toggleFab = fab
-        toggleParams = params
-        manager.addView(host, params)
     }
 
     private fun ensureLockButton() {
@@ -1403,35 +1327,18 @@ class CombatOverlayService : Service() {
 
     private fun applyOverlayVisibilityState() {
         val bubbleContainer = overlayView
-        val toggle = toggleFab
         val lock = lockFab
-        if (overlayHidden) {
-            hideOverlayHistoryPanel()
-            quickCommandsPopover.hide()
-            overlayTicker.hideTicker()
-            chatStripHost?.visibility = View.GONE
-            bubbleContainer?.animate()?.cancel()
-            bubbleContainer?.visibility = View.GONE
-            lockHost?.visibility = View.GONE
-            toggleHost?.visibility = View.VISIBLE
-            toggle?.setImageResource(R.drawable.ic_overlay_ui_expand)
-            toggle?.contentDescription = getString(R.string.overlay_cd_toggle_show_ui)
-        } else {
-            val compactStrip = AppContainer.from(this).userSettingsPreferences.isCompactOverlay()
-            chatStripHost?.visibility = if (compactStrip) View.GONE else View.VISIBLE
-            bubbleContainer?.animate()?.cancel()
-            bubbleContainer?.visibility = View.VISIBLE
-            bubbleContainer?.alpha = 1f
-            bubbleContainer?.scaleX = 1f
-            bubbleContainer?.scaleY = 1f
-            lockHost?.visibility = View.VISIBLE
-            lock?.let { refreshLockFabIcon(it) }
-            toggleHost?.visibility = View.VISIBLE
-            toggle?.setImageResource(R.drawable.ic_overlay_ui_collapse)
-            toggle?.contentDescription = getString(R.string.overlay_cd_toggle_hide_ui)
-            overlayTicker.ensureTicker()
-            rebalanceOverlayChatWindowZOrder()
-        }
+        val compactStrip = AppContainer.from(this).userSettingsPreferences.isCompactOverlay()
+        chatStripHost?.visibility = if (compactStrip) View.GONE else View.VISIBLE
+        bubbleContainer?.animate()?.cancel()
+        bubbleContainer?.visibility = View.VISIBLE
+        bubbleContainer?.alpha = 1f
+        bubbleContainer?.scaleX = 1f
+        bubbleContainer?.scaleY = 1f
+        lockHost?.visibility = View.VISIBLE
+        lock?.let { refreshLockFabIcon(it) }
+        overlayTicker.ensureTicker()
+        rebalanceOverlayChatWindowZOrder()
     }
 
     private fun toggleOverlayHistoryPanel() {
@@ -1717,7 +1624,6 @@ class CombatOverlayService : Service() {
         quickCommandsPopover.hide()
         val wm = windowManager ?: systemWindowManager()
         removeLockButton(wm)
-        removeToggleButton(wm)
         removeChatStripWindow(wm)
         val view = overlayView
         if (view != null && wm != null) {
@@ -1738,15 +1644,6 @@ class CombatOverlayService : Service() {
         overlayBtnMessageFab = null
         overlayPanelAnchoredEnd = false
         windowManager = null
-    }
-
-    private fun removeToggleButton(forManager: WindowManager? = null) {
-        val manager = forManager ?: windowManager ?: return
-        val host = toggleHost ?: return
-        runCatching { manager.removeView(host) }
-        toggleHost = null
-        toggleFab = null
-        toggleParams = null
     }
 
     private fun removeLockButton(forManager: WindowManager? = null) {
