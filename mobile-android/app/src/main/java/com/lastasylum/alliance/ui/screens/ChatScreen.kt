@@ -26,6 +26,7 @@ import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
@@ -2023,61 +2024,65 @@ private fun AttachmentPreviewOverlay(
     var offsetY by remember(uri) { mutableStateOf(0f) }
     val context = LocalContext.current
 
-    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-        val nextScale = (scale * zoomChange).coerceIn(1f, 4f)
-        val factor = nextScale / scale
-        scale = nextScale
-        if (factor != 1f) {
-            offsetX *= factor
-            offsetY *= factor
-        }
-        if (scale > 1f) {
-            offsetX += panChange.x
-            offsetY += panChange.y
-        } else {
-            offsetX = 0f
-            offsetY = 0f
-        }
-    }
-
     DisposableEffect(Unit) {
         OverlayChatInteractionHold.suppressGameForegroundGate = true
         onDispose { OverlayChatInteractionHold.suppressGameForegroundGate = false }
     }
     BackHandler(onBack = onDismiss)
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black),
     ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .pointerInput(uris, index, scale) {
-                        detectTapGestures(
-                            onDoubleTap = {
-                                if (scale > 1f) {
-                                    scale = 1f
-                                    offsetX = 0f
-                                    offsetY = 0f
-                                } else {
-                                    scale = 2.5f
-                                }
-                            },
-                        )
-                        detectHorizontalDragGestures(
-                            onDragEnd = { /* noop */ },
-                            onHorizontalDrag = { change, dragAmount ->
-                                if (scale > 1f) return@detectHorizontalDragGestures
-                                change.consume()
-                                if (kotlin.math.abs(dragAmount) < 14f) return@detectHorizontalDragGestures
-                                if (dragAmount > 0 && index > 0) index -= 1
-                                if (dragAmount < 0 && index < uris.lastIndex) index += 1
-                            },
-                        )
-                    }
-                    .transformable(state = transformState),
-            ) {
+        val density = LocalDensity.current
+        val wPx = with(density) { maxWidth.toPx() }
+        val hPx = with(density) { maxHeight.toPx() }
+
+        fun clampOffsets() {
+            if (scale <= 1f) {
+                offsetX = 0f
+                offsetY = 0f
+                return
+            }
+            val maxX = (wPx * (scale - 1f) / 2f).coerceAtLeast(0f)
+            val maxY = (hPx * (scale - 1f) / 2f).coerceAtLeast(0f)
+            offsetX = offsetX.coerceIn(-maxX, maxX)
+            offsetY = offsetY.coerceIn(-maxY, maxY)
+        }
+
+        val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+            val nextScale = (scale * zoomChange).coerceIn(1f, 4f)
+            scale = nextScale
+            if (scale > 1f) {
+                offsetX += panChange.x
+                offsetY += panChange.y
+            }
+            clampOffsets()
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(uris, index, scale) {
+                    detectTapGestures(
+                        onDoubleTap = {
+                            scale = if (scale > 1f) 1f else 2.5f
+                            clampOffsets()
+                        },
+                    )
+                    detectHorizontalDragGestures(
+                        onDragEnd = { /* noop */ },
+                        onHorizontalDrag = { change, dragAmount ->
+                            if (scale > 1f) return@detectHorizontalDragGestures
+                            change.consume()
+                            if (kotlin.math.abs(dragAmount) < 14f) return@detectHorizontalDragGestures
+                            if (dragAmount > 0 && index > 0) index -= 1
+                            if (dragAmount < 0 && index < uris.lastIndex) index += 1
+                        },
+                    )
+                }
+                .transformable(state = transformState),
+        ) {
                 AsyncImage(
                     model = ImageRequest.Builder(context)
                         .data(uri)
@@ -2198,61 +2203,65 @@ private fun RemoteChatImagesPreviewOverlay(
     var offsetY by remember(url) { mutableStateOf(0f) }
     val context = LocalContext.current
 
-    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-        val nextScale = (scale * zoomChange).coerceIn(1f, 4f)
-        val factor = nextScale / scale
-        scale = nextScale
-        if (factor != 1f) {
-            offsetX *= factor
-            offsetY *= factor
-        }
-        if (scale > 1f) {
-            offsetX += panChange.x
-            offsetY += panChange.y
-        } else {
-            offsetX = 0f
-            offsetY = 0f
-        }
-    }
-
     DisposableEffect(Unit) {
         OverlayChatInteractionHold.suppressGameForegroundGate = true
         onDispose { OverlayChatInteractionHold.suppressGameForegroundGate = false }
     }
     BackHandler(onBack = onDismiss)
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black),
     ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .pointerInput(urls, index, scale) {
-                        detectTapGestures(
-                            onDoubleTap = {
-                                if (scale > 1f) {
-                                    scale = 1f
-                                    offsetX = 0f
-                                    offsetY = 0f
-                                } else {
-                                    scale = 2.5f
-                                }
-                            },
-                        )
-                        detectHorizontalDragGestures(
-                            onDragEnd = { /* noop */ },
-                            onHorizontalDrag = { change, dragAmount ->
-                                if (scale > 1f) return@detectHorizontalDragGestures
-                                change.consume()
-                                if (kotlin.math.abs(dragAmount) < 14f) return@detectHorizontalDragGestures
-                                if (dragAmount > 0 && index > 0) index -= 1
-                                if (dragAmount < 0 && index < urls.lastIndex) index += 1
-                            },
-                        )
-                    }
-                    .transformable(state = transformState),
-            ) {
+        val density = LocalDensity.current
+        val wPx = with(density) { maxWidth.toPx() }
+        val hPx = with(density) { maxHeight.toPx() }
+
+        fun clampOffsets() {
+            if (scale <= 1f) {
+                offsetX = 0f
+                offsetY = 0f
+                return
+            }
+            val maxX = (wPx * (scale - 1f) / 2f).coerceAtLeast(0f)
+            val maxY = (hPx * (scale - 1f) / 2f).coerceAtLeast(0f)
+            offsetX = offsetX.coerceIn(-maxX, maxX)
+            offsetY = offsetY.coerceIn(-maxY, maxY)
+        }
+
+        val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+            val nextScale = (scale * zoomChange).coerceIn(1f, 4f)
+            scale = nextScale
+            if (scale > 1f) {
+                offsetX += panChange.x
+                offsetY += panChange.y
+            }
+            clampOffsets()
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(urls, index, scale) {
+                    detectTapGestures(
+                        onDoubleTap = {
+                            scale = if (scale > 1f) 1f else 2.5f
+                            clampOffsets()
+                        },
+                    )
+                    detectHorizontalDragGestures(
+                        onDragEnd = { /* noop */ },
+                        onHorizontalDrag = { change, dragAmount ->
+                            if (scale > 1f) return@detectHorizontalDragGestures
+                            change.consume()
+                            if (kotlin.math.abs(dragAmount) < 14f) return@detectHorizontalDragGestures
+                            if (dragAmount > 0 && index > 0) index -= 1
+                            if (dragAmount < 0 && index < urls.lastIndex) index += 1
+                        },
+                    )
+                }
+                .transformable(state = transformState),
+        ) {
                 AsyncImage(
                     model = chatAuthedImageRequest(context, url),
                     contentDescription = stringResource(R.string.cd_chat_message_image),
