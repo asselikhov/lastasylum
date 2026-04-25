@@ -2524,7 +2524,8 @@ private fun TelegramLikeAttachmentsGrid(
                 model = chatAuthedImageRequest(ctx, u),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit,
+                // Telegram-like: tiles are cropped to fill.
+                contentScale = ContentScale.Crop,
             )
             if (extra > 0 && idx == shown.lastIndex) {
                 Box(
