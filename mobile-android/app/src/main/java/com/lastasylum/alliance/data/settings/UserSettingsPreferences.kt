@@ -43,6 +43,30 @@ class UserSettingsPreferences(context: Context) {
     }
 
     /**
+     * Позиция главной панели оверлея (px): x — от левого края (gravity=BOTTOM|START),
+     * y — от нижнего края. Нужна, чтобы панель не "прыгала" после rebuild / сворачивания игры.
+     */
+    fun getOverlayPanelPosXPx(): Int? =
+        prefs.getInt(KEY_OVERLAY_PANEL_POS_X_PX, Int.MIN_VALUE).takeIf { it != Int.MIN_VALUE }
+
+    fun getOverlayPanelPosYPx(): Int? =
+        prefs.getInt(KEY_OVERLAY_PANEL_POS_Y_PX, Int.MIN_VALUE).takeIf { it != Int.MIN_VALUE }
+
+    fun setOverlayPanelPosPx(x: Int, y: Int) {
+        prefs.edit()
+            .putInt(KEY_OVERLAY_PANEL_POS_X_PX, x)
+            .putInt(KEY_OVERLAY_PANEL_POS_Y_PX, y)
+            .apply()
+    }
+
+    fun clearOverlayPanelPosPx() {
+        prefs.edit()
+            .remove(KEY_OVERLAY_PANEL_POS_X_PX)
+            .remove(KEY_OVERLAY_PANEL_POS_Y_PX)
+            .apply()
+    }
+
+    /**
      * Если включено — боевой оверлей в идеале только при открытой игре ([getOverlayTargetGamePackage]).
      * На части прошивок без «Данных об использовании» гейт не может это проверить — тогда панель всё равно
      * показывается (см. CombatOverlayService).
@@ -113,6 +137,8 @@ class UserSettingsPreferences(context: Context) {
         private const val KEY_OVERLAY_PANEL_ENABLED = "overlay_panel_enabled"
         private const val KEY_OVERLAY_GAME_GATE = "overlay_game_gate"
         private const val KEY_OVERLAY_TARGET_PACKAGE = "overlay_target_game_package"
+        private const val KEY_OVERLAY_PANEL_POS_X_PX = "overlay_panel_pos_x_px"
+        private const val KEY_OVERLAY_PANEL_POS_Y_PX = "overlay_panel_pos_y_px"
         private const val KEY_OVERLAY_TARGET_LEGACY_MIGRATED = "overlay_target_legacy_migrated_v1"
         private const val KEY_OVERLAY_TARGET_PLAY_MIGRATED = "overlay_target_play_migrated_v2"
 

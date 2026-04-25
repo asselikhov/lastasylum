@@ -1012,8 +1012,11 @@ class CombatOverlayService : Service() {
         ).apply {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
             gravity = Gravity.BOTTOM or Gravity.START
-            x = dp(18)
-            y = dp(140)
+            val prefs = AppContainer.from(this@CombatOverlayService).userSettingsPreferences
+            val preset = OverlayLayoutDp.forPreset(prefs.getOverlayLayoutPreset())
+            // Default position from preset, then override by saved drag position (px) if present.
+            x = prefs.getOverlayPanelPosXPx() ?: dp(preset.toggleX)
+            y = prefs.getOverlayPanelPosYPx() ?: dp(preset.toggleY)
         }
 
         var initialX = 0
@@ -1224,6 +1227,11 @@ class CombatOverlayService : Service() {
                 p.x = (p.x - dx).coerceIn(0, (screenW - w).coerceAtLeast(0))
                 p.y = (p.y + dy).coerceIn(0, (screenH - h).coerceAtLeast(0))
                 runCatching { manager.updateViewLayout(windowRoot, p) }
+                // Persist corrected position (toggle anchored).
+                AppContainer.from(this@CombatOverlayService).userSettingsPreferences.setOverlayPanelPosPx(
+                    x = p.x,
+                    y = p.y,
+                )
                 overlayTicker.syncTickerPosition()
                 syncOverlayPanelEdgeLayout()
             }
@@ -1314,6 +1322,13 @@ class CombatOverlayService : Service() {
                     dragArmRunnable = null
                     if (isDragging) {
                         syncOverlayPanelEdgeLayout()
+                        // Persist last drag position so the panel doesn't jump after rebuild/restart.
+                        overlayMainWindowParams?.let { p ->
+                            AppContainer.from(this@CombatOverlayService).userSettingsPreferences.setOverlayPanelPosPx(
+                                x = p.x,
+                                y = p.y,
+                            )
+                        }
                     }
                     val consumed = isDragging
                     isDragging = false
