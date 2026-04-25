@@ -1199,7 +1199,7 @@ private fun ChatMessagesLazyList(
                                 onBeginSelection = onBeginMessageSelection,
                                 onToggleSelection = onToggleMessageSelection,
                                 onSwipeReply = onReplyToMessage,
-                                onJumpToQuotedMessage = jumpToQuotedMessage,
+                                _onJumpToQuotedMessage = jumpToQuotedMessage,
                             )
                         }
                     }
@@ -2719,6 +2719,7 @@ private fun ChatFloatingImageAttachmentsBlock(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
+@Suppress("UNUSED_PARAMETER")
 private fun ChatAlbumRow(
     messages: List<ChatMessage>,
     messageIndex: Int,
@@ -2736,7 +2737,7 @@ private fun ChatAlbumRow(
     onBeginSelection: (String) -> Unit,
     onToggleSelection: (String) -> Unit,
     onSwipeReply: (String) -> Unit,
-    onJumpToQuotedMessage: (String) -> Unit,
+    _onJumpToQuotedMessage: (String) -> Unit,
 ) {
     val messageId = message._id
     val haptics = LocalHapticFeedback.current
@@ -2966,6 +2967,11 @@ private fun ChatBubbleRow(
         !message._id.isNullOrBlank() &&
         !otherReadUptoMessageId.isNullOrBlank() &&
         otherReadUptoMessageId >= message._id
+    val formattedTimeUi = if (isMine && formattedTime.isNotBlank()) {
+        if (readDouble) "$formattedTime ✓✓" else "$formattedTime ✓"
+    } else {
+        formattedTime
+    }
 
     val swipeModifier = if (messageId != null) {
         Modifier.pointerInput(messageId, layoutDirection, swipePx) {
@@ -3099,7 +3105,7 @@ private fun ChatBubbleRow(
                     senderAccent = senderAccent,
                     message = message,
                     isChainBottom = isChainBottom,
-                    formattedTime = formattedTime,
+                    formattedTime = formattedTimeUi,
                     bubbleClickModifier = bubbleClickModifier,
                     swipeModifier = swipeModifier,
                     deleting = deleting,
@@ -3126,7 +3132,7 @@ private fun ChatBubbleRow(
                         nickname = nickname,
                         onBubble = onBubble,
                         timeMuted = timeMuted,
-                        formattedTime = formattedTime,
+                        formattedTime = formattedTimeUi,
                         swipeModifier = swipeModifier,
                         bubbleContext = bubbleContext,
                         replyQuoteInteraction = replyQuoteInteraction,

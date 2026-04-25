@@ -272,7 +272,15 @@ class CombatOverlayService : Service() {
                 val owner = overlayChatOwner ?: return@post
                 when (i.action) {
                     OverlaySystemDialogActivity.ACTION_OVERLAY_PICK_IMAGES_RESULT -> {
-                        val uris = i.getParcelableArrayListExtra<Uri>(OverlaySystemDialogActivity.EXTRA_URIS).orEmpty()
+                        val uris = if (android.os.Build.VERSION.SDK_INT >= 33) {
+                            i.getParcelableArrayListExtra(
+                                OverlaySystemDialogActivity.EXTRA_URIS,
+                                Uri::class.java,
+                            ).orEmpty()
+                        } else {
+                            @Suppress("DEPRECATION")
+                            i.getParcelableArrayListExtra<Uri>(OverlaySystemDialogActivity.EXTRA_URIS).orEmpty()
+                        }
                         // Build intent payload compatible with PickMultipleVisualMedia contract parsing:
                         // ActivityResultContracts.PickMultipleVisualMedia -> GetMultipleContents.getClipDataUris(intent)
                         val data = Intent().apply {
@@ -955,7 +963,7 @@ class CombatOverlayService : Service() {
     private fun syncOverlayPanelEdgeLayout() {
         val params = overlayMainWindowParams ?: return
         val root = overlayView ?: return
-        val controls = overlayControlsStack ?: return
+        overlayControlsStack ?: return
         val msgRow = overlayMessageRow ?: return
         val sub = overlaySubRow ?: return
         val fabCol = overlayMessageFabColumn ?: return
