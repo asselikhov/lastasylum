@@ -807,11 +807,12 @@ class CombatOverlayService : Service() {
 
         val stripMaxWidth =
             (resources.displayMetrics.widthPixels - dp(20)).coerceAtLeast(dp(220))
+        // Strip is display-only: touches must reach the game under the overlay.
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             type,
-            OverlayWindowLayout.popupWindowFlags(),
+            OverlayWindowLayout.popupWindowFlags() or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
