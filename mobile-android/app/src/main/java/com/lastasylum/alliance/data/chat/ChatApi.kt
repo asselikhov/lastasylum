@@ -47,4 +47,22 @@ interface ChatApi {
 
     @DELETE("chat/messages/{messageId}")
     suspend fun deleteMessage(@Path("messageId") messageId: String): ChatMessageDeleteResult
+
+    @PATCH("chat/messages/{messageId}")
+    suspend fun editMessage(
+        @Path("messageId") messageId: String,
+        @Body body: EditMessageRequest,
+    ): ChatMessage
+
+    @POST("chat/messages/{messageId}/reactions")
+    suspend fun toggleReaction(
+        @Path("messageId") messageId: String,
+        @Body body: ToggleReactionRequest,
+    ): ChatMessage
+
+    @POST("chat/messages/{messageId}/forward")
+    suspend fun forwardMessage(
+        @Path("messageId") messageId: String,
+        @Body body: ForwardMessageRequest,
+    ): ChatMessage
 }

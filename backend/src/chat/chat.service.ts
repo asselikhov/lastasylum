@@ -33,7 +33,23 @@ type MessageLean = {
   senderRole: AllianceRole;
   senderTeamTag?: string | null;
   text: string;
-  attachments?: { kind: 'image'; fileId: Types.ObjectId; mimeType: string; size: number }[];
+  editedAt?: Date | null;
+  forwardedFrom?:
+    | {
+        messageId: Types.ObjectId;
+        senderId: string;
+        senderUsername: string;
+        senderRole: AllianceRole;
+        senderTeamTag?: string | null;
+      }
+    | null;
+  reactions?: { emoji: string; userIds: string[] }[];
+  attachments?: {
+    kind: 'image';
+    fileId: Types.ObjectId;
+    mimeType: string;
+    size: number;
+  }[];
   replyToMessageId?: Types.ObjectId | string | null;
   deletedAt?: Date | null;
   deletedByUserId?: string | null;
@@ -64,6 +80,17 @@ export type ChatMessageView = {
   /** Telegram @handle without @, from sender profile at read time (or at send). */
   senderTelegramUsername: string | null;
   text: string;
+  editedAt: string | null;
+  forwardedFrom:
+    | {
+        messageId: string;
+        senderId: string;
+        senderUsername: string;
+        senderRole: AllianceRole;
+        senderTeamTag: string | null;
+      }
+    | null;
+  reactions: { emoji: string; count: number; reactedByMe: boolean }[];
   attachments: { kind: 'image'; url: string; mimeType: string; size: number }[];
   createdAt: string | null;
   updatedAt: string | null;
@@ -112,19 +139,21 @@ export class ChatService {
     if (room.allianceId === GLOBAL_CHAT_ALLIANCE_ID) {
       return {
         allianceId: GLOBAL_CHAT_ALLIANCE_ID,
-        roomObjectId: room._id as Types.ObjectId,
+        roomObjectId: room._id,
       };
     }
     if (room.allianceId === user.allianceName) {
       return {
         allianceId: user.allianceName,
-        roomObjectId: room._id as Types.ObjectId,
+        roomObjectId: room._id,
       };
     }
     throw new ForbiddenException('Room is not available for your alliance');
   }
 
-  private asIdString(id: Types.ObjectId | string | null | undefined): string | null {
+  private asIdString(
+    id: Types.ObjectId | string | null | undefined,
+  ): string | null {
     if (!id) return null;
     return typeof id === 'string' ? id : id.toString();
   }
@@ -156,20 +185,38 @@ export class ChatService {
     replyMap?: Map<string, MessageLean>,
     senderTelegramMap?: Map<string, string | null>,
     senderTeamTagMap?: Map<string, string | null>,
+    viewerUserId?: string,
   ): ChatMessageView {
     const replyToMessageId = this.asIdString(message.replyToMessageId);
-    const replyTarget = replyToMessageId ? replyMap?.get(replyToMessageId) : null;
+    const replyTarget = replyToMessageId
+      ? replyMap?.get(replyToMessageId)
+      : null;
     const senderTeamTag =
       message.senderTeamTag ?? senderTeamTagMap?.get(message.senderId) ?? null;
-    const attachments =
-      message.deletedAt
-        ? []
-        : (message.attachments ?? []).map((a) => ({
-            kind: 'image' as const,
-            url: `/chat/attachments/${a.fileId.toString()}`,
-            mimeType: a.mimeType,
-            size: a.size,
-          }));
+    const attachments = message.deletedAt
+      ? []
+      : (message.attachments ?? []).map((a) => ({
+          kind: 'image' as const,
+          url: `/chat/attachments/${a.fileId.toString()}`,
+          mimeType: a.mimeType,
+          size: a.size,
+        }));
+    const forwardedFrom = message.forwardedFrom
+      ? {
+          messageId: message.forwardedFrom.messageId.toString(),
+          senderId: message.forwardedFrom.senderId,
+          senderUsername: message.forwardedFrom.senderUsername,
+          senderRole: message.forwardedFrom.senderRole,
+          senderTeamTag: message.forwardedFrom.senderTeamTag ?? null,
+        }
+      : null;
+    const reactions = (message.reactions ?? [])
+      .filter((r) => r.emoji && (r.userIds?.length ?? 0) > 0)
+      .map((r) => ({
+        emoji: r.emoji,
+        count: r.userIds.length,
+        reactedByMe: viewerUserId ? r.userIds.includes(viewerUserId) : false,
+      }));
     return {
       _id: this.asIdString(message._id)!,
       allianceId: message.allianceId,
@@ -180,6 +227,9 @@ export class ChatService {
       senderTeamTag,
       senderTelegramUsername: senderTelegramMap?.get(message.senderId) ?? null,
       text: message.deletedAt ? '' : message.text,
+      editedAt: this.toIso(message.editedAt),
+      forwardedFrom: message.deletedAt ? null : forwardedFrom,
+      reactions: message.deletedAt ? [] : reactions,
       attachments,
       createdAt: this.toIso(message.createdAt),
       updatedAt: this.toIso(message.updatedAt),
@@ -192,12 +242,16 @@ export class ChatService {
     };
   }
 
-  private async loadReplyMap(messages: MessageLean[]): Promise<Map<string, MessageLean>> {
-    const replyIds = [...new Set(
-      messages
-        .map((message) => this.asIdString(message.replyToMessageId))
-        .filter((value): value is string => Boolean(value)),
-    )];
+  private async loadReplyMap(
+    messages: MessageLean[],
+  ): Promise<Map<string, MessageLean>> {
+    const replyIds = [
+      ...new Set(
+        messages
+          .map((message) => this.asIdString(message.replyToMessageId))
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ];
     if (replyIds.length == 0) {
       return new Map();
     }
@@ -205,12 +259,13 @@ export class ChatService {
       .find({ _id: { $in: replyIds.map((id) => new Types.ObjectId(id)) } })
       .lean<MessageLean[]>()
       .exec();
-    return new Map(
-      replyDocs.map((doc) => [this.asIdString(doc._id)!, doc]),
-    );
+    return new Map(replyDocs.map((doc) => [this.asIdString(doc._id)!, doc]));
   }
 
-  private async enrichMessages(messages: MessageLean[]): Promise<ChatMessageView[]> {
+  private async enrichMessages(
+    messages: MessageLean[],
+    viewerUserId: string,
+  ): Promise<ChatMessageView[]> {
     const replyMap = await this.loadReplyMap(messages);
     const replySenderIds: string[] = [];
     for (const m of messages) {
@@ -233,6 +288,7 @@ export class ChatService {
         replyMap,
         senderTelegramMap,
         senderTeamTagMap,
+        viewerUserId,
       ),
     );
   }
@@ -277,7 +333,12 @@ export class ChatService {
     author: MessageAuthor;
     roomId: string;
     replyToMessageId?: string;
-    attachments?: { kind: 'image'; fileId: Types.ObjectId; mimeType: string; size: number }[];
+    attachments?: {
+      kind: 'image';
+      fileId: Types.ObjectId;
+      mimeType: string;
+      size: number;
+    }[];
   }): Promise<ChatMessageView> {
     const authorUser = await this.usersService.findById(input.author.userId);
     if (
@@ -340,9 +401,12 @@ export class ChatService {
     ]);
     return this.serializeMessage(
       created.toObject<MessageLean>(),
-      replyTarget ? new Map([[this.asIdString(replyTarget._id)!, replyTarget]]) : undefined,
+      replyTarget
+        ? new Map([[this.asIdString(replyTarget._id)!, replyTarget]])
+        : undefined,
       senderTelegramMap,
       senderTeamTagMap,
+      input.author.userId,
     );
   }
 
@@ -375,7 +439,130 @@ export class ChatService {
       .limit(limit)
       .lean<MessageLean[]>()
       .exec();
-    return this.enrichMessages(messages);
+    return this.enrichMessages(messages, userId);
+  }
+
+  async editMessage(
+    userId: string,
+    messageId: string,
+    text: string,
+  ): Promise<ChatMessageView> {
+    if (!Types.ObjectId.isValid(messageId)) {
+      throw new BadRequestException('Invalid message id');
+    }
+    await this.assertUserMayUseChat(userId);
+    const actor = await this.usersService.findById(userId);
+    if (!actor) throw new ForbiddenException('User not found');
+    const message = await this.messageModel.findById(messageId).exec();
+    if (!message) throw new NotFoundException('Message not found');
+    const mayEdit =
+      message.senderId === userId || actor.role === AllianceRole.R5;
+    if (!mayEdit) {
+      throw new ForbiddenException('You may only edit your own messages');
+    }
+    const trimmed = text.trim();
+    if (!trimmed) throw new BadRequestException('Text is required');
+    this.assertZlobyakaStickerPayload(trimmed);
+    message.text = trimmed;
+    message.editedAt = new Date();
+    await message.save();
+    const lean = message.toObject<MessageLean>();
+    return this.serializeMessage(lean, undefined, undefined, undefined, userId);
+  }
+
+  async toggleReaction(
+    userId: string,
+    messageId: string,
+    emoji: string,
+  ): Promise<ChatMessageView> {
+    if (!Types.ObjectId.isValid(messageId)) {
+      throw new BadRequestException('Invalid message id');
+    }
+    await this.assertUserMayUseChat(userId);
+    const trimmed = emoji.trim();
+    if (!trimmed) throw new BadRequestException('emoji is required');
+    const message = await this.messageModel.findById(messageId).exec();
+    if (!message) throw new NotFoundException('Message not found');
+    const list = (message.reactions ?? []) as { emoji: string; userIds: string[] }[];
+    const r = list.find((x) => x.emoji === trimmed);
+    if (!r) {
+      list.push({ emoji: trimmed, userIds: [userId] });
+    } else {
+      const idx = r.userIds.indexOf(userId);
+      if (idx >= 0) r.userIds.splice(idx, 1);
+      else r.userIds.push(userId);
+    }
+    message.reactions = list.filter((x) => x.userIds.length > 0) as any;
+    await message.save();
+    return this.serializeMessage(
+      message.toObject<MessageLean>(),
+      undefined,
+      undefined,
+      undefined,
+      userId,
+    );
+  }
+
+  async forwardMessage(
+    userId: string,
+    roomId: string,
+    sourceMessageId: string,
+  ): Promise<ChatMessageView> {
+    if (!Types.ObjectId.isValid(sourceMessageId)) {
+      throw new BadRequestException('Invalid message id');
+    }
+    await this.assertUserMayUseChat(userId);
+    const actor = await this.usersService.findById(userId);
+    if (!actor) throw new ForbiddenException('User not found');
+    const { allianceId, roomObjectId } = await this.assertRoomForUser(
+      userId,
+      roomId,
+    );
+    const source = await this.messageModel
+      .findOne({
+        _id: new Types.ObjectId(sourceMessageId),
+        allianceId,
+        roomId: roomObjectId,
+        deletedAt: null,
+      })
+      .lean<MessageLean | null>()
+      .exec();
+    if (!source) throw new NotFoundException('Message not found');
+    const created = await this.messageModel.create({
+      allianceId,
+      roomId: roomObjectId,
+      text: (source.text ?? '').trim(),
+      attachments: source.attachments ?? [],
+      senderId: userId,
+      senderUsername: actor.username,
+      senderRole: actor.role,
+      senderTeamTag: actor.teamTag ?? null,
+      replyToMessageId: null,
+      deletedAt: null,
+      deletedByUserId: null,
+      forwardedFrom: {
+        messageId: new Types.ObjectId(sourceMessageId),
+        senderId: source.senderId,
+        senderUsername: source.senderUsername,
+        senderRole: source.senderRole,
+        senderTeamTag: source.senderTeamTag ?? null,
+      },
+      editedAt: null,
+      reactions: [],
+    });
+    const senderTelegramMap = new Map<string, string | null>([
+      [userId, actor.telegramUsername ?? null],
+    ]);
+    const senderTeamTagMap = new Map<string, string | null>([
+      [userId, actor.teamTag ?? null],
+    ]);
+    return this.serializeMessage(
+      created.toObject<MessageLean>(),
+      undefined,
+      senderTelegramMap,
+      senderTeamTagMap,
+      userId,
+    );
   }
 
   async deleteMessage(
@@ -398,7 +585,9 @@ export class ChatService {
       message.allianceId !== GLOBAL_CHAT_ALLIANCE_ID &&
       message.allianceId !== actor.allianceName
     ) {
-      throw new ForbiddenException('Message is not available for your alliance');
+      throw new ForbiddenException(
+        'Message is not available for your alliance',
+      );
     }
     const mayDelete =
       message.senderId === userId || actor.role === AllianceRole.R5;

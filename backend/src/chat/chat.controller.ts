@@ -37,6 +37,18 @@ import { UploadChatAttachmentDto } from './dto/upload-chat-attachment.dto';
 import type { Response } from 'express';
 import { Types } from 'mongoose';
 
+class EditMessageDto {
+  text: string;
+}
+
+class ToggleReactionDto {
+  emoji: string;
+}
+
+class ForwardMessageDto {
+  roomId: string;
+}
+
 type RequestUser = {
   userId: string;
   username: string;
@@ -147,7 +159,8 @@ export class ChatController {
   ) {
     await this.chatService.assertUserMayUseChat(req.user.userId);
     const attachmentIds =
-      dto.attachments?.slice(0, 8).filter((id) => Types.ObjectId.isValid(id)) ?? [];
+      dto.attachments?.slice(0, 8).filter((id) => Types.ObjectId.isValid(id)) ??
+      [];
     const message = await this.chatService.createMessage({
       roomId: dto.roomId,
       text: dto.text ?? '',
@@ -164,12 +177,11 @@ export class ChatController {
     this.chatGateway.broadcastNewMessage(dto.roomId, message);
     const authorUser = await this.usersService.findById(req.user.userId);
     if (authorUser && message.allianceId !== GLOBAL_CHAT_ALLIANCE_ID) {
-      const preview =
-        dto.text?.trim()
-          ? formatChatPushBody(dto.text)
-          : attachmentIds.length > 0
-            ? 'Фото'
-            : '';
+      const preview = dto.text?.trim()
+        ? formatChatPushBody(dto.text)
+        : attachmentIds.length > 0
+          ? 'Фото'
+          : '';
       const messageId =
         typeof (message as { _id?: unknown })._id === 'string'
           ? (message as { _id: string })._id
@@ -211,7 +223,9 @@ export class ChatController {
     if (!roomId) throw new BadRequestException('roomId is required');
     if (!file) throw new BadRequestException('file is required');
     if (!file.buffer?.length) {
-      throw new BadRequestException('file buffer is empty (multipart parse failed?)');
+      throw new BadRequestException(
+        'file buffer is empty (multipart parse failed?)',
+      );
     }
     await this.chatService.assertUserMayUseChat(req.user.userId);
 
@@ -273,11 +287,70 @@ export class ChatController {
     @Req() req: { user: RequestUser },
     @Param('messageId') messageId: string,
   ) {
-    const deleted = await this.chatService.deleteMessage(req.user.userId, messageId);
+    const deleted = await this.chatService.deleteMessage(
+      req.user.userId,
+      messageId,
+    );
     this.chatGateway.broadcastMessageDeleted(deleted.roomId, {
       messageId: deleted.messageId,
       roomId: deleted.roomId,
     });
     return deleted;
+  }
+
+  @Patch('messages/:messageId')
+  @Roles(AllianceRole.R2)
+  async editMessage(
+    @Req() req: { user: RequestUser },
+    @Param('messageId') messageId: string,
+    @Body() dto: EditMessageDto,
+  ) {
+    const edited = await this.chatService.editMessage(
+      req.user.userId,
+      messageId,
+      dto?.text ?? '',
+    );
+    this.chatGateway.server
+      ?.to(`chat:${edited.roomId}`)
+      .emit('message:edited', edited);
+    return edited;
+  }
+
+  @Post('messages/:messageId/reactions')
+  @Roles(AllianceRole.R2)
+  async toggleReaction(
+    @Req() req: { user: RequestUser },
+    @Param('messageId') messageId: string,
+    @Body() dto: ToggleReactionDto,
+  ) {
+    const updated = await this.chatService.toggleReaction(
+      req.user.userId,
+      messageId,
+      dto?.emoji ?? '',
+    );
+    this.chatGateway.server
+      ?.to(`chat:${updated.roomId}`)
+      .emit('message:reaction', updated);
+    return updated;
+  }
+
+  @Post('messages/:messageId/forward')
+  @Roles(AllianceRole.R2)
+  async forwardMessage(
+    @Req() req: { user: RequestUser },
+    @Param('messageId') messageId: string,
+    @Body() dto: ForwardMessageDto,
+  ) {
+    const roomId = dto?.roomId?.trim() ?? '';
+    if (!roomId) {
+      throw new BadRequestException('roomId is required');
+    }
+    const forwarded = await this.chatService.forwardMessage(
+      req.user.userId,
+      roomId,
+      messageId,
+    );
+    this.chatGateway.broadcastNewMessage(roomId, forwarded);
+    return forwarded;
   }
 }

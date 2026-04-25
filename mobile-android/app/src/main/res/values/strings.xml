@@ -40,6 +40,9 @@
 
     <!-- Chat -->
     <string name="chat_message_hint">Сообщение</string>
+    <string name="chat_caption_hint">Добавить подпись…</string>
+    <string name="chat_edited">изменено</string>
+    <string name="chat_forwarded_from">Переслано от %1$s</string>
     <string name="chat_send">Отправить</string>
     <string name="chat_open_media_panel_cd">Стикеры и GIF</string>
     <string name="chat_show_keyboard_cd">Показать клавиатуру</string>
@@ -77,6 +80,11 @@
     <string name="chat_deleting_progress">Удаление…</string>
     <string name="chat_action_reply">Ответить</string>
     <string name="chat_action_delete">Удалить сообщение</string>
+    <string name="chat_action_forward">Переслать</string>
+    <string name="chat_action_edit">Редактировать</string>
+    <string name="chat_edit_title">Редактировать сообщение</string>
+    <string name="chat_edit_confirm">Сохранить</string>
+    <string name="chat_edit_cancel">Отмена</string>
     <string name="chat_delete_title">Удалить сообщение?</string>
     <string name="chat_delete_body">Сообщение исчезнет из чата для всех участников. Действие нельзя отменить.</string>
     <string name="chat_delete_confirm">Удалить</string>

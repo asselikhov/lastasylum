@@ -491,6 +491,39 @@ class ChatViewModel(
         )
     }
 
+    fun toggleReaction(messageId: String, emoji: String) {
+        if (messageId.isBlank() || emoji.isBlank()) return
+        viewModelScope.launch {
+            repository.toggleReaction(messageId, emoji)
+                .onSuccess { updated ->
+                    applyIncomingMessage(updated)
+                }
+        }
+    }
+
+    fun editMessage(messageId: String, newText: String) {
+        if (messageId.isBlank()) return
+        val trimmed = newText.trim()
+        if (trimmed.isBlank()) return
+        viewModelScope.launch {
+            repository.editMessage(messageId, trimmed)
+                .onSuccess { updated ->
+                    applyIncomingMessage(updated)
+                }
+        }
+    }
+
+    fun forwardMessage(messageId: String) {
+        if (messageId.isBlank()) return
+        val roomId = _state.value.selectedRoomId ?: return
+        viewModelScope.launch {
+            repository.forwardMessage(messageId, roomId)
+                .onSuccess { forwarded ->
+                    applyIncomingMessage(forwarded)
+                }
+        }
+    }
+
     fun beginMessageSelection(messageId: String) {
         val target = _state.value.messages.find { it._id == messageId } ?: return
         if (target.deletedAt != null) return

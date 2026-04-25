@@ -64,6 +64,7 @@ import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentPaste
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.AttachFile
@@ -157,6 +158,11 @@ import com.lastasylum.alliance.ui.chat.RoleBadge
 import com.lastasylum.alliance.ui.chat.chatDayKey
 import com.lastasylum.alliance.ui.chat.formatChatDaySeparator
 import com.lastasylum.alliance.ui.chat.formatChatTime
+import com.lastasylum.alliance.ui.chat.ChatBubbleAttachmentsWithCaption
+import com.lastasylum.alliance.ui.chat.ChatBubbleAuthorHeader
+import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
+import com.lastasylum.alliance.ui.chat.TelegramImageCaptionBar
+import com.lastasylum.alliance.ui.chat.TelegramLikeAttachmentsGrid
 import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingBubble
 import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingOnBubble
 import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingBubble
@@ -304,6 +310,11 @@ private fun buildChatTimeline(messages: List<ChatMessage>): List<ChatTimelineEnt
         val hasImages = m.attachments.any { it.kind == "image" && it.url.isNotBlank() }
         return hasImages && ZlobyakaStickerPack.parseStem(m.text) == null
     }
+    fun tsMillis(createdAt: String?): Long {
+        if (createdAt.isNullOrBlank()) return -1L
+        return runCatching { java.time.Instant.parse(createdAt.trim()).toEpochMilli() }.getOrDefault(-1L)
+    }
+    val albumWindowMs = 3L * 60L * 1000L // Telegram-ish grouping window for consecutive media
 
     var i = 0
     while (i < messages.size) {
@@ -322,6 +333,7 @@ private fun buildChatTimeline(messages: List<ChatMessage>): List<ChatTimelineEnt
         if (isAlbumCandidate(m)) {
             val sid = m.senderId.trim()
             val day = chatDayKey(m.createdAt)
+            val baseTs = tsMillis(m.createdAt)
             val indices = ArrayList<Int>(4)
             val urls = ArrayList<String>(8)
             var caption: String? = null
@@ -332,6 +344,8 @@ private fun buildChatTimeline(messages: List<ChatMessage>): List<ChatTimelineEnt
                 if (!isAlbumCandidate(mm)) break
                 if (mm.senderId.trim() != sid || sid.isBlank()) break
                 if (day != null && chatDayKey(mm.createdAt) != day) break
+                val tsm = tsMillis(mm.createdAt)
+                if (baseTs > 0 && tsm > 0 && kotlin.math.abs(tsm - baseTs) > albumWindowMs) break
                 val t = mm.text.trimEnd()
                 if (t.isNotBlank()) {
                     if (caption == null) {
@@ -449,6 +463,9 @@ fun ChatScreen(
     onDismissSendFailure: () -> Unit,
     onChatVoiceHoldStart: () -> Unit,
     onChatVoiceHoldEnd: () -> Unit,
+    onEditMessage: (String, String) -> Unit,
+    onForwardMessage: (String) -> Unit,
+    onToggleReaction: (String, String) -> Unit,
 ) {
     val context = LocalContext.current
     val activityResultOwner = LocalActivityResultRegistryOwner.current
@@ -752,6 +769,34 @@ fun ChatScreen(
 
     if (!inSelectionMode) {
         activeActionMessage?.let { message ->
+            var showEdit by remember(message._id) { mutableStateOf(false) }
+            var editDraft by remember(message._id) { mutableStateOf(message.text) }
+            if (showEdit) {
+                AlertDialog(
+                    onDismissRequest = { showEdit = false },
+                    title = { Text(stringResource(R.string.chat_edit_title)) },
+                    text = {
+                        OutlinedTextField(
+                            value = editDraft,
+                            onValueChange = { editDraft = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            maxLines = 6,
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                message._id?.let { onEditMessage(it, editDraft) }
+                                showEdit = false
+                                onDismissMessageActions()
+                            },
+                        ) { Text(stringResource(R.string.chat_edit_confirm)) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showEdit = false }) { Text(stringResource(R.string.chat_edit_cancel)) }
+                    },
+                )
+            }
             ChatMessageActionsSheet(
                 message = message,
                 canDelete = canDeleteChatMessage(
@@ -759,10 +804,24 @@ fun ChatScreen(
                     currentUserId = state.currentUserId,
                     currentUserRole = state.currentUserRole,
                 ),
+                mayEdit = message._id != null &&
+                    message.deletedAt == null &&
+                    message.senderId == state.currentUserId &&
+                    message.text.isNotBlank(),
                 onDismiss = onDismissMessageActions,
                 onReply = {
                     message._id?.let(onReplyToMessage)
                     onDismissMessageActions()
+                },
+                onForward = {
+                    message._id?.let(onForwardMessage)
+                    onDismissMessageActions()
+                },
+                onReact = { emoji ->
+                    message._id?.let { onToggleReaction(it, emoji) }
+                },
+                onEdit = {
+                    showEdit = true
                 },
                 onDelete = {
                     message._id?.let(onRequestDeleteMessage)
@@ -1393,9 +1452,6 @@ private fun ChatComposer(
             verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
         ) {
                 if (pickedImageUris.isNotEmpty()) {
-                    val maxThumbs = 4
-                    val visibleThumbs = pickedImageUris.take(maxThumbs)
-                    val extraCount = (pickedImageUris.size - visibleThumbs.size).coerceAtLeast(0)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1415,79 +1471,115 @@ private fun ChatComposer(
                             Text(stringResource(R.string.chat_attachments_clear))
                         }
                     }
-                    LazyRow(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        contentPadding = PaddingValues(vertical = 2.dp),
-                    ) {
-                        items(visibleThumbs, key = { it.toString() }) { uri ->
-                            Box(
-                                modifier = Modifier
-                                    .size(64.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(
-                                        MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.55f),
-                                    ),
-                            ) {
-                                AsyncImage(
-                                    model = ImageRequest.Builder(context)
-                                        .data(uri)
-                                        .crossfade(false)
-                                        .build(),
-                                    contentDescription = null,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop,
-                                )
-                                if (extraCount > 0 && uri == visibleThumbs.last()) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(Color.Black.copy(alpha = 0.45f)),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(
-                                            text = "+$extraCount",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            color = Color.White,
-                                            fontWeight = FontWeight.SemiBold,
-                                        )
-                                    }
-                                }
+                    // Telegram-like: grid preview with +N overlay; manage/remove in the sheet.
+                    val maxShown = 4
+                    val shown = pickedImageUris.take(maxShown)
+                    val extraCount = (pickedImageUris.size - shown.size).coerceAtLeast(0)
+                    val gap = 6.dp
+                    val tileShape = RoundedCornerShape(14.dp)
+                    val tileBg = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.55f)
+
+                    fun openAt(uri: Uri) {
+                        pickedImageUris.indexOf(uri).takeIf { it >= 0 }?.let(onOpenAttachmentPreview)
+                    }
+
+                    @Composable
+                    fun tile(uri: Uri, modifier: Modifier, isExtraTile: Boolean) {
+                        Box(
+                            modifier = modifier
+                                .clip(tileShape)
+                                .background(tileBg)
+                                .clickable {
+                                    if (isExtraTile) showAttachmentsSheet = true else openAt(uri)
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(context).data(uri).crossfade(false).build(),
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                            )
+                            if (isExtraTile && extraCount > 0) {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .clickable {
-                                            if (extraCount > 0 && uri == visibleThumbs.last()) {
-                                                showAttachmentsSheet = true
-                                            } else {
-                                                pickedImageUris.indexOf(uri).takeIf { it >= 0 }
-                                                    ?.let(onOpenAttachmentPreview)
-                                            }
-                                        },
-                                )
-                                IconButton(
-                                    onClick = { onRemovePickedImage(uri) },
-                                    enabled = !readOnly && !isSending,
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .size(28.dp)
-                                        .padding(2.dp),
+                                        .background(Color.Black.copy(alpha = 0.45f)),
+                                    contentAlignment = Alignment.Center,
                                 ) {
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = Color.Black.copy(alpha = 0.38f),
-                                        tonalElevation = 0.dp,
-                                        shadowElevation = 0.dp,
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Outlined.Cancel,
-                                            contentDescription = null,
-                                            tint = Color.White,
-                                            modifier = Modifier.padding(4.dp),
-                                        )
-                                    }
+                                    Text(
+                                        text = "+$extraCount",
+                                        style = MaterialTheme.typography.titleLarge,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    when (shown.size) {
+                        1 -> {
+                            tile(
+                                uri = shown.first(),
+                                modifier = Modifier
+                                    .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal)
+                                    .fillMaxWidth()
+                                    .heightIn(max = 220.dp),
+                                isExtraTile = false,
+                            )
+                        }
+                        2 -> {
+                            Row(
+                                modifier = Modifier
+                                    .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal)
+                                    .fillMaxWidth()
+                                    .height(150.dp),
+                                horizontalArrangement = Arrangement.spacedBy(gap),
+                            ) {
+                                tile(shown[0], Modifier.weight(1f).fillMaxHeight(), isExtraTile = false)
+                                tile(shown[1], Modifier.weight(1f).fillMaxHeight(), isExtraTile = extraCount > 0)
+                            }
+                        }
+                        3 -> {
+                            Row(
+                                modifier = Modifier
+                                    .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal)
+                                    .fillMaxWidth()
+                                    .height(180.dp),
+                                horizontalArrangement = Arrangement.spacedBy(gap),
+                            ) {
+                                tile(shown[0], Modifier.weight(1.25f).fillMaxHeight(), isExtraTile = false)
+                                Column(
+                                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                                    verticalArrangement = Arrangement.spacedBy(gap),
+                                ) {
+                                    tile(shown[1], Modifier.weight(1f).fillMaxWidth(), isExtraTile = false)
+                                    tile(shown[2], Modifier.weight(1f).fillMaxWidth(), isExtraTile = extraCount > 0)
+                                }
+                            }
+                        }
+                        else -> {
+                            Column(
+                                modifier = Modifier
+                                    .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal)
+                                    .fillMaxWidth()
+                                    .height(190.dp),
+                                verticalArrangement = Arrangement.spacedBy(gap),
+                            ) {
+                                Row(
+                                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(gap),
+                                ) {
+                                    tile(shown[0], Modifier.weight(1f).fillMaxHeight(), isExtraTile = false)
+                                    tile(shown[1], Modifier.weight(1f).fillMaxHeight(), isExtraTile = false)
+                                }
+                                Row(
+                                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(gap),
+                                ) {
+                                    tile(shown[2], Modifier.weight(1f).fillMaxHeight(), isExtraTile = false)
+                                    tile(shown[3], Modifier.weight(1f).fillMaxHeight(), isExtraTile = extraCount > 0)
                                 }
                             }
                         }
@@ -1622,7 +1714,11 @@ private fun ChatComposer(
                                     Box {
                                         if (draft.isBlank()) {
                                             Text(
-                                                text = stringResource(R.string.chat_message_hint),
+                                                text = if (pickedImageUris.isNotEmpty()) {
+                                                    stringResource(R.string.chat_caption_hint)
+                                                } else {
+                                                    stringResource(R.string.chat_message_hint)
+                                                },
                                                 style = MaterialTheme.typography.bodyMedium,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
@@ -2242,131 +2338,6 @@ private fun RemoteChatImagesPreviewOverlay(
 }
 
 @Composable
-private fun ChatSenderAvatar(
-    telegramUrl: String?,
-    modifier: Modifier = Modifier,
-    size: Dp = 32.dp,
-    fallbackName: String? = null,
-) {
-    val ring = MaterialTheme.colorScheme.outlineVariant
-    val fill = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f)
-    val trimmed = fallbackName?.trim().orEmpty()
-    val initialChar = trimmed.firstOrNull { it.isLetterOrDigit() }
-        ?: trimmed.firstOrNull()
-    val initial = initialChar?.uppercaseChar()?.toString() ?: "?"
-    val ctx = LocalContext.current
-    Surface(
-        modifier = modifier.size(size),
-        shape = CircleShape,
-        color = fill,
-        border = BorderStroke(1.dp, ring),
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-    ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = initial,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (!telegramUrl.isNullOrBlank()) {
-                AsyncImage(
-                    model = ImageRequest.Builder(ctx)
-                        .data(telegramUrl)
-                        .crossfade(220)
-                        .build(),
-                    contentDescription = null,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(CircleShape),
-                    contentScale = ContentScale.Crop,
-                )
-            }
-        }
-    }
-}
-
-/** Подпись под медиа в одном пузыре (как в Telegram): отдельная полоса + время справа снизу. */
-@Composable
-private fun TelegramImageCaptionBar(
-    caption: String,
-    formattedTime: String,
-    captionBarBg: Color,
-    onBubble: Color,
-    timeMuted: Color,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(captionBarBg)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.Bottom,
-    ) {
-        Text(
-            text = caption,
-            style = MaterialTheme.typography.bodyMedium,
-            color = onBubble,
-            modifier = Modifier.weight(1f),
-        )
-        if (formattedTime.isNotBlank()) {
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = formattedTime,
-                style = MaterialTheme.typography.labelSmall,
-                color = timeMuted,
-                modifier = Modifier.padding(bottom = 1.dp),
-            )
-        }
-    }
-}
-
-/** Telegram-like header: `[TAG]` + nickname on the left, role badge on the right. */
-@Composable
-private fun ChatBubbleAuthorHeader(
-    teamTag: String?,
-    nickname: String,
-    nicknameColor: Color,
-    tagBracketColor: Color,
-    senderRole: String,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Row(
-            modifier = Modifier.weight(1f),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            val t = teamTag?.trim()?.takeIf { it.isNotEmpty() }
-            if (t != null) {
-                Text(
-                    text = "[$t]",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = tagBracketColor,
-                    maxLines = 1,
-                )
-            }
-            Text(
-                text = nickname.trim().ifBlank { "—" },
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                color = nicknameColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-        }
-        Spacer(modifier = Modifier.width(8.dp))
-        RoleBadge(role = senderRole)
-    }
-}
-
-@Composable
 private fun ChatBubbleInnerColumn(
     message: ChatMessage,
     isMine: Boolean,
@@ -2396,6 +2367,12 @@ private fun ChatBubbleInnerColumn(
         else -> 10.dp
     }
     val messageImageTapLabel = stringResource(R.string.cd_chat_message_image)
+    val timeLabel = remember(formattedTime, message.editedAt) {
+        if (formattedTime.isBlank()) "" else {
+            val edited = !message.editedAt.isNullOrBlank()
+            if (edited) "$formattedTime · ${bubbleContext.getString(R.string.chat_edited)}" else formattedTime
+        }
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -2404,6 +2381,16 @@ private fun ChatBubbleInnerColumn(
             .then(swipeModifier),
         verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
     ) {
+        message.forwardedFrom?.let { fwd ->
+            val sender = chatSenderDisplayWithTag(fwd.senderTeamTag, fwd.senderUsername)
+            Text(
+                text = stringResource(R.string.chat_forwarded_from, sender),
+                style = MaterialTheme.typography.labelMedium,
+                color = onBubble.copy(alpha = 0.78f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         if (!isMine && showClusterHeader) {
             val tagMuted = ChatTelegramIncomingOnBubble.copy(alpha = 0.5f)
             ChatBubbleAuthorHeader(
@@ -2515,7 +2502,7 @@ private fun ChatBubbleInnerColumn(
                             roundTileCorners = false,
                             bottomRound = !hasCaption,
                         )
-                        if (!hasCaption && formattedTime.isNotBlank()) {
+                        if (!hasCaption && timeLabel.isNotBlank()) {
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
                                 color = Color.Black.copy(alpha = 0.45f),
@@ -2526,7 +2513,7 @@ private fun ChatBubbleInnerColumn(
                                     .padding(6.dp),
                             ) {
                                 Text(
-                                    text = formattedTime,
+                                    text = timeLabel,
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Color.White,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
@@ -2537,7 +2524,7 @@ private fun ChatBubbleInnerColumn(
                     if (hasCaption) {
                         TelegramImageCaptionBar(
                             caption = message.text.trimEnd(),
-                            formattedTime = formattedTime,
+                            formattedTime = timeLabel,
                             captionBarBg = captionBarBg,
                             onBubble = onBubble,
                             timeMuted = timeMuted,
@@ -2555,10 +2542,10 @@ private fun ChatBubbleInnerColumn(
                         color = onBubble,
                         modifier = Modifier.weight(1f),
                     )
-                    if (formattedTime.isNotBlank()) {
+                    if (timeLabel.isNotBlank()) {
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = formattedTime,
+                            text = timeLabel,
                             style = MaterialTheme.typography.labelSmall,
                             color = timeMuted,
                             modifier = Modifier.padding(bottom = 1.dp),
@@ -2568,16 +2555,44 @@ private fun ChatBubbleInnerColumn(
             }
         }
 
-        if (stickerStem != null && formattedTime.isNotBlank()) {
+        if (stickerStem != null && timeLabel.isNotBlank()) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
             ) {
                 Text(
-                    text = formattedTime,
+                    text = timeLabel,
                     style = MaterialTheme.typography.labelSmall,
                     color = timeMuted,
                 )
+            }
+        }
+
+        if (message.reactions.isNotEmpty()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                message.reactions.filter { it.count > 0 }.forEach { r ->
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (r.reactedByMe) {
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.75f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                        },
+                        tonalElevation = 0.dp,
+                        shadowElevation = 0.dp,
+                    ) {
+                        Text(
+                            text = "${r.emoji} ${r.count}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (r.reactedByMe) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        )
+                    }
+                }
             }
         }
 
@@ -2591,142 +2606,7 @@ private fun ChatBubbleInnerColumn(
     }
 }
 
-@Composable
-private fun TelegramLikeAttachmentsGrid(
-    urls: List<String>,
-    contentDescription: String,
-    onOpen: (Int) -> Unit,
-    modifier: Modifier = Modifier,
-    /** Rounded outer corners like Telegram albums. */
-    roundTileCorners: Boolean = true,
-    /** When caption bar follows, album bottom corners must be square. */
-    bottomRound: Boolean = true,
-) {
-    if (urls.isEmpty()) return
-    val maxShown = 4
-    val shown = urls.take(maxShown)
-    val extra = (urls.size - shown.size).coerceAtLeast(0)
-    val corner = 12.dp
-    val gap = 4.dp
-
-    fun tileShapeFor(shownCount: Int, tileIndex: Int): RoundedCornerShape {
-        val r = corner
-        fun tl() = if (roundTileCorners) r else 0.dp
-        fun tr() = if (roundTileCorners) r else 0.dp
-        fun bl() = if (roundTileCorners && bottomRound) r else 0.dp
-        fun br() = if (roundTileCorners && bottomRound) r else 0.dp
-        return when (shownCount) {
-            1 -> RoundedCornerShape(topStart = tl(), topEnd = tr(), bottomStart = bl(), bottomEnd = br())
-            2 -> when (tileIndex) {
-                0 -> RoundedCornerShape(topStart = tl(), topEnd = 0.dp, bottomStart = bl(), bottomEnd = 0.dp)
-                else -> RoundedCornerShape(topStart = 0.dp, topEnd = tr(), bottomStart = 0.dp, bottomEnd = br())
-            }
-            3 -> when (tileIndex) {
-                0 -> RoundedCornerShape(topStart = tl(), topEnd = 0.dp, bottomStart = bl(), bottomEnd = 0.dp)
-                1 -> RoundedCornerShape(topStart = 0.dp, topEnd = tr(), bottomStart = 0.dp, bottomEnd = 0.dp)
-                else -> RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = 0.dp, bottomEnd = br())
-            }
-            else -> when (tileIndex) {
-                0 -> RoundedCornerShape(topStart = tl(), topEnd = 0.dp, bottomStart = 0.dp, bottomEnd = 0.dp)
-                1 -> RoundedCornerShape(topStart = 0.dp, topEnd = tr(), bottomStart = 0.dp, bottomEnd = 0.dp)
-                2 -> RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = bl(), bottomEnd = 0.dp)
-                else -> RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = 0.dp, bottomEnd = br())
-            }
-        }
-    }
-
-    @Composable
-    fun tile(idx: Int, modifier: Modifier) {
-        val u = shown.getOrNull(idx) ?: return
-        Box(
-            modifier = modifier
-                .clip(tileShapeFor(shown.size, idx))
-                .semantics {
-                    this.contentDescription = contentDescription
-                    role = Role.Button
-                }
-                .clickable { onOpen(idx) },
-            contentAlignment = Alignment.Center,
-        ) {
-            val ctx = LocalContext.current
-            AsyncImage(
-                model = chatAuthedImageRequest(ctx, u),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                // Telegram-like: tiles are cropped to fill.
-                contentScale = ContentScale.Crop,
-            )
-            if (extra > 0 && idx == shown.lastIndex) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.38f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = "+$extra",
-                        color = Color.White,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-            }
-        }
-    }
-
-    Column(modifier = modifier) {
-        when (shown.size) {
-        1 -> tile(0, Modifier.fillMaxWidth().heightIn(max = 260.dp))
-        2 -> Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(190.dp),
-            horizontalArrangement = Arrangement.spacedBy(gap),
-        ) {
-            tile(0, Modifier.weight(1f).fillMaxHeight())
-            tile(1, Modifier.weight(1f).fillMaxHeight())
-        }
-        3 -> Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(220.dp),
-            horizontalArrangement = Arrangement.spacedBy(gap),
-        ) {
-            tile(0, Modifier.weight(1.3f).fillMaxHeight())
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
-                verticalArrangement = Arrangement.spacedBy(gap),
-            ) {
-                tile(1, Modifier.weight(1f).fillMaxWidth())
-                tile(2, Modifier.weight(1f).fillMaxWidth())
-            }
-        }
-        else -> Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(240.dp),
-            verticalArrangement = Arrangement.spacedBy(gap),
-        ) {
-            Row(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(gap),
-            ) {
-                tile(0, Modifier.weight(1f).fillMaxHeight())
-                tile(1, Modifier.weight(1f).fillMaxHeight())
-            }
-            Row(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(gap),
-            ) {
-                tile(2, Modifier.weight(1f).fillMaxHeight())
-                tile(3, Modifier.weight(1f).fillMaxHeight())
-            }
-        }
-        }
-    }
-}
+// moved to ui/chat/ChatMessageComponents.kt
 
 /** Сообщение только с фото: без «пузыря», как стикер; тап — полноэкранный просмотр. */
 @Composable
@@ -3385,8 +3265,12 @@ private fun ChatBubbleRow(
 private fun ChatMessageActionsSheet(
     message: ChatMessage,
     canDelete: Boolean,
+    mayEdit: Boolean,
     onDismiss: () -> Unit,
     onReply: () -> Unit,
+    onForward: () -> Unit,
+    onReact: (String) -> Unit,
+    onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -3452,6 +3336,43 @@ private fun ChatMessageActionsSheet(
                     modifier = Modifier.padding(end = 6.dp),
                 )
                 Text(stringResource(R.string.chat_action_reply))
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                listOf("👍", "❤️", "😂").forEach { e ->
+                    OutlinedButton(
+                        onClick = { onReact(e) },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(e)
+                    }
+                }
+            }
+            OutlinedButton(
+                onClick = onForward,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.ContentPaste,
+                    contentDescription = null,
+                    modifier = Modifier.padding(end = 6.dp),
+                )
+                Text(stringResource(R.string.chat_action_forward))
+            }
+            if (mayEdit) {
+                OutlinedButton(
+                    onClick = onEdit,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Edit,
+                        contentDescription = null,
+                        modifier = Modifier.padding(end = 6.dp),
+                    )
+                    Text(stringResource(R.string.chat_action_edit))
+                }
             }
             if (canDelete) {
                 OutlinedButton(

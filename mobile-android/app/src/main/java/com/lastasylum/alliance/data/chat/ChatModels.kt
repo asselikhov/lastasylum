@@ -23,6 +23,9 @@ data class ChatMessage(
     val senderTeamTag: String? = null,
     val senderTelegramUsername: String? = null,
     val text: String,
+    val editedAt: String? = null,
+    val forwardedFrom: ChatForwardedFrom? = null,
+    val reactions: List<ChatReaction> = emptyList(),
     val attachments: List<ChatAttachment> = emptyList(),
     val createdAt: String? = null,
     val updatedAt: String? = null,
@@ -30,6 +33,22 @@ data class ChatMessage(
     val replyTo: ChatMessageReplyPreview? = null,
     val deletedAt: String? = null,
     val deletedByUserId: String? = null,
+)
+
+@Immutable
+data class ChatForwardedFrom(
+    val messageId: String,
+    val senderId: String,
+    val senderUsername: String,
+    val senderRole: String,
+    val senderTeamTag: String? = null,
+)
+
+@Immutable
+data class ChatReaction(
+    val emoji: String,
+    val count: Int,
+    val reactedByMe: Boolean,
 )
 
 @Immutable
@@ -46,6 +65,18 @@ data class SendMessageRequest(
     val allianceId: String? = AllianceDefaults.DEFAULT_ALLIANCE_ID,
     val replyToMessageId: String? = null,
     val attachments: List<String>? = null,
+)
+
+data class EditMessageRequest(
+    val text: String,
+)
+
+data class ToggleReactionRequest(
+    val emoji: String,
+)
+
+data class ForwardMessageRequest(
+    val roomId: String,
 )
 
 data class UploadChatAttachmentResponse(

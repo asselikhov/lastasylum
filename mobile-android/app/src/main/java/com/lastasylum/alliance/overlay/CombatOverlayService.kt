@@ -43,6 +43,8 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Icon
@@ -56,6 +58,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.unit.dp
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.lastasylum.alliance.R
@@ -176,8 +179,10 @@ class CombatOverlayService : Service() {
     private var messageExpanded = false
     private var chatStripClipRoot: FrameLayout? = null
     private var chatStripLines: LinearLayout? = null
+    private var chatStripCompose: ComposeView? = null
     private var chatStripHost: FrameLayout? = null
     private var chatStripParams: WindowManager.LayoutParams? = null
+    private val chatStripPreviewFlow = MutableStateFlow<List<ChatMessage>>(emptyList())
     private var overlayMessageListener: ((ChatMessage) -> Unit)? = null
     /** Параметры главного окна оверлея (перетаскивание + определение «у правого края»). */
     private var overlayMainWindowParams: WindowManager.LayoutParams? = null
@@ -685,7 +690,6 @@ class CombatOverlayService : Service() {
     }
 
     private fun refreshOverlayChatStrip() {
-        val lines = chatStripLines ?: return
         stripBuffer.prune()
         val preview = stripBuffer.visibleForPreview()
         val signature = preview.joinToString(separator = "|") { msg ->
@@ -695,23 +699,7 @@ class CombatOverlayService : Service() {
                 "${msg.senderTeamTag ?: ""}:${msg.senderTelegramUsername ?: ""}:$att"
         }
         if (signature == lastStripRenderSignature) return
-        val selfId = jwtSubFromAccessToken()
-        OverlayChatStripUi.clearLines(lines)
-        for (msg in preview) {
-            OverlayChatStripUi.addLine(
-                this,
-                lines,
-                teamTag = msg.senderTeamTag,
-                username = msg.senderUsername,
-                msg.text,
-                msg.senderId,
-                msg.senderRole,
-                senderTelegramUsername = msg.senderTelegramUsername,
-                attachments = msg.attachments,
-                selfUserId = selfId,
-                showDismiss = false,
-            )
-        }
+        chatStripPreviewFlow.value = preview
         lastStripRenderSignature = signature
     }
 
@@ -754,11 +742,28 @@ class CombatOverlayService : Service() {
 
     private fun setStripPlainMessage(message: String) {
         stripBuffer.clear()
-        val lines = chatStripLines ?: return
         val signature = "notice:$message"
         if (signature == lastStripRenderSignature) return
-        OverlayChatStripUi.clearLines(lines)
-        OverlayChatStripUi.addNoticeLine(this, lines, message)
+        chatStripPreviewFlow.value = listOf(
+            ChatMessage(
+                _id = "notice",
+                allianceId = "",
+                roomId = "",
+                senderId = "",
+                senderUsername = getString(R.string.app_name),
+                senderRole = "",
+                senderTeamTag = null,
+                senderTelegramUsername = null,
+                text = message.trimEnd(),
+                attachments = emptyList(),
+                createdAt = null,
+                updatedAt = null,
+                replyToMessageId = null,
+                replyTo = null,
+                deletedAt = null,
+                deletedByUserId = null,
+            ),
+        )
         lastStripRenderSignature = signature
     }
 
@@ -794,6 +799,7 @@ class CombatOverlayService : Service() {
         chatStripParams = null
         chatStripClipRoot = null
         chatStripLines = null
+        chatStripCompose = null
     }
 
     private fun ensureChatStripWindow(manager: WindowManager) {
@@ -822,12 +828,27 @@ class CombatOverlayService : Service() {
             y = dp(10)
         }
 
-        val stripLines = OverlayChatStripUi.createLinesContainer(this)
         val clipRoot = FrameLayout(this).apply {
             clipChildren = true
             OverlayChatStripUi.styleStripContainer(this@CombatOverlayService, this)
+            val compose = ComposeView(this@CombatOverlayService).apply {
+                setContent {
+                    val preview by chatStripPreviewFlow.collectAsState()
+                    val selfId = jwtSubFromAccessToken()
+                    SquadRelayTheme {
+                        OverlayChatStrip(
+                            messages = preview,
+                            selfUserId = selfId,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 2.dp, vertical = 2.dp),
+                        )
+                    }
+                }
+            }
+            chatStripCompose = compose
             addView(
-                stripLines,
+                compose,
                 FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
                     FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -857,7 +878,7 @@ class CombatOverlayService : Service() {
         chatStripHost = host
         chatStripParams = params
         chatStripClipRoot = clipRoot
-        chatStripLines = stripLines
+        chatStripLines = null
     }
 
     private fun beginOverlayChatSubscription() {
@@ -1568,6 +1589,9 @@ class CombatOverlayService : Service() {
                                     onDismissSendFailure = vm::dismissSendFailure,
                                     onChatVoiceHoldStart = vm::startChatVoiceInput,
                                     onChatVoiceHoldEnd = vm::stopChatVoiceInput,
+                                    onEditMessage = vm::editMessage,
+                                    onForwardMessage = vm::forwardMessage,
+                                    onToggleReaction = vm::toggleReaction,
                                 )
                                 IconButton(
                                     onClick = { hideOverlayHistoryPanel() },

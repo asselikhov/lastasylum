@@ -87,6 +87,15 @@ class ChatRepository(
     suspend fun deleteMessage(messageId: String): Result<ChatMessageDeleteResult> =
         runCatching { chatApi.deleteMessage(messageId) }
 
+    suspend fun editMessage(messageId: String, text: String): Result<ChatMessage> =
+        runCatching { chatApi.editMessage(messageId, EditMessageRequest(text = text)) }
+
+    suspend fun toggleReaction(messageId: String, emoji: String): Result<ChatMessage> =
+        runCatching { chatApi.toggleReaction(messageId, ToggleReactionRequest(emoji = emoji)) }
+
+    suspend fun forwardMessage(messageId: String, roomId: String): Result<ChatMessage> =
+        runCatching { chatApi.forwardMessage(messageId, ForwardMessageRequest(roomId = roomId)) }
+
     fun connectRealtime(
         roomId: String,
         onMessage: (ChatMessage) -> Unit,

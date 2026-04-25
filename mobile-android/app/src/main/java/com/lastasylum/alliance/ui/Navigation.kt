@@ -270,6 +270,9 @@ fun AppNavigation(
                     onDismissSendFailure = chatViewModel::dismissSendFailure,
                     onChatVoiceHoldStart = chatViewModel::startChatVoiceInput,
                     onChatVoiceHoldEnd = chatViewModel::stopChatVoiceInput,
+                    onEditMessage = chatViewModel::editMessage,
+                    onForwardMessage = chatViewModel::forwardMessage,
+                    onToggleReaction = chatViewModel::toggleReaction,
                 )
             }
             composable(AppTab.OVERLAY.route) {

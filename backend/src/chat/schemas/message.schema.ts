@@ -12,12 +12,30 @@ export type MessageAttachment = {
   size: number;
 };
 
+export type MessageReaction = {
+  emoji: string;
+  userIds: string[];
+};
+
+export type MessageForwardedFrom = {
+  messageId: Types.ObjectId;
+  senderId: string;
+  senderUsername: string;
+  senderRole: AllianceRole;
+  senderTeamTag: string | null;
+};
+
 @Schema({ timestamps: true })
 export class Message {
   @Prop({ required: true, index: true })
   allianceId: string;
 
-  @Prop({ type: Types.ObjectId, ref: ChatRoom.name, required: true, index: true })
+  @Prop({
+    type: Types.ObjectId,
+    ref: ChatRoom.name,
+    required: true,
+    index: true,
+  })
   roomId: Types.ObjectId;
 
   @Prop({ required: true })
@@ -52,6 +70,35 @@ export class Message {
 
   @Prop({ type: Types.ObjectId, ref: Message.name, default: null, index: true })
   replyToMessageId: Types.ObjectId | null;
+
+  /** Edited text marker (Telegram-style "edited"). */
+  @Prop({ type: Date, default: null, index: true })
+  editedAt: Date | null;
+
+  /** Forwarded message metadata (minimal; points to original message). */
+  @Prop({
+    type: {
+      messageId: { type: Types.ObjectId, required: true },
+      senderId: { type: String, required: true },
+      senderUsername: { type: String, required: true },
+      senderRole: { type: String, required: true },
+      senderTeamTag: { type: String, default: null },
+    },
+    default: null,
+  })
+  forwardedFrom: MessageForwardedFrom | null;
+
+  /** Emoji reactions with explicit user lists for toggling. */
+  @Prop({
+    type: [
+      {
+        emoji: { type: String, required: true, trim: true },
+        userIds: { type: [String], default: [] },
+      },
+    ],
+    default: [],
+  })
+  reactions: MessageReaction[];
 
   @Prop({ type: Date, default: null, index: true })
   deletedAt: Date | null;

@@ -205,6 +205,9 @@ class ChatSocketManager {
                         senderTelegramUsername = payload.optString("senderTelegramUsername")
                             .takeIf { it.isNotBlank() },
                         text = payload.optString("text"),
+                        editedAt = payload.optString("editedAt").takeIf { it.isNotBlank() },
+                        forwardedFrom = payload.optJSONObject("forwardedFrom")?.toForwardedFrom(),
+                        reactions = payload.optJSONArray("reactions")?.toReactions().orEmpty(),
                         createdAt = payload.optString("createdAt"),
                         updatedAt = payload.optString("updatedAt").takeIf { it.isNotBlank() },
                         replyToMessageId = payload.optString("replyToMessageId")
@@ -217,6 +220,20 @@ class ChatSocketManager {
                     messageListeners.forEach { l ->
                         runCatching { l(message) }
                     }
+                }
+                on("message:edited") { args ->
+                    val payload = args.firstOrNull() as? JSONObject ?: return@on
+                    val msgRoom = payload.optString("roomId", "")
+                    if (msgRoom.isNotBlank() && msgRoom != roomId) return@on
+                    val message = payload.toChatMessage()
+                    messageListeners.forEach { l -> runCatching { l(message) } }
+                }
+                on("message:reaction") { args ->
+                    val payload = args.firstOrNull() as? JSONObject ?: return@on
+                    val msgRoom = payload.optString("roomId", "")
+                    if (msgRoom.isNotBlank() && msgRoom != roomId) return@on
+                    val message = payload.toChatMessage()
+                    messageListeners.forEach { l -> runCatching { l(message) } }
                 }
                 on("message:deleted") { args ->
                     val payload = args.firstOrNull() as? JSONObject ?: return@on
@@ -289,5 +306,56 @@ private fun JSONObject.toChatReplyPreview(): ChatMessageReplyPreview? {
         text = optString("text"),
         createdAt = optString("createdAt").takeIf { it.isNotBlank() },
         deletedAt = optString("deletedAt").takeIf { it.isNotBlank() },
+    )
+}
+
+private fun JSONObject.toForwardedFrom(): ChatForwardedFrom? {
+    val messageId = optString("messageId").takeIf { it.isNotBlank() } ?: return null
+    return ChatForwardedFrom(
+        messageId = messageId,
+        senderId = optString("senderId"),
+        senderUsername = optString("senderUsername"),
+        senderRole = optString("senderRole"),
+        senderTeamTag = optString("senderTeamTag").takeIf { it.isNotBlank() },
+    )
+}
+
+private fun org.json.JSONArray.toReactions(): List<ChatReaction> {
+    val out = ArrayList<ChatReaction>(length())
+    for (i in 0 until length()) {
+        val o = optJSONObject(i) ?: continue
+        val emoji = o.optString("emoji").takeIf { it.isNotBlank() } ?: continue
+        out.add(
+            ChatReaction(
+                emoji = emoji,
+                count = o.optInt("count", 0),
+                reactedByMe = o.optBoolean("reactedByMe", false),
+            ),
+        )
+    }
+    return out
+}
+
+private fun JSONObject.toChatMessage(): ChatMessage {
+    val msgRoom = optString("roomId", "")
+    return ChatMessage(
+        _id = optString("_id").takeIf { it.isNotBlank() },
+        allianceId = optString("allianceId", AllianceDefaults.DEFAULT_ALLIANCE_ID),
+        roomId = msgRoom,
+        senderId = optString("senderId"),
+        senderUsername = optString("senderUsername"),
+        senderRole = optString("senderRole"),
+        senderTeamTag = optString("senderTeamTag").takeIf { it.isNotBlank() },
+        senderTelegramUsername = optString("senderTelegramUsername").takeIf { it.isNotBlank() },
+        text = optString("text"),
+        editedAt = optString("editedAt").takeIf { it.isNotBlank() },
+        forwardedFrom = optJSONObject("forwardedFrom")?.toForwardedFrom(),
+        reactions = optJSONArray("reactions")?.toReactions().orEmpty(),
+        createdAt = optString("createdAt"),
+        updatedAt = optString("updatedAt").takeIf { it.isNotBlank() },
+        replyToMessageId = optString("replyToMessageId").takeIf { it.isNotBlank() },
+        replyTo = optJSONObject("replyTo")?.toChatReplyPreview(),
+        deletedAt = optString("deletedAt").takeIf { it.isNotBlank() },
+        deletedByUserId = optString("deletedByUserId").takeIf { it.isNotBlank() },
     )
 }
