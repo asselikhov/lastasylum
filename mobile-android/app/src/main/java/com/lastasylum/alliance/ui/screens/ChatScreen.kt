@@ -202,10 +202,13 @@ private sealed interface ChatTimelineEntry {
     data class DaySeparator(val label: String) : ChatTimelineEntry
     data class ChatMessageItem(val message: ChatMessage, val messageIndex: Int) : ChatTimelineEntry
     data class ChatAlbumItem(
-        val message: ChatMessage,
-        val messageIndex: Int,
+        /** First (newest) message index of the grouped run (newest-first list). */
+        val firstMessageIndex: Int,
+        /** Message used for metadata/id/time (caption message when present, else the first one). */
+        val representativeMessage: ChatMessage,
         val messageIndices: List<Int>,
         val resolvedImageUrls: List<String>,
+        val caption: String?,
     ) : ChatTimelineEntry
 }
 
@@ -273,7 +276,7 @@ private fun chatBubbleClusterTopSpacing(
         if (e is ChatTimelineEntry.DaySeparator) return 10.dp
         val o = when (e) {
             is ChatTimelineEntry.ChatMessageItem -> e.message
-            is ChatTimelineEntry.ChatAlbumItem -> e.message
+            is ChatTimelineEntry.ChatAlbumItem -> e.representativeMessage
             else -> null
         }
         if (o != null) {
@@ -298,7 +301,6 @@ private fun buildChatTimeline(messages: List<ChatMessage>): List<ChatTimelineEnt
     val out = ArrayList<ChatTimelineEntry>(messages.size + 8)
     fun isAlbumCandidate(m: ChatMessage): Boolean {
         if (m.replyTo != null) return false
-        if (m.text.isNotBlank()) return false
         val hasImages = m.attachments.any { it.kind == "image" && it.url.isNotBlank() }
         return hasImages && ZlobyakaStickerPack.parseStem(m.text) == null
     }
@@ -322,12 +324,24 @@ private fun buildChatTimeline(messages: List<ChatMessage>): List<ChatTimelineEnt
             val day = chatDayKey(m.createdAt)
             val indices = ArrayList<Int>(4)
             val urls = ArrayList<String>(8)
+            var caption: String? = null
+            var repIndex = i
             var j = i
             while (j < messages.size && indices.size < 10) {
                 val mm = messages[j]
                 if (!isAlbumCandidate(mm)) break
                 if (mm.senderId.trim() != sid || sid.isBlank()) break
                 if (day != null && chatDayKey(mm.createdAt) != day) break
+                val t = mm.text.trimEnd()
+                if (t.isNotBlank()) {
+                    if (caption == null) {
+                        caption = t
+                        repIndex = j
+                    } else {
+                        // Telegram-like: one caption per album group.
+                        break
+                    }
+                }
                 indices.add(j)
                 mm.attachments
                     .filter { it.kind == "image" && it.url.isNotBlank() }
@@ -342,10 +356,11 @@ private fun buildChatTimeline(messages: List<ChatMessage>): List<ChatTimelineEnt
             if (indices.size >= 2 && urls.isNotEmpty()) {
                 out.add(
                     ChatTimelineEntry.ChatAlbumItem(
-                        message = m,
-                        messageIndex = i,
+                        firstMessageIndex = i,
+                        representativeMessage = messages[repIndex],
                         messageIndices = indices,
                         resolvedImageUrls = urls,
+                        caption = caption,
                     ),
                 )
                 i += indices.size
@@ -1059,7 +1074,7 @@ private fun ChatMessagesLazyList(
                         when (val e = timeline[idx]) {
                             is ChatTimelineEntry.DaySeparator -> "day:$idx:${e.label}"
                             is ChatTimelineEntry.ChatMessageItem -> chatMessageKey(e.message)
-                            is ChatTimelineEntry.ChatAlbumItem -> "album:${chatMessageKey(e.message)}:${e.messageIndices.firstOrNull() ?: -1}:${e.messageIndices.lastOrNull() ?: -1}"
+                            is ChatTimelineEntry.ChatAlbumItem -> "album:${chatMessageKey(e.representativeMessage)}:${e.messageIndices.firstOrNull() ?: -1}:${e.messageIndices.lastOrNull() ?: -1}"
                         }
                     },
                     contentType = { idx ->
@@ -1099,14 +1114,15 @@ private fun ChatMessagesLazyList(
                             )
                         }
                         is ChatTimelineEntry.ChatAlbumItem -> {
-                            val message = e.message
-                            val showClusterHeader = chatMessageShowsClusterHeader(state.messages, e.messageIndex)
+                            val message = e.representativeMessage
+                            val showClusterHeader = chatMessageShowsClusterHeader(state.messages, e.firstMessageIndex)
                             val clusterTop = chatBubbleClusterTopSpacing(timeline, idx, message)
                             ChatAlbumRow(
                                 messages = state.messages,
-                                messageIndex = e.messageIndex,
+                                messageIndex = e.firstMessageIndex,
                                 message = message,
                                 resolvedImageUrls = e.resolvedImageUrls,
+                                caption = e.caption,
                                 isMine = chatMessageIsOwn(message, state.currentUserId),
                                 showClusterHeader = showClusterHeader,
                                 clusterTopSpacing = clusterTop,
@@ -2724,6 +2740,10 @@ private fun ChatFloatingImageAttachmentsBlock(
     message: ChatMessage,
     isChainBottom: Boolean,
     formattedTime: String,
+    caption: String? = null,
+    captionBarBg: Color = Color.Transparent,
+    onBubble: Color = Color.White,
+    timeMuted: Color = Color.White.copy(alpha = 0.6f),
     bubbleClickModifier: Modifier,
     swipeModifier: Modifier,
     deleting: Boolean,
@@ -2756,29 +2776,43 @@ private fun ChatFloatingImageAttachmentsBlock(
                 .padding(top = if (!isMine && showClusterHeader) 2.dp else 0.dp)
                 .clip(clipShape),
         ) {
-            TelegramLikeAttachmentsGrid(
-                urls = urls,
-                contentDescription = label,
-                onOpen = { idx -> openRemote(urls, idx) },
-                modifier = Modifier.fillMaxWidth(),
-                roundTileCorners = false,
-                bottomRound = true,
-            )
-            if (formattedTime.isNotBlank()) {
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = Color.Black.copy(alpha = 0.45f),
-                    tonalElevation = 0.dp,
-                    shadowElevation = 0.dp,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(6.dp),
-                ) {
-                    Text(
-                        text = formattedTime,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+            val hasCaption = !caption.isNullOrBlank()
+            Column {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    TelegramLikeAttachmentsGrid(
+                        urls = urls,
+                        contentDescription = label,
+                        onOpen = { idx -> openRemote(urls, idx) },
+                        modifier = Modifier.fillMaxWidth(),
+                        roundTileCorners = true,
+                        bottomRound = !hasCaption,
+                    )
+                    if (!hasCaption && formattedTime.isNotBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color.Black.copy(alpha = 0.45f),
+                            tonalElevation = 0.dp,
+                            shadowElevation = 0.dp,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(6.dp),
+                        ) {
+                            Text(
+                                text = formattedTime,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                            )
+                        }
+                    }
+                }
+                if (hasCaption) {
+                    TelegramImageCaptionBar(
+                        caption = caption!!.trimEnd(),
+                        formattedTime = formattedTime,
+                        captionBarBg = captionBarBg,
+                        onBubble = onBubble,
+                        timeMuted = timeMuted,
                     )
                 }
             }
@@ -2800,6 +2834,7 @@ private fun ChatAlbumRow(
     messageIndex: Int,
     message: ChatMessage,
     resolvedImageUrls: List<String>,
+    caption: String?,
     isMine: Boolean,
     showClusterHeader: Boolean,
     clusterTopSpacing: Dp,
@@ -2832,6 +2867,13 @@ private fun ChatAlbumRow(
     val nickname = message.senderUsername.trim().ifBlank { displayName }
     val isChainBottom = chatMessageIsClusterChainBottom(messages, messageIndex)
     val formattedTime = formatChatTime(message.createdAt)
+    val onBubble = if (isMine) ChatTelegramOutgoingOnBubble else ChatTelegramIncomingOnBubble
+    val timeMuted = if (isMine) ChatTelegramTimeMuted else ChatTelegramTimeMutedIncoming
+    val captionBarBg = if (isMine) {
+        lerp(ChatTelegramOutgoingBubble, Color.Black, 0.18f)
+    } else {
+        lerp(ChatTelegramIncomingBubble, Color.Black, 0.24f)
+    }
 
     val swipeModifier = if (messageId != null) {
         Modifier.pointerInput(messageId, layoutDirection, swipePx) {
@@ -2908,6 +2950,10 @@ private fun ChatAlbumRow(
                 message = message,
                 isChainBottom = isChainBottom,
                 formattedTime = formattedTime,
+                caption = caption,
+                captionBarBg = captionBarBg,
+                onBubble = onBubble,
+                timeMuted = timeMuted,
                 bubbleClickModifier = bubbleClickModifier,
                 swipeModifier = swipeModifier,
                 deleting = deleting,
@@ -2947,6 +2993,10 @@ private fun ChatAlbumRow(
                 message = message,
                 isChainBottom = isChainBottom,
                 formattedTime = formattedTime,
+                caption = caption,
+                captionBarBg = captionBarBg,
+                onBubble = onBubble,
+                timeMuted = timeMuted,
                 bubbleClickModifier = bubbleClickModifier,
                 swipeModifier = swipeModifier,
                 deleting = deleting,
