@@ -201,6 +201,12 @@ private data class ChatListLoadSignal(
 private sealed interface ChatTimelineEntry {
     data class DaySeparator(val label: String) : ChatTimelineEntry
     data class ChatMessageItem(val message: ChatMessage, val messageIndex: Int) : ChatTimelineEntry
+    data class ChatAlbumItem(
+        val message: ChatMessage,
+        val messageIndex: Int,
+        val messageIndices: List<Int>,
+        val resolvedImageUrls: List<String>,
+    ) : ChatTimelineEntry
 }
 
 /**
@@ -265,8 +271,12 @@ private fun chatBubbleClusterTopSpacing(
     while (i < timeline.size) {
         val e = timeline[i]
         if (e is ChatTimelineEntry.DaySeparator) return 10.dp
-        if (e is ChatTimelineEntry.ChatMessageItem) {
-            val o = e.message
+        val o = when (e) {
+            is ChatTimelineEntry.ChatMessageItem -> e.message
+            is ChatTimelineEntry.ChatAlbumItem -> e.message
+            else -> null
+        }
+        if (o != null) {
             val same = o.senderId.trim() == sid && o.senderId.trim().isNotEmpty()
             return if (same) 1.dp else 10.dp
         }
@@ -286,7 +296,15 @@ private fun chatMessageIsOwn(message: ChatMessage, currentUserId: String): Boole
 private fun buildChatTimeline(messages: List<ChatMessage>): List<ChatTimelineEntry> {
     if (messages.isEmpty()) return emptyList()
     val out = ArrayList<ChatTimelineEntry>(messages.size + 8)
-    for (i in messages.indices) {
+    fun isAlbumCandidate(m: ChatMessage): Boolean {
+        if (m.replyTo != null) return false
+        if (m.text.isNotBlank()) return false
+        val hasImages = m.attachments.any { it.kind == "image" && it.url.isNotBlank() }
+        return hasImages && ZlobyakaStickerPack.parseStem(m.text) == null
+    }
+
+    var i = 0
+    while (i < messages.size) {
         if (i > 0) {
             val newer = messages[i - 1]
             val older = messages[i]
@@ -294,12 +312,49 @@ private fun buildChatTimeline(messages: List<ChatMessage>): List<ChatTimelineEnt
             val d1 = chatDayKey(older.createdAt)
             if (d0 != null && d1 != null && d0 != d1) {
                 val label = formatChatDaySeparator(older.createdAt)
-                if (label.isNotBlank()) {
-                    out.add(ChatTimelineEntry.DaySeparator(label))
-                }
+                if (label.isNotBlank()) out.add(ChatTimelineEntry.DaySeparator(label))
             }
         }
-        out.add(ChatTimelineEntry.ChatMessageItem(messages[i], i))
+
+        val m = messages[i]
+        if (isAlbumCandidate(m)) {
+            val sid = m.senderId.trim()
+            val day = chatDayKey(m.createdAt)
+            val indices = ArrayList<Int>(4)
+            val urls = ArrayList<String>(8)
+            var j = i
+            while (j < messages.size && indices.size < 10) {
+                val mm = messages[j]
+                if (!isAlbumCandidate(mm)) break
+                if (mm.senderId.trim() != sid || sid.isBlank()) break
+                if (day != null && chatDayKey(mm.createdAt) != day) break
+                indices.add(j)
+                mm.attachments
+                    .filter { it.kind == "image" && it.url.isNotBlank() }
+                    .forEach { urls.add(resolvedChatAttachmentImageUrl(it.url)) }
+                // only group consecutive messages
+                j++
+                if (j < messages.size) {
+                    val next = messages[j]
+                    if (next.senderId.trim() != sid) break
+                }
+            }
+            if (indices.size >= 2 && urls.isNotEmpty()) {
+                out.add(
+                    ChatTimelineEntry.ChatAlbumItem(
+                        message = m,
+                        messageIndex = i,
+                        messageIndices = indices,
+                        resolvedImageUrls = urls,
+                    ),
+                )
+                i += indices.size
+                continue
+            }
+        }
+
+        out.add(ChatTimelineEntry.ChatMessageItem(m, i))
+        i++
     }
     return out
 }
@@ -1004,12 +1059,14 @@ private fun ChatMessagesLazyList(
                         when (val e = timeline[idx]) {
                             is ChatTimelineEntry.DaySeparator -> "day:$idx:${e.label}"
                             is ChatTimelineEntry.ChatMessageItem -> chatMessageKey(e.message)
+                            is ChatTimelineEntry.ChatAlbumItem -> "album:${chatMessageKey(e.message)}:${e.messageIndices.firstOrNull() ?: -1}:${e.messageIndices.lastOrNull() ?: -1}"
                         }
                     },
                     contentType = { idx ->
                         when (timeline[idx]) {
                             is ChatTimelineEntry.DaySeparator -> "chat_day"
                             is ChatTimelineEntry.ChatMessageItem -> "chat_message"
+                            is ChatTimelineEntry.ChatAlbumItem -> "chat_album"
                         }
                     },
                 ) { idx ->
@@ -1023,6 +1080,33 @@ private fun ChatMessagesLazyList(
                                 messages = state.messages,
                                 messageIndex = e.messageIndex,
                                 message = message,
+                                isMine = chatMessageIsOwn(message, state.currentUserId),
+                                showClusterHeader = showClusterHeader,
+                                clusterTopSpacing = clusterTop,
+                                canDelete = canDeleteChatMessage(
+                                    message = message,
+                                    currentUserId = state.currentUserId,
+                                    currentUserRole = state.currentUserRole,
+                                ),
+                                deleting = state.deletingMessageId == message._id,
+                                inSelectionMode = inSelectionMode,
+                                isSelected = message._id != null && message._id in selectedMessageIds,
+                                onOpenActions = { id -> onOpenMessageActions(id) },
+                                onBeginSelection = onBeginMessageSelection,
+                                onToggleSelection = onToggleMessageSelection,
+                                onSwipeReply = onReplyToMessage,
+                                onJumpToQuotedMessage = jumpToQuotedMessage,
+                            )
+                        }
+                        is ChatTimelineEntry.ChatAlbumItem -> {
+                            val message = e.message
+                            val showClusterHeader = chatMessageShowsClusterHeader(state.messages, e.messageIndex)
+                            val clusterTop = chatBubbleClusterTopSpacing(timeline, idx, message)
+                            ChatAlbumRow(
+                                messages = state.messages,
+                                messageIndex = e.messageIndex,
+                                message = message,
+                                resolvedImageUrls = e.resolvedImageUrls,
                                 isMine = chatMessageIsOwn(message, state.currentUserId),
                                 showClusterHeader = showClusterHeader,
                                 clusterTopSpacing = clusterTop,
@@ -2413,6 +2497,7 @@ private fun ChatBubbleInnerColumn(
                             onOpen = { idx -> openRemoteChatImagePreview(fullResolvedUrls, idx) },
                             modifier = Modifier.fillMaxWidth(),
                             roundTileCorners = false,
+                            bottomRound = !hasCaption,
                         )
                         if (!hasCaption && formattedTime.isNotBlank()) {
                             Surface(
@@ -2496,22 +2581,50 @@ private fun TelegramLikeAttachmentsGrid(
     contentDescription: String,
     onOpen: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    /** Внутри скруглённого пузыря — без отдельного clip на тайлах (внешняя оболочка обрезает углы). */
+    /** Rounded outer corners like Telegram albums. */
     roundTileCorners: Boolean = true,
+    /** When caption bar follows, album bottom corners must be square. */
+    bottomRound: Boolean = true,
 ) {
     if (urls.isEmpty()) return
     val maxShown = 4
     val shown = urls.take(maxShown)
     val extra = (urls.size - shown.size).coerceAtLeast(0)
-    val shape = RoundedCornerShape(12.dp)
+    val corner = 12.dp
     val gap = 4.dp
+
+    fun tileShapeFor(shownCount: Int, tileIndex: Int): RoundedCornerShape {
+        val r = corner
+        fun tl() = if (roundTileCorners) r else 0.dp
+        fun tr() = if (roundTileCorners) r else 0.dp
+        fun bl() = if (roundTileCorners && bottomRound) r else 0.dp
+        fun br() = if (roundTileCorners && bottomRound) r else 0.dp
+        return when (shownCount) {
+            1 -> RoundedCornerShape(topStart = tl(), topEnd = tr(), bottomStart = bl(), bottomEnd = br())
+            2 -> when (tileIndex) {
+                0 -> RoundedCornerShape(topStart = tl(), topEnd = 0.dp, bottomStart = bl(), bottomEnd = 0.dp)
+                else -> RoundedCornerShape(topStart = 0.dp, topEnd = tr(), bottomStart = 0.dp, bottomEnd = br())
+            }
+            3 -> when (tileIndex) {
+                0 -> RoundedCornerShape(topStart = tl(), topEnd = 0.dp, bottomStart = bl(), bottomEnd = 0.dp)
+                1 -> RoundedCornerShape(topStart = 0.dp, topEnd = tr(), bottomStart = 0.dp, bottomEnd = 0.dp)
+                else -> RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = 0.dp, bottomEnd = br())
+            }
+            else -> when (tileIndex) {
+                0 -> RoundedCornerShape(topStart = tl(), topEnd = 0.dp, bottomStart = 0.dp, bottomEnd = 0.dp)
+                1 -> RoundedCornerShape(topStart = 0.dp, topEnd = tr(), bottomStart = 0.dp, bottomEnd = 0.dp)
+                2 -> RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = bl(), bottomEnd = 0.dp)
+                else -> RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = 0.dp, bottomEnd = br())
+            }
+        }
+    }
 
     @Composable
     fun tile(idx: Int, modifier: Modifier) {
         val u = shown.getOrNull(idx) ?: return
         Box(
             modifier = modifier
-                .then(if (roundTileCorners) Modifier.clip(shape) else Modifier)
+                .clip(tileShapeFor(shown.size, idx))
                 .semantics {
                     this.contentDescription = contentDescription
                     role = Role.Button
@@ -2649,6 +2762,7 @@ private fun ChatFloatingImageAttachmentsBlock(
                 onOpen = { idx -> openRemote(urls, idx) },
                 modifier = Modifier.fillMaxWidth(),
                 roundTileCorners = false,
+                bottomRound = true,
             )
             if (formattedTime.isNotBlank()) {
                 Surface(
@@ -2674,6 +2788,169 @@ private fun ChatFloatingImageAttachmentsBlock(
                 text = stringResource(R.string.chat_deleting_progress),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ChatAlbumRow(
+    messages: List<ChatMessage>,
+    messageIndex: Int,
+    message: ChatMessage,
+    resolvedImageUrls: List<String>,
+    isMine: Boolean,
+    showClusterHeader: Boolean,
+    clusterTopSpacing: Dp,
+    canDelete: Boolean,
+    deleting: Boolean,
+    inSelectionMode: Boolean,
+    isSelected: Boolean,
+    onOpenActions: (String) -> Unit,
+    onBeginSelection: (String) -> Unit,
+    onToggleSelection: (String) -> Unit,
+    onSwipeReply: (String) -> Unit,
+    onJumpToQuotedMessage: (String) -> Unit,
+) {
+    val messageId = message._id
+    val haptics = LocalHapticFeedback.current
+    val density = LocalDensity.current
+    val layoutDirection = LocalLayoutDirection.current
+    val swipePx = remember(density) { with(density) { 56.dp.toPx() } }
+    val senderLine = chatSenderDisplayWithTag(message.senderTeamTag, message.senderUsername)
+    val bubbleDescription = stringResource(
+        R.string.cd_chat_message,
+        senderLine,
+        message.senderRole,
+        stringResource(R.string.cd_chat_message_image),
+    )
+    val telegramUrl = telegramAvatarUrl(message.senderTelegramUsername)
+    val senderAccent = roleAccentColor(message.senderRole)
+    val stemTag = message.senderTeamTag?.trim()?.takeIf { it.isNotEmpty() }
+    val displayName = message.senderUsername.trim().ifBlank { senderLine }
+    val nickname = message.senderUsername.trim().ifBlank { displayName }
+    val isChainBottom = chatMessageIsClusterChainBottom(messages, messageIndex)
+    val formattedTime = formatChatTime(message.createdAt)
+
+    val swipeModifier = if (messageId != null) {
+        Modifier.pointerInput(messageId, layoutDirection, swipePx) {
+            var accX = 0f
+            detectHorizontalDragGestures(
+                onDragEnd = {
+                    val fired = kotlin.math.abs(accX) > swipePx
+                    if (fired) {
+                        val towardReply = if (layoutDirection == LayoutDirection.Rtl) {
+                            accX < 0
+                        } else {
+                            accX > 0
+                        }
+                        if (towardReply) onSwipeReply(messageId)
+                    }
+                    accX = 0f
+                },
+                onHorizontalDrag = { change, dragAmount ->
+                    accX += dragAmount
+                    change.consume()
+                },
+            )
+        }
+    } else {
+        Modifier
+    }
+
+    val bubbleClickModifier = Modifier
+        .semantics(mergeDescendants = true) {
+            contentDescription = bubbleDescription
+            role = Role.Button
+        }
+        .combinedClickable(
+            onClick = {
+                if (inSelectionMode && canDelete && !messageId.isNullOrBlank()) {
+                    onToggleSelection(messageId)
+                }
+            },
+            onLongClick = {
+                if (messageId.isNullOrBlank()) return@combinedClickable
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                if (canDelete) {
+                    if (inSelectionMode) onToggleSelection(messageId) else onBeginSelection(messageId)
+                } else {
+                    onOpenActions(messageId)
+                }
+            },
+        )
+
+    if (isMine) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = clusterTopSpacing),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            if (inSelectionMode && canDelete) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = {
+                        if (!messageId.isNullOrBlank()) onToggleSelection(messageId)
+                    },
+                    enabled = !messageId.isNullOrBlank(),
+                )
+            }
+            ChatFloatingImageAttachmentsBlock(
+                urls = resolvedImageUrls,
+                isMine = true,
+                showClusterHeader = false,
+                stemTag = stemTag,
+                nickname = nickname,
+                senderAccent = senderAccent,
+                message = message,
+                isChainBottom = isChainBottom,
+                formattedTime = formattedTime,
+                bubbleClickModifier = bubbleClickModifier,
+                swipeModifier = swipeModifier,
+                deleting = deleting,
+                canDelete = canDelete,
+            )
+        }
+    } else {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = clusterTopSpacing),
+            horizontalArrangement = Arrangement.Start,
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            if (inSelectionMode && canDelete) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = {
+                        if (!messageId.isNullOrBlank()) onToggleSelection(messageId)
+                    },
+                    enabled = !messageId.isNullOrBlank(),
+                )
+            }
+            ChatSenderAvatar(
+                telegramUrl = telegramUrl,
+                size = ChatIncomingAvatarSize,
+                modifier = Modifier.padding(end = ChatIncomingAvatarEndPad),
+                fallbackName = displayName,
+            )
+            ChatFloatingImageAttachmentsBlock(
+                urls = resolvedImageUrls,
+                isMine = false,
+                showClusterHeader = showClusterHeader,
+                stemTag = stemTag,
+                nickname = nickname,
+                senderAccent = senderAccent,
+                message = message,
+                isChainBottom = isChainBottom,
+                formattedTime = formattedTime,
+                bubbleClickModifier = bubbleClickModifier,
+                swipeModifier = swipeModifier,
+                deleting = deleting,
+                canDelete = canDelete,
             )
         }
     }
