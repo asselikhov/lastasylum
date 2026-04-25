@@ -11,7 +11,11 @@ export enum TeamJoinRequestStatus {
 
 @Schema({ timestamps: true, collection: 'teamjoinrequests' })
 export class TeamJoinRequest {
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'PlayerTeam', required: true })
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'PlayerTeam',
+    required: true,
+  })
   teamId: Types.ObjectId;
 
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true })

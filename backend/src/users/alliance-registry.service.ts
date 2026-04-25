@@ -31,7 +31,9 @@ export class AllianceRegistryService {
     allianceCode: string,
   ): Promise<AllianceRegistryDocument> {
     const code = allianceCode.trim();
-    const existing = await this.registryModel.findOne({ allianceCode: code }).exec();
+    const existing = await this.registryModel
+      .findOne({ allianceCode: code })
+      .exec();
     if (existing) {
       return existing;
     }
@@ -80,9 +82,10 @@ export class AllianceRegistryService {
       >()
       .exec();
     const agg = await this.userModel
-      .aggregate<{ _id: string; c: number }>([
-        { $group: { _id: '$allianceName', c: { $sum: 1 } } },
-      ])
+      .aggregate<{
+        _id: string;
+        c: number;
+      }>([{ $group: { _id: '$allianceName', c: { $sum: 1 } } }])
       .exec();
     const counts = new Map<string, number>();
     for (const a of agg) {

@@ -102,7 +102,8 @@ export class ChatGateway {
     if (!client.data.user) {
       throw new WsException('Unauthorized socket connection');
     }
-    const roomId = typeof payload?.roomId === 'string' ? payload.roomId.trim() : '';
+    const roomId =
+      typeof payload?.roomId === 'string' ? payload.roomId.trim() : '';
     if (!roomId) {
       throw new WsException('roomId is required');
     }
@@ -120,7 +121,10 @@ export class ChatGateway {
     if (!mayJoin) {
       throw new WsException('Room is not available for your alliance');
     }
-    if (this.usersService.effectiveMembership(user) !== TeamMembershipStatus.ACTIVE) {
+    if (
+      this.usersService.effectiveMembership(user) !==
+      TeamMembershipStatus.ACTIVE
+    ) {
       throw new WsException('Chat is not available for this account');
     }
 
@@ -185,17 +189,17 @@ export class ChatGateway {
     if (!mayType) {
       throw new WsException('Room is not available for your alliance');
     }
-    if (this.usersService.effectiveMembership(user) !== TeamMembershipStatus.ACTIVE) {
+    if (
+      this.usersService.effectiveMembership(user) !==
+      TeamMembershipStatus.ACTIVE
+    ) {
       throw new WsException('Chat is not available for this account');
     }
-    this.server
-      ?.to(`chat:${roomId}`)
-      .except(client.id)
-      .emit('user:typing', {
-        roomId,
-        userId: client.data.user.userId,
-        username: client.data.user.username,
-      });
+    this.server?.to(`chat:${roomId}`).except(client.id).emit('user:typing', {
+      roomId,
+      userId: client.data.user.userId,
+      username: client.data.user.username,
+    });
   }
 
   broadcastNewMessage(roomId: string, message: unknown) {

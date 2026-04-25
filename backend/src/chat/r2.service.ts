@@ -1,7 +1,11 @@
 import '../common/aws-r2-sdk-env';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 
 @Injectable()
 export class R2Service {
@@ -13,8 +17,12 @@ export class R2Service {
       .getOrThrow<string>('R2_ENDPOINT')
       .trim()
       .replace(/\/+$/, '');
-    const accessKeyId = this.config.getOrThrow<string>('R2_ACCESS_KEY_ID').trim();
-    const secretAccessKey = this.config.getOrThrow<string>('R2_SECRET_ACCESS_KEY').trim();
+    const accessKeyId = this.config
+      .getOrThrow<string>('R2_ACCESS_KEY_ID')
+      .trim();
+    const secretAccessKey = this.config
+      .getOrThrow<string>('R2_SECRET_ACCESS_KEY')
+      .trim();
     this.bucket = this.config.getOrThrow<string>('R2_BUCKET').trim();
     const region = (this.config.get<string>('R2_REGION') ?? 'auto').trim();
 
@@ -59,7 +67,10 @@ export class R2Service {
         Key: key,
       }),
     );
-    if (!res.Body || typeof (res.Body as { pipe?: unknown }).pipe !== 'function') {
+    if (
+      !res.Body ||
+      typeof (res.Body as { pipe?: unknown }).pipe !== 'function'
+    ) {
       throw new Error('Invalid R2 body stream');
     }
     return {
@@ -69,4 +80,3 @@ export class R2Service {
     };
   }
 }
-

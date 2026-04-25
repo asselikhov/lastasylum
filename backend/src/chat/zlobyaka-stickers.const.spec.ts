@@ -14,7 +14,9 @@ describe('zlobyaka-stickers.const', () => {
     expect(parseZlobyakaStickerStem('[[zlobyaka:1-96632-512b]]')).toBe(
       '1-96632-512b',
     );
-    expect(isZlobyakaStickerOnlyMessage('[[zlobyaka:1-96632-512b]]')).toBe(true);
+    expect(isZlobyakaStickerOnlyMessage('[[zlobyaka:1-96632-512b]]')).toBe(
+      true,
+    );
   });
 
   it('rejects non-exact payloads', () => {

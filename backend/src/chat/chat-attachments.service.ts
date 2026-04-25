@@ -67,7 +67,10 @@ export class ChatAttachmentsService {
       });
     } catch (err) {
       this.logger.error(`R2 putObject failed key=${key}`, err);
-      await this.attachmentModel.deleteOne({ _id: fileId }).exec().catch(() => undefined);
+      await this.attachmentModel
+        .deleteOne({ _id: fileId })
+        .exec()
+        .catch(() => undefined);
       throw new BadGatewayException('CHAT_ATTACHMENT_R2_PUT_FAILED');
     }
 
@@ -106,4 +109,3 @@ export class ChatAttachmentsService {
     };
   }
 }
-

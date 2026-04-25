@@ -1,4 +1,10 @@
-import { IsNumber, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsNumber,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 export class CreateChatRoomDto {
   @IsString()

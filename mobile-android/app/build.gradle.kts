@@ -1,4 +1,4 @@
-﻿import java.util.Properties
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -121,6 +121,10 @@ dependencies {
 
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("com.google.android.material:material:1.12.0")
+    // Explicit base artifacts: required for ViewTree*Owner classes (overlay ComposeView owners).
+    implementation("androidx.activity:activity-ktx:1.9.1")
+    implementation("androidx.lifecycle:lifecycle-runtime:2.8.4")
+    implementation("androidx.savedstate:savedstate:1.2.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.4")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.4")

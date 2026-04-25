@@ -62,7 +62,7 @@ fun SquadRelayApp() {
         if (!authState.isAuthenticated) {
             runCatching {
                 AppContainer.from(application).chatRepository.resetRealtimeForLogout()
-                CombatOverlayService.stopService(application)
+                CombatOverlayService.stopRuntime(application)
             }
         }
     }

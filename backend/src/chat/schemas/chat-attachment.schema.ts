@@ -9,7 +9,12 @@ export class ChatAttachment {
   @Prop({ required: true, index: true })
   allianceId: string;
 
-  @Prop({ type: Types.ObjectId, ref: ChatRoom.name, required: true, index: true })
+  @Prop({
+    type: Types.ObjectId,
+    ref: ChatRoom.name,
+    required: true,
+    index: true,
+  })
   roomId: Types.ObjectId;
 
   @Prop({ required: true })
@@ -28,6 +33,6 @@ export class ChatAttachment {
   size: number;
 }
 
-export const ChatAttachmentSchema = SchemaFactory.createForClass(ChatAttachment);
+export const ChatAttachmentSchema =
+  SchemaFactory.createForClass(ChatAttachment);
 ChatAttachmentSchema.index({ allianceId: 1, roomId: 1, createdAt: -1 });
-

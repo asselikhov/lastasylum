@@ -13,8 +13,10 @@ import { Message, MessageDocument } from './schemas/message.schema';
 @Injectable()
 export class ChatRoomsService {
   constructor(
-    @InjectModel(ChatRoom.name) private readonly roomModel: Model<ChatRoomDocument>,
-    @InjectModel(Message.name) private readonly messageModel: Model<MessageDocument>,
+    @InjectModel(ChatRoom.name)
+    private readonly roomModel: Model<ChatRoomDocument>,
+    @InjectModel(Message.name)
+    private readonly messageModel: Model<MessageDocument>,
     private readonly usersService: UsersService,
   ) {}
 
@@ -128,7 +130,7 @@ export class ChatRoomsService {
       .findOne({ allianceId, title: 'Общий', archivedAt: null })
       .exec();
     if (existing) {
-      return existing._id as Types.ObjectId;
+      return existing._id;
     }
     const created = await this.roomModel.create({
       allianceId,
@@ -136,7 +138,7 @@ export class ChatRoomsService {
       sortOrder: 0,
       archivedAt: null,
     });
-    return created._id as Types.ObjectId;
+    return created._id;
   }
 
   /** Cross-alliance lobby: one "Общая" room for everyone. */

@@ -29,7 +29,11 @@ export class User {
   allianceName: string;
 
   /** Optional in-app player squad (separate from allianceName / chat routing). */
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'PlayerTeam', default: null })
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'PlayerTeam',
+    default: null,
+  })
   playerTeamId: Types.ObjectId | null;
 
   /** Optional display name for the squad / team (does not change alliance routing). */

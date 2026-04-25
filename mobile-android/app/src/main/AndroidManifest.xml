@@ -41,6 +41,15 @@
             </intent-filter>
         </activity>
 
+        <!-- Transparent helper activity for overlay system dialogs (picker/permissions). -->
+        <activity
+            android:name=".overlay.OverlaySystemDialogActivity"
+            android:exported="false"
+            android:finishOnTaskLaunch="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.LastAsylum.OverlayDialog"
+            android:excludeFromRecents="true" />
+
         <service
             android:name=".overlay.CombatOverlayService"
             android:enabled="true"

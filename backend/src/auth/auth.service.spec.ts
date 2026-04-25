@@ -62,7 +62,9 @@ describe('AuthService', () => {
   describe('forgotPassword', () => {
     it('returns ok without sending when user not found', async () => {
       findByEmail.mockResolvedValue(null);
-      const out = await authService.forgotPassword({ email: 'nope@example.com' });
+      const out = await authService.forgotPassword({
+        email: 'nope@example.com',
+      });
       expect(out).toEqual({ ok: true });
       expect(sendMail).not.toHaveBeenCalled();
       expect(setPasswordResetToken).not.toHaveBeenCalled();
