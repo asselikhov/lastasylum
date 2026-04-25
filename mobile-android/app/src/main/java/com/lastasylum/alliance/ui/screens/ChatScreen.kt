@@ -106,6 +106,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -2189,6 +2190,40 @@ private fun ChatSenderAvatar(
     }
 }
 
+/** Подпись под медиа в одном пузыре (как в Telegram): отдельная полоса + время справа снизу. */
+@Composable
+private fun TelegramImageCaptionBar(
+    caption: String,
+    formattedTime: String,
+    captionBarBg: Color,
+    onBubble: Color,
+    timeMuted: Color,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(captionBarBg)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        Text(
+            text = caption,
+            style = MaterialTheme.typography.bodyMedium,
+            color = onBubble,
+            modifier = Modifier.weight(1f),
+        )
+        if (formattedTime.isNotBlank()) {
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = formattedTime,
+                style = MaterialTheme.typography.labelSmall,
+                color = timeMuted,
+                modifier = Modifier.padding(bottom = 1.dp),
+            )
+        }
+    }
+}
+
 /** Telegram-like header: `[TAG]` + nickname on the left, role badge on the right. */
 @Composable
 private fun ChatBubbleAuthorHeader(
@@ -2356,38 +2391,78 @@ private fun ChatBubbleInnerColumn(
                 )
             }
         } else {
-            if (message.attachments.isNotEmpty()) {
-                val imageAttachments =
-                    message.attachments.filter { it.kind == "image" && it.url.isNotBlank() }
-                if (imageAttachments.isNotEmpty()) {
-                    val fullResolvedUrls =
-                        imageAttachments.map { resolvedChatAttachmentImageUrl(it.url) }
-                    TelegramLikeAttachmentsGrid(
-                        urls = fullResolvedUrls,
-                        contentDescription = messageImageTapLabel,
-                        onOpen = { idx -> openRemoteChatImagePreview(fullResolvedUrls, idx) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+            val imageAttachments =
+                message.attachments.filter { it.kind == "image" && it.url.isNotBlank() }
+            if (imageAttachments.isNotEmpty()) {
+                val fullResolvedUrls =
+                    imageAttachments.map { resolvedChatAttachmentImageUrl(it.url) }
+                val captionBarBg = if (isMine) {
+                    lerp(ChatTelegramOutgoingBubble, Color.Black, 0.18f)
+                } else {
+                    lerp(ChatTelegramIncomingBubble, Color.Black, 0.24f)
                 }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Bottom,
-            ) {
-                Text(
-                    text = message.text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = onBubble,
-                    modifier = Modifier.weight(1f),
-                )
-                if (formattedTime.isNotBlank()) {
-                    Spacer(modifier = Modifier.width(8.dp))
+                val hasCaption = message.text.isNotBlank()
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(0.dp),
+                ) {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        TelegramLikeAttachmentsGrid(
+                            urls = fullResolvedUrls,
+                            contentDescription = messageImageTapLabel,
+                            onOpen = { idx -> openRemoteChatImagePreview(fullResolvedUrls, idx) },
+                            modifier = Modifier.fillMaxWidth(),
+                            roundTileCorners = false,
+                        )
+                        if (!hasCaption && formattedTime.isNotBlank()) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = Color.Black.copy(alpha = 0.45f),
+                                tonalElevation = 0.dp,
+                                shadowElevation = 0.dp,
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(6.dp),
+                            ) {
+                                Text(
+                                    text = formattedTime,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                )
+                            }
+                        }
+                    }
+                    if (hasCaption) {
+                        TelegramImageCaptionBar(
+                            caption = message.text.trimEnd(),
+                            formattedTime = formattedTime,
+                            captionBarBg = captionBarBg,
+                            onBubble = onBubble,
+                            timeMuted = timeMuted,
+                        )
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Bottom,
+                ) {
                     Text(
-                        text = formattedTime,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = timeMuted,
-                        modifier = Modifier.padding(bottom = 1.dp),
+                        text = message.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = onBubble,
+                        modifier = Modifier.weight(1f),
                     )
+                    if (formattedTime.isNotBlank()) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = formattedTime,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = timeMuted,
+                            modifier = Modifier.padding(bottom = 1.dp),
+                        )
+                    }
                 }
             }
         }
@@ -2421,6 +2496,8 @@ private fun TelegramLikeAttachmentsGrid(
     contentDescription: String,
     onOpen: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    /** Внутри скруглённого пузыря — без отдельного clip на тайлах (внешняя оболочка обрезает углы). */
+    roundTileCorners: Boolean = true,
 ) {
     if (urls.isEmpty()) return
     val maxShown = 4
@@ -2434,7 +2511,7 @@ private fun TelegramLikeAttachmentsGrid(
         val u = shown.getOrNull(idx) ?: return
         Box(
             modifier = modifier
-                .clip(shape)
+                .then(if (roundTileCorners) Modifier.clip(shape) else Modifier)
                 .semantics {
                     this.contentDescription = contentDescription
                     role = Role.Button
@@ -2570,6 +2647,7 @@ private fun ChatFloatingImageAttachmentsBlock(
                 contentDescription = label,
                 onOpen = { idx -> openRemote(urls, idx) },
                 modifier = Modifier.fillMaxWidth(),
+                roundTileCorners = false,
             )
             if (formattedTime.isNotBlank()) {
                 Surface(

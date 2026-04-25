@@ -9,11 +9,12 @@ import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
-import android.widget.ImageView
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.core.graphics.ColorUtils
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.card.MaterialCardView
@@ -367,16 +368,109 @@ object OverlayChatHistoryPanel {
                 )
             }
         } else {
-            TextView(context).apply {
-                text = ChatStickerFormat.humanReadableBody(context, msg.text).trimEnd()
-                setTextColor(bodyColor)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-                maxLines = 40
-                ellipsize = TextUtils.TruncateAt.END
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = dp(context, 4f).toInt() }
+            val imageUrls = msg.attachments.filter { it.kind == "image" && it.url.isNotBlank() }
+            if (imageUrls.isNotEmpty()) {
+                val firstUrl = resolvedChatAttachmentImageUrl(imageUrls.first().url)
+                val extra = (imageUrls.size - 1).coerceAtLeast(0)
+                val bodyStr = ChatStickerFormat.humanReadableBody(context, msg.text).trimEnd()
+                val captionBarBg = ColorUtils.blendARGB(
+                    Color.parseColor("#1A2838"),
+                    Color.BLACK,
+                    0.38f,
+                )
+                val imageMaxH = dp(context, 200f).toInt()
+                LinearLayout(context).apply {
+                    orientation = LinearLayout.VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { topMargin = dp(context, 4f).toInt() }
+                    val mediaWrap = FrameLayout(context).apply {
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                        )
+                    }
+                    val img = ImageView(context).apply {
+                        layoutParams = FrameLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                        )
+                        maxHeight = imageMaxH
+                        adjustViewBounds = true
+                        scaleType = ImageView.ScaleType.CENTER_CROP
+                        contentDescription = context.getString(R.string.chat_attachments_open)
+                    }
+                    mediaWrap.addView(img)
+                    if (extra > 0) {
+                        mediaWrap.addView(
+                            TextView(context).apply {
+                                layoutParams = FrameLayout.LayoutParams(
+                                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                                    Gravity.BOTTOM or Gravity.END,
+                                ).apply {
+                                    setMargins(0, 0, dp(context, 8f).toInt(), dp(context, 8f).toInt())
+                                }
+                                text = "+$extra"
+                                setTextColor(Color.WHITE)
+                                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                                typeface = Typeface.DEFAULT_BOLD
+                                setPadding(
+                                    dp(context, 10f).toInt(),
+                                    dp(context, 4f).toInt(),
+                                    dp(context, 10f).toInt(),
+                                    dp(context, 4f).toInt(),
+                                )
+                                background = GradientDrawable().apply {
+                                    cornerRadius = dp(context, 12f)
+                                    setColor(ColorUtils.setAlphaComponent(Color.BLACK, 0xC8))
+                                }
+                            },
+                        )
+                    }
+                    addView(mediaWrap)
+                    Coil.imageLoader(context).enqueue(
+                        overlayAuthedImageRequest(context, firstUrl) {
+                            target(img)
+                            size(720)
+                        },
+                    )
+                    if (bodyStr.isNotBlank()) {
+                        addView(
+                            TextView(context).apply {
+                                layoutParams = LinearLayout.LayoutParams(
+                                    LinearLayout.LayoutParams.MATCH_PARENT,
+                                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                                )
+                                text = bodyStr
+                                setTextColor(bodyColor)
+                                setBackgroundColor(captionBarBg)
+                                setPadding(
+                                    dp(context, 12f).toInt(),
+                                    dp(context, 10f).toInt(),
+                                    dp(context, 12f).toInt(),
+                                    dp(context, 10f).toInt(),
+                                )
+                                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                                maxLines = 80
+                                ellipsize = TextUtils.TruncateAt.END
+                            },
+                        )
+                    }
+                }
+            } else {
+                TextView(context).apply {
+                    text = ChatStickerFormat.humanReadableBody(context, msg.text).trimEnd()
+                    setTextColor(bodyColor)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                    maxLines = 40
+                    ellipsize = TextUtils.TruncateAt.END
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { topMargin = dp(context, 4f).toInt() }
+                }
             }
         }
 

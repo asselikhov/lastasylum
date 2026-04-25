@@ -315,7 +315,15 @@ object OverlayChatStripUi {
                 )
             }
             firstImage != null -> {
+                val imageUrls =
+                    attachments.filter { it.kind == "image" && it.url.isNotBlank() }
                 val url = resolvedChatAttachmentImageUrl(firstImage.url)
+                val extra = (imageUrls.size - 1).coerceAtLeast(0)
+                val captionBarBg = ColorUtils.blendARGB(
+                    Color.parseColor("#1A2838"),
+                    Color.BLACK,
+                    0.38f,
+                )
                 val column = LinearLayout(context).apply {
                     orientation = LinearLayout.VERTICAL
                     layoutParams = LinearLayout.LayoutParams(
@@ -323,8 +331,14 @@ object OverlayChatStripUi {
                         ViewGroup.LayoutParams.WRAP_CONTENT,
                     ).apply { topMargin = dp(context, 2f).toInt() }
                 }
-                val img = ImageView(context).apply {
+                val mediaWrap = FrameLayout(context).apply {
                     layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                    )
+                }
+                val img = ImageView(context).apply {
+                    layoutParams = FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT,
                     )
@@ -333,7 +347,35 @@ object OverlayChatStripUi {
                     scaleType = ImageView.ScaleType.CENTER_CROP
                     contentDescription = context.getString(R.string.chat_attachments_open)
                 }
-                column.addView(img)
+                mediaWrap.addView(img)
+                if (extra > 0) {
+                    mediaWrap.addView(
+                        TextView(context).apply {
+                            layoutParams = FrameLayout.LayoutParams(
+                                ViewGroup.LayoutParams.WRAP_CONTENT,
+                                ViewGroup.LayoutParams.WRAP_CONTENT,
+                                Gravity.BOTTOM or Gravity.END,
+                            ).apply {
+                                setMargins(0, 0, dp(context, 6f).toInt(), dp(context, 6f).toInt())
+                            }
+                            text = "+$extra"
+                            setTextColor(Color.WHITE)
+                            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+                            typeface = Typeface.DEFAULT_BOLD
+                            setPadding(
+                                dp(context, 8f).toInt(),
+                                dp(context, 3f).toInt(),
+                                dp(context, 8f).toInt(),
+                                dp(context, 3f).toInt(),
+                            )
+                            background = GradientDrawable().apply {
+                                cornerRadius = dp(context, 10f)
+                                setColor(ColorUtils.setAlphaComponent(Color.BLACK, 0xC8))
+                            }
+                        },
+                    )
+                }
+                column.addView(mediaWrap)
                 Coil.imageLoader(context).enqueue(
                     overlayAuthedImageRequest(context, url) {
                         target(img)
@@ -346,9 +388,16 @@ object OverlayChatStripUi {
                             layoutParams = LinearLayout.LayoutParams(
                                 ViewGroup.LayoutParams.MATCH_PARENT,
                                 ViewGroup.LayoutParams.WRAP_CONTENT,
-                            ).apply { topMargin = dp(context, 3f).toInt() }
+                            )
                             text = bodyText
                             setTextColor(bodyColor)
+                            setBackgroundColor(captionBarBg)
+                            setPadding(
+                                dp(context, 9f).toInt(),
+                                dp(context, 7f).toInt(),
+                                dp(context, 9f).toInt(),
+                                dp(context, 7f).toInt(),
+                            )
                             setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
                             maxLines = 6
                             ellipsize = TextUtils.TruncateAt.END
