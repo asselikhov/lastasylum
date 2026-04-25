@@ -12,6 +12,7 @@ import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatMessageDeletedEvent
 import com.lastasylum.alliance.data.chat.ChatRepository
+import com.lastasylum.alliance.data.chat.ChatRoomReadEvent
 import com.lastasylum.alliance.data.chat.ChatTypingEvent
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
@@ -191,6 +192,7 @@ class ChatViewModel(
             newestMessageKey = null,
             scrollToLatestNonce = 0L,
             sendFailure = null,
+            otherReadUptoMessageId = null,
         )
         repository.loadRecentMessages(roomId, beforeMessageId = null, limit = PAGE_SIZE)
             .onSuccess { loaded ->
@@ -208,7 +210,11 @@ class ChatViewModel(
                     onMessage = ::onIncomingMessage,
                     onDeleteMessage = ::onDeletedMessage,
                     onTyping = ::onTypingFromPeer,
+                    onRead = ::onRoomReadEvent,
                 )
+                capped.firstOrNull()?._id?.let { newestId ->
+                    repository.markRoomRead(roomId, newestId)
+                }
             }
             .onFailure { e ->
                 _state.value = _state.value.copy(
@@ -636,6 +642,16 @@ class ChatViewModel(
         incomingMessages.trySend(message).isSuccess
     }
 
+    private fun onRoomReadEvent(event: ChatRoomReadEvent) {
+        if (event.userId.isBlank() || event.messageId.isBlank()) return
+        if (event.userId == currentUserId) return
+        _state.update { st ->
+            val cur = st.otherReadUptoMessageId
+            val next = if (cur == null || cur < event.messageId) event.messageId else cur
+            st.copy(otherReadUptoMessageId = next)
+        }
+    }
+
     private fun onTypingFromPeer(event: ChatTypingEvent) {
         viewModelScope.launch {
             if (event.userId.isBlank() || event.userId == currentUserId) return@launch
@@ -717,6 +733,14 @@ class ChatViewModel(
             )
         }
         _state.value = syncSelections(nextState)
+        val rid = _state.value.selectedRoomId
+        if (!rid.isNullOrBlank()) {
+            nextState.messages.firstOrNull()?._id?.let { newestId ->
+                viewModelScope.launch {
+                    repository.markRoomRead(rid, newestId)
+                }
+            }
+        }
     }
 
     fun clearError() {

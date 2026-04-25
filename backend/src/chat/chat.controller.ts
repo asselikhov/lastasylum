@@ -49,6 +49,10 @@ class ForwardMessageDto {
   roomId: string;
 }
 
+class MarkReadDto {
+  messageId: string;
+}
+
 type RequestUser = {
   userId: string;
   username: string;
@@ -352,5 +356,23 @@ export class ChatController {
     );
     this.chatGateway.broadcastNewMessage(roomId, forwarded);
     return forwarded;
+  }
+
+  @Post('rooms/:roomId/read')
+  @Roles(AllianceRole.R2)
+  async markRoomRead(
+    @Req() req: { user: RequestUser },
+    @Param('roomId') roomId: string,
+    @Body() dto: MarkReadDto,
+  ) {
+    const messageId = dto?.messageId?.trim() ?? '';
+    if (!messageId) throw new BadRequestException('messageId is required');
+    const result = await this.chatService.markRoomRead({
+      userId: req.user.userId,
+      roomId: roomId.trim(),
+      messageId,
+    });
+    this.chatGateway.server?.to(`chat:${result.roomId}`).emit('room:read', result);
+    return { success: true };
   }
 }

@@ -14,6 +14,10 @@ import {
   ChatAttachmentSchema,
 } from './schemas/chat-attachment.schema';
 import { Message, MessageSchema } from './schemas/message.schema';
+import {
+  ChatRoomReadState,
+  ChatRoomReadStateSchema,
+} from './schemas/chat-room-read-state.schema';
 import { R2Service } from './r2.service';
 
 @Module({
@@ -25,6 +29,7 @@ import { R2Service } from './r2.service';
       { name: Message.name, schema: MessageSchema },
       { name: ChatAttachment.name, schema: ChatAttachmentSchema },
       { name: ChatRoom.name, schema: ChatRoomSchema },
+      { name: ChatRoomReadState.name, schema: ChatRoomReadStateSchema },
     ]),
   ],
   controllers: [ChatController],

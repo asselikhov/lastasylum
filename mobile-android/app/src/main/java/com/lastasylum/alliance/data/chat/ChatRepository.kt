@@ -18,6 +18,7 @@ class ChatRepository(
     private var realtimeUiListener: ((ChatMessage) -> Unit)? = null
     private var realtimeDeleteListener: ((ChatMessageDeletedEvent) -> Unit)? = null
     private var realtimeTypingListener: ((ChatTypingEvent) -> Unit)? = null
+    private var realtimeReadListener: ((ChatRoomReadEvent) -> Unit)? = null
 
     suspend fun listRooms(): Result<List<ChatRoomDto>> =
         runCatching { chatApi.listRooms() }
@@ -96,21 +97,31 @@ class ChatRepository(
     suspend fun forwardMessage(messageId: String, roomId: String): Result<ChatMessage> =
         runCatching { chatApi.forwardMessage(messageId, ForwardMessageRequest(roomId = roomId)) }
 
+    suspend fun markRoomRead(roomId: String, messageId: String): Result<Unit> =
+        runCatching {
+            chatApi.markRoomRead(roomId, MarkRoomReadRequest(messageId = messageId))
+            Unit
+        }
+
     fun connectRealtime(
         roomId: String,
         onMessage: (ChatMessage) -> Unit,
         onDeleteMessage: (ChatMessageDeletedEvent) -> Unit = {},
         onTyping: (ChatTypingEvent) -> Unit = {},
+        onRead: (ChatRoomReadEvent) -> Unit = {},
     ) {
         realtimeUiListener?.let { socketManager.removeMessageListener(it) }
         realtimeDeleteListener?.let { socketManager.removeMessageDeletedListener(it) }
         realtimeTypingListener?.let { socketManager.removeTypingListener(it) }
+        realtimeReadListener?.let { socketManager.removeReadListener(it) }
         realtimeUiListener = onMessage
         realtimeDeleteListener = onDeleteMessage
         realtimeTypingListener = onTyping
+        realtimeReadListener = onRead
         socketManager.addMessageListener(onMessage)
         socketManager.addMessageDeletedListener(onDeleteMessage)
         socketManager.addTypingListener(onTyping)
+        socketManager.addReadListener(onRead)
         socketManager.connect(
             baseUrl = BuildConfig.API_BASE_URL,
             roomId = roomId,
@@ -131,9 +142,11 @@ class ChatRepository(
         realtimeUiListener?.let { socketManager.removeMessageListener(it) }
         realtimeDeleteListener?.let { socketManager.removeMessageDeletedListener(it) }
         realtimeTypingListener?.let { socketManager.removeTypingListener(it) }
+        realtimeReadListener?.let { socketManager.removeReadListener(it) }
         realtimeUiListener = null
         realtimeDeleteListener = null
         realtimeTypingListener = null
+        realtimeReadListener = null
         socketManager.disconnect()
     }
 

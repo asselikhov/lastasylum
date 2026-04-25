@@ -65,4 +65,10 @@ interface ChatApi {
         @Path("messageId") messageId: String,
         @Body body: ForwardMessageRequest,
     ): ChatMessage
+
+    @POST("chat/rooms/{roomId}/read")
+    suspend fun markRoomRead(
+        @Path("roomId") roomId: String,
+        @Body body: MarkRoomReadRequest,
+    )
 }

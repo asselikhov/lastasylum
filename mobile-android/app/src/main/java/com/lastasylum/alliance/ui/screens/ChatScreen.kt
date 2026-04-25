@@ -1165,6 +1165,7 @@ private fun ChatMessagesLazyList(
                                 deleting = state.deletingMessageId == message._id,
                                 inSelectionMode = inSelectionMode,
                                 isSelected = message._id != null && message._id in selectedMessageIds,
+                                otherReadUptoMessageId = state.otherReadUptoMessageId,
                                 onOpenActions = { id -> onOpenMessageActions(id) },
                                 onBeginSelection = onBeginMessageSelection,
                                 onToggleSelection = onToggleMessageSelection,
@@ -2899,6 +2900,7 @@ private fun ChatBubbleRow(
     deleting: Boolean,
     inSelectionMode: Boolean,
     isSelected: Boolean,
+    otherReadUptoMessageId: String?,
     onOpenActions: (String) -> Unit,
     onBeginSelection: (String) -> Unit,
     onToggleSelection: (String) -> Unit,
@@ -2951,6 +2953,10 @@ private fun ChatBubbleRow(
     }
     val bubbleContext = LocalContext.current
     val formattedTime = formatChatTime(message.createdAt)
+    val readDouble = isMine &&
+        !message._id.isNullOrBlank() &&
+        !otherReadUptoMessageId.isNullOrBlank() &&
+        otherReadUptoMessageId >= message._id
 
     val swipeModifier = if (messageId != null) {
         Modifier.pointerInput(messageId, layoutDirection, swipePx) {

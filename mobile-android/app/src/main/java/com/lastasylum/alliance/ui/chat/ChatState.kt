@@ -42,4 +42,6 @@ data class ChatState(
     val scrollToLatestNonce: Long = 0L,
     val sendFailure: ChatSendFailure? = null,
     val chatVoicePhase: ChatVoicePhase = ChatVoicePhase.Idle,
+    /** Highest message id read by someone else in this room (for Telegram-like double-check on own messages). */
+    val otherReadUptoMessageId: String? = null,
 )

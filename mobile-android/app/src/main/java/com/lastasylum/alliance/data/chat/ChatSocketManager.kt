@@ -21,6 +21,7 @@ class ChatSocketManager {
     private val messageDeletedListeners =
         CopyOnWriteArrayList<(ChatMessageDeletedEvent) -> Unit>()
     private val typingListeners = CopyOnWriteArrayList<(ChatTypingEvent) -> Unit>()
+    private val readListeners = CopyOnWriteArrayList<(ChatRoomReadEvent) -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var reconnectAttempt = 0
     private var intentionalDisconnect = false
@@ -68,10 +69,21 @@ class ChatSocketManager {
         typingListeners.remove(listener)
     }
 
+    fun addReadListener(listener: (ChatRoomReadEvent) -> Unit) {
+        if (!readListeners.contains(listener)) {
+            readListeners.add(listener)
+        }
+    }
+
+    fun removeReadListener(listener: (ChatRoomReadEvent) -> Unit) {
+        readListeners.remove(listener)
+    }
+
     fun clearMessageListeners() {
         messageListeners.clear()
         messageDeletedListeners.clear()
         typingListeners.clear()
+        readListeners.clear()
     }
 
     fun connect(
@@ -263,6 +275,18 @@ class ChatSocketManager {
                     typingListeners.forEach { l ->
                         runCatching { l(event) }
                     }
+                }
+                on("room:read") { args ->
+                    val payload = args.firstOrNull() as? JSONObject ?: return@on
+                    val rid = payload.optString("roomId", "")
+                    if (rid.isNotBlank() && rid != roomId) return@on
+                    val event = ChatRoomReadEvent(
+                        roomId = rid,
+                        userId = payload.optString("userId"),
+                        messageId = payload.optString("messageId"),
+                    )
+                    if (event.userId.isBlank() || event.messageId.isBlank()) return@on
+                    readListeners.forEach { l -> runCatching { l(event) } }
                 }
                 connect()
             }

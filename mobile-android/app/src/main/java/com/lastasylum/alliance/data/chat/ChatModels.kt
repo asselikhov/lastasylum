@@ -79,6 +79,10 @@ data class ForwardMessageRequest(
     val roomId: String,
 )
 
+data class MarkRoomReadRequest(
+    val messageId: String,
+)
+
 data class UploadChatAttachmentResponse(
     val fileId: String,
     val url: String,
@@ -114,6 +118,12 @@ data class ChatTypingEvent(
     val roomId: String,
     val userId: String,
     val username: String,
+)
+
+data class ChatRoomReadEvent(
+    val roomId: String,
+    val userId: String,
+    val messageId: String,
 )
 
 data class CreateChatRoomRequest(

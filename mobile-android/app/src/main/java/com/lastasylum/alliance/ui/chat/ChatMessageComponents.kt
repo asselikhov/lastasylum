@@ -185,7 +185,8 @@ fun TelegramLikeAttachmentsGrid(
     enabled: Boolean = true,
 ) {
     if (urls.isEmpty()) return
-    val maxShown = 4
+    // Telegram-like albums: show up to 6 tiles; for more, overlay +N on the last one.
+    val maxShown = 6
     val shown = urls.take(maxShown)
     val extra = (urls.size - shown.size).coerceAtLeast(0)
     val corner = 12.dp
@@ -208,12 +209,31 @@ fun TelegramLikeAttachmentsGrid(
                 1 -> RoundedCornerShape(topStart = 0.dp, topEnd = tr(), bottomStart = 0.dp, bottomEnd = 0.dp)
                 else -> RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = 0.dp, bottomEnd = br())
             }
-            else -> when (tileIndex) {
+            4 -> when (tileIndex) {
                 0 -> RoundedCornerShape(topStart = tl(), topEnd = 0.dp, bottomStart = 0.dp, bottomEnd = 0.dp)
                 1 -> RoundedCornerShape(topStart = 0.dp, topEnd = tr(), bottomStart = 0.dp, bottomEnd = 0.dp)
                 2 -> RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = bl(), bottomEnd = 0.dp)
                 else -> RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = 0.dp, bottomEnd = br())
             }
+            5, 6 -> {
+                // 5 = 2 + 3; 6 = 3 + 3
+                val topCols = if (shownCount == 5) 2 else 3
+                val topCount = topCols
+                val row = if (tileIndex < topCount) 0 else 1
+                val col = if (row == 0) tileIndex else tileIndex - topCount
+                val cols = if (row == 0) topCols else 3
+                val isTL = row == 0 && col == 0
+                val isTR = row == 0 && col == cols - 1
+                val isBL = row == 1 && col == 0
+                val isBR = row == 1 && col == cols - 1
+                RoundedCornerShape(
+                    topStart = if (isTL) tl() else 0.dp,
+                    topEnd = if (isTR) tr() else 0.dp,
+                    bottomStart = if (isBL) bl() else 0.dp,
+                    bottomEnd = if (isBR) br() else 0.dp,
+                )
+            }
+            else -> RoundedCornerShape(tl(), tr(), bl(), br())
         }
     }
 
@@ -291,7 +311,7 @@ fun TelegramLikeAttachmentsGrid(
                     tile(2, Modifier.weight(1f).fillMaxWidth())
                 }
             }
-            else -> Column(
+            4 -> Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(240.dp),
@@ -310,6 +330,51 @@ fun TelegramLikeAttachmentsGrid(
                 ) {
                     tile(2, Modifier.weight(1f).fillMaxHeight())
                     tile(3, Modifier.weight(1f).fillMaxHeight())
+                }
+            }
+            5 -> Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(260.dp),
+                verticalArrangement = Arrangement.spacedBy(gap),
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(gap),
+                ) {
+                    tile(0, Modifier.weight(1f).fillMaxHeight())
+                    tile(1, Modifier.weight(1f).fillMaxHeight())
+                }
+                Row(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(gap),
+                ) {
+                    tile(2, Modifier.weight(1f).fillMaxHeight())
+                    tile(3, Modifier.weight(1f).fillMaxHeight())
+                    tile(4, Modifier.weight(1f).fillMaxHeight())
+                }
+            }
+            else -> Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(260.dp),
+                verticalArrangement = Arrangement.spacedBy(gap),
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(gap),
+                ) {
+                    tile(0, Modifier.weight(1f).fillMaxHeight())
+                    tile(1, Modifier.weight(1f).fillMaxHeight())
+                    tile(2, Modifier.weight(1f).fillMaxHeight())
+                }
+                Row(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(gap),
+                ) {
+                    tile(3, Modifier.weight(1f).fillMaxHeight())
+                    tile(4, Modifier.weight(1f).fillMaxHeight())
+                    tile(5, Modifier.weight(1f).fillMaxHeight())
                 }
             }
         }

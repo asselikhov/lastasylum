@@ -13,6 +13,7 @@ import { UserDocument } from '../users/schemas/user.schema';
 import { UsersService } from '../users/users.service';
 import { ChatRoomsService } from './chat-rooms.service';
 import { Message } from './schemas/message.schema';
+import { ChatRoomReadState } from './schemas/chat-room-read-state.schema';
 import {
   parseZlobyakaStickerStem,
   ZLOBYAKA_STICKER_STEMS,
@@ -104,6 +105,8 @@ export type ChatMessageView = {
 export class ChatService {
   constructor(
     @InjectModel(Message.name) private readonly messageModel: Model<Message>,
+    @InjectModel(ChatRoomReadState.name)
+    private readonly chatReadStateModel: Model<ChatRoomReadState>,
     private readonly usersService: UsersService,
     private readonly chatRoomsService: ChatRoomsService,
   ) {}
@@ -563,6 +566,30 @@ export class ChatService {
       senderTeamTagMap,
       userId,
     );
+  }
+
+  async markRoomRead(input: {
+    userId: string;
+    roomId: string;
+    messageId: string;
+  }): Promise<{ roomId: string; userId: string; messageId: string }> {
+    if (!Types.ObjectId.isValid(input.roomId)) {
+      throw new BadRequestException('Invalid room id');
+    }
+    if (!Types.ObjectId.isValid(input.messageId)) {
+      throw new BadRequestException('Invalid message id');
+    }
+    await this.assertUserMayUseChat(input.userId);
+    await this.assertRoomForUser(input.userId, input.roomId);
+    const roomObjectId = new Types.ObjectId(input.roomId);
+    await this.chatReadStateModel
+      .updateOne(
+        { roomId: roomObjectId, userId: input.userId },
+        { $set: { lastReadMessageId: input.messageId } },
+        { upsert: true },
+      )
+      .exec();
+    return { roomId: input.roomId, userId: input.userId, messageId: input.messageId };
   }
 
   async deleteMessage(
