@@ -464,7 +464,8 @@ object OverlayChatStripUi {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ).apply {
-                bottomMargin = dp(context, 1f).toInt()
+                // Small but visible gap between messages (Telegram-like).
+                bottomMargin = dp(context, 4f).toInt()
             }
             radius = cornerCard
             cardElevation = dp(context, 1.5f)

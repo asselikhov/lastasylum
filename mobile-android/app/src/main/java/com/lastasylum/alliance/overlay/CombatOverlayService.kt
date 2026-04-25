@@ -818,7 +818,8 @@ class CombatOverlayService : Service() {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             x = 0
-            y = dp(12)
+            // Slight top margin from the game screen edge.
+            y = dp(10)
         }
 
         val stripLines = OverlayChatStripUi.createLinesContainer(this)
@@ -1200,8 +1201,32 @@ class CombatOverlayService : Service() {
         applyControlsVisibility()
 
         btnCollapse.setOnClickListener {
+            // Keep the toggle button anchored on screen when window content expands/collapses.
+            val desired = IntArray(2)
+            btnCollapse.getLocationOnScreen(desired)
             panelCollapsed = !panelCollapsed
             applyControlsVisibility()
+            windowRoot.post {
+                if (!windowRoot.isAttachedToWindow) return@post
+                val p = overlayMainWindowParams ?: return@post
+                val current = IntArray(2)
+                btnCollapse.getLocationOnScreen(current)
+                val dx = current[0] - desired[0]
+                val dy = current[1] - desired[1]
+                if (dx == 0 && dy == 0) return@post
+
+                val screenW = resources.displayMetrics.widthPixels
+                val screenH = resources.displayMetrics.heightPixels
+                val w = windowRoot.width.takeIf { it > 0 } ?: dp(120)
+                val h = windowRoot.height.takeIf { it > 0 } ?: dp(180)
+
+                // gravity = BOTTOM|START: x is from left; y is from bottom.
+                p.x = (p.x - dx).coerceIn(0, (screenW - w).coerceAtLeast(0))
+                p.y = (p.y + dy).coerceIn(0, (screenH - h).coerceAtLeast(0))
+                runCatching { manager.updateViewLayout(windowRoot, p) }
+                overlayTicker.syncTickerPosition()
+                syncOverlayPanelEdgeLayout()
+            }
         }
 
         btnMessage.setOnClickListener {
