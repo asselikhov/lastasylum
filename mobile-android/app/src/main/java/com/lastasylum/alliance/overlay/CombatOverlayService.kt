@@ -176,6 +176,8 @@ class CombatOverlayService : Service() {
     private var recordingStartRunnable: Runnable? = null
     /** True: только кнопка разворота; по нажатию — остальные кнопки панели. */
     private var panelCollapsed = false
+    /** Desired screen position of collapse/expand button to keep it anchored after relayout. */
+    private var pendingCollapseAnchorOnScreen: IntArray? = null
     private var messageExpanded = false
     private var chatStripClipRoot: FrameLayout? = null
     private var chatStripLines: LinearLayout? = null
@@ -822,7 +824,16 @@ class CombatOverlayService : Service() {
         chatStripCompose = null
     }
 
+    private fun repairDetachedChatStripIfNeeded(manager: WindowManager) {
+        val host = chatStripHost ?: return
+        if (!host.isAttachedToWindow) {
+            Log.w(TAG, "repairDetachedChatStripIfNeeded: strip host detached, rebuilding")
+            removeChatStripWindow(manager)
+        }
+    }
+
     private fun ensureChatStripWindow(manager: WindowManager) {
+        repairDetachedChatStripIfNeeded(manager)
         if (chatStripHost != null) return
         // Compose in overlay windows requires ViewTree owners (Lifecycle/VM/SavedState), otherwise it crashes
         // with "ViewTreeLifecycleOwner not found" on some devices/Compose versions.
@@ -906,6 +917,10 @@ class CombatOverlayService : Service() {
         chatStripParams = params
         chatStripClipRoot = clipRoot
         chatStripLines = null
+        // Seed a visible placeholder immediately if we don't have content yet.
+        if (chatStripPreviewFlow.value.isEmpty()) {
+            setStripPlainMessage(getString(R.string.overlay_strip_no_room))
+        }
     }
 
     private fun beginOverlayChatSubscription() {
@@ -1253,6 +1268,34 @@ class CombatOverlayService : Service() {
                         )
                     }
                     syncOverlayPanelEdgeLayout()
+
+                    // After final layout (including edge anchoring), keep toggle button fixed on screen.
+                    val desired = pendingCollapseAnchorOnScreen
+                    if (desired != null) {
+                        pendingCollapseAnchorOnScreen = null
+                        if (!windowRoot.isAttachedToWindow) return@post
+                        val pp = overlayMainWindowParams ?: return@post
+                        val current = IntArray(2)
+                        btnCollapse.getLocationOnScreen(current)
+                        val dx = current[0] - desired[0]
+                        val dy = current[1] - desired[1]
+                        if (dx != 0 || dy != 0) {
+                            val screenW = resources.displayMetrics.widthPixels
+                            val screenH = resources.displayMetrics.heightPixels
+                            val w = windowRoot.width.takeIf { it > 0 } ?: dp(120)
+                            val h = windowRoot.height.takeIf { it > 0 } ?: dp(180)
+                            // gravity = BOTTOM|START: x is from left; y is from bottom.
+                            pp.x = (pp.x - dx).coerceIn(0, (screenW - w).coerceAtLeast(0))
+                            pp.y = (pp.y + dy).coerceIn(0, (screenH - h).coerceAtLeast(0))
+                            runCatching { manager.updateViewLayout(windowRoot, pp) }
+                            AppContainer.from(this@CombatOverlayService).userSettingsPreferences.setOverlayPanelPosPx(
+                                x = pp.x,
+                                y = pp.y,
+                            )
+                            overlayTicker.syncTickerPosition()
+                            syncOverlayPanelEdgeLayout()
+                        }
+                    }
                 }
             }
         }
@@ -1264,36 +1307,9 @@ class CombatOverlayService : Service() {
 
         btnCollapse.setOnClickListener {
             // Keep the toggle button anchored on screen when window content expands/collapses.
-            val desired = IntArray(2)
-            btnCollapse.getLocationOnScreen(desired)
+            pendingCollapseAnchorOnScreen = IntArray(2).also { btnCollapse.getLocationOnScreen(it) }
             panelCollapsed = !panelCollapsed
             applyControlsVisibility()
-            windowRoot.post {
-                if (!windowRoot.isAttachedToWindow) return@post
-                val p = overlayMainWindowParams ?: return@post
-                val current = IntArray(2)
-                btnCollapse.getLocationOnScreen(current)
-                val dx = current[0] - desired[0]
-                val dy = current[1] - desired[1]
-                if (dx == 0 && dy == 0) return@post
-
-                val screenW = resources.displayMetrics.widthPixels
-                val screenH = resources.displayMetrics.heightPixels
-                val w = windowRoot.width.takeIf { it > 0 } ?: dp(120)
-                val h = windowRoot.height.takeIf { it > 0 } ?: dp(180)
-
-                // gravity = BOTTOM|START: x is from left; y is from bottom.
-                p.x = (p.x - dx).coerceIn(0, (screenW - w).coerceAtLeast(0))
-                p.y = (p.y + dy).coerceIn(0, (screenH - h).coerceAtLeast(0))
-                runCatching { manager.updateViewLayout(windowRoot, p) }
-                // Persist corrected position (toggle anchored).
-                AppContainer.from(this@CombatOverlayService).userSettingsPreferences.setOverlayPanelPosPx(
-                    x = p.x,
-                    y = p.y,
-                )
-                overlayTicker.syncTickerPosition()
-                syncOverlayPanelEdgeLayout()
-            }
         }
 
         btnMessage.setOnClickListener {
@@ -1431,6 +1447,9 @@ class CombatOverlayService : Service() {
 
     private fun applyOverlayVisibilityState() {
         val bubbleContainer = overlayView
+        (windowManager ?: systemWindowManager())?.let { wm ->
+            runCatching { ensureChatStripWindow(wm) }
+        }
         chatStripHost?.visibility = View.VISIBLE
         bubbleContainer?.animate()?.cancel()
         bubbleContainer?.visibility = View.VISIBLE
