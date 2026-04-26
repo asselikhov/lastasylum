@@ -393,6 +393,8 @@ class CombatOverlayService : Service() {
     @Volatile
     private var gateCheckInFlight = false
     private var lastGateDiagLogMs: Long = 0L
+    private var lastKnownInGameMs: Long = 0L
+    private var lastForegroundHintPkg: String? = null
 
     private val gameGateRunnable = object : Runnable {
         override fun run() {
@@ -502,6 +504,8 @@ class CombatOverlayService : Service() {
         serviceScope.launch {
             try {
                 val hasUsageAccess = GameForegroundGate.hasUsageStatsAccess(this@CombatOverlayService)
+                val hintedPkg = runCatching { GameForegroundGate.lastResumedPackage(this@CombatOverlayService) }.getOrNull()
+                lastForegroundHintPkg = hintedPkg
                 val shouldShow = if (hasUsageAccess) {
                     // While the user is interacting with the overlay chat UI, do not hide the overlay.
                     // Some OEM ROMs may report SquadRelay as "resumed" when touching overlay windows.
@@ -517,21 +521,28 @@ class CombatOverlayService : Service() {
                 }
                 mainHandler.post {
                     val nowMs = System.currentTimeMillis()
+                    if (shouldShow) {
+                        lastKnownInGameMs = nowMs
+                    }
+                    // MIUI/HyperOS: foreground heuristics may flicker for a few seconds even while the game is visible.
+                    // Keep overlay visible for a grace window to avoid chat strip detach/rebuild loops.
+                    val effectiveShow = shouldShow || (nowMs - lastKnownInGameMs) <= IN_GAME_GRACE_MS
                     if (prefs.isOverlayGameGateEnabled() && nowMs - lastGateDiagLogMs >= 25_000L) {
                         lastGateDiagLogMs = nowMs
                         val draw = canDrawOverlaysNow()
-                        if (!hasUsageAccess || !shouldShow || !draw || overlayView == null) {
+                        if (!hasUsageAccess || !effectiveShow || !draw || overlayView == null) {
                             Log.i(
                                 TAG,
-                                "overlayGate usage=$hasUsageAccess inGame=$shouldShow " +
-                                    "drawOverlays=$draw overlayAttached=${overlayView != null} targets=${targets.joinToString()}",
+                                "overlayGate usage=$hasUsageAccess inGame=$effectiveShow rawInGame=$shouldShow " +
+                                    "hint=${hintedPkg ?: "-"} drawOverlays=$draw overlayAttached=${overlayView != null} " +
+                                    "targets=${targets.joinToString()}",
                             )
                         }
                     }
                     applyGameGateState(
                         gameGateEnabled = true,
                         hasUsageAccess = hasUsageAccess,
-                        shouldShow = shouldShow,
+                        shouldShow = effectiveShow,
                     )
                 }
             } finally {
@@ -564,7 +575,13 @@ class CombatOverlayService : Service() {
             return
         }
         if (!shouldShow) {
-            notifyGateThrottled(getString(R.string.overlay_notif_waiting_for_game))
+            val hint = lastForegroundHintPkg?.takeIf { it.isNotBlank() }
+            val content = if (hint != null) {
+                "${getString(R.string.overlay_notif_waiting_for_game)} ($hint)"
+            } else {
+                getString(R.string.overlay_notif_waiting_for_game)
+            }
+            notifyGateThrottled(content)
             if (overlayView != null) {
                 removeOverlayControl()
             }
@@ -1797,6 +1814,8 @@ class CombatOverlayService : Service() {
         private const val STRIP_TICK_MS = 2_500L
         /** Реже дергать UsageStats — меньше нагрузки на CPU/binder рядом с игрой; скрытие оверлея после выхода из игры — до ~4s. */
         private const val GAME_GATE_POLL_MS = 4_000L
+        /** Grace window for MIUI/HyperOS false negatives in UsageStats foreground detection. */
+        private const val IN_GAME_GRACE_MS = 12_000L
         private const val OVERLAY_HISTORY_LOAD = 150
         /** Matches backend / user schema: ingame | online | away */
         private const val OVERLAY_PRESENCE_INGAME = "ingame"
