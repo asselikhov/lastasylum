@@ -457,7 +457,14 @@ class CombatOverlayService : Service() {
         }
         repairDetachedOverlayShellIfNeeded()
         if (overlayView == null) {
-            showOverlayControl()
+            val result = runCatching { showOverlayControl() }
+            if (result.isFailure) {
+                Log.e(TAG, "ensureOverlayIfPermitted: showOverlayControl crashed", result.exceptionOrNull())
+                // Avoid a crash-loop with a half-initialized state.
+                runCatching { removeOverlayControl() }
+                _overlayVisible.value = false
+                updateNotification(getString(R.string.overlay_notif_waiting_for_game))
+            }
         }
     }
 
