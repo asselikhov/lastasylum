@@ -740,6 +740,12 @@ class CombatOverlayService : Service() {
         if (signature == lastStripRenderSignature) return
         chatStripPreviewFlow.value = preview
         lastStripRenderSignature = signature
+        // Ensure the top strip window exists and is visible whenever preview changes.
+        mainHandler.post {
+            val wm = windowManager ?: systemWindowManager() ?: return@post
+            runCatching { ensureChatStripWindow(wm) }
+            chatStripHost?.visibility = View.VISIBLE
+        }
     }
 
     /**
@@ -981,7 +987,6 @@ class CombatOverlayService : Service() {
                     y = p.y,
                 )
                 overlayTicker.syncTickerPosition()
-                syncOverlayPanelEdgeLayout()
             }
         }
         observer.addOnGlobalLayoutListener(listener)
