@@ -923,6 +923,53 @@ class CombatOverlayService : Service() {
         }
     }
 
+    private fun scheduleCollapseButtonAnchorCorrection(
+        manager: WindowManager,
+        windowRoot: View,
+        btnCollapse: View,
+    ) {
+        val desired = pendingCollapseAnchorOnScreen ?: return
+        if (!windowRoot.isAttachedToWindow) return
+        val observer = windowRoot.viewTreeObserver
+        if (!observer.isAlive) return
+
+        val listener = object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                val obs = windowRoot.viewTreeObserver
+                if (obs.isAlive) {
+                    @Suppress("DEPRECATION")
+                    obs.removeOnGlobalLayoutListener(this)
+                }
+                val target = pendingCollapseAnchorOnScreen ?: return
+                pendingCollapseAnchorOnScreen = null
+                if (!windowRoot.isAttachedToWindow) return
+                val p = overlayMainWindowParams ?: return
+
+                val current = IntArray(2)
+                btnCollapse.getLocationOnScreen(current)
+                val dx = current[0] - target[0]
+                val dy = current[1] - target[1]
+                if (dx == 0 && dy == 0) return
+
+                val screenW = resources.displayMetrics.widthPixels
+                val screenH = resources.displayMetrics.heightPixels
+                val w = windowRoot.width.takeIf { it > 0 } ?: dp(120)
+                val h = windowRoot.height.takeIf { it > 0 } ?: dp(180)
+                // gravity = BOTTOM|START: x is from left; y is from bottom.
+                p.x = (p.x - dx).coerceIn(0, (screenW - w).coerceAtLeast(0))
+                p.y = (p.y + dy).coerceIn(0, (screenH - h).coerceAtLeast(0))
+                runCatching { manager.updateViewLayout(windowRoot, p) }
+                AppContainer.from(this@CombatOverlayService).userSettingsPreferences.setOverlayPanelPosPx(
+                    x = p.x,
+                    y = p.y,
+                )
+                overlayTicker.syncTickerPosition()
+                syncOverlayPanelEdgeLayout()
+            }
+        }
+        observer.addOnGlobalLayoutListener(listener)
+    }
+
     private fun beginOverlayChatSubscription() {
         if (overlayMessageListener != null) return
         cancelStripTick()
@@ -1268,34 +1315,8 @@ class CombatOverlayService : Service() {
                         )
                     }
                     syncOverlayPanelEdgeLayout()
-
-                    // After final layout (including edge anchoring), keep toggle button fixed on screen.
-                    val desired = pendingCollapseAnchorOnScreen
-                    if (desired != null) {
-                        pendingCollapseAnchorOnScreen = null
-                        if (!windowRoot.isAttachedToWindow) return@post
-                        val pp = overlayMainWindowParams ?: return@post
-                        val current = IntArray(2)
-                        btnCollapse.getLocationOnScreen(current)
-                        val dx = current[0] - desired[0]
-                        val dy = current[1] - desired[1]
-                        if (dx != 0 || dy != 0) {
-                            val screenW = resources.displayMetrics.widthPixels
-                            val screenH = resources.displayMetrics.heightPixels
-                            val w = windowRoot.width.takeIf { it > 0 } ?: dp(120)
-                            val h = windowRoot.height.takeIf { it > 0 } ?: dp(180)
-                            // gravity = BOTTOM|START: x is from left; y is from bottom.
-                            pp.x = (pp.x - dx).coerceIn(0, (screenW - w).coerceAtLeast(0))
-                            pp.y = (pp.y + dy).coerceIn(0, (screenH - h).coerceAtLeast(0))
-                            runCatching { manager.updateViewLayout(windowRoot, pp) }
-                            AppContainer.from(this@CombatOverlayService).userSettingsPreferences.setOverlayPanelPosPx(
-                                x = pp.x,
-                                y = pp.y,
-                            )
-                            overlayTicker.syncTickerPosition()
-                            syncOverlayPanelEdgeLayout()
-                        }
-                    }
+                    // Anchor the collapse/expand button after the final global layout pass.
+                    scheduleCollapseButtonAnchorCorrection(manager, windowRoot, btnCollapse)
                 }
             }
         }
