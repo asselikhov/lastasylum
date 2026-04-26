@@ -824,6 +824,9 @@ class CombatOverlayService : Service() {
 
     private fun ensureChatStripWindow(manager: WindowManager) {
         if (chatStripHost != null) return
+        // Compose in overlay windows requires ViewTree owners (Lifecycle/VM/SavedState), otherwise it crashes
+        // with "ViewTreeLifecycleOwner not found" on some devices/Compose versions.
+        val owner = overlayChatOwner ?: OverlayChatComposeOwner().also { overlayChatOwner = it }
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
@@ -881,6 +884,10 @@ class CombatOverlayService : Service() {
             elevation = 18f
             setPadding(dp(10), 0, dp(10), 0)
             setBackgroundColor(Color.TRANSPARENT)
+            setViewTreeLifecycleOwner(owner)
+            setViewTreeViewModelStoreOwner(owner)
+            setViewTreeSavedStateRegistryOwner(owner)
+            setViewTreeOnBackPressedDispatcherOwner(owner)
             addView(
                 clipRoot,
                 FrameLayout.LayoutParams(
