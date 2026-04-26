@@ -43,6 +43,8 @@ class OverlayChatStripBuffer(
         if (messages.isEmpty()) return
         val cutoff = Instant.now().minus(messageTtlSeconds, ChronoUnit.SECONDS)
         messages.removeAll {
+            // Keep service notices (e.g. "no room selected") visible; they are not part of TTL preview.
+            if (it._id == "notice") return@removeAll false
             OverlayChatTime.effectiveInstant(it, receivedAt).isBefore(cutoff)
         }
         messages.sortBy { OverlayChatTime.effectiveInstant(it, receivedAt) }
@@ -54,7 +56,9 @@ class OverlayChatStripBuffer(
     fun visibleForPreview(): List<ChatMessage> {
         val cutoff = Instant.now().minus(messageTtlSeconds, ChronoUnit.SECONDS)
         return messages
-            .filter { !OverlayChatTime.effectiveInstant(it, receivedAt).isBefore(cutoff) }
+            .filter {
+                it._id == "notice" || !OverlayChatTime.effectiveInstant(it, receivedAt).isBefore(cutoff)
+            }
             .sortedBy { OverlayChatTime.effectiveInstant(it, receivedAt) }
             .takeLast(maxPreviewMessages)
     }

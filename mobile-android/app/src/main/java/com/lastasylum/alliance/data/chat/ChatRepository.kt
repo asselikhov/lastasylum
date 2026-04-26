@@ -19,6 +19,7 @@ class ChatRepository(
     private var realtimeDeleteListener: ((ChatMessageDeletedEvent) -> Unit)? = null
     private var realtimeTypingListener: ((ChatTypingEvent) -> Unit)? = null
     private var realtimeReadListener: ((ChatRoomReadEvent) -> Unit)? = null
+    private val overlayMessageListeners = java.util.concurrent.CopyOnWriteArrayList<(ChatMessage) -> Unit>()
 
     suspend fun listRooms(): Result<List<ChatRoomDto>> =
         runCatching { chatApi.listRooms() }
@@ -61,7 +62,14 @@ class ChatRepository(
         var last: Throwable? = null
         repeat(3) { attempt ->
             val r = sendMessage(text, roomId, replyToMessageId, attachments)
-            if (r.isSuccess) return r
+            if (r.isSuccess) {
+                // For the overlay strip we want the message to appear immediately after HTTP success,
+                // even if the socket broadcast is delayed or the room subscription is rebuilding.
+                r.getOrNull()?.let { sent ->
+                    overlayMessageListeners.forEach { l -> runCatching { l(sent) } }
+                }
+                return r
+            }
             last = r.exceptionOrNull()
             if (attempt < 2) {
                 delay(listOf(400L, 1200L)[attempt])
@@ -151,6 +159,9 @@ class ChatRepository(
     }
 
     fun addOverlayMessageListener(listener: (ChatMessage) -> Unit) {
+        if (!overlayMessageListeners.contains(listener)) {
+            overlayMessageListeners.add(listener)
+        }
         socketManager.addMessageListener(listener)
         val roomId = chatRoomPreferences.getSelectedRoomId() ?: return
         socketManager.connect(
@@ -161,6 +172,7 @@ class ChatRepository(
     }
 
     fun removeOverlayMessageListener(listener: (ChatMessage) -> Unit) {
+        overlayMessageListeners.remove(listener)
         socketManager.removeMessageListener(listener)
     }
 
