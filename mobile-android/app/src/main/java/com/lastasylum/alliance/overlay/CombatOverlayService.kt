@@ -401,10 +401,12 @@ class CombatOverlayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.i(TAG, "onCreate: starting overlay service")
         // If the user has disabled the panel, do not spin up the FGS at all.
         // This avoids slow enable/disable cycles on OEM ROMs (HyperOS/MIUI) caused by starting an FGS
         // just to immediately stop it.
         if (!AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()) {
+            Log.w(TAG, "onCreate: overlay disabled in prefs, stopping self")
             isServiceInstanceActive = false
             _serviceRunning.value = false
             _overlayVisible.value = false
@@ -425,6 +427,7 @@ class CombatOverlayService : Service() {
             notification,
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
         )
+        Log.i(TAG, "onCreate: startForeground OK")
         isServiceInstanceActive = true
         _serviceRunning.value = true
         _overlayVisible.value = false
@@ -602,6 +605,7 @@ class CombatOverlayService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val prefs = AppContainer.from(this).userSettingsPreferences
+        Log.i(TAG, "onStartCommand: action=${intent?.action} enabled=${prefs.isOverlayPanelEnabled()}")
         when (intent?.action) {
             ACTION_SET_ENABLED -> {
                 val enabled = intent.getBooleanExtra(EXTRA_ENABLED, true)
@@ -656,6 +660,7 @@ class CombatOverlayService : Service() {
     }
 
     override fun onDestroy() {
+        Log.w(TAG, "onDestroy: overlay service is being destroyed")
         isServiceInstanceActive = false
         _serviceRunning.value = false
         gateCheckInFlight = false
@@ -1051,8 +1056,19 @@ class CombatOverlayService : Service() {
             val prefs = AppContainer.from(this@CombatOverlayService).userSettingsPreferences
             val preset = OverlayLayoutDp.forPreset(prefs.getOverlayLayoutPreset())
             // Default position from preset, then override by saved drag position (px) if present.
-            x = prefs.getOverlayPanelPosXPx() ?: dp(preset.toggleX)
-            y = prefs.getOverlayPanelPosYPx() ?: dp(preset.toggleY)
+            val screenW = resources.displayMetrics.widthPixels
+            val screenH = resources.displayMetrics.heightPixels
+            // Until view is measured, clamp using conservative minimum size so the panel can't spawn off-screen.
+            val minW = dp(120)
+            val minH = dp(180)
+            val rawX = prefs.getOverlayPanelPosXPx() ?: dp(preset.toggleX)
+            val rawY = prefs.getOverlayPanelPosYPx() ?: dp(preset.toggleY)
+            x = rawX.coerceIn(0, (screenW - minW).coerceAtLeast(0))
+            y = rawY.coerceIn(0, (screenH - minH).coerceAtLeast(0))
+            if (rawX != x || rawY != y) {
+                Log.w(TAG, "overlay pos clamped from ($rawX,$rawY) to ($x,$y)")
+                runCatching { prefs.setOverlayPanelPosPx(x = x, y = y) }
+            }
         }
 
         var initialX = 0
