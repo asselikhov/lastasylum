@@ -220,7 +220,12 @@ class CombatOverlayService : Service() {
     private var overlayHistoryStatus: TextView? = null
     private val overlayHistoryDedupeIds = mutableSetOf<String>()
     private var overlayChatViewModel: ChatViewModel? = null
-    private var overlayChatOwner: OverlayChatComposeOwner? = null
+    /** Только верхняя лента; не уничтожать при закрытии окна истории чата. */
+    private var overlayStripComposeOwner: OverlayChatComposeOwner? = null
+    /** Полноэкранный чат в оверлее (ActivityResult и т.д.); уничтожается в [hideOverlayHistoryPanel]. */
+    private var overlayHistoryComposeOwner: OverlayChatComposeOwner? = null
+    /** Кнопка сворачивания панели — для стабильного [syncOverlayPanelEdgeLayout] без «перещёлкивания» края при смене ширины. */
+    private var overlayCollapseButton: ImageView? = null
 
     private data class OverlayWindowFlagSnap(
         val view: View,
@@ -271,7 +276,7 @@ class CombatOverlayService : Service() {
             if (requestCode < 0) return
             mainHandler.post {
                 resumeOverlayWindowsAfterSystemActivity()
-                val owner = overlayChatOwner ?: return@post
+                val owner = overlayHistoryComposeOwner ?: return@post
                 when (i.action) {
                     OverlaySystemDialogActivity.ACTION_OVERLAY_PICK_IMAGES_RESULT -> {
                         val uris = if (android.os.Build.VERSION.SDK_INT >= 33) {
@@ -729,6 +734,10 @@ class CombatOverlayService : Service() {
     }
 
     private fun refreshOverlayChatStrip() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { refreshOverlayChatStrip() }
+            return
+        }
         stripBuffer.prune()
         val preview = stripBuffer.visibleForPreview()
         val signature = preview.joinToString(separator = "|") { msg ->
@@ -738,6 +747,13 @@ class CombatOverlayService : Service() {
                 "${msg.senderTeamTag ?: ""}:${msg.senderTelegramUsername ?: ""}:$att"
         }
         if (signature == lastStripRenderSignature) return
+        Log.d(
+            OVERLAY_DIAG_TAG,
+            "stripRefresh apply preview=${preview.size} sigLen=${signature.length} " +
+                preview.joinToString { m ->
+                    "id=${m._id} room=${m.roomId} len=${m.text.length}"
+                },
+        )
         chatStripPreviewFlow.value = preview
         lastStripRenderSignature = signature
         // Ensure the top strip window exists and is visible whenever preview changes.
@@ -745,6 +761,7 @@ class CombatOverlayService : Service() {
             val wm = windowManager ?: systemWindowManager() ?: return@post
             runCatching { ensureChatStripWindow(wm) }
             chatStripHost?.visibility = View.VISIBLE
+            rebalanceOverlayChatStripZOrder()
         }
     }
 
@@ -758,6 +775,10 @@ class CombatOverlayService : Service() {
     }
 
     private fun processOverlayChatMessage(msg: ChatMessage) {
+        Log.d(
+            OVERLAY_DIAG_TAG,
+            "processMsg id=${msg._id} room=${msg.roomId} sender=${msg.senderId} textLen=${msg.text.length}",
+        )
         stripBuffer.upsert(msg)
         stripBuffer.mergeReceiveTimeline(msg, jwtSubFromAccessToken())
         refreshOverlayChatStrip()
@@ -786,6 +807,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun setStripPlainMessage(message: String) {
+        Log.d(OVERLAY_DIAG_TAG, "stripNotice textLen=${message.length}")
         stripBuffer.clear()
         val signature = "notice:$message"
         if (signature == lastStripRenderSignature) return
@@ -845,6 +867,8 @@ class CombatOverlayService : Service() {
         chatStripClipRoot = null
         chatStripLines = null
         chatStripCompose = null
+        overlayStripComposeOwner?.destroy()
+        overlayStripComposeOwner = null
     }
 
     private fun repairDetachedChatStripIfNeeded(manager: WindowManager) {
@@ -860,7 +884,7 @@ class CombatOverlayService : Service() {
         if (chatStripHost != null) return
         // Compose in overlay windows requires ViewTree owners (Lifecycle/VM/SavedState), otherwise it crashes
         // with "ViewTreeLifecycleOwner not found" on some devices/Compose versions.
-        val owner = overlayChatOwner ?: OverlayChatComposeOwner().also { overlayChatOwner = it }
+        val owner = overlayStripComposeOwner ?: OverlayChatComposeOwner().also { overlayStripComposeOwner = it }
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
@@ -909,7 +933,7 @@ class CombatOverlayService : Service() {
                 FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
                     FrameLayout.LayoutParams.WRAP_CONTENT,
-                    Gravity.BOTTOM,
+                    Gravity.TOP,
                 ),
             )
         }
@@ -936,6 +960,7 @@ class CombatOverlayService : Service() {
             Log.e(TAG, "WindowManager.addView(chatStrip) failed", attach.exceptionOrNull())
             return
         }
+        Log.d(OVERLAY_DIAG_TAG, "chatStripWindow attached stripOwner=${overlayStripComposeOwner != null}")
         chatStripHost = host
         chatStripParams = params
         chatStripClipRoot = clipRoot
@@ -972,7 +997,11 @@ class CombatOverlayService : Service() {
                 btnCollapse.getLocationOnScreen(current)
                 val dx = current[0] - target[0]
                 val dy = current[1] - target[1]
-                if (dx == 0 && dy == 0) return
+                if (dx == 0 && dy == 0) {
+                    Log.d(OVERLAY_DIAG_TAG, "collapseAnchor ok dx=0 dy=0")
+                    return
+                }
+                Log.d(OVERLAY_DIAG_TAG, "collapseAnchor adjust dx=$dx dy=$dy")
 
                 val screenW = resources.displayMetrics.widthPixels
                 val screenH = resources.displayMetrics.heightPixels
@@ -999,6 +1028,10 @@ class CombatOverlayService : Service() {
             mainHandler.post {
                 val roomId = AppContainer.from(this).chatRoomPreferences.getSelectedRoomId()
                 if (roomId != null && msg.roomId.isNotBlank() && msg.roomId != roomId) {
+                    Log.d(
+                        OVERLAY_DIAG_TAG,
+                        "overlayListener skipRoom msgRoom=${msg.roomId} selected=$roomId id=${msg._id}",
+                    )
                     return@post
                 }
                 processOverlayChatMessage(msg)
@@ -1076,14 +1109,30 @@ class CombatOverlayService : Service() {
             return
         }
         val screenW = resources.displayMetrics.widthPixels
-        val wAnchor = maxOf(w, maxOf(overlayPanelStableAnchorWidthPx, dp(160)))
-        val anchoredEnd = params.x + wAnchor / 2 >= screenW / 2
+        val btn = overlayCollapseButton
+        val anchoredEnd = if (
+            btn != null &&
+            btn.isAttachedToWindow &&
+            btn.width > 0 &&
+            btn.height > 0
+        ) {
+            val loc = IntArray(2)
+            btn.getLocationOnScreen(loc)
+            loc[0] + btn.width / 2 >= screenW / 2
+        } else {
+            val wAnchor = maxOf(w, maxOf(overlayPanelStableAnchorWidthPx, dp(160)))
+            params.x + wAnchor / 2 >= screenW / 2
+        }
         val msgOk = msgRow.childCount == 2 &&
             (
                 (anchoredEnd && msgRow.getChildAt(0) === sub && msgRow.getChildAt(1) === fabCol) ||
                     (!anchoredEnd && msgRow.getChildAt(0) === fabCol && msgRow.getChildAt(1) === sub)
                 )
         if (msgOk && anchoredEnd == overlayPanelAnchoredEnd) return
+        Log.d(
+            OVERLAY_DIAG_TAG,
+            "syncPanelEdge reorder w=$w anchoredEnd=$anchoredEnd prevEnd=$overlayPanelAnchoredEnd msgOk=$msgOk",
+        )
         overlayPanelAnchoredEnd = anchoredEnd
 
         // Controls stack itself is always inside the main overlay window; only re-order inside message row.
@@ -1125,6 +1174,7 @@ class CombatOverlayService : Service() {
             overlayMessageFabColumn = null
             overlaySubRow = null
             overlayBtnMessageFab = null
+            overlayCollapseButton = null
             overlayPanelAnchoredEnd = false
             overlayPanelStableAnchorWidthPx = 0
         }
@@ -1189,6 +1239,7 @@ class CombatOverlayService : Service() {
             isFocusable = true
         }
         OverlayTickerUi.styleOverlayIconButton(fabCtx, btnCollapse, sideDp = 42f)
+        overlayCollapseButton = btnCollapse
         val btnMessage = makeMiniFab(
             iconRes = R.drawable.ic_overlay_history,
             cd = getString(R.string.overlay_cd_history),
@@ -1311,6 +1362,7 @@ class CombatOverlayService : Service() {
         }
 
         fun applyControlsVisibility() {
+            Log.d(OVERLAY_DIAG_TAG, "applyControls collapsed=$panelCollapsed pendingAnchor=${pendingCollapseAnchorOnScreen != null}")
             // GONE (не INVISIBLE): иначе ряд с FAB остаётся в разметке по ширине и окно перехватывает карту справа от кнопок.
             if (panelCollapsed) {
                 messageExpanded = false
@@ -1482,6 +1534,7 @@ class CombatOverlayService : Service() {
         _overlayVisible.value = true
         windowManager = manager
         overlayTicker.syncTickerPosition()
+        rebalanceOverlayChatStripZOrder()
         rebalanceOverlayChatWindowZOrder()
         applyOverlayVisibilityState()
         windowRoot.post {
@@ -1496,6 +1549,7 @@ class CombatOverlayService : Service() {
             runCatching { ensureChatStripWindow(wm) }
         }
         chatStripHost?.visibility = View.VISIBLE
+        rebalanceOverlayChatStripZOrder()
         bubbleContainer?.animate()?.cancel()
         bubbleContainer?.visibility = View.VISIBLE
         bubbleContainer?.alpha = 1f
@@ -1531,8 +1585,8 @@ class CombatOverlayService : Service() {
         overlayHistoryDedupeIds.clear()
         overlayChatViewModel = null
         runCatching { unregisterReceiver(overlaySystemResultReceiver) }
-        overlayChatOwner?.destroy()
-        overlayChatOwner = null
+        overlayHistoryComposeOwner?.destroy()
+        overlayHistoryComposeOwner = null
     }
 
     private fun hideOverlayIme(view: View) {
@@ -1601,6 +1655,20 @@ class CombatOverlayService : Service() {
         }
     }
 
+    /** Поднять ленту поверх остальных окон оверлея этого процесса (порядок addView на части OEM). */
+    private fun rebalanceOverlayChatStripZOrder() {
+        val host = chatStripHost ?: return
+        val mgr = windowManager ?: systemWindowManager() ?: return
+        val p = chatStripParams ?: return
+        if (!host.isAttachedToWindow) return
+        runCatching {
+            mgr.removeView(host)
+            mgr.addView(host, p)
+        }.onFailure { e ->
+            Log.w(TAG, "rebalanceOverlayChatStripZOrder failed", e)
+        }
+    }
+
     private fun showOverlayHistoryPanel() {
         if (overlayHistoryVisible) return
         val manager = windowManager ?: return
@@ -1612,7 +1680,7 @@ class CombatOverlayService : Service() {
         }
 
         // Full chat UI (same as in-app ChatScreen) rendered inside overlay window.
-        val owner = overlayChatOwner ?: OverlayChatComposeOwner().also { overlayChatOwner = it }
+        val owner = overlayHistoryComposeOwner ?: OverlayChatComposeOwner().also { overlayHistoryComposeOwner = it }
         runCatching { unregisterReceiver(overlaySystemResultReceiver) }
         runCatching {
             ContextCompat.registerReceiver(
@@ -1763,7 +1831,8 @@ class CombatOverlayService : Service() {
             overlayHistoryParams = null
             overlayHistoryVisible = false
             runCatching { unregisterReceiver(overlaySystemResultReceiver) }
-            // Owner/VM are safe to keep; they will be recreated next time if needed.
+            overlayHistoryComposeOwner?.destroy()
+            overlayHistoryComposeOwner = null
             // Some ROMs leave the main overlay in a bad state after a failed second window; rebuild shell.
             mainHandler.post {
                 requestRebuildOverlayIfRunning(this@CombatOverlayService)
@@ -1809,6 +1878,7 @@ class CombatOverlayService : Service() {
         overlayMessageFabColumn = null
         overlaySubRow = null
         overlayBtnMessageFab = null
+        overlayCollapseButton = null
         overlayPanelAnchoredEnd = false
         overlayPanelStableAnchorWidthPx = 0
         windowManager = null
@@ -1826,6 +1896,8 @@ class CombatOverlayService : Service() {
         private const val OVERLAY_PRESENCE_INGAME = "ingame"
         private const val OVERLAY_PRESENCE_AWAY = "away"
         private const val TAG = "CombatOverlayService"
+        /** Logcat: `adb logcat -s SR_OverlayDiag:D` или фильтр по тегу в Android Studio. */
+        private const val OVERLAY_DIAG_TAG = "SR_OverlayDiag"
 
         const val ACTION_START_RECORDING = "com.squadrelay.action.START_RECORDING"
         const val ACTION_STOP_RECORDING = "com.squadrelay.action.STOP_RECORDING"
