@@ -8,8 +8,10 @@ import androidx.compose.foundation.layout.exclude
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
@@ -130,14 +132,22 @@ fun AppNavigation(
     val msgRoomRenamed = stringResource(R.string.admin_ok_room_renamed)
     val msgRoomDeleted = stringResource(R.string.admin_ok_room_deleted)
     val msgOverlaySaved = stringResource(R.string.admin_ok_overlay)
+    val density = LocalDensity.current
+    val imeVisible = WindowInsets.ime.getBottom(density) > 0
 
     Scaffold(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground,
-        // adjustNothing + imePadding в чате. Вкладки не скрываем при IME — иначе лишняя анимация.
-        contentWindowInsets = WindowInsets.safeDrawing.exclude(WindowInsets.ime),
+        // adjustNothing + imePadding в чате. When IME is visible we hide the bottom bar and also
+        // drop nav-bar insets so the composer sits flush with the keyboard.
+        contentWindowInsets = if (imeVisible) {
+            WindowInsets.safeDrawing.exclude(WindowInsets.ime).exclude(WindowInsets.navigationBars)
+        } else {
+            WindowInsets.safeDrawing.exclude(WindowInsets.ime)
+        },
         bottomBar = {
+            if (imeVisible) return@Scaffold
             Surface(
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 tonalElevation = 0.dp,

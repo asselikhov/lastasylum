@@ -928,7 +928,7 @@ class CombatOverlayService : Service() {
         windowRoot: View,
         btnCollapse: View,
     ) {
-        val desired = pendingCollapseAnchorOnScreen ?: return
+        pendingCollapseAnchorOnScreen ?: return
         if (!windowRoot.isAttachedToWindow) return
         val observer = windowRoot.viewTreeObserver
         if (!observer.isAlive) return
@@ -1065,6 +1065,8 @@ class CombatOverlayService : Service() {
         overlayPanelAnchoredEnd = anchoredEnd
 
         // Controls stack itself is always inside the main overlay window; only re-order inside message row.
+        (sub.parent as? ViewGroup)?.let { if (it !== msgRow) it.removeView(sub) }
+        (fabCol.parent as? ViewGroup)?.let { if (it !== msgRow) it.removeView(fabCol) }
         msgRow.removeAllViews()
         if (anchoredEnd) {
             sub.setPadding(0, 0, dp(8), 0)
