@@ -680,7 +680,7 @@ fun ChatScreen(
                     // adjustNothing + edge-to-edge: window does not resize; lift composer with IME
                     // insets only (no adjustResize, so no double gap with this padding).
                     .imePadding()
-                    .padding(bottom = 6.dp),
+                    .padding(bottom = SquadRelayDimens.keyboardComposerGap),
             ) {
                 state.sendFailure?.let { failure ->
                     Surface(
@@ -1442,7 +1442,7 @@ private fun ChatComposer(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = SquadRelayDimens.itemGap),
+            .padding(top = SquadRelayDimens.itemGap),
     ) {
         HorizontalDivider(
             modifier = Modifier.padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
@@ -1454,7 +1454,7 @@ private fun ChatComposer(
                 .fillMaxWidth()
                 .padding(
                     top = 8.dp,
-                    bottom = if (showMediaPanel) 2.dp else SquadRelayDimens.composerInnerPadding,
+                    bottom = if (showMediaPanel) 2.dp else 0.dp,
                 ),
             verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
         ) {

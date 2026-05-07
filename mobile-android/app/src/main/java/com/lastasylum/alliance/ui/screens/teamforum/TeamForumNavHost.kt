@@ -615,7 +615,8 @@ private fun TeamForumTopicChatRoute(
     Column(
         Modifier
             .fillMaxSize()
-            .imePadding(),
+            .imePadding()
+            .padding(bottom = SquadRelayDimens.keyboardComposerGap),
     ) {
         error?.let { err ->
             Text(

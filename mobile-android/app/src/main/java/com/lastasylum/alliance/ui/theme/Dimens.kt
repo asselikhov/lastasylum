@@ -15,6 +15,8 @@ object SquadRelayDimens {
     val cardInnerPadding = 14.dp
     val panelInnerPadding = 14.dp
     val composerInnerPadding = 10.dp
+    /** Зазор между нижним краем поля ввода и системной клавиатурой (вместе с [imePadding]). */
+    val keyboardComposerGap = 4.dp
     val headerSubtitleGap = 2.dp
     val listRowHorizontalPadding = 10.dp
     val listRowVerticalPadding = 10.dp

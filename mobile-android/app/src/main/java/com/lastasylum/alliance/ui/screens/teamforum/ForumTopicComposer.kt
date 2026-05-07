@@ -130,7 +130,7 @@ fun ForumTopicComposer(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = SquadRelayDimens.itemGap),
+            .padding(top = SquadRelayDimens.itemGap),
     ) {
         HorizontalDivider(
             modifier = Modifier.padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
@@ -215,7 +215,7 @@ fun ForumTopicComposer(
                 .fillMaxWidth()
                 .padding(
                     top = 8.dp,
-                    bottom = if (showMediaPanel) 2.dp else SquadRelayDimens.composerInnerPadding,
+                    bottom = if (showMediaPanel) 2.dp else 0.dp,
                 ),
             verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
         ) {
