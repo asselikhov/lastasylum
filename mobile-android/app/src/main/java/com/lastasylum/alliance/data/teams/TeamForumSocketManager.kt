@@ -298,6 +298,16 @@ data class TeamForumMessageDeletedEvent(
     val deletedByUserId: String?,
 )
 
+/**
+ * org.json turns JSON `null` into [JSONObject.NULL]; [optString] then becomes the literal `"null"`.
+ * Treat missing / JSON-null / that placeholder as absent so new messages are not "deleted".
+ */
+private fun JSONObject.optionalStringField(key: String): String? {
+    if (!has(key) || isNull(key)) return null
+    val s = optString(key)
+    return s.takeIf { it.isNotBlank() && !s.equals("null", ignoreCase = true) }
+}
+
 private fun JSONObject.toForumMessageDto(): TeamForumMessageDto? {
     val id = optString("id").takeIf { it.isNotBlank() } ?: return null
     return TeamForumMessageDto(
@@ -307,12 +317,12 @@ private fun JSONObject.toForumMessageDto(): TeamForumMessageDto? {
         senderUserId = optString("senderUserId"),
         senderUsername = optString("senderUsername"),
         text = optString("text"),
-        editedAt = optString("editedAt").takeIf { it.isNotBlank() },
-        deletedAt = optString("deletedAt").takeIf { it.isNotBlank() },
-        deletedByUserId = optString("deletedByUserId").takeIf { it.isNotBlank() },
-        imageRelativeUrl = optString("imageRelativeUrl").takeIf { it.isNotBlank() },
+        editedAt = optionalStringField("editedAt"),
+        deletedAt = optionalStringField("deletedAt"),
+        deletedByUserId = optionalStringField("deletedByUserId"),
+        imageRelativeUrl = optionalStringField("imageRelativeUrl"),
         createdAt = optString("createdAt"),
-        updatedAt = optString("updatedAt").takeIf { it.isNotBlank() }.orEmpty()
+        updatedAt = optionalStringField("updatedAt").orEmpty()
             .ifBlank { optString("createdAt") },
     )
 }

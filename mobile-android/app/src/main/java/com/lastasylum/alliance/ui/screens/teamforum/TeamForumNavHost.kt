@@ -847,7 +847,8 @@ private fun ForumMessageBubble(
     canEdit: Boolean,
     onLongPressMenu: () -> Unit,
 ) {
-    val deleted = !message.deletedAt.isNullOrBlank()
+    val deleted = !message.deletedAt.isNullOrBlank() &&
+        !message.deletedAt.equals("null", ignoreCase = true)
     val ctx = LocalContext.current
     val stickerStem = if (!deleted) ZlobyakaStickerPack.parseStem(message.text) else null
     val bubbleBg = if (isMine) ChatTelegramOutgoingBubble else ChatTelegramIncomingBubble
