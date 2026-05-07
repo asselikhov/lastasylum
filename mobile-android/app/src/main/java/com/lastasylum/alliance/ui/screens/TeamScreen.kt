@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -26,7 +27,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -50,6 +53,7 @@ import com.lastasylum.alliance.data.teams.TeamSearchResultDto
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.users.MyProfileDto
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.ui.screens.teamnews.TeamNewsNavHost
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.delay
@@ -69,10 +73,17 @@ private fun isValidThreeLetterTeamTag(raw: String): Boolean {
     return count == 3
 }
 
+private enum class TeamMainSection {
+    News,
+    Members,
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TeamScreen(
     currentUserId: String,
     teamsRepository: TeamsRepository,
+    isTeamTabSelected: Boolean = false,
 ) {
     val context = LocalContext.current
     val app = remember { AppContainer.from(context.applicationContext) }
@@ -109,6 +120,13 @@ fun TeamScreen(
     var editTeamTagDraft by remember { mutableStateOf("") }
     var editNameBusy by remember { mutableStateOf(false) }
     var roleEditMember by remember { mutableStateOf<PlayerTeamMemberDto?>(null) }
+    var mainSection by remember { mutableStateOf(TeamMainSection.News) }
+
+    LaunchedEffect(isTeamTabSelected) {
+        if (isTeamTabSelected) {
+            mainSection = TeamMainSection.News
+        }
+    }
 
     fun reloadProfileAndTeam() {
         scope.launch {
@@ -251,6 +269,9 @@ fun TeamScreen(
                         }
                     } else if (teamDetail != null) {
                         val team = teamDetail!!
+                        val myTeamRole =
+                            team.members.find { it.userId == currentUserId }?.teamRole ?: "R1"
+                        val canPublishNews = myTeamRole == "R4" || myTeamRole == "R5"
                         Surface(
                             modifier = Modifier
                                 .weight(1f, fill = true)
@@ -343,22 +364,51 @@ fun TeamScreen(
                                     modifier = Modifier.padding(horizontal = 8.dp),
                                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
                                 )
-                                SquadTeamRoster(
-                                    members = team.members,
-                                    isSquadLeader = isLeader,
-                                    currentUserId = currentUserId,
-                                    teamId = team.id,
-                                    busy = membersBusy,
-                                    onBusyChange = { membersBusy = it },
-                                    onReload = { reloadProfileAndTeam() },
-                                    onError = { msg -> error = msg },
-                                    teamsRepository = teamsRepository,
-                                    onRequestEditMemberRole = { m -> roleEditMember = m },
-                                    modifier = Modifier
-                                        .weight(1f, fill = true)
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 4.dp, vertical = 4.dp),
-                                )
+                                PrimaryTabRow(selectedTabIndex = mainSection.ordinal) {
+                                    Tab(
+                                        selected = mainSection == TeamMainSection.News,
+                                        onClick = { mainSection = TeamMainSection.News },
+                                        text = { Text(stringResource(R.string.team_tab_news)) },
+                                    )
+                                    Tab(
+                                        selected = mainSection == TeamMainSection.Members,
+                                        onClick = { mainSection = TeamMainSection.Members },
+                                        text = { Text(stringResource(R.string.team_tab_members)) },
+                                    )
+                                }
+                                when (mainSection) {
+                                    TeamMainSection.News -> {
+                                        TeamNewsNavHost(
+                                            teamId = team.id,
+                                            currentUserId = currentUserId,
+                                            myTeamRole = myTeamRole,
+                                            canPublishNews = canPublishNews,
+                                            teamsRepository = teamsRepository,
+                                            modifier = Modifier
+                                                .weight(1f, fill = true)
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 4.dp, vertical = 4.dp),
+                                        )
+                                    }
+                                    TeamMainSection.Members -> {
+                                        SquadTeamRoster(
+                                            members = team.members,
+                                            isSquadLeader = isLeader,
+                                            currentUserId = currentUserId,
+                                            teamId = team.id,
+                                            busy = membersBusy,
+                                            onBusyChange = { membersBusy = it },
+                                            onReload = { reloadProfileAndTeam() },
+                                            onError = { msg -> error = msg },
+                                            teamsRepository = teamsRepository,
+                                            onRequestEditMemberRole = { m -> roleEditMember = m },
+                                            modifier = Modifier
+                                                .weight(1f, fill = true)
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 4.dp, vertical = 4.dp),
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

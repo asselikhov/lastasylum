@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">SquadRelay</string>
+    <string name="launch_splash_session_subtitle">Проверка сохранённого входа…</string>
+    <string name="launch_splash_welcome_subtitle">Загрузка интерфейса…</string>
 
     <!-- Auth -->
     <string name="auth_brand">SquadRelay</string>
@@ -236,6 +238,32 @@
     <string name="team_remove_member">Исключить</string>
     <string name="team_remove_member_cd">Исключить из команды</string>
     <string name="team_screen_title">Команда</string>
+    <string name="team_tab_news">Новости</string>
+    <string name="team_tab_members">Участники</string>
+    <string name="team_news_poll_badge">Опрос</string>
+    <string name="team_news_new">Новая новость</string>
+    <string name="team_news_edit">Редактировать</string>
+    <string name="team_news_delete">Удалить</string>
+    <string name="team_news_title_hint">Заголовок</string>
+    <string name="team_news_body_hint">Текст новости</string>
+    <string name="team_news_save">Сохранить</string>
+    <string name="team_news_poll_question_hint">Вопрос опроса</string>
+    <string name="team_news_poll_option_hint">Вариант %1$d</string>
+    <string name="team_news_add_poll">Добавить опрос</string>
+    <string name="team_news_remove_poll">Убрать опрос</string>
+    <string name="team_news_add_option">Добавить вариант</string>
+    <string name="team_news_vote">Проголосовать</string>
+    <string name="team_news_change_vote">Изменить голос</string>
+    <string name="team_news_votes_count">Голосов: %1$d</string>
+    <string name="team_news_empty">Пока нет новостей</string>
+    <string name="team_news_load_error">Не удалось загрузить новости</string>
+    <string name="team_news_delete_confirm">Удалить эту новость?</string>
+    <string name="team_news_pick_image">Добавить изображение</string>
+    <string name="team_news_saving">Сохранение…</string>
+    <string name="team_news_cd_back">Назад</string>
+    <string name="team_news_retry">Повторить</string>
+    <string name="team_news_fill_required">Заполните заголовок и текст</string>
+    <string name="team_news_poll_invalid">Для опроса нужен вопрос и минимум два варианта</string>
     <string name="team_no_team_title">Вы еще не состоите в команде</string>
     <string name="team_no_team_body">Создайте свою команду или отправьте заявку на вступление в существующую.</string>
     <string name="team_squad_pick_r4">R4 — старейшины команды</string>

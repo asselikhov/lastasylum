@@ -74,3 +74,107 @@ data class UpdateSquadMemberRoleBody(
 data class SubmitJoinResponse(
     val id: String,
 )
+
+@JsonClass(generateAdapter = true)
+data class TeamNewsPollTallyDto(
+    val optionId: String,
+    val count: Int,
+)
+
+@JsonClass(generateAdapter = true)
+data class TeamNewsListItemDto(
+    val id: String,
+    val teamId: String,
+    val title: String,
+    val excerpt: String,
+    val authorUserId: String,
+    val authorUsername: String,
+    val createdAt: String,
+    val updatedAt: String,
+    val hasPoll: Boolean,
+    val firstImageRelativeUrl: String?,
+    val pollTallies: List<TeamNewsPollTallyDto> = emptyList(),
+    val myVoteOptionId: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class TeamNewsListPageDto(
+    val items: List<TeamNewsListItemDto>,
+    val nextCursor: String?,
+)
+
+@JsonClass(generateAdapter = true)
+data class TeamNewsPollOptionDto(
+    val id: String,
+    val text: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class TeamNewsPollVoteDto(
+    val userId: String,
+    val optionId: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class TeamNewsPollDetailDto(
+    val question: String,
+    val options: List<TeamNewsPollOptionDto>,
+    val votes: List<TeamNewsPollVoteDto> = emptyList(),
+    val tallies: List<TeamNewsPollTallyDto>,
+    val myVoteOptionId: String?,
+)
+
+@JsonClass(generateAdapter = true)
+data class TeamNewsDetailDto(
+    val id: String,
+    val teamId: String,
+    val title: String,
+    val excerpt: String,
+    val authorUserId: String,
+    val authorUsername: String,
+    val createdAt: String,
+    val updatedAt: String,
+    val hasPoll: Boolean,
+    val firstImageRelativeUrl: String?,
+    val pollTallies: List<TeamNewsPollTallyDto> = emptyList(),
+    val myVoteOptionId: String? = null,
+    val body: String,
+    val imageRelativeUrls: List<String> = emptyList(),
+    val poll: TeamNewsPollDetailDto? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class TeamNewsPollCreateBody(
+    val question: String,
+    val optionTexts: List<String>,
+)
+
+@JsonClass(generateAdapter = true)
+data class CreateTeamNewsBody(
+    val title: String,
+    val body: String,
+    val imageFileIds: List<String> = emptyList(),
+    val poll: TeamNewsPollCreateBody? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class UpdateTeamNewsBody(
+    val title: String? = null,
+    val body: String? = null,
+    val imageFileIds: List<String>? = null,
+    val poll: TeamNewsPollCreateBody? = null,
+    val clearPoll: Boolean? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class VoteTeamNewsBody(
+    val optionId: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class UploadedTeamNewsImageDto(
+    val fileId: String,
+    val url: String,
+    val mimeType: String,
+    val size: Int,
+)

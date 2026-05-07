@@ -21,8 +21,15 @@ class AuthViewModel(
     private val authRepository: AuthRepository,
 ) : AndroidViewModel(application) {
     /** Не держим экран в «загрузке» при фоновом refresh — иначе нельзя войти другим аккаунтом, пока таймаутит старый refresh. */
-    private val _state = MutableStateFlow(AuthState(isLoading = false))
+    private val _state = MutableStateFlow(initialAuthState())
     val state: StateFlow<AuthState> = _state.asStateFlow()
+
+    private fun initialAuthState(): AuthState =
+        if (authRepository.hasSession()) {
+            AuthState(isCheckingStoredSession = true)
+        } else {
+            AuthState(isLoading = false)
+        }
 
     private val res get() = getApplication<Application>().resources
 
@@ -50,6 +57,7 @@ class AuthViewModel(
             authRepository.login(email, password)
                 .onSuccess { user ->
                     _state.value = AuthState(
+                        isCheckingStoredSession = false,
                         isLoading = false,
                         isAuthenticated = true,
                         user = user,
@@ -58,6 +66,7 @@ class AuthViewModel(
                 .onFailure { throwable ->
                     logAuthFailure("login", throwable)
                     _state.value = AuthState(
+                        isCheckingStoredSession = false,
                         isLoading = false,
                         isAuthenticated = false,
                         error = throwable.toUserMessageRu(res),
@@ -75,6 +84,7 @@ class AuthViewModel(
                     when (result) {
                         is RegisterResult.LoggedIn -> {
                             _state.value = AuthState(
+                                isCheckingStoredSession = false,
                                 isLoading = false,
                                 isAuthenticated = true,
                                 user = result.user,
@@ -82,6 +92,7 @@ class AuthViewModel(
                         }
                         RegisterResult.PendingApproval -> {
                             _state.value = AuthState(
+                                isCheckingStoredSession = false,
                                 isLoading = false,
                                 isAuthenticated = false,
                                 infoMessage = getApplication<Application>().getString(
@@ -94,6 +105,7 @@ class AuthViewModel(
                 .onFailure { throwable ->
                     logAuthFailure("register", throwable)
                     _state.value = AuthState(
+                        isCheckingStoredSession = false,
                         isLoading = false,
                         isAuthenticated = false,
                         error = throwable.toUserMessageRu(res),
@@ -107,7 +119,11 @@ class AuthViewModel(
         viewModelScope.launch {
             runCatching { FcmTokenManager.unregister(getApplication()) }
             authRepository.logout()
-            _state.value = AuthState(isLoading = false, isAuthenticated = false)
+            _state.value = AuthState(
+                isCheckingStoredSession = false,
+                isLoading = false,
+                isAuthenticated = false,
+            )
         }
     }
 
@@ -118,6 +134,7 @@ class AuthViewModel(
             authRepository.forgotPassword(email)
                 .onSuccess {
                     _state.value = AuthState(
+                        isCheckingStoredSession = false,
                         isLoading = false,
                         isAuthenticated = false,
                         infoMessage = getApplication<Application>().getString(
@@ -128,6 +145,7 @@ class AuthViewModel(
                 .onFailure { throwable ->
                     logAuthFailure("forgotPassword", throwable)
                     _state.value = AuthState(
+                        isCheckingStoredSession = false,
                         isLoading = false,
                         isAuthenticated = false,
                         error = throwable.toUserMessageRu(res),
@@ -143,6 +161,7 @@ class AuthViewModel(
             authRepository.resetPassword(email, token, newPassword)
                 .onSuccess {
                     _state.value = AuthState(
+                        isCheckingStoredSession = false,
                         isLoading = false,
                         isAuthenticated = false,
                         infoMessage = getApplication<Application>().getString(
@@ -153,6 +172,7 @@ class AuthViewModel(
                 .onFailure { throwable ->
                     logAuthFailure("resetPassword", throwable)
                     _state.value = AuthState(
+                        isCheckingStoredSession = false,
                         isLoading = false,
                         isAuthenticated = false,
                         error = throwable.toUserMessageRu(res),
@@ -163,13 +183,18 @@ class AuthViewModel(
 
     private suspend fun restoreSession() {
         if (!authRepository.hasSession()) {
-            _state.value = AuthState(isLoading = false, isAuthenticated = false)
+            _state.value = AuthState(
+                isCheckingStoredSession = false,
+                isLoading = false,
+                isAuthenticated = false,
+            )
             return
         }
 
         authRepository.refreshSession()
             .onSuccess { user ->
                 _state.value = AuthState(
+                    isCheckingStoredSession = false,
                     isLoading = false,
                     isAuthenticated = true,
                     user = user,
@@ -179,6 +204,7 @@ class AuthViewModel(
                 logAuthFailure("refreshSession", err)
                 authRepository.logout()
                 _state.value = AuthState(
+                    isCheckingStoredSession = false,
                     isLoading = false,
                     isAuthenticated = false,
                     error = getApplication<Application>().getString(R.string.session_expired_message),

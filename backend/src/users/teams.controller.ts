@@ -1,24 +1,38 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
+  Header,
   Param,
   Patch,
   Post,
   Query,
   Req,
+  Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import type { Response } from 'express';
+import { Types } from 'mongoose';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { AddTeamMemberDto } from './dto/add-team-member.dto';
 import { CreatePlayerTeamDto } from './dto/create-player-team.dto';
+import { CreateTeamNewsDto } from './dto/create-team-news.dto';
 import { UpdatePlayerTeamDisplayNameDto } from './dto/update-player-team-display.dto';
 import { UpdateSquadMemberRoleDto } from './dto/update-squad-member-role.dto';
+import { UpdateTeamNewsDto } from './dto/update-team-news.dto';
+import { VoteTeamNewsDto } from './dto/vote-team-news.dto';
 import { TeamsService } from './teams.service';
+import { TeamNewsAttachmentsService } from './team-news-attachments.service';
+import { TeamNewsService } from './team-news.service';
 
 type RequestUser = {
   userId: string;
@@ -27,7 +41,11 @@ type RequestUser = {
 @Controller('teams')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class TeamsController {
-  constructor(private readonly teams: TeamsService) {}
+  constructor(
+    private readonly teams: TeamsService,
+    private readonly teamNews: TeamNewsService,
+    private readonly teamNewsAttachments: TeamNewsAttachmentsService,
+  ) {}
 
   @Post()
   @Roles(AllianceRole.R2)
@@ -67,6 +85,126 @@ export class TeamsController {
     @Param('requestId') requestId: string,
   ) {
     return this.teams.rejectJoinRequest(requestId, req.user.userId);
+  }
+
+  @Get(':teamId/news/attachments/:fileId')
+  @Roles(AllianceRole.R2)
+  @Header('Cache-Control', 'private, max-age=3600')
+  async getNewsAttachment(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Param('fileId') fileId: string,
+    @Res() res: Response,
+  ) {
+    await this.teams.getTeamIfMemberOrThrow(teamId, req.user.userId);
+    const dl = await this.teamNewsAttachments.openDownloadForTeam(
+      new Types.ObjectId(teamId),
+      fileId,
+    );
+    res.setHeader('Content-Type', dl.mimeType);
+    dl.stream.on('error', () => res.status(404).end());
+    dl.stream.pipe(res);
+  }
+
+  @Post(':teamId/news/attachments')
+  @Roles(AllianceRole.R2)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 8 * 1024 * 1024 },
+    }),
+  )
+  async uploadNewsImage(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('file is required');
+    }
+    await this.teamNews.assertMayUploadNewsImage(teamId, req.user.userId);
+    return this.teamNewsAttachments.uploadImage({
+      teamId: new Types.ObjectId(teamId),
+      uploaderUserId: req.user.userId,
+      buffer: file.buffer,
+      mimeType: file.mimetype,
+      size: file.size,
+    });
+  }
+
+  @Get(':teamId/news')
+  @Roles(AllianceRole.R2)
+  listNews(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const lim = limit != null ? Number.parseInt(limit, 10) : 20;
+    return this.teamNews.list(
+      teamId,
+      req.user.userId,
+      cursor,
+      Number.isFinite(lim) ? lim : 20,
+    );
+  }
+
+  @Post(':teamId/news')
+  @Roles(AllianceRole.R2)
+  createNews(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Body() dto: CreateTeamNewsDto,
+  ) {
+    return this.teamNews.create(teamId, req.user.userId, dto);
+  }
+
+  @Get(':teamId/news/:newsId')
+  @Roles(AllianceRole.R2)
+  getNews(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Param('newsId') newsId: string,
+  ) {
+    return this.teamNews.getOne(teamId, newsId, req.user.userId);
+  }
+
+  @Patch(':teamId/news/:newsId')
+  @Roles(AllianceRole.R2)
+  updateNews(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Param('newsId') newsId: string,
+    @Body() dto: UpdateTeamNewsDto,
+  ) {
+    return this.teamNews.update(teamId, newsId, req.user.userId, dto);
+  }
+
+  @Delete(':teamId/news/:newsId')
+  @Roles(AllianceRole.R2)
+  async deleteNews(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Param('newsId') newsId: string,
+  ) {
+    await this.teamNews.delete(teamId, newsId, req.user.userId);
+    return { ok: true };
+  }
+
+  @Post(':teamId/news/:newsId/vote')
+  @Roles(AllianceRole.R2)
+  voteNews(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Param('newsId') newsId: string,
+    @Body() dto: VoteTeamNewsDto,
+  ) {
+    return this.teamNews.vote(
+      teamId,
+      newsId,
+      req.user.userId,
+      dto.optionId.trim(),
+    );
   }
 
   @Get(':teamId')

@@ -217,6 +217,32 @@ export class TeamsService {
     }
   }
 
+  /** Для сервисов (новости команды и т.п.), которым нужен документ команды после проверки членства. */
+  async getTeamIfMemberOrThrow(
+    teamId: string,
+    userId: string,
+  ): Promise<PlayerTeamDocument> {
+    if (!Types.ObjectId.isValid(teamId)) {
+      throw new NotFoundException('Team not found');
+    }
+    const team = await this.teamModel.findById(teamId).exec();
+    if (!team) {
+      throw new NotFoundException('Team not found');
+    }
+    await this.migrateLegacyIfNeeded(team);
+    this.assertMember(team, userId);
+    return team;
+  }
+
+  getSquadRoleForUser(
+    team: PlayerTeamDocument,
+    userId: string,
+  ): PlayerTeamMemberRole | null {
+    const uid = new Types.ObjectId(userId);
+    const m = team.squadMembers.find((x) => x.userId.equals(uid));
+    return m?.role ?? null;
+  }
+
   async createTeam(
     userId: string,
     displayName: string,

@@ -18,13 +18,14 @@ import {
   ChatRoomReadState,
   ChatRoomReadStateSchema,
 } from './schemas/chat-room-read-state.schema';
-import { R2Service } from './r2.service';
+import { StorageModule } from '../storage/storage.module';
 
 @Module({
   imports: [
     AuthModule,
     PushModule,
     UsersModule,
+    StorageModule,
     MongooseModule.forFeature([
       { name: Message.name, schema: MessageSchema },
       { name: ChatAttachment.name, schema: ChatAttachmentSchema },
@@ -38,7 +39,6 @@ import { R2Service } from './r2.service';
     ChatGateway,
     ChatRoomsService,
     ChatAttachmentsService,
-    R2Service,
   ],
   exports: [ChatService, ChatRoomsService],
 })

@@ -307,9 +307,13 @@ fun AppNavigation(
                 )
             }
             composable(AppTab.TEAM.route) {
+                val isTeamTabSelected = currentDestination?.hierarchy?.any {
+                    it.route == AppTab.TEAM.route
+                } == true
                 TeamScreen(
                     currentUserId = userId,
                     teamsRepository = app.teamsRepository,
+                    isTeamTabSelected = isTeamTabSelected,
                 )
             }
             composable(AppTab.ADMIN.route) {

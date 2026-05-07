@@ -1,5 +1,9 @@
 package com.lastasylum.alliance.data.teams
 
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
+
 class TeamsRepository(
     private val teamsApi: TeamsApi,
 ) {
@@ -60,5 +64,56 @@ class TeamsRepository(
                 memberUserId,
                 UpdateSquadMemberRoleBody(role = role.trim()),
             ).let { }
+        }
+
+    suspend fun listTeamNews(
+        teamId: String,
+        cursor: String? = null,
+        limit: Int = 30,
+    ): Result<TeamNewsListPageDto> =
+        runCatching { teamsApi.listTeamNews(teamId, cursor, limit) }
+
+    suspend fun getTeamNews(teamId: String, newsId: String): Result<TeamNewsDetailDto> =
+        runCatching { teamsApi.getTeamNews(teamId, newsId) }
+
+    suspend fun createTeamNews(
+        teamId: String,
+        body: CreateTeamNewsBody,
+    ): Result<TeamNewsDetailDto> =
+        runCatching { teamsApi.createTeamNews(teamId, body) }
+
+    suspend fun updateTeamNews(
+        teamId: String,
+        newsId: String,
+        body: UpdateTeamNewsBody,
+    ): Result<TeamNewsDetailDto> =
+        runCatching { teamsApi.updateTeamNews(teamId, newsId, body) }
+
+    suspend fun deleteTeamNews(teamId: String, newsId: String): Result<Unit> =
+        runCatching { teamsApi.deleteTeamNews(teamId, newsId).let { } }
+
+    suspend fun voteTeamNews(
+        teamId: String,
+        newsId: String,
+        optionId: String,
+    ): Result<TeamNewsDetailDto> =
+        runCatching {
+            teamsApi.voteTeamNews(
+                teamId,
+                newsId,
+                VoteTeamNewsBody(optionId = optionId),
+            )
+        }
+
+    suspend fun uploadTeamNewsImage(
+        teamId: String,
+        bytes: ByteArray,
+        fileName: String,
+        mimeType: String,
+    ): Result<UploadedTeamNewsImageDto> =
+        runCatching {
+            val body = bytes.toRequestBody(mimeType.toMediaTypeOrNull())
+            val part = MultipartBody.Part.createFormData("file", fileName, body)
+            teamsApi.uploadTeamNewsAttachment(teamId, part)
         }
 }

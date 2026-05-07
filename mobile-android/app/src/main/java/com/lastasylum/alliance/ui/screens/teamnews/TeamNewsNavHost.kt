@@ -1,0 +1,808 @@
+package com.lastasylum.alliance.ui.screens.teamnews
+
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.lastasylum.alliance.R
+import com.lastasylum.alliance.data.teams.CreateTeamNewsBody
+import com.lastasylum.alliance.data.teams.TeamNewsDetailDto
+import com.lastasylum.alliance.data.teams.TeamNewsListItemDto
+import com.lastasylum.alliance.data.teams.TeamNewsPollCreateBody
+import com.lastasylum.alliance.data.teams.TeamNewsPollOptionDto
+import com.lastasylum.alliance.data.teams.TeamsRepository
+import com.lastasylum.alliance.data.teams.UpdateTeamNewsBody
+import com.lastasylum.alliance.ui.util.toUserMessageRu
+import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+private object TeamNewsRoutes {
+    const val LIST = "news_list"
+    const val CREATE = "news_create"
+    fun detail(id: String) = "news_detail/$id"
+    fun edit(id: String) = "news_edit/$id"
+}
+
+private fun formatNewsDateRu(iso: String): String =
+    runCatching {
+        val instant = Instant.parse(iso)
+        val fmt = DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale("ru"))
+        fmt.format(instant.atZone(ZoneId.systemDefault()))
+    }.getOrElse { iso }
+
+@Composable
+fun TeamNewsNavHost(
+    teamId: String,
+    currentUserId: String,
+    myTeamRole: String,
+    canPublishNews: Boolean,
+    teamsRepository: TeamsRepository,
+    modifier: Modifier = Modifier,
+) {
+    val nav = rememberNavController()
+    NavHost(
+        navController = nav,
+        startDestination = TeamNewsRoutes.LIST,
+        modifier = modifier,
+    ) {
+        composable(TeamNewsRoutes.LIST) {
+            TeamNewsListRoute(
+                teamId = teamId,
+                currentUserId = currentUserId,
+                myTeamRole = myTeamRole,
+                canPublishNews = canPublishNews,
+                teamsRepository = teamsRepository,
+                onOpenDetail = { nav.navigate(TeamNewsRoutes.detail(it)) },
+                onCreate = { nav.navigate(TeamNewsRoutes.CREATE) },
+                onEditFromList = { nav.navigate(TeamNewsRoutes.edit(it)) },
+            )
+        }
+        composable(
+            route = "news_detail/{newsId}",
+            arguments = listOf(navArgument("newsId") { type = NavType.StringType }),
+        ) { entry ->
+            val id = entry.arguments?.getString("newsId") ?: return@composable
+            TeamNewsDetailRoute(
+                teamId = teamId,
+                newsId = id,
+                currentUserId = currentUserId,
+                myTeamRole = myTeamRole,
+                teamsRepository = teamsRepository,
+                onBack = { nav.popBackStack() },
+                onEdit = { nav.navigate(TeamNewsRoutes.edit(it)) },
+            )
+        }
+        composable(TeamNewsRoutes.CREATE) {
+            TeamNewsEditorRoute(
+                teamId = teamId,
+                newsId = null,
+                teamsRepository = teamsRepository,
+                onBack = { nav.popBackStack() },
+                onDone = { nav.popBackStack() },
+            )
+        }
+        composable(
+            route = "news_edit/{newsId}",
+            arguments = listOf(navArgument("newsId") { type = NavType.StringType }),
+        ) { entry ->
+            val id = entry.arguments?.getString("newsId") ?: return@composable
+            TeamNewsEditorRoute(
+                teamId = teamId,
+                newsId = id,
+                teamsRepository = teamsRepository,
+                onBack = { nav.popBackStack() },
+                onDone = { nav.popBackStack() },
+            )
+        }
+    }
+}
+
+@Composable
+private fun TeamNewsListRoute(
+    teamId: String,
+    currentUserId: String,
+    myTeamRole: String,
+    canPublishNews: Boolean,
+    teamsRepository: TeamsRepository,
+    onOpenDetail: (String) -> Unit,
+    onCreate: () -> Unit,
+    onEditFromList: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    val res = context.resources
+    val scope = rememberCoroutineScope()
+    var loading by remember { mutableStateOf(true) }
+    var newsItems by remember { mutableStateOf<List<TeamNewsListItemDto>>(emptyList()) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(teamId) {
+        loading = true
+        loadError = null
+        teamsRepository.listTeamNews(teamId, null, limit = 40)
+            .onSuccess { page ->
+                newsItems = page.items
+                loading = false
+            }
+            .onFailure { e ->
+                loadError = e.toUserMessageRu(res)
+                loading = false
+            }
+    }
+
+    Scaffold(
+        floatingActionButton = {
+            if (canPublishNews) {
+                FloatingActionButton(
+                    onClick = onCreate,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.team_news_new))
+                }
+            }
+        },
+    ) { pad ->
+        Box(
+            Modifier
+                .fillMaxSize()
+                .padding(pad),
+        ) {
+            when {
+                loading && newsItems.isEmpty() -> {
+                    CircularProgressIndicator(Modifier.align(Alignment.Center))
+                }
+                loadError != null && newsItems.isEmpty() -> {
+                    Column(
+                        Modifier
+                            .align(Alignment.Center)
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            text = loadError ?: "",
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        OutlinedButton(
+                            onClick = {
+                                scope.launch {
+                                    loading = true
+                                    loadError = null
+                                    teamsRepository.listTeamNews(teamId, null, limit = 40)
+                                        .onSuccess { page ->
+                                            newsItems = page.items
+                                            loading = false
+                                        }
+                                        .onFailure { e ->
+                                            loadError = e.toUserMessageRu(res)
+                                            loading = false
+                                        }
+                                }
+                            },
+                        ) {
+                            Text(stringResource(R.string.team_news_retry))
+                        }
+                    }
+                }
+                newsItems.isEmpty() -> {
+                    Text(
+                        text = stringResource(R.string.team_news_empty),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.align(Alignment.Center),
+                    )
+                }
+                else -> {
+                    LazyColumn(
+                        contentPadding = PaddingValues(bottom = 88.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        items(
+                            count = newsItems.size,
+                            key = { index -> newsItems[index].id },
+                        ) { index ->
+                            val row = newsItems[index]
+                            TeamNewsCard(
+                                item = row,
+                                onClick = { onOpenDetail(row.id) },
+                                onEdit = {
+                                    val isAuthor = row.authorUserId == currentUserId
+                                    val isR5 = myTeamRole == "R5"
+                                    if (isAuthor || isR5) onEditFromList(row.id)
+                                },
+                                showEdit = row.authorUserId == currentUserId || myTeamRole == "R5",
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TeamNewsCard(
+    item: TeamNewsListItemDto,
+    onClick: () -> Unit,
+    onEdit: () -> Unit,
+    showEdit: Boolean,
+) {
+    ElevatedCard(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = CardDefaults.elevatedShape,
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ),
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            item.firstImageRelativeUrl?.let { raw ->
+                teamNewsAuthedImageRequest(LocalContext.current, raw)?.let { req ->
+                    AsyncImage(
+                        model = req,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(140.dp),
+                        contentScale = ContentScale.Crop,
+                    )
+                }
+            }
+            Text(
+                text = item.title,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = item.excerpt,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    Text(
+                        text = item.authorUsername,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        text = formatNewsDateRu(item.createdAt),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (item.hasPoll) {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            ),
+                        ) {
+                            Text(
+                                stringResource(R.string.team_news_poll_badge),
+                                Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    }
+                    if (showEdit) {
+                        TextButton(onClick = onEdit) {
+                            Text(stringResource(R.string.team_news_edit))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TeamNewsDetailRoute(
+    teamId: String,
+    newsId: String,
+    currentUserId: String,
+    myTeamRole: String,
+    teamsRepository: TeamsRepository,
+    onBack: () -> Unit,
+    onEdit: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    val res = context.resources
+    var detail by remember { mutableStateOf<TeamNewsDetailDto?>(null) }
+    var loading by remember { mutableStateOf(true) }
+    var err by remember { mutableStateOf<String?>(null) }
+    var voteBusy by remember { mutableStateOf(false) }
+    var deleteOpen by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(teamId, newsId) {
+        loading = true
+        err = null
+        teamsRepository.getTeamNews(teamId, newsId)
+            .onSuccess { doc ->
+                detail = doc
+                loading = false
+            }
+            .onFailure { e ->
+                err = e.toUserMessageRu(res)
+                loading = false
+            }
+    }
+
+    val d = detail
+    val canEdit = d != null && (d.authorUserId == currentUserId || myTeamRole == "R5")
+    val poll = d?.poll
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(d?.title ?: "") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.team_news_cd_back),
+                        )
+                    }
+                },
+                actions = {
+                    if (canEdit && d != null) {
+                        TextButton(onClick = { onEdit(d.id) }) {
+                            Text(stringResource(R.string.team_news_edit))
+                        }
+                        IconButton(onClick = { deleteOpen = true }) {
+                            Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.team_news_delete))
+                        }
+                    }
+                },
+            )
+        },
+    ) { pad ->
+        when {
+            loading && d == null -> {
+                Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            }
+            err != null && d == null -> {
+                Text(err ?: "", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(pad))
+            }
+            d != null -> {
+                Column(
+                    Modifier
+                        .padding(pad)
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    val hero: String? = d.imageRelativeUrls.firstOrNull() ?: d.firstImageRelativeUrl
+                    hero?.let { rawPath: String ->
+                        teamNewsAuthedImageRequest(context, rawPath)?.let { imgReq: ImageRequest ->
+                            AsyncImage(
+                                model = imgReq,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(220.dp),
+                                contentScale = ContentScale.Crop,
+                            )
+                            Spacer(Modifier.height(12.dp))
+                        }
+                    }
+                    Text(d.title, style = MaterialTheme.typography.headlineSmall)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "${d.authorUsername} · ${formatNewsDateRu(d.createdAt)}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(d.body, style = MaterialTheme.typography.bodyLarge)
+                    if (poll != null) {
+                        val p = poll
+                        Spacer(Modifier.height(20.dp))
+                        key(d.updatedAt) {
+                            Card(
+                                Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                ),
+                            ) {
+                                Column(
+                                    Modifier.padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    Text(p.question, style = MaterialTheme.typography.titleMedium)
+                                    val totalVotes = p.tallies.sumOf { tally -> tally.count }
+                                    Text(
+                                        stringResource(R.string.team_news_votes_count, totalVotes),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    var selected by remember {
+                                        mutableStateOf(p.myVoteOptionId)
+                                    }
+                                    p.options.forEach { opt: TeamNewsPollOptionDto ->
+                                        val cnt =
+                                            p.tallies.find { t -> t.optionId == opt.id }?.count ?: 0
+                                        Row(
+                                            Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            RadioButton(
+                                                selected = selected == opt.id,
+                                                onClick = { selected = opt.id },
+                                            )
+                                            Column(Modifier.weight(1f)) {
+                                                Text(opt.text)
+                                                Text(
+                                                    "$cnt",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Button(
+                                        onClick = {
+                                            val oid = selected ?: return@Button
+                                            voteBusy = true
+                                            scope.launch {
+                                                teamsRepository.voteTeamNews(teamId, newsId, oid)
+                                                    .onSuccess { voted -> detail = voted }
+                                                voteBusy = false
+                                            }
+                                        },
+                                        enabled = !voteBusy && selected != null,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        if (voteBusy) {
+                                            CircularProgressIndicator(
+                                                Modifier.size(20.dp),
+                                                strokeWidth = 2.dp,
+                                            )
+                                        } else {
+                                            Text(
+                                                if (p.myVoteOptionId == null) {
+                                                    stringResource(R.string.team_news_vote)
+                                                } else {
+                                                    stringResource(R.string.team_news_change_vote)
+                                                },
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (deleteOpen && d != null) {
+        AlertDialog(
+            onDismissRequest = { deleteOpen = false },
+            title = { Text(stringResource(R.string.team_news_delete)) },
+            text = { Text(stringResource(R.string.team_news_delete_confirm)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            teamsRepository.deleteTeamNews(teamId, d.id)
+                                .onSuccess { deleteOpen = false; onBack() }
+                        }
+                    },
+                ) {
+                    Text(stringResource(R.string.team_news_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteOpen = false }) {
+                    Text(stringResource(R.string.profile_action_cancel))
+                }
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TeamNewsEditorRoute(
+    teamId: String,
+    newsId: String?,
+    teamsRepository: TeamsRepository,
+    onBack: () -> Unit,
+    onDone: () -> Unit,
+) {
+    val context = LocalContext.current
+    val res = context.resources
+    val scope = rememberCoroutineScope()
+    var title by remember { mutableStateOf("") }
+    var body by remember { mutableStateOf("") }
+    val imageIds = remember { mutableStateListOf<String>() }
+    var includePoll by remember { mutableStateOf(false) }
+    var pollQuestion by remember { mutableStateOf("") }
+    val pollOptions = remember { mutableStateListOf("", "") }
+    var loading by remember { mutableStateOf(newsId != null) }
+    var saving by remember { mutableStateOf(false) }
+    var err by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(teamId, newsId) {
+        val nid = newsId ?: return@LaunchedEffect
+        loading = true
+        teamsRepository.getTeamNews(teamId, nid)
+            .onSuccess { d ->
+                title = d.title
+                body = d.body
+                imageIds.clear()
+                d.imageRelativeUrls.forEach { rel ->
+                    val seg = rel.substringAfterLast('/')
+                    if (seg.isNotBlank()) imageIds.add(seg)
+                }
+                val p = d.poll
+                if (p != null) {
+                    includePoll = true
+                    pollQuestion = p.question
+                    pollOptions.clear()
+                    p.options.forEach { pollOptions.add(it.text) }
+                }
+                loading = false
+            }
+            .onFailure { e ->
+                err = e.toUserMessageRu(res)
+                loading = false
+            }
+    }
+
+    val pickImage = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent(),
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            val cr = context.contentResolver
+            val mime = cr.getType(uri) ?: "image/jpeg"
+            val bytes = cr.openInputStream(uri)?.use { it.readBytes() } ?: return@launch
+            val name = "upload_${System.currentTimeMillis()}.jpg"
+            teamsRepository.uploadTeamNewsImage(teamId, bytes, name, mime)
+                .onSuccess { uploaded -> imageIds.add(uploaded.fileId) }
+                .onFailure { e -> err = e.toUserMessageRu(res) }
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        if (newsId == null) stringResource(R.string.team_news_new)
+                        else stringResource(R.string.team_news_edit),
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack, enabled = !saving) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.team_news_cd_back),
+                        )
+                    }
+                },
+            )
+        },
+    ) { pad ->
+        if (loading) {
+            Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            return@Scaffold
+        }
+        Column(
+            Modifier
+                .padding(pad)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            err?.let { msg ->
+                Text(msg, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+            OutlinedTextField(
+                value = title,
+                onValueChange = { v -> title = v.take(200) },
+                label = { Text(stringResource(R.string.team_news_title_hint)) },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = body,
+                onValueChange = { v -> body = v },
+                label = { Text(stringResource(R.string.team_news_body_hint)) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp),
+            )
+            OutlinedButton(onClick = { pickImage.launch("image/*") }) {
+                Text(stringResource(R.string.team_news_pick_image))
+            }
+            imageIds.forEachIndexed { idx, id ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("• $id", maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { imageIds.removeAt(idx) }) { Text("×") }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { includePoll = !includePoll }) {
+                    Text(
+                        if (includePoll) stringResource(R.string.team_news_remove_poll)
+                        else stringResource(R.string.team_news_add_poll),
+                    )
+                }
+            }
+            if (includePoll) {
+                OutlinedTextField(
+                    value = pollQuestion,
+                    onValueChange = { v -> pollQuestion = v.take(500) },
+                    label = { Text(stringResource(R.string.team_news_poll_question_hint)) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                pollOptions.forEachIndexed { i, v ->
+                    OutlinedTextField(
+                        value = v,
+                        onValueChange = { nv -> pollOptions[i] = nv.take(200) },
+                        label = {
+                            Text(stringResource(R.string.team_news_poll_option_hint, i + 1))
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                if (pollOptions.size < 8) {
+                    TextButton(
+                        onClick = { pollOptions.add("") },
+                    ) {
+                        Text(stringResource(R.string.team_news_add_option))
+                    }
+                }
+            }
+            Button(
+                onClick = {
+                    if (title.isBlank() || body.isBlank()) {
+                        err = res.getString(R.string.team_news_fill_required)
+                        return@Button
+                    }
+                    if (includePoll) {
+                        val filled = pollOptions.count { o -> o.isNotBlank() }
+                        if (pollQuestion.isBlank() || filled < 2) {
+                            err = res.getString(R.string.team_news_poll_invalid)
+                            return@Button
+                        }
+                    }
+                    err = null
+                    saving = true
+                    scope.launch {
+                        val pollBody =
+                            if (includePoll) {
+                                TeamNewsPollCreateBody(
+                                    question = pollQuestion.trim(),
+                                    optionTexts = pollOptions.map { o -> o.trim() }.filter { o -> o.isNotEmpty() },
+                                )
+                            } else {
+                                null
+                            }
+                        if (newsId == null) {
+                            teamsRepository.createTeamNews(
+                                teamId,
+                                CreateTeamNewsBody(
+                                    title = title.trim(),
+                                    body = body.trim(),
+                                    imageFileIds = imageIds.toList(),
+                                    poll = pollBody,
+                                ),
+                            )
+                                .onSuccess { saving = false; onDone() }
+                                .onFailure { e ->
+                                    err = e.toUserMessageRu(res)
+                                    saving = false
+                                }
+                        } else {
+                            teamsRepository.updateTeamNews(
+                                teamId,
+                                newsId,
+                                UpdateTeamNewsBody(
+                                    title = title.trim(),
+                                    body = body.trim(),
+                                    imageFileIds = imageIds.toList(),
+                                    poll = if (includePoll) pollBody else null,
+                                    clearPoll = if (!includePoll) true else null,
+                                ),
+                            )
+                                .onSuccess { saving = false; onDone() }
+                                .onFailure { e ->
+                                    err = e.toUserMessageRu(res)
+                                    saving = false
+                                }
+                        }
+                    }
+                },
+                enabled = !saving,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (saving) {
+                    CircularProgressIndicator(
+                        Modifier.size(20.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    Text(stringResource(R.string.team_news_save))
+                }
+            }
+        }
+    }
+}
