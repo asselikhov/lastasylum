@@ -60,6 +60,7 @@ private fun copyTeamId(context: Context, text: String) {
     cm.setPrimaryClip(ClipData.newPlainText("team_id", text))
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AdminScreen(
     currentUserId: String,
@@ -82,6 +83,10 @@ fun AdminScreen(
     onRenameRoom: (String, String) -> Unit,
     onDeleteRoom: (String) -> Unit,
     onClearRoomSnack: () -> Unit,
+    onToggleStickerAllianceRole: (String, Boolean) -> Unit = { _, _ -> },
+    onToggleStickerUserGrant: (String, Boolean) -> Unit = { _, _ -> },
+    onSaveStickerAccess: () -> Unit = {},
+    onClearStickerAccessError: () -> Unit = {},
 ) {
     var deleteTarget by remember { mutableStateOf<TeamMemberDto?>(null) }
     var deleteRoomTarget by remember { mutableStateOf<ChatRoomDto?>(null) }
@@ -218,6 +223,68 @@ fun AdminScreen(
                                 )
                             },
                         )
+                    }
+                }
+                if (state.filterAllianceCode != null) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 8.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                    )
+                    Text(
+                        text = stringResource(R.string.admin_sticker_section_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = stringResource(R.string.admin_sticker_roles_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (state.stickerAccessLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .padding(vertical = 8.dp)
+                                .size(22.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    }
+                    state.stickerAccessError?.takeIf { it.isNotBlank() }?.let { err ->
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = err,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            TextButton(onClick = onClearStickerAccessError) {
+                                Text(stringResource(R.string.admin_dismiss_error))
+                            }
+                        }
+                    }
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        listOf("R2", "R3", "R4", "R5").forEach { role ->
+                            FilterChip(
+                                selected = state.stickerRolesZlobyaka.contains(role),
+                                onClick = {
+                                    onToggleStickerAllianceRole(
+                                        role,
+                                        !state.stickerRolesZlobyaka.contains(role),
+                                    )
+                                },
+                                label = { Text(role) },
+                            )
+                        }
+                    }
+                    Button(
+                        onClick = onSaveStickerAccess,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.large,
+                        enabled = !state.stickerAccessLoading,
+                    ) {
+                        Text(stringResource(R.string.admin_sticker_save))
                     }
                 }
                 OutlinedTextField(
@@ -475,6 +542,11 @@ fun AdminScreen(
                 onSetRole = { role -> onSetRole(member.id, role) },
                 onRename = { name -> onRename(member.id, name) },
                 onDeleteClick = { deleteTarget = member },
+                showStickerUserGrant = state.filterAllianceCode != null,
+                stickerUserGrantEnabled = state.stickerUsersZlobyaka.contains(member.id),
+                onStickerUserGrantChange = { enabled ->
+                    onToggleStickerUserGrant(member.id, enabled)
+                },
             )
         }
     }
@@ -657,6 +729,9 @@ private fun AdminMemberCard(
     onSetRole: (String) -> Unit,
     onRename: (String) -> Unit,
     onDeleteClick: () -> Unit,
+    showStickerUserGrant: Boolean = false,
+    stickerUserGrantEnabled: Boolean = false,
+    onStickerUserGrantChange: ((Boolean) -> Unit)? = null,
 ) {
     var draftName by remember(member.id) { mutableStateOf(member.username) }
     LaunchedEffect(member.username) {
@@ -724,6 +799,25 @@ private fun AdminMemberCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            if (showStickerUserGrant && onStickerUserGrantChange != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.admin_sticker_user_switch),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(
+                        checked = stickerUserGrantEnabled,
+                        onCheckedChange = onStickerUserGrantChange,
+                    )
+                }
+            }
 
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                 if (member.membershipStatus == "pending") {

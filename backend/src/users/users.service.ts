@@ -9,6 +9,7 @@ import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
 import { AllianceRegistryService } from './alliance-registry.service';
 import { User, UserDocument } from './schemas/user.schema';
+import { StickerAccessService } from './sticker-access.service';
 import { TeamsService } from './teams.service';
 
 export type SafeUser = {
@@ -31,6 +32,8 @@ export type SafeUser = {
   playerTeamLeaderUserId: string | null;
   isPlayerTeamLeader: boolean;
   pendingPlayerTeamJoinRequests: number;
+  /** Alliance sticker packs this account may send (wire keys, e.g. zlobyaka). */
+  enabledStickerPacks: string[];
 };
 
 @Injectable()
@@ -39,6 +42,7 @@ export class UsersService {
     @InjectModel(User.name) private readonly userModel: Model<User>,
     private readonly allianceRegistry: AllianceRegistryService,
     private readonly teamsService: TeamsService,
+    private readonly stickerAccess: StickerAccessService,
   ) {}
 
   effectiveMembership(user: UserDocument): TeamMembershipStatus {
@@ -236,6 +240,8 @@ export class UsersService {
     );
     const teamFields = await this.teamsService.getPlayerTeamProfileFields(user);
     const inSquad = Boolean(teamFields.playerTeamId);
+    const enabledStickerPacks =
+      await this.stickerAccess.listEnabledPackKeysForUser(user);
     return {
       id: user._id.toString(),
       username: user.username,
@@ -255,6 +261,7 @@ export class UsersService {
         : null,
       telegramUsername: user.telegramUsername ?? null,
       ...teamFields,
+      enabledStickerPacks,
     };
   }
 

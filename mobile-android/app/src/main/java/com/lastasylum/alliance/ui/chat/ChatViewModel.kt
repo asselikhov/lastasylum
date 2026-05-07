@@ -108,8 +108,11 @@ class ChatViewModel(
     }
 
     private suspend fun loadTeamProfileGate(): Boolean {
-        return usersRepository.getMyProfile().getOrNull()?.let { p ->
-            !p.teamDisplayName.isNullOrBlank() && !p.teamTag.isNullOrBlank()
+        val p = usersRepository.getMyProfile().getOrNull()
+        val keys = p?.enabledStickerPacks?.toSet() ?: emptySet()
+        _state.value = _state.value.copy(enabledStickerPackKeys = keys)
+        return p?.let {
+            !it.teamDisplayName.isNullOrBlank() && !it.teamTag.isNullOrBlank()
         } ?: false
     }
 
@@ -124,6 +127,7 @@ class ChatViewModel(
                 currentUserId = currentUserId,
                 currentUserRole = currentUserRole,
                 hasTeamProfileForGlobalChat = false,
+                enabledStickerPackKeys = emptySet(),
             )
             return
         }
@@ -138,6 +142,7 @@ class ChatViewModel(
                 error = getApplication<Application>().getString(
                     com.lastasylum.alliance.R.string.chat_no_rooms,
                 ),
+                enabledStickerPackKeys = emptySet(),
             )
             return
         }

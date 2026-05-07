@@ -3,6 +3,7 @@ package com.lastasylum.alliance.data.admin
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.PATCH
+import retrofit2.http.PUT
 import retrofit2.http.Path
 
 interface AdminApi {
@@ -14,4 +15,15 @@ interface AdminApi {
         @Path("publicId") publicId: String,
         @Body body: UpdateAllianceOverlayBody,
     ): AllianceAdminDto
+
+    @GET("admin/sticker-access/{allianceCode}")
+    suspend fun getStickerAccess(
+        @Path("allianceCode") allianceCode: String,
+    ): AllianceStickerAccessDto
+
+    @PUT("admin/sticker-access/{allianceCode}")
+    suspend fun putStickerAccess(
+        @Path("allianceCode") allianceCode: String,
+        @Body body: PutAllianceStickerAccessBody,
+    ): AllianceStickerAccessDto
 }

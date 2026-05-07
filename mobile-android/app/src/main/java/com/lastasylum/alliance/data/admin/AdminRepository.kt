@@ -16,4 +16,13 @@ class AdminRepository(
                 UpdateAllianceOverlayBody(overlayEnabled = enabled),
             )
         }
+
+    suspend fun getStickerAccess(allianceCode: String): Result<AllianceStickerAccessDto> =
+        runCatching { adminApi.getStickerAccess(allianceCode) }
+
+    suspend fun putStickerAccess(
+        allianceCode: String,
+        body: PutAllianceStickerAccessBody,
+    ): Result<AllianceStickerAccessDto> =
+        runCatching { adminApi.putStickerAccess(allianceCode, body) }
 }

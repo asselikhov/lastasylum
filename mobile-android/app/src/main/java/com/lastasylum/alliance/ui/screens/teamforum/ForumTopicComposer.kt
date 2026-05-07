@@ -12,6 +12,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,6 +37,7 @@ import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.Keyboard
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Mood
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -87,6 +89,7 @@ fun ForumTopicComposer(
     isSending: Boolean,
     isUploadingImage: Boolean,
     sendEnabled: Boolean,
+    canUseZlobyakaStickers: Boolean,
     onSend: () -> Unit,
     onSendStickerPayload: (String) -> Unit,
     onImageUriPicked: (Uri) -> Unit,
@@ -408,26 +411,49 @@ fun ForumTopicComposer(
                                 .aspectRatio(1f)
                                 .clip(RoundedCornerShape(12.dp))
                                 .clickable(
-                                    enabled = sendEnabled && !isSending && !isUploadingImage,
+                                    enabled = sendEnabled && !isSending && !isUploadingImage &&
+                                        canUseZlobyakaStickers,
                                     onClick = {
                                         onSendStickerPayload(ZlobyakaStickerPack.encode(stem))
                                         showMediaPanel = false
                                     },
                                 ),
                         ) {
-                            AsyncImage(
-                                model = ImageRequest.Builder(context)
-                                    .data(ZlobyakaStickerPack.assetUriForStem(stem))
-                                    .size(192)
-                                    .crossfade(true)
-                                    .build(),
-                                contentDescription = stringResource(R.string.cd_chat_sticker),
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(6.dp)
-                                    .clip(RoundedCornerShape(8.dp)),
-                                contentScale = ContentScale.Fit,
-                            )
+                            Box(Modifier.fillMaxSize()) {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(context)
+                                        .data(ZlobyakaStickerPack.assetUriForStem(stem))
+                                        .size(192)
+                                        .crossfade(true)
+                                        .build(),
+                                    contentDescription = stringResource(R.string.cd_chat_sticker),
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(6.dp)
+                                        .clip(RoundedCornerShape(8.dp)),
+                                    contentScale = ContentScale.Fit,
+                                    alpha = if (canUseZlobyakaStickers) 1f else 0.42f,
+                                )
+                                if (!canUseZlobyakaStickers) {
+                                    Box(
+                                        Modifier
+                                            .fillMaxSize()
+                                            .background(
+                                                MaterialTheme.colorScheme.scrim.copy(alpha = 0.42f),
+                                            ),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Lock,
+                                            contentDescription = stringResource(
+                                                R.string.cd_chat_sticker_locked,
+                                            ),
+                                            tint = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.size(26.dp),
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }

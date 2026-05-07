@@ -7,7 +7,11 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { PlayerTeamMemberRole } from '../common/enums/player-team-member-role.enum';
-import { User } from './schemas/user.schema';
+import {
+  parseZlobyakaStickerStem,
+  ZLOBYAKA_STICKER_STEMS,
+} from '../chat/zlobyaka-stickers.const';
+import { User, UserDocument } from './schemas/user.schema';
 import {
   TeamForumMessage,
   TeamForumMessageDocument,
@@ -18,6 +22,7 @@ import {
 } from './schemas/team-forum-topic.schema';
 import { TeamNewsAttachmentsService } from './team-news-attachments.service';
 import { TeamsService } from './teams.service';
+import { StickerAccessService } from './sticker-access.service';
 
 export type TeamForumTopicRow = {
   id: string;
@@ -55,6 +60,7 @@ export class TeamForumService {
     @InjectModel(User.name) private readonly userModel: Model<User>,
     private readonly teams: TeamsService,
     private readonly teamNewsAttachments: TeamNewsAttachmentsService,
+    private readonly stickerAccess: StickerAccessService,
   ) {}
 
   private async assertCanManageTopicsAsync(
@@ -84,6 +90,14 @@ export class TeamForumService {
       createdAt: doc.createdAt?.toISOString() ?? new Date().toISOString(),
       updatedAt: doc.updatedAt?.toISOString() ?? new Date().toISOString(),
     };
+  }
+
+  private assertZlobyakaStickerPayload(text: string): void {
+    const stem = parseZlobyakaStickerStem(text);
+    if (!stem) return;
+    if (!ZLOBYAKA_STICKER_STEMS.has(stem)) {
+      throw new BadRequestException('Unknown sticker');
+    }
   }
 
   messageRow(doc: TeamForumMessageDocument): TeamForumMessageRow {
@@ -226,9 +240,6 @@ export class TeamForumService {
     if (!topic) {
       throw new NotFoundException('Topic not found');
     }
-    const user = await this.userModel.findById(userId).lean();
-    const username =
-      user && typeof user.username === 'string' ? user.username : userId;
     const trimmed = text.trim();
     const imgRaw =
       typeof imageFileId === 'string' && imageFileId.trim()
@@ -237,6 +248,17 @@ export class TeamForumService {
     if (!trimmed && !imgRaw) {
       throw new BadRequestException('Message text or image is required');
     }
+    const senderDoc = await this.userModel.findById(userId).exec();
+    if (!senderDoc) {
+      throw new ForbiddenException('User not found');
+    }
+    const username =
+      typeof senderDoc.username === 'string' ? senderDoc.username : userId;
+    this.assertZlobyakaStickerPayload(trimmed);
+    await this.stickerAccess.assertUserMaySendStickerMessage(
+      senderDoc as UserDocument,
+      trimmed,
+    );
     let imageMeta: {
       fileId: Types.ObjectId;
       mimeType: string;
@@ -308,6 +330,15 @@ export class TeamForumService {
     if (!trimmed && !hasImage) {
       throw new BadRequestException('Message text is required');
     }
+    this.assertZlobyakaStickerPayload(trimmed);
+    const editorDoc = await this.userModel.findById(userId).exec();
+    if (!editorDoc) {
+      throw new ForbiddenException('User not found');
+    }
+    await this.stickerAccess.assertUserMaySendStickerMessage(
+      editorDoc as UserDocument,
+      trimmed,
+    );
     msg.text = trimmed;
     msg.editedAt = new Date();
     await msg.save();

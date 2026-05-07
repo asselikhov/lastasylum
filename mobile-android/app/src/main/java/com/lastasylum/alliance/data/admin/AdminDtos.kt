@@ -14,3 +14,22 @@ data class AllianceAdminDto(
 data class UpdateAllianceOverlayBody(
     val overlayEnabled: Boolean,
 )
+
+@JsonClass(generateAdapter = true)
+data class StickerPackCatalogItemDto(
+    val key: String,
+    val title: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class AllianceStickerAccessDto(
+    val catalog: List<StickerPackCatalogItemDto>,
+    val roleGrants: Map<String, List<String>>,
+    val userGrants: Map<String, List<String>>,
+)
+
+@JsonClass(generateAdapter = true)
+data class PutAllianceStickerAccessBody(
+    val roleGrants: Map<String, List<String>>,
+    val userGrants: Map<String, List<String>>,
+)

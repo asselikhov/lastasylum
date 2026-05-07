@@ -44,4 +44,6 @@ data class ChatState(
     val chatVoicePhase: ChatVoicePhase = ChatVoicePhase.Idle,
     /** Highest message id read by someone else in this room (for Telegram-like double-check on own messages). */
     val otherReadUptoMessageId: String? = null,
+    /** Wire keys for sticker packs the user may send (e.g. zlobyaka). */
+    val enabledStickerPackKeys: Set<String> = emptySet(),
 )

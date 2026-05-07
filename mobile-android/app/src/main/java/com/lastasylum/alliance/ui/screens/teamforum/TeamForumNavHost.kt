@@ -124,6 +124,8 @@ fun TeamForumNavHost(
     tokenStore: TokenStore,
     modifier: Modifier = Modifier,
     forumTabReselectSignal: Int = 0,
+    /** Wire keys of sticker packs the current user may send. */
+    enabledStickerPackKeys: Set<String> = emptySet(),
 ) {
     val nav = rememberNavController()
     val topicTitles = remember { mutableStateMapOf<String, String>() }
@@ -165,6 +167,7 @@ fun TeamForumNavHost(
                 teamsRepository = teamsRepository,
                 forumSocket = forumSocket,
                 tokenStore = tokenStore,
+                enabledStickerPackKeys = enabledStickerPackKeys,
                 onBack = { nav.popBackStack() },
             )
         }
@@ -477,6 +480,7 @@ private fun TeamForumTopicChatRoute(
     forumSocket: TeamForumSocketManager,
     tokenStore: TokenStore,
     onBack: () -> Unit,
+    enabledStickerPackKeys: Set<String> = emptySet(),
 ) {
     BackHandler { onBack() }
 
@@ -702,6 +706,7 @@ private fun TeamForumTopicChatRoute(
             isSending = sending,
             isUploadingImage = uploadingImage,
             sendEnabled = true,
+            canUseZlobyakaStickers = enabledStickerPackKeys.contains(ZlobyakaStickerPack.PACK_KEY),
             onSend = {
                 scope.launch {
                     sending = true

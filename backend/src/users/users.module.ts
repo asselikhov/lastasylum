@@ -38,6 +38,16 @@ import {
   TeamForumTopicSchema,
 } from './schemas/team-forum-topic.schema';
 import { TeamForumService } from './team-forum.service';
+import {
+  AllianceStickerRoleGrant,
+  AllianceStickerRoleGrantSchema,
+} from './schemas/alliance-sticker-role-grant.schema';
+import {
+  AllianceStickerUserGrant,
+  AllianceStickerUserGrantSchema,
+} from './schemas/alliance-sticker-user-grant.schema';
+import { AdminStickerAccessController } from './admin-sticker-access.controller';
+import { StickerAccessService } from './sticker-access.service';
 
 @Module({
   imports: [
@@ -52,9 +62,19 @@ import { TeamForumService } from './team-forum.service';
       { name: TeamNewsAttachment.name, schema: TeamNewsAttachmentSchema },
       { name: TeamForumTopic.name, schema: TeamForumTopicSchema },
       { name: TeamForumMessage.name, schema: TeamForumMessageSchema },
+      { name: AllianceStickerRoleGrant.name, schema: AllianceStickerRoleGrantSchema },
+      {
+        name: AllianceStickerUserGrant.name,
+        schema: AllianceStickerUserGrantSchema,
+      },
     ]),
   ],
-  controllers: [UsersController, AdminAlliancesController, TeamsController],
+  controllers: [
+    UsersController,
+    AdminAlliancesController,
+    AdminStickerAccessController,
+    TeamsController,
+  ],
   providers: [
     UsersService,
     AllianceRegistryService,
@@ -62,7 +82,8 @@ import { TeamForumService } from './team-forum.service';
     TeamNewsService,
     TeamNewsAttachmentsService,
     TeamForumService,
+    StickerAccessService,
   ],
-  exports: [UsersService, MongooseModule, TeamForumService],
+  exports: [UsersService, MongooseModule, TeamForumService, StickerAccessService],
 })
 export class UsersModule {}

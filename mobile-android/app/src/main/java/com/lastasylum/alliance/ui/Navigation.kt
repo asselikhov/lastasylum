@@ -131,6 +131,7 @@ fun AppNavigation(
     val msgRoomRenamed = stringResource(R.string.admin_ok_room_renamed)
     val msgRoomDeleted = stringResource(R.string.admin_ok_room_deleted)
     val msgOverlaySaved = stringResource(R.string.admin_ok_overlay)
+    val msgStickerSaved = stringResource(R.string.admin_sticker_saved)
     Scaffold(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.background,
@@ -347,6 +348,10 @@ fun AppNavigation(
                         adminViewModel.deleteChatRoom(roomId, msgRoomDeleted)
                     },
                     onClearRoomSnack = adminViewModel::clearRoomSnack,
+                    onToggleStickerAllianceRole = adminViewModel::toggleStickerAllianceRole,
+                    onToggleStickerUserGrant = adminViewModel::toggleStickerUserGrant,
+                    onSaveStickerAccess = { adminViewModel.saveStickerAccess(msgStickerSaved) },
+                    onClearStickerAccessError = adminViewModel::clearStickerAccessError,
                 )
             }
         }

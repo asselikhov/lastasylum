@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lastasylum.alliance.data.admin.AllianceAdminDto
 import com.lastasylum.alliance.data.admin.AdminRepository
+import com.lastasylum.alliance.data.admin.PutAllianceStickerAccessBody
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.chat.ChatRoomsRepository
 import com.lastasylum.alliance.data.users.TeamMemberDto
@@ -32,6 +33,12 @@ data class AdminUiState(
     /** When null, R5 loads members across all alliances (paginated). */
     val filterAllianceCode: String? = null,
     val memberSearchQuery: String = "",
+    val stickerAccessLoading: Boolean = false,
+    val stickerAccessError: String? = null,
+    /** Alliance roles (R2–R5) that may use pack «zlobyaka». */
+    val stickerRolesZlobyaka: Set<String> = emptySet(),
+    /** Explicit per-user grants for «zlobyaka». */
+    val stickerUsersZlobyaka: Set<String> = emptySet(),
 )
 
 class AdminViewModel(
@@ -116,6 +123,7 @@ class AdminViewModel(
     fun setFilterAllianceCode(code: String?) {
         _state.value = _state.value.copy(filterAllianceCode = code)
         refresh()
+        refreshStickerAccess()
     }
 
     fun setMemberSearchQuery(raw: String) {
@@ -242,6 +250,76 @@ class AdminViewModel(
                 }
                 .onFailure { e ->
                     _state.value = _state.value.copy(error = e.toUserMessageRu(res))
+                }
+        }
+    }
+
+    fun refreshStickerAccess() {
+        viewModelScope.launch {
+            val code = _state.value.filterAllianceCode?.trim()?.takeIf { it.isNotEmpty() }
+            if (code == null) {
+                _state.value = _state.value.copy(
+                    stickerAccessLoading = false,
+                    stickerAccessError = null,
+                    stickerRolesZlobyaka = emptySet(),
+                    stickerUsersZlobyaka = emptySet(),
+                )
+                return@launch
+            }
+            _state.value = _state.value.copy(stickerAccessLoading = true, stickerAccessError = null)
+            adminRepository.getStickerAccess(code)
+                .onSuccess { dto ->
+                    _state.value = _state.value.copy(
+                        stickerAccessLoading = false,
+                        stickerRolesZlobyaka = dto.roleGrants["zlobyaka"]?.toSet() ?: emptySet(),
+                        stickerUsersZlobyaka = dto.userGrants["zlobyaka"]?.toSet() ?: emptySet(),
+                    )
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(
+                        stickerAccessLoading = false,
+                        stickerAccessError = e.toUserMessageRu(res),
+                        stickerRolesZlobyaka = emptySet(),
+                        stickerUsersZlobyaka = emptySet(),
+                    )
+                }
+        }
+    }
+
+    fun clearStickerAccessError() {
+        _state.value = _state.value.copy(stickerAccessError = null)
+    }
+
+    fun toggleStickerAllianceRole(role: String, enabled: Boolean) {
+        val next = _state.value.stickerRolesZlobyaka.toMutableSet()
+        if (enabled) next.add(role) else next.remove(role)
+        _state.value = _state.value.copy(stickerRolesZlobyaka = next)
+    }
+
+    fun toggleStickerUserGrant(userId: String, enabled: Boolean) {
+        val next = _state.value.stickerUsersZlobyaka.toMutableSet()
+        if (enabled) next.add(userId) else next.remove(userId)
+        _state.value = _state.value.copy(stickerUsersZlobyaka = next)
+    }
+
+    fun saveStickerAccess(okMessage: String) {
+        val code = _state.value.filterAllianceCode?.trim()?.takeIf { it.isNotEmpty() } ?: return
+        viewModelScope.launch {
+            val roles = _state.value.stickerRolesZlobyaka.toList().sorted()
+            val users = _state.value.stickerUsersZlobyaka.toList().sorted()
+            adminRepository.putStickerAccess(
+                code,
+                PutAllianceStickerAccessBody(
+                    roleGrants = mapOf("zlobyaka" to roles),
+                    userGrants = mapOf("zlobyaka" to users),
+                ),
+            )
+                .onSuccess {
+                    _state.value = _state.value.copy(snackMessage = okMessage)
+                    refreshStickerAccess()
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(stickerAccessError = e.toUserMessageRu(res))
                 }
         }
     }

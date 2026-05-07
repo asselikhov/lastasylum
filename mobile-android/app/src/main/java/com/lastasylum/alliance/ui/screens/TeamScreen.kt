@@ -298,6 +298,9 @@ fun TeamScreen(
                             myTeamRole == "R4" || myTeamRole == "R5"
                         }
                         val canModerateForumMessages = remember(myTeamRole) { myTeamRole == "R5" }
+                        val enabledStickerPackKeys = remember(profile?.enabledStickerPacks) {
+                            profile?.enabledStickerPacks?.toSet() ?: emptySet()
+                        }
                         Surface(
                             modifier = Modifier
                                 .weight(1f, fill = true)
@@ -470,6 +473,7 @@ fun TeamScreen(
                                             forumSocket = app.teamForumSocket,
                                             tokenStore = app.tokenStore,
                                             forumTabReselectSignal = forumTabReselectSignal,
+                                            enabledStickerPackKeys = enabledStickerPackKeys,
                                             modifier = Modifier
                                                 .weight(1f, fill = true)
                                                 .fillMaxWidth()

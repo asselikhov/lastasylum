@@ -40,6 +40,7 @@ data class MyProfileDto(
     val playerTeamLeaderUserId: String? = null,
     val isPlayerTeamLeader: Boolean = false,
     val pendingPlayerTeamJoinRequests: Int = 0,
+    val enabledStickerPacks: List<String> = emptyList(),
 )
 
 @JsonClass(generateAdapter = true)

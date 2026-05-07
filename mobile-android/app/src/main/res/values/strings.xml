@@ -70,6 +70,7 @@
     <string name="chat_stickers_pack_zlobyaka">Злобяка</string>
     <string name="chat_reply_preview_sticker">Стикер «Злобяка»</string>
     <string name="cd_chat_sticker">Стикер «Злобяка»</string>
+    <string name="cd_chat_sticker_locked">Стикер заблокирован</string>
     <string name="chat_ok">Понятно</string>
     <string name="chat_empty_state">Пока нет сообщений — напишите первым.</string>
     <string name="chat_no_rooms">Комнаты чата недоступны. Проверьте сеть или попробуйте позже.</string>
@@ -216,6 +217,11 @@
     <string name="admin_copy_team_id">Копировать ID</string>
     <string name="admin_cd_refresh_teams">Обновить список команд</string>
     <string name="admin_ok_overlay">Доступ к оверлею обновлён</string>
+    <string name="admin_sticker_section_title">Стикеры «Злобяка»</string>
+    <string name="admin_sticker_roles_hint">Выберите роли альянса, которым разрешён этот пакет. Дополнительно можно выдать доступ конкретным игрокам ниже.</string>
+    <string name="admin_sticker_user_switch">Персональный доступ к стикерам</string>
+    <string name="admin_sticker_save">Сохранить правила стикеров</string>
+    <string name="admin_sticker_saved">Правила стикеров сохранены</string>
     <string name="profile_team_bracket_cd">Открыть страницу команды</string>
     <string name="profile_player_team_section">Моя команда</string>
     <string name="profile_player_team_create">Создать команду</string>

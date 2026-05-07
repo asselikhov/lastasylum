@@ -11,6 +11,7 @@ import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
 import { UserDocument } from '../users/schemas/user.schema';
 import { UsersService } from '../users/users.service';
+import { StickerAccessService } from '../users/sticker-access.service';
 import { ChatRoomsService } from './chat-rooms.service';
 import { Message } from './schemas/message.schema';
 import { ChatRoomReadState } from './schemas/chat-room-read-state.schema';
@@ -109,6 +110,7 @@ export class ChatService {
     private readonly chatReadStateModel: Model<ChatRoomReadState>,
     private readonly usersService: UsersService,
     private readonly chatRoomsService: ChatRoomsService,
+    private readonly stickerAccess: StickerAccessService,
   ) {}
 
   async assertUserMayUseChat(userId: string): Promise<void> {
@@ -382,6 +384,10 @@ export class ChatService {
       );
     }
     this.assertZlobyakaStickerPayload(trimmedText);
+    await this.stickerAccess.assertUserMaySendStickerMessage(
+      authorUser,
+      trimmedText,
+    );
 
     const created = await this.messageModel.create({
       allianceId,
@@ -466,6 +472,7 @@ export class ChatService {
     const trimmed = text.trim();
     if (!trimmed) throw new BadRequestException('Text is required');
     this.assertZlobyakaStickerPayload(trimmed);
+    await this.stickerAccess.assertUserMaySendStickerMessage(actor, trimmed);
     message.text = trimmed;
     message.editedAt = new Date();
     await message.save();
@@ -531,10 +538,13 @@ export class ChatService {
       .lean<MessageLean | null>()
       .exec();
     if (!source) throw new NotFoundException('Message not found');
+    const fwdText = (source.text ?? '').trim();
+    this.assertZlobyakaStickerPayload(fwdText);
+    await this.stickerAccess.assertUserMaySendStickerMessage(actor, fwdText);
     const created = await this.messageModel.create({
       allianceId,
       roomId: roomObjectId,
-      text: (source.text ?? '').trim(),
+      text: fwdText,
       attachments: source.attachments ?? [],
       senderId: userId,
       senderUsername: actor.username,
