@@ -368,6 +368,8 @@
     <string name="overlay_history_empty_send">Введите текст сообщения</string>
     <string name="overlay_online_cd">Участники альянса в игре с оверлеем</string>
     <string name="overlay_online_title">В игре (оверлей)</string>
+    <string name="overlay_online_subtitle">Статус «в игре» и свежий пинг</string>
+    <string name="overlay_online_refresh_cd">Обновить список</string>
     <string name="overlay_online_loading">Загрузка…</string>
     <string name="overlay_online_empty">Сейчас никого нет со статусом «в игре» и свежим пингом.</string>
     <string name="overlay_online_error">Не удалось загрузить список.</string>

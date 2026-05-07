@@ -1026,6 +1026,7 @@ class CombatOverlayService : Service() {
                     y = p.y,
                 )
                 overlayTicker.syncTickerPosition()
+                syncOverlayPanelEdgeLayout()
             }
         }
         observer.addOnGlobalLayoutListener(listener)
@@ -1376,6 +1377,7 @@ class CombatOverlayService : Service() {
             Log.d(OVERLAY_DIAG_TAG, "applyControls collapsed=$panelCollapsed pendingAnchor=${pendingCollapseAnchorOnScreen != null}")
             // GONE (не INVISIBLE): иначе ряд с FAB остаётся в разметке по ширине и окно перехватывает карту справа от кнопок.
             if (panelCollapsed) {
+                overlayAllianceOnlinePopover.hide()
                 messageExpanded = false
                 messageRow.visibility = View.GONE
                 subRow.visibility = View.GONE
@@ -1695,6 +1697,7 @@ class CombatOverlayService : Service() {
 
     private fun showOverlayHistoryPanel() {
         if (overlayHistoryVisible) return
+        overlayAllianceOnlinePopover.hide()
         val manager = windowManager ?: return
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY

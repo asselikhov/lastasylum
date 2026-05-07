@@ -32,7 +32,7 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * Floating panel listing alliance members currently marked [ingame] with a fresh presence ping
+ * Full-screen dim + card listing alliance members with [ingame] presence and a fresh ping
  * (overlay combat mode / overlay heartbeat).
  */
 class OverlayAllianceOnlinePopover(
@@ -42,14 +42,20 @@ class OverlayAllianceOnlinePopover(
     private val dp: (Int) -> Int,
 ) {
     private var shell: FrameLayout? = null
+    private var attachedWindowManager: WindowManager? = null
+    private var refreshRunnable: Runnable? = null
 
     fun isShowing(): Boolean = shell != null
 
     fun hide() {
+        refreshRunnable?.let { mainHandler.removeCallbacks(it) }
+        refreshRunnable = null
         val host = shell ?: return
-        val wm = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
+        val wm = attachedWindowManager
+            ?: context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+        attachedWindowManager = null
         shell = null
-        runCatching { wm.removeView(host) }
+        runCatching { wm?.removeView(host) }
     }
 
     fun toggle(
@@ -81,6 +87,7 @@ class OverlayAllianceOnlinePopover(
         val screenW = context.resources.displayMetrics.widthPixels
         val screenH = context.resources.displayMetrics.heightPixels
         val panelW = panelRoot.width.takeIf { it > 0 } ?: dp(120)
+        val panelH = panelRoot.height.takeIf { it > 0 } ?: dp(180)
 
         val popoverW = minOf(dp(280), screenW - dp(16))
         val popoverH = minOf(dp(320), screenH - dp(24))
@@ -92,7 +99,9 @@ class OverlayAllianceOnlinePopover(
         }
         x = x.coerceIn(dp(8), (screenW - popoverW - dp(8)).coerceAtLeast(dp(8)))
 
-        val y = panelParams.y.coerceIn(0, (screenH - popoverH).coerceAtLeast(0))
+        // Align vertical centers of overlay panel and card (stable next to floating controls).
+        val yBottom = (panelParams.y + panelH / 2 - popoverH / 2)
+            .coerceIn(0, (screenH - popoverH).coerceAtLeast(0))
 
         val title = TextView(context).apply {
             text = context.getString(R.string.overlay_online_title)
@@ -101,23 +110,47 @@ class OverlayAllianceOnlinePopover(
             typeface = Typeface.DEFAULT_BOLD
         }
 
+        val subtitle = TextView(context).apply {
+            text = context.getString(R.string.overlay_online_subtitle)
+            setTextColor(Color.parseColor("#99B8C0D9"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+            setPadding(0, dp(2), 0, 0)
+        }
+
+        val refreshBtn = TextView(context).apply {
+            text = "↻"
+            contentDescription = context.getString(R.string.overlay_online_refresh_cd)
+            setTextColor(Color.parseColor("#FFB8C0D9"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+            setPadding(dp(10), dp(4), dp(6), dp(4))
+            isClickable = true
+        }
+
         val close = TextView(context).apply {
             text = "✕"
             contentDescription = context.getString(R.string.overlay_online_close_cd)
             setTextColor(Color.parseColor("#FFB8C0D9"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-            setPadding(dp(8), dp(4), dp(4), dp(4))
+            setPadding(dp(6), dp(4), dp(10), dp(4))
+            isClickable = true
             setOnClickListener { hide() }
+        }
+
+        val titleCol = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(title)
+            addView(subtitle)
         }
 
         val headerRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(10), dp(8), dp(10), dp(4))
+            setPadding(dp(10), dp(10), dp(4), dp(4))
             addView(
-                title,
+                titleCol,
                 LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
             )
+            addView(refreshBtn)
             addView(close)
         }
 
@@ -125,7 +158,7 @@ class OverlayAllianceOnlinePopover(
             text = context.getString(R.string.overlay_online_loading)
             setTextColor(Color.parseColor("#FFB8C0D9"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            setPadding(dp(14), 0, dp(14), dp(12))
+            setPadding(dp(14), 0, dp(14), dp(10))
         }
 
         val listColumn = LinearLayout(context).apply {
@@ -135,6 +168,7 @@ class OverlayAllianceOnlinePopover(
 
         val scroll = ScrollView(context).apply {
             isFillViewport = true
+            isVerticalScrollBarEnabled = true
             addView(
                 listColumn,
                 ViewGroup.LayoutParams(
@@ -146,6 +180,10 @@ class OverlayAllianceOnlinePopover(
 
         val card = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
+            isClickable = true
+            clipToPadding = false
+            clipChildren = false
+            elevation = dp(6).toFloat()
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = dp(14).toFloat()
@@ -162,71 +200,106 @@ class OverlayAllianceOnlinePopover(
                     1f,
                 ),
             )
+            setOnClickListener { /* keep panel open; scrim closes */ }
         }
 
-        val root = FrameLayout(context).apply {
-            elevation = 40f
-            addView(
-                card,
-                FrameLayout.LayoutParams(popoverW, popoverH),
-            )
+        val scrim = FrameLayout(context).apply {
+            setBackgroundColor(0x66000000)
+            isClickable = true
+            setOnClickListener { hide() }
         }
+
+        val cardLp = FrameLayout.LayoutParams(popoverW, popoverH).apply {
+            gravity = Gravity.BOTTOM or Gravity.START
+            leftMargin = x
+            bottomMargin = yBottom
+        }
+        scrim.addView(card, cardLp)
 
         val params = WindowManager.LayoutParams(
-            popoverW,
-            popoverH,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
             type,
             OverlayWindowLayout.popupWindowFlags(),
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
-            gravity = Gravity.BOTTOM or Gravity.START
-            this.x = x
-            this.y = y
+            gravity = Gravity.TOP or Gravity.START
+            this.x = 0
+            this.y = 0
         }
 
-        val attach = runCatching { windowManager.addView(root, params) }
+        val attach = runCatching { windowManager.addView(scrim, params) }
         if (attach.isFailure) return
 
-        shell = root
+        shell = scrim
+        attachedWindowManager = windowManager
 
         val usersRepository = AppContainer.from(context.applicationContext).usersRepository
-        scope.launch {
-            val result = usersRepository.listMembers(allianceCode = null, q = null, skip = 0, limit = 300)
-            mainHandler.post {
-                if (shell !== root) return@post
-                result.onSuccess { members ->
-                    val online = filterOverlayOnlineMembers(members)
-                    status.visibility = View.GONE
-                    listColumn.removeAllViews()
-                    if (online.isEmpty()) {
-                        listColumn.addView(
-                            emptyLabel(context.getString(R.string.overlay_online_empty)),
-                            LinearLayout.LayoutParams(
-                                LinearLayout.LayoutParams.MATCH_PARENT,
-                                LinearLayout.LayoutParams.WRAP_CONTENT,
-                            ),
-                        )
-                    } else {
-                        online.forEach { m ->
+
+        fun fetchMembers(silent: Boolean) {
+            if (!silent) {
+                status.visibility = View.VISIBLE
+                status.text = context.getString(R.string.overlay_online_loading)
+                status.setTextColor(Color.parseColor("#FFB8C0D9"))
+                listColumn.removeAllViews()
+            }
+            scope.launch {
+                val result = usersRepository.listMembers(allianceCode = null, q = null, skip = 0, limit = 300)
+                mainHandler.post {
+                    if (shell !== scrim) return@post
+                    result.onSuccess { members ->
+                        val online = filterOverlayOnlineMembers(members)
+                        status.visibility = View.GONE
+                        listColumn.removeAllViews()
+                        if (online.isEmpty()) {
                             listColumn.addView(
-                                memberRow(m),
+                                emptyLabel(context.getString(R.string.overlay_online_empty)),
                                 LinearLayout.LayoutParams(
                                     LinearLayout.LayoutParams.MATCH_PARENT,
                                     LinearLayout.LayoutParams.WRAP_CONTENT,
-                                ).apply {
-                                    topMargin = if (listColumn.childCount > 0) dp(6) else 0
-                                },
+                                ),
                             )
+                        } else {
+                            online.forEachIndexed { index, m ->
+                                listColumn.addView(
+                                    memberRow(m),
+                                    LinearLayout.LayoutParams(
+                                        LinearLayout.LayoutParams.MATCH_PARENT,
+                                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                                    ).apply {
+                                        topMargin = if (index > 0) dp(6) else 0
+                                    },
+                                )
+                            }
+                        }
+                        scroll.scrollTo(0, 0)
+                    }.onFailure {
+                        if (!silent) {
+                            status.visibility = View.VISIBLE
+                            status.text = context.getString(R.string.overlay_online_error)
+                            status.setTextColor(Color.parseColor("#FFFF8A80"))
                         }
                     }
-                }.onFailure {
-                    status.text = context.getString(R.string.overlay_online_error)
-                    status.setTextColor(Color.parseColor("#FFFF8A80"))
                 }
             }
         }
 
+        refreshBtn.setOnClickListener {
+            fetchMembers(silent = false)
+        }
+
+        fetchMembers(silent = false)
+
+        val tick = object : Runnable {
+            override fun run() {
+                if (shell !== scrim) return
+                fetchMembers(silent = true)
+                mainHandler.postDelayed(this, REFRESH_INTERVAL_MS)
+            }
+        }
+        refreshRunnable = tick
+        mainHandler.postDelayed(tick, REFRESH_INTERVAL_MS)
     }
 
     private fun emptyLabel(text: String): TextView =
@@ -306,12 +379,13 @@ class OverlayAllianceOnlinePopover(
             text = member.username
             setTextColor(Color.parseColor("#FFF1F5FF"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            maxLines = 2
         }
 
         return LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(4), dp(4), dp(4), dp(4))
+            setPadding(dp(6), dp(6), dp(6), dp(6))
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = dp(10).toFloat()
@@ -326,7 +400,9 @@ class OverlayAllianceOnlinePopover(
     }
 
     private companion object {
-        private const val STALE_MS = 120_000L
+        /** ~3× overlay heartbeat (45s) so a single missed ping does not drop the row. */
+        private const val STALE_MS = 135_000L
+        private const val REFRESH_INTERVAL_MS = 35_000L
 
         private fun parsePresenceFresh(lastPresenceAt: String?, staleMs: Long): Boolean {
             if (lastPresenceAt.isNullOrBlank()) return false
