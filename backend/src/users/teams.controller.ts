@@ -30,9 +30,18 @@ import { UpdatePlayerTeamDisplayNameDto } from './dto/update-player-team-display
 import { UpdateSquadMemberRoleDto } from './dto/update-squad-member-role.dto';
 import { UpdateTeamNewsDto } from './dto/update-team-news.dto';
 import { VoteTeamNewsDto } from './dto/vote-team-news.dto';
-import { TeamsService } from './teams.service';
+import { Throttle } from '@nestjs/throttler';
+import { TeamForumGateway } from './team-forum.gateway';
+import {
+  CreateTeamForumMessageDto,
+  CreateTeamForumTopicDto,
+  UpdateTeamForumMessageDto,
+  UpdateTeamForumTopicDto,
+} from './dto/team-forum.dto';
 import { TeamNewsAttachmentsService } from './team-news-attachments.service';
 import { TeamNewsService } from './team-news.service';
+import { TeamForumService } from './team-forum.service';
+import { TeamsService } from './teams.service';
 
 type RequestUser = {
   userId: string;
@@ -45,6 +54,8 @@ export class TeamsController {
     private readonly teams: TeamsService,
     private readonly teamNews: TeamNewsService,
     private readonly teamNewsAttachments: TeamNewsAttachmentsService,
+    private readonly teamForum: TeamForumService,
+    private readonly teamForumGateway: TeamForumGateway,
   ) {}
 
   @Post()
@@ -205,6 +216,135 @@ export class TeamsController {
       req.user.userId,
       dto.optionId.trim(),
     );
+  }
+
+  @Get(':teamId/forum/topics')
+  @Roles(AllianceRole.R2)
+  listForumTopics(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+  ) {
+    return this.teamForum.listTopics(teamId, req.user.userId);
+  }
+
+  @Post(':teamId/forum/topics')
+  @Roles(AllianceRole.R2)
+  createForumTopic(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Body() dto: CreateTeamForumTopicDto,
+  ) {
+    return this.teamForum.createTopic(teamId, req.user.userId, dto.title);
+  }
+
+  @Patch(':teamId/forum/topics/:topicId')
+  @Roles(AllianceRole.R2)
+  patchForumTopic(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Param('topicId') topicId: string,
+    @Body() dto: UpdateTeamForumTopicDto,
+  ) {
+    return this.teamForum.updateTopic(
+      teamId,
+      topicId,
+      req.user.userId,
+      dto.title,
+    );
+  }
+
+  @Delete(':teamId/forum/topics/:topicId')
+  @Roles(AllianceRole.R2)
+  async deleteForumTopic(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Param('topicId') topicId: string,
+  ) {
+    await this.teamForum.deleteTopic(teamId, topicId, req.user.userId);
+    return { ok: true };
+  }
+
+  @Get(':teamId/forum/topics/:topicId/messages')
+  @Roles(AllianceRole.R2)
+  listForumMessages(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Param('topicId') topicId: string,
+    @Query('before') before?: string,
+    @Query('limit') limitRaw?: string,
+  ) {
+    const lim = limitRaw != null ? Number.parseInt(limitRaw, 10) : 50;
+    return this.teamForum.listMessages(
+      teamId,
+      topicId,
+      req.user.userId,
+      before,
+      Number.isFinite(lim) ? lim : 50,
+    );
+  }
+
+  @Post(':teamId/forum/topics/:topicId/messages')
+  @Roles(AllianceRole.R2)
+  @Throttle({ default: { limit: 8, ttl: 10_000 } })
+  async postForumMessage(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Param('topicId') topicId: string,
+    @Body() dto: CreateTeamForumMessageDto,
+  ) {
+    const message = await this.teamForum.postMessage(
+      teamId,
+      topicId,
+      req.user.userId,
+      dto.text,
+    );
+    this.teamForumGateway.broadcastNewMessage(teamId, topicId, message);
+    return message;
+  }
+
+  @Patch(':teamId/forum/topics/:topicId/messages/:messageId')
+  @Roles(AllianceRole.R2)
+  async patchForumMessage(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Param('topicId') topicId: string,
+    @Param('messageId') messageId: string,
+    @Body() dto: UpdateTeamForumMessageDto,
+  ) {
+    const message = await this.teamForum.patchMessage(
+      teamId,
+      topicId,
+      messageId,
+      req.user.userId,
+      dto.text,
+    );
+    this.teamForumGateway.broadcastMessageEdited(teamId, topicId, message);
+    return message;
+  }
+
+  @Delete(':teamId/forum/topics/:topicId/messages/:messageId')
+  @Roles(AllianceRole.R2)
+  async deleteForumMessage(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Param('topicId') topicId: string,
+    @Param('messageId') messageId: string,
+  ) {
+    await this.teamForum.deleteMessage(
+      teamId,
+      topicId,
+      messageId,
+      req.user.userId,
+    );
+    const deletedAt = new Date().toISOString();
+    this.teamForumGateway.broadcastMessageDeleted(
+      teamId,
+      topicId,
+      messageId,
+      deletedAt,
+      req.user.userId,
+    );
+    return { ok: true };
   }
 
   @Get(':teamId')

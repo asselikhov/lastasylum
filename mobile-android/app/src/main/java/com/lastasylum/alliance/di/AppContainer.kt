@@ -11,6 +11,7 @@ import com.lastasylum.alliance.data.chat.ChatSocketManager
 import com.lastasylum.alliance.data.network.NetworkModule
 import com.lastasylum.alliance.data.settings.OnboardingPreferences
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
+import com.lastasylum.alliance.data.teams.TeamForumSocketManager
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.users.UsersRepository
 
@@ -21,6 +22,7 @@ class AppContainer private constructor(context: Context) {
     val userSettingsPreferences: UserSettingsPreferences = UserSettingsPreferences(appContext)
     val onboardingPreferences: OnboardingPreferences = OnboardingPreferences(appContext)
     private val chatSocketManager = ChatSocketManager()
+    private val teamForumSocketManager = TeamForumSocketManager()
 
     private lateinit var chatRepositoryImpl: ChatRepository
 
@@ -28,6 +30,7 @@ class AppContainer private constructor(context: Context) {
         if (::chatRepositoryImpl.isInitialized) {
             chatRepositoryImpl.onAccessTokenRefreshed()
         }
+        teamForumSocketManager.reconnectWithFreshToken()
     }
 
     val chatRepository: ChatRepository
@@ -55,6 +58,8 @@ class AppContainer private constructor(context: Context) {
     val teamsRepository: TeamsRepository = TeamsRepository(
         teamsApi = authorizedClients.teamsApi,
     )
+
+    val teamForumSocket: TeamForumSocketManager get() = teamForumSocketManager
 
     init {
         chatRepositoryImpl = ChatRepository(

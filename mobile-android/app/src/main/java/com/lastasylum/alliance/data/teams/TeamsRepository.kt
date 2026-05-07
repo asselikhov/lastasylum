@@ -116,4 +116,75 @@ class TeamsRepository(
             val part = MultipartBody.Part.createFormData("file", fileName, body)
             teamsApi.uploadTeamNewsAttachment(teamId, part)
         }
+
+    suspend fun listForumTopics(teamId: String): Result<List<TeamForumTopicDto>> =
+        runCatching { teamsApi.listForumTopics(teamId) }
+
+    suspend fun createForumTopic(teamId: String, title: String): Result<TeamForumTopicDto> =
+        runCatching {
+            teamsApi.createForumTopic(teamId, CreateTeamForumTopicBody(title = title.trim()))
+        }
+
+    suspend fun updateForumTopic(
+        teamId: String,
+        topicId: String,
+        title: String,
+    ): Result<TeamForumTopicDto> =
+        runCatching {
+            teamsApi.updateForumTopic(
+                teamId,
+                topicId,
+                UpdateTeamForumTopicBody(title = title.trim()),
+            )
+        }
+
+    suspend fun deleteForumTopic(teamId: String, topicId: String): Result<Unit> =
+        runCatching { teamsApi.deleteForumTopic(teamId, topicId).let { } }
+
+    suspend fun listForumMessages(
+        teamId: String,
+        topicId: String,
+        before: String? = null,
+        limit: Int = 50,
+    ): Result<List<TeamForumMessageDto>> =
+        runCatching {
+            teamsApi.listForumMessages(teamId, topicId, before, limit)
+        }
+
+    suspend fun postForumMessage(
+        teamId: String,
+        topicId: String,
+        text: String,
+    ): Result<TeamForumMessageDto> =
+        runCatching {
+            teamsApi.postForumMessage(
+                teamId,
+                topicId,
+                CreateTeamForumMessageBody(text = text.trim()),
+            )
+        }
+
+    suspend fun patchForumMessage(
+        teamId: String,
+        topicId: String,
+        messageId: String,
+        text: String,
+    ): Result<TeamForumMessageDto> =
+        runCatching {
+            teamsApi.patchForumMessage(
+                teamId,
+                topicId,
+                messageId,
+                UpdateTeamForumMessageBody(text = text.trim()),
+            )
+        }
+
+    suspend fun deleteForumMessage(
+        teamId: String,
+        topicId: String,
+        messageId: String,
+    ): Result<Unit> =
+        runCatching {
+            teamsApi.deleteForumMessage(teamId, topicId, messageId).let { }
+        }
 }

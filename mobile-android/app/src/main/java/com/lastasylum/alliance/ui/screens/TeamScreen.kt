@@ -53,6 +53,7 @@ import com.lastasylum.alliance.data.teams.TeamSearchResultDto
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.users.MyProfileDto
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.ui.screens.teamforum.TeamForumNavHost
 import com.lastasylum.alliance.ui.screens.teamnews.TeamNewsNavHost
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.util.toUserMessageRu
@@ -75,6 +76,7 @@ private fun isValidThreeLetterTeamTag(raw: String): Boolean {
 
 private enum class TeamMainSection {
     News,
+    Forum,
     Members,
 }
 
@@ -272,6 +274,8 @@ fun TeamScreen(
                         val myTeamRole =
                             team.members.find { it.userId == currentUserId }?.teamRole ?: "R1"
                         val canPublishNews = myTeamRole == "R4" || myTeamRole == "R5"
+                        val canManageForumTopics = myTeamRole == "R4" || myTeamRole == "R5"
+                        val canModerateForumMessages = myTeamRole == "R5"
                         Surface(
                             modifier = Modifier
                                 .weight(1f, fill = true)
@@ -371,6 +375,11 @@ fun TeamScreen(
                                         text = { Text(stringResource(R.string.team_tab_news)) },
                                     )
                                     Tab(
+                                        selected = mainSection == TeamMainSection.Forum,
+                                        onClick = { mainSection = TeamMainSection.Forum },
+                                        text = { Text(stringResource(R.string.team_tab_forum)) },
+                                    )
+                                    Tab(
                                         selected = mainSection == TeamMainSection.Members,
                                         onClick = { mainSection = TeamMainSection.Members },
                                         text = { Text(stringResource(R.string.team_tab_members)) },
@@ -384,6 +393,21 @@ fun TeamScreen(
                                             myTeamRole = myTeamRole,
                                             canPublishNews = canPublishNews,
                                             teamsRepository = teamsRepository,
+                                            modifier = Modifier
+                                                .weight(1f, fill = true)
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 4.dp, vertical = 4.dp),
+                                        )
+                                    }
+                                    TeamMainSection.Forum -> {
+                                        TeamForumNavHost(
+                                            teamId = team.id,
+                                            currentUserId = currentUserId,
+                                            canManageTopics = canManageForumTopics,
+                                            canModerateForumMessages = canModerateForumMessages,
+                                            teamsRepository = teamsRepository,
+                                            forumSocket = app.teamForumSocket,
+                                            tokenStore = app.tokenStore,
                                             modifier = Modifier
                                                 .weight(1f, fill = true)
                                                 .fillMaxWidth()

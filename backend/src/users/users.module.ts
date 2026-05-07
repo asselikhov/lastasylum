@@ -1,5 +1,6 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { TeamForumSocketModule } from './team-forum-socket.module';
 import { AdminAlliancesController } from './admin-alliances.controller';
 import { AllianceRegistryService } from './alliance-registry.service';
 import {
@@ -28,10 +29,20 @@ import {
 } from './schemas/team-news-attachment.schema';
 import { TeamNewsService } from './team-news.service';
 import { TeamNewsAttachmentsService } from './team-news-attachments.service';
+import {
+  TeamForumMessage,
+  TeamForumMessageSchema,
+} from './schemas/team-forum-message.schema';
+import {
+  TeamForumTopic,
+  TeamForumTopicSchema,
+} from './schemas/team-forum-topic.schema';
+import { TeamForumService } from './team-forum.service';
 
 @Module({
   imports: [
     StorageModule,
+    forwardRef(() => TeamForumSocketModule),
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: AllianceRegistry.name, schema: AllianceRegistrySchema },
@@ -39,6 +50,8 @@ import { TeamNewsAttachmentsService } from './team-news-attachments.service';
       { name: TeamJoinRequest.name, schema: TeamJoinRequestSchema },
       { name: TeamNews.name, schema: TeamNewsSchema },
       { name: TeamNewsAttachment.name, schema: TeamNewsAttachmentSchema },
+      { name: TeamForumTopic.name, schema: TeamForumTopicSchema },
+      { name: TeamForumMessage.name, schema: TeamForumMessageSchema },
     ]),
   ],
   controllers: [UsersController, AdminAlliancesController, TeamsController],
@@ -48,7 +61,8 @@ import { TeamNewsAttachmentsService } from './team-news-attachments.service';
     TeamsService,
     TeamNewsService,
     TeamNewsAttachmentsService,
+    TeamForumService,
   ],
-  exports: [UsersService, MongooseModule],
+  exports: [UsersService, MongooseModule, TeamForumService],
 })
 export class UsersModule {}

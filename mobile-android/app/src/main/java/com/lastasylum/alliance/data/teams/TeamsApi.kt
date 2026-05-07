@@ -106,4 +106,56 @@ interface TeamsApi {
         @Path("teamId") teamId: String,
         @Part file: MultipartBody.Part,
     ): UploadedTeamNewsImageDto
+
+    @GET("teams/{teamId}/forum/topics")
+    suspend fun listForumTopics(@Path("teamId") teamId: String): List<TeamForumTopicDto>
+
+    @POST("teams/{teamId}/forum/topics")
+    suspend fun createForumTopic(
+        @Path("teamId") teamId: String,
+        @Body body: CreateTeamForumTopicBody,
+    ): TeamForumTopicDto
+
+    @PATCH("teams/{teamId}/forum/topics/{topicId}")
+    suspend fun updateForumTopic(
+        @Path("teamId") teamId: String,
+        @Path("topicId") topicId: String,
+        @Body body: UpdateTeamForumTopicBody,
+    ): TeamForumTopicDto
+
+    @DELETE("teams/{teamId}/forum/topics/{topicId}")
+    suspend fun deleteForumTopic(
+        @Path("teamId") teamId: String,
+        @Path("topicId") topicId: String,
+    ): OkResponse
+
+    @GET("teams/{teamId}/forum/topics/{topicId}/messages")
+    suspend fun listForumMessages(
+        @Path("teamId") teamId: String,
+        @Path("topicId") topicId: String,
+        @Query("before") before: String? = null,
+        @Query("limit") limit: Int? = null,
+    ): List<TeamForumMessageDto>
+
+    @POST("teams/{teamId}/forum/topics/{topicId}/messages")
+    suspend fun postForumMessage(
+        @Path("teamId") teamId: String,
+        @Path("topicId") topicId: String,
+        @Body body: CreateTeamForumMessageBody,
+    ): TeamForumMessageDto
+
+    @PATCH("teams/{teamId}/forum/topics/{topicId}/messages/{messageId}")
+    suspend fun patchForumMessage(
+        @Path("teamId") teamId: String,
+        @Path("topicId") topicId: String,
+        @Path("messageId") messageId: String,
+        @Body body: UpdateTeamForumMessageBody,
+    ): TeamForumMessageDto
+
+    @DELETE("teams/{teamId}/forum/topics/{topicId}/messages/{messageId}")
+    suspend fun deleteForumMessage(
+        @Path("teamId") teamId: String,
+        @Path("topicId") topicId: String,
+        @Path("messageId") messageId: String,
+    ): OkResponse
 }

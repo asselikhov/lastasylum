@@ -178,3 +178,50 @@ data class UploadedTeamNewsImageDto(
     val mimeType: String,
     val size: Int,
 )
+
+@JsonClass(generateAdapter = true)
+data class TeamForumTopicDto(
+    val id: String,
+    val teamId: String,
+    val title: String,
+    val createdByUserId: String,
+    val messageCount: Int,
+    val lastMessageAt: String? = null,
+    val createdAt: String,
+    val updatedAt: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class CreateTeamForumTopicBody(
+    val title: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class UpdateTeamForumTopicBody(
+    val title: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class TeamForumMessageDto(
+    val id: String,
+    val topicId: String,
+    val teamId: String,
+    val senderUserId: String,
+    val senderUsername: String,
+    val text: String,
+    val editedAt: String? = null,
+    val deletedAt: String? = null,
+    val deletedByUserId: String? = null,
+    val createdAt: String,
+    val updatedAt: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class CreateTeamForumMessageBody(
+    val text: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class UpdateTeamForumMessageBody(
+    val text: String,
+)
