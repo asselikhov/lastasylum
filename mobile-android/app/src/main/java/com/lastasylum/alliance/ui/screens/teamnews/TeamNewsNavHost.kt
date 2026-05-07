@@ -40,6 +40,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -77,6 +78,7 @@ import com.lastasylum.alliance.data.teams.TeamNewsPollVoteDto
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.teams.UpdateTeamNewsBody
 import com.lastasylum.alliance.ui.util.toUserMessageRu
+import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
@@ -243,11 +245,21 @@ private fun TeamNewsListRoute(
                             .align(Alignment.Center)
                             .padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
                     ) {
-                        Text(
-                            text = loadError ?: "",
-                            color = MaterialTheme.colorScheme.error,
-                        )
+                        Surface(
+                            shape = MaterialTheme.shapes.medium,
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f),
+                        ) {
+                            Text(
+                                text = loadError ?: "",
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 4,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            )
+                        }
                         OutlinedButton(
                             onClick = {
                                 scope.launch {
@@ -279,8 +291,9 @@ private fun TeamNewsListRoute(
                 }
                 else -> {
                     LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 88.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.blockGap),
                     ) {
                         items(
                             count = newsItems.size,

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -22,9 +23,11 @@ import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.ManageAccounts
 import androidx.compose.material.icons.outlined.PersonRemove
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
@@ -54,6 +57,7 @@ import coil.compose.AsyncImage
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
 import com.lastasylum.alliance.data.teams.TeamsRepository
+import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import com.lastasylum.alliance.ui.util.telegramDisplayHandle
 import com.lastasylum.alliance.ui.util.toUserMessageRu
@@ -100,7 +104,7 @@ fun SquadTeamRoster(
     onRequestEditMemberRole: (PlayerTeamMemberDto) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var searchQuery by remember(members) { mutableStateOf("") }
+    var searchQuery by remember { mutableStateOf("") }
     val filteredMembers = remember(members, searchQuery) {
         val q = searchQuery.trim().lowercase()
         if (q.isEmpty()) {
@@ -113,22 +117,36 @@ fun SquadTeamRoster(
         }
     }
     val grouped = remember(filteredMembers) { groupMembersBySquadRole(filteredMembers) }
-    var collapsedRoles by remember(members) { mutableStateOf(setOf<String>()) }
+    var collapsedRoles by remember { mutableStateOf(setOf<String>()) }
 
-    Column(modifier = modifier.fillMaxWidth()) {
+    Column(modifier = modifier.fillMaxWidth().fillMaxSize()) {
         androidx.compose.material3.OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 8.dp),
+                .padding(bottom = SquadRelayDimens.itemGap),
             singleLine = true,
+            shape = RoundedCornerShape(28.dp),
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Outlined.Search,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.65f),
+                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+            ),
             placeholder = { Text(stringResource(R.string.team_members_search_hint)) },
         )
         LazyColumn(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
             contentPadding = PaddingValues(bottom = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
         ) {
             grouped.forEach { (roleCode, subMembers) ->
                 val expanded = roleCode !in collapsedRoles

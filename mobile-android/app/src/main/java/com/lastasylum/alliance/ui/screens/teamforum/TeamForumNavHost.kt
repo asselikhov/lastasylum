@@ -94,6 +94,7 @@ import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingBubble
 import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingOnBubble
 import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMuted
 import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMutedIncoming
+import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -215,12 +216,22 @@ private fun TeamForumListRoute(
 
     Column(Modifier.fillMaxSize()) {
         error?.let { err ->
-            Text(
-                text = err,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(8.dp),
-            )
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = SquadRelayDimens.itemGap, vertical = SquadRelayDimens.itemGap),
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f),
+            ) {
+                Text(
+                    text = err,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                )
+            }
         }
         Box(Modifier.fillMaxSize()) {
             when {
@@ -242,15 +253,20 @@ private fun TeamForumListRoute(
                 }
                 else -> {
                     LazyColumn(
-                        contentPadding = PaddingValues(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(
+                            start = SquadRelayDimens.itemGap,
+                            end = SquadRelayDimens.itemGap,
+                            top = SquadRelayDimens.itemGap,
+                            bottom = 88.dp,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
                     ) {
                         items(topics, key = { it.id }) { t ->
                             Card(
                                 onClick = { onOpenTopic(t) },
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                                 ),
                             ) {
                                 Row(
@@ -322,6 +338,8 @@ private fun TeamForumListRoute(
                         createTitle = ""
                         showCreate = true
                     },
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(16.dp),
