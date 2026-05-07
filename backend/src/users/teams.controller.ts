@@ -143,6 +143,32 @@ export class TeamsController {
     });
   }
 
+  @Post(':teamId/forum/attachments')
+  @Roles(AllianceRole.R2)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 8 * 1024 * 1024 },
+    }),
+  )
+  async uploadForumImage(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('file is required');
+    }
+    await this.teams.getTeamIfMemberOrThrow(teamId, req.user.userId);
+    return this.teamNewsAttachments.uploadImage({
+      teamId: new Types.ObjectId(teamId),
+      uploaderUserId: req.user.userId,
+      buffer: file.buffer,
+      mimeType: file.mimetype,
+      size: file.size,
+    });
+  }
+
   @Get(':teamId/news')
   @Roles(AllianceRole.R2)
   listNews(
@@ -296,7 +322,8 @@ export class TeamsController {
       teamId,
       topicId,
       req.user.userId,
-      dto.text,
+      dto.text ?? '',
+      dto.imageFileId?.trim() || null,
     );
     this.teamForumGateway.broadcastNewMessage(teamId, topicId, message);
     return message;

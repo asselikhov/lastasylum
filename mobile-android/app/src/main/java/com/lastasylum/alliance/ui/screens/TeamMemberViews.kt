@@ -77,6 +77,16 @@ private fun groupMembersBySquadRole(
 }
 
 @Composable
+private fun squadRoleSectionTitle(roleCode: String): String = when (roleCode) {
+    "R5" -> stringResource(R.string.team_squad_section_r5)
+    "R4" -> stringResource(R.string.team_squad_section_r4)
+    "R3" -> stringResource(R.string.team_squad_section_r3)
+    "R2" -> stringResource(R.string.team_squad_section_r2)
+    "R1" -> stringResource(R.string.team_squad_section_r1)
+    else -> roleCode
+}
+
+@Composable
 fun SquadTeamRoster(
     members: List<PlayerTeamMemberDto>,
     isSquadLeader: Boolean,
@@ -90,48 +100,72 @@ fun SquadTeamRoster(
     onRequestEditMemberRole: (PlayerTeamMemberDto) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val grouped = remember(members) { groupMembersBySquadRole(members) }
+    var searchQuery by remember(members) { mutableStateOf("") }
+    val filteredMembers = remember(members, searchQuery) {
+        val q = searchQuery.trim().lowercase()
+        if (q.isEmpty()) {
+            members
+        } else {
+            members.filter { m ->
+                m.username.lowercase().contains(q) ||
+                    (m.telegramUsername?.lowercase()?.contains(q) == true)
+            }
+        }
+    }
+    val grouped = remember(filteredMembers) { groupMembersBySquadRole(filteredMembers) }
     var collapsedRoles by remember(members) { mutableStateOf(setOf<String>()) }
 
-    LazyColumn(
-        modifier = modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(bottom = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        grouped.forEach { (roleCode, subMembers) ->
-            val expanded = roleCode !in collapsedRoles
-            item(key = "hdr-$roleCode") {
-                SquadRoleSectionHeader(
-                    roleCode = roleCode,
-                    memberCount = subMembers.size,
-                    expanded = expanded,
-                    onToggle = {
-                        collapsedRoles =
-                            if (roleCode in collapsedRoles) {
-                                collapsedRoles - roleCode
-                            } else {
-                                collapsedRoles + roleCode
-                            }
-                    },
-                )
-            }
-            if (expanded) {
-                items(
-                    subMembers,
-                    key = { "${roleCode}_${it.userId}" },
-                ) { member ->
-                    SquadMemberCard(
-                        member = member,
-                        isSquadLeader = isSquadLeader,
-                        currentUserId = currentUserId,
-                        teamId = teamId,
-                        busy = busy,
-                        onBusyChange = onBusyChange,
-                        onReload = onReload,
-                        onError = onError,
-                        teamsRepository = teamsRepository,
-                        onRequestEditMemberRole = onRequestEditMemberRole,
+    Column(modifier = modifier.fillMaxWidth()) {
+        androidx.compose.material3.OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            singleLine = true,
+            placeholder = { Text(stringResource(R.string.team_members_search_hint)) },
+        )
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            grouped.forEach { (roleCode, subMembers) ->
+                val expanded = roleCode !in collapsedRoles
+                item(key = "hdr-$roleCode") {
+                    SquadRoleSectionHeader(
+                        roleCode = roleCode,
+                        sectionTitle = squadRoleSectionTitle(roleCode),
+                        memberCount = subMembers.size,
+                        expanded = expanded,
+                        onToggle = {
+                            collapsedRoles =
+                                if (roleCode in collapsedRoles) {
+                                    collapsedRoles - roleCode
+                                } else {
+                                    collapsedRoles + roleCode
+                                }
+                        },
                     )
+                }
+                if (expanded) {
+                    items(
+                        subMembers,
+                        key = { "${roleCode}_${it.userId}" },
+                    ) { member ->
+                        SquadMemberCard(
+                            member = member,
+                            isSquadLeader = isSquadLeader,
+                            currentUserId = currentUserId,
+                            teamId = teamId,
+                            busy = busy,
+                            onBusyChange = onBusyChange,
+                            onReload = onReload,
+                            onError = onError,
+                            teamsRepository = teamsRepository,
+                            onRequestEditMemberRole = onRequestEditMemberRole,
+                        )
+                    }
                 }
             }
         }
@@ -141,6 +175,7 @@ fun SquadTeamRoster(
 @Composable
 private fun SquadRoleSectionHeader(
     roleCode: String,
+    sectionTitle: String,
     memberCount: Int,
     expanded: Boolean,
     onToggle: () -> Unit,
@@ -177,12 +212,19 @@ private fun SquadRoleSectionHeader(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(
-                    text = roleCode,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = sectionTitle,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = roleCode,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Surface(
                     shape = RoundedCornerShape(8.dp),
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),

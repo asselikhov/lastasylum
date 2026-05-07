@@ -107,6 +107,13 @@ interface TeamsApi {
         @Part file: MultipartBody.Part,
     ): UploadedTeamNewsImageDto
 
+    @Multipart
+    @POST("teams/{teamId}/forum/attachments")
+    suspend fun uploadForumAttachment(
+        @Path("teamId") teamId: String,
+        @Part file: MultipartBody.Part,
+    ): UploadedTeamNewsImageDto
+
     @GET("teams/{teamId}/forum/topics")
     suspend fun listForumTopics(@Path("teamId") teamId: String): List<TeamForumTopicDto>
 

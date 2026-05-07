@@ -310,6 +310,7 @@ private fun JSONObject.toForumMessageDto(): TeamForumMessageDto? {
         editedAt = optString("editedAt").takeIf { it.isNotBlank() },
         deletedAt = optString("deletedAt").takeIf { it.isNotBlank() },
         deletedByUserId = optString("deletedByUserId").takeIf { it.isNotBlank() },
+        imageRelativeUrl = optString("imageRelativeUrl").takeIf { it.isNotBlank() },
         createdAt = optString("createdAt"),
         updatedAt = optString("updatedAt").takeIf { it.isNotBlank() }.orEmpty()
             .ifBlank { optString("createdAt") },

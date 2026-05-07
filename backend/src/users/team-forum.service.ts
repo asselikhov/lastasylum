@@ -16,6 +16,7 @@ import {
   TeamForumTopic,
   TeamForumTopicDocument,
 } from './schemas/team-forum-topic.schema';
+import { TeamNewsAttachmentsService } from './team-news-attachments.service';
 import { TeamsService } from './teams.service';
 
 export type TeamForumTopicRow = {
@@ -39,6 +40,7 @@ export type TeamForumMessageRow = {
   editedAt: string | null;
   deletedAt: string | null;
   deletedByUserId: string | null;
+  imageRelativeUrl: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -52,6 +54,7 @@ export class TeamForumService {
     private readonly messageModel: Model<TeamForumMessageDocument>,
     @InjectModel(User.name) private readonly userModel: Model<User>,
     private readonly teams: TeamsService,
+    private readonly teamNewsAttachments: TeamNewsAttachmentsService,
   ) {}
 
   private async assertCanManageTopicsAsync(
@@ -84,16 +87,24 @@ export class TeamForumService {
   }
 
   messageRow(doc: TeamForumMessageDocument): TeamForumMessageRow {
+    const teamIdStr = doc.teamId.toString();
+    const hasImage =
+      !doc.deletedAt &&
+      doc.imageFileId != null &&
+      Types.ObjectId.isValid(doc.imageFileId.toString());
     return {
       id: doc._id.toString(),
       topicId: doc.topicId.toString(),
-      teamId: doc.teamId.toString(),
+      teamId: teamIdStr,
       senderUserId: doc.senderUserId,
       senderUsername: doc.senderUsername,
       text: doc.deletedAt ? '' : doc.text,
       editedAt: doc.editedAt ? doc.editedAt.toISOString() : null,
       deletedAt: doc.deletedAt ? doc.deletedAt.toISOString() : null,
       deletedByUserId: doc.deletedByUserId,
+      imageRelativeUrl: hasImage
+        ? `/teams/${teamIdStr}/news/attachments/${doc.imageFileId!.toString()}`
+        : null,
       createdAt: doc.createdAt?.toISOString() ?? new Date().toISOString(),
       updatedAt: doc.updatedAt?.toISOString() ?? new Date().toISOString(),
     };
@@ -203,6 +214,7 @@ export class TeamForumService {
     topicId: string,
     userId: string,
     text: string,
+    imageFileId?: string | null,
   ): Promise<TeamForumMessageRow> {
     await this.teams.getTeamIfMemberOrThrow(teamId, userId);
     const teamOid = new Types.ObjectId(teamId);
@@ -218,8 +230,24 @@ export class TeamForumService {
     const username =
       user && typeof user.username === 'string' ? user.username : userId;
     const trimmed = text.trim();
-    if (!trimmed) {
-      throw new BadRequestException('Message text is required');
+    const imgRaw =
+      typeof imageFileId === 'string' && imageFileId.trim()
+        ? imageFileId.trim()
+        : null;
+    if (!trimmed && !imgRaw) {
+      throw new BadRequestException('Message text or image is required');
+    }
+    let imageMeta: {
+      fileId: Types.ObjectId;
+      mimeType: string;
+      size: number;
+    } | null = null;
+    if (imgRaw) {
+      imageMeta = await this.teamNewsAttachments.assertForumAttachmentForSender(
+        teamOid,
+        imgRaw,
+        userId,
+      );
     }
     const doc = await this.messageModel.create({
       topicId: topOid,
@@ -227,6 +255,9 @@ export class TeamForumService {
       senderUserId: userId,
       senderUsername: username,
       text: trimmed,
+      imageFileId: imageMeta?.fileId ?? null,
+      imageMimeType: imageMeta?.mimeType ?? null,
+      imageSize: imageMeta?.size ?? null,
       editedAt: null,
       deletedAt: null,
       deletedByUserId: null,
@@ -273,7 +304,8 @@ export class TeamForumService {
     }
     await this.assertMayEditMessage(teamId, msg, userId);
     const trimmed = text.trim();
-    if (!trimmed) {
+    const hasImage = msg.imageFileId != null;
+    if (!trimmed && !hasImage) {
       throw new BadRequestException('Message text is required');
     }
     msg.text = trimmed;

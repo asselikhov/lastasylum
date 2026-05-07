@@ -33,6 +33,16 @@ export class TeamForumMessage {
   @Prop({ type: String, required: true, trim: true, default: '' })
   text: string;
 
+  /** Optional image; same storage as team news attachments (GET …/news/attachments/:id). */
+  @Prop({ type: Types.ObjectId, default: null })
+  imageFileId: Types.ObjectId | null;
+
+  @Prop({ type: String, default: null })
+  imageMimeType: string | null;
+
+  @Prop({ type: Number, default: null })
+  imageSize: number | null;
+
   @Prop({ type: Date, default: null })
   editedAt: Date | null;
 

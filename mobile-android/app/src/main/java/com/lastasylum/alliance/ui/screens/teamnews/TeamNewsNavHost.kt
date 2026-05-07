@@ -328,7 +328,8 @@ private fun TeamNewsCard(
                         contentDescription = null,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(140.dp),
+                            .height(140.dp)
+                            .clip(RoundedCornerShape(10.dp)),
                         contentScale = ContentScale.Crop,
                     )
                 }

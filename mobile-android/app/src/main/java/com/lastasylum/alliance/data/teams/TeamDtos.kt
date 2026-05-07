@@ -214,13 +214,15 @@ data class TeamForumMessageDto(
     val editedAt: String? = null,
     val deletedAt: String? = null,
     val deletedByUserId: String? = null,
+    val imageRelativeUrl: String? = null,
     val createdAt: String,
     val updatedAt: String,
 )
 
 @JsonClass(generateAdapter = true)
 data class CreateTeamForumMessageBody(
-    val text: String,
+    val text: String = "",
+    val imageFileId: String? = null,
 )
 
 @JsonClass(generateAdapter = true)

@@ -1,4 +1,4 @@
-import { IsString, Length, MaxLength } from 'class-validator';
+import { IsOptional, IsString, Length, MaxLength } from 'class-validator';
 
 export class CreateTeamForumTopicDto {
   @IsString()
@@ -13,9 +13,15 @@ export class UpdateTeamForumTopicDto {
 }
 
 export class CreateTeamForumMessageDto {
+  @IsOptional()
   @IsString()
   @MaxLength(4000)
-  text: string;
+  text?: string;
+
+  /** Pre-uploaded via POST …/forum/attachments; must belong to sender and team. */
+  @IsOptional()
+  @IsString()
+  imageFileId?: string;
 }
 
 export class UpdateTeamForumMessageDto {

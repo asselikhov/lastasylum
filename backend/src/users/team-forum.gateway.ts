@@ -127,7 +127,12 @@ export class TeamForumGateway {
   async handleMessage(
     @ConnectedSocket() client: AuthSocket,
     @MessageBody()
-    payload: { teamId?: string; topicId?: string; text?: string },
+    payload: {
+      teamId?: string;
+      topicId?: string;
+      text?: string;
+      imageFileId?: string;
+    },
   ) {
     if (!client.data.user) {
       throw new WsException('Unauthorized socket connection');
@@ -137,6 +142,10 @@ export class TeamForumGateway {
     const topicId =
       typeof payload?.topicId === 'string' ? payload.topicId.trim() : '';
     const text = typeof payload?.text === 'string' ? payload.text : '';
+    const imageFileId =
+      typeof payload?.imageFileId === 'string'
+        ? payload.imageFileId.trim()
+        : undefined;
     if (!teamId || !topicId) {
       throw new WsException('teamId and topicId are required');
     }
@@ -147,6 +156,7 @@ export class TeamForumGateway {
       topicId,
       client.data.user.userId,
       text,
+      imageFileId || null,
     );
 
     this.broadcastNewMessage(teamId, topicId, message);

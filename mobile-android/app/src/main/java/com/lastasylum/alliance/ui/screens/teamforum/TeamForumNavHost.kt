@@ -1,5 +1,7 @@
 package com.lastasylum.alliance.ui.screens.teamforum
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -10,15 +12,20 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.AttachFile
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -49,6 +56,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -68,8 +77,10 @@ import com.lastasylum.alliance.data.teams.TeamForumSocketManager
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamForumTypingEvent
 import com.lastasylum.alliance.data.teams.TeamsRepository
+import com.lastasylum.alliance.ui.screens.teamnews.teamNewsAuthedImageRequest
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.launch
+import coil.compose.AsyncImage
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -252,7 +263,7 @@ private fun TeamForumListRoute(
                                         Box {
                                             IconButton(onClick = { menuTopic = t }) {
                                                 Icon(
-                                                    Icons.Default.MoreVert,
+                                                    Icons.Filled.MoreVert,
                                                     contentDescription = stringResource(
                                                         R.string.team_forum_topic_menu_cd,
                                                     ),
@@ -296,7 +307,7 @@ private fun TeamForumListRoute(
                         .align(Alignment.BottomEnd)
                         .padding(16.dp),
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.team_forum_new_topic_cd))
+                    Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.team_forum_new_topic_cd))
                 }
             }
         }
@@ -438,6 +449,9 @@ private fun TeamForumTopicChatRoute(
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var draft by remember { mutableStateOf("") }
+    var pendingImageUrl by remember { mutableStateOf<String?>(null) }
+    var pendingImageFileId by remember { mutableStateOf<String?>(null) }
+    var uploadingImage by remember { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
     var typingHint by remember { mutableStateOf<String?>(null) }
     val sortedMessages by remember {
@@ -463,6 +477,7 @@ private fun TeamForumTopicChatRoute(
         if (i >= 0) {
             messages[i] = messages[i].copy(
                 text = "",
+                imageRelativeUrl = null,
                 deletedAt = ev.deletedAt ?: messages[i].deletedAt,
                 deletedByUserId = ev.deletedByUserId ?: messages[i].deletedByUserId,
             )
@@ -474,10 +489,35 @@ private fun TeamForumTopicChatRoute(
         messages.add(msg)
     }
 
+    val pickForumImage = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent(),
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            uploadingImage = true
+            val cr = context.contentResolver
+            val mime = cr.getType(uri) ?: "image/jpeg"
+            val bytes = cr.openInputStream(uri)?.use { it.readBytes() } ?: run {
+                uploadingImage = false
+                return@launch
+            }
+            val name = "forum_${System.currentTimeMillis()}.jpg"
+            teamsRepository.uploadForumImage(teamId, bytes, name, mime)
+                .onSuccess { u ->
+                    pendingImageUrl = u.url
+                    pendingImageFileId = u.fileId
+                }
+                .onFailure { e -> error = e.toUserMessageRu(res) }
+            uploadingImage = false
+        }
+    }
+
     LaunchedEffect(teamId, topicId) {
         loading = true
         error = null
         messages.clear()
+        pendingImageUrl = null
+        pendingImageFileId = null
         teamsRepository.listForumMessages(teamId, topicId, before = null, limit = 50)
             .onSuccess { page -> messages.addAll(page) }
             .onFailure { e -> error = e.toUserMessageRu(res) }
@@ -578,41 +618,96 @@ private fun TeamForumTopicChatRoute(
                     }
                 }
             }
-            Row(
+            Column(
                 Modifier
                     .fillMaxWidth()
                     .padding(8.dp),
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                OutlinedTextField(
-                    value = draft,
-                    onValueChange = {
-                        draft = it
-                        if (it.isNotEmpty()) {
-                            forumSocket.emitTyping()
+                pendingImageUrl?.let { rawPreview ->
+                    Box(
+                        Modifier
+                            .padding(bottom = 6.dp)
+                            .fillMaxWidth(),
+                    ) {
+                        teamNewsAuthedImageRequest(context, rawPreview)?.let { req ->
+                            AsyncImage(
+                                model = req,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(120.dp)
+                                    .clip(RoundedCornerShape(10.dp)),
+                                contentScale = ContentScale.Crop,
+                            )
                         }
-                    },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text(stringResource(R.string.team_forum_message_hint)) },
-                    maxLines = 5,
-                    enabled = !sending,
-                )
-                TextButton(
-                    enabled = !sending && draft.trim().isNotEmpty(),
-                    onClick = {
-                        val t = draft.trim()
-                        if (t.isEmpty()) return@TextButton
-                        scope.launch {
-                            sending = true
-                            teamsRepository.postForumMessage(teamId, topicId, t)
-                                .onSuccess { mergeNew(it); draft = "" }
-                                .onFailure { e -> error = e.toUserMessageRu(res) }
-                            sending = false
+                        IconButton(
+                            onClick = {
+                                pendingImageUrl = null
+                                pendingImageFileId = null
+                            },
+                            enabled = !sending && !uploadingImage,
+                            modifier = Modifier.align(Alignment.TopEnd),
+                        ) {
+                            Icon(
+                                Icons.Outlined.Close,
+                                contentDescription = stringResource(R.string.team_forum_clear_image_cd),
+                            )
                         }
-                    },
+                    }
+                }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Text(stringResource(R.string.chat_send))
+                    IconButton(
+                        onClick = { pickForumImage.launch("image/*") },
+                        enabled = !sending && !uploadingImage,
+                    ) {
+                        Icon(
+                            Icons.Outlined.AttachFile,
+                            contentDescription = stringResource(R.string.team_forum_add_image_cd),
+                        )
+                    }
+                    OutlinedTextField(
+                        value = draft,
+                        onValueChange = {
+                            draft = it
+                            if (it.isNotEmpty()) {
+                                forumSocket.emitTyping()
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text(stringResource(R.string.team_forum_message_hint)) },
+                        maxLines = 5,
+                        enabled = !sending && !uploadingImage,
+                    )
+                    TextButton(
+                        enabled = !sending &&
+                            !uploadingImage &&
+                            (draft.trim().isNotEmpty() || !pendingImageFileId.isNullOrBlank()),
+                        onClick = {
+                            scope.launch {
+                                sending = true
+                                teamsRepository.postForumMessage(
+                                    teamId,
+                                    topicId,
+                                    draft,
+                                    pendingImageFileId,
+                                )
+                                    .onSuccess {
+                                        mergeNew(it)
+                                        draft = ""
+                                        pendingImageUrl = null
+                                        pendingImageFileId = null
+                                    }
+                                    .onFailure { e -> error = e.toUserMessageRu(res) }
+                                sending = false
+                            }
+                        },
+                    ) {
+                        Text(stringResource(R.string.chat_send))
+                    }
                 }
             }
         }
@@ -626,10 +721,25 @@ private fun TeamForumTopicChatRoute(
             title = { Text(stringResource(R.string.team_forum_message_actions_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        msg.text.take(280) + if (msg.text.length > 280) "…" else "",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                    msg.imageRelativeUrl?.let { rel ->
+                        teamNewsAuthedImageRequest(LocalContext.current, rel)?.let { req ->
+                            AsyncImage(
+                                model = req,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 160.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop,
+                            )
+                        }
+                    }
+                    if (msg.text.isNotBlank()) {
+                        Text(
+                            msg.text.take(280) + if (msg.text.length > 280) "…" else "",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                     if (canEditMsg) {
                         TextButton(
                             onClick = {
@@ -693,7 +803,8 @@ private fun TeamForumTopicChatRoute(
             },
             confirmButton = {
                 TextButton(
-                    enabled = !editBusy && editBody.trim().isNotEmpty(),
+                    enabled = !editBusy &&
+                        (editBody.trim().isNotEmpty() || !msg.imageRelativeUrl.isNullOrBlank()),
                     onClick = {
                         scope.launch {
                             editBusy = true
@@ -728,6 +839,7 @@ private fun ForumMessageBubble(
     onLongPressMenu: () -> Unit,
 ) {
     val deleted = !message.deletedAt.isNullOrBlank()
+    val ctx = LocalContext.current
     val container = if (isMine) {
         MaterialTheme.colorScheme.primaryContainer
     } else {
@@ -776,16 +888,32 @@ private fun ForumMessageBubble(
                     )
                 }
             }
-            Text(
-                text = if (deleted) stringResource(R.string.team_forum_message_deleted) else message.text,
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (deleted) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
-                modifier = Modifier.padding(top = 4.dp),
-            )
+            if (!deleted && !message.imageRelativeUrl.isNullOrBlank()) {
+                teamNewsAuthedImageRequest(ctx, message.imageRelativeUrl)?.let { req ->
+                    AsyncImage(
+                        model = req,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .padding(top = 8.dp)
+                            .fillMaxWidth()
+                            .heightIn(max = 220.dp)
+                            .clip(RoundedCornerShape(8.dp)),
+                        contentScale = ContentScale.Crop,
+                    )
+                }
+            }
+            if (deleted || message.text.isNotBlank()) {
+                Text(
+                    text = if (deleted) stringResource(R.string.team_forum_message_deleted) else message.text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (deleted) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
         }
     }
 }

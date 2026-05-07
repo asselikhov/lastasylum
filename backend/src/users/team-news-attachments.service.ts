@@ -130,6 +130,35 @@ export class TeamNewsAttachmentsService {
     }));
   }
 
+  /** Forum: any team member may attach their own pre-uploaded images (not news-author–only). */
+  async assertForumAttachmentForSender(
+    teamId: Types.ObjectId,
+    fileIdRaw: string,
+    uploaderUserId: string,
+  ): Promise<{ fileId: Types.ObjectId; mimeType: string; size: number }> {
+    if (!Types.ObjectId.isValid(fileIdRaw)) {
+      throw new BadRequestException('Invalid image file id');
+    }
+    const fileId = new Types.ObjectId(fileIdRaw);
+    const doc = await this.attachmentModel
+      .findOne({ _id: fileId, teamId })
+      .lean<{ _id: Types.ObjectId; uploaderUserId: string; mimeType: string; size: number } | null>()
+      .exec();
+    if (!doc) {
+      throw new BadRequestException('Image not found for this team');
+    }
+    if (doc.uploaderUserId !== uploaderUserId) {
+      throw new ForbiddenException(
+        'Image must be uploaded by the message sender',
+      );
+    }
+    return {
+      fileId: doc._id,
+      mimeType: doc.mimeType,
+      size: doc.size,
+    };
+  }
+
   async openDownloadForTeam(
     teamId: Types.ObjectId,
     fileId: string,
