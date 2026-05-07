@@ -7,7 +7,18 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import com.lastasylum.alliance.ui.chat.ChatBubbleAuthorHeader
+import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarEndPad
+import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarSize
+import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
+import com.lastasylum.alliance.ui.chat.TelegramImageCaptionBar
+import com.lastasylum.alliance.ui.chat.chatBubbleShapeIncoming
+import com.lastasylum.alliance.ui.chat.chatBubbleShapeOutgoing
+import com.lastasylum.alliance.ui.theme.roleAccentColor
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -60,7 +71,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavType
@@ -878,6 +888,11 @@ private fun ForumMessageBubble(
     val bubbleBg = if (isMine) ChatTelegramOutgoingBubble else ChatTelegramIncomingBubble
     val onBubble = if (isMine) ChatTelegramOutgoingOnBubble else ChatTelegramIncomingOnBubble
     val timeMuted = if (isMine) ChatTelegramTimeMuted else ChatTelegramTimeMutedIncoming
+    val senderAccent = roleAccentColor("")
+    val nickname = message.senderUsername.trim()
+    val displayName = nickname.ifBlank { "—" }
+    val tagBracketMuted = ChatTelegramIncomingOnBubble.copy(alpha = 0.5f)
+
     val timeStr = formatChatTime(message.createdAt)
     val timeLabel = remember(timeStr, message.editedAt) {
         if (timeStr.isBlank()) {
@@ -889,93 +904,202 @@ private fun ForumMessageBubble(
         }
     }
 
+    val chainBottom = true
+    val bubbleShape = if (isMine) {
+        chatBubbleShapeOutgoing(chainBottom)
+    } else {
+        chatBubbleShapeIncoming(chainBottom)
+    }
+
+    val captionBarBg = if (isMine) {
+        lerp(ChatTelegramOutgoingBubble, Color.Black, 0.18f)
+    } else {
+        lerp(ChatTelegramIncomingBubble, Color.Black, 0.24f)
+    }
+
+    val clickMod = Modifier.combinedClickable(
+        onClick = {},
+        onLongClick = if (canEdit) {
+            { onLongPressMenu() }
+        } else {
+            null
+        },
+    )
+
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val maxBubble = maxWidth * 0.82f
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Bottom,
+        ) {
             if (isMine) {
                 Spacer(Modifier.weight(1f))
             }
+            if (!isMine && !deleted) {
+                ChatSenderAvatar(
+                    telegramUrl = null,
+                    size = ChatIncomingAvatarSize,
+                    modifier = Modifier.padding(end = ChatIncomingAvatarEndPad),
+                    fallbackName = displayName,
+                )
+            }
             Surface(
                 modifier = Modifier
-                    .widthIn(max = maxBubble)
-                    .combinedClickable(
-                        onClick = {},
-                        onLongClick = if (canEdit) {
-                            { onLongPressMenu() }
-                        } else {
-                            null
-                        },
-                    ),
+                    .widthIn(max = minOf(maxBubble, 300.dp))
+                    .then(clickMod),
                 color = bubbleBg,
-                shape = RoundedCornerShape(16.dp),
+                shape = bubbleShape,
                 tonalElevation = 0.dp,
                 shadowElevation = 0.dp,
             ) {
                 Column(
-                    Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp)
+                        .padding(top = 10.dp, bottom = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
                 ) {
                     if (!isMine && !deleted) {
-                        Text(
-                            text = message.senderUsername,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                        ChatBubbleAuthorHeader(
+                            teamTag = null,
+                            nickname = nickname.ifBlank { "—" },
+                            nicknameColor = senderAccent,
+                            tagBracketColor = tagBracketMuted,
+                            senderRole = "",
                         )
                     }
-                    if (!deleted && stickerStem != null) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(ctx)
-                                .data(ZlobyakaStickerPack.assetUriForStem(stickerStem))
-                                .size(384)
-                                .crossfade(true)
-                                .build(),
-                            contentDescription = stringResource(R.string.cd_chat_sticker),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 120.dp, max = 200.dp),
-                            contentScale = ContentScale.Fit,
-                        )
-                    }
-                    if (!deleted && !message.imageRelativeUrl.isNullOrBlank()) {
-                        teamNewsAuthedImageRequest(ctx, message.imageRelativeUrl)?.let { req ->
-                            AsyncImage(
-                                model = req,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 220.dp)
-                                    .clip(RoundedCornerShape(12.dp)),
-                                contentScale = ContentScale.Crop,
+
+                    when {
+                        deleted -> {
+                            Text(
+                                text = stringResource(R.string.team_forum_message_deleted),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = timeMuted,
                             )
+                            if (timeLabel.isNotBlank()) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End,
+                                ) {
+                                    Text(
+                                        text = timeLabel,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = timeMuted,
+                                    )
+                                }
+                            }
                         }
-                    }
-                    val showText = deleted ||
-                        (message.text.isNotBlank() && stickerStem == null)
-                    if (showText) {
-                        Text(
-                            text = if (deleted) {
-                                stringResource(R.string.team_forum_message_deleted)
-                            } else {
-                                message.text
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (deleted) {
-                                timeMuted
-                            } else {
-                                onBubble
-                            },
-                        )
-                    }
-                    if (timeLabel.isNotBlank()) {
-                        Text(
-                            text = timeLabel,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = timeMuted,
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.End,
-                        )
+                        stickerStem != null -> {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 2.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(ctx)
+                                        .data(ZlobyakaStickerPack.assetUriForStem(stickerStem))
+                                        .size(384)
+                                        .crossfade(true)
+                                        .build(),
+                                    contentDescription = stringResource(R.string.cd_chat_sticker),
+                                    modifier = Modifier
+                                        .widthIn(max = 220.dp)
+                                        .heightIn(max = 200.dp)
+                                        .clip(RoundedCornerShape(12.dp)),
+                                    contentScale = ContentScale.Fit,
+                                )
+                            }
+                            if (timeLabel.isNotBlank()) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End,
+                                ) {
+                                    Text(
+                                        text = timeLabel,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = timeMuted,
+                                    )
+                                }
+                            }
+                        }
+                        !message.imageRelativeUrl.isNullOrBlank() -> {
+                            teamNewsAuthedImageRequest(ctx, message.imageRelativeUrl)?.let { req ->
+                                val hasCaption = message.text.isNotBlank()
+                                Column(
+                                    Modifier.fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(0.dp),
+                                ) {
+                                    Box(Modifier.fillMaxWidth()) {
+                                        AsyncImage(
+                                            model = req,
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .heightIn(max = 220.dp)
+                                                .clip(
+                                                    RoundedCornerShape(
+                                                        topStart = 12.dp,
+                                                        topEnd = 12.dp,
+                                                        bottomStart = if (hasCaption) 0.dp else 12.dp,
+                                                        bottomEnd = if (hasCaption) 0.dp else 12.dp,
+                                                    ),
+                                                ),
+                                            contentScale = ContentScale.Crop,
+                                        )
+                                        if (!hasCaption && timeLabel.isNotBlank()) {
+                                            Surface(
+                                                shape = RoundedCornerShape(10.dp),
+                                                color = Color.Black.copy(alpha = 0.45f),
+                                                tonalElevation = 0.dp,
+                                                shadowElevation = 0.dp,
+                                                modifier = Modifier
+                                                    .align(Alignment.BottomEnd)
+                                                    .padding(6.dp),
+                                            ) {
+                                                Text(
+                                                    text = timeLabel,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = Color.White,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                                )
+                                            }
+                                        }
+                                    }
+                                    if (hasCaption) {
+                                        TelegramImageCaptionBar(
+                                            caption = message.text.trimEnd(),
+                                            formattedTime = timeLabel,
+                                            captionBarBg = captionBarBg,
+                                            onBubble = onBubble,
+                                            timeMuted = timeMuted,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        else -> {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.Bottom,
+                            ) {
+                                Text(
+                                    text = message.text,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = onBubble,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                if (timeLabel.isNotBlank()) {
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        text = timeLabel,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = timeMuted,
+                                        modifier = Modifier.padding(bottom = 1.dp),
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

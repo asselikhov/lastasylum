@@ -136,7 +136,9 @@ fun ChatBubbleAuthorHeader(
             )
         }
         Spacer(modifier = Modifier.width(8.dp))
-        RoleBadge(role = senderRole)
+        if (senderRole.isNotBlank()) {
+            RoleBadge(role = senderRole)
+        }
     }
 }
 

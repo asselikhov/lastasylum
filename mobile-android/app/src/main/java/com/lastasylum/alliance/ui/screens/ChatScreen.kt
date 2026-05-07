@@ -163,6 +163,10 @@ import com.lastasylum.alliance.ui.chat.formatChatTime
 import com.lastasylum.alliance.ui.chat.ChatBubbleAttachmentsWithCaption
 import com.lastasylum.alliance.ui.chat.ChatBubbleAuthorHeader
 import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
+import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarEndPad
+import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarSize
+import com.lastasylum.alliance.ui.chat.chatBubbleShapeIncoming
+import com.lastasylum.alliance.ui.chat.chatBubbleShapeOutgoing
 import com.lastasylum.alliance.ui.chat.TelegramImageCaptionBar
 import com.lastasylum.alliance.ui.chat.TelegramLikeAttachmentsGrid
 import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingBubble
@@ -391,36 +395,6 @@ private fun buildChatTimeline(messages: List<ChatMessage>): List<ChatTimelineEnt
 }
 
 private enum class MediaPickerTab { Stickers, Gif }
-
-private val ChatIncomingAvatarSize = 38.dp
-private val ChatIncomingAvatarEndPad = 6.dp
-
-private val ChatBubbleChainRadius = 18.dp
-private val ChatBubbleTailCorner = 3.dp
-
-private fun bubbleShapeOutgoing(isChainBottom: Boolean): RoundedCornerShape =
-    if (isChainBottom) {
-        RoundedCornerShape(
-            topStart = ChatBubbleChainRadius,
-            topEnd = ChatBubbleChainRadius,
-            bottomStart = ChatBubbleChainRadius,
-            bottomEnd = ChatBubbleTailCorner,
-        )
-    } else {
-        RoundedCornerShape(ChatBubbleChainRadius)
-    }
-
-private fun bubbleShapeIncoming(isChainBottom: Boolean): RoundedCornerShape =
-    if (isChainBottom) {
-        RoundedCornerShape(
-            topStart = ChatBubbleChainRadius,
-            topEnd = ChatBubbleChainRadius,
-            bottomStart = ChatBubbleTailCorner,
-            bottomEnd = ChatBubbleChainRadius,
-        )
-    } else {
-        RoundedCornerShape(ChatBubbleChainRadius)
-    }
 
 private fun readClipboardPlainText(context: Context): String? {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return null
@@ -2675,9 +2649,9 @@ private fun ChatFloatingImageAttachmentsBlock(
         .then(bubbleClickModifier)
         .then(swipeModifier)
     val clipShape = if (isMine) {
-        bubbleShapeOutgoing(isChainBottom)
+        chatBubbleShapeOutgoing(isChainBottom)
     } else {
-        bubbleShapeIncoming(isChainBottom)
+        chatBubbleShapeIncoming(isChainBottom)
     }
     Column(modifier = floatMod) {
         if (!isMine && showClusterHeader) {
@@ -2986,9 +2960,9 @@ private fun ChatBubbleRow(
     val isChainBottom = chatMessageIsClusterChainBottom(messages, messageIndex)
     val tightClusterTop = chatMessageClusterTightInnerTop(messages, messageIndex)
     val bubbleShape = if (isMine) {
-        bubbleShapeOutgoing(isChainBottom)
+        chatBubbleShapeOutgoing(isChainBottom)
     } else {
-        bubbleShapeIncoming(isChainBottom)
+        chatBubbleShapeIncoming(isChainBottom)
     }
     val bubbleContext = LocalContext.current
     val formattedTime = formatChatTime(message.createdAt)
@@ -3094,7 +3068,7 @@ private fun ChatBubbleRow(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(max = 200.dp)
-                                .clip(bubbleShapeOutgoing(isChainBottom)),
+                                .clip(chatBubbleShapeOutgoing(isChainBottom)),
                             contentScale = ContentScale.Fit,
                         )
                         if (formattedTime.isNotBlank()) {
@@ -3228,7 +3202,7 @@ private fun ChatBubbleRow(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(max = 200.dp)
-                                .clip(bubbleShapeIncoming(isChainBottom)),
+                                .clip(chatBubbleShapeIncoming(isChainBottom)),
                             contentScale = ContentScale.Fit,
                         )
                         if (formattedTime.isNotBlank()) {
