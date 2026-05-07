@@ -277,6 +277,10 @@
     <string name="team_news_vote">Проголосовать</string>
     <string name="team_news_change_vote">Изменить голос</string>
     <string name="team_news_votes_count">Голосов: %1$d</string>
+    <string name="team_news_poll_option_votes">%1$d голосов</string>
+    <string name="team_news_poll_voters">Участники: %1$s</string>
+    <string name="team_news_gallery_label">Галерея</string>
+    <string name="team_news_gallery_image_cd">Фотография к новости</string>
     <string name="team_news_empty">Пока нет новостей</string>
     <string name="team_news_load_error">Не удалось загрузить новости</string>
     <string name="team_news_delete_confirm">Удалить эту новость?</string>

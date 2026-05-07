@@ -113,6 +113,8 @@ data class TeamNewsPollOptionDto(
 data class TeamNewsPollVoteDto(
     val userId: String,
     val optionId: String,
+    /** Отображаемый ник; с бэкенда с версии poll voter enrichment. */
+    val username: String? = null,
 )
 
 @JsonClass(generateAdapter = true)

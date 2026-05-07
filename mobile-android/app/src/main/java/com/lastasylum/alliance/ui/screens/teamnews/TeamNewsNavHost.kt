@@ -13,8 +13,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -30,6 +34,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -47,6 +52,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -67,6 +73,7 @@ import com.lastasylum.alliance.data.teams.TeamNewsDetailDto
 import com.lastasylum.alliance.data.teams.TeamNewsListItemDto
 import com.lastasylum.alliance.data.teams.TeamNewsPollCreateBody
 import com.lastasylum.alliance.data.teams.TeamNewsPollOptionDto
+import com.lastasylum.alliance.data.teams.TeamNewsPollVoteDto
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.teams.UpdateTeamNewsBody
 import com.lastasylum.alliance.ui.util.toUserMessageRu
@@ -89,6 +96,25 @@ private fun formatNewsDateRu(iso: String): String =
         val fmt = DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale("ru"))
         fmt.format(instant.atZone(ZoneId.systemDefault()))
     }.getOrElse { iso }
+
+private fun pollVotersSummaryLine(
+    votes: List<TeamNewsPollVoteDto>,
+    optionId: String,
+    maxNames: Int = 18,
+): String? {
+    val names = votes.filter { it.optionId == optionId }
+        .map { v ->
+            val u = v.username?.trim().orEmpty()
+            if (u.isNotEmpty() && u != "—") u else v.userId
+        }
+        .distinct()
+    if (names.isEmpty()) return null
+    return if (names.size <= maxNames) {
+        names.joinToString(", ")
+    } else {
+        names.take(maxNames).joinToString(", ") + "…"
+    }
+}
 
 @Composable
 fun TeamNewsNavHost(
@@ -464,6 +490,41 @@ private fun TeamNewsDetailRoute(
                     )
                     Spacer(Modifier.height(12.dp))
                     Text(d.body, style = MaterialTheme.typography.bodyLarge)
+                    val galleryPaths = remember(d.imageRelativeUrls, d.firstImageRelativeUrl) {
+                        val base = if (d.imageRelativeUrls.isNotEmpty()) {
+                            d.imageRelativeUrls
+                        } else {
+                            d.firstImageRelativeUrl?.let { listOf(it) } ?: emptyList()
+                        }
+                        if (base.size <= 1) emptyList() else base.drop(1)
+                    }
+                    if (galleryPaths.isNotEmpty()) {
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            stringResource(R.string.team_news_gallery_label),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            contentPadding = PaddingValues(vertical = 2.dp),
+                        ) {
+                            items(galleryPaths, key = { it }) { rawPath ->
+                                teamNewsAuthedImageRequest(context, rawPath)?.let { imgReq ->
+                                    AsyncImage(
+                                        model = imgReq,
+                                        contentDescription = stringResource(R.string.team_news_gallery_image_cd),
+                                        modifier = Modifier
+                                            .width(168.dp)
+                                            .height(120.dp)
+                                            .clip(RoundedCornerShape(12.dp)),
+                                        contentScale = ContentScale.Crop,
+                                    )
+                                }
+                            }
+                        }
+                    }
                     if (poll != null) {
                         val p = poll
                         Spacer(Modifier.height(20.dp))
@@ -473,10 +534,11 @@ private fun TeamNewsDetailRoute(
                                 colors = CardDefaults.cardColors(
                                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                                 ),
+                                shape = RoundedCornerShape(16.dp),
                             ) {
                                 Column(
-                                    Modifier.padding(16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                    Modifier.padding(18.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
                                     Text(p.question, style = MaterialTheme.typography.titleMedium)
                                     val totalVotes = p.tallies.sumOf { tally -> tally.count }
@@ -491,6 +553,8 @@ private fun TeamNewsDetailRoute(
                                     p.options.forEach { opt: TeamNewsPollOptionDto ->
                                         val cnt =
                                             p.tallies.find { t -> t.optionId == opt.id }?.count ?: 0
+                                        val share =
+                                            if (totalVotes > 0) cnt.toFloat() / totalVotes else 0f
                                         Row(
                                             Modifier.fillMaxWidth(),
                                             verticalAlignment = Alignment.CenterVertically,
@@ -500,14 +564,33 @@ private fun TeamNewsDetailRoute(
                                                 onClick = { selected = opt.id },
                                             )
                                             Column(Modifier.weight(1f)) {
-                                                Text(opt.text)
+                                                Text(opt.text, style = MaterialTheme.typography.bodyMedium)
+                                                Spacer(Modifier.height(6.dp))
+                                                LinearProgressIndicator(
+                                                    progress = { share },
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .height(6.dp)
+                                                        .clip(RoundedCornerShape(4.dp)),
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                                )
+                                                Spacer(Modifier.height(4.dp))
                                                 Text(
-                                                    "$cnt",
+                                                    stringResource(R.string.team_news_poll_option_votes, cnt),
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 )
+                                                pollVotersSummaryLine(p.votes, opt.id)?.let { line ->
+                                                    Text(
+                                                        stringResource(R.string.team_news_poll_voters, line),
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    )
+                                                }
                                             }
                                         }
+                                        Spacer(Modifier.height(4.dp))
                                     }
                                     Button(
                                         onClick = {

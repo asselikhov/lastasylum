@@ -37,7 +37,7 @@ export type TeamNewsDetail = TeamNewsListRow & {
   poll: null | {
     question: string;
     options: Array<{ id: string; text: string }>;
-    votes: Array<{ userId: string; optionId: string }>;
+    votes: Array<{ userId: string; username: string; optionId: string }>;
     tallies: Array<{ optionId: string; count: number }>;
     myVoteOptionId: string | null;
   };
@@ -224,7 +224,8 @@ export class TeamNewsService {
       >()
       .exec();
     if (!doc) throw new NotFoundException('News not found');
-    const names = await this.usernamesFor([doc.authorUserId]);
+    const pollVoterIds = doc.poll?.votes.map((v) => v.userId) ?? [];
+    const names = await this.usernamesFor([doc.authorUserId, ...pollVoterIds]);
     const base = this.toListRow(doc, names, userId);
     const images = doc.imageAttachments.map(
       (a) =>
@@ -234,7 +235,11 @@ export class TeamNewsService {
       ? {
           question: doc.poll.question,
           options: doc.poll.options,
-          votes: doc.poll.votes,
+          votes: doc.poll.votes.map((v) => ({
+            userId: v.userId,
+            username: names.get(v.userId) ?? '—',
+            optionId: v.optionId,
+          })),
           tallies: this.pollTallies(doc.poll),
           myVoteOptionId: this.myVote(doc.poll, userId),
         }
