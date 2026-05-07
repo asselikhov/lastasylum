@@ -123,6 +123,7 @@ fun TeamScreen(
     var editNameBusy by remember { mutableStateOf(false) }
     var roleEditMember by remember { mutableStateOf<PlayerTeamMemberDto?>(null) }
     var mainSection by remember { mutableStateOf(TeamMainSection.News) }
+    var forumTabReselectSignal by remember { mutableStateOf(0) }
 
     LaunchedEffect(isTeamTabSelected) {
         if (isTeamTabSelected) {
@@ -376,7 +377,13 @@ fun TeamScreen(
                                     )
                                     Tab(
                                         selected = mainSection == TeamMainSection.Forum,
-                                        onClick = { mainSection = TeamMainSection.Forum },
+                                        onClick = {
+                                            if (mainSection == TeamMainSection.Forum) {
+                                                forumTabReselectSignal++
+                                            } else {
+                                                mainSection = TeamMainSection.Forum
+                                            }
+                                        },
                                         text = { Text(stringResource(R.string.team_tab_forum)) },
                                     )
                                     Tab(
@@ -408,6 +415,7 @@ fun TeamScreen(
                                             teamsRepository = teamsRepository,
                                             forumSocket = app.teamForumSocket,
                                             tokenStore = app.tokenStore,
+                                            forumTabReselectSignal = forumTabReselectSignal,
                                             modifier = Modifier
                                                 .weight(1f, fill = true)
                                                 .fillMaxWidth()

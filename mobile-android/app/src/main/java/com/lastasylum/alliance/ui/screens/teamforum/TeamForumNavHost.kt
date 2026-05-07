@@ -1,11 +1,13 @@
 package com.lastasylum.alliance.ui.screens.teamforum
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,16 +18,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.outlined.AttachFile
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -39,11 +40,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -61,6 +60,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavType
@@ -79,8 +79,21 @@ import com.lastasylum.alliance.data.teams.TeamForumTypingEvent
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.ui.screens.teamnews.teamNewsAuthedImageRequest
 import com.lastasylum.alliance.ui.util.toUserMessageRu
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
+import com.lastasylum.alliance.ui.chat.ChatStickerFormat
+import com.lastasylum.alliance.ui.chat.chatDayKey
+import com.lastasylum.alliance.ui.chat.formatChatDaySeparator
+import com.lastasylum.alliance.ui.chat.formatChatTime
+import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingBubble
+import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingOnBubble
+import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingBubble
+import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingOnBubble
+import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMuted
+import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMutedIncoming
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -109,9 +122,15 @@ fun TeamForumNavHost(
     forumSocket: TeamForumSocketManager,
     tokenStore: TokenStore,
     modifier: Modifier = Modifier,
+    forumTabReselectSignal: Int = 0,
 ) {
     val nav = rememberNavController()
     val topicTitles = remember { mutableStateMapOf<String, String>() }
+    LaunchedEffect(forumTabReselectSignal) {
+        if (forumTabReselectSignal > 0) {
+            nav.popBackStack(ForumRoutes.LIST, inclusive = false)
+        }
+    }
     NavHost(
         navController = nav,
         startDestination = ForumRoutes.LIST,
@@ -441,6 +460,8 @@ private fun TeamForumTopicChatRoute(
     tokenStore: TokenStore,
     onBack: () -> Unit,
 ) {
+    BackHandler { onBack() }
+
     val context = LocalContext.current
     val res = context.resources
     val scope = rememberCoroutineScope()
@@ -449,6 +470,7 @@ private fun TeamForumTopicChatRoute(
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var draft by remember { mutableStateOf("") }
+    var pendingImageUri by remember { mutableStateOf<Uri?>(null) }
     var pendingImageUrl by remember { mutableStateOf<String?>(null) }
     var pendingImageFileId by remember { mutableStateOf<String?>(null) }
     var uploadingImage by remember { mutableStateOf(false) }
@@ -462,6 +484,12 @@ private fun TeamForumTopicChatRoute(
     var editMessage by remember { mutableStateOf<TeamForumMessageDto?>(null) }
     var editBody by remember { mutableStateOf("") }
     var editBusy by remember { mutableStateOf(false) }
+
+    fun clearPendingAttachment() {
+        pendingImageUri = null
+        pendingImageUrl = null
+        pendingImageFileId = null
+    }
 
     fun applyEdited(msg: TeamForumMessageDto) {
         val i = messages.indexOfFirst { it.id == msg.id }
@@ -489,10 +517,7 @@ private fun TeamForumTopicChatRoute(
         messages.add(msg)
     }
 
-    val pickForumImage = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent(),
-    ) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
+    fun uploadPickedImage(uri: Uri) {
         scope.launch {
             uploadingImage = true
             val cr = context.contentResolver
@@ -504,6 +529,7 @@ private fun TeamForumTopicChatRoute(
             val name = "forum_${System.currentTimeMillis()}.jpg"
             teamsRepository.uploadForumImage(teamId, bytes, name, mime)
                 .onSuccess { u ->
+                    pendingImageUri = null
                     pendingImageUrl = u.url
                     pendingImageFileId = u.fileId
                 }
@@ -516,12 +542,25 @@ private fun TeamForumTopicChatRoute(
         loading = true
         error = null
         messages.clear()
-        pendingImageUrl = null
-        pendingImageFileId = null
+        clearPendingAttachment()
+        draft = ""
         teamsRepository.listForumMessages(teamId, topicId, before = null, limit = 50)
             .onSuccess { page -> messages.addAll(page) }
             .onFailure { e -> error = e.toUserMessageRu(res) }
         loading = false
+    }
+
+    LaunchedEffect(sortedMessages.size, sortedMessages.lastOrNull()?.id) {
+        if (sortedMessages.isNotEmpty()) {
+            val lastIndex = 1 + sortedMessages.lastIndex
+            runCatching { listState.animateScrollToItem(lastIndex) }
+        }
+    }
+
+    LaunchedEffect(typingHint) {
+        val hint = typingHint ?: return@LaunchedEffect
+        delay(4000)
+        if (typingHint == hint) typingHint = null
     }
 
     DisposableEffect(teamId, topicId) {
@@ -551,166 +590,133 @@ private fun TeamForumTopicChatRoute(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        topicTitle.ifBlank { stringResource(R.string.team_forum_topic_fallback) },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
-                    }
-                },
+    Column(
+        Modifier
+            .fillMaxSize()
+            .imePadding(),
+    ) {
+        error?.let { err ->
+            Text(
+                err,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
             )
-        },
-    ) { inner ->
-        Column(
-            Modifier
-                .padding(inner)
-                .fillMaxSize()
-                .imePadding(),
-        ) {
-            error?.let { err ->
-                Text(
-                    err,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+        }
+        typingHint?.let { hint ->
+            Text(
+                hint,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+            )
+        }
+        HorizontalDivider()
+        Box(Modifier.weight(1f)) {
+            if (loading && messages.isEmpty()) {
+                CircularProgressIndicator(
+                    Modifier.align(Alignment.Center),
+                    strokeWidth = 2.dp,
                 )
-            }
-            typingHint?.let { hint ->
-                Text(
-                    hint,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
-                )
-            }
-            HorizontalDivider()
-            Box(Modifier.weight(1f)) {
-                if (loading && messages.isEmpty()) {
-                    CircularProgressIndicator(
-                        Modifier.align(Alignment.Center),
-                        strokeWidth = 2.dp,
-                    )
-                } else {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        items(sortedMessages, key = { it.id }) { msg ->
-                            val mine = msg.senderUserId == currentUserId
-                            val canEdit = (mine || canModerateMessages) && msg.deletedAt.isNullOrBlank()
-                            ForumMessageBubble(
-                                message = msg,
-                                isMine = mine,
-                                canEdit = canEdit,
-                                onLongPressMenu = { if (canEdit) menuMessage = msg },
-                            )
-                        }
-                    }
-                }
-            }
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
-            ) {
-                pendingImageUrl?.let { rawPreview ->
-                    Box(
-                        Modifier
-                            .padding(bottom = 6.dp)
-                            .fillMaxWidth(),
-                    ) {
-                        teamNewsAuthedImageRequest(context, rawPreview)?.let { req ->
-                            AsyncImage(
-                                model = req,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(120.dp)
-                                    .clip(RoundedCornerShape(10.dp)),
-                                contentScale = ContentScale.Crop,
-                            )
-                        }
-                        IconButton(
-                            onClick = {
-                                pendingImageUrl = null
-                                pendingImageFileId = null
-                            },
-                            enabled = !sending && !uploadingImage,
-                            modifier = Modifier.align(Alignment.TopEnd),
-                        ) {
-                            Icon(
-                                Icons.Outlined.Close,
-                                contentDescription = stringResource(R.string.team_forum_clear_image_cd),
-                            )
-                        }
-                    }
-                }
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    IconButton(
-                        onClick = { pickForumImage.launch("image/*") },
-                        enabled = !sending && !uploadingImage,
-                    ) {
-                        Icon(
-                            Icons.Outlined.AttachFile,
-                            contentDescription = stringResource(R.string.team_forum_add_image_cd),
+                    item(key = "topic_hdr") {
+                        Text(
+                            text = topicTitle.ifBlank { stringResource(R.string.team_forum_topic_fallback) },
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(bottom = 4.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
                         )
                     }
-                    OutlinedTextField(
-                        value = draft,
-                        onValueChange = {
-                            draft = it
-                            if (it.isNotEmpty()) {
-                                forumSocket.emitTyping()
+                    itemsIndexed(
+                        sortedMessages,
+                        key = { _, m -> m.id },
+                    ) { idx, msg ->
+                        val prev = sortedMessages.getOrNull(idx - 1)
+                        val dayCurr = chatDayKey(msg.createdAt)
+                        val dayPrev = chatDayKey(prev?.createdAt)
+                        if (idx == 0 || dayCurr != dayPrev) {
+                            val sep = formatChatDaySeparator(msg.createdAt)
+                            if (sep.isNotBlank()) {
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        text = sep,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
-                        },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text(stringResource(R.string.team_forum_message_hint)) },
-                        maxLines = 5,
-                        enabled = !sending && !uploadingImage,
-                    )
-                    TextButton(
-                        enabled = !sending &&
-                            !uploadingImage &&
-                            (draft.trim().isNotEmpty() || !pendingImageFileId.isNullOrBlank()),
-                        onClick = {
-                            scope.launch {
-                                sending = true
-                                teamsRepository.postForumMessage(
-                                    teamId,
-                                    topicId,
-                                    draft,
-                                    pendingImageFileId,
-                                )
-                                    .onSuccess {
-                                        mergeNew(it)
-                                        draft = ""
-                                        pendingImageUrl = null
-                                        pendingImageFileId = null
-                                    }
-                                    .onFailure { e -> error = e.toUserMessageRu(res) }
-                                sending = false
-                            }
-                        },
-                    ) {
-                        Text(stringResource(R.string.chat_send))
+                        }
+                        val mine = msg.senderUserId == currentUserId
+                        val canEdit = (mine || canModerateMessages) && msg.deletedAt.isNullOrBlank()
+                        ForumMessageBubble(
+                            message = msg,
+                            isMine = mine,
+                            canEdit = canEdit,
+                            onLongPressMenu = { if (canEdit) menuMessage = msg },
+                        )
                     }
                 }
             }
         }
+        ForumTopicComposer(
+            draft = draft,
+            onDraftChange = { draft = it },
+            pendingImageUri = pendingImageUri,
+            onClearPendingImage = { clearPendingAttachment() },
+            pendingImageRemotePreviewUrl = pendingImageUrl,
+            isSending = sending,
+            isUploadingImage = uploadingImage,
+            sendEnabled = true,
+            onSend = {
+                scope.launch {
+                    sending = true
+                    teamsRepository.postForumMessage(
+                        teamId,
+                        topicId,
+                        draft,
+                        pendingImageFileId,
+                    )
+                        .onSuccess {
+                            mergeNew(it)
+                            draft = ""
+                            clearPendingAttachment()
+                        }
+                        .onFailure { e -> error = e.toUserMessageRu(res) }
+                    sending = false
+                }
+            },
+            onSendStickerPayload = { payload ->
+                scope.launch {
+                    sending = true
+                    teamsRepository.postForumMessage(teamId, topicId, payload, null)
+                        .onSuccess { mergeNew(it) }
+                        .onFailure { e -> error = e.toUserMessageRu(res) }
+                    sending = false
+                }
+            },
+            onImageUriPicked = { uri ->
+                pendingImageUri = uri
+                uploadPickedImage(uri)
+            },
+            onTyping = { forumSocket.emitTyping() },
+        )
     }
 
     menuMessage?.let { msg ->
@@ -736,7 +742,10 @@ private fun TeamForumTopicChatRoute(
                     }
                     if (msg.text.isNotBlank()) {
                         Text(
-                            msg.text.take(280) + if (msg.text.length > 280) "…" else "",
+                            ChatStickerFormat.humanReadableBody(
+                                LocalContext.current,
+                                msg.text,
+                            ).take(280) + if (msg.text.length > 280) "…" else "",
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
@@ -840,79 +849,113 @@ private fun ForumMessageBubble(
 ) {
     val deleted = !message.deletedAt.isNullOrBlank()
     val ctx = LocalContext.current
-    val container = if (isMine) {
-        MaterialTheme.colorScheme.primaryContainer
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerHighest
+    val stickerStem = if (!deleted) ZlobyakaStickerPack.parseStem(message.text) else null
+    val bubbleBg = if (isMine) ChatTelegramOutgoingBubble else ChatTelegramIncomingBubble
+    val onBubble = if (isMine) ChatTelegramOutgoingOnBubble else ChatTelegramIncomingOnBubble
+    val timeMuted = if (isMine) ChatTelegramTimeMuted else ChatTelegramTimeMutedIncoming
+    val timeStr = formatChatTime(message.createdAt)
+    val timeLabel = remember(timeStr, message.editedAt) {
+        if (timeStr.isBlank()) {
+            ""
+        } else if (!message.editedAt.isNullOrBlank()) {
+            "$timeStr · ${ctx.getString(R.string.chat_edited)}"
+        } else {
+            timeStr
+        }
     }
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = {},
-                onLongClick = if (canEdit) {
-                    { onLongPressMenu() }
-                } else {
-                    null
-                },
-            ),
-        color = container,
-        shape = MaterialTheme.shapes.medium,
-    ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(10.dp),
-        ) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val maxBubble = maxWidth * 0.82f
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+            if (isMine) {
+                Spacer(Modifier.weight(1f))
+            }
+            Surface(
+                modifier = Modifier
+                    .widthIn(max = maxBubble)
+                    .combinedClickable(
+                        onClick = {},
+                        onLongClick = if (canEdit) {
+                            { onLongPressMenu() }
+                        } else {
+                            null
+                        },
+                    ),
+                color = bubbleBg,
+                shape = RoundedCornerShape(16.dp),
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp,
             ) {
-                Text(
-                    text = if (isMine) stringResource(R.string.team_forum_you) else message.senderUsername,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (!message.editedAt.isNullOrBlank()) {
+                Column(
+                    Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    if (!isMine && !deleted) {
                         Text(
-                            stringResource(R.string.chat_edited),
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(end = 6.dp),
+                            text = message.senderUsername,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    Text(
-                        formatForumTime(message.createdAt),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    if (!deleted && stickerStem != null) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(ctx)
+                                .data(ZlobyakaStickerPack.assetUriForStem(stickerStem))
+                                .size(384)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = stringResource(R.string.cd_chat_sticker),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 120.dp, max = 200.dp),
+                            contentScale = ContentScale.Fit,
+                        )
+                    }
+                    if (!deleted && !message.imageRelativeUrl.isNullOrBlank()) {
+                        teamNewsAuthedImageRequest(ctx, message.imageRelativeUrl)?.let { req ->
+                            AsyncImage(
+                                model = req,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 220.dp)
+                                    .clip(RoundedCornerShape(12.dp)),
+                                contentScale = ContentScale.Crop,
+                            )
+                        }
+                    }
+                    val showText = deleted ||
+                        (message.text.isNotBlank() && stickerStem == null)
+                    if (showText) {
+                        Text(
+                            text = if (deleted) {
+                                stringResource(R.string.team_forum_message_deleted)
+                            } else {
+                                message.text
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (deleted) {
+                                timeMuted
+                            } else {
+                                onBubble
+                            },
+                        )
+                    }
+                    if (timeLabel.isNotBlank()) {
+                        Text(
+                            text = timeLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = timeMuted,
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.End,
+                        )
+                    }
                 }
             }
-            if (!deleted && !message.imageRelativeUrl.isNullOrBlank()) {
-                teamNewsAuthedImageRequest(ctx, message.imageRelativeUrl)?.let { req ->
-                    AsyncImage(
-                        model = req,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .padding(top = 8.dp)
-                            .fillMaxWidth()
-                            .heightIn(max = 220.dp)
-                            .clip(RoundedCornerShape(8.dp)),
-                        contentScale = ContentScale.Crop,
-                    )
-                }
-            }
-            if (deleted || message.text.isNotBlank()) {
-                Text(
-                    text = if (deleted) stringResource(R.string.team_forum_message_deleted) else message.text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (deleted) {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                    modifier = Modifier.padding(top = 4.dp),
-                )
+            if (!isMine) {
+                Spacer(Modifier.weight(1f))
             }
         }
     }
