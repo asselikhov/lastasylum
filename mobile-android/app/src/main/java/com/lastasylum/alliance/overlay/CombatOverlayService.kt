@@ -160,6 +160,14 @@ class CombatOverlayService : Service() {
             },
         )
     }
+    private val overlayAllianceOnlinePopover by lazy {
+        OverlayAllianceOnlinePopover(
+            context = this,
+            mainHandler = mainHandler,
+            scope = serviceScope,
+            dp = { dp(it) },
+        )
+    }
     private val presenceHeartbeat by lazy {
         OverlayPresenceHeartbeat(
             mainHandler = mainHandler,
@@ -176,7 +184,7 @@ class CombatOverlayService : Service() {
     private var recordingStartRunnable: Runnable? = null
     /** True: только кнопка разворота; по нажатию — остальные кнопки панели. */
     private var panelCollapsed = false
-    /** Desired screen position of collapse/expand button to keep it anchored after relayout. */
+    /** Collapse/expand control center on screen (x,y) to keep the control visually fixed after relayout. */
     private var pendingCollapseAnchorOnScreen: IntArray? = null
     private var messageExpanded = false
     private var chatStripClipRoot: FrameLayout? = null
@@ -995,8 +1003,10 @@ class CombatOverlayService : Service() {
 
                 val current = IntArray(2)
                 btnCollapse.getLocationOnScreen(current)
-                val dx = current[0] - target[0]
-                val dy = current[1] - target[1]
+                val curCx = current[0] + btnCollapse.width / 2
+                val curCy = current[1] + btnCollapse.height / 2
+                val dx = curCx - target[0]
+                val dy = curCy - target[1]
                 if (dx == 0 && dy == 0) {
                     Log.d(OVERLAY_DIAG_TAG, "collapseAnchor ok dx=0 dy=0")
                     return
@@ -1093,8 +1103,8 @@ class CombatOverlayService : Service() {
     }
 
     /**
-     * У правого края экрана: выпадающий ряд (атака/защита) — слева от колонки истории (история + чат + мик + замок),
-     * у левого края — справа. Верхняя чат-лента теперь в отдельном overlay-окне и здесь не участвует.
+     * У правого края экрана: выпадающий ряд (атака/защита) — слева от колонки кнопок (онлайн + история + чат + мик + замок),
+     * у левого края — справа. Верхняя чат-лента в отдельном overlay-окне и здесь не участвует.
      */
     private fun syncOverlayPanelEdgeLayout() {
         val params = overlayMainWindowParams ?: return
@@ -1109,20 +1119,10 @@ class CombatOverlayService : Service() {
             return
         }
         val screenW = resources.displayMetrics.widthPixels
-        val btn = overlayCollapseButton
-        val anchoredEnd = if (
-            btn != null &&
-            btn.isAttachedToWindow &&
-            btn.width > 0 &&
-            btn.height > 0
-        ) {
-            val loc = IntArray(2)
-            btn.getLocationOnScreen(loc)
-            loc[0] + btn.width / 2 >= screenW / 2
-        } else {
-            val wAnchor = maxOf(w, maxOf(overlayPanelStableAnchorWidthPx, dp(160)))
-            params.x + wAnchor / 2 >= screenW / 2
-        }
+        // Use window left edge + effective width (not the collapse button) so mode does not flip
+        // when the panel is narrow (collapsed) or the window width is still settling.
+        val wAnchor = maxOf(w, maxOf(overlayPanelStableAnchorWidthPx, dp(160)))
+        val anchoredEnd = params.x + wAnchor / 2 >= screenW / 2
         val msgOk = msgRow.childCount == 2 &&
             (
                 (anchoredEnd && msgRow.getChildAt(0) === sub && msgRow.getChildAt(1) === fabCol) ||
@@ -1144,16 +1144,13 @@ class CombatOverlayService : Service() {
             msgRow.addView(sub, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
             msgRow.addView(
                 fabCol,
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                LinearLayout.LayoutParams(dp(44), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                     marginStart = dp(8)
                 },
             )
         } else {
             sub.setPadding(dp(8), 0, 0, 0)
-            msgRow.addView(
-                fabCol,
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT),
-            )
+            msgRow.addView(fabCol, LinearLayout.LayoutParams(dp(44), LinearLayout.LayoutParams.WRAP_CONTENT))
             msgRow.addView(sub, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         }
     }
@@ -1260,6 +1257,13 @@ class CombatOverlayService : Service() {
             isFocusable = true
         }
 
+        val btnOnline = ImageView(this).apply {
+            setImageResource(R.drawable.ic_overlay_online)
+            contentDescription = getString(R.string.overlay_online_cd)
+            isClickable = true
+            isFocusable = true
+        }
+
         val subAttack = makeMiniFab(iconRes = R.drawable.ic_overlay_send, cd = "Атака").apply {
             // Placeholder
             setOnClickListener { Toast.makeText(this@CombatOverlayService, "Атака (заглушка)", Toast.LENGTH_SHORT).show() }
@@ -1279,27 +1283,34 @@ class CombatOverlayService : Service() {
         }
 
         OverlayTickerUi.styleOverlayIconButton(fabCtx, lockIcon, sideDp = 42f)
+        OverlayTickerUi.styleOverlayIconButton(fabCtx, btnOnline, sideDp = 42f)
+        val fabColW = dp(44)
         val messageFabColumn = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            addView(btnMessage, LinearLayout.LayoutParams(dp(44), dp(44)))
+            addView(btnOnline, LinearLayout.LayoutParams(fabColW, dp(44)))
+            addView(
+                btnMessage,
+                LinearLayout.LayoutParams(fabColW, dp(44)).apply {
+                    topMargin = dp(6)
+                },
+            )
             addView(
                 btnChat,
-                LinearLayout.LayoutParams(dp(44), dp(44)).apply {
+                LinearLayout.LayoutParams(fabColW, dp(44)).apply {
                     topMargin = dp(6)
                 },
             )
             addView(
                 btnMic,
-                LinearLayout.LayoutParams(dp(44), dp(44)).apply {
+                LinearLayout.LayoutParams(fabColW, dp(44)).apply {
                     topMargin = dp(6)
                 },
             )
             addView(
                 lockIcon,
-                LinearLayout.LayoutParams(dp(44), dp(44)).apply {
+                LinearLayout.LayoutParams(fabColW, dp(44)).apply {
                     topMargin = dp(6)
-                    gravity = Gravity.CENTER_HORIZONTAL
                 },
             )
         }
@@ -1310,7 +1321,7 @@ class CombatOverlayService : Service() {
             gravity = Gravity.TOP
             addView(
                 messageFabColumn,
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT),
+                LinearLayout.LayoutParams(fabColW, LinearLayout.LayoutParams.WRAP_CONTENT),
             )
             addView(subRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         }
@@ -1403,10 +1414,23 @@ class CombatOverlayService : Service() {
         applyControlsVisibility()
 
         btnCollapse.setOnClickListener {
-            // Keep the toggle button anchored on screen when window content expands/collapses.
-            pendingCollapseAnchorOnScreen = IntArray(2).also { btnCollapse.getLocationOnScreen(it) }
+            // Keep the toggle button anchored on screen when window content expands/collapses (center-based).
+            pendingCollapseAnchorOnScreen = IntArray(2).also { out ->
+                val loc = IntArray(2)
+                btnCollapse.getLocationOnScreen(loc)
+                out[0] = loc[0] + btnCollapse.width / 2
+                out[1] = loc[1] + btnCollapse.height / 2
+            }
             panelCollapsed = !panelCollapsed
             applyControlsVisibility()
+        }
+
+        btnOnline.setOnClickListener {
+            if (panelCollapsed) return@setOnClickListener
+            val mgr = windowManager ?: return@setOnClickListener
+            val wr = overlayView ?: return@setOnClickListener
+            val p = overlayMainWindowParams ?: return@setOnClickListener
+            overlayAllianceOnlinePopover.toggle(mgr, p, wr, overlayPanelAnchoredEnd)
         }
 
         btnMessage.setOnClickListener {
@@ -1859,6 +1883,7 @@ class CombatOverlayService : Service() {
         endOverlayChatSubscription()
         overlayTicker.hideTicker()
         quickCommandsPopover.hide()
+        overlayAllianceOnlinePopover.hide()
         val wm = windowManager ?: systemWindowManager()
         removeChatStripWindow(wm)
         val view = overlayView
