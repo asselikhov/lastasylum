@@ -26,6 +26,12 @@ export class CreateTeamForumMessageDto {
   @IsOptional()
   @IsString()
   imageFileId?: string;
+
+  /** Multiple pre-uploaded attachments (preferred). */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  imageFileIds?: string[];
 }
 
 export class UpdateTeamForumMessageDto {

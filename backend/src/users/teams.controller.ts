@@ -325,6 +325,7 @@ export class TeamsController {
       req.user.userId,
       dto.text ?? '',
       dto.replyToMessageId?.trim() || null,
+      (dto.imageFileIds ?? []).map((x) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean),
       dto.imageFileId?.trim() || null,
     );
     this.teamForumGateway.broadcastNewMessage(teamId, topicId, message);

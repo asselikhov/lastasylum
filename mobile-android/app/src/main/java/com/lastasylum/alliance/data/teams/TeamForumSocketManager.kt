@@ -311,6 +311,15 @@ private fun JSONObject.optionalStringField(key: String): String? {
 private fun JSONObject.toForumMessageDto(): TeamForumMessageDto? {
     val id = optString("id").takeIf { it.isNotBlank() } ?: return null
     val replyToObj = optJSONObject("replyTo")
+    val urlsArr = optJSONArray("imageRelativeUrls")
+    val urls = buildList<String> {
+        if (urlsArr != null) {
+            for (i in 0 until urlsArr.length()) {
+                val u = urlsArr.optString(i).trim()
+                if (u.isNotBlank() && !u.equals("null", ignoreCase = true)) add(u)
+            }
+        }
+    }
     return TeamForumMessageDto(
         id = id,
         topicId = optString("topicId"),
@@ -331,6 +340,7 @@ private fun JSONObject.toForumMessageDto(): TeamForumMessageDto? {
         deletedAt = optionalStringField("deletedAt"),
         deletedByUserId = optionalStringField("deletedByUserId"),
         imageRelativeUrl = optionalStringField("imageRelativeUrl"),
+        imageRelativeUrls = urls,
         createdAt = optString("createdAt"),
         updatedAt = optionalStringField("updatedAt").orEmpty()
             .ifBlank { optString("createdAt") },

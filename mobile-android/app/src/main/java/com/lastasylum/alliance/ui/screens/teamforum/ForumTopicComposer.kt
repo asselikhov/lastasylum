@@ -87,7 +87,7 @@ fun ForumTopicComposer(
     onDraftChange: (String) -> Unit,
     replyTo: TeamForumMessageDto?,
     onClearReply: () -> Unit,
-    pendingImageUri: Uri?,
+    pendingImageUris: List<Uri>,
     onClearPendingImage: () -> Unit,
     pendingImageRemotePreviewUrl: String?,
     isSending: Boolean,
@@ -96,7 +96,7 @@ fun ForumTopicComposer(
     canUseZlobyakaStickers: Boolean,
     onSend: () -> Unit,
     onSendStickerPayload: (String) -> Unit,
-    onImageUriPicked: (Uri) -> Unit,
+    onImageUrisPicked: (List<Uri>) -> Unit,
     onTyping: () -> Unit,
 ) {
     var showMediaPanel by remember { mutableStateOf(false) }
@@ -110,14 +110,12 @@ fun ForumTopicComposer(
 
     val pickImagesLauncher = if (activityResultOwner != null) {
         rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.PickVisualMedia(),
-            onResult = { uri ->
-                if (uri != null) onImageUriPicked(uri)
+            contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 12),
+            onResult = { uris ->
+                if (uris.isNotEmpty()) onImageUrisPicked(uris)
             },
         )
-    } else {
-        null
-    }
+    } else null
 
     LaunchedEffect(showMediaPanel) {
         if (!showMediaPanel) {
@@ -141,7 +139,7 @@ fun ForumTopicComposer(
             thickness = 0.5.dp,
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
         )
-        val showPending = pendingImageUri != null || !pendingImageRemotePreviewUrl.isNullOrBlank()
+        val showPending = pendingImageUris.isNotEmpty() || !pendingImageRemotePreviewUrl.isNullOrBlank()
         if (showPending) {
             Box(
                 modifier = Modifier
@@ -152,10 +150,10 @@ fun ForumTopicComposer(
                     .clip(RoundedCornerShape(14.dp)),
             ) {
                 when {
-                    pendingImageUri != null -> {
+                    pendingImageUris.isNotEmpty() -> {
                         AsyncImage(
                             model = ImageRequest.Builder(context)
-                                .data(pendingImageUri)
+                                .data(pendingImageUris.first())
                                 .crossfade(true)
                                 .build(),
                             contentDescription = null,
@@ -365,7 +363,7 @@ fun ForumTopicComposer(
                             },
                         )
                         val canSend = sendEnabled &&
-                            (draft.isNotBlank() || pendingImageUri != null || !pendingImageRemotePreviewUrl.isNullOrBlank())
+                            (draft.isNotBlank() || pendingImageUris.isNotEmpty() || !pendingImageRemotePreviewUrl.isNullOrBlank())
                         val sendButtonEnabled = canSend && !isSending && !isUploadingImage
 
                         IconButton(

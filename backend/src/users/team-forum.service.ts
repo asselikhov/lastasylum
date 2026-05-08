@@ -48,6 +48,7 @@ export type TeamForumMessageRow = {
   deletedAt: string | null;
   deletedByUserId: string | null;
   imageRelativeUrl: string | null;
+  imageRelativeUrls: string[];
   createdAt: string;
   updatedAt: string;
 };
@@ -129,10 +130,17 @@ export class TeamForumService {
     replyTarget?: TeamForumMessageDocument | null,
   ): TeamForumMessageRow {
     const teamIdStr = doc.teamId.toString();
-    const hasImage =
+    const legacyHasImage =
       !doc.deletedAt &&
       doc.imageFileId != null &&
       Types.ObjectId.isValid(doc.imageFileId.toString());
+    const albumIds = Array.isArray(doc.imageFileIds) ? doc.imageFileIds : [];
+    const albumUrls = !doc.deletedAt
+      ? albumIds
+          .map((id) => id?.toString?.() ?? '')
+          .filter((id) => Types.ObjectId.isValid(id))
+          .map((id) => `/teams/${teamIdStr}/news/attachments/${id}`)
+      : [];
     const replyId = this.asIdString(doc.replyToMessageId);
     const reply =
       replyId && replyTarget && !replyTarget.deletedAt
@@ -150,9 +158,15 @@ export class TeamForumService {
       editedAt: doc.editedAt ? doc.editedAt.toISOString() : null,
       deletedAt: doc.deletedAt ? doc.deletedAt.toISOString() : null,
       deletedByUserId: doc.deletedByUserId,
-      imageRelativeUrl: hasImage
+      imageRelativeUrl: legacyHasImage
         ? `/teams/${teamIdStr}/news/attachments/${doc.imageFileId!.toString()}`
         : null,
+      imageRelativeUrls:
+        albumUrls.length > 0
+          ? albumUrls
+          : legacyHasImage
+            ? [`/teams/${teamIdStr}/news/attachments/${doc.imageFileId!.toString()}`]
+            : [],
       createdAt: doc.createdAt?.toISOString() ?? new Date().toISOString(),
       updatedAt: doc.updatedAt?.toISOString() ?? new Date().toISOString(),
     };
@@ -290,6 +304,7 @@ export class TeamForumService {
     userId: string,
     text: string,
     replyToMessageId?: string | null,
+    imageFileIds?: string[],
     imageFileId?: string | null,
   ): Promise<TeamForumMessageRow> {
     await this.teams.getTeamIfMemberOrThrow(teamId, userId);
@@ -311,7 +326,10 @@ export class TeamForumService {
       typeof imageFileId === 'string' && imageFileId.trim()
         ? imageFileId.trim()
         : null;
-    if (!trimmed && !imgRaw) {
+    const imgArr = Array.isArray(imageFileIds)
+      ? imageFileIds.map((x) => x.trim()).filter(Boolean).slice(0, 12)
+      : [];
+    if (!trimmed && !imgRaw && imgArr.length === 0) {
       throw new BadRequestException('Message text or image is required');
     }
     let replyTarget: TeamForumMessageDocument | null = null;
@@ -339,18 +357,31 @@ export class TeamForumService {
       senderDoc as UserDocument,
       trimmed,
     );
-    let imageMeta: {
+    const albumMetas: Array<{
       fileId: Types.ObjectId;
       mimeType: string;
       size: number;
-    } | null = null;
-    if (imgRaw) {
-      imageMeta = await this.teamNewsAttachments.assertForumAttachmentForSender(
-        teamOid,
-        imgRaw,
-        userId,
-      );
+    }> = [];
+    if (imgArr.length > 0) {
+      for (const fid of imgArr) {
+        albumMetas.push(
+          await this.teamNewsAttachments.assertForumAttachmentForSender(
+            teamOid,
+            fid,
+            userId,
+          ),
+        );
+      }
     }
+    // Legacy single-file path (kept for old clients).
+    const legacyMeta =
+      imgRaw && albumMetas.length === 0
+        ? await this.teamNewsAttachments.assertForumAttachmentForSender(
+            teamOid,
+            imgRaw,
+            userId,
+          )
+        : null;
     const doc = await this.messageModel.create({
       topicId: topOid,
       teamId: teamOid,
@@ -358,9 +389,10 @@ export class TeamForumService {
       senderUsername: username,
       text: trimmed,
       replyToMessageId: replyTarget?._id ?? null,
-      imageFileId: imageMeta?.fileId ?? null,
-      imageMimeType: imageMeta?.mimeType ?? null,
-      imageSize: imageMeta?.size ?? null,
+      imageFileId: legacyMeta?.fileId ?? null,
+      imageFileIds: albumMetas.map((m) => m.fileId),
+      imageMimeType: legacyMeta?.mimeType ?? null,
+      imageSize: legacyMeta?.size ?? null,
       editedAt: null,
       deletedAt: null,
       deletedByUserId: null,

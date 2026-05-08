@@ -133,6 +133,7 @@ export class TeamForumGateway {
       text?: string;
       imageFileId?: string;
       replyToMessageId?: string;
+      imageFileIds?: string[];
     },
   ) {
     if (!client.data.user) {
@@ -147,6 +148,11 @@ export class TeamForumGateway {
       typeof payload?.imageFileId === 'string'
         ? payload.imageFileId.trim()
         : undefined;
+    const imageFileIds = Array.isArray(payload?.imageFileIds)
+      ? payload.imageFileIds
+          .map((x) => (typeof x === 'string' ? x.trim() : ''))
+          .filter(Boolean)
+      : [];
     const replyToMessageId =
       typeof payload?.replyToMessageId === 'string'
         ? payload.replyToMessageId.trim()
@@ -162,6 +168,7 @@ export class TeamForumGateway {
       client.data.user.userId,
       text,
       replyToMessageId || null,
+      imageFileIds,
       imageFileId || null,
     );
 

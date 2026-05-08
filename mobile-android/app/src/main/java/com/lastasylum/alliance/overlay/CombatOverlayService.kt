@@ -186,6 +186,7 @@ class CombatOverlayService : Service() {
     private var panelCollapsed = false
     /** После смены размера окна — подправить x/y так, чтобы центр кнопки сворачивания остался на экране. */
     private var pendingCollapseAnchorOnScreen: IntArray? = null
+    private var pendingCollapseAnchorAttempts: Int = 0
     private var messageExpanded = false
     private var chatStripClipRoot: FrameLayout? = null
     private var chatStripLines: LinearLayout? = null
@@ -997,7 +998,6 @@ class CombatOverlayService : Service() {
                     obs.removeOnGlobalLayoutListener(this)
                 }
                 val target = pendingCollapseAnchorOnScreen ?: return
-                pendingCollapseAnchorOnScreen = null
                 if (!windowRoot.isAttachedToWindow) return
                 val p = overlayMainWindowParams ?: return
 
@@ -1007,8 +1007,12 @@ class CombatOverlayService : Service() {
                 val curCy = current[1] + btnCollapse.height / 2
                 val dx = curCx - target[0]
                 val dy = curCy - target[1]
+                // Some devices do multiple layout passes after we toggle visibility and re-order rows.
+                // Keep the button fixed across those passes with a small bounded retry loop.
                 if (dx == 0 && dy == 0) {
                     Log.d(OVERLAY_DIAG_TAG, "collapseAnchor ok dx=0 dy=0")
+                    pendingCollapseAnchorOnScreen = null
+                    pendingCollapseAnchorAttempts = 0
                     return
                 }
                 Log.d(OVERLAY_DIAG_TAG, "collapseAnchor adjust dx=$dx dy=$dy")
@@ -1027,6 +1031,16 @@ class CombatOverlayService : Service() {
                 )
                 overlayTicker.syncTickerPosition()
                 syncOverlayPanelEdgeLayout()
+
+                pendingCollapseAnchorAttempts += 1
+                if (pendingCollapseAnchorAttempts >= 3) {
+                    // Prevent endless loops if layout is constantly changing.
+                    pendingCollapseAnchorOnScreen = null
+                    pendingCollapseAnchorAttempts = 0
+                    return
+                }
+                // Schedule one more pass after updateViewLayout settles.
+                windowRoot.post { scheduleCollapseButtonAnchorCorrection(manager, windowRoot, btnCollapse) }
             }
         }
         observer.addOnGlobalLayoutListener(listener)

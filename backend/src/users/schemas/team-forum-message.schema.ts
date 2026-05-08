@@ -41,6 +41,10 @@ export class TeamForumMessage {
   @Prop({ type: Types.ObjectId, default: null })
   imageFileId: Types.ObjectId | null;
 
+  /** Optional album (preferred). Legacy [imageFileId] kept for backward compatibility. */
+  @Prop({ type: [Types.ObjectId], default: [] })
+  imageFileIds: Types.ObjectId[];
+
   @Prop({ type: String, default: null })
   imageMimeType: string | null;
 

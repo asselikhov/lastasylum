@@ -507,9 +507,9 @@ private fun TeamForumTopicChatRoute(
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var draft by remember { mutableStateOf("") }
-    var pendingImageUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var pendingImageUrl by remember { mutableStateOf<String?>(null) }
-    var pendingImageFileId by remember { mutableStateOf<String?>(null) }
+    var pendingImageFileIds by remember { mutableStateOf<List<String>>(emptyList()) }
     var uploadingImage by remember { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
     var typingHint by remember { mutableStateOf<String?>(null) }
@@ -528,9 +528,9 @@ private fun TeamForumTopicChatRoute(
     var highlightMessageId by remember { mutableStateOf<String?>(null) }
 
     fun clearPendingAttachment() {
-        pendingImageUri = null
+        pendingImageUris = emptyList()
         pendingImageUrl = null
-        pendingImageFileId = null
+        pendingImageFileIds = emptyList()
     }
 
     fun applyEdited(msg: TeamForumMessageDto) {
@@ -559,23 +559,25 @@ private fun TeamForumTopicChatRoute(
         messages.add(msg)
     }
 
-    fun uploadPickedImage(uri: Uri) {
+    fun uploadPickedImages(uris: List<Uri>) {
         scope.launch {
             uploadingImage = true
             val cr = context.contentResolver
-            val mime = cr.getType(uri) ?: "image/jpeg"
-            val bytes = cr.openInputStream(uri)?.use { it.readBytes() } ?: run {
-                uploadingImage = false
-                return@launch
+            val fileIds = mutableListOf<String>()
+            var lastPreview: String? = null
+            for (uri in uris) {
+                val mime = cr.getType(uri) ?: "image/jpeg"
+                val bytes = cr.openInputStream(uri)?.use { it.readBytes() } ?: continue
+                val name = "forum_${System.currentTimeMillis()}.jpg"
+                teamsRepository.uploadForumImage(teamId, bytes, name, mime)
+                    .onSuccess { u ->
+                        fileIds.add(u.fileId)
+                        lastPreview = u.url
+                    }
+                    .onFailure { e -> error = e.toUserMessageRu(res) }
             }
-            val name = "forum_${System.currentTimeMillis()}.jpg"
-            teamsRepository.uploadForumImage(teamId, bytes, name, mime)
-                .onSuccess { u ->
-                    pendingImageUri = null
-                    pendingImageUrl = u.url
-                    pendingImageFileId = u.fileId
-                }
-                .onFailure { e -> error = e.toUserMessageRu(res) }
+            pendingImageFileIds = fileIds
+            pendingImageUrl = lastPreview
             uploadingImage = false
         }
     }
@@ -747,7 +749,7 @@ private fun TeamForumTopicChatRoute(
             onDraftChange = { draft = it },
             replyTo = replyToMessage,
             onClearReply = { replyToMessage = null },
-            pendingImageUri = pendingImageUri,
+            pendingImageUris = pendingImageUris,
             onClearPendingImage = { clearPendingAttachment() },
             pendingImageRemotePreviewUrl = pendingImageUrl,
             isSending = sending,
@@ -762,7 +764,8 @@ private fun TeamForumTopicChatRoute(
                         topicId,
                         draft,
                         replyToMessageId = replyToMessage?.id,
-                        imageFileId = pendingImageFileId,
+                        imageFileId = null,
+                        imageFileIds = pendingImageFileIds,
                     )
                         .onSuccess {
                             mergeNew(it)
@@ -783,6 +786,7 @@ private fun TeamForumTopicChatRoute(
                         text = payload,
                         replyToMessageId = replyToMessage?.id,
                         imageFileId = null,
+                        imageFileIds = null,
                     )
                         .onSuccess { mergeNew(it) }
                         .onFailure { e -> error = e.toUserMessageRu(res) }
@@ -790,9 +794,9 @@ private fun TeamForumTopicChatRoute(
                     replyToMessage = null
                 }
             },
-            onImageUriPicked = { uri ->
-                pendingImageUri = uri
-                uploadPickedImage(uri)
+            onImageUrisPicked = { uris ->
+                pendingImageUris = uris
+                uploadPickedImages(uris)
             },
             onTyping = { forumSocket.emitTyping() },
         )

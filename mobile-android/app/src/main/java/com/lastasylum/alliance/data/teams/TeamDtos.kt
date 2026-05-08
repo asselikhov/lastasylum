@@ -217,6 +217,7 @@ data class TeamForumMessageDto(
     val deletedAt: String? = null,
     val deletedByUserId: String? = null,
     val imageRelativeUrl: String? = null,
+    val imageRelativeUrls: List<String> = emptyList(),
     val createdAt: String,
     val updatedAt: String,
 )
@@ -232,6 +233,7 @@ data class TeamForumReplyPreviewDto(
 data class CreateTeamForumMessageBody(
     val text: String = "",
     val replyToMessageId: String? = null,
+    val imageFileIds: List<String>? = null,
     val imageFileId: String? = null,
 )
 
