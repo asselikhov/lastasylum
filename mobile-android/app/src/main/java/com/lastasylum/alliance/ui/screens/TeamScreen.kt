@@ -185,35 +185,13 @@ fun TeamScreen(
     val isLeader = profile?.isPlayerTeamLeader == true
     val pending = profile?.pendingPlayerTeamJoinRequests ?: 0
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            // Full-width content like Chat: small side padding is applied per-section/list.
+            .padding(top = SquadRelayDimens.screenTopPadding),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(
-                    horizontal = SquadRelayDimens.contentPaddingHorizontal,
-                    vertical = SquadRelayDimens.screenTopPadding,
-                ),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            // Header: show team tag + name; no redundant "Команда" title.
-            profile?.let { p ->
-                val tag = p.playerTeamTag?.trim()?.takeIf { it.isNotEmpty() }
-                val name = p.playerTeamDisplayName?.trim()?.takeIf { it.isNotEmpty() }
-                    ?: p.teamDisplayName?.trim()?.takeIf { it.isNotEmpty() }
-                if (tag != null && name != null) {
-                    Text(
-                        text = "[${tag.uppercase()}] $name",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
 
             if (loading && profile == null) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -515,7 +493,6 @@ fun TeamScreen(
                     }
                 }
             }
-        }
     }
 
     if (showCreate) {
