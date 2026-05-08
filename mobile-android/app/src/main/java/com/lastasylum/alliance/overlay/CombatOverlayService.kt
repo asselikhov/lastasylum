@@ -1419,10 +1419,19 @@ class CombatOverlayService : Service() {
             if (panelCollapsed) {
                 overlayAllianceOnlinePopover.hide()
                 messageExpanded = false
-                messageRow.visibility = View.INVISIBLE
+                // Keep the row itself visible because it contains the collapse/expand button now.
+                messageRow.visibility = View.VISIBLE
+                btnOnline.visibility = View.INVISIBLE
+                btnMessage.visibility = View.INVISIBLE
+                chatHost.visibility = View.INVISIBLE
+                btnMic.visibility = View.INVISIBLE
+                lockIcon.visibility = View.INVISIBLE
                 subRow.visibility = View.INVISIBLE
             } else {
                 messageRow.visibility = View.VISIBLE
+                btnOnline.visibility = View.VISIBLE
+                btnMessage.visibility = View.VISIBLE
+                chatHost.visibility = View.VISIBLE
                 btnMic.visibility = View.VISIBLE
                 lockIcon.visibility = View.VISIBLE
                 subRow.visibility = if (messageExpanded) View.VISIBLE else View.INVISIBLE
