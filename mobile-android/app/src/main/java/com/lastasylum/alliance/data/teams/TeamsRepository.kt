@@ -167,15 +167,21 @@ class TeamsRepository(
         teamId: String,
         topicId: String,
         text: String,
+        replyToMessageId: String? = null,
         imageFileId: String? = null,
     ): Result<TeamForumMessageDto> =
         runCatching {
             val t = text.trim()
             val img = imageFileId?.trim()?.takeIf { it.isNotEmpty() }
+            val replyId = replyToMessageId?.trim()?.takeIf { it.isNotEmpty() }
             teamsApi.postForumMessage(
                 teamId,
                 topicId,
-                CreateTeamForumMessageBody(text = t, imageFileId = img),
+                CreateTeamForumMessageBody(
+                    text = t,
+                    replyToMessageId = replyId,
+                    imageFileId = img,
+                ),
             )
         }
 

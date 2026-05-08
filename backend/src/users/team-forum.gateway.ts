@@ -132,6 +132,7 @@ export class TeamForumGateway {
       topicId?: string;
       text?: string;
       imageFileId?: string;
+      replyToMessageId?: string;
     },
   ) {
     if (!client.data.user) {
@@ -146,6 +147,10 @@ export class TeamForumGateway {
       typeof payload?.imageFileId === 'string'
         ? payload.imageFileId.trim()
         : undefined;
+    const replyToMessageId =
+      typeof payload?.replyToMessageId === 'string'
+        ? payload.replyToMessageId.trim()
+        : undefined;
     if (!teamId || !topicId) {
       throw new WsException('teamId and topicId are required');
     }
@@ -156,6 +161,7 @@ export class TeamForumGateway {
       topicId,
       client.data.user.userId,
       text,
+      replyToMessageId || null,
       imageFileId || null,
     );
 

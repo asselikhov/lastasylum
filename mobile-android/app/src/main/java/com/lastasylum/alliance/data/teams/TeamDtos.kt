@@ -211,6 +211,8 @@ data class TeamForumMessageDto(
     val senderUserId: String,
     val senderUsername: String,
     val text: String,
+    val replyToMessageId: String? = null,
+    val replyTo: TeamForumReplyPreviewDto? = null,
     val editedAt: String? = null,
     val deletedAt: String? = null,
     val deletedByUserId: String? = null,
@@ -220,8 +222,16 @@ data class TeamForumMessageDto(
 )
 
 @JsonClass(generateAdapter = true)
+data class TeamForumReplyPreviewDto(
+    val id: String,
+    val senderUsername: String,
+    val text: String,
+)
+
+@JsonClass(generateAdapter = true)
 data class CreateTeamForumMessageBody(
     val text: String = "",
+    val replyToMessageId: String? = null,
     val imageFileId: String? = null,
 )
 

@@ -33,6 +33,10 @@ export class TeamForumMessage {
   @Prop({ type: String, required: true, trim: true, default: '' })
   text: string;
 
+  /** Optional reply target within the same team+topic (deleted targets are not allowed). */
+  @Prop({ type: Types.ObjectId, default: null })
+  replyToMessageId: Types.ObjectId | null;
+
   /** Optional image; same storage as team news attachments (GET …/news/attachments/:id). */
   @Prop({ type: Types.ObjectId, default: null })
   imageFileId: Types.ObjectId | null;

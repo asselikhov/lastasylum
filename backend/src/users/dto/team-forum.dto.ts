@@ -18,6 +18,10 @@ export class CreateTeamForumMessageDto {
   @MaxLength(4000)
   text?: string;
 
+  @IsOptional()
+  @IsString()
+  replyToMessageId?: string;
+
   /** Pre-uploaded via POST …/forum/attachments; must belong to sender and team. */
   @IsOptional()
   @IsString()

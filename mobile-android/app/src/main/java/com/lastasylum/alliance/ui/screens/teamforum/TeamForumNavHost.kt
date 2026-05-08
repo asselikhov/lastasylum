@@ -516,6 +516,7 @@ private fun TeamForumTopicChatRoute(
     var editMessage by remember { mutableStateOf<TeamForumMessageDto?>(null) }
     var editBody by remember { mutableStateOf("") }
     var editBusy by remember { mutableStateOf(false) }
+    var replyToMessage by remember { mutableStateOf<TeamForumMessageDto?>(null) }
 
     fun clearPendingAttachment() {
         pendingImageUri = null
@@ -696,6 +697,8 @@ private fun TeamForumTopicChatRoute(
         ForumTopicComposer(
             draft = draft,
             onDraftChange = { draft = it },
+            replyTo = replyToMessage,
+            onClearReply = { replyToMessage = null },
             pendingImageUri = pendingImageUri,
             onClearPendingImage = { clearPendingAttachment() },
             pendingImageRemotePreviewUrl = pendingImageUrl,
@@ -710,11 +713,13 @@ private fun TeamForumTopicChatRoute(
                         teamId,
                         topicId,
                         draft,
-                        pendingImageFileId,
+                        replyToMessageId = replyToMessage?.id,
+                        imageFileId = pendingImageFileId,
                     )
                         .onSuccess {
                             mergeNew(it)
                             draft = ""
+                            replyToMessage = null
                             clearPendingAttachment()
                         }
                         .onFailure { e -> error = e.toUserMessageRu(res) }
@@ -724,10 +729,17 @@ private fun TeamForumTopicChatRoute(
             onSendStickerPayload = { payload ->
                 scope.launch {
                     sending = true
-                    teamsRepository.postForumMessage(teamId, topicId, payload, null)
+                    teamsRepository.postForumMessage(
+                        teamId = teamId,
+                        topicId = topicId,
+                        text = payload,
+                        replyToMessageId = replyToMessage?.id,
+                        imageFileId = null,
+                    )
                         .onSuccess { mergeNew(it) }
                         .onFailure { e -> error = e.toUserMessageRu(res) }
                     sending = false
+                    replyToMessage = null
                 }
             },
             onImageUriPicked = { uri ->
@@ -769,6 +781,15 @@ private fun TeamForumTopicChatRoute(
                         )
                     }
                     if (canEditMsg) {
+                        TextButton(
+                            onClick = {
+                                replyToMessage = msg
+                                menuMessage = null
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(stringResource(R.string.chat_action_reply))
+                        }
                         TextButton(
                             onClick = {
                                 editMessage = msg

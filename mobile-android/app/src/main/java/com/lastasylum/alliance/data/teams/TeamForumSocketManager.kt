@@ -310,6 +310,7 @@ private fun JSONObject.optionalStringField(key: String): String? {
 
 private fun JSONObject.toForumMessageDto(): TeamForumMessageDto? {
     val id = optString("id").takeIf { it.isNotBlank() } ?: return null
+    val replyToObj = optJSONObject("replyTo")
     return TeamForumMessageDto(
         id = id,
         topicId = optString("topicId"),
@@ -317,6 +318,15 @@ private fun JSONObject.toForumMessageDto(): TeamForumMessageDto? {
         senderUserId = optString("senderUserId"),
         senderUsername = optString("senderUsername"),
         text = optString("text"),
+        replyToMessageId = optionalStringField("replyToMessageId"),
+        replyTo = replyToObj?.let { obj ->
+            val rid = obj.optString("id").takeIf { it.isNotBlank() } ?: return@let null
+            com.lastasylum.alliance.data.teams.TeamForumReplyPreviewDto(
+                id = rid,
+                senderUsername = obj.optString("senderUsername"),
+                text = obj.optString("text"),
+            )
+        },
         editedAt = optionalStringField("editedAt"),
         deletedAt = optionalStringField("deletedAt"),
         deletedByUserId = optionalStringField("deletedByUserId"),

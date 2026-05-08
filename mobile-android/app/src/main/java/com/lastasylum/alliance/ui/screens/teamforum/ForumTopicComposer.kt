@@ -72,6 +72,8 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
+import com.lastasylum.alliance.data.teams.TeamForumMessageDto
+import com.lastasylum.alliance.ui.chat.replyPreviewText
 import com.lastasylum.alliance.ui.screens.teamnews.teamNewsAuthedImageRequest
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 
@@ -83,6 +85,8 @@ import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 fun ForumTopicComposer(
     draft: String,
     onDraftChange: (String) -> Unit,
+    replyTo: TeamForumMessageDto?,
+    onClearReply: () -> Unit,
     pendingImageUri: Uri?,
     onClearPendingImage: () -> Unit,
     pendingImageRemotePreviewUrl: String?,
@@ -219,6 +223,50 @@ fun ForumTopicComposer(
                 ),
             verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
         ) {
+            replyTo?.let { msg ->
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f),
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(
+                            horizontal = SquadRelayDimens.itemGap,
+                            vertical = SquadRelayDimens.itemGap,
+                        ),
+                        horizontalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(
+                                    R.string.chat_replying_to,
+                                    msg.senderUsername.trim().ifBlank { "—" },
+                                ),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1,
+                            )
+                            Text(
+                                text = replyPreviewText(msg.replyTo?.text ?: msg.text),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                            )
+                        }
+                        IconButton(onClick = onClearReply) {
+                            Icon(
+                                imageVector = Icons.Outlined.Cancel,
+                                contentDescription = stringResource(R.string.chat_reply_cancel),
+                            )
+                        }
+                    }
+                }
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

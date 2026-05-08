@@ -42,6 +42,8 @@ export type TeamForumMessageRow = {
   senderUserId: string;
   senderUsername: string;
   text: string;
+  replyToMessageId: string | null;
+  replyTo: { id: string; senderUsername: string; text: string } | null;
   editedAt: string | null;
   deletedAt: string | null;
   deletedByUserId: string | null;
@@ -100,12 +102,42 @@ export class TeamForumService {
     }
   }
 
-  messageRow(doc: TeamForumMessageDocument): TeamForumMessageRow {
+  private asIdString(v: unknown): string | null {
+    if (v == null) return null;
+    if (typeof v === 'string') return v;
+    if (v instanceof Types.ObjectId) return v.toString();
+    if (typeof (v as { toString?: unknown }).toString === 'function') {
+      return (v as { toString(): string }).toString();
+    }
+    return null;
+  }
+
+  private replyPreview(doc: TeamForumMessageDocument): {
+    id: string;
+    senderUsername: string;
+    text: string;
+  } {
+    return {
+      id: doc._id.toString(),
+      senderUsername: doc.senderUsername,
+      text: doc.text,
+    };
+  }
+
+  messageRow(
+    doc: TeamForumMessageDocument,
+    replyTarget?: TeamForumMessageDocument | null,
+  ): TeamForumMessageRow {
     const teamIdStr = doc.teamId.toString();
     const hasImage =
       !doc.deletedAt &&
       doc.imageFileId != null &&
       Types.ObjectId.isValid(doc.imageFileId.toString());
+    const replyId = this.asIdString(doc.replyToMessageId);
+    const reply =
+      replyId && replyTarget && !replyTarget.deletedAt
+        ? this.replyPreview(replyTarget)
+        : null;
     return {
       id: doc._id.toString(),
       topicId: doc.topicId.toString(),
@@ -113,6 +145,8 @@ export class TeamForumService {
       senderUserId: doc.senderUserId,
       senderUsername: doc.senderUsername,
       text: doc.deletedAt ? '' : doc.text,
+      replyToMessageId: replyId,
+      replyTo: reply,
       editedAt: doc.editedAt ? doc.editedAt.toISOString() : null,
       deletedAt: doc.deletedAt ? doc.deletedAt.toISOString() : null,
       deletedByUserId: doc.deletedByUserId,
@@ -218,8 +252,35 @@ export class TeamForumService {
       .sort({ _id: -1 })
       .limit(limit)
       .lean();
-    return rows
-      .map((r) => this.messageRow(r as unknown as TeamForumMessageDocument))
+    const docs = rows as unknown as TeamForumMessageDocument[];
+    const replyIds = [
+      ...new Set(
+        docs
+          .map((d) => this.asIdString(d.replyToMessageId))
+          .filter((x): x is string => Boolean(x && Types.ObjectId.isValid(x))),
+      ),
+    ];
+    const replyDocs =
+      replyIds.length > 0
+        ? await this.messageModel
+            .find({
+              _id: { $in: replyIds.map((id) => new Types.ObjectId(id)) },
+              teamId: teamOid,
+              topicId: topOid,
+            })
+            .lean()
+        : [];
+    const replyMap = new Map(
+      (replyDocs as unknown as TeamForumMessageDocument[]).map((d) => [
+        d._id.toString(),
+        d,
+      ]),
+    );
+    return docs
+      .map((d) => {
+        const rid = this.asIdString(d.replyToMessageId);
+        return this.messageRow(d, rid ? replyMap.get(rid) : null);
+      })
       .reverse();
   }
 
@@ -228,6 +289,7 @@ export class TeamForumService {
     topicId: string,
     userId: string,
     text: string,
+    replyToMessageId?: string | null,
     imageFileId?: string | null,
   ): Promise<TeamForumMessageRow> {
     await this.teams.getTeamIfMemberOrThrow(teamId, userId);
@@ -241,12 +303,30 @@ export class TeamForumService {
       throw new NotFoundException('Topic not found');
     }
     const trimmed = text.trim();
+    const replyIdRaw =
+      typeof replyToMessageId === 'string' && replyToMessageId.trim()
+        ? replyToMessageId.trim()
+        : null;
     const imgRaw =
       typeof imageFileId === 'string' && imageFileId.trim()
         ? imageFileId.trim()
         : null;
     if (!trimmed && !imgRaw) {
       throw new BadRequestException('Message text or image is required');
+    }
+    let replyTarget: TeamForumMessageDocument | null = null;
+    if (replyIdRaw) {
+      if (!Types.ObjectId.isValid(replyIdRaw)) {
+        throw new BadRequestException('Invalid reply target');
+      }
+      replyTarget = await this.messageModel.findOne({
+        _id: new Types.ObjectId(replyIdRaw),
+        teamId: teamOid,
+        topicId: topOid,
+      });
+      if (!replyTarget || replyTarget.deletedAt) {
+        throw new BadRequestException('Reply target not found');
+      }
     }
     const senderDoc = await this.userModel.findById(userId).exec();
     if (!senderDoc) {
@@ -277,6 +357,7 @@ export class TeamForumService {
       senderUserId: userId,
       senderUsername: username,
       text: trimmed,
+      replyToMessageId: replyTarget?._id ?? null,
       imageFileId: imageMeta?.fileId ?? null,
       imageMimeType: imageMeta?.mimeType ?? null,
       imageSize: imageMeta?.size ?? null,
@@ -287,7 +368,7 @@ export class TeamForumService {
     topic.lastMessageAt = doc.createdAt ?? new Date();
     topic.messageCount = (topic.messageCount ?? 0) + 1;
     await topic.save();
-    return this.messageRow(doc);
+    return this.messageRow(doc, replyTarget);
   }
 
   private async assertMayEditMessage(
@@ -342,7 +423,7 @@ export class TeamForumService {
     msg.text = trimmed;
     msg.editedAt = new Date();
     await msg.save();
-    return this.messageRow(msg);
+    return this.messageRow(msg, null);
   }
 
   async deleteMessage(

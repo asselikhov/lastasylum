@@ -323,6 +323,7 @@ export class TeamsController {
       topicId,
       req.user.userId,
       dto.text ?? '',
+      dto.replyToMessageId?.trim() || null,
       dto.imageFileId?.trim() || null,
     );
     this.teamForumGateway.broadcastNewMessage(teamId, topicId, message);
