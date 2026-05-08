@@ -335,7 +335,7 @@ fun ForumTopicComposer(
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.AttachFile,
-                                contentDescription = stringResource(R.string.chat_attach_gif),
+                                contentDescription = stringResource(R.string.chat_attach_images_cd),
                                 tint = if (!isSending && !isUploadingImage) {
                                     MaterialTheme.colorScheme.onSurfaceVariant
                                 } else {

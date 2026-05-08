@@ -32,8 +32,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -180,7 +178,6 @@ import com.lastasylum.alliance.ui.theme.roleAccentColor
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -392,15 +389,6 @@ private fun buildChatTimeline(messages: List<ChatMessage>): List<ChatTimelineEnt
         i++
     }
     return out
-}
-
-private enum class MediaPickerTab { Stickers, Gif }
-
-private fun readClipboardPlainText(context: Context): String? {
-    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return null
-    val clip = cm.primaryClip ?: return null
-    if (clip.itemCount == 0) return null
-    return clip.getItemAt(0).coerceToText(context)?.toString()?.trim()?.takeIf { it.isNotEmpty() }
 }
 
 private val LocalOpenRemoteChatImagePreview =
@@ -1285,8 +1273,6 @@ private fun ChatComposer(
     onOpenAttachmentPreview: (Int) -> Unit = {},
 ) {
     var showMediaPanel by remember { mutableStateOf(false) }
-    var mediaTab by remember { mutableStateOf(MediaPickerTab.Stickers) }
-    var gifUrlDraft by remember { mutableStateOf("") }
     var showAttachmentsSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val activityResultOwner = LocalActivityResultRegistryOwner.current
@@ -1295,7 +1281,6 @@ private fun ChatComposer(
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
-    val gifScroll = rememberScrollState()
     val pickImagesLauncher = if (activityResultOwner != null) {
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 12),
@@ -1307,13 +1292,6 @@ private fun ChatComposer(
         )
     } else {
         null
-    }
-
-    LaunchedEffect(showMediaPanel) {
-        if (!showMediaPanel) {
-            mediaTab = MediaPickerTab.Stickers
-            gifUrlDraft = ""
-        }
     }
 
     if (canHandleBack) {
@@ -1647,7 +1625,6 @@ private fun ChatComposer(
                                     } else {
                                         focusManager.clearFocus()
                                         keyboard?.hide()
-                                        mediaTab = MediaPickerTab.Stickers
                                         showMediaPanel = true
                                     }
                                 },
@@ -1729,7 +1706,7 @@ private fun ChatComposer(
                             ) {
                                 Icon(
                                     imageVector = Icons.Outlined.AttachFile,
-                                    contentDescription = stringResource(R.string.chat_attach_gif),
+                                    contentDescription = stringResource(R.string.chat_attach_images_cd),
                                     tint = if (!readOnly && !isSending) {
                                         MaterialTheme.colorScheme.onSurfaceVariant
                                     } else {
@@ -1825,178 +1802,76 @@ private fun ChatComposer(
                         .fillMaxWidth()
                         .padding(bottom = 4.dp),
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        FilterChip(
-                            selected = mediaTab == MediaPickerTab.Stickers,
-                            onClick = { mediaTab = MediaPickerTab.Stickers },
-                            label = { Text(stringResource(R.string.chat_stickers_title)) },
-                        )
-                        FilterChip(
-                            selected = mediaTab == MediaPickerTab.Gif,
-                            onClick = { mediaTab = MediaPickerTab.Gif },
-                            label = { Text(stringResource(R.string.chat_attach_gif)) },
-                        )
-                    }
                     HorizontalDivider(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
                     )
-                    when (mediaTab) {
-                        MediaPickerTab.Stickers -> {
-                            Text(
-                                text = stringResource(R.string.chat_stickers_pack_zlobyaka),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                            )
-                            LazyVerticalGrid(
-                                columns = GridCells.Fixed(4),
+                    Text(
+                        text = stringResource(R.string.chat_stickers_pack_zlobyaka),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                    )
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(4),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 280.dp)
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        items(zlobStems, key = { it }) { stem ->
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 280.dp)
-                                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                                    .padding(4.dp)
+                                    .aspectRatio(1f)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable(
+                                        enabled = sendEnabled &&
+                                            !readOnly &&
+                                            canUseZlobyakaStickers,
+                                        onClick = {
+                                            onSendStickerPayload(ZlobyakaStickerPack.encode(stem))
+                                            showMediaPanel = false
+                                        },
+                                    ),
                             ) {
-                                items(zlobStems, key = { it }) { stem ->
-                                    Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                Box(Modifier.fillMaxSize()) {
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(context)
+                                            .data(ZlobyakaStickerPack.assetUriForStem(stem))
+                                            .size(192)
+                                            .crossfade(true)
+                                            .build(),
+                                        contentDescription = stringResource(R.string.cd_chat_sticker),
                                         modifier = Modifier
-                                            .padding(4.dp)
-                                            .aspectRatio(1f)
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .clickable(
-                                                enabled = sendEnabled &&
-                                                    !readOnly &&
-                                                    canUseZlobyakaStickers,
-                                                onClick = {
-                                                    onSendStickerPayload(ZlobyakaStickerPack.encode(stem))
-                                                    showMediaPanel = false
-                                                },
-                                            ),
-                                    ) {
-                                        Box(Modifier.fillMaxSize()) {
-                                            AsyncImage(
-                                                model = ImageRequest.Builder(context)
-                                                    .data(ZlobyakaStickerPack.assetUriForStem(stem))
-                                                    .size(192)
-                                                    .crossfade(true)
-                                                    .build(),
-                                                contentDescription = stringResource(R.string.cd_chat_sticker),
-                                                modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .padding(6.dp)
-                                                    .clip(RoundedCornerShape(8.dp)),
-                                                contentScale = ContentScale.Fit,
-                                                alpha = if (canUseZlobyakaStickers) 1f else 0.42f,
+                                            .fillMaxSize()
+                                            .padding(6.dp)
+                                            .clip(RoundedCornerShape(8.dp)),
+                                        contentScale = ContentScale.Fit,
+                                        alpha = if (canUseZlobyakaStickers) 1f else 0.42f,
+                                    )
+                                    if (!canUseZlobyakaStickers) {
+                                        Box(
+                                            Modifier
+                                                .fillMaxSize()
+                                                .background(
+                                                    MaterialTheme.colorScheme.scrim.copy(alpha = 0.42f),
+                                                ),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Lock,
+                                                contentDescription = stringResource(
+                                                    R.string.cd_chat_sticker_locked,
+                                                ),
+                                                tint = MaterialTheme.colorScheme.onSurface,
+                                                modifier = Modifier.size(26.dp),
                                             )
-                                            if (!canUseZlobyakaStickers) {
-                                                Box(
-                                                    Modifier
-                                                        .fillMaxSize()
-                                                        .background(
-                                                            MaterialTheme.colorScheme.scrim.copy(alpha = 0.42f),
-                                                        ),
-                                                    contentAlignment = Alignment.Center,
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Outlined.Lock,
-                                                        contentDescription = stringResource(
-                                                            R.string.cd_chat_sticker_locked,
-                                                        ),
-                                                        tint = MaterialTheme.colorScheme.onSurface,
-                                                        modifier = Modifier.size(26.dp),
-                                                    )
-                                                }
-                                            }
                                         }
                                     }
-                                }
-                            }
-                        }
-
-                        MediaPickerTab.Gif -> {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 280.dp)
-                                    .verticalScroll(gifScroll)
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.chat_gif_title),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                                OutlinedTextField(
-                                    value = gifUrlDraft,
-                                    onValueChange = { gifUrlDraft = it },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    label = { Text(stringResource(R.string.chat_gif_hint)) },
-                                    singleLine = false,
-                                    maxLines = 3,
-                                )
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    OutlinedButton(
-                                        onClick = {
-                                            readClipboardPlainText(context)?.let { gifUrlDraft = it }
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Outlined.ContentPaste,
-                                            contentDescription = null,
-                                            modifier = Modifier
-                                                .padding(end = 6.dp)
-                                                .size(18.dp),
-                                        )
-                                        Text(
-                                            text = stringResource(R.string.chat_gif_paste),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                    OutlinedButton(
-                                        onClick = {
-                                            context.startActivity(
-                                                Intent(Intent.ACTION_VIEW, Uri.parse("https://giphy.com")),
-                                            )
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                    ) {
-                                        Text(
-                                            text = stringResource(R.string.chat_gif_open_giphy),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                }
-                                TextButton(
-                                    onClick = {
-                                        val url = gifUrlDraft.trim()
-                                        if (url.isEmpty()) return@TextButton
-                                        val sep = when {
-                                            draft.isEmpty() -> ""
-                                            draft.endsWith(' ') || draft.endsWith('\n') -> ""
-                                            else -> " "
-                                        }
-                                        onDraftChange(draft + sep + url)
-                                        showMediaPanel = false
-                                    },
-                                    enabled = gifUrlDraft.trim().isNotEmpty(),
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) {
-                                    Text(stringResource(R.string.chat_gif_insert))
                                 }
                             }
                         }
