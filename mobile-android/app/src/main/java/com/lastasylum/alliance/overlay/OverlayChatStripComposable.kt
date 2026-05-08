@@ -15,12 +15,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -143,23 +143,37 @@ private fun OverlayChatStripMessage(
         telegramAvatarUrl(msg.senderTelegramUsername)
     }
     val role = remember(msg.senderRole) { msg.senderRole.trim() }
+    val border = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)
 
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = bubbleBg.copy(alpha = 0.94f),
+        color = bubbleBg, // non-transparent per requirement
+        border = BorderStroke(1.dp, border),
         tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
+        shadowElevation = 1.dp,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            ChatSenderAvatar(
-                telegramUrl = avatarUrl,
-                size = 30.dp,
-                fallbackName = msg.senderUsername,
-            )
+            Column(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                ChatSenderAvatar(
+                    telegramUrl = avatarUrl,
+                    size = 30.dp,
+                    fallbackName = msg.senderUsername,
+                )
+                if (time.isNotBlank()) {
+                    Text(
+                        text = time,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = timeMuted,
+                        maxLines = 1,
+                    )
+                }
+            }
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -174,25 +188,16 @@ private fun OverlayChatStripMessage(
                         modifier = Modifier.weight(1f),
                     )
                     if (role.isNotBlank()) {
-                        // Keep it compact: small badge next to the name.
+                        // Rank in top-right corner
                         RoleBadge(role = role)
-                    }
-                    if (time.isNotBlank()) {
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = time,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = timeMuted,
-                        )
                     }
                 }
 
                 if (hasSticker && stickerStem != null) {
                     val ctx = androidx.compose.ui.platform.LocalContext.current
-                    val stickerBg = lerp(bubbleBg, Color.Black, if (isMine) 0.14f else 0.18f)
                     Surface(
                         shape = RoundedCornerShape(14.dp),
-                        color = stickerBg.copy(alpha = 0.55f),
+                        color = lerp(bubbleBg, Color.Black, if (isMine) 0.08f else 0.12f),
                         tonalElevation = 0.dp,
                         shadowElevation = 0.dp,
                         modifier = Modifier
@@ -212,8 +217,7 @@ private fun OverlayChatStripMessage(
                                     .build(),
                                 contentDescription = "sticker",
                                 modifier = Modifier
-                                    .heightIn(max = 72.dp)
-                                    .aspectRatio(1f)
+                                    .size(76.dp)
                                     .clip(RoundedCornerShape(12.dp)),
                                 contentScale = ContentScale.Fit,
                             )

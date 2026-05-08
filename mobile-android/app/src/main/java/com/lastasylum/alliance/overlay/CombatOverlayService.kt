@@ -184,9 +184,6 @@ class CombatOverlayService : Service() {
     private var recordingStartRunnable: Runnable? = null
     /** True: только кнопка разворота; по нажатию — остальные кнопки панели. */
     private var panelCollapsed = false
-    /** После смены размера окна — подправить x/y так, чтобы центр кнопки сворачивания остался на экране. */
-    private var pendingCollapseAnchorOnScreen: IntArray? = null
-    private var pendingCollapseAnchorAttempts: Int = 0
     private var messageExpanded = false
     private var chatStripClipRoot: FrameLayout? = null
     private var chatStripLines: LinearLayout? = null
@@ -980,43 +977,6 @@ class CombatOverlayService : Service() {
         }
     }
 
-    private fun applyPendingCollapseAnchorCorrectionOnce(
-        windowRoot: View,
-        btnCollapse: View,
-    ) {
-        val target = pendingCollapseAnchorOnScreen ?: return
-        if (!windowRoot.isAttachedToWindow) return
-        val p = overlayMainWindowParams ?: return
-
-        val current = IntArray(2)
-        btnCollapse.getLocationOnScreen(current)
-        val curCx = current[0] + btnCollapse.width / 2
-        val curCy = current[1] + btnCollapse.height / 2
-        val dx = curCx - target[0]
-        val dy = curCy - target[1]
-        if (dx == 0 && dy == 0) {
-            pendingCollapseAnchorOnScreen = null
-            pendingCollapseAnchorAttempts = 0
-            return
-        }
-
-        val screenW = resources.displayMetrics.widthPixels
-        val screenH = resources.displayMetrics.heightPixels
-        val w = windowRoot.width.takeIf { it > 0 } ?: dp(120)
-        val h = windowRoot.height.takeIf { it > 0 } ?: dp(180)
-        // gravity = BOTTOM|START: x is from left; y is from bottom.
-        p.x = (p.x - dx).coerceIn(0, (screenW - w).coerceAtLeast(0))
-        p.y = (p.y + dy).coerceIn(0, (screenH - h).coerceAtLeast(0))
-        AppContainer.from(this@CombatOverlayService).userSettingsPreferences.setOverlayPanelPosPx(
-            x = p.x,
-            y = p.y,
-        )
-        overlayTicker.syncTickerPosition()
-        syncOverlayPanelEdgeLayout()
-        pendingCollapseAnchorOnScreen = null
-        pendingCollapseAnchorAttempts = 0
-    }
-
     private fun beginOverlayChatSubscription() {
         if (overlayMessageListener != null) return
         cancelStripTick()
@@ -1359,18 +1319,20 @@ class CombatOverlayService : Service() {
         }
 
         fun applyControlsVisibility() {
-            Log.d(OVERLAY_DIAG_TAG, "applyControls collapsed=$panelCollapsed pendingAnchor=${pendingCollapseAnchorOnScreen != null}")
-            // GONE (не INVISIBLE): иначе ряд с FAB остаётся в разметке по ширине и окно перехватывает карту справа от кнопок.
+            Log.d(OVERLAY_DIAG_TAG, "applyControls collapsed=$panelCollapsed")
+            // Use INVISIBLE (not GONE) to keep the window size stable, so the collapse/expand button
+            // does not shift on screen. Touches still pass through "empty" zones thanks to
+            // [OverlayPassthroughMultitouchFrameLayout] (it ignores non-visible descendants).
             if (panelCollapsed) {
                 overlayAllianceOnlinePopover.hide()
                 messageExpanded = false
-                messageRow.visibility = View.GONE
-                subRow.visibility = View.GONE
+                messageRow.visibility = View.INVISIBLE
+                subRow.visibility = View.INVISIBLE
             } else {
                 messageRow.visibility = View.VISIBLE
                 btnMic.visibility = View.VISIBLE
                 lockIcon.visibility = View.VISIBLE
-                subRow.visibility = if (messageExpanded) View.VISIBLE else View.GONE
+                subRow.visibility = if (messageExpanded) View.VISIBLE else View.INVISIBLE
             }
             btnCollapse.setImageResource(if (panelCollapsed) R.drawable.ic_overlay_ui_expand else R.drawable.ic_overlay_ui_collapse)
             btnCollapse.contentDescription = getString(
@@ -1384,7 +1346,6 @@ class CombatOverlayService : Service() {
                         windowRoot.width,
                     )
                 }
-                applyPendingCollapseAnchorCorrectionOnce(windowRoot, btnCollapse)
                 val p = overlayMainWindowParams ?: return@post
                 runCatching { manager.updateViewLayout(windowRoot, p) }
             }
@@ -1396,12 +1357,6 @@ class CombatOverlayService : Service() {
         applyControlsVisibility()
 
         btnCollapse.setOnClickListener {
-            pendingCollapseAnchorOnScreen = IntArray(2).also { out ->
-                val loc = IntArray(2)
-                btnCollapse.getLocationOnScreen(loc)
-                out[0] = loc[0] + btnCollapse.width / 2
-                out[1] = loc[1] + btnCollapse.height / 2
-            }
             panelCollapsed = !panelCollapsed
             applyControlsVisibility()
         }
