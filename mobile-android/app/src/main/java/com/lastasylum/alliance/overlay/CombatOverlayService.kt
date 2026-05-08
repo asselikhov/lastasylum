@@ -184,8 +184,6 @@ class CombatOverlayService : Service() {
     private var recordingStartRunnable: Runnable? = null
     /** True: только кнопка разворота; по нажатию — остальные кнопки панели. */
     private var panelCollapsed = false
-    /** Collapse/expand control center on screen (x,y) to keep the control visually fixed after relayout. */
-    private var pendingCollapseAnchorOnScreen: IntArray? = null
     private var messageExpanded = false
     private var chatStripClipRoot: FrameLayout? = null
     private var chatStripLines: LinearLayout? = null
@@ -979,59 +977,6 @@ class CombatOverlayService : Service() {
         }
     }
 
-    private fun scheduleCollapseButtonAnchorCorrection(
-        manager: WindowManager,
-        windowRoot: View,
-        btnCollapse: View,
-    ) {
-        pendingCollapseAnchorOnScreen ?: return
-        if (!windowRoot.isAttachedToWindow) return
-        val observer = windowRoot.viewTreeObserver
-        if (!observer.isAlive) return
-
-        val listener = object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
-            override fun onGlobalLayout() {
-                val obs = windowRoot.viewTreeObserver
-                if (obs.isAlive) {
-                    @Suppress("DEPRECATION")
-                    obs.removeOnGlobalLayoutListener(this)
-                }
-                val target = pendingCollapseAnchorOnScreen ?: return
-                pendingCollapseAnchorOnScreen = null
-                if (!windowRoot.isAttachedToWindow) return
-                val p = overlayMainWindowParams ?: return
-
-                val current = IntArray(2)
-                btnCollapse.getLocationOnScreen(current)
-                val curCx = current[0] + btnCollapse.width / 2
-                val curCy = current[1] + btnCollapse.height / 2
-                val dx = curCx - target[0]
-                val dy = curCy - target[1]
-                if (dx == 0 && dy == 0) {
-                    Log.d(OVERLAY_DIAG_TAG, "collapseAnchor ok dx=0 dy=0")
-                    return
-                }
-                Log.d(OVERLAY_DIAG_TAG, "collapseAnchor adjust dx=$dx dy=$dy")
-
-                val screenW = resources.displayMetrics.widthPixels
-                val screenH = resources.displayMetrics.heightPixels
-                val w = windowRoot.width.takeIf { it > 0 } ?: dp(120)
-                val h = windowRoot.height.takeIf { it > 0 } ?: dp(180)
-                // gravity = BOTTOM|START: x is from left; y is from bottom.
-                p.x = (p.x - dx).coerceIn(0, (screenW - w).coerceAtLeast(0))
-                p.y = (p.y + dy).coerceIn(0, (screenH - h).coerceAtLeast(0))
-                runCatching { manager.updateViewLayout(windowRoot, p) }
-                AppContainer.from(this@CombatOverlayService).userSettingsPreferences.setOverlayPanelPosPx(
-                    x = p.x,
-                    y = p.y,
-                )
-                overlayTicker.syncTickerPosition()
-                syncOverlayPanelEdgeLayout()
-            }
-        }
-        observer.addOnGlobalLayoutListener(listener)
-    }
-
     private fun beginOverlayChatSubscription() {
         if (overlayMessageListener != null) return
         cancelStripTick()
@@ -1374,7 +1319,7 @@ class CombatOverlayService : Service() {
         }
 
         fun applyControlsVisibility() {
-            Log.d(OVERLAY_DIAG_TAG, "applyControls collapsed=$panelCollapsed pendingAnchor=${pendingCollapseAnchorOnScreen != null}")
+            Log.d(OVERLAY_DIAG_TAG, "applyControls collapsed=$panelCollapsed")
             // GONE (не INVISIBLE): иначе ряд с FAB остаётся в разметке по ширине и окно перехватывает карту справа от кнопок.
             if (panelCollapsed) {
                 overlayAllianceOnlinePopover.hide()
@@ -1404,8 +1349,6 @@ class CombatOverlayService : Service() {
                         )
                     }
                     syncOverlayPanelEdgeLayout()
-                    // Anchor the collapse/expand button after the final global layout pass.
-                    scheduleCollapseButtonAnchorCorrection(manager, windowRoot, btnCollapse)
                 }
             }
         }
@@ -1416,13 +1359,9 @@ class CombatOverlayService : Service() {
         applyControlsVisibility()
 
         btnCollapse.setOnClickListener {
-            // Keep the toggle button anchored on screen when window content expands/collapses (center-based).
-            pendingCollapseAnchorOnScreen = IntArray(2).also { out ->
-                val loc = IntArray(2)
-                btnCollapse.getLocationOnScreen(loc)
-                out[0] = loc[0] + btnCollapse.width / 2
-                out[1] = loc[1] + btnCollapse.height / 2
-            }
+            // Do not adjust WindowManager x/y here. Main panel uses BOTTOM|START; saved (x,y) pin the
+            // window's bottom edge — expand/collapse only changes WRAP_CONTENT height (growth upward).
+            // Previous "collapse button center" anchoring moved the whole panel and overwrote prefs.
             panelCollapsed = !panelCollapsed
             applyControlsVisibility()
         }
