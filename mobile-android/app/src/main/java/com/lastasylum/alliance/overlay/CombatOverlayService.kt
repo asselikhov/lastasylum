@@ -44,6 +44,7 @@ import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
@@ -1780,7 +1781,7 @@ class CombatOverlayService : Service() {
                 ) {
                     SquadRelayTheme {
                         Surface(
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier.fillMaxSize().imePadding(),
                             color = MaterialTheme.colorScheme.surface,
                         ) {
                             Box(Modifier.fillMaxSize()) {
@@ -1847,8 +1848,9 @@ class CombatOverlayService : Service() {
             gravity = Gravity.TOP or Gravity.START
             x = 0
             y = 0
-            // Let Compose handle IME insets (ChatScreen uses imePadding); avoids double-adjust jank.
-            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+            // Ensure the overlay window is resized for IME, and Compose applies padding so input stays above keyboard.
+            softInputMode =
+                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN
         }
 
         val overlayUiContext = OverlayTickerUi.themedFabContext(this)
