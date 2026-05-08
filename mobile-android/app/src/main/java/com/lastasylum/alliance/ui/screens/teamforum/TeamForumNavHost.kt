@@ -488,7 +488,7 @@ private fun TeamForumListRoute(
 private fun TeamForumTopicChatRoute(
     teamId: String,
     topicId: String,
-    topicTitle: String,
+    @Suppress("UNUSED_PARAMETER") topicTitle: String,
     currentUserId: String,
     canModerateMessages: Boolean,
     teamsRepository: TeamsRepository,
@@ -958,7 +958,7 @@ private fun ForumSelectionToolbar(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ForumMessageActionsSheet(
-    message: TeamForumMessageDto,
+    @Suppress("UNUSED_PARAMETER") message: TeamForumMessageDto,
     canEdit: Boolean,
     canDelete: Boolean,
     onDismiss: () -> Unit,
