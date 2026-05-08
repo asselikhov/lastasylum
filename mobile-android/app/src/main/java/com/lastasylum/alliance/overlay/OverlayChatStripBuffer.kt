@@ -94,7 +94,8 @@ class OverlayChatStripBuffer(
     }
 
     companion object {
-        const val DEFAULT_MESSAGE_TTL_SECONDS = 10L
+        /** Keep overlay strip messages for 5 minutes by default. */
+        const val DEFAULT_MESSAGE_TTL_SECONDS = 300L
         const val DEFAULT_BUFFER_CAP = 80
         const val DEFAULT_MAX_PREVIEW = 5
     }
