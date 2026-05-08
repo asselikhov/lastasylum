@@ -537,6 +537,10 @@ class CombatOverlayService : Service() {
                     // dialogs set [OverlayChatInteractionHold] while open (Compose Dialog window timing).
                     if (overlayHistoryVisible || OverlayChatInteractionHold.suppressGameForegroundGate) {
                         true
+                    } else if (targets.isEmpty()) {
+                        // If the user enabled "only in game" but did not configure target packages yet,
+                        // keep the overlay visible instead of hiding it everywhere.
+                        true
                     } else {
                         GameForegroundGate.shouldShowOverlay(
                             context = this@CombatOverlayService,
