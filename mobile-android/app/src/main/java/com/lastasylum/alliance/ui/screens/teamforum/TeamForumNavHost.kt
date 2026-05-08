@@ -657,20 +657,6 @@ private fun TeamForumTopicChatRoute(
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    item(key = "topic_hdr") {
-                        Text(
-                            text = topicTitle.ifBlank { stringResource(R.string.team_forum_topic_fallback) },
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(bottom = 4.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
-                        )
-                    }
                     itemsIndexed(
                         sortedMessages,
                         key = { _, m -> m.id },

@@ -65,7 +65,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 
-private fun isValidThreeLetterTeamTag(raw: String): Boolean {
+private fun isValidTeamTag3to4Letters(raw: String): Boolean {
     val t = raw.trim()
     var i = 0
     var count = 0
@@ -73,10 +73,10 @@ private fun isValidThreeLetterTeamTag(raw: String): Boolean {
         val cp = t.codePointAt(i)
         if (!Character.isLetter(cp)) return false
         count++
-        if (count > 3) return false
+        if (count > 4) return false
         i += Character.charCount(cp)
     }
-    return count == 3
+    return count in 3..4
 }
 
 private enum class TeamMainSection {
@@ -198,16 +198,21 @@ fun TeamScreen(
                 ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(R.string.team_screen_title),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
+            // Header: show team tag + name; no redundant "Команда" title.
+            profile?.let { p ->
+                val tag = p.playerTeamTag?.trim()?.takeIf { it.isNotEmpty() }
+                val name = p.playerTeamDisplayName?.trim()?.takeIf { it.isNotEmpty() }
+                    ?: p.teamDisplayName?.trim()?.takeIf { it.isNotEmpty() }
+                if (tag != null && name != null) {
+                    Text(
+                        text = "[${tag.uppercase()}] $name",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
 
             if (loading && profile == null) {
@@ -533,7 +538,7 @@ fun TeamScreen(
                     OutlinedTextField(
                         value = createTag,
                         onValueChange = { v ->
-                            createTag = v.filter { it.isLetter() }.take(3)
+                            createTag = v.filter { it.isLetter() }.take(4)
                             createError = null
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -548,11 +553,11 @@ fun TeamScreen(
             },
             confirmButton = {
                 Button(
-                    enabled = !createBusy && createName.trim().length >= 2 && isValidThreeLetterTeamTag(createTag),
+                    enabled = !createBusy && createName.trim().length >= 2 && isValidTeamTag3to4Letters(createTag),
                     onClick = {
                         val n = createName.trim()
                         val tg = createTag.trim()
-                        if (n.length < 2 || !isValidThreeLetterTeamTag(tg)) return@Button
+                        if (n.length < 2 || !isValidTeamTag3to4Letters(tg)) return@Button
                         scope.launch {
                             createBusy = true
                             createError = null
@@ -808,7 +813,7 @@ fun TeamScreen(
                     OutlinedTextField(
                         value = editTeamTagDraft,
                         onValueChange = { v ->
-                            editTeamTagDraft = v.filter { it.isLetter() }.take(3)
+                            editTeamTagDraft = v.filter { it.isLetter() }.take(4)
                         },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
@@ -821,11 +826,11 @@ fun TeamScreen(
                 Button(
                     enabled = !editNameBusy &&
                         editTeamNameDraft.trim().length >= 2 &&
-                        isValidThreeLetterTeamTag(editTeamTagDraft),
+                        isValidTeamTag3to4Letters(editTeamTagDraft),
                     onClick = {
                         val n = editTeamNameDraft.trim()
                         val tg = editTeamTagDraft.trim()
-                        if (n.length < 2 || !isValidThreeLetterTeamTag(tg)) return@Button
+                        if (n.length < 2 || !isValidTeamTag3to4Letters(tg)) return@Button
                         scope.launch {
                             editNameBusy = true
                             teamsRepository.updateTeamBranding(teamIdForDialogs, n, tg)

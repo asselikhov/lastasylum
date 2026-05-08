@@ -73,8 +73,8 @@ export class TeamsService {
 
   private normalizeTag(raw: string): string {
     const chars = [...raw.trim()];
-    if (chars.length !== 3) {
-      throw new BadRequestException('Team tag must be exactly 3 letters');
+    if (chars.length < 3 || chars.length > 4) {
+      throw new BadRequestException('Team tag must be 3-4 letters');
     }
     for (const c of chars) {
       if (!/\p{L}/u.test(c)) {

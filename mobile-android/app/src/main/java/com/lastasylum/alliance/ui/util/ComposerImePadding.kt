@@ -2,7 +2,6 @@ package com.lastasylum.alliance.ui.util
 
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -17,9 +16,11 @@ import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 fun Modifier.composerImeAboveBottomNav(): Modifier {
     val density = LocalDensity.current
     val imeBottom = WindowInsets.ime.getBottom(density)
-    val navBottom = WindowInsets.navigationBars.getBottom(density)
     val tabPx = with(density) { SquadRelayDimens.bottomNavigationBarHeight.roundToPx() }
-    val padPx = (imeBottom - tabPx - navBottom).coerceAtLeast(0)
+    // Scaffold already applies bottomBar height as content padding. We only need to lift by the IME
+    // height above that bar. Do not subtract navigation bars: the app hides legacy navigation and
+    // gesture insets can otherwise under-pad and let the IME overlap the composer on some devices.
+    val padPx = (imeBottom - tabPx).coerceAtLeast(0)
     val padDp = with(density) { padPx.toDp() }
     return this.padding(bottom = padDp + SquadRelayDimens.keyboardComposerGap)
 }

@@ -8,6 +8,6 @@ export class UpdatePlayerTeamDisplayNameDto {
 
   @IsString()
   @MinLength(3)
-  @MaxLength(3)
+  @MaxLength(4)
   tag!: string;
 }

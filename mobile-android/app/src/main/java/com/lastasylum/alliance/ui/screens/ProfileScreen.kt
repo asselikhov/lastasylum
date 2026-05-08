@@ -69,6 +69,7 @@ private fun playerTeamShortLabel(p: MyProfileDto): String? {
     val tag = p.playerTeamTag?.trim()?.takeIf { it.isNotEmpty() }
     if (tag != null) return "[$tag]"
     val n = p.playerTeamDisplayName?.trim().orEmpty()
+    if (n.length >= 4) return "[${n.take(4).uppercase()}]"
     if (n.length >= 3) return "[${n.take(3).uppercase()}]"
     if (n.isNotEmpty()) return "[$n]"
     return null

@@ -43,7 +43,7 @@ import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.launch
 
-private fun isValidThreeLetterTeamTag(raw: String): Boolean {
+private fun isValidTeamTag3to4Letters(raw: String): Boolean {
     val t = raw.trim()
     var i = 0
     var count = 0
@@ -51,10 +51,10 @@ private fun isValidThreeLetterTeamTag(raw: String): Boolean {
         val cp = t.codePointAt(i)
         if (!Character.isLetter(cp)) return false
         count++
-        if (count > 3) return false
+        if (count > 4) return false
         i += Character.charCount(cp)
     }
-    return count == 3
+    return count in 3..4
 }
 
 @Composable
@@ -281,7 +281,7 @@ fun TeamDetailScreen(
                     OutlinedTextField(
                         value = editTeamTagDraft,
                         onValueChange = { v ->
-                            editTeamTagDraft = v.filter { it.isLetter() }.take(3)
+                            editTeamTagDraft = v.filter { it.isLetter() }.take(4)
                         },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
@@ -294,11 +294,11 @@ fun TeamDetailScreen(
                 Button(
                     enabled = !editNameBusy &&
                         editTeamNameDraft.trim().length >= 2 &&
-                        isValidThreeLetterTeamTag(editTeamTagDraft),
+                        isValidTeamTag3to4Letters(editTeamTagDraft),
                     onClick = {
                         val n = editTeamNameDraft.trim()
                         val tg = editTeamTagDraft.trim()
-                        if (n.length < 2 || !isValidThreeLetterTeamTag(tg)) return@Button
+                        if (n.length < 2 || !isValidTeamTag3to4Letters(tg)) return@Button
                         scope.launch {
                             editNameBusy = true
                             teamsRepository.updateTeamBranding(teamId, n, tg)

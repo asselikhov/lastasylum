@@ -4,6 +4,9 @@ import { Types } from 'mongoose';
 import { UsersService } from './users.service';
 import { User } from './schemas/user.schema';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
+import { AllianceRegistryService } from './alliance-registry.service';
+import { TeamsService } from './teams.service';
+import { StickerAccessService } from './sticker-access.service';
 
 describe('UsersService', () => {
   const updateOneExec = jest.fn().mockResolvedValue({ modifiedCount: 1 });
@@ -24,6 +27,9 @@ describe('UsersService', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         UsersService,
+        { provide: AllianceRegistryService, useValue: {} },
+        { provide: TeamsService, useValue: {} },
+        { provide: StickerAccessService, useValue: {} },
         {
           provide: getModelToken(User.name),
           useValue: {
