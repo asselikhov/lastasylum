@@ -980,17 +980,7 @@ class CombatOverlayService : Service() {
         }
     }
 
-    private fun scheduleCollapseButtonAnchorCorrection(
-        manager: WindowManager,
-        windowRoot: View,
-        btnCollapse: View,
-    ) {
-        // No-op: replaced by a single-pass correction in applyControlsVisibility to avoid visible "jump"
-        // from multiple updateViewLayout/layout passes on some OEM ROMs.
-    }
-
     private fun applyPendingCollapseAnchorCorrectionOnce(
-        manager: WindowManager,
         windowRoot: View,
         btnCollapse: View,
     ) {
@@ -1394,7 +1384,7 @@ class CombatOverlayService : Service() {
                         windowRoot.width,
                     )
                 }
-                applyPendingCollapseAnchorCorrectionOnce(manager, windowRoot, btnCollapse)
+                applyPendingCollapseAnchorCorrectionOnce(windowRoot, btnCollapse)
                 val p = overlayMainWindowParams ?: return@post
                 runCatching { manager.updateViewLayout(windowRoot, p) }
             }

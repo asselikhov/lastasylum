@@ -1349,8 +1349,6 @@ private fun ForumMessageBubble(
                                         urls = urls,
                                         onOpen = { idx -> onOpenImages(urls, idx) },
                                         modifier = Modifier.fillMaxWidth(),
-                                        bottomRound = !hasCaption,
-                                        onOpenExternal = { idx -> onOpenImages(urls, idx) },
                                     )
                                 }
                                 if (hasCaption) {
@@ -1410,9 +1408,7 @@ private fun ForumMessageBubble(
 @Composable
 private fun ForumAuthedAttachmentsGrid(
     urls: List<String>,
-    onOpenExternal: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    bottomRound: Boolean = true,
     onOpen: (Int) -> Unit,
 ) {
     // Reuse Telegram-like layout but feed it authed ImageRequests by wrapping the URLs into the same grid.
