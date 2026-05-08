@@ -20,12 +20,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -151,14 +153,9 @@ fun ForumTopicComposer(
             ) {
                 when {
                     pendingImageUris.isNotEmpty() -> {
-                        AsyncImage(
-                            model = ImageRequest.Builder(context)
-                                .data(pendingImageUris.first())
-                                .crossfade(true)
-                                .build(),
-                            contentDescription = null,
+                        ForumLocalAttachmentsPreview(
+                            uris = pendingImageUris,
                             modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
                         )
                     }
                     else -> {
@@ -502,6 +499,75 @@ fun ForumTopicComposer(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ForumLocalAttachmentsPreview(
+    uris: List<Uri>,
+    modifier: Modifier = Modifier,
+) {
+    if (uris.isEmpty()) return
+    val maxShown = 6
+    val shown = uris.take(maxShown)
+    val extra = (uris.size - shown.size).coerceAtLeast(0)
+    val gap = 4.dp
+    val corner = 12.dp
+
+    @Composable
+    fun tile(idx: Int, modifier: Modifier) {
+        val uri = shown.getOrNull(idx) ?: return
+        Box(
+            modifier = modifier
+                .clip(RoundedCornerShape(corner)),
+            contentAlignment = Alignment.Center,
+        ) {
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(uri)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+            if (idx == shown.lastIndex && extra > 0) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.45f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "+$extra",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = Color.White,
+                    )
+                }
+            }
+        }
+    }
+
+    when (shown.size) {
+        1 -> tile(0, modifier)
+        2 -> {
+            Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(gap)) {
+                tile(0, Modifier.weight(1f).fillMaxSize())
+                tile(1, Modifier.weight(1f).fillMaxSize())
+            }
+        }
+        else -> {
+            Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(gap)) {
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                    tile(0, Modifier.weight(1f).fillMaxSize())
+                    tile(1, Modifier.weight(1f).fillMaxSize())
+                }
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                    tile(2, Modifier.weight(1f).fillMaxSize())
+                    tile(3.coerceAtMost(shown.lastIndex), Modifier.weight(1f).fillMaxSize())
                 }
             }
         }

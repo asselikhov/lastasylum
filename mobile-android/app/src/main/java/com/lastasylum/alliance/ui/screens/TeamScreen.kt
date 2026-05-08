@@ -302,44 +302,36 @@ fun TeamScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Column(Modifier.weight(1f)) {
-                                        Text(
-                                            text = team.displayName,
-                                            style = MaterialTheme.typography.titleLarge,
-                                            fontWeight = FontWeight.SemiBold,
-                                            maxLines = 2,
-                                            overflow = TextOverflow.Ellipsis,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                        )
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                                         ) {
-                                            Surface(
-                                                shape = MaterialTheme.shapes.small,
-                                                color = MaterialTheme.colorScheme.secondaryContainer.copy(
-                                                    alpha = 0.55f,
-                                                ),
-                                            ) {
-                                                Text(
-                                                    text = team.tag.uppercase(),
-                                                    style = MaterialTheme.typography.labelMedium,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                                    modifier = Modifier.padding(
-                                                        horizontal = 8.dp,
-                                                        vertical = 2.dp,
-                                                    ),
-                                                )
-                                            }
                                             Text(
-                                                text = stringResource(
-                                                    R.string.team_roster_count,
-                                                    team.members.size,
-                                                ),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                text = "[${team.tag.uppercase()}]",
+                                                style = MaterialTheme.typography.titleLarge,
+                                                fontWeight = FontWeight.SemiBold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                color = MaterialTheme.colorScheme.primary,
+                                            )
+                                            Text(
+                                                text = team.displayName,
+                                                style = MaterialTheme.typography.titleLarge,
+                                                fontWeight = FontWeight.SemiBold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                modifier = Modifier.weight(1f, fill = false),
                                             )
                                         }
+                                        Text(
+                                            text = stringResource(
+                                                R.string.team_roster_count,
+                                                team.members.size,
+                                            ),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
                                     }
                                     if (isLeader) {
                                         IconButton(
@@ -442,7 +434,7 @@ fun TeamScreen(
                                                 .fillMaxWidth()
                                                 .padding(
                                                     horizontal = SquadRelayDimens.itemGap,
-                                                    vertical = SquadRelayDimens.itemGap,
+                                                    vertical = 6.dp,
                                                 ),
                                         )
                                     }

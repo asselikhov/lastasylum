@@ -19,11 +19,17 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.outlined.ModeEditOutline
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -60,6 +66,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -293,7 +300,7 @@ private fun TeamNewsListRoute(
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 88.dp),
-                        verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.blockGap),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         items(
                             count = newsItems.size,
@@ -325,75 +332,186 @@ private fun TeamNewsCard(
     onEdit: () -> Unit,
     showEdit: Boolean,
 ) {
+    val shape = RoundedCornerShape(18.dp)
+    val hasHero = !item.firstImageRelativeUrl.isNullOrBlank()
+    val baseBg = MaterialTheme.colorScheme.surfaceContainerLow
+    val ring = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
     ElevatedCard(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        shape = CardDefaults.elevatedShape,
+        shape = shape,
         colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            containerColor = baseBg,
+        ),
+        elevation = CardDefaults.elevatedCardElevation(
+            defaultElevation = 1.dp,
+            pressedElevation = 2.dp,
+            focusedElevation = 1.dp,
+            hoveredElevation = 1.dp,
         ),
     ) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            item.firstImageRelativeUrl?.let { raw ->
-                teamNewsAuthedImageRequest(LocalContext.current, raw)?.let { req ->
-                    AsyncImage(
-                        model = req,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(140.dp)
-                            .clip(RoundedCornerShape(10.dp)),
-                        contentScale = ContentScale.Crop,
-                    )
-                }
-            }
-            Text(
-                text = item.title,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = item.excerpt,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column {
-                    Text(
-                        text = item.authorUsername,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Text(
-                        text = formatNewsDateRu(item.createdAt),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (item.hasPoll) {
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            ),
-                        ) {
-                            Text(
-                                stringResource(R.string.team_news_poll_badge),
-                                Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                style = MaterialTheme.typography.labelSmall,
+        Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+            if (hasHero) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(168.dp)
+                        .clip(shape),
+                ) {
+                    item.firstImageRelativeUrl?.let { raw ->
+                        teamNewsAuthedImageRequest(LocalContext.current, raw)?.let { req ->
+                            AsyncImage(
+                                model = req,
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
                             )
                         }
                     }
-                    if (showEdit) {
-                        TextButton(onClick = onEdit) {
-                            Text(stringResource(R.string.team_news_edit))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        Color.Black.copy(alpha = 0.62f),
+                                    ),
+                                    startY = 40f,
+                                ),
+                            ),
+                    )
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            AssistChip(
+                                onClick = {},
+                                enabled = false,
+                                label = {
+                                    Text(
+                                        text = formatNewsDateRu(item.createdAt),
+                                        maxLines = 1,
+                                    )
+                                },
+                                colors = AssistChipDefaults.assistChipColors(
+                                    containerColor = Color.Black.copy(alpha = 0.42f),
+                                    labelColor = Color.White.copy(alpha = 0.92f),
+                                    disabledContainerColor = Color.Black.copy(alpha = 0.42f),
+                                    disabledLabelColor = Color.White.copy(alpha = 0.92f),
+                                ),
+                                border = AssistChipDefaults.assistChipBorder(
+                                    enabled = false,
+                                    borderColor = Color.White.copy(alpha = 0.14f),
+                                ),
+                            )
+                            if (item.hasPoll) {
+                                AssistChip(
+                                    onClick = {},
+                                    enabled = false,
+                                    label = { Text(stringResource(R.string.team_news_poll_badge), maxLines = 1) },
+                                    colors = AssistChipDefaults.assistChipColors(
+                                        containerColor = Color.Black.copy(alpha = 0.42f),
+                                        labelColor = Color.White.copy(alpha = 0.92f),
+                                        disabledContainerColor = Color.Black.copy(alpha = 0.42f),
+                                        disabledLabelColor = Color.White.copy(alpha = 0.92f),
+                                    ),
+                                    border = AssistChipDefaults.assistChipBorder(
+                                        enabled = false,
+                                        borderColor = Color.White.copy(alpha = 0.14f),
+                                    ),
+                                )
+                            }
+                        }
+                        Text(
+                            text = item.title,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            Surface(
+                color = if (hasHero) {
+                    lerp(baseBg, MaterialTheme.colorScheme.surface, 0.14f)
+                } else {
+                    baseBg
+                },
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    if (!hasHero) {
+                        Text(
+                            text = item.title,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Text(
+                        text = item.excerpt,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = if (hasHero) 2 else 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, ring),
+                            ) {
+                                Text(
+                                    text = item.authorUsername,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                )
+                            }
+                            if (!hasHero) {
+                                Text(
+                                    text = formatNewsDateRu(item.createdAt),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                        if (showEdit) {
+                            IconButton(onClick = onEdit) {
+                                Icon(
+                                    imageVector = Icons.Outlined.ModeEditOutline,
+                                    contentDescription = stringResource(R.string.team_news_edit),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                 }
@@ -481,29 +599,90 @@ private fun TeamNewsDetailRoute(
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState()),
                 ) {
+                    val pagePad = 12.dp
                     val hero: String? = d.imageRelativeUrls.firstOrNull() ?: d.firstImageRelativeUrl
                     hero?.let { rawPath: String ->
                         teamNewsAuthedImageRequest(context, rawPath)?.let { imgReq: ImageRequest ->
-                            AsyncImage(
-                                model = imgReq,
-                                contentDescription = null,
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(220.dp),
-                                contentScale = ContentScale.Crop,
-                            )
-                            Spacer(Modifier.height(12.dp))
+                                    .height(240.dp)
+                                    .padding(horizontal = pagePad, vertical = pagePad)
+                                    .clip(RoundedCornerShape(20.dp)),
+                            ) {
+                                AsyncImage(
+                                    model = imgReq,
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(
+                                            Brush.verticalGradient(
+                                                colors = listOf(
+                                                    Color.Transparent,
+                                                    Color.Black.copy(alpha = 0.58f),
+                                                ),
+                                            ),
+                                        ),
+                                )
+                                Column(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomStart)
+                                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    Text(
+                                        text = d.title,
+                                        style = MaterialTheme.typography.headlineSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color.White,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        text = "${d.authorUsername} · ${formatNewsDateRu(d.createdAt)}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = Color.White.copy(alpha = 0.86f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
                         }
                     }
-                    Text(d.title, style = MaterialTheme.typography.headlineSmall)
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "${d.authorUsername} · ${formatNewsDateRu(d.createdAt)}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Text(d.body, style = MaterialTheme.typography.bodyLarge)
+
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = pagePad)
+                            .padding(bottom = 14.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        tonalElevation = 0.dp,
+                        shadowElevation = 0.dp,
+                    ) {
+                        Column(
+                            Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            if (hero == null) {
+                                Text(
+                                    d.title,
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    "${d.authorUsername} · ${formatNewsDateRu(d.createdAt)}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Text(d.body, style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
                     val galleryPaths = remember(d.imageRelativeUrls, d.firstImageRelativeUrl) {
                         val base = if (d.imageRelativeUrls.isNotEmpty()) {
                             d.imageRelativeUrls
@@ -513,16 +692,18 @@ private fun TeamNewsDetailRoute(
                         if (base.size <= 1) emptyList() else base.drop(1)
                     }
                     if (galleryPaths.isNotEmpty()) {
-                        Spacer(Modifier.height(16.dp))
+                        Spacer(Modifier.height(6.dp))
                         Text(
                             stringResource(R.string.team_news_gallery_label),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(horizontal = pagePad),
                         )
                         Spacer(Modifier.height(8.dp))
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            contentPadding = PaddingValues(vertical = 2.dp),
+                            contentPadding = PaddingValues(horizontal = pagePad, vertical = 2.dp),
                         ) {
                             items(galleryPaths, key = { it }) { rawPath ->
                                 teamNewsAuthedImageRequest(context, rawPath)?.let { imgReq ->

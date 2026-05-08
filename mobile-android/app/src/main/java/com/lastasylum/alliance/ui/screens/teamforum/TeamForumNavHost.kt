@@ -122,6 +122,10 @@ import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMuted
 import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMutedIncoming
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.util.composerImeAboveBottomNav
+import java.io.InputStream
+import java.util.Locale
+import android.content.ContentResolver
+import android.os.ParcelFileDescriptor
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -583,9 +587,12 @@ private fun TeamForumTopicChatRoute(
             val fileIds = mutableListOf<String>()
             var lastPreview: String? = null
             for (uri in uris) {
-                val mime = cr.getType(uri) ?: "image/jpeg"
-                val bytes = cr.openInputStream(uri)?.use { it.readBytes() } ?: continue
-                val name = "forum_${System.currentTimeMillis()}.jpg"
+                val bytes = openUriInputStream(cr, uri)?.use { it.readBytes() }
+                if (bytes == null || bytes.isEmpty()) continue
+                val declared = cr.getType(uri)?.trim().orEmpty()
+                val sniffed = sniffImageMimeFromHeader(bytes)
+                val mime = resolveUploadImageMime(declared, sniffed) ?: continue
+                val name = "forum_${System.currentTimeMillis()}.${guessExt(mime)}"
                 teamsRepository.uploadForumImage(teamId, bytes, name, mime)
                     .onSuccess { u ->
                         fileIds.add(u.fileId)
@@ -679,8 +686,6 @@ private fun TeamForumTopicChatRoute(
                 onClear = { if (!deletingSelection) selectedMessageIds = emptySet() },
                 onDelete = { if (!deletingSelection) confirmBulkDelete = true },
             )
-        } else {
-            HorizontalDivider()
         }
         Box(Modifier.weight(1f)) {
             if (loading && messages.isEmpty()) {
@@ -813,8 +818,9 @@ private fun TeamForumTopicChatRoute(
                 }
             },
             onImageUrisPicked = { uris ->
-                pendingImageUris = uris
-                uploadPickedImages(uris)
+                val merged = (pendingImageUris + uris).distinct().take(12)
+                pendingImageUris = merged
+                uploadPickedImages(merged)
             },
             onTyping = { forumSocket.emitTyping() },
         )
@@ -951,6 +957,90 @@ private fun TeamForumTopicChatRoute(
             },
         )
     }
+}
+
+private fun openUriInputStream(cr: ContentResolver, uri: Uri): InputStream? {
+    runCatching { cr.openInputStream(uri) }.getOrNull()?.let { return it }
+    val pfd = runCatching { cr.openFileDescriptor(uri, "r") }.getOrNull()
+    if (pfd != null) {
+        runCatching { return ParcelFileDescriptor.AutoCloseInputStream(pfd) }
+        runCatching { pfd.close() }
+    }
+    val afd = runCatching { cr.openAssetFileDescriptor(uri, "r") }.getOrNull()
+    if (afd != null) {
+        runCatching { return afd.createInputStream() }
+        runCatching { afd.close() }
+    }
+    return null
+}
+
+private fun ByteArray.hasPrefix(prefix: ByteArray): Boolean {
+    if (size < prefix.size) return false
+    for (i in prefix.indices) {
+        if (this[i] != prefix[i]) return false
+    }
+    return true
+}
+
+private fun sniffImageMimeFromHeader(bytes: ByteArray): String? {
+    if (bytes.size < 12) return null
+    val jpeg = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte())
+    if (bytes.hasPrefix(jpeg)) return "image/jpeg"
+    val png = byteArrayOf(
+        0x89.toByte(),
+        0x50,
+        0x4E,
+        0x47,
+        0x0D,
+        0x0A,
+        0x1A,
+        0x0A,
+    )
+    if (bytes.hasPrefix(png)) return "image/png"
+    if (bytes.size >= 6) {
+        val gif = String(bytes, 0, 6, Charsets.US_ASCII)
+        if (gif == "GIF87a" || gif == "GIF89a") return "image/gif"
+    }
+    val riff = String(bytes, 0, 4, Charsets.US_ASCII)
+    val webp = String(bytes, 8, 4, Charsets.US_ASCII)
+    if (riff == "RIFF" && webp == "WEBP") return "image/webp"
+    if (bytes.size >= 2 && bytes[0] == 0x42.toByte() && bytes[1] == 0x4D.toByte()) return "image/bmp"
+    if (bytes.size >= 12 &&
+        bytes[4] == 'f'.code.toByte() &&
+        bytes[5] == 't'.code.toByte() &&
+        bytes[6] == 'y'.code.toByte() &&
+        bytes[7] == 'p'.code.toByte()
+    ) {
+        val brand = String(bytes, 8, 4, Charsets.US_ASCII)
+        if (brand.equals("heic", ignoreCase = true) ||
+            brand.equals("heix", ignoreCase = true) ||
+            brand.equals("mif1", ignoreCase = true) ||
+            brand.equals("msf1", ignoreCase = true)
+        ) {
+            return "image/heic"
+        }
+    }
+    return null
+}
+
+private fun resolveUploadImageMime(declared: String, sniffed: String?): String? {
+    val d = declared.trim()
+    val dl = d.lowercase(Locale.ROOT)
+    return when {
+        dl.startsWith("image/") && dl != "image/*" -> d
+        dl == "image/*" -> sniffed ?: "image/jpeg"
+        sniffed != null -> sniffed
+        else -> null
+    }
+}
+
+private fun guessExt(mime: String): String = when (mime.lowercase(Locale.ROOT)) {
+    "image/png" -> "png"
+    "image/gif" -> "gif"
+    "image/webp" -> "webp"
+    "image/bmp" -> "bmp"
+    "image/heic" -> "heic"
+    else -> "jpg"
 }
 
 @Composable
