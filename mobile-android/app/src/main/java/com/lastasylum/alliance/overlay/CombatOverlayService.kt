@@ -985,65 +985,46 @@ class CombatOverlayService : Service() {
         windowRoot: View,
         btnCollapse: View,
     ) {
-        pendingCollapseAnchorOnScreen ?: return
+        // No-op: replaced by a single-pass correction in applyControlsVisibility to avoid visible "jump"
+        // from multiple updateViewLayout/layout passes on some OEM ROMs.
+    }
+
+    private fun applyPendingCollapseAnchorCorrectionOnce(
+        manager: WindowManager,
+        windowRoot: View,
+        btnCollapse: View,
+    ) {
+        val target = pendingCollapseAnchorOnScreen ?: return
         if (!windowRoot.isAttachedToWindow) return
-        val observer = windowRoot.viewTreeObserver
-        if (!observer.isAlive) return
+        val p = overlayMainWindowParams ?: return
 
-        val listener = object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
-            override fun onGlobalLayout() {
-                val obs = windowRoot.viewTreeObserver
-                if (obs.isAlive) {
-                    @Suppress("DEPRECATION")
-                    obs.removeOnGlobalLayoutListener(this)
-                }
-                val target = pendingCollapseAnchorOnScreen ?: return
-                if (!windowRoot.isAttachedToWindow) return
-                val p = overlayMainWindowParams ?: return
-
-                val current = IntArray(2)
-                btnCollapse.getLocationOnScreen(current)
-                val curCx = current[0] + btnCollapse.width / 2
-                val curCy = current[1] + btnCollapse.height / 2
-                val dx = curCx - target[0]
-                val dy = curCy - target[1]
-                // Some devices do multiple layout passes after we toggle visibility and re-order rows.
-                // Keep the button fixed across those passes with a small bounded retry loop.
-                if (dx == 0 && dy == 0) {
-                    Log.d(OVERLAY_DIAG_TAG, "collapseAnchor ok dx=0 dy=0")
-                    pendingCollapseAnchorOnScreen = null
-                    pendingCollapseAnchorAttempts = 0
-                    return
-                }
-                Log.d(OVERLAY_DIAG_TAG, "collapseAnchor adjust dx=$dx dy=$dy")
-
-                val screenW = resources.displayMetrics.widthPixels
-                val screenH = resources.displayMetrics.heightPixels
-                val w = windowRoot.width.takeIf { it > 0 } ?: dp(120)
-                val h = windowRoot.height.takeIf { it > 0 } ?: dp(180)
-                // gravity = BOTTOM|START: x is from left; y is from bottom.
-                p.x = (p.x - dx).coerceIn(0, (screenW - w).coerceAtLeast(0))
-                p.y = (p.y + dy).coerceIn(0, (screenH - h).coerceAtLeast(0))
-                runCatching { manager.updateViewLayout(windowRoot, p) }
-                AppContainer.from(this@CombatOverlayService).userSettingsPreferences.setOverlayPanelPosPx(
-                    x = p.x,
-                    y = p.y,
-                )
-                overlayTicker.syncTickerPosition()
-                syncOverlayPanelEdgeLayout()
-
-                pendingCollapseAnchorAttempts += 1
-                if (pendingCollapseAnchorAttempts >= 3) {
-                    // Prevent endless loops if layout is constantly changing.
-                    pendingCollapseAnchorOnScreen = null
-                    pendingCollapseAnchorAttempts = 0
-                    return
-                }
-                // Schedule one more pass after updateViewLayout settles.
-                windowRoot.post { scheduleCollapseButtonAnchorCorrection(manager, windowRoot, btnCollapse) }
-            }
+        val current = IntArray(2)
+        btnCollapse.getLocationOnScreen(current)
+        val curCx = current[0] + btnCollapse.width / 2
+        val curCy = current[1] + btnCollapse.height / 2
+        val dx = curCx - target[0]
+        val dy = curCy - target[1]
+        if (dx == 0 && dy == 0) {
+            pendingCollapseAnchorOnScreen = null
+            pendingCollapseAnchorAttempts = 0
+            return
         }
-        observer.addOnGlobalLayoutListener(listener)
+
+        val screenW = resources.displayMetrics.widthPixels
+        val screenH = resources.displayMetrics.heightPixels
+        val w = windowRoot.width.takeIf { it > 0 } ?: dp(120)
+        val h = windowRoot.height.takeIf { it > 0 } ?: dp(180)
+        // gravity = BOTTOM|START: x is from left; y is from bottom.
+        p.x = (p.x - dx).coerceIn(0, (screenW - w).coerceAtLeast(0))
+        p.y = (p.y + dy).coerceIn(0, (screenH - h).coerceAtLeast(0))
+        AppContainer.from(this@CombatOverlayService).userSettingsPreferences.setOverlayPanelPosPx(
+            x = p.x,
+            y = p.y,
+        )
+        overlayTicker.syncTickerPosition()
+        syncOverlayPanelEdgeLayout()
+        pendingCollapseAnchorOnScreen = null
+        pendingCollapseAnchorAttempts = 0
     }
 
     private fun beginOverlayChatSubscription() {
@@ -1407,19 +1388,15 @@ class CombatOverlayService : Service() {
             )
             windowRoot.post {
                 if (!windowRoot.isAttachedToWindow) return@post
+                if (!panelCollapsed && windowRoot.width > 0) {
+                    overlayPanelStableAnchorWidthPx = kotlin.math.max(
+                        overlayPanelStableAnchorWidthPx,
+                        windowRoot.width,
+                    )
+                }
+                applyPendingCollapseAnchorCorrectionOnce(manager, windowRoot, btnCollapse)
                 val p = overlayMainWindowParams ?: return@post
                 runCatching { manager.updateViewLayout(windowRoot, p) }
-                // После смены размеров измеряем ширину, чтобы якорь края не «прыгал» при следующем сворачивании.
-                windowRoot.post {
-                    if (!panelCollapsed && windowRoot.width > 0) {
-                        overlayPanelStableAnchorWidthPx = kotlin.math.max(
-                            overlayPanelStableAnchorWidthPx,
-                            windowRoot.width,
-                        )
-                    }
-                    syncOverlayPanelEdgeLayout()
-                    scheduleCollapseButtonAnchorCorrection(manager, windowRoot, btnCollapse)
-                }
             }
         }
 
