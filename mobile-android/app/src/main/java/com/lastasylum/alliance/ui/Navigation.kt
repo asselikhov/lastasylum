@@ -31,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -140,23 +141,26 @@ fun AppNavigation(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground,
-        // IME handled inside screens (e.g. ChatScreen.im Padding). Keep bottom tab bar visible
-        // above the keyboard instead of hiding it (avoids jumpy layout on Team/Forum, etc.).
+        // IME padding lives in screens (e.g. ChatScreen). Hide the tab bar while IME is visible so
+        // it cannot sit between the composer and the keyboard (adjustNothing + full IME inset).
         contentWindowInsets = WindowInsets.safeDrawing.exclude(WindowInsets.ime),
         bottomBar = {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                tonalElevation = 0.dp,
-                shadowElevation = 0.dp,
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceEvenly,
+            val density = LocalDensity.current
+            val imeOpen = WindowInsets.ime.getBottom(density) > 0
+            if (!imeOpen) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp,
                 ) {
-                    visibleTabs.forEach { tab ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                    ) {
+                        visibleTabs.forEach { tab ->
                             val isSelected =
                                 currentDestination?.hierarchy?.any { it.route == tab.route } == true
                             IconButton(
@@ -226,6 +230,7 @@ fun AppNavigation(
                         }
                     }
                 }
+            }
         },
     ) { contentPadding ->
         NavHost(
