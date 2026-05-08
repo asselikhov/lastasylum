@@ -62,6 +62,7 @@ fun OverlayControlScreen() {
     val overlayVisible by CombatOverlayService.overlayVisible.collectAsStateWithLifecycle()
     var gameGateOnly by remember { mutableStateOf(prefs.isOverlayGameGateEnabled()) }
     var targetPkg by remember { mutableStateOf(prefs.getOverlayTargetGamePackage()) }
+    var targetActivities by remember { mutableStateOf(prefs.getOverlayTargetGameActivityTokens().joinToString(",")) }
     var overlayEnabled by remember { mutableStateOf(prefs.isOverlayPanelEnabled()) }
 
     val latestGameGate = rememberUpdatedState(gameGateOnly)
@@ -104,6 +105,14 @@ fun OverlayControlScreen() {
         if (trimmed.isEmpty()) return@LaunchedEffect
         if (trimmed == prefs.getOverlayTargetGamePackage()) return@LaunchedEffect
         prefs.setOverlayTargetGamePackage(trimmed)
+        CombatOverlayService.requestGateRecheckIfRunning(context)
+    }
+
+    LaunchedEffect(targetActivities) {
+        delay(450)
+        val trimmed = targetActivities.trim()
+        if (trimmed == prefs.getOverlayTargetGameActivityTokens().joinToString(",")) return@LaunchedEffect
+        prefs.setOverlayTargetGameActivityTokens(trimmed)
         CombatOverlayService.requestGateRecheckIfRunning(context)
     }
 
@@ -249,6 +258,21 @@ fun OverlayControlScreen() {
                     onValueChange = { targetPkg = it },
                     singleLine = true,
                     label = { Text(stringResource(R.string.overlay_package_field_label)) },
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    modifier = Modifier.fillMaxWidth(),
+                    value = targetActivities,
+                    onValueChange = { targetActivities = it },
+                    singleLine = true,
+                    label = { Text("Activity фильтр (опционально)") },
+                    supportingText = {
+                        Text(
+                            "Через запятую: части имени Activity (className). " +
+                                "Если заполнено — панель покажется только на этих экранах (нужен «Доступ к данным об использовании»).",
+                        )
+                    },
                     textStyle = MaterialTheme.typography.bodyMedium,
                 )
             }

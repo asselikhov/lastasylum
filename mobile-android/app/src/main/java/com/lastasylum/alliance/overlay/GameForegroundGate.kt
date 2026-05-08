@@ -33,10 +33,15 @@ object GameForegroundGate {
     @Volatile
     private var usageAccessCacheValue: Boolean = false
 
+    data class ForegroundComponent(
+        val packageName: String,
+        val className: String?,
+    )
+
     private data class CachedForeground(
         val eventWindowMs: Long,
         val cachedAtMs: Long,
-        val packageName: String?,
+        val component: ForegroundComponent?,
     )
 
     /** Сброс кэша после возврата из «Доступ к данным об использовании» и т.п. */
@@ -147,20 +152,29 @@ object GameForegroundGate {
      * produced no events in a short window and the overlay gate hid the UI).
      */
     fun lastResumedPackage(context: Context, windowMs: Long = RESUME_EVENTS_WINDOW_MS): String? {
+        return lastResumedComponent(context, windowMs)?.packageName
+    }
+
+    /**
+     * Foreground package + (when available) the resumed activity class name from [UsageEvents].
+     * If there were no resume events, falls back to last-used package (className will be null).
+     */
+    fun lastResumedComponent(context: Context, windowMs: Long = RESUME_EVENTS_WINDOW_MS): ForegroundComponent? {
         if (!hasUsageStatsAccess(context)) return null
         val now = System.currentTimeMillis()
         val effectiveWindow = max(windowMs, RESUME_EVENTS_WINDOW_MS)
         cachedForeground?.takeIf {
             it.eventWindowMs == effectiveWindow && now - it.cachedAtMs <= FOREGROUND_CACHE_MS
-        }?.let { return it.packageName }
+        }?.let { return it.component }
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return null
         return try {
-            val fromEvents = lastMeaningfulResumePackageFromEvents(usm, now, effectiveWindow)
+            val fromEvents = lastMeaningfulResumeComponentFromEvents(usm, now, effectiveWindow)
             val resolved = fromEvents ?: mostRecentPackageByLastTimeUsed(usm, now, USAGE_STATS_LOOKBACK_MS)
+                ?.let { ForegroundComponent(packageName = it, className = null) }
             cachedForeground = CachedForeground(
                 eventWindowMs = effectiveWindow,
                 cachedAtMs = now,
-                packageName = resolved,
+                component = resolved,
             )
             resolved
         } catch (_: Throwable) {
@@ -173,15 +187,15 @@ object GameForegroundGate {
      * иначе последнее событие часто оказывается [com.android.systemui] при жестах/шторке —
      * гейт думает, что игра не на экране, хотя пользователь в игре.
      */
-    private fun lastMeaningfulResumePackageFromEvents(
+    private fun lastMeaningfulResumeComponentFromEvents(
         usm: UsageStatsManager,
         endMs: Long,
         windowMs: Long,
-    ): String? {
+    ): ForegroundComponent? {
         val begin = endMs - windowMs
         val events = usm.queryEvents(begin, endMs)
         val ev = UsageEvents.Event()
-        val resumes = ArrayList<Pair<Long, String>>(48)
+        val resumes = ArrayList<Pair<Long, ForegroundComponent>>(48)
         while (events.hasNextEvent()) {
             events.getNextEvent(ev)
             val type = ev.eventType
@@ -192,7 +206,9 @@ object GameForegroundGate {
                 type == UsageEvents.Event.MOVE_TO_FOREGROUND
             }
             if (isResume) {
-                resumes.add(ev.timeStamp to ev.packageName)
+                val pkg = ev.packageName ?: continue
+                val cls = runCatching { ev.className }.getOrNull()
+                resumes.add(ev.timeStamp to ForegroundComponent(pkg, cls))
             }
         }
         if (resumes.isEmpty()) return null
@@ -203,13 +219,15 @@ object GameForegroundGate {
      * Из хронологического списка RESUME (старые → новые) — последний пакет не из [RESUME_DECOR_PACKAGES].
      * Для тестов и для [lastMeaningfulResumePackageFromEvents].
      */
-    internal fun selectMeaningfulForegroundResume(resumePackagesChronologicalOrder: List<String>): String? {
-        if (resumePackagesChronologicalOrder.isEmpty()) return null
-        for (pkg in resumePackagesChronologicalOrder.asReversed()) {
-            if (pkg in RESUME_DECOR_PACKAGES) continue
-            return pkg
+    internal fun selectMeaningfulForegroundResume(
+        resumesChronologicalOrder: List<ForegroundComponent>,
+    ): ForegroundComponent? {
+        if (resumesChronologicalOrder.isEmpty()) return null
+        for (c in resumesChronologicalOrder.asReversed()) {
+            if (c.packageName in RESUME_DECOR_PACKAGES) continue
+            return c
         }
-        return resumePackagesChronologicalOrder.last()
+        return resumesChronologicalOrder.last()
     }
 
     private fun mostRecentPackageByLastTimeUsed(
@@ -247,15 +265,19 @@ object GameForegroundGate {
     fun shouldShowOverlay(
         context: Context,
         targetGamePackages: Collection<String>,
+        allowedActivitySubstrings: Collection<String> = emptyList(),
     ): Boolean {
         val targets = targetGamePackages.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         if (targets.isEmpty()) return false
         if (!hasUsageStatsAccess(context)) return false
+        val allowed = allowedActivitySubstrings.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        val hasActivityFilter = allowed.isNotEmpty()
         val alliance = context.packageName
         val targetSet = targets.toSet()
         // Не вызывать invalidateForegroundHintCache() здесь: каждый тик гейта сбрасывал кэш lastResumed (~1.5s)
         // и лишний раз гонял queryEvents/UsageStats — лишняя нагрузка на binder при активной игре.
-        val hinted = lastResumedPackage(context)
+        val hintedComp = lastResumedComponent(context)
+        val hinted = hintedComp?.packageName
         // Never show the overlay while the SquadRelay app itself is in foreground.
         // Otherwise, after minimizing the game and opening SquadRelay, heuristics (TTF/lastUsed)
         // may still think the game "wins" and bring the overlay back on top of the app.
@@ -264,9 +286,17 @@ object GameForegroundGate {
         // do NOT immediately return false: on some ROMs (MIUI/HyperOS), resume events may temporarily
         // point to launcher/system while the game is still on screen. Instead, fall through to the
         // rest of heuristics (package-only events, resume timeline, TTF growth, lastUsed tie).
-        if (hinted != null && targetSet.contains(hinted)) return true
+        if (hinted != null && targetSet.contains(hinted)) {
+            if (!hasActivityFilter) return true
+            val cls = hintedComp.className?.trim().orEmpty()
+            if (cls.isBlank()) return false
+            return allowed.any { token -> cls.contains(token, ignoreCase = true) }
+        }
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return false
         val end = System.currentTimeMillis()
+        // With an activity filter, we only trust explicit resume events (component) matches.
+        // Other heuristics can only tell the package, not the in-game screen, so they are not safe.
+        if (hasActivityFilter) return false
         // API 28+: события только по пакету игры — на MIUI глобальный queryEvents часто пуст/обрезан.
         for (t in targets) {
             if (runCatching { targetForegroundFromPackageOnlyEvents(usm, t, end) }.getOrDefault(false)) {

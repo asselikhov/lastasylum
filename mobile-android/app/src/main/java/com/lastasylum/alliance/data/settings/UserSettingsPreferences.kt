@@ -120,6 +120,23 @@ class UserSettingsPreferences(context: Context) {
             .filter { it.isNotEmpty() }
             .distinct()
 
+    /**
+     * Optional activity filter for the game: comma-separated substrings of activity class names.
+     * When non-empty, the overlay is shown only when UsageEvents reports a resumed activity whose className
+     * contains one of these tokens (case-insensitive).
+     */
+    fun getOverlayTargetGameActivityTokens(): List<String> =
+        prefs.getString(KEY_OVERLAY_TARGET_ACTIVITY_TOKENS, "")
+            ?.split(',')
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.distinct()
+            .orEmpty()
+
+    fun setOverlayTargetGameActivityTokens(value: String) {
+        prefs.edit().putString(KEY_OVERLAY_TARGET_ACTIVITY_TOKENS, value.trim()).apply()
+    }
+
     fun setOverlayTargetGamePackage(value: String) {
         prefs.edit().putString(KEY_OVERLAY_TARGET_PACKAGE, value.trim()).apply()
     }
@@ -137,6 +154,7 @@ class UserSettingsPreferences(context: Context) {
         private const val KEY_OVERLAY_PANEL_ENABLED = "overlay_panel_enabled"
         private const val KEY_OVERLAY_GAME_GATE = "overlay_game_gate"
         private const val KEY_OVERLAY_TARGET_PACKAGE = "overlay_target_game_package"
+        private const val KEY_OVERLAY_TARGET_ACTIVITY_TOKENS = "overlay_target_game_activity_tokens"
         private const val KEY_OVERLAY_PANEL_POS_X_PX = "overlay_panel_pos_x_px"
         private const val KEY_OVERLAY_PANEL_POS_Y_PX = "overlay_panel_pos_y_px"
         private const val KEY_OVERLAY_TARGET_LEGACY_MIGRATED = "overlay_target_legacy_migrated_v1"

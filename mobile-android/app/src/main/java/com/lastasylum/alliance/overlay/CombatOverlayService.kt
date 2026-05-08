@@ -512,6 +512,7 @@ class CombatOverlayService : Service() {
         if (gateCheckInFlight) return
         gateCheckInFlight = true
         val targets = prefs.getOverlayTargetGamePackages()
+        val activityTokens = prefs.getOverlayTargetGameActivityTokens()
         serviceScope.launch {
             try {
                 val hasUsageAccess = GameForegroundGate.hasUsageStatsAccess(this@CombatOverlayService)
@@ -525,7 +526,11 @@ class CombatOverlayService : Service() {
                     if (overlayHistoryVisible || OverlayChatInteractionHold.suppressGameForegroundGate) {
                         true
                     } else {
-                        GameForegroundGate.shouldShowOverlay(this@CombatOverlayService, targets)
+                        GameForegroundGate.shouldShowOverlay(
+                            context = this@CombatOverlayService,
+                            targetGamePackages = targets,
+                            allowedActivitySubstrings = activityTokens,
+                        )
                     }
                 } else {
                     false
