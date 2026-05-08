@@ -3,6 +3,7 @@ package com.lastasylum.alliance.ui.screens.teamforum
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -53,6 +55,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Checkbox
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -512,11 +517,15 @@ private fun TeamForumTopicChatRoute(
         derivedStateOf { messages.sortedBy { it.createdAt } }
     }
 
-    var menuMessage by remember { mutableStateOf<TeamForumMessageDto?>(null) }
     var editMessage by remember { mutableStateOf<TeamForumMessageDto?>(null) }
     var editBody by remember { mutableStateOf("") }
     var editBusy by remember { mutableStateOf(false) }
     var replyToMessage by remember { mutableStateOf<TeamForumMessageDto?>(null) }
+    var activeActionMessageId by remember { mutableStateOf<String?>(null) }
+    var selectedMessageIds by remember { mutableStateOf(setOf<String>()) }
+    var confirmBulkDelete by remember { mutableStateOf(false) }
+    var deletingSelection by remember { mutableStateOf(false) }
+    var highlightMessageId by remember { mutableStateOf<String?>(null) }
 
     fun clearPendingAttachment() {
         pendingImageUri = null
@@ -644,7 +653,16 @@ private fun TeamForumTopicChatRoute(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
             )
         }
-        HorizontalDivider()
+        if (selectedMessageIds.isNotEmpty()) {
+            ForumSelectionToolbar(
+                selectedCount = selectedMessageIds.size,
+                isDeleting = deletingSelection,
+                onClear = { if (!deletingSelection) selectedMessageIds = emptySet() },
+                onDelete = { if (!deletingSelection) confirmBulkDelete = true },
+            )
+        } else {
+            HorizontalDivider()
+        }
         Box(Modifier.weight(1f)) {
             if (loading && messages.isEmpty()) {
                 CircularProgressIndicator(
@@ -684,11 +702,41 @@ private fun TeamForumTopicChatRoute(
                         }
                         val mine = msg.senderUserId == currentUserId
                         val canEdit = (mine || canModerateMessages) && msg.deletedAt.isNullOrBlank()
+                        val inSelectionMode = selectedMessageIds.isNotEmpty()
+                        val isSelected = msg.id in selectedMessageIds
                         ForumMessageBubble(
                             message = msg,
                             isMine = mine,
                             canEdit = canEdit,
-                            onLongPressMenu = { if (canEdit) menuMessage = msg },
+                            inSelectionMode = inSelectionMode,
+                            isSelected = isSelected,
+                            highlighted = highlightMessageId == msg.id,
+                            onJumpToMessage = { targetId ->
+                                val targetIndex = sortedMessages.indexOfFirst { it.id == targetId }
+                                if (targetIndex >= 0) {
+                                    scope.launch {
+                                        runCatching { listState.animateScrollToItem(targetIndex) }
+                                        highlightMessageId = targetId
+                                        delay(900)
+                                        if (highlightMessageId == targetId) highlightMessageId = null
+                                    }
+                                }
+                            },
+                            onClick = {
+                                if (inSelectionMode) {
+                                    selectedMessageIds =
+                                        if (isSelected) selectedMessageIds - msg.id else selectedMessageIds + msg.id
+                                }
+                            },
+                            onLongPress = {
+                                if (!inSelectionMode) {
+                                    selectedMessageIds = setOf(msg.id)
+                                } else {
+                                    selectedMessageIds =
+                                        if (isSelected) selectedMessageIds - msg.id else selectedMessageIds + msg.id
+                                }
+                            },
+                            onOpenActions = { if (!inSelectionMode && canEdit) activeActionMessageId = msg.id },
                         )
                     }
                 }
@@ -750,92 +798,7 @@ private fun TeamForumTopicChatRoute(
         )
     }
 
-    menuMessage?.let { msg ->
-        val canEditMsg = (msg.senderUserId == currentUserId || canModerateMessages) &&
-            msg.deletedAt.isNullOrBlank()
-        AlertDialog(
-            onDismissRequest = { menuMessage = null },
-            title = { Text(stringResource(R.string.team_forum_message_actions_title)) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    msg.imageRelativeUrl?.let { rel ->
-                        teamNewsAuthedImageRequest(LocalContext.current, rel)?.let { req ->
-                            AsyncImage(
-                                model = req,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 160.dp)
-                                    .clip(RoundedCornerShape(8.dp)),
-                                contentScale = ContentScale.Crop,
-                            )
-                        }
-                    }
-                    if (msg.text.isNotBlank()) {
-                        Text(
-                            ChatStickerFormat.humanReadableBody(
-                                LocalContext.current,
-                                msg.text,
-                            ).take(280) + if (msg.text.length > 280) "…" else "",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    if (canEditMsg) {
-                        TextButton(
-                            onClick = {
-                                replyToMessage = msg
-                                menuMessage = null
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(stringResource(R.string.chat_action_reply))
-                        }
-                        TextButton(
-                            onClick = {
-                                editMessage = msg
-                                editBody = msg.text
-                                menuMessage = null
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(stringResource(R.string.team_forum_edit_message))
-                        }
-                        TextButton(
-                            onClick = {
-                                menuMessage = null
-                                scope.launch {
-                                    teamsRepository.deleteForumMessage(teamId, topicId, msg.id)
-                                        .onSuccess {
-                                            applyDeleted(
-                                                TeamForumMessageDeletedEvent(
-                                                    teamId = teamId,
-                                                    topicId = topicId,
-                                                    messageId = msg.id,
-                                                    deletedAt = java.time.Instant.now().toString(),
-                                                    deletedByUserId = currentUserId,
-                                                ),
-                                            )
-                                        }
-                                        .onFailure { e -> error = e.toUserMessageRu(res) }
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(
-                                stringResource(R.string.team_forum_delete_message),
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { menuMessage = null }) {
-                    Text(stringResource(R.string.profile_action_cancel))
-                }
-            },
-        )
-    }
+    // legacy menu dialog removed (replaced with bottom sheet)
 
     editMessage?.let { msg ->
         AlertDialog(
@@ -877,6 +840,159 @@ private fun TeamForumTopicChatRoute(
             },
         )
     }
+
+    val activeActionMessage = remember(activeActionMessageId, messages) {
+        activeActionMessageId?.let { id -> messages.firstOrNull { it.id == id } }
+    }
+    if (selectedMessageIds.isEmpty()) {
+        activeActionMessage?.let { msg ->
+            ForumMessageActionsSheet(
+                message = msg,
+                canEdit = (msg.senderUserId == currentUserId || canModerateMessages) &&
+                    msg.deletedAt.isNullOrBlank() &&
+                    msg.text.isNotBlank(),
+                canDelete = (msg.senderUserId == currentUserId || canModerateMessages) &&
+                    msg.deletedAt.isNullOrBlank(),
+                onDismiss = { activeActionMessageId = null },
+                onReply = {
+                    replyToMessage = msg
+                    activeActionMessageId = null
+                },
+                onEdit = {
+                    editMessage = msg
+                    editBody = msg.text
+                    activeActionMessageId = null
+                },
+                onDelete = {
+                    activeActionMessageId = null
+                    scope.launch {
+                        teamsRepository.deleteForumMessage(teamId, topicId, msg.id)
+                            .onSuccess {
+                                applyDeleted(
+                                    TeamForumMessageDeletedEvent(
+                                        teamId = teamId,
+                                        topicId = topicId,
+                                        messageId = msg.id,
+                                        deletedAt = java.time.Instant.now().toString(),
+                                        deletedByUserId = currentUserId,
+                                    ),
+                                )
+                            }
+                            .onFailure { e -> error = e.toUserMessageRu(res) }
+                    }
+                },
+            )
+        }
+    }
+
+    if (confirmBulkDelete && selectedMessageIds.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { if (!deletingSelection) confirmBulkDelete = false },
+            title = { Text(stringResource(R.string.chat_bulk_delete_title)) },
+            text = {
+                Text(stringResource(R.string.chat_bulk_delete_body, selectedMessageIds.size))
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !deletingSelection,
+                    onClick = {
+                        scope.launch {
+                            deletingSelection = true
+                            val ids = selectedMessageIds.toList()
+                            teamsRepository.bulkDeleteForumMessages(teamId, topicId, ids)
+                                .onFailure { e -> error = e.toUserMessageRu(res) }
+                            selectedMessageIds = emptySet()
+                            confirmBulkDelete = false
+                            deletingSelection = false
+                        }
+                    },
+                ) {
+                    Text(stringResource(R.string.chat_delete_confirm), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !deletingSelection,
+                    onClick = { confirmBulkDelete = false },
+                ) { Text(stringResource(R.string.chat_delete_cancel)) }
+            },
+        )
+    }
+}
+
+@Composable
+private fun ForumSelectionToolbar(
+    selectedCount: Int,
+    isDeleting: Boolean,
+    onClear: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onClear, enabled = !isDeleting) {
+                Icon(Icons.Outlined.Close, contentDescription = null)
+            }
+            Text(
+                text = selectedCount.toString(),
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = onDelete, enabled = !isDeleting) {
+                Icon(Icons.Outlined.DeleteOutline, contentDescription = null)
+            }
+        }
+    }
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ForumMessageActionsSheet(
+    message: TeamForumMessageDto,
+    canEdit: Boolean,
+    canDelete: Boolean,
+    onDismiss: () -> Unit,
+    onReply: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            TextButton(onClick = onReply, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.chat_action_reply))
+            }
+            TextButton(
+                onClick = onEdit,
+                enabled = canEdit,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.chat_action_edit))
+            }
+            TextButton(
+                onClick = onDelete,
+                enabled = canDelete,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.chat_action_delete), color = MaterialTheme.colorScheme.error)
+            }
+            Spacer(Modifier.padding(bottom = 8.dp))
+        }
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -885,7 +1001,13 @@ private fun ForumMessageBubble(
     message: TeamForumMessageDto,
     isMine: Boolean,
     canEdit: Boolean,
-    onLongPressMenu: () -> Unit,
+    inSelectionMode: Boolean,
+    isSelected: Boolean,
+    highlighted: Boolean,
+    onJumpToMessage: (String) -> Unit,
+    onClick: () -> Unit,
+    onLongPress: () -> Unit,
+    onOpenActions: () -> Unit,
 ) {
     val deleted = !message.deletedAt.isNullOrBlank() &&
         !message.deletedAt.equals("null", ignoreCase = true)
@@ -924,11 +1046,21 @@ private fun ForumMessageBubble(
     }
 
     val clickMod = Modifier.combinedClickable(
-        onClick = {},
-        onLongClick = if (canEdit) {
-            { onLongPressMenu() }
-        } else {
-            null
+        onClick = {
+            if (inSelectionMode) {
+                onClick()
+            } else {
+                onClick()
+            }
+        },
+        onLongClick = {
+            if (inSelectionMode) {
+                onLongPress()
+            } else if (canEdit) {
+                onOpenActions()
+            } else {
+                onLongPress()
+            }
         },
     )
 
@@ -949,11 +1081,19 @@ private fun ForumMessageBubble(
                     fallbackName = displayName,
                 )
             }
+            val baseBg = bubbleBg
+            val selectionTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+            val highlightTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+            val finalBg = when {
+                isSelected -> lerp(baseBg, selectionTint, 0.65f)
+                highlighted -> lerp(baseBg, highlightTint, 0.55f)
+                else -> baseBg
+            }
             Surface(
                 modifier = Modifier
                     .widthIn(max = minOf(maxBubble, 300.dp))
                     .then(clickMod),
-                color = bubbleBg,
+                color = finalBg,
                 shape = bubbleShape,
                 tonalElevation = 0.dp,
                 shadowElevation = 0.dp,
@@ -973,6 +1113,50 @@ private fun ForumMessageBubble(
                             tagBracketColor = tagBracketMuted,
                             senderRole = "",
                         )
+                    }
+
+                    if (inSelectionMode) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                        ) {
+                            Checkbox(
+                                checked = isSelected,
+                                onCheckedChange = { onClick() },
+                            )
+                        }
+                    }
+
+                    message.replyTo?.let { rp ->
+                        val rid = message.replyToMessageId
+                        if (!rid.isNullOrBlank()) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = finalBg.copy(alpha = 0.42f),
+                                tonalElevation = 0.dp,
+                                shadowElevation = 0.dp,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onJumpToMessage(rid) },
+                            ) {
+                                Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                                    Text(
+                                        text = rp.senderUsername.trim().ifBlank { "—" },
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = senderAccent,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        text = com.lastasylum.alliance.ui.chat.replyPreviewText(rp.text),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = onBubble.copy(alpha = 0.75f),
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     when {

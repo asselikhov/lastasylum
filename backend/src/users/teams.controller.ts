@@ -35,6 +35,7 @@ import { TeamForumGateway } from './team-forum.gateway';
 import {
   CreateTeamForumMessageDto,
   CreateTeamForumTopicDto,
+  BulkDeleteTeamForumMessagesDto,
   UpdateTeamForumMessageDto,
   UpdateTeamForumTopicDto,
 } from './dto/team-forum.dto';
@@ -372,6 +373,36 @@ export class TeamsController {
       deletedAt,
       req.user.userId,
     );
+    return { ok: true };
+  }
+
+  @Post(':teamId/forum/topics/:topicId/messages/bulk-delete')
+  @Roles(AllianceRole.R2)
+  async bulkDeleteForumMessages(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Param('topicId') topicId: string,
+    @Body() dto: BulkDeleteTeamForumMessagesDto,
+  ) {
+    const ids = Array.isArray(dto.messageIds)
+      ? dto.messageIds.map((x) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean)
+      : [];
+    const deletedAt = new Date().toISOString();
+    await this.teamForum.bulkDeleteMessages(
+      teamId,
+      topicId,
+      ids,
+      req.user.userId,
+    );
+    for (const id of ids) {
+      this.teamForumGateway.broadcastMessageDeleted(
+        teamId,
+        topicId,
+        id,
+        deletedAt,
+        req.user.userId,
+      );
+    }
     return { ok: true };
   }
 

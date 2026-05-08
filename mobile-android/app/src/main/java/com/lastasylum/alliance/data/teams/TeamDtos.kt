@@ -239,3 +239,8 @@ data class CreateTeamForumMessageBody(
 data class UpdateTeamForumMessageBody(
     val text: String,
 )
+
+@JsonClass(generateAdapter = true)
+data class BulkDeleteForumMessagesBody(
+    val messageIds: List<String>,
+)

@@ -165,4 +165,11 @@ interface TeamsApi {
         @Path("topicId") topicId: String,
         @Path("messageId") messageId: String,
     ): OkResponse
+
+    @POST("teams/{teamId}/forum/topics/{topicId}/messages/bulk-delete")
+    suspend fun bulkDeleteForumMessages(
+        @Path("teamId") teamId: String,
+        @Path("topicId") topicId: String,
+        @Body body: BulkDeleteForumMessagesBody,
+    ): OkResponse
 }

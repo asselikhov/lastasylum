@@ -208,4 +208,19 @@ class TeamsRepository(
         runCatching {
             teamsApi.deleteForumMessage(teamId, topicId, messageId).let { }
         }
+
+    suspend fun bulkDeleteForumMessages(
+        teamId: String,
+        topicId: String,
+        messageIds: List<String>,
+    ): Result<Unit> =
+        runCatching {
+            val ids = messageIds.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+            if (ids.isEmpty()) return@runCatching
+            teamsApi.bulkDeleteForumMessages(
+                teamId,
+                topicId,
+                BulkDeleteForumMessagesBody(messageIds = ids),
+            ).let { }
+        }
 }

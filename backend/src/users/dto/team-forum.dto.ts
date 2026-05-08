@@ -1,4 +1,4 @@
-import { IsOptional, IsString, Length, MaxLength } from 'class-validator';
+import { IsArray, IsOptional, IsString, Length, MaxLength } from 'class-validator';
 
 export class CreateTeamForumTopicDto {
   @IsString()
@@ -32,4 +32,15 @@ export class UpdateTeamForumMessageDto {
   @IsString()
   @MaxLength(4000)
   text: string;
+}
+
+export class BulkDeleteTeamForumMessagesDto {
+  @IsOptional()
+  @IsString()
+  /** Optional UI trace label; ignored by backend. */
+  reason?: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  messageIds: string[];
 }

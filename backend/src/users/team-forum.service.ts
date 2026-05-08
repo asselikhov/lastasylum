@@ -448,4 +448,32 @@ export class TeamForumService {
     msg.deletedByUserId = userId;
     await msg.save();
   }
+
+  async bulkDeleteMessages(
+    teamId: string,
+    topicId: string,
+    messageIds: string[],
+    userId: string,
+  ): Promise<void> {
+    await this.teams.getTeamIfMemberOrThrow(teamId, userId);
+    const teamOid = new Types.ObjectId(teamId);
+    const topOid = new Types.ObjectId(topicId);
+    const uniq = [...new Set(messageIds.map((x) => x.trim()).filter(Boolean))];
+    const valid = uniq.filter((id) => Types.ObjectId.isValid(id));
+    if (valid.length === 0) return;
+
+    const docs = await this.messageModel.find({
+      _id: { $in: valid.map((id) => new Types.ObjectId(id)) },
+      teamId: teamOid,
+      topicId: topOid,
+      deletedAt: null,
+    });
+
+    for (const msg of docs) {
+      await this.assertMayEditMessage(teamId, msg, userId);
+      msg.deletedAt = new Date();
+      msg.deletedByUserId = userId;
+      await msg.save();
+    }
+  }
 }
