@@ -8,8 +8,17 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import com.lastasylum.alliance.ui.chat.ChatBubbleAuthorHeader
@@ -19,12 +28,11 @@ import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
 import com.lastasylum.alliance.ui.chat.TelegramImageCaptionBar
 import com.lastasylum.alliance.ui.chat.chatBubbleShapeIncoming
 import com.lastasylum.alliance.ui.chat.chatBubbleShapeOutgoing
+import com.lastasylum.alliance.ui.chat.TelegramLikeAttachmentsGrid
 import com.lastasylum.alliance.ui.theme.roleAccentColor
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -69,6 +77,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -77,6 +86,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -114,6 +126,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 
 private object ForumRoutes {
     const val LIST = "forum_list"
@@ -526,6 +539,10 @@ private fun TeamForumTopicChatRoute(
     var confirmBulkDelete by remember { mutableStateOf(false) }
     var deletingSelection by remember { mutableStateOf(false) }
     var highlightMessageId by remember { mutableStateOf<String?>(null) }
+    var remoteImagePreview by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
+    val openImages = remember {
+        { urls: List<String>, idx: Int -> remoteImagePreview = urls to idx }
+    }
 
     fun clearPendingAttachment() {
         pendingImageUris = emptyList()
@@ -713,6 +730,7 @@ private fun TeamForumTopicChatRoute(
                             inSelectionMode = inSelectionMode,
                             isSelected = isSelected,
                             highlighted = highlightMessageId == msg.id,
+                            onOpenImages = openImages,
                             onJumpToMessage = { targetId ->
                                 val targetIndex = sortedMessages.indexOfFirst { it.id == targetId }
                                 if (targetIndex >= 0) {
@@ -800,6 +818,17 @@ private fun TeamForumTopicChatRoute(
             },
             onTyping = { forumSocket.emitTyping() },
         )
+    }
+
+    remoteImagePreview?.let { (urls, start) ->
+        if (urls.isNotEmpty()) {
+            ForumImagesPreviewOverlay(
+                modifier = Modifier.fillMaxSize(),
+                urls = urls,
+                startIndex = start,
+                onDismiss = { remoteImagePreview = null },
+            )
+        }
     }
 
     // legacy menu dialog removed (replaced with bottom sheet)
@@ -1008,6 +1037,7 @@ private fun ForumMessageBubble(
     inSelectionMode: Boolean,
     isSelected: Boolean,
     highlighted: Boolean,
+    onOpenImages: (List<String>, Int) -> Unit,
     onJumpToMessage: (String) -> Unit,
     onClick: () -> Unit,
     onLongPress: () -> Unit,
@@ -1017,6 +1047,7 @@ private fun ForumMessageBubble(
         !message.deletedAt.equals("null", ignoreCase = true)
     val ctx = LocalContext.current
     val stickerStem = if (!deleted) ZlobyakaStickerPack.parseStem(message.text) else null
+    val floatingSticker = stickerStem != null && message.replyTo == null && !deleted
     val bubbleBg = if (isMine) ChatTelegramOutgoingBubble else ChatTelegramIncomingBubble
     val onBubble = if (isMine) ChatTelegramOutgoingOnBubble else ChatTelegramIncomingOnBubble
     val timeMuted = if (isMine) ChatTelegramTimeMuted else ChatTelegramTimeMutedIncoming
@@ -1085,7 +1116,7 @@ private fun ForumMessageBubble(
                     fallbackName = displayName,
                 )
             }
-            val baseBg = bubbleBg
+    val baseBg = if (floatingSticker) Color.Transparent else bubbleBg
             val selectionTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
             val highlightTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
             val finalBg = when {
@@ -1217,56 +1248,39 @@ private fun ForumMessageBubble(
                                 }
                             }
                         }
-                        !message.imageRelativeUrl.isNullOrBlank() -> {
-                            teamNewsAuthedImageRequest(ctx, message.imageRelativeUrl)?.let { req ->
-                                val hasCaption = message.text.isNotBlank()
-                                Column(
-                                    Modifier.fillMaxWidth(),
-                                    verticalArrangement = Arrangement.spacedBy(0.dp),
-                                ) {
-                                    Box(Modifier.fillMaxWidth()) {
-                                        AsyncImage(
-                                            model = req,
-                                            contentDescription = null,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .heightIn(max = 220.dp)
-                                                .clip(
-                                                    RoundedCornerShape(
-                                                        topStart = 12.dp,
-                                                        topEnd = 12.dp,
-                                                        bottomStart = if (hasCaption) 0.dp else 12.dp,
-                                                        bottomEnd = if (hasCaption) 0.dp else 12.dp,
-                                                    ),
-                                                ),
-                                            contentScale = ContentScale.Crop,
-                                        )
-                                        if (!hasCaption && timeLabel.isNotBlank()) {
-                                            Surface(
-                                                shape = RoundedCornerShape(10.dp),
-                                                color = Color.Black.copy(alpha = 0.45f),
-                                                tonalElevation = 0.dp,
-                                                shadowElevation = 0.dp,
-                                                modifier = Modifier
-                                                    .align(Alignment.BottomEnd)
-                                                    .padding(6.dp),
-                                            ) {
-                                                Text(
-                                                    text = timeLabel,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = Color.White,
-                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                                                )
-                                            }
-                                        }
-                                    }
-                                    if (hasCaption) {
-                                        TelegramImageCaptionBar(
-                                            caption = message.text.trimEnd(),
-                                            formattedTime = timeLabel,
-                                            captionBarBg = captionBarBg,
-                                            onBubble = onBubble,
-                                            timeMuted = timeMuted,
+                        message.imageRelativeUrls.isNotEmpty() -> {
+                            val urls = message.imageRelativeUrls
+                            val hasCaption = message.text.isNotBlank()
+                            Column(
+                                Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(0.dp),
+                            ) {
+                                Box(Modifier.fillMaxWidth()) {
+                                    ForumAuthedAttachmentsGrid(
+                                        urls = urls,
+                                        onOpen = { idx -> onOpenImages(urls, idx) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        bottomRound = !hasCaption,
+                                        onOpenExternal = { idx -> onOpenImages(urls, idx) },
+                                    )
+                                }
+                                if (hasCaption) {
+                                    TelegramImageCaptionBar(
+                                        caption = message.text.trimEnd(),
+                                        formattedTime = timeLabel,
+                                        captionBarBg = captionBarBg,
+                                        onBubble = onBubble,
+                                        timeMuted = timeMuted,
+                                    )
+                                } else if (timeLabel.isNotBlank()) {
+                                    Row(
+                                        Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.End,
+                                    ) {
+                                        Text(
+                                            text = timeLabel,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = timeMuted,
                                         )
                                     }
                                 }
@@ -1300,6 +1314,174 @@ private fun ForumMessageBubble(
             if (!isMine) {
                 Spacer(Modifier.weight(1f))
             }
+        }
+    }
+}
+
+@Composable
+private fun ForumAuthedAttachmentsGrid(
+    urls: List<String>,
+    onOpenExternal: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    bottomRound: Boolean = true,
+    onOpen: (Int) -> Unit,
+) {
+    // Reuse Telegram-like layout but feed it authed ImageRequests by wrapping the URLs into the same grid.
+    // We can't directly reuse TelegramLikeAttachmentsGrid because forum URLs require auth headers.
+    if (urls.isEmpty()) return
+    val ctx = LocalContext.current
+    val maxShown = 6
+    val shown = urls.take(maxShown)
+    val extra = (urls.size - shown.size).coerceAtLeast(0)
+    val corner = 12.dp
+    val gap = 4.dp
+
+    @Composable
+    fun tile(idx: Int, modifier: Modifier) {
+        val u = shown.getOrNull(idx) ?: return
+        val req = teamNewsAuthedImageRequest(ctx, u)
+        Box(
+            modifier = modifier
+                .clip(RoundedCornerShape(corner))
+                .clickable { onOpen(idx) },
+            contentAlignment = Alignment.Center,
+        ) {
+            if (req != null) {
+                AsyncImage(
+                    model = req,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            }
+            if (idx == shown.lastIndex && extra > 0) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.45f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "+$extra",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = Color.White,
+                    )
+                }
+            }
+        }
+    }
+
+    // Minimal: 1 / 2 / 3+ grid (keep TelegramLikeAttachmentsGrid exact layout later if needed).
+    when (shown.size) {
+        1 -> {
+            tile(0, modifier.heightIn(max = 220.dp))
+        }
+        2 -> {
+            Row(modifier = modifier.height(160.dp), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                tile(0, Modifier.weight(1f).fillMaxHeight())
+                tile(1, Modifier.weight(1f).fillMaxHeight())
+            }
+        }
+        else -> {
+            Column(modifier = modifier.height(220.dp), verticalArrangement = Arrangement.spacedBy(gap)) {
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                    tile(0, Modifier.weight(1f).fillMaxHeight())
+                    tile(1, Modifier.weight(1f).fillMaxHeight())
+                }
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                    tile(2, Modifier.weight(1f).fillMaxHeight())
+                    tile(3.coerceAtMost(shown.lastIndex), Modifier.weight(1f).fillMaxHeight())
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ForumImagesPreviewOverlay(
+    modifier: Modifier = Modifier,
+    urls: List<String>,
+    startIndex: Int,
+    onDismiss: () -> Unit,
+) {
+    if (urls.isEmpty()) return
+    var index by remember(startIndex, urls) { mutableStateOf(startIndex.coerceIn(0, urls.lastIndex)) }
+    val url = urls.getOrNull(index) ?: urls.first()
+
+    var scale by remember(url) { mutableStateOf(1f) }
+    var offsetX by remember(url) { mutableStateOf(0f) }
+    var offsetY by remember(url) { mutableStateOf(0f) }
+    val context = LocalContext.current
+
+    DisposableEffect(Unit) {
+        OverlayChatInteractionHold.suppressGameForegroundGate = true
+        onDispose { OverlayChatInteractionHold.suppressGameForegroundGate = false }
+    }
+    BackHandler(onBack = onDismiss)
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Black),
+    ) {
+        val density = LocalDensity.current
+        val wPx = with(density) { maxWidth.toPx() }
+        val hPx = with(density) { maxHeight.toPx() }
+
+        fun clampOffsets() {
+            if (scale <= 1f) {
+                offsetX = 0f
+                offsetY = 0f
+                return
+            }
+            val maxX = (wPx * (scale - 1f) / 2f).coerceAtLeast(0f)
+            val maxY = (hPx * (scale - 1f) / 2f).coerceAtLeast(0f)
+            offsetX = offsetX.coerceIn(-maxX, maxX)
+            offsetY = offsetY.coerceIn(-maxY, maxY)
+        }
+
+        val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+            val nextScale = (scale * zoomChange).coerceIn(1f, 4f)
+            scale = nextScale
+            if (scale > 1f) {
+                offsetX += panChange.x
+                offsetY += panChange.y
+            }
+            clampOffsets()
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(urls, index, scale) {
+                    detectTapGestures(
+                        onDoubleTap = {
+                            scale = if (scale > 1f) 1f else 2.5f
+                            clampOffsets()
+                        },
+                    )
+                    detectHorizontalDragGestures { change, dragAmount ->
+                        if (scale > 1f) return@detectHorizontalDragGestures
+                        change.consume()
+                        if (kotlin.math.abs(dragAmount) < 14f) return@detectHorizontalDragGestures
+                        if (dragAmount > 0 && index > 0) index -= 1
+                        if (dragAmount < 0 && index < urls.lastIndex) index += 1
+                    }
+                }
+                .transformable(state = transformState),
+        ) {
+            AsyncImage(
+                model = teamNewsAuthedImageRequest(context, url),
+                contentDescription = stringResource(R.string.cd_chat_message_image),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                        translationX = offsetX
+                        translationY = offsetY
+                    },
+                contentScale = ContentScale.Fit,
+            )
         }
     }
 }
