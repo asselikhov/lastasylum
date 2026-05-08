@@ -516,8 +516,15 @@ class CombatOverlayService : Service() {
         serviceScope.launch {
             try {
                 val hasUsageAccess = GameForegroundGate.hasUsageStatsAccess(this@CombatOverlayService)
-                val hintedPkg = runCatching { GameForegroundGate.lastResumedPackage(this@CombatOverlayService) }.getOrNull()
+                val hintedComp = runCatching { GameForegroundGate.lastResumedComponent(this@CombatOverlayService) }.getOrNull()
+                val hintedPkg = hintedComp?.packageName
                 lastForegroundHintPkg = hintedPkg
+                if (prefs.isOverlayGameGateEnabled() && activityTokens.isNotEmpty()) {
+                    Log.d(
+                        OVERLAY_DIAG_TAG,
+                        "activityGate hint pkg=${hintedComp?.packageName ?: "-"} cls=${hintedComp?.className ?: "-"} tokens=${activityTokens.joinToString()}",
+                    )
+                }
                 val shouldShow = if (hasUsageAccess) {
                     // While the user is interacting with the overlay chat UI, do not hide the overlay.
                     // Some OEM ROMs may report SquadRelay as "resumed" when touching overlay windows.

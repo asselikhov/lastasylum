@@ -289,14 +289,20 @@ object GameForegroundGate {
         if (hinted != null && targetSet.contains(hinted)) {
             if (!hasActivityFilter) return true
             val cls = hintedComp.className?.trim().orEmpty()
-            if (cls.isBlank()) return false
+            // Some ROMs / games do not report activity className reliably via UsageEvents.
+            // When we know the game package is foreground but className is missing, fall back to package-only gating
+            // instead of hiding the overlay everywhere.
+            if (cls.isBlank()) return true
             return allowed.any { token -> cls.contains(token, ignoreCase = true) }
         }
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return false
         val end = System.currentTimeMillis()
-        // With an activity filter, we only trust explicit resume events (component) matches.
-        // Other heuristics can only tell the package, not the in-game screen, so they are not safe.
-        if (hasActivityFilter) return false
+        // With an activity filter, heuristics below can't reliably tell in-game "pages" (only the package),
+        // so we don't use them for restricting to specific screens. The filter is applied only when we have a className
+        // from resume events; otherwise we fall back to package-only gating above.
+        if (hasActivityFilter) {
+            return false
+        }
         // API 28+: события только по пакету игры — на MIUI глобальный queryEvents часто пуст/обрезан.
         for (t in targets) {
             if (runCatching { targetForegroundFromPackageOnlyEvents(usm, t, end) }.getOrDefault(false)) {
