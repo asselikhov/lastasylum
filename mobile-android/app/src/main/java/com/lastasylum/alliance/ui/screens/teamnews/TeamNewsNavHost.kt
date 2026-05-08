@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -90,7 +91,6 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 private object TeamNewsRoutes {
     const val LIST = "news_list"
@@ -102,7 +102,7 @@ private object TeamNewsRoutes {
 private fun formatNewsDateRu(iso: String): String =
     runCatching {
         val instant = Instant.parse(iso)
-        val fmt = DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale("ru"))
+        val fmt = DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", java.util.Locale("ru"))
         fmt.format(instant.atZone(ZoneId.systemDefault()))
     }.getOrElse { iso }
 

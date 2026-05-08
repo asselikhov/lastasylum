@@ -123,7 +123,6 @@ import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMutedIncoming
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.util.composerImeAboveBottomNav
 import java.io.InputStream
-import java.util.Locale
 import android.content.ContentResolver
 import android.os.ParcelFileDescriptor
 import java.time.Instant
@@ -140,7 +139,7 @@ private object ForumRoutes {
 private fun formatForumTime(iso: String): String =
     runCatching {
         val instant = Instant.parse(iso)
-        val fmt = DateTimeFormatter.ofPattern("d MMM, HH:mm", Locale("ru"))
+        val fmt = DateTimeFormatter.ofPattern("d MMM, HH:mm", java.util.Locale("ru"))
         fmt.format(instant.atZone(ZoneId.systemDefault()))
     }.getOrElse { iso }
 
