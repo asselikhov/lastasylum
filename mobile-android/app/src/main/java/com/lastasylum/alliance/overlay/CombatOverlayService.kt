@@ -1085,19 +1085,24 @@ class CombatOverlayService : Service() {
         (sub.parent as? ViewGroup)?.let { if (it !== msgRow) it.removeView(sub) }
         (fabCol.parent as? ViewGroup)?.let { if (it !== msgRow) it.removeView(fabCol) }
         msgRow.removeAllViews()
+        val subLp = (sub.layoutParams as? LinearLayout.LayoutParams)
+            ?: LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+        val fabLp = (fabCol.layoutParams as? LinearLayout.LayoutParams)
+            ?: LinearLayout.LayoutParams(dp(44), LinearLayout.LayoutParams.WRAP_CONTENT)
         if (anchoredEnd) {
             sub.setPadding(0, 0, dp(8), 0)
-            msgRow.addView(sub, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-            msgRow.addView(
-                fabCol,
-                LinearLayout.LayoutParams(dp(44), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                    marginStart = dp(8)
-                },
-            )
+            msgRow.addView(sub, subLp)
+            // Do not add extra marginStart here: it shifts the FAB column relative to the collapse button above.
+            // Spacing is provided by subRow padding.
+            fabLp.marginStart = 0
+            msgRow.addView(fabCol, fabLp)
         } else {
             sub.setPadding(dp(8), 0, 0, 0)
-            msgRow.addView(fabCol, LinearLayout.LayoutParams(dp(44), LinearLayout.LayoutParams.WRAP_CONTENT))
-            msgRow.addView(sub, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+            msgRow.addView(fabCol, fabLp.apply { marginStart = 0 })
+            msgRow.addView(sub, subLp)
         }
     }
 
@@ -1227,6 +1232,14 @@ class CombatOverlayService : Service() {
             addView(subAttack, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(6) })
             addView(subDefense, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(6) })
         }
+        // Align the expandable row with the "menu" button (2nd item under Online),
+        // not with the very top of the column.
+        subRow.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply {
+            topMargin = dp(44 + 6)
+        }
 
         OverlayTickerUi.styleOverlayIconButton(fabCtx, lockIcon, sideDp = 42f)
         OverlayTickerUi.styleOverlayIconButton(fabCtx, btnOnline, sideDp = 42f)
@@ -1274,7 +1287,9 @@ class CombatOverlayService : Service() {
 
         val buttonStack = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.START
+            // Keep the collapse button perfectly aligned with the FAB column below
+            // regardless of whether the panel is anchored to the left or right edge.
+            gravity = Gravity.CENTER_HORIZONTAL
             addView(btnCollapse, LinearLayout.LayoutParams(dp(44), dp(44)).apply { bottomMargin = dp(8) })
             addView(
                 messageRow,
