@@ -37,7 +37,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
@@ -174,6 +173,7 @@ import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingOnBubble
 import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMuted
 import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMutedIncoming
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
+import com.lastasylum.alliance.ui.util.composerImeAboveBottomNav
 import com.lastasylum.alliance.ui.theme.roleAccentColor
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import coil.compose.AsyncImage
@@ -639,10 +639,7 @@ fun ChatScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    // adjustNothing + edge-to-edge: window does not resize; lift composer with IME
-                    // insets only (no adjustResize, so no double gap with this padding).
-                    .imePadding()
-                    .padding(bottom = SquadRelayDimens.keyboardComposerGap),
+                    .composerImeAboveBottomNav(),
             ) {
                 state.sendFailure?.let { failure ->
                     Surface(
@@ -1781,7 +1778,7 @@ private fun ChatComposer(
                 }
             }
 
-        // Короткий fade без изменения высоты — меньше конфликтов с imePadding при клавиатуре.
+        // Короткий fade без изменения высоты — меньше конфликтов с IME при клавиатуре.
         AnimatedVisibility(
             visible = showMediaPanel,
             enter = fadeIn(animationSpec = tween(90)),

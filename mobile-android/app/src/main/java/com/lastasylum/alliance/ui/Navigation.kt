@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.exclude
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material.icons.Icons
@@ -31,7 +30,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -141,91 +139,86 @@ fun AppNavigation(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground,
-        // IME padding lives in screens (e.g. ChatScreen). Hide the tab bar while IME is visible so
-        // it cannot sit between the composer and the keyboard (adjustNothing + full IME inset).
+        // IME handled in chat/forum via [com.lastasylum.alliance.ui.util.composerImeAboveBottomNav].
         contentWindowInsets = WindowInsets.safeDrawing.exclude(WindowInsets.ime),
         bottomBar = {
-            val density = LocalDensity.current
-            val imeOpen = WindowInsets.ime.getBottom(density) > 0
-            if (!imeOpen) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    tonalElevation = 0.dp,
-                    shadowElevation = 0.dp,
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp,
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                    ) {
-                        visibleTabs.forEach { tab ->
-                            val isSelected =
-                                currentDestination?.hierarchy?.any { it.route == tab.route } == true
-                            IconButton(
-                                onClick = {
-                                    navController.navigate(tab.route) {
-                                        popUpTo(navController.graph.findStartDestination().id) {
-                                            saveState = true
-                                        }
-                                        launchSingleTop = true
-                                        restoreState = true
+                    visibleTabs.forEach { tab ->
+                        val isSelected =
+                            currentDestination?.hierarchy?.any { it.route == tab.route } == true
+                        IconButton(
+                            onClick = {
+                                navController.navigate(tab.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
                                     }
-                                },
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                when (tab) {
-                                    AppTab.CHAT -> Icon(
-                                        imageVector = Icons.Outlined.ChatBubbleOutline,
-                                        contentDescription = stringResource(tab.titleRes),
-                                        tint = if (isSelected) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                    )
-
-                                    AppTab.OVERLAY -> Icon(
-                                        imageVector = Icons.Outlined.RadioButtonChecked,
-                                        contentDescription = stringResource(tab.titleRes),
-                                        tint = if (isSelected) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                    )
-
-                                    AppTab.PROFILE -> Icon(
-                                        imageVector = Icons.Outlined.PersonOutline,
-                                        contentDescription = stringResource(tab.titleRes),
-                                        tint = if (isSelected) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                    )
-
-                                    AppTab.ADMIN -> Icon(
-                                        imageVector = Icons.Outlined.AdminPanelSettings,
-                                        contentDescription = stringResource(tab.titleRes),
-                                        tint = if (isSelected) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                    )
-
-                                    AppTab.TEAM -> Icon(
-                                        imageVector = Icons.Outlined.Groups,
-                                        contentDescription = stringResource(tab.titleRes),
-                                        tint = if (isSelected) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                    )
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
+                            },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            when (tab) {
+                                AppTab.CHAT -> Icon(
+                                    imageVector = Icons.Outlined.ChatBubbleOutline,
+                                    contentDescription = stringResource(tab.titleRes),
+                                    tint = if (isSelected) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                )
+
+                                AppTab.OVERLAY -> Icon(
+                                    imageVector = Icons.Outlined.RadioButtonChecked,
+                                    contentDescription = stringResource(tab.titleRes),
+                                    tint = if (isSelected) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                )
+
+                                AppTab.PROFILE -> Icon(
+                                    imageVector = Icons.Outlined.PersonOutline,
+                                    contentDescription = stringResource(tab.titleRes),
+                                    tint = if (isSelected) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                )
+
+                                AppTab.ADMIN -> Icon(
+                                    imageVector = Icons.Outlined.AdminPanelSettings,
+                                    contentDescription = stringResource(tab.titleRes),
+                                    tint = if (isSelected) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                )
+
+                                AppTab.TEAM -> Icon(
+                                    imageVector = Icons.Outlined.Groups,
+                                    contentDescription = stringResource(tab.titleRes),
+                                    tint = if (isSelected) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                )
                             }
                         }
                     }

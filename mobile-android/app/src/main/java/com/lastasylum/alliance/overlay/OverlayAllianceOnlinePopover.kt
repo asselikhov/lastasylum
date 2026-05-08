@@ -245,6 +245,7 @@ class OverlayAllianceOnlinePopover(
                 listColumn.removeAllViews()
             }
             scope.launch {
+                usersRepository.updatePresence("ingame")
                 val result = usersRepository.listMembers(allianceCode = null, q = null, skip = 0, limit = 300)
                 mainHandler.post {
                     if (shell !== scrim) return@post
@@ -412,10 +413,15 @@ class OverlayAllianceOnlinePopover(
             }.getOrDefault(false)
         }
 
+        private fun overlayPresenceActive(status: String?): Boolean {
+            val s = status?.trim()?.lowercase() ?: return false
+            return s == "ingame" || s == "online"
+        }
+
         fun filterOverlayOnlineMembers(members: List<TeamMemberDto>): List<TeamMemberDto> =
             members.filter { m ->
                 m.membershipStatus == "active" &&
-                    m.presenceStatus == "ingame" &&
+                    overlayPresenceActive(m.presenceStatus) &&
                     parsePresenceFresh(m.lastPresenceAt, STALE_MS)
             }.sortedBy { it.username.lowercase() }
     }
