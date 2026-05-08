@@ -232,6 +232,10 @@ class CombatOverlayService : Service() {
     private var overlayHistoryComposeOwner: OverlayChatComposeOwner? = null
     /** Кнопка сворачивания панели — для стабильного [syncOverlayPanelEdgeLayout] без «перещёлкивания» края при смене ширины. */
     private var overlayCollapseButton: ImageView? = null
+    /** Unread messages counter for the overlay Chat button badge. */
+    @Volatile
+    private var overlayUnreadChatCount: Int = 0
+    private var overlayChatBadgeText: TextView? = null
 
     private data class OverlayWindowFlagSnap(
         val view: View,
@@ -800,9 +804,26 @@ class CombatOverlayService : Service() {
         stripBuffer.upsert(msg)
         stripBuffer.mergeReceiveTimeline(msg, jwtSubFromAccessToken())
         refreshOverlayChatStrip()
+        val selfId = jwtSubFromAccessToken()
+        if (!overlayHistoryVisible && !selfId.isNullOrBlank() && msg.senderId != selfId) {
+            overlayUnreadChatCount = (overlayUnreadChatCount + 1).coerceAtMost(99)
+            mainHandler.post { updateOverlayChatBadge() }
+        }
         if (overlayHistoryVisible) {
             mainHandler.post { appendOverlayHistoryIfVisible(msg) }
         }
+    }
+
+    private fun updateOverlayChatBadge() {
+        val badge = overlayChatBadgeText ?: return
+        val count = overlayUnreadChatCount.coerceAtLeast(0)
+        if (count <= 0) {
+            badge.visibility = View.GONE
+            badge.text = ""
+            return
+        }
+        badge.visibility = View.VISIBLE
+        badge.text = if (count > 99) "99+" else count.toString()
     }
 
     private fun appendOverlayHistoryIfVisible(msg: ChatMessage) {
@@ -1236,6 +1257,36 @@ class CombatOverlayService : Service() {
         }
         btnChat.setOnClickListener { showOverlayHistoryPanel() }
 
+        // Chat unread badge (overlay only).
+        val chatBadge = TextView(this).apply {
+            visibility = View.GONE
+            text = ""
+            setTextColor(Color.WHITE)
+            setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 10f)
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setPadding(dp(6), dp(2), dp(6), dp(2))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = dp(10).toFloat()
+                setColor(Color.parseColor("#E53935"))
+            }
+        }
+        overlayChatBadgeText = chatBadge
+        updateOverlayChatBadge()
+        val chatHost = FrameLayout(this).apply {
+            addView(btnChat, FrameLayout.LayoutParams(dp(44), dp(44)))
+            addView(
+                chatBadge,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.TOP or Gravity.END,
+                ).apply {
+                    setMargins(0, dp(2), dp(2), 0)
+                },
+            )
+        }
+
         val subRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -1250,7 +1301,7 @@ class CombatOverlayService : Service() {
             LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT,
         ).apply {
-            topMargin = dp(44 + 6)
+            topMargin = dp((44 + 6) * 2)
         }
 
         OverlayTickerUi.styleOverlayIconButton(fabCtx, lockIcon, sideDp = 42f)
@@ -1259,29 +1310,36 @@ class CombatOverlayService : Service() {
         val messageFabColumn = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            addView(btnOnline, LinearLayout.LayoutParams(fabColW, dp(44)))
+            val gap = dp(6)
+            addView(btnCollapse, LinearLayout.LayoutParams(fabColW, dp(44)))
             addView(
-                btnMessage,
+                btnOnline,
                 LinearLayout.LayoutParams(fabColW, dp(44)).apply {
-                    topMargin = dp(6)
+                    topMargin = gap
                 },
             )
             addView(
-                btnChat,
+                btnMessage,
                 LinearLayout.LayoutParams(fabColW, dp(44)).apply {
-                    topMargin = dp(6)
+                    topMargin = gap
+                },
+            )
+            addView(
+                chatHost,
+                LinearLayout.LayoutParams(fabColW, dp(44)).apply {
+                    topMargin = gap
                 },
             )
             addView(
                 btnMic,
                 LinearLayout.LayoutParams(fabColW, dp(44)).apply {
-                    topMargin = dp(6)
+                    topMargin = gap
                 },
             )
             addView(
                 lockIcon,
                 LinearLayout.LayoutParams(fabColW, dp(44)).apply {
-                    topMargin = dp(6)
+                    topMargin = gap
                 },
             )
         }
@@ -1294,7 +1352,11 @@ class CombatOverlayService : Service() {
                 messageFabColumn,
                 LinearLayout.LayoutParams(fabColW, LinearLayout.LayoutParams.WRAP_CONTENT),
             )
-            addView(subRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+            addView(
+                subRow,
+                (subRow.layoutParams as? LinearLayout.LayoutParams)
+                    ?: LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT),
+            )
         }
 
         val buttonStack = LinearLayout(this).apply {
@@ -1302,7 +1364,6 @@ class CombatOverlayService : Service() {
             // Keep the collapse button perfectly aligned with the FAB column below
             // regardless of whether the panel is anchored to the left or right edge.
             gravity = Gravity.CENTER_HORIZONTAL
-            addView(btnCollapse, LinearLayout.LayoutParams(dp(44), dp(44)).apply { bottomMargin = dp(8) })
             addView(
                 messageRow,
                 LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
@@ -1393,6 +1454,11 @@ class CombatOverlayService : Service() {
             val mgr = windowManager ?: return@setOnClickListener
             val wr = overlayView ?: return@setOnClickListener
             val p = overlayMainWindowParams ?: return@setOnClickListener
+            OverlayChatInteractionHold.suppressGameForegroundGate = true
+            mainHandler.postDelayed(
+                { OverlayChatInteractionHold.suppressGameForegroundGate = false },
+                2500L,
+            )
             overlayAllianceOnlinePopover.toggle(mgr, p, wr, overlayPanelAnchoredEnd)
         }
 
@@ -1659,6 +1725,8 @@ class CombatOverlayService : Service() {
     private fun showOverlayHistoryPanel() {
         if (overlayHistoryVisible) return
         overlayAllianceOnlinePopover.hide()
+        overlayUnreadChatCount = 0
+        mainHandler.post { updateOverlayChatBadge() }
         val manager = windowManager ?: return
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
