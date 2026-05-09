@@ -1823,9 +1823,7 @@ class CombatOverlayService : Service() {
             gravity = Gravity.TOP or Gravity.START
             x = 0
             y = 0
-            // Ensure the overlay window is resized for IME, and Compose applies padding so input stays above keyboard.
-            softInputMode =
-                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN
+            OverlayWindowLayout.applyHistoryPanelSoftInputMode(this)
         }
 
         val overlayUiContext = OverlayTickerUi.themedFabContext(this)

@@ -53,4 +53,25 @@ object OverlayWindowLayout {
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
     }
+
+    /**
+     * IME для полноэкранного оверлей-чата (Compose + [imePadding]).
+     * [WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE] помечен deprecated в API 35+; для
+     * [WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY] на практике по-прежнему нужен явный
+     * режим resize/pan, иначе клавиатура перекрывает ввод на части прошивок.
+     */
+    fun applyHistoryPanelSoftInputMode(params: WindowManager.LayoutParams) {
+        @Suppress("DEPRECATION")
+        val mode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or
+            WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN
+        params.softInputMode = mode
+    }
+
+    /** IME для диалога координат в отдельном overlay-окне. */
+    fun applyCoordinateDialogSoftInputMode(params: WindowManager.LayoutParams) {
+        @Suppress("DEPRECATION")
+        val mode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or
+            WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
+        params.softInputMode = mode
+    }
 }

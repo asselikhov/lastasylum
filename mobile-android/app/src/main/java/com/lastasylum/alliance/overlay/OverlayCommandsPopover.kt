@@ -1,9 +1,11 @@
 package com.lastasylum.alliance.overlay
 
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
 import android.os.Build
 import android.os.Handler
 import android.text.InputType
@@ -91,8 +93,8 @@ class OverlayCommandsPopover(
         val panelW = panelRoot.width.takeIf { it > 0 } ?: dp(120)
         val panelH = panelRoot.height.takeIf { it > 0 } ?: dp(180)
 
-        val popoverW = minOf(dp(360), screenW - dp(16))
-        val popoverH = minOf(dp(280), screenH - dp(24))
+        val popoverW = minOf(dp(404), screenW - dp(20))
+        val popoverH = minOf(dp(312), screenH - dp(32))
 
         var x = if (anchoredEnd) {
             panelParams.x - popoverW - dp(8)
@@ -104,19 +106,54 @@ class OverlayCommandsPopover(
         val yBottom = (panelParams.y + panelH / 2 - popoverH / 2)
             .coerceIn(0, (screenH - popoverH).coerceAtLeast(0))
 
+        fun menuItemBackground(): RippleDrawable {
+            val base = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(12).toFloat()
+                setColor(Color.parseColor("#2E1A2332"))
+                setStroke(dp(1).coerceAtLeast(1), Color.parseColor("#5C7C9CFF"))
+            }
+            return RippleDrawable(
+                ColorStateList.valueOf(Color.parseColor("#38FFFFFF")),
+                base,
+                base,
+            )
+        }
+
         val title = TextView(context).apply {
             text = context.getString(R.string.overlay_commands_title)
-            setTextColor(Color.parseColor("#FFF1F5FF"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setTextColor(Color.parseColor("#FFF8FAFF"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+            letterSpacing = 0.02f
             typeface = Typeface.DEFAULT_BOLD
+        }
+        val subtitle = TextView(context).apply {
+            text = context.getString(R.string.overlay_commands_subtitle)
+            setTextColor(Color.parseColor("#8FA3B8C8"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            setPadding(0, dp(4), 0, 0)
+        }
+        val titleBlock = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(title)
+            addView(subtitle)
         }
 
         val close = TextView(context).apply {
             text = "✕"
             contentDescription = context.getString(R.string.overlay_online_close_cd)
-            setTextColor(Color.parseColor("#FFB8C0D9"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-            setPadding(dp(6), dp(4), dp(10), dp(4))
+            setTextColor(Color.parseColor("#CCB8C0D9"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            background = RippleDrawable(
+                ColorStateList.valueOf(Color.parseColor("#28FFFFFF")),
+                GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = dp(999).toFloat()
+                    setColor(Color.parseColor("#15202838"))
+                },
+                null,
+            )
             isClickable = true
             setOnClickListener { hide() }
         }
@@ -124,27 +161,35 @@ class OverlayCommandsPopover(
         val headerRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(10), dp(10), dp(4), dp(4))
+            setPadding(dp(16), dp(14), dp(12), dp(10))
             addView(
-                title,
+                titleBlock,
                 LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
             )
             addView(close)
         }
 
+        val headerDivider = View(context).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(1),
+            ).apply {
+                marginStart = dp(14)
+                marginEnd = dp(14)
+            }
+            setBackgroundColor(Color.parseColor("#268899AA"))
+        }
+
         fun menuButton(labelRes: Int): TextView =
             TextView(context).apply {
                 text = context.getString(labelRes)
-                setTextColor(Color.parseColor("#FFE8ECF5"))
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
-                setPadding(dp(10), dp(10), dp(10), dp(10))
+                setTextColor(Color.parseColor("#FFEEF3FB"))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                letterSpacing = 0.015f
+                minimumHeight = dp(48)
+                setPadding(dp(12), dp(12), dp(12), dp(12))
                 gravity = Gravity.CENTER
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.RECTANGLE
-                    cornerRadius = dp(10).toFloat()
-                    setColor(Color.parseColor("#33101828"))
-                    setStroke(dp(1).coerceAtLeast(1), Color.parseColor("#449B7CFF"))
-                }
+                background = menuItemBackground()
                 isClickable = true
                 val label = context.getString(labelRes)
                 setOnClickListener {
@@ -159,8 +204,7 @@ class OverlayCommandsPopover(
         fun column(vararg labels: Int): LinearLayout =
             LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                labels.forEach { id ->
+                labels.forEachIndexed { index, id ->
                     val btn = menuButton(id)
                     addView(
                         btn,
@@ -168,38 +212,52 @@ class OverlayCommandsPopover(
                             LinearLayout.LayoutParams.MATCH_PARENT,
                             LinearLayout.LayoutParams.WRAP_CONTENT,
                         ).apply {
-                            bottomMargin = dp(8)
+                            if (index < labels.lastIndex) bottomMargin = dp(10)
                         },
                     )
                 }
             }
 
+        val columnGroups = listOf(
+            intArrayOf(R.string.overlay_cmd_attack_city, R.string.overlay_cmd_attack_player),
+            intArrayOf(R.string.overlay_cmd_storm_city, R.string.overlay_cmd_storm_player),
+            intArrayOf(R.string.overlay_cmd_reinf_city, R.string.overlay_cmd_reinf_player),
+        )
+        val columnGap = dp(12)
         val columns = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(10), dp(4), dp(10), dp(10))
-            addView(column(R.string.overlay_cmd_attack_city, R.string.overlay_cmd_attack_player))
-            addView(column(R.string.overlay_cmd_storm_city, R.string.overlay_cmd_storm_player))
-            addView(column(R.string.overlay_cmd_reinf_city, R.string.overlay_cmd_reinf_player))
+            setPadding(dp(14), dp(6), dp(14), dp(16))
+            columnGroups.forEachIndexed { index, ids ->
+                val col = column(*ids)
+                val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    if (index < columnGroups.lastIndex) marginEnd = columnGap
+                }
+                addView(col, lp)
+            }
+        }
+
+        val cardBg = GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(Color.parseColor("#F2222E3D"), Color.parseColor("#E8151C26")),
+        ).apply {
+            cornerRadius = dp(18).toFloat()
+            setStroke(dp(1).coerceAtLeast(1), Color.parseColor("#668899CC"))
         }
 
         val card = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             clipToPadding = false
             clipChildren = false
-            elevation = dp(6).toFloat()
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(14).toFloat()
-                setColor(Color.parseColor("#E610141E"))
-                setStroke(dp(1).coerceAtLeast(1), Color.parseColor("#559B7CFF"))
-            }
+            elevation = dp(12).toFloat()
+            background = cardBg
             addView(headerRow)
+            addView(headerDivider)
             addView(columns)
             setOnClickListener { }
         }
 
         val scrim = FrameLayout(context).apply {
-            setBackgroundColor(0x66000000)
+            setBackgroundColor(Color.argb(102, 0, 0, 0))
             isClickable = true
             setOnClickListener { hide() }
         }
@@ -392,10 +450,7 @@ class OverlayCommandsPopover(
             gravity = Gravity.TOP or Gravity.START
             x = 0
             y = 0
-            @Suppress("DEPRECATION")
-            softInputMode =
-                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or
-                    WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
+            OverlayWindowLayout.applyCoordinateDialogSoftInputMode(this)
         }
 
         if (runCatching { windowManager.addView(scrim, params) }.isFailure) {

@@ -370,6 +370,7 @@
     <string name="overlay_online_close_cd">Закрыть список</string>
     <string name="overlay_cd_commands">Команды альянса</string>
     <string name="overlay_commands_title">Команды</string>
+    <string name="overlay_commands_subtitle">Выберите действие</string>
     <string name="overlay_coord_x_label">X:</string>
     <string name="overlay_coord_y_label">Y:</string>
     <string name="overlay_coord_send">Отправить</string>
