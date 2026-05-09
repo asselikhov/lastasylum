@@ -15,10 +15,12 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
+import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import com.lastasylum.alliance.R
@@ -94,7 +96,7 @@ class OverlayCommandsPopover(
         val panelH = panelRoot.height.takeIf { it > 0 } ?: dp(180)
 
         val popoverW = minOf(dp(404), screenW - dp(20))
-        val popoverH = minOf(dp(312), screenH - dp(32))
+        val popoverH = minOf(dp(400), screenH - dp(24))
 
         var x = if (anchoredEnd) {
             panelParams.x - popoverW - dp(8)
@@ -180,57 +182,94 @@ class OverlayCommandsPopover(
             setBackgroundColor(Color.parseColor("#268899AA"))
         }
 
-        fun menuButton(labelRes: Int): TextView =
-            TextView(context).apply {
-                text = context.getString(labelRes)
-                setTextColor(Color.parseColor("#FFEEF3FB"))
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-                letterSpacing = 0.015f
-                minimumHeight = dp(48)
-                setPadding(dp(12), dp(12), dp(12), dp(12))
-                gravity = Gravity.CENTER
-                background = menuItemBackground()
-                isClickable = true
-                val label = context.getString(labelRes)
-                setOnClickListener {
-                    val wm = attachedWindowManager ?: return@setOnClickListener
-                    hideCoordOnly()
-                    removeShell(menuScrim)
-                    menuScrim = null
-                    showCoordinateDialog(wm, label)
-                }
-            }
+        data class CommandOption(val labelDisplayRes: Int, val labelCommandRes: Int)
 
-        fun column(vararg labels: Int): LinearLayout =
+        fun columnWithHeader(
+            titleRes: Int,
+            options: List<CommandOption>,
+        ): LinearLayout =
             LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
-                labels.forEachIndexed { index, id ->
-                    val btn = menuButton(id)
-                    addView(
-                        btn,
-                        LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT,
-                        ).apply {
-                            if (index < labels.lastIndex) bottomMargin = dp(10)
-                        },
-                    )
+                val titleTv = TextView(context).apply {
+                    text = context.getString(titleRes)
+                    setTextColor(Color.parseColor("#FFB8C6DD"))
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+                    typeface = Typeface.DEFAULT_BOLD
+                    letterSpacing = 0.02f
+                    setPadding(0, 0, 0, dp(6))
                 }
+                val spinner = Spinner(context).apply {
+                    val labels = options.map { context.getString(it.labelDisplayRes) }
+                    adapter = ArrayAdapter(
+                        context,
+                        R.layout.overlay_command_spinner_item,
+                        labels,
+                    ).also { a ->
+                        a.setDropDownViewResource(R.layout.overlay_command_spinner_dropdown)
+                    }
+                    setPadding(0, 0, 0, dp(8))
+                }
+                val actionBtn = TextView(context).apply {
+                    text = context.getString(R.string.overlay_cmd_column_open_coords)
+                    setTextColor(Color.parseColor("#FFEEF3FB"))
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                    letterSpacing = 0.015f
+                    minimumHeight = dp(44)
+                    setPadding(dp(10), dp(10), dp(10), dp(10))
+                    gravity = Gravity.CENTER
+                    background = menuItemBackground()
+                    isClickable = true
+                    setOnClickListener {
+                        val wm = attachedWindowManager ?: return@setOnClickListener
+                        val idx = spinner.selectedItemPosition
+                            .coerceIn(0, options.lastIndex)
+                        val commandRes = options[idx].labelCommandRes
+                        val label = context.getString(commandRes)
+                        hideCoordOnly()
+                        removeShell(menuScrim)
+                        menuScrim = null
+                        showCoordinateDialog(wm, label)
+                    }
+                }
+                addView(titleTv)
+                addView(
+                    spinner,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ),
+                )
+                addView(
+                    actionBtn,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ),
+                )
             }
 
-        val columnGroups = listOf(
-            intArrayOf(R.string.overlay_cmd_attack_city, R.string.overlay_cmd_attack_player),
-            intArrayOf(R.string.overlay_cmd_storm_city, R.string.overlay_cmd_storm_player),
-            intArrayOf(R.string.overlay_cmd_reinf_city, R.string.overlay_cmd_reinf_player),
+        val columnDefs = listOf(
+            R.string.overlay_cmd_column_attack to listOf(
+                CommandOption(R.string.overlay_cmd_spinner_by_city, R.string.overlay_cmd_attack_city),
+                CommandOption(R.string.overlay_cmd_spinner_by_player, R.string.overlay_cmd_attack_player),
+            ),
+            R.string.overlay_cmd_column_storm to listOf(
+                CommandOption(R.string.overlay_cmd_spinner_by_city, R.string.overlay_cmd_storm_city),
+                CommandOption(R.string.overlay_cmd_spinner_by_player, R.string.overlay_cmd_storm_player),
+            ),
+            R.string.overlay_cmd_column_reinf to listOf(
+                CommandOption(R.string.overlay_cmd_spinner_reinf_to_city, R.string.overlay_cmd_reinf_city),
+                CommandOption(R.string.overlay_cmd_spinner_reinf_to_player, R.string.overlay_cmd_reinf_player),
+            ),
         )
         val columnGap = dp(12)
         val columns = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(dp(14), dp(6), dp(14), dp(16))
-            columnGroups.forEachIndexed { index, ids ->
-                val col = column(*ids)
+            columnDefs.forEachIndexed { index, (titleRes, opts) ->
+                val col = columnWithHeader(titleRes, opts)
                 val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    if (index < columnGroups.lastIndex) marginEnd = columnGap
+                    if (index < columnDefs.lastIndex) marginEnd = columnGap
                 }
                 addView(col, lp)
             }

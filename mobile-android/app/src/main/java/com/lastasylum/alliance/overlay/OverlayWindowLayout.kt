@@ -10,8 +10,8 @@ import android.view.WindowManager
  * - **Панель кнопок** ([CombatOverlayService]): `WRAP_CONTENT` окно, без `MATCH_PARENT` по ширине у контента;
  *   [FLAG_NOT_TOUCH_MODAL] — касания вне прямоугольника окна уходят в игру;
  *   корень [OverlayPassthroughMultitouchFrameLayout] — при pinch (>1 пальца) окно не участвует в dispatch (зум карты).
- * - **Лента чата**: отдельное окно; ширина по контенту + центр; контент клипуется по высоте без ScrollView,
- *   нижние сообщения видны; пустые зоны — [OverlayPassthroughMultitouchFrameLayout] + [FLAG_NOT_TOUCH_MODAL].
+ * - **Лента чата**: отдельное окно; ширина по контенту + центр; вертикальный скролл и max-height от экрана;
+ *   касания — [OverlayStripPassthroughFrameLayout]: проходят в игру, кроме зон крестика закрытия.
  * - **Тикер**: окно создаётся только при первом [OverlayTickerWindow.showTicker], чтобы не держать
  *   невидимую полоску на всю ширину экрана между сообщениями.
  * - **Quick commands**: маленькие `WRAP_CONTENT` окна у пузыря, тот же корень для pinch.

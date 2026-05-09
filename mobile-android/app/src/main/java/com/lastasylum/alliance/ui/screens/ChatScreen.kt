@@ -174,6 +174,7 @@ import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMuted
 import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMutedIncoming
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.util.composerImeAboveBottomNav
+import com.lastasylum.alliance.ui.util.composerImeOverlay
 import com.lastasylum.alliance.ui.theme.roleAccentColor
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import coil.compose.AsyncImage
@@ -430,6 +431,7 @@ fun ChatScreen(
     onEditMessage: (String, String) -> Unit,
     onForwardMessage: (String) -> Unit,
     onToggleReaction: (String, String) -> Unit,
+    overlayComposerInsets: Boolean = false,
 ) {
     val context = LocalContext.current
     val activityResultOwner = LocalActivityResultRegistryOwner.current
@@ -639,7 +641,10 @@ fun ChatScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .composerImeAboveBottomNav(),
+                    .then(
+                        if (overlayComposerInsets) Modifier.composerImeOverlay()
+                        else Modifier.composerImeAboveBottomNav(),
+                    ),
             ) {
                 state.sendFailure?.let { failure ->
                     Surface(

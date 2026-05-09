@@ -25,6 +25,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.view.ViewGroup
 import android.util.Base64
@@ -44,7 +45,6 @@ import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
@@ -202,7 +202,7 @@ class CombatOverlayService : Service() {
     private var chatStripClipRoot: FrameLayout? = null
     private var chatStripLines: LinearLayout? = null
     private var chatStripCompose: ComposeView? = null
-    private var chatStripHost: FrameLayout? = null
+    private var chatStripHost: View? = null
     private var chatStripParams: WindowManager.LayoutParams? = null
     private val chatStripPreviewFlow = MutableStateFlow<List<ChatMessage>>(emptyList())
     private var overlayMessageListener: ((ChatMessage) -> Unit)? = null
@@ -786,6 +786,14 @@ class CombatOverlayService : Service() {
         refreshOverlayChatStrip()
     }
 
+    private fun updateStripDismissScreenRects(rects: List<Rect>) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { updateStripDismissScreenRects(rects) }
+            return
+        }
+        (chatStripHost as? OverlayStripPassthroughFrameLayout)?.dismissScreenRects = rects
+    }
+
     private fun refreshOverlayChatStrip() {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             mainHandler.post { refreshOverlayChatStrip() }
@@ -813,7 +821,8 @@ class CombatOverlayService : Service() {
         mainHandler.post {
             val wm = windowManager ?: systemWindowManager() ?: return@post
             runCatching { ensureChatStripWindow(wm) }
-            chatStripHost?.visibility = View.VISIBLE
+            chatStripHost?.visibility =
+                if (overlayHistoryVisible) View.GONE else View.VISIBLE
             rebalanceOverlayChatStripZOrder()
         }
     }
@@ -964,12 +973,12 @@ class CombatOverlayService : Service() {
 
         val stripMaxWidth =
             (resources.displayMetrics.widthPixels - dp(20)).coerceAtLeast(dp(220))
-        // Strip is display-only: touches must reach the game under the overlay.
+        // Touches pass through except dismiss rects handled by [OverlayStripPassthroughFrameLayout].
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             type,
-            OverlayWindowLayout.popupWindowFlags() or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            OverlayWindowLayout.popupWindowFlags(),
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
@@ -980,7 +989,7 @@ class CombatOverlayService : Service() {
         }
 
         val clipRoot = FrameLayout(this).apply {
-            clipChildren = true
+            clipChildren = false
             OverlayChatStripUi.styleStripContainer(this@CombatOverlayService, this)
             val compose = ComposeView(this@CombatOverlayService).apply {
                 setContent {
@@ -991,6 +1000,7 @@ class CombatOverlayService : Service() {
                             messages = preview,
                             selfUserId = selfId,
                             onDismissMessage = { m -> dismissStripMessage(m) },
+                            onDismissRegionsChanged = { updateStripDismissScreenRects(it) },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 2.dp, vertical = 2.dp),
@@ -1009,7 +1019,7 @@ class CombatOverlayService : Service() {
             )
         }
 
-        val host = OverlayPassthroughMultitouchFrameLayout(this).apply {
+        val host = OverlayStripPassthroughFrameLayout(this).apply {
             elevation = 18f
             setPadding(dp(10), 0, dp(10), 0)
             setBackgroundColor(Color.TRANSPARENT)
@@ -1021,7 +1031,7 @@ class CombatOverlayService : Service() {
                 clipRoot,
                 FrameLayout.LayoutParams(
                     stripMaxWidth,
-                    dp(320),
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
                 ),
             )
         }
@@ -1611,6 +1621,9 @@ class CombatOverlayService : Service() {
         resumeOverlayWindowsAfterSystemActivity()
         val root = overlayHistoryRoot
         overlayHistoryVisible = false
+        stripBuffer.clear()
+        lastStripRenderSignature = null
+        updateStripDismissScreenRects(emptyList())
         overlayHistoryInput?.let { hideOverlayIme(it) }
         val manager = windowManager ?: systemWindowManager()
         if (root != null && manager != null) {
@@ -1628,6 +1641,7 @@ class CombatOverlayService : Service() {
         runCatching { unregisterReceiver(overlaySystemResultReceiver) }
         overlayHistoryComposeOwner?.destroy()
         overlayHistoryComposeOwner = null
+        refreshOverlayChatStrip()
     }
 
     private fun hideOverlayIme(view: View) {
@@ -1716,6 +1730,7 @@ class CombatOverlayService : Service() {
         overlayUnreadChatCount = 0
         mainHandler.post { updateOverlayChatBadge() }
         val manager = windowManager ?: return
+        chatStripHost?.visibility = View.GONE
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
@@ -1768,7 +1783,7 @@ class CombatOverlayService : Service() {
                 ) {
                     SquadRelayTheme {
                         Surface(
-                            modifier = Modifier.fillMaxSize().imePadding(),
+                            modifier = Modifier.fillMaxSize(),
                             color = MaterialTheme.colorScheme.surface,
                         ) {
                             Box(Modifier.fillMaxSize()) {
@@ -1806,6 +1821,7 @@ class CombatOverlayService : Service() {
                                     onEditMessage = vm::editMessage,
                                     onForwardMessage = vm::forwardMessage,
                                     onToggleReaction = vm::toggleReaction,
+                                    overlayComposerInsets = true,
                                 )
                                 IconButton(
                                     onClick = { hideOverlayHistoryPanel() },
@@ -1876,6 +1892,7 @@ class CombatOverlayService : Service() {
             runCatching { unregisterReceiver(overlaySystemResultReceiver) }
             overlayHistoryComposeOwner?.destroy()
             overlayHistoryComposeOwner = null
+            refreshOverlayChatStrip()
             // Some ROMs leave the main overlay in a bad state after a failed second window; rebuild shell.
             mainHandler.post {
                 requestRebuildOverlayIfRunning(this@CombatOverlayService)

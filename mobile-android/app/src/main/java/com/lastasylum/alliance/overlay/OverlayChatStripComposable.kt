@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.overlay
 
+import android.graphics.Rect
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -15,8 +16,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -39,12 +40,15 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -72,6 +76,7 @@ import com.lastasylum.alliance.ui.theme.roleAccentColor
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import java.time.Instant
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
 @Composable
@@ -79,10 +84,12 @@ fun OverlayChatStrip(
     messages: List<ChatMessage>,
     selfUserId: String?,
     onDismissMessage: (ChatMessage) -> Unit = {},
+    onDismissRegionsChanged: (List<Rect>) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val keep = remember { mutableStateListOf<ChatMessage>() }
     val leaving = remember { mutableStateMapOf<String, Boolean>() }
+    val dismissRegions = remember { mutableStateMapOf<String, Rect>() }
     val latestMessages by rememberUpdatedState(messages)
     val latestSelfId by rememberUpdatedState(selfUserId)
     val stripScroll = rememberScrollState()
@@ -91,7 +98,15 @@ fun OverlayChatStrip(
     fun keyOf(msg: ChatMessage): String =
         msg._id?.takeIf { it.isNotBlank() } ?: msg.stableKey()
 
+    val cfg = LocalConfiguration.current
+    val stripMaxHeight = remember(cfg.screenHeightDp) {
+        (cfg.screenHeightDp * 0.56f).dp.coerceAtLeast(220.dp)
+    }
+
     LaunchedEffect(latestMessages) {
+        val valid = latestMessages.map { keyOf(it) }.toSet()
+        dismissRegions.keys.retainAll { valid.contains(it) }
+        onDismissRegionsChanged(dismissRegions.values.toList())
         val keysBefore = keep.map { keyOf(it) }.toSet()
 
         latestMessages.forEach { m ->
@@ -126,7 +141,7 @@ fun OverlayChatStrip(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .fillMaxHeight()
+            .heightIn(max = stripMaxHeight)
             .verticalScroll(stripScroll),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -154,9 +169,14 @@ fun OverlayChatStrip(
             ) {
                 OverlayChatStripMessage(
                     msg = msg,
+                    messageKey = key,
                     isMine = isMine,
                     compactStickers = compactStickers,
                     onDismiss = { onDismissMessage(msg) },
+                    onReportDismissBounds = { mk, rect ->
+                        dismissRegions[mk] = rect
+                        onDismissRegionsChanged(dismissRegions.values.toList())
+                    },
                 )
             }
         }
@@ -203,9 +223,11 @@ private fun OverlayStripBatchHeader(firstMessage: ChatMessage) {
 @Composable
 private fun OverlayChatStripMessage(
     msg: ChatMessage,
+    messageKey: String,
     isMine: Boolean,
     compactStickers: Boolean,
     onDismiss: () -> Unit,
+    onReportDismissBounds: (String, Rect) -> Unit,
 ) {
     val bubbleBg = if (isMine) ChatTelegramOutgoingBubble else ChatTelegramIncomingBubble
     val onBubble = if (isMine) ChatTelegramOutgoingOnBubble else ChatTelegramIncomingOnBubble
@@ -352,6 +374,18 @@ private fun OverlayChatStripMessage(
                     .align(Alignment.TopEnd)
                     .padding(top = 3.dp, end = 3.dp)
                     .size(32.dp)
+                    .onGloballyPositioned { coords ->
+                        val b = coords.boundsInWindow()
+                        onReportDismissBounds(
+                            messageKey,
+                            Rect(
+                                b.left.roundToInt(),
+                                b.top.roundToInt(),
+                                b.right.roundToInt(),
+                                b.bottom.roundToInt(),
+                            ),
+                        )
+                    }
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
