@@ -7,4 +7,10 @@ package com.lastasylum.alliance.overlay
 object OverlayChatInteractionHold {
     @Volatile
     var suppressGameForegroundGate: Boolean = false
+
+    /**
+     * Пока пользователь тащит панель оверлея: не скрывать окна по usage-stats (лагает фокус на части ROM).
+     */
+    @Volatile
+    var suppressGameForegroundGateForOverlayPanel: Boolean = false
 }

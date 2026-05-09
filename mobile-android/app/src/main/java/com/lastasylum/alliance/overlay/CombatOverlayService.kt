@@ -535,7 +535,10 @@ class CombatOverlayService : Service() {
                     // Some OEM ROMs may report SquadRelay as "resumed" when touching overlay windows.
                     // [overlayHistoryVisible] is @Volatile so IO reads see main-thread updates; full-screen image
                     // dialogs set [OverlayChatInteractionHold] while open (Compose Dialog window timing).
-                    if (overlayHistoryVisible || OverlayChatInteractionHold.suppressGameForegroundGate) {
+                    if (overlayHistoryVisible ||
+                        OverlayChatInteractionHold.suppressGameForegroundGate ||
+                        OverlayChatInteractionHold.suppressGameForegroundGateForOverlayPanel
+                    ) {
                         true
                     } else if (targets.isEmpty()) {
                         // If the user enabled "only in game" but did not configure target packages yet,
@@ -1518,6 +1521,7 @@ class CombatOverlayService : Service() {
             if (dragLocked) return@setOnTouchListener false
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
+                    OverlayChatInteractionHold.suppressGameForegroundGateForOverlayPanel = true
                     (v.parent as? ViewGroup)?.requestDisallowInterceptTouchEvent(true)
                     initialX = overlayMainWindowParams!!.x
                     initialY = overlayMainWindowParams!!.y
@@ -1544,23 +1548,37 @@ class CombatOverlayService : Service() {
                         val screenHeight = resources.displayMetrics.heightPixels
                         val rootW = windowRoot.width.takeIf { it > 0 }?.coerceAtLeast(dp(48)) ?: dp(120)
                         val rootH = windowRoot.height.takeIf { it > 0 }?.coerceAtLeast(dp(48)) ?: dp(180)
-                        val nextX = (initialX + deltaX).coerceIn(0, screenWidth - rootW)
-                        val nextY = (initialY - deltaY).coerceIn(0, screenHeight - rootH) // gravity=BOTTOM
+                        // Invalid range in coerceIn (e.g. rootW > screenWidth) crashes the process — same guard as OverlayWindowDragHelper.
+                        val maxX = (screenWidth - rootW).coerceAtLeast(0)
+                        val maxY = (screenHeight - rootH).coerceAtLeast(0)
+                        val nextX = (initialX + deltaX).coerceIn(0, maxX)
+                        val nextY = (initialY - deltaY).coerceIn(0, maxY) // gravity=BOTTOM
                         overlayMainWindowParams!!.x = nextX
                         overlayMainWindowParams!!.y = nextY
-                        manager.updateViewLayout(windowRoot, overlayMainWindowParams)
-                        overlayTicker.syncTickerPosition()
-                        syncOverlayPanelEdgeLayout()
+                        val layoutOk = runCatching {
+                            manager.updateViewLayout(windowRoot, overlayMainWindowParams)
+                        }.onFailure { e ->
+                            Log.w(TAG, "overlay drag updateViewLayout failed", e)
+                        }.isSuccess
+                        if (layoutOk) {
+                            overlayTicker.syncTickerPosition()
+                            runCatching { syncOverlayPanelEdgeLayout() }.onFailure { e ->
+                                Log.w(TAG, "syncOverlayPanelEdgeLayout during drag failed", e)
+                            }
+                        }
                         true
                     } else {
                         false
                     }
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    OverlayChatInteractionHold.suppressGameForegroundGateForOverlayPanel = false
                     dragArmRunnable?.let { mainHandler.removeCallbacks(it) }
                     dragArmRunnable = null
                     if (isDragging) {
-                        syncOverlayPanelEdgeLayout()
+                        runCatching { syncOverlayPanelEdgeLayout() }.onFailure { e ->
+                            Log.w(TAG, "syncOverlayPanelEdgeLayout after drag failed", e)
+                        }
                         // Persist last drag position so the panel doesn't jump after rebuild/restart.
                         overlayMainWindowParams?.let { p ->
                             AppContainer.from(this@CombatOverlayService).userSettingsPreferences.setOverlayPanelPosPx(
