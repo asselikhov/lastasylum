@@ -3,23 +3,29 @@ package com.lastasylum.alliance.overlay
 import android.content.Context
 import android.graphics.Rect
 import android.view.MotionEvent
+import android.view.View
 import android.widget.FrameLayout
 
 /**
- * Корень окна ленты сообщений: касания проходят к игре, кроме явных зон (крестики закрытия),
- * заданных в экранных координатах ([dismissScreenRects]).
+ * Корень окна ленты сообщений: касания проходят к игре, кроме зон крестика закрытия.
+ * Прямоугольники задаются в координатах содержимого [composeLocatorView] (как [boundsInRoot] в Compose).
  */
 internal class OverlayStripPassthroughFrameLayout(context: Context) : FrameLayout(context) {
 
+    /** [ComposeView] ленты — для перевода координат касания в систему Compose. */
+    var composeLocatorView: View? = null
+
     @Volatile
-    var dismissScreenRects: List<Rect> = emptyList()
+    var dismissRectsInCompose: List<Rect> = emptyList()
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         if (ev.pointerCount > 1) return false
+        val compose = composeLocatorView
+        if (compose == null) return false
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
-            val rx = ev.rawX.toInt()
-            val ry = ev.rawY.toInt()
-            if (dismissScreenRects.none { it.contains(rx, ry) }) return false
+            val lx = (ev.x - compose.left).toInt()
+            val ly = (ev.y - compose.top).toInt()
+            if (dismissRectsInCompose.none { it.contains(lx, ly) }) return false
         }
         return super.dispatchTouchEvent(ev)
     }

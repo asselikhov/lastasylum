@@ -67,6 +67,17 @@ object OverlayWindowLayout {
         params.softInputMode = mode
     }
 
+    /**
+     * Полноэкранный оверлей-чат: без системного resize окна под IME — подъём композера только через
+     * [com.lastasylum.alliance.ui.util.composerImeOverlay], без конфликта с [SOFT_INPUT_ADJUST_RESIZE].
+     */
+    fun applyOverlayChatHistorySoftInputMode(params: WindowManager.LayoutParams) {
+        @Suppress("DEPRECATION")
+        val mode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING or
+            WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN
+        params.softInputMode = mode
+    }
+
     /** IME для диалога координат в отдельном overlay-окне. */
     fun applyCoordinateDialogSoftInputMode(params: WindowManager.LayoutParams) {
         @Suppress("DEPRECATION")

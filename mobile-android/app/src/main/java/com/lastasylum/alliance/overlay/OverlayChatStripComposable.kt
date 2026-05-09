@@ -7,7 +7,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -17,7 +16,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -40,7 +38,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
@@ -131,7 +129,7 @@ fun OverlayChatStrip(
         // Только одно новое сообщение — «премиум» анимация входа; при пакетной подгрузке истории не дёргаем всю колонку.
         if (newKeys.size == 1) {
             accentEnterKey = newKeys.first()
-            delay(420)
+            delay(260)
             accentEnterKey = null
         }
     }
@@ -145,7 +143,7 @@ fun OverlayChatStrip(
             .verticalScroll(stripScroll),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (keep.size >= 2) {
+        if (keep.isNotEmpty()) {
             OverlayStripBatchHeader(firstMessage = keep.first())
         }
         keep.forEach { msg ->
@@ -154,11 +152,10 @@ fun OverlayChatStrip(
             val isLeaving = leaving[key] == true
             val fancyEnter = accentEnterKey != null && key == accentEnterKey
             val enterTransition = if (fancyEnter) {
-                fadeIn(animationSpec = tween(130)) +
-                    slideInVertically(animationSpec = tween(210)) { it / 4 } +
-                    scaleIn(initialScale = 0.94f, animationSpec = tween(210))
+                fadeIn(animationSpec = tween(110)) +
+                    scaleIn(initialScale = 0.96f, animationSpec = tween(170))
             } else {
-                fadeIn(animationSpec = tween(75))
+                fadeIn(animationSpec = tween(55))
             }
             AnimatedVisibility(
                 visible = !isLeaving,
@@ -375,7 +372,7 @@ private fun OverlayChatStripMessage(
                     .padding(top = 3.dp, end = 3.dp)
                     .size(32.dp)
                     .onGloballyPositioned { coords ->
-                        val b = coords.boundsInWindow()
+                        val b = coords.boundsInRoot()
                         onReportDismissBounds(
                             messageKey,
                             Rect(

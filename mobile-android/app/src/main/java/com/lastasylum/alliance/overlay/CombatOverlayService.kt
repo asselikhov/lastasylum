@@ -791,7 +791,7 @@ class CombatOverlayService : Service() {
             mainHandler.post { updateStripDismissScreenRects(rects) }
             return
         }
-        (chatStripHost as? OverlayStripPassthroughFrameLayout)?.dismissScreenRects = rects
+        (chatStripHost as? OverlayStripPassthroughFrameLayout)?.dismissRectsInCompose = rects
     }
 
     private fun refreshOverlayChatStrip() {
@@ -988,27 +988,28 @@ class CombatOverlayService : Service() {
             y = dp(10)
         }
 
+        val compose = ComposeView(this).apply {
+            setContent {
+                val preview by chatStripPreviewFlow.collectAsState()
+                val selfId = jwtSubFromAccessToken()
+                SquadRelayTheme {
+                    OverlayChatStrip(
+                        messages = preview,
+                        selfUserId = selfId,
+                        onDismissMessage = { m -> dismissStripMessage(m) },
+                        onDismissRegionsChanged = { updateStripDismissScreenRects(it) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 2.dp, vertical = 2.dp),
+                    )
+                }
+            }
+        }
+        chatStripCompose = compose
+
         val clipRoot = FrameLayout(this).apply {
             clipChildren = false
             OverlayChatStripUi.styleStripContainer(this@CombatOverlayService, this)
-            val compose = ComposeView(this@CombatOverlayService).apply {
-                setContent {
-                    val preview by chatStripPreviewFlow.collectAsState()
-                    val selfId = jwtSubFromAccessToken()
-                    SquadRelayTheme {
-                        OverlayChatStrip(
-                            messages = preview,
-                            selfUserId = selfId,
-                            onDismissMessage = { m -> dismissStripMessage(m) },
-                            onDismissRegionsChanged = { updateStripDismissScreenRects(it) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 2.dp, vertical = 2.dp),
-                        )
-                    }
-                }
-            }
-            chatStripCompose = compose
             addView(
                 compose,
                 FrameLayout.LayoutParams(
@@ -1023,6 +1024,7 @@ class CombatOverlayService : Service() {
             elevation = 18f
             setPadding(dp(10), 0, dp(10), 0)
             setBackgroundColor(Color.TRANSPARENT)
+            composeLocatorView = compose
             setViewTreeLifecycleOwner(owner)
             setViewTreeViewModelStoreOwner(owner)
             setViewTreeSavedStateRegistryOwner(owner)
@@ -1851,7 +1853,7 @@ class CombatOverlayService : Service() {
             gravity = Gravity.TOP or Gravity.START
             x = 0
             y = 0
-            OverlayWindowLayout.applyHistoryPanelSoftInputMode(this)
+            OverlayWindowLayout.applyOverlayChatHistorySoftInputMode(this)
         }
 
         val overlayUiContext = OverlayTickerUi.themedFabContext(this)
