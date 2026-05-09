@@ -775,6 +775,17 @@ class CombatOverlayService : Service() {
         mainHandler.removeCallbacks(stripTickRunnable)
     }
 
+    private fun dismissStripMessage(msg: ChatMessage) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { dismissStripMessage(msg) }
+            return
+        }
+        val key = msg._id?.takeIf { it.isNotBlank() } ?: msg.stableKey()
+        stripBuffer.removeMessageWithKey(key)
+        lastStripRenderSignature = null
+        refreshOverlayChatStrip()
+    }
+
     private fun refreshOverlayChatStrip() {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             mainHandler.post { refreshOverlayChatStrip() }
@@ -979,6 +990,7 @@ class CombatOverlayService : Service() {
                         OverlayChatStrip(
                             messages = preview,
                             selfUserId = selfId,
+                            onDismissMessage = { m -> dismissStripMessage(m) },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 2.dp, vertical = 2.dp),

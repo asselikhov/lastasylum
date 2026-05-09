@@ -9,6 +9,8 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +39,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -75,6 +78,7 @@ import kotlinx.coroutines.delay
 fun OverlayChatStrip(
     messages: List<ChatMessage>,
     selfUserId: String?,
+    onDismissMessage: (ChatMessage) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val keep = remember { mutableStateListOf<ChatMessage>() }
@@ -152,6 +156,7 @@ fun OverlayChatStrip(
                     msg = msg,
                     isMine = isMine,
                     compactStickers = compactStickers,
+                    onDismiss = { onDismissMessage(msg) },
                 )
             }
         }
@@ -200,6 +205,7 @@ private fun OverlayChatStripMessage(
     msg: ChatMessage,
     isMine: Boolean,
     compactStickers: Boolean,
+    onDismiss: () -> Unit,
 ) {
     val bubbleBg = if (isMine) ChatTelegramOutgoingBubble else ChatTelegramIncomingBubble
     val onBubble = if (isMine) ChatTelegramOutgoingOnBubble else ChatTelegramIncomingOnBubble
@@ -228,6 +234,7 @@ private fun OverlayChatStripMessage(
     }
     val stickerCap = if (compactStickers) 72.dp else 96.dp
     val stickerImg = if (compactStickers) 58.dp else 76.dp
+    val dismissCd = stringResource(R.string.overlay_chat_dismiss_cd)
 
     Surface(
         shape = shape,
@@ -243,7 +250,9 @@ private fun OverlayChatStripMessage(
                 .background(brush = gradientBrush, shape = shape),
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 10.dp, end = 28.dp, top = 8.dp, bottom = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Column(
@@ -337,6 +346,26 @@ private fun OverlayChatStripMessage(
                         )
                     }
                 }
+            }
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 3.dp, end = 3.dp)
+                    .size(32.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        role = Role.Button,
+                        onClickLabel = dismissCd,
+                        onClick = onDismiss,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "✕",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                )
             }
         }
     }

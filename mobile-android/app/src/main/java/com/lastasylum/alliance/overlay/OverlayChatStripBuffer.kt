@@ -93,6 +93,18 @@ class OverlayChatStripBuffer(
         }
     }
 
+    /**
+     * Убрать карточку из ленты оверлея по тому же ключу, что [keyOf] в UI
+     * ([_id] или [ChatMessage.stableKey]).
+     */
+    fun removeMessageWithKey(messageKey: String) {
+        messages.removeAll { m ->
+            val k = m._id?.takeIf { it.isNotBlank() } ?: m.stableKey()
+            k == messageKey
+        }
+        receivedAt.remove(messageKey)
+    }
+
     companion object {
         /** Keep overlay strip messages for 5 minutes by default. */
         const val DEFAULT_MESSAGE_TTL_SECONDS = 300L
