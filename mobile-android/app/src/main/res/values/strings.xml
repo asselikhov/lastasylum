@@ -337,6 +337,8 @@
     <string name="overlay_toggle_hide">Скрыть</string>
     <string name="overlay_toggle_show">Показать</string>
     <string name="overlay_strip_no_room">Откройте вкладку «Чат» и выберите комнату — лента подтянется сюда.</string>
+    <string name="overlay_strip_messages_since">С %1$s</string>
+    <string name="overlay_strip_live_now">Сейчас</string>
     <string name="overlay_strip_history_failed">Не удалось загрузить историю чата.</string>
     <string name="overlay_ticker_voice">Голос: %1$s</string>
     <string name="overlay_cmd_assembly_label">СБОР</string>
