@@ -368,6 +368,19 @@
     <string name="overlay_online_empty">Сейчас никого нет со свежим пингом (статусы «в игре» или «онлайн»).</string>
     <string name="overlay_online_error">Не удалось загрузить список.</string>
     <string name="overlay_online_close_cd">Закрыть список</string>
+    <string name="overlay_cd_commands">Команды альянса</string>
+    <string name="overlay_commands_title">Команды</string>
+    <string name="overlay_coord_x_label">X:</string>
+    <string name="overlay_coord_y_label">Y:</string>
+    <string name="overlay_coord_send">Отправить</string>
+    <string name="overlay_coord_cancel">Отмена</string>
+    <string name="overlay_coord_invalid">Введите координаты (целые числа)</string>
+    <string name="overlay_cmd_attack_city">Атака по городу</string>
+    <string name="overlay_cmd_attack_player">Атака по игроку</string>
+    <string name="overlay_cmd_storm_city">Штурм по городу</string>
+    <string name="overlay_cmd_storm_player">Штурм по игроку</string>
+    <string name="overlay_cmd_reinf_city">Подкрепление в город</string>
+    <string name="overlay_cmd_reinf_player">Подкрепление игроку</string>
 
     <!-- API / network (ViewModel) -->
     <string name="err_invalid_credentials">Неверная почта или пароль.</string>
