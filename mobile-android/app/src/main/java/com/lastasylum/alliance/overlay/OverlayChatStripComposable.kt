@@ -14,12 +14,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -98,8 +101,11 @@ fun OverlayChatStrip(
     }
 
     Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .fillMaxHeight()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         keep.forEach { msg ->
             val key = keyOf(msg)
@@ -150,7 +156,7 @@ private fun OverlayChatStripMessage(
         color = bubbleBg, // non-transparent per requirement
         border = BorderStroke(1.dp, border),
         tonalElevation = 0.dp,
-        shadowElevation = 1.dp,
+        shadowElevation = 2.dp,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(

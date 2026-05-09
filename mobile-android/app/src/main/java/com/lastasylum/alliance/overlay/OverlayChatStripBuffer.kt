@@ -97,6 +97,7 @@ class OverlayChatStripBuffer(
         /** Keep overlay strip messages for 5 minutes by default. */
         const val DEFAULT_MESSAGE_TTL_SECONDS = 300L
         const val DEFAULT_BUFFER_CAP = 80
-        const val DEFAULT_MAX_PREVIEW = 3
+        /** Должно совпадать с лимитом в [CombatOverlayService] для ожидаемого числа карточек в ленте. */
+        const val DEFAULT_MAX_PREVIEW = 13
     }
 }

@@ -225,7 +225,7 @@ class CombatOverlayService : Service() {
     /** Лента: короткий TTL и мало строк превью — компактная полоса у края. */
     private val stripBuffer = OverlayChatStripBuffer(
         messageTtlSeconds = OverlayChatStripBuffer.DEFAULT_MESSAGE_TTL_SECONDS,
-        maxPreviewMessages = 5,
+        maxPreviewMessages = OverlayChatStripBuffer.DEFAULT_MAX_PREVIEW,
     )
     private var overlayHistoryRoot: FrameLayout? = null
     private var overlayHistoryScroll: ScrollView? = null
@@ -991,7 +991,7 @@ class CombatOverlayService : Service() {
                 compose,
                 FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT,
                     Gravity.TOP,
                 ),
             )
@@ -1009,7 +1009,7 @@ class CombatOverlayService : Service() {
                 clipRoot,
                 FrameLayout.LayoutParams(
                     stripMaxWidth,
-                    dp(210),
+                    dp(320),
                 ),
             )
         }

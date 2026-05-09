@@ -11,7 +11,11 @@ import java.util.Locale
 /** Стабильный ключ для карт «время прихода» без серверного id. */
 fun ChatMessage.stableKey(): String =
     (_id?.takeIf { it.isNotBlank() })
-        ?: "${senderId}:${createdAt.orEmpty()}:${text.hashCode()}"
+        ?: run {
+            val att =
+                attachments.joinToString("|") { "${it.kind}:${it.url}" }.hashCode()
+            "${senderId}:${createdAt.orEmpty()}:${text.hashCode()}:$att"
+        }
 
 /** Разбор ISO-времени сообщений чата и отображение в оверлее. */
 object OverlayChatTime {
