@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Brush
@@ -36,7 +37,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -299,8 +301,8 @@ private fun TeamNewsListRoute(
                 else -> {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 88.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = PaddingValues(bottom = 88.dp, top = 2.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         items(
                             count = newsItems.size,
@@ -332,31 +334,25 @@ private fun TeamNewsCard(
     onEdit: () -> Unit,
     showEdit: Boolean,
 ) {
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(20.dp)
     val hasHero = !item.firstImageRelativeUrl.isNullOrBlank()
-    val baseBg = MaterialTheme.colorScheme.surfaceContainerLow
-    val ring = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
-    ElevatedCard(
+    val baseBg = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f)
+    val ring = MaterialTheme.colorScheme.primary.copy(alpha = 0.42f)
+    val ringSoft = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+    OutlinedCard(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         shape = shape,
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = baseBg,
-        ),
-        elevation = CardDefaults.elevatedCardElevation(
-            defaultElevation = 1.dp,
-            pressedElevation = 2.dp,
-            focusedElevation = 1.dp,
-            hoveredElevation = 1.dp,
-        ),
+        border = BorderStroke(1.5.dp, ring),
+        colors = CardDefaults.outlinedCardColors(containerColor = baseBg),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
             if (hasHero) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(168.dp)
-                        .clip(shape),
+                        .height(172.dp)
+                        .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)),
                 ) {
                     item.firstImageRelativeUrl?.let { raw ->
                         teamNewsAuthedImageRequest(LocalContext.current, raw)?.let { req ->
@@ -439,10 +435,14 @@ private fun TeamNewsCard(
                         )
                     }
                 }
+                HorizontalDivider(
+                    thickness = 1.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f),
+                )
             }
             Surface(
                 color = if (hasHero) {
-                    lerp(baseBg, MaterialTheme.colorScheme.surface, 0.14f)
+                    lerp(baseBg, MaterialTheme.colorScheme.surfaceContainerLow, 0.35f)
                 } else {
                     baseBg
                 },
@@ -452,7 +452,7 @@ private fun TeamNewsCard(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                        .padding(horizontal = 15.dp, vertical = 13.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     if (!hasHero) {
@@ -482,8 +482,8 @@ private fun TeamNewsCard(
                         ) {
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                border = androidx.compose.foundation.BorderStroke(1.dp, ring),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.85f),
+                                border = BorderStroke(1.dp, ringSoft),
                             ) {
                                 Text(
                                     text = item.authorUsername,

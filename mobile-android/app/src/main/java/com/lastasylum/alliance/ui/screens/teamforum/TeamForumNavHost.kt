@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -19,6 +21,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import com.lastasylum.alliance.ui.chat.ChatBubbleAuthorHeader
@@ -30,6 +33,7 @@ import com.lastasylum.alliance.ui.chat.chatBubbleShapeIncoming
 import com.lastasylum.alliance.ui.chat.chatBubbleShapeOutgoing
 import com.lastasylum.alliance.ui.chat.TelegramLikeAttachmentsGrid
 import com.lastasylum.alliance.ui.theme.roleAccentColor
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -44,12 +48,13 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -84,6 +89,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.graphicsLayer
@@ -287,76 +293,102 @@ private fun TeamForumListRoute(
                 }
                 else -> {
                     LazyColumn(
-                        contentPadding = PaddingValues(
-                            start = SquadRelayDimens.itemGap,
-                            end = SquadRelayDimens.itemGap,
-                            top = SquadRelayDimens.itemGap,
-                            bottom = 88.dp,
-                        ),
-                        verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+                        contentPadding = PaddingValues(bottom = 88.dp, top = 2.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         items(topics, key = { it.id }) { t ->
-                            Card(
+                            OutlinedCard(
                                 onClick = { onOpenTopic(t) },
                                 modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                                shape = RoundedCornerShape(18.dp),
+                                border = BorderStroke(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.38f),
+                                ),
+                                colors = CardDefaults.outlinedCardColors(
+                                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
                                 ),
                             ) {
                                 Row(
                                     Modifier
                                         .fillMaxWidth()
-                                        .padding(12.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
+                                        .height(IntrinsicSize.Min),
                                 ) {
-                                    Column(Modifier.weight(1f)) {
-                                        Text(
-                                            text = t.title,
-                                            style = MaterialTheme.typography.titleSmall,
-                                            maxLines = 2,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                        Text(
-                                            text = stringResource(
-                                                R.string.team_forum_topic_meta,
-                                                t.messageCount,
-                                                t.lastMessageAt?.let { formatForumTime(it) }
-                                                    ?: "—",
-                                            ),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                    if (canManageTopics) {
-                                        Box {
-                                            IconButton(onClick = { menuTopic = t }) {
-                                                Icon(
-                                                    Icons.Filled.MoreVert,
-                                                    contentDescription = stringResource(
-                                                        R.string.team_forum_topic_menu_cd,
+                                    Box(
+                                        Modifier
+                                            .width(4.dp)
+                                            .fillMaxHeight()
+                                            .background(
+                                                Brush.verticalGradient(
+                                                    colors = listOf(
+                                                        MaterialTheme.colorScheme.primary,
+                                                        MaterialTheme.colorScheme.tertiary,
                                                     ),
-                                                )
-                                            }
-                                            DropdownMenu(
-                                                expanded = menuTopic?.id == t.id,
-                                                onDismissRequest = { menuTopic = null },
-                                            ) {
-                                                DropdownMenuItem(
-                                                    text = { Text(stringResource(R.string.team_forum_edit_topic)) },
-                                                    onClick = {
-                                                        menuTopic = null
-                                                        editTopic = t
-                                                        editTitle = t.title
-                                                    },
-                                                )
-                                                DropdownMenuItem(
-                                                    text = { Text(stringResource(R.string.team_forum_delete_topic)) },
-                                                    onClick = {
-                                                        menuTopic = null
-                                                        deleteTopic = t
-                                                    },
-                                                )
+                                                ),
+                                            ),
+                                    )
+                                    Row(
+                                        Modifier
+                                            .weight(1f)
+                                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.ChatBubbleOutline,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.62f),
+                                            modifier = Modifier.size(26.dp),
+                                        )
+                                        Column(Modifier.weight(1f)) {
+                                            Text(
+                                                text = t.title,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.SemiBold,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                            Text(
+                                                text = stringResource(
+                                                    R.string.team_forum_topic_meta,
+                                                    t.messageCount,
+                                                    t.lastMessageAt?.let { formatForumTime(it) }
+                                                        ?: "—",
+                                                ),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                        if (canManageTopics) {
+                                            Box {
+                                                IconButton(onClick = { menuTopic = t }) {
+                                                    Icon(
+                                                        Icons.Filled.MoreVert,
+                                                        contentDescription = stringResource(
+                                                            R.string.team_forum_topic_menu_cd,
+                                                        ),
+                                                    )
+                                                }
+                                                DropdownMenu(
+                                                    expanded = menuTopic?.id == t.id,
+                                                    onDismissRequest = { menuTopic = null },
+                                                ) {
+                                                    DropdownMenuItem(
+                                                        text = { Text(stringResource(R.string.team_forum_edit_topic)) },
+                                                        onClick = {
+                                                            menuTopic = null
+                                                            editTopic = t
+                                                            editTitle = t.title
+                                                        },
+                                                    )
+                                                    DropdownMenuItem(
+                                                        text = { Text(stringResource(R.string.team_forum_delete_topic)) },
+                                                        onClick = {
+                                                            menuTopic = null
+                                                            deleteTopic = t
+                                                        },
+                                                    )
+                                                }
                                             }
                                         }
                                     }

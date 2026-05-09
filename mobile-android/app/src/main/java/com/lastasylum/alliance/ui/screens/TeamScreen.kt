@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Inbox
@@ -190,7 +192,7 @@ fun TeamScreen(
             .fillMaxSize()
             // Full-width content like Chat: small side padding is applied per-section/list.
             .padding(top = SquadRelayDimens.screenTopPadding),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
 
             if (loading && profile == null) {
@@ -289,7 +291,9 @@ fun TeamScreen(
                                 .weight(1f, fill = true)
                                 .fillMaxWidth(),
                             shape = MaterialTheme.shapes.large,
-                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            color = Color.Transparent,
+                            tonalElevation = 0.dp,
+                            shadowElevation = 0.dp,
                         ) {
                             Column(Modifier.fillMaxSize()) {
                                 Row(
@@ -392,34 +396,53 @@ fun TeamScreen(
                                     }
                                 }
                                 HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = SquadRelayDimens.itemGap),
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                                    modifier = Modifier.padding(horizontal = SquadRelayDimens.panelInnerPadding),
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f),
+                                    thickness = 1.dp,
                                 )
-                                PrimaryTabRow(
-                                    selectedTabIndex = mainSectionOrdinal,
-                                    containerColor = Color.Transparent,
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(
+                                            horizontal = SquadRelayDimens.panelInnerPadding,
+                                            vertical = 4.dp,
+                                        ),
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.42f),
+                                    border = BorderStroke(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.28f),
+                                    ),
+                                    tonalElevation = 1.dp,
+                                    shadowElevation = 0.dp,
                                 ) {
-                                    Tab(
-                                        selected = mainSectionOrdinal == TeamMainSection.News.ordinal,
-                                        onClick = { mainSectionOrdinal = TeamMainSection.News.ordinal },
-                                        text = { Text(stringResource(R.string.team_tab_news)) },
-                                    )
-                                    Tab(
-                                        selected = mainSectionOrdinal == TeamMainSection.Forum.ordinal,
-                                        onClick = {
-                                            if (mainSectionOrdinal == TeamMainSection.Forum.ordinal) {
-                                                forumTabReselectSignal++
-                                            } else {
-                                                mainSectionOrdinal = TeamMainSection.Forum.ordinal
-                                            }
-                                        },
-                                        text = { Text(stringResource(R.string.team_tab_forum)) },
-                                    )
-                                    Tab(
-                                        selected = mainSectionOrdinal == TeamMainSection.Members.ordinal,
-                                        onClick = { mainSectionOrdinal = TeamMainSection.Members.ordinal },
-                                        text = { Text(stringResource(R.string.team_tab_members)) },
-                                    )
+                                    PrimaryTabRow(
+                                        selectedTabIndex = mainSectionOrdinal,
+                                        containerColor = Color.Transparent,
+                                        divider = {},
+                                    ) {
+                                        Tab(
+                                            selected = mainSectionOrdinal == TeamMainSection.News.ordinal,
+                                            onClick = { mainSectionOrdinal = TeamMainSection.News.ordinal },
+                                            text = { Text(stringResource(R.string.team_tab_news)) },
+                                        )
+                                        Tab(
+                                            selected = mainSectionOrdinal == TeamMainSection.Forum.ordinal,
+                                            onClick = {
+                                                if (mainSectionOrdinal == TeamMainSection.Forum.ordinal) {
+                                                    forumTabReselectSignal++
+                                                } else {
+                                                    mainSectionOrdinal = TeamMainSection.Forum.ordinal
+                                                }
+                                            },
+                                            text = { Text(stringResource(R.string.team_tab_forum)) },
+                                        )
+                                        Tab(
+                                            selected = mainSectionOrdinal == TeamMainSection.Members.ordinal,
+                                            onClick = { mainSectionOrdinal = TeamMainSection.Members.ordinal },
+                                            text = { Text(stringResource(R.string.team_tab_members)) },
+                                        )
+                                    }
                                 }
                                 when (TeamMainSection.entries[mainSectionOrdinal]) {
                                     TeamMainSection.News -> {
@@ -434,7 +457,7 @@ fun TeamScreen(
                                                 .fillMaxWidth()
                                                 .padding(
                                                     horizontal = SquadRelayDimens.itemGap,
-                                                    vertical = 6.dp,
+                                                    vertical = 2.dp,
                                                 ),
                                         )
                                     }
@@ -454,7 +477,7 @@ fun TeamScreen(
                                                 .fillMaxWidth()
                                                 .padding(
                                                     horizontal = SquadRelayDimens.itemGap,
-                                                    vertical = SquadRelayDimens.itemGap,
+                                                    vertical = 4.dp,
                                                 ),
                                         )
                                     }
