@@ -42,6 +42,9 @@ import androidx.activity.setViewTreeOnBackPressedDispatcherOwner
 import androidx.core.app.ActivityOptionsCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.Insets
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -1852,7 +1855,7 @@ class CombatOverlayService : Service() {
             gravity = Gravity.TOP or Gravity.START
             x = 0
             y = 0
-            OverlayWindowLayout.applyHistoryPanelSoftInputMode(this)
+            OverlayWindowLayout.applyOverlayFullscreenChatSoftInputMode(this)
         }
 
         val overlayUiContext = OverlayTickerUi.themedFabContext(this)
@@ -1862,6 +1865,7 @@ class CombatOverlayService : Service() {
             Color.parseColor("#10141E"),
         )
         // Compose resolves WindowRecomposer from the View tree before composition runs; locals alone are not enough.
+        val keyboardGapPx = (4f * resources.displayMetrics.density).toInt()
         val root = FrameLayout(this).apply {
             setBackgroundColor(surfaceArgb)
             elevation = 48f
@@ -1869,6 +1873,13 @@ class CombatOverlayService : Service() {
             setViewTreeViewModelStoreOwner(owner)
             setViewTreeSavedStateRegistryOwner(owner)
             setViewTreeOnBackPressedDispatcherOwner(owner)
+            ViewCompat.setOnApplyWindowInsetsListener(this) { view, windowInsets ->
+                val ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime())
+                view.setPadding(0, 0, 0, ime.bottom + keyboardGapPx)
+                WindowInsetsCompat.Builder(windowInsets)
+                    .setInsets(WindowInsetsCompat.Type.ime(), Insets.NONE)
+                    .build()
+            }
             addView(
                 compose,
                 FrameLayout.LayoutParams(
@@ -1905,6 +1916,7 @@ class CombatOverlayService : Service() {
         overlayHistoryParams = params
         overlayHistoryVisible = true
         rebalanceOverlayChatWindowZOrder()
+        ViewCompat.requestApplyInsets(root)
     }
 
     private fun dp(value: Int): Int {

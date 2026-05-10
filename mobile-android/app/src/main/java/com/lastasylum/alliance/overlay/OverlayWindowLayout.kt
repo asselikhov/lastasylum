@@ -55,10 +55,19 @@ object OverlayWindowLayout {
     }
 
     /**
-     * IME для полноэкранного оверлей-чата: системное изменение размера окна под клавиатуру.
-     * [WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE] помечен deprecated в API 35+; для
-     * [WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY] на практике по-прежнему нужен явный
-     * режим resize/pan, иначе клавиатура перекрывает ввод на части прошивок.
+     * Полноэкранный оверлей-чат: без системного resize (на TYPE_APPLICATION_OVERLAY он часто не
+     * сдвигает контент как у Activity). Подъём контента — через [android.view.View] padding от
+     * [android.view.WindowInsetsCompat.Type.ime] на корневом [android.widget.FrameLayout].
+     */
+    fun applyOverlayFullscreenChatSoftInputMode(params: WindowManager.LayoutParams) {
+        @Suppress("DEPRECATION")
+        val mode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING or
+            WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN
+        params.softInputMode = mode
+    }
+
+    /**
+     * Прочие overlay-диалоги, где нужен системный resize под IME (не полноэкранный Compose-чат).
      */
     fun applyHistoryPanelSoftInputMode(params: WindowManager.LayoutParams) {
         @Suppress("DEPRECATION")
