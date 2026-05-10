@@ -173,8 +173,6 @@ import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingOnBubble
 import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMuted
 import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMutedIncoming
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
-import com.lastasylum.alliance.ui.util.composerImeAboveBottomNav
-import com.lastasylum.alliance.ui.util.composerImeFullscreenOverlay
 import com.lastasylum.alliance.ui.theme.roleAccentColor
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import coil.compose.AsyncImage
@@ -431,7 +429,6 @@ fun ChatScreen(
     onEditMessage: (String, String) -> Unit,
     onForwardMessage: (String) -> Unit,
     onToggleReaction: (String, String) -> Unit,
-    overlayComposerInsets: Boolean = false,
 ) {
     val context = LocalContext.current
     val activityResultOwner = LocalActivityResultRegistryOwner.current
@@ -641,14 +638,8 @@ fun ChatScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .then(
-                        if (overlayComposerInsets) {
-                            // Оверлей: ADJUST_RESIZE + insets (без вычитания высоты таб-бара).
-                            Modifier.composerImeFullscreenOverlay()
-                        } else {
-                            Modifier.composerImeAboveBottomNav()
-                        },
-                    ),
+                    // Только системный resize/pan окна — не читаем WindowInsets.ime здесь (иначе лаги с LazyColumn+weight).
+                    .padding(bottom = SquadRelayDimens.keyboardComposerGap),
             ) {
                 state.sendFailure?.let { failure ->
                     Surface(

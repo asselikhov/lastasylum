@@ -1823,7 +1823,6 @@ class CombatOverlayService : Service() {
                                     onEditMessage = vm::editMessage,
                                     onForwardMessage = vm::forwardMessage,
                                     onToggleReaction = vm::toggleReaction,
-                                    overlayComposerInsets = true,
                                 )
                                 IconButton(
                                     onClick = { hideOverlayHistoryPanel() },

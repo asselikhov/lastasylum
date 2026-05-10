@@ -55,7 +55,7 @@ object OverlayWindowLayout {
     }
 
     /**
-     * IME для полноэкранного оверлей-чата (Compose + [imePadding]).
+     * IME для полноэкранного оверлей-чата: системное изменение размера окна под клавиатуру.
      * [WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE] помечен deprecated в API 35+; для
      * [WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY] на практике по-прежнему нужен явный
      * режим resize/pan, иначе клавиатура перекрывает ввод на части прошивок.

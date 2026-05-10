@@ -17,6 +17,9 @@ class MainActivity : ComponentActivity() {
             isAppearanceLightNavigationBars = false
         }
         super.onCreate(savedInstanceState)
+        // Иначе при enableEdgeToEdge контент часто остаётся «на полный экран», а IME только накладывается —
+        // композер оказывается под клавиатурой без покадрового imePadding (который даёт лаги).
+        WindowCompat.setDecorFitsSystemWindows(window, true)
         hideSystemUi()
         setContent {
             SquadRelayApp()
@@ -27,7 +30,7 @@ class MainActivity : ComponentActivity() {
         WindowCompat.getInsetsController(window, window.decorView).apply {
             systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            // Manifest uses adjustResize so the system resizes the window above the IME (smooth, less layout jank than per-frame ime padding).
+            // Manifest adjustResize + decorFitsSystemWindows(true): система сжимает окно, без тяжёлого ime padding в Compose.
             // Hiding legacy three-button navigation strip so more vertical space is available for game/content.
             hide(WindowInsetsCompat.Type.navigationBars())
         }
