@@ -179,8 +179,8 @@ class CombatOverlayService : Service() {
             scope = serviceScope,
             dp = { dp(it) },
             sendCommand = { label, x, y ->
-                val roomId = AppContainer.from(this@CombatOverlayService).chatRoomPreferences.getSelectedRoomId()
-                    ?: return@OverlayCommandsPopover Result.failure(IllegalStateException("no_room"))
+                val roomId = AppContainer.from(this@CombatOverlayService).chatRoomPreferences.getRaidRoomId()
+                    ?: return@OverlayCommandsPopover Result.failure(IllegalStateException("no_raid"))
                 val text = "$label X:${x} Y:${y}"
                 AppContainer.from(this@CombatOverlayService).chatRepository.sendMessageWithRetries(text, roomId)
             },
@@ -840,6 +840,10 @@ class CombatOverlayService : Service() {
     }
 
     private fun processOverlayChatMessage(msg: ChatMessage) {
+        val raidId = AppContainer.from(this).chatRoomPreferences.getRaidRoomId()
+        if (raidId == null || (msg.roomId.isNotBlank() && msg.roomId != raidId)) {
+            return
+        }
         Log.d(
             OVERLAY_DIAG_TAG,
             "processMsg id=${msg._id} room=${msg.roomId} sender=${msg.senderId} textLen=${msg.text.length}",
@@ -1062,11 +1066,12 @@ class CombatOverlayService : Service() {
         cancelStripTick()
         val listener: (ChatMessage) -> Unit = { msg ->
             mainHandler.post {
-                val roomId = AppContainer.from(this).chatRoomPreferences.getSelectedRoomId()
-                if (roomId != null && msg.roomId.isNotBlank() && msg.roomId != roomId) {
+                val raidId = AppContainer.from(this).chatRoomPreferences.getRaidRoomId()
+                if (raidId == null) return@post
+                if (msg.roomId.isNotBlank() && msg.roomId != raidId) {
                     Log.d(
                         OVERLAY_DIAG_TAG,
-                        "overlayListener skipRoom msgRoom=${msg.roomId} selected=$roomId id=${msg._id}",
+                        "overlayListener skipRoom msgRoom=${msg.roomId} raid=$raidId id=${msg._id}",
                     )
                     return@post
                 }
@@ -1081,14 +1086,14 @@ class CombatOverlayService : Service() {
         }
         serviceScope.launch {
             val container = AppContainer.from(this@CombatOverlayService)
-            val roomId = container.chatRoomPreferences.getSelectedRoomId()
-            if (roomId == null) {
+            val raidId = container.chatRoomPreferences.getRaidRoomId()
+            if (raidId == null) {
                 mainHandler.post {
-                    setStripPlainMessage(getString(R.string.overlay_strip_no_room))
+                    setStripPlainMessage(getString(R.string.overlay_strip_no_raid))
                 }
                 return@launch
             }
-            container.chatRepository.loadRecentMessages(roomId, null, OVERLAY_HISTORY_LOAD)
+            container.chatRepository.loadRecentMessages(raidId, null, OVERLAY_HISTORY_LOAD)
                 .onSuccess { loaded ->
                     mainHandler.post {
                         stripBuffer.seedFromHistory(loaded)
@@ -1672,9 +1677,9 @@ class CombatOverlayService : Service() {
             showOverlayHistoryStatus(getString(R.string.overlay_history_empty_send))
             return
         }
-        val roomId = runCatching { AppContainer.from(this).chatRoomPreferences.getSelectedRoomId() }.getOrNull()
+        val roomId = runCatching { AppContainer.from(this).chatRoomPreferences.getRaidRoomId() }.getOrNull()
         if (roomId.isNullOrBlank()) {
-            showOverlayHistoryStatus(getString(R.string.overlay_strip_no_room))
+            showOverlayHistoryStatus(getString(R.string.overlay_strip_no_raid))
             return
         }
         showOverlayHistoryStatus(getString(R.string.overlay_history_sending))

@@ -14,7 +14,7 @@ import org.json.JSONObject
 
 class ChatSocketManager {
     private var socket: Socket? = null
-    private var subscribedRoomId: String? = null
+    private var subscribedRoomIds: List<String> = emptyList()
     private var lastBaseUrl: String? = null
     private var tokenProvider: (() -> String?)? = null
     private val messageListeners = CopyOnWriteArrayList<(ChatMessage) -> Unit>()
@@ -31,13 +31,17 @@ class ChatSocketManager {
         reconnectScheduled = false
         if (intentionalDisconnect) return@Runnable
         val base = lastBaseUrl ?: return@Runnable
-        val room = subscribedRoomId ?: return@Runnable
+        val rooms = subscribedRoomIds
+        if (rooms.isEmpty()) return@Runnable
         val token = tokenProvider?.invoke() ?: return@Runnable
-        openSocket(base, token, room)
+        openSocket(base, token, rooms)
     }
 
     private val _connectionState = MutableStateFlow(ChatConnectionState.Disconnected)
     val connectionState: StateFlow<ChatConnectionState> = _connectionState.asStateFlow()
+
+    private fun isSubscribedRoom(roomId: String): Boolean =
+        roomId.isNotBlank() && subscribedRoomIds.contains(roomId)
 
     fun addMessageListener(listener: (ChatMessage) -> Unit) {
         if (!messageListeners.contains(listener)) {
@@ -88,32 +92,38 @@ class ChatSocketManager {
 
     fun connect(
         baseUrl: String,
-        roomId: String,
+        roomIds: List<String>,
         tokenProvider: () -> String?,
     ) {
         intentionalDisconnect = false
         cancelReconnect()
         lastBaseUrl = baseUrl.trimEnd('/')
         this.tokenProvider = tokenProvider
+        val distinct = roomIds.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         val token = tokenProvider() ?: run {
             emitConnectionState(ChatConnectionState.Disconnected)
             return
         }
-        if (socket?.connected() == true && subscribedRoomId == roomId) {
+        if (distinct.isEmpty()) {
+            emitConnectionState(ChatConnectionState.Disconnected)
             return
         }
-        subscribedRoomId = roomId
-        openSocket(lastBaseUrl!!, token, roomId)
+        if (socket?.connected() == true && subscribedRoomIds.toSet() == distinct.toSet()) {
+            return
+        }
+        subscribedRoomIds = distinct
+        openSocket(lastBaseUrl!!, token, distinct)
     }
 
     fun reconnectWithFreshToken() {
-        val room = subscribedRoomId ?: return
+        val rooms = subscribedRoomIds
+        if (rooms.isEmpty()) return
         val base = lastBaseUrl ?: return
         val provider = tokenProvider ?: return
         val token = provider() ?: return
         intentionalDisconnect = false
         cancelReconnect()
-        openSocket(base, token, room)
+        openSocket(base, token, rooms)
     }
 
     fun sendMessage(text: String, roomId: String, replyToMessageId: String? = null) {
@@ -144,6 +154,7 @@ class ChatSocketManager {
         messageListeners.clear()
         messageDeletedListeners.clear()
         typingListeners.clear()
+        readListeners.clear()
     }
 
     private fun cancelReconnect() {
@@ -168,7 +179,7 @@ class ChatSocketManager {
         }
     }
 
-    private fun openSocket(baseUrl: String, accessToken: String, roomId: String) {
+    private fun openSocket(baseUrl: String, accessToken: String, roomIds: List<String>) {
         emitConnectionState(ChatConnectionState.Connecting)
         disconnectSocketOnly()
 
@@ -181,10 +192,12 @@ class ChatSocketManager {
                 on(Socket.EVENT_CONNECT) {
                     reconnectAttempt = 0
                     emitConnectionState(ChatConnectionState.Connected)
-                    emit(
-                        "room:join",
-                        JSONObject().put("roomId", roomId),
-                    )
+                    for (rid in roomIds) {
+                        emit(
+                            "room:join",
+                            JSONObject().put("roomId", rid),
+                        )
+                    }
                 }
                 on(Socket.EVENT_DISCONNECT) {
                     if (!intentionalDisconnect) {
@@ -201,7 +214,7 @@ class ChatSocketManager {
                 on("message:new") { args ->
                     val payload = args.firstOrNull() as? JSONObject ?: return@on
                     val msgRoom = payload.optString("roomId", "")
-                    if (msgRoom.isNotBlank() && msgRoom != roomId) return@on
+                    if (msgRoom.isNotBlank() && !isSubscribedRoom(msgRoom)) return@on
                     val message = ChatMessage(
                         _id = payload.optString("_id").takeIf { it.isNotBlank() },
                         allianceId = payload.optString(
@@ -236,14 +249,14 @@ class ChatSocketManager {
                 on("message:edited") { args ->
                     val payload = args.firstOrNull() as? JSONObject ?: return@on
                     val msgRoom = payload.optString("roomId", "")
-                    if (msgRoom.isNotBlank() && msgRoom != roomId) return@on
+                    if (msgRoom.isNotBlank() && !isSubscribedRoom(msgRoom)) return@on
                     val message = payload.toChatMessage()
                     messageListeners.forEach { l -> runCatching { l(message) } }
                 }
                 on("message:reaction") { args ->
                     val payload = args.firstOrNull() as? JSONObject ?: return@on
                     val msgRoom = payload.optString("roomId", "")
-                    if (msgRoom.isNotBlank() && msgRoom != roomId) return@on
+                    if (msgRoom.isNotBlank() && !isSubscribedRoom(msgRoom)) return@on
                     val message = payload.toChatMessage()
                     messageListeners.forEach { l -> runCatching { l(message) } }
                 }
@@ -256,7 +269,7 @@ class ChatSocketManager {
                         deletedByUserId = payload.optString("deletedByUserId")
                             .takeIf { it.isNotBlank() },
                     )
-                    if (event.roomId.isNotBlank() && event.roomId != roomId) return@on
+                    if (event.roomId.isNotBlank() && !isSubscribedRoom(event.roomId)) return@on
                     if (event.messageId.isBlank()) return@on
                     messageDeletedListeners.forEach { l ->
                         runCatching { l(event) }
@@ -265,7 +278,7 @@ class ChatSocketManager {
                 on("user:typing") { args ->
                     val payload = args.firstOrNull() as? JSONObject ?: return@on
                     val rid = payload.optString("roomId", "")
-                    if (rid.isNotBlank() && rid != roomId) return@on
+                    if (rid.isNotBlank() && !isSubscribedRoom(rid)) return@on
                     val event = ChatTypingEvent(
                         roomId = rid,
                         userId = payload.optString("userId"),
@@ -279,7 +292,7 @@ class ChatSocketManager {
                 on("room:read") { args ->
                     val payload = args.firstOrNull() as? JSONObject ?: return@on
                     val rid = payload.optString("roomId", "")
-                    if (rid.isNotBlank() && rid != roomId) return@on
+                    if (rid.isNotBlank() && !isSubscribedRoom(rid)) return@on
                     val event = ChatRoomReadEvent(
                         roomId = rid,
                         userId = payload.optString("userId"),
@@ -308,7 +321,7 @@ class ChatSocketManager {
 
     private fun disconnectSocket() {
         disconnectSocketOnly()
-        subscribedRoomId = null
+        subscribedRoomIds = emptyList()
         lastBaseUrl = null
         tokenProvider = null
         emitConnectionState(ChatConnectionState.Disconnected)

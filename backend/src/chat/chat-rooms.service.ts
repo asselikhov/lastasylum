@@ -29,11 +29,12 @@ export class ChatRoomsService {
   }
 
   /**
-   * Global "Общая" + this alliance's rooms (excludes legacy per-alliance "Общий"/"Общая" rows).
+   * Global «Союз» + this alliance's rooms (excludes legacy per-alliance "Общий"/"Общая" rows).
    */
   async listRoomsVisibleToUser(userAllianceName: string) {
     await this.ensureGlobalGeneralRoom();
     await this.ensureAllianceHubRoom(userAllianceName);
+    await this.ensureAllianceRaidRoom(userAllianceName);
     const [globalRooms, allianceRooms] = await Promise.all([
       this.roomModel
         .find({ allianceId: GLOBAL_CHAT_ALLIANCE_ID, archivedAt: null })
@@ -141,7 +142,7 @@ export class ChatRoomsService {
     return created._id;
   }
 
-  /** Cross-alliance lobby: one "Общая" room for everyone. */
+  /** Cross-alliance lobby: one «Союз» room for everyone (legacy title «Общая» is renamed). */
   async ensureGlobalGeneralRoom(): Promise<void> {
     const current = await this.roomModel
       .findOne({
@@ -152,14 +153,14 @@ export class ChatRoomsService {
     if (!current) {
       await this.roomModel.create({
         allianceId: GLOBAL_CHAT_ALLIANCE_ID,
-        title: 'Общая',
+        title: 'Союз',
         sortOrder: 0,
         archivedAt: null,
       });
       return;
     }
-    if (current.title !== 'Общая') {
-      current.title = 'Общая';
+    if (current.title === 'Общая' || current.title !== 'Союз') {
+      current.title = 'Союз';
       await current.save();
     }
   }
@@ -194,5 +195,25 @@ export class ChatRoomsService {
       hub.title = displayTitle;
     }
     await hub.save();
+  }
+
+  /** Alliance «Рейд» room (sortOrder 2), same access as hub. */
+  async ensureAllianceRaidRoom(allianceId: string): Promise<void> {
+    let raid = await this.roomModel
+      .findOne({ allianceId, title: 'Рейд', archivedAt: null })
+      .exec();
+    if (!raid) {
+      await this.roomModel.create({
+        allianceId,
+        title: 'Рейд',
+        sortOrder: 2,
+        archivedAt: null,
+      });
+      return;
+    }
+    if (raid.sortOrder !== 2) {
+      raid.sortOrder = 2;
+      await raid.save();
+    }
   }
 }

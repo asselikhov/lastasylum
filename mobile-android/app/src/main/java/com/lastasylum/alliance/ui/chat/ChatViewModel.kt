@@ -97,13 +97,28 @@ class ChatViewModel(
             val hasTeam = loadTeamProfileGate()
             val roomsResult = repository.listRooms()
             _state.value = if (roomsResult.isSuccess) {
+                val nextRooms = roomsResult.getOrElse { _state.value.rooms }
+                syncRaidRoomPreference(nextRooms)
                 _state.value.copy(
                     hasTeamProfileForGlobalChat = hasTeam,
-                    rooms = roomsResult.getOrElse { _state.value.rooms },
+                    rooms = nextRooms,
                 )
             } else {
                 _state.value.copy(hasTeamProfileForGlobalChat = hasTeam)
             }
+        }
+    }
+
+    private fun syncRaidRoomPreference(rooms: List<ChatRoomDto>) {
+        val raid = rooms.firstOrNull { room ->
+            room.title == "Рейд" &&
+                room.allianceId != null &&
+                room.allianceId != ChatAllianceIds.GLOBAL
+        }
+        if (raid != null) {
+            chatRoomPreferences.setRaidRoomId(raid.id)
+        } else {
+            chatRoomPreferences.clearRaidRoomId()
         }
     }
 
@@ -145,6 +160,7 @@ class ChatViewModel(
         if (rooms.isEmpty()) {
             _draftMessage.value = ""
             _typingPeers.value = emptyMap()
+            chatRoomPreferences.clearRaidRoomId()
             _state.value = ChatState(
                 isRoomsLoading = false,
                 currentUserId = currentUserId,
@@ -157,6 +173,7 @@ class ChatViewModel(
             )
             return
         }
+        syncRaidRoomPreference(rooms)
         val stored = chatRoomPreferences.getSelectedRoomId()
         val selected = rooms.find { it.id == stored }?.id
             ?: rooms.minByOrNull { it.sortOrder }?.id

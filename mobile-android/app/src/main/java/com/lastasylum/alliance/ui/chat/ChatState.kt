@@ -18,7 +18,7 @@ data class ChatSendFailure(
 data class ChatState(
     val isLoading: Boolean = false,
     val isRoomsLoading: Boolean = true,
-    /** Full team name + tag set in profile — required to post in global «Общая». */
+    /** Full team name + tag set in profile — required to post in global «Союз». */
     val hasTeamProfileForGlobalChat: Boolean = false,
     val rooms: List<ChatRoomDto> = emptyList(),
     val selectedRoomId: String? = null,

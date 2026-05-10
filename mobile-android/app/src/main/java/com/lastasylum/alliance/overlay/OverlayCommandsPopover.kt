@@ -527,6 +527,7 @@ class OverlayCommandsPopover(
                     }.onFailure { e ->
                         val msg = when (e.message) {
                             "no_room" -> context.getString(R.string.overlay_strip_no_room)
+                            "no_raid" -> context.getString(R.string.overlay_strip_no_raid)
                             else ->
                                 e.message?.takeIf { it.isNotBlank() }
                                     ?: context.getString(R.string.overlay_history_send_failed, e.javaClass.simpleName)

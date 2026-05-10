@@ -30,7 +30,6 @@ type GatewayUser = {
 
 type SocketData = {
   user?: GatewayUser;
-  lastJoinedChatRoom?: string;
 };
 
 type AuthSocket = Socket<
@@ -129,14 +128,8 @@ export class ChatGateway {
     }
 
     const key = `chat:${roomId}`;
-    if (
-      client.data.lastJoinedChatRoom &&
-      client.data.lastJoinedChatRoom !== key
-    ) {
-      void client.leave(client.data.lastJoinedChatRoom);
-    }
+    /** Allow multiple chat rooms per socket (e.g. selected room + «Рейд» for overlay). */
     void client.join(key);
-    client.data.lastJoinedChatRoom = key;
 
     return { event: 'room:joined', data: { roomId } };
   }

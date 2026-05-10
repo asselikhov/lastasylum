@@ -15,6 +15,25 @@ class ChatRepository(
     private val socketManager: ChatSocketManager,
     private val chatRoomPreferences: ChatRoomPreferences,
 ) {
+    /** Primary chat tab + alliance «Рейд» so overlay can receive raid while another tab is open. */
+    private fun realtimeRoomIdsForPrimary(primaryRoomId: String): List<String> {
+        val raid = chatRoomPreferences.getRaidRoomId()
+        return buildList {
+            add(primaryRoomId)
+            if (!raid.isNullOrBlank() && raid != primaryRoomId) add(raid)
+        }
+    }
+
+    /** When only the overlay is active: subscribe to raid first, then any stored selected room. */
+    private fun realtimeRoomIdsForOverlayBootstrap(): List<String> {
+        val raid = chatRoomPreferences.getRaidRoomId()
+        val selected = chatRoomPreferences.getSelectedRoomId()
+        return buildList {
+            if (!raid.isNullOrBlank()) add(raid)
+            if (!selected.isNullOrBlank() && selected !in this) add(selected)
+        }
+    }
+
     private var realtimeUiListener: ((ChatMessage) -> Unit)? = null
     private var realtimeDeleteListener: ((ChatMessageDeletedEvent) -> Unit)? = null
     private var realtimeTypingListener: ((ChatTypingEvent) -> Unit)? = null
@@ -88,7 +107,7 @@ class ChatRepository(
     }
 
     suspend fun sendSystemVoiceMessage(text: String): Result<ChatMessage> {
-        val roomId = chatRoomPreferences.getSelectedRoomId()
+        val roomId = chatRoomPreferences.getRaidRoomId()
             ?: return Result.failure(IllegalStateException("no_room"))
         return sendMessageWithRetries(text.trim(), roomId)
     }
@@ -132,7 +151,7 @@ class ChatRepository(
         socketManager.addReadListener(onRead)
         socketManager.connect(
             baseUrl = BuildConfig.API_BASE_URL,
-            roomId = roomId,
+            roomIds = realtimeRoomIdsForPrimary(roomId),
             tokenProvider = { tokenStore.getAccessToken() },
         )
     }
@@ -163,10 +182,11 @@ class ChatRepository(
             overlayMessageListeners.add(listener)
         }
         socketManager.addMessageListener(listener)
-        val roomId = chatRoomPreferences.getSelectedRoomId() ?: return
+        val roomIds = realtimeRoomIdsForOverlayBootstrap()
+        if (roomIds.isEmpty()) return
         socketManager.connect(
             baseUrl = BuildConfig.API_BASE_URL,
-            roomId = roomId,
+            roomIds = roomIds,
             tokenProvider = { tokenStore.getAccessToken() },
         )
     }

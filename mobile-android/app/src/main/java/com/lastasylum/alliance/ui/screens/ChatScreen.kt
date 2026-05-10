@@ -67,13 +67,16 @@ import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.AttachFile
+import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.Mood
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -1217,6 +1220,24 @@ private fun ChatMessagesLazyList(
     }
 }
 
+private enum class ChatRoomVisualKind {
+    GlobalUnion,
+    Raid,
+    AllianceHub,
+    Other,
+}
+
+private fun com.lastasylum.alliance.data.chat.ChatRoomDto.chatRoomVisualKind(): ChatRoomVisualKind =
+    when {
+        allianceId == ChatAllianceIds.GLOBAL -> ChatRoomVisualKind.GlobalUnion
+        title == "Рейд" -> ChatRoomVisualKind.Raid
+        sortOrder == 1 &&
+            allianceId != null &&
+            allianceId != ChatAllianceIds.GLOBAL -> ChatRoomVisualKind.AllianceHub
+        else -> ChatRoomVisualKind.Other
+    }
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChatRoomsBar(
     rooms: List<com.lastasylum.alliance.data.chat.ChatRoomDto>,
@@ -1224,23 +1245,79 @@ private fun ChatRoomsBar(
     onSelectRoom: (String) -> Unit,
 ) {
     if (rooms.isEmpty()) return
+    val scheme = MaterialTheme.colorScheme
     LazyRow(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
-        contentPadding = PaddingValues(bottom = SquadRelayDimens.itemGap),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(horizontal = 2.dp, vertical = 6.dp),
     ) {
         items(rooms, key = { it.id }) { room ->
-            FilterChip(
-                selected = room.id == selectedRoomId,
+            val selected = room.id == selectedRoomId
+            val kind = room.chatRoomVisualKind()
+            val accent = when (kind) {
+                ChatRoomVisualKind.GlobalUnion -> Color(0xFF5C6BC0)
+                ChatRoomVisualKind.Raid -> Color(0xFFE65100)
+                ChatRoomVisualKind.AllianceHub -> Color(0xFF00897B)
+                ChatRoomVisualKind.Other -> scheme.primary
+            }
+            val icon = when (kind) {
+                ChatRoomVisualKind.GlobalUnion -> Icons.Outlined.Public
+                ChatRoomVisualKind.Raid -> Icons.Outlined.Bolt
+                ChatRoomVisualKind.AllianceHub -> Icons.Outlined.Shield
+                ChatRoomVisualKind.Other -> Icons.Outlined.ChatBubbleOutline
+            }
+            val containerBrush = if (selected) {
+                Brush.horizontalGradient(
+                    listOf(
+                        accent.copy(alpha = 0.92f),
+                        lerp(accent, scheme.primary, 0.28f),
+                    ),
+                )
+            } else {
+                Brush.verticalGradient(
+                    listOf(
+                        scheme.surfaceContainerHigh,
+                        scheme.surfaceContainerHighest.copy(alpha = 0.92f),
+                    ),
+                )
+            }
+            Surface(
                 onClick = { onSelectRoom(room.id) },
-                label = {
+                shape = RoundedCornerShape(22.dp),
+                color = Color.Transparent,
+                shadowElevation = if (selected) 5.dp else 1.dp,
+                border = if (selected) {
+                    null
+                } else {
+                    BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = 0.55f))
+                },
+            ) {
+                Row(
+                    modifier = Modifier
+                        .background(containerBrush)
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = if (selected) Color.White.copy(alpha = 0.95f) else accent,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
                     Text(
                         text = room.title,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (selected) {
+                            Color.White
+                        } else {
+                            scheme.onSurface
+                        },
                     )
-                },
-            )
+                }
+            }
         }
     }
 }

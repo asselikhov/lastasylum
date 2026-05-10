@@ -68,10 +68,10 @@
     <string name="chat_ok">Понятно</string>
     <string name="chat_empty_state">Пока нет сообщений — напишите первым.</string>
     <string name="chat_no_rooms">Комнаты чата недоступны. Проверьте сеть или попробуйте позже.</string>
-    <string name="chat_global_team_notice">Чтобы писать в комнате «Общая» (все альянсы), укажите в профиле полное название команды и тег из трёх букв.</string>
-    <string name="chat_global_team_required">Сначала укажите в профиле название команды и трёхбуквенный тег — без этого сообщения в «Общая» недоступны.</string>
+    <string name="chat_global_team_notice">Чтобы писать в комнате «Союз» (все альянсы), укажите в профиле полное название команды и тег из трёх букв.</string>
+    <string name="chat_global_team_required">Сначала укажите в профиле название команды и трёхбуквенный тег — без этого сообщения в «Союз» недоступны.</string>
     <string name="cd_chat_message">Сообщение от %1$s, роль %2$s: %3$s</string>
-    <string name="err_chat_no_room">Выберите комнату чата в приложении, затем снова запишите голос.</string>
+    <string name="err_chat_no_room">Откройте вкладку «Чат», чтобы подтянуть комнату «Рейд», затем снова запишите голос.</string>
     <string name="chat_replying_to">Ответ для %1$s</string>
     <string name="chat_reply_cancel">Отменить ответ</string>
     <string name="chat_deleting_progress">Удаление…</string>
@@ -336,7 +336,8 @@
     <string name="overlay_bubble_sending">···</string>
     <string name="overlay_toggle_hide">Скрыть</string>
     <string name="overlay_toggle_show">Показать</string>
-    <string name="overlay_strip_no_room">Откройте вкладку «Чат» и выберите комнату — лента подтянется сюда.</string>
+    <string name="overlay_strip_no_room">Откройте вкладку «Чат» — лента синхронизируется с комнатой «Рейд».</string>
+    <string name="overlay_strip_no_raid">Откройте вкладку «Чат» один раз — комната «Рейд» подключится к ленте в игре.</string>
     <string name="overlay_strip_messages_since">С %1$s</string>
     <string name="overlay_strip_live_now">Сейчас</string>
     <string name="overlay_strip_history_failed">Не удалось загрузить историю чата.</string>
