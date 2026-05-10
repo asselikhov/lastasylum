@@ -1853,7 +1853,7 @@ class CombatOverlayService : Service() {
             gravity = Gravity.TOP or Gravity.START
             x = 0
             y = 0
-            OverlayWindowLayout.applyOverlayChatHistorySoftInputMode(this)
+            OverlayWindowLayout.applyHistoryPanelSoftInputMode(this)
         }
 
         val overlayUiContext = OverlayTickerUi.themedFabContext(this)

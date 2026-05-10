@@ -173,7 +173,8 @@ import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingOnBubble
 import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMuted
 import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMutedIncoming
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
-import com.lastasylum.alliance.ui.util.composerImeOverlay
+import com.lastasylum.alliance.ui.util.composerImeAboveBottomNav
+import com.lastasylum.alliance.ui.util.composerImeFullscreenOverlay
 import com.lastasylum.alliance.ui.theme.roleAccentColor
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import coil.compose.AsyncImage
@@ -642,10 +643,10 @@ fun ChatScreen(
                     .fillMaxWidth()
                     .then(
                         if (overlayComposerInsets) {
-                            Modifier.composerImeOverlay()
+                            // Оверлей: ADJUST_RESIZE + insets (без вычитания высоты таб-бара).
+                            Modifier.composerImeFullscreenOverlay()
                         } else {
-                            // MainActivity uses adjustResize: window height already clears the IME; only keep a small gap.
-                            Modifier.padding(bottom = SquadRelayDimens.keyboardComposerGap)
+                            Modifier.composerImeAboveBottomNav()
                         },
                     ),
             ) {

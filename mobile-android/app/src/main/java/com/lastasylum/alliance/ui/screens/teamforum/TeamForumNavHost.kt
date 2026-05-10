@@ -127,6 +127,7 @@ import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingOnBubble
 import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMuted
 import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMutedIncoming
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
+import com.lastasylum.alliance.ui.util.composerImeAboveBottomNav
 import java.io.InputStream
 import android.content.ContentResolver
 import android.os.ParcelFileDescriptor
@@ -691,7 +692,7 @@ private fun TeamForumTopicChatRoute(
     Column(
         Modifier
             .fillMaxSize()
-            .padding(bottom = SquadRelayDimens.keyboardComposerGap),
+            .composerImeAboveBottomNav(),
     ) {
         error?.let { err ->
             Text(

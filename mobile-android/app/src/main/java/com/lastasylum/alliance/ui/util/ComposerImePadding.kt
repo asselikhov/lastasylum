@@ -9,11 +9,24 @@ import androidx.compose.ui.platform.LocalDensity
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 
 /**
- * Оверлей-чат без нижней панели вкладок: отступ снизу = высота IME + [SquadRelayDimens.keyboardComposerGap],
- * без вычитания высоты bottom navigation.
+ * Поднимает композер над IME при главном приложении: нижняя панель вкладок уже учтена в padding контента
+ * Scaffold, поэтому из высоты IME вычитается [SquadRelayDimens.bottomNavigationBarHeight].
+ * Нужно при [enableEdgeToEdge]: одного [android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE]
+ * часто недостаточно — [WindowInsets.ime] всё равно задаёт подъём.
  */
 @Composable
-fun Modifier.composerImeOverlay(): Modifier {
+fun Modifier.composerImeAboveBottomNav(): Modifier {
+    val density = LocalDensity.current
+    val imeBottom = WindowInsets.ime.getBottom(density)
+    val tabPx = with(density) { SquadRelayDimens.bottomNavigationBarHeight.roundToPx() }
+    val padPx = (imeBottom - tabPx).coerceAtLeast(0)
+    val padDp = with(density) { padPx.toDp() }
+    return this.padding(bottom = padDp + SquadRelayDimens.keyboardComposerGap)
+}
+
+/** Полноэкранный чат без нижней панели вкладок (оверлей с [SOFT_INPUT_ADJUST_RESIZE]): полная высота IME + зазор. */
+@Composable
+fun Modifier.composerImeFullscreenOverlay(): Modifier {
     val density = LocalDensity.current
     val imeBottom = WindowInsets.ime.getBottom(density)
     val padDp = with(density) { imeBottom.toDp() }
