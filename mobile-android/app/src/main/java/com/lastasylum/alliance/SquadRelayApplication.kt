@@ -20,14 +20,16 @@ class SquadRelayApplication : Application() {
         super.onCreate()
         // Раньше ProfileInstaller: FirebaseInitProvider отключён в манифесте без google-services.json.
         initFirebaseIfConfigured()
-        runCatching { ProfileInstaller.writeProfile(this) }
         if (FirebaseApp.getApps(this).isNotEmpty()) {
             runCatching {
                 FirebaseCrashlytics.getInstance().isCrashlyticsCollectionEnabled = !BuildConfig.DEBUG
             }
         }
         appScope.launch(Dispatchers.IO) {
-            if (AppContainer.from(this@SquadRelayApplication).tokenStore.getAccessToken() != null) {
+            runCatching { ProfileInstaller.writeProfile(this@SquadRelayApplication) }
+            val container = AppContainer.from(this@SquadRelayApplication)
+            val access = runCatching { container.tokenStore.getAccessToken() }.getOrNull()
+            if (!access.isNullOrBlank()) {
                 runCatching { FcmTokenManager.registerWithBackend(this@SquadRelayApplication) }
             }
         }

@@ -34,6 +34,7 @@ import com.lastasylum.alliance.ui.onboarding.PermissionOnboardingGate
 import com.lastasylum.alliance.update.fetchNewerApkDownloadUrl
 import com.lastasylum.alliance.update.openApkDownload
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -44,7 +45,7 @@ fun SquadRelayApp() {
     val authViewModel: AuthViewModel = viewModel(
         factory = AuthViewModelFactory(
             application = application,
-            authRepository = appContainer.authRepository,
+            appContainer = appContainer,
         ),
     )
     val authState by authViewModel.state.collectAsStateWithLifecycle()
@@ -59,6 +60,8 @@ fun SquadRelayApp() {
     }
 
     LaunchedEffect(Unit) {
+        // Не конкурируем с восстановлением сессии и первым bootstrap чата.
+        delay(4_000)
         val url = withContext(Dispatchers.IO) {
             runCatching { fetchNewerApkDownloadUrl() }.getOrNull()
         }

@@ -84,6 +84,7 @@ fun AppNavigation(
         factory = chatViewModelFactory,
     )
     LaunchedEffect(Unit) {
+        delay(48)
         chatViewModel.refreshChat()
     }
 

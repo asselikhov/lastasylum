@@ -18,9 +18,12 @@ import retrofit2.converter.moshi.MoshiConverterFactory
 import java.util.concurrent.TimeUnit
 
 object NetworkModule {
-    private val moshi: Moshi = Moshi.Builder()
-        .addLast(KotlinJsonAdapterFactory())
-        .build()
+    /** Ленивая инициализация: не блокируем главный поток при первом composition до реального сетевого вызова. */
+    private val moshi: Moshi by lazy {
+        Moshi.Builder()
+            .addLast(KotlinJsonAdapterFactory())
+            .build()
+    }
 
     private fun loggingInterceptorOrNull(): HttpLoggingInterceptor? {
         if (!BuildConfig.DEBUG) return null
@@ -61,19 +64,23 @@ object NetworkModule {
         return this
     }
 
-    private val publicClient = OkHttpClient.Builder()
-        .applySquadRelayNetworkDefaults()
-        .build()
+    private val publicClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .applySquadRelayNetworkDefaults()
+            .build()
+    }
 
-    private val publicRetrofit: Retrofit = Retrofit.Builder()
-        .baseUrl(BuildConfig.API_BASE_URL)
-        .client(publicClient)
-        .addConverterFactory(MoshiConverterFactory.create(moshi))
-        .build()
+    private val publicRetrofit: Retrofit by lazy {
+        Retrofit.Builder()
+            .baseUrl(BuildConfig.API_BASE_URL)
+            .client(publicClient)
+            .addConverterFactory(MoshiConverterFactory.create(moshi))
+            .build()
+    }
 
-    val authApi: AuthApi = publicRetrofit.create(AuthApi::class.java)
+    val authApi: AuthApi by lazy { publicRetrofit.create(AuthApi::class.java) }
 
-    val mobileApi: MobileApi = publicRetrofit.create(MobileApi::class.java)
+    val mobileApi: MobileApi by lazy { publicRetrofit.create(MobileApi::class.java) }
 
     fun createAuthorizedClients(
         tokenStore: TokenStore,

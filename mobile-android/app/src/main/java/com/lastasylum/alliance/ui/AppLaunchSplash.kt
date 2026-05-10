@@ -146,4 +146,4 @@ private fun LaunchSplashScaffold(
     }
 }
 
-const val LAUNCH_SPLASH_MS = 750L
+const val LAUNCH_SPLASH_MS = 350L

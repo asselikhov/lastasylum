@@ -8,42 +8,50 @@ import androidx.lifecycle.viewModelScope
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.auth.AuthRepository
 import com.lastasylum.alliance.data.auth.RegisterResult
+import com.lastasylum.alliance.data.auth.TokenStore
 import com.lastasylum.alliance.push.FcmTokenManager
 import com.lastasylum.alliance.ui.util.toUserMessageRu
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class AuthViewModel(
     application: Application,
+    private val tokenStore: TokenStore,
     private val authRepository: AuthRepository,
 ) : AndroidViewModel(application) {
-    /** Не держим экран в «загрузке» при фоновом refresh — иначе нельзя войти другим аккаунтом, пока таймаутит старый refresh. */
-    private val _state = MutableStateFlow(initialAuthState())
+    private val _state = MutableStateFlow(AuthState(isCheckingStoredSession = true))
     val state: StateFlow<AuthState> = _state.asStateFlow()
-
-    private fun initialAuthState(): AuthState =
-        if (authRepository.hasSession()) {
-            AuthState(isCheckingStoredSession = true)
-        } else {
-            AuthState(isLoading = false)
-        }
 
     private val res get() = getApplication<Application>().resources
 
-    private var sessionRestoreJob: Job? = null
+    private var authBootstrapJob: Job? = null
 
     init {
-        sessionRestoreJob = viewModelScope.launch {
+        authBootstrapJob = viewModelScope.launch {
+            val hasRefresh = withContext(Dispatchers.IO) {
+                runCatching { tokenStore.getRefreshToken() != null }.getOrDefault(false)
+            }
+            if (!hasRefresh) {
+                _state.value = AuthState(
+                    isCheckingStoredSession = false,
+                    isLoading = false,
+                    isAuthenticated = false,
+                )
+                return@launch
+            }
             restoreSession()
         }
     }
 
-    private fun cancelSilentSessionRestore() {
-        sessionRestoreJob?.cancel()
-        sessionRestoreJob = null
+    private fun cancelAuthBootstrap() {
+        authBootstrapJob?.cancel()
+        authBootstrapJob = null
     }
 
     fun clearError() {
@@ -51,7 +59,7 @@ class AuthViewModel(
     }
 
     fun login(email: String, password: String) {
-        cancelSilentSessionRestore()
+        cancelAuthBootstrap()
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true, error = null, infoMessage = null)
             authRepository.login(email, password)
@@ -76,7 +84,7 @@ class AuthViewModel(
     }
 
     fun register(username: String, email: String, password: String) {
-        cancelSilentSessionRestore()
+        cancelAuthBootstrap()
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true, error = null, infoMessage = null)
             authRepository.register(username, email, password)
@@ -115,7 +123,7 @@ class AuthViewModel(
     }
 
     fun logout() {
-        cancelSilentSessionRestore()
+        cancelAuthBootstrap()
         viewModelScope.launch {
             runCatching { FcmTokenManager.unregister(getApplication()) }
             authRepository.logout()
@@ -128,7 +136,7 @@ class AuthViewModel(
     }
 
     fun forgotPassword(email: String) {
-        cancelSilentSessionRestore()
+        cancelAuthBootstrap()
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true, error = null, infoMessage = null)
             authRepository.forgotPassword(email)
@@ -155,7 +163,7 @@ class AuthViewModel(
     }
 
     fun resetPassword(email: String, token: String, newPassword: String) {
-        cancelSilentSessionRestore()
+        cancelAuthBootstrap()
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true, error = null, infoMessage = null)
             authRepository.resetPassword(email, token, newPassword)
@@ -201,6 +209,7 @@ class AuthViewModel(
                 )
             }
             .onFailure { err ->
+                if (err is CancellationException) throw err
                 logAuthFailure("refreshSession", err)
                 authRepository.logout()
                 _state.value = AuthState(

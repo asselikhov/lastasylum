@@ -17,58 +17,66 @@ import com.lastasylum.alliance.data.users.UsersRepository
 
 class AppContainer private constructor(context: Context) {
     private val appContext = context.applicationContext
-    val tokenStore: TokenStore = TokenStore(appContext)
+
+    /** Encrypted prefs + KeyStore: создаём лениво; прогрев — в [SquadRelayApplication] на IO. */
+    val tokenStore: TokenStore by lazy { TokenStore(appContext) }
+
     val chatRoomPreferences: ChatRoomPreferences = ChatRoomPreferences(appContext)
     val userSettingsPreferences: UserSettingsPreferences = UserSettingsPreferences(appContext)
     val onboardingPreferences: OnboardingPreferences = OnboardingPreferences(appContext)
+
     private val chatSocketManager = ChatSocketManager()
     private val teamForumSocketManager = TeamForumSocketManager()
 
-    private lateinit var chatRepositoryImpl: ChatRepository
+    @Volatile
+    private var chatRepositoryInstance: ChatRepository? = null
 
-    private val authorizedClients = NetworkModule.createAuthorizedClients(tokenStore) {
-        if (::chatRepositoryImpl.isInitialized) {
-            chatRepositoryImpl.onAccessTokenRefreshed()
+    private val authorizedClients by lazy {
+        NetworkModule.createAuthorizedClients(tokenStore) {
+            chatRepositoryInstance?.onAccessTokenRefreshed()
+            teamForumSocketManager.reconnectWithFreshToken()
         }
-        teamForumSocketManager.reconnectWithFreshToken()
     }
 
     val chatRepository: ChatRepository
-        get() = chatRepositoryImpl
+        get() {
+            chatRepositoryInstance?.let { return it }
+            return synchronized(this) {
+                chatRepositoryInstance ?: ChatRepository(
+                    chatApi = authorizedClients.chatApi,
+                    tokenStore = tokenStore,
+                    socketManager = chatSocketManager,
+                    chatRoomPreferences = chatRoomPreferences,
+                ).also { chatRepositoryInstance = it }
+            }
+        }
 
-    val authRepository: AuthRepository = AuthRepository(
-        authApi = NetworkModule.authApi,
-        authorizedAuthApi = authorizedClients.authorizedAuthApi,
-        tokenStore = tokenStore,
-        chatRoomPreferences = chatRoomPreferences,
-    )
-
-    val chatRoomsRepository: ChatRoomsRepository = ChatRoomsRepository(
-        chatApi = authorizedClients.chatApi,
-    )
-
-    val usersRepository: UsersRepository = UsersRepository(
-        usersApi = authorizedClients.usersApi,
-    )
-
-    val adminRepository: AdminRepository = AdminRepository(
-        adminApi = authorizedClients.adminApi,
-    )
-
-    val teamsRepository: TeamsRepository = TeamsRepository(
-        teamsApi = authorizedClients.teamsApi,
-    )
-
-    val teamForumSocket: TeamForumSocketManager get() = teamForumSocketManager
-
-    init {
-        chatRepositoryImpl = ChatRepository(
-            chatApi = authorizedClients.chatApi,
+    val authRepository: AuthRepository by lazy {
+        AuthRepository(
+            authApi = NetworkModule.authApi,
+            authorizedAuthApi = authorizedClients.authorizedAuthApi,
             tokenStore = tokenStore,
-            socketManager = chatSocketManager,
             chatRoomPreferences = chatRoomPreferences,
         )
     }
+
+    val chatRoomsRepository: ChatRoomsRepository by lazy {
+        ChatRoomsRepository(chatApi = authorizedClients.chatApi)
+    }
+
+    val usersRepository: UsersRepository by lazy {
+        UsersRepository(usersApi = authorizedClients.usersApi)
+    }
+
+    val adminRepository: AdminRepository by lazy {
+        AdminRepository(adminApi = authorizedClients.adminApi)
+    }
+
+    val teamsRepository: TeamsRepository by lazy {
+        TeamsRepository(teamsApi = authorizedClients.teamsApi)
+    }
+
+    val teamForumSocket: TeamForumSocketManager get() = teamForumSocketManager
 
     companion object {
         @Volatile
