@@ -13,6 +13,9 @@ object ZlobyakaStickerPack {
     private const val PREFIX: String = "[[${PACK_KEY}:"
     private const val SUFFIX: String = "]]"
 
+    @Volatile
+    private var sortedStemsCache: List<String>? = null
+
     fun encode(fileStem: String): String {
         val stem = fileStem.trim()
         require(stem.isNotEmpty()) { "empty sticker stem" }
@@ -33,10 +36,16 @@ object ZlobyakaStickerPack {
     fun assetUriForStem(stem: String): String = "file:///android_asset/$ASSET_FOLDER/$stem.png"
 
     fun listSortedStems(context: Context): List<String> {
-        val names = context.assets.list(ASSET_FOLDER) ?: return emptyList()
-        return names
-            .filter { it.endsWith(".png", ignoreCase = true) }
-            .map { name -> name.dropLast(4) }
-            .sortedWith(naturalOrder())
+        sortedStemsCache?.let { return it }
+        return synchronized(this) {
+            sortedStemsCache?.let { return@synchronized it }
+            val names = context.applicationContext.assets.list(ASSET_FOLDER) ?: emptyArray()
+            val list = names
+                .filter { it.endsWith(".png", ignoreCase = true) }
+                .map { name -> name.dropLast(4) }
+                .sortedWith(naturalOrder())
+            sortedStemsCache = list
+            list
+        }
     }
 }

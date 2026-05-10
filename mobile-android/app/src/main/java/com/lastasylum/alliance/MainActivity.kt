@@ -8,7 +8,6 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.lastasylum.alliance.ui.SquadRelayApp
-import com.lastasylum.alliance.ui.util.ImeSnapInsets
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -19,7 +18,6 @@ class MainActivity : ComponentActivity() {
         }
         super.onCreate(savedInstanceState)
         hideSystemUi()
-        window.decorView.post { ImeSnapInsets.install(window.decorView) }
         setContent {
             SquadRelayApp()
         }

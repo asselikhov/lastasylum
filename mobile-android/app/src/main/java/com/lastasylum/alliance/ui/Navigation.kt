@@ -237,7 +237,7 @@ fun AppNavigation(
         ) {
             composable(AppTab.CHAT.route) {
                 LaunchedEffect(Unit) {
-                    chatViewModel.refreshTeamProfileGate()
+                    chatViewModel.refreshTeamProfileGateLight()
                 }
                 val chatState by chatViewModel.state.collectAsStateWithLifecycle()
                 val draftMessage by chatViewModel.draftMessage.collectAsStateWithLifecycle()

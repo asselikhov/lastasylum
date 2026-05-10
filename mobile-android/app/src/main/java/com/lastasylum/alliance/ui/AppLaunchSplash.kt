@@ -52,7 +52,7 @@ fun SessionBootstrapSplash(modifier: Modifier = Modifier) {
     )
 }
 
-/** После успешного входа — минимум 5 с с линейным прогрессом. */
+/** После успешного входа — короткий экран приветствия (не блокирует вход дольше [LAUNCH_SPLASH_MS]). */
 @Composable
 fun PostAuthLaunchSplash(
     onComplete: () -> Unit,
@@ -146,4 +146,4 @@ private fun LaunchSplashScaffold(
     }
 }
 
-const val LAUNCH_SPLASH_MS = 5000L
+const val LAUNCH_SPLASH_MS = 750L

@@ -107,6 +107,17 @@ class ChatViewModel(
         }
     }
 
+    /**
+     * Только профиль/стикеры/гейт глобального чата — без [repository.listRooms].
+     * Используется при входе на вкладку чата, чтобы не дублировать сетевую нагрузку с [bootstrap].
+     */
+    fun refreshTeamProfileGateLight() {
+        viewModelScope.launch {
+            val hasTeam = loadTeamProfileGate()
+            _state.value = _state.value.copy(hasTeamProfileForGlobalChat = hasTeam)
+        }
+    }
+
     private suspend fun loadTeamProfileGate(): Boolean {
         val p = usersRepository.getMyProfile().getOrNull()
         val keys = p?.enabledStickerPacks?.toSet() ?: emptySet()

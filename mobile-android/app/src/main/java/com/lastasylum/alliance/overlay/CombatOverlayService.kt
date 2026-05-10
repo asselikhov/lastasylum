@@ -71,7 +71,6 @@ import com.lastasylum.alliance.overlay.layout.OverlayLayoutDp
 import com.lastasylum.alliance.ui.screens.ChatScreen
 import com.lastasylum.alliance.ui.chat.ChatViewModel
 import com.lastasylum.alliance.ui.theme.SquadRelayTheme
-import com.lastasylum.alliance.ui.util.ImeSnapInsets
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -1906,7 +1905,6 @@ class CombatOverlayService : Service() {
         overlayHistoryRoot = root
         overlayHistoryParams = params
         overlayHistoryVisible = true
-        ImeSnapInsets.install(root)
         rebalanceOverlayChatWindowZOrder()
     }
 
