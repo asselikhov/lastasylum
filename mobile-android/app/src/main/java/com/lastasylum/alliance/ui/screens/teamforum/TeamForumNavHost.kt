@@ -1,4 +1,4 @@
-package com.lastasylum.alliance.ui.screens.teamforum
+﻿package com.lastasylum.alliance.ui.screens.teamforum
 
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -110,6 +110,7 @@ import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamForumTypingEvent
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.ui.screens.teamnews.teamNewsAuthedImageRequest
+import com.lastasylum.alliance.ui.util.copyForumMessageToClipboard
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -153,7 +154,7 @@ fun TeamForumNavHost(
     teamId: String,
     currentUserId: String,
     canManageTopics: Boolean,
-    /** Только R5 может редактировать/удалять чужие сообщения (как на бэкенде). */
+    /** РўРѕР»СЊРєРѕ R5 РјРѕР¶РµС‚ СЂРµРґР°РєС‚РёСЂРѕРІР°С‚СЊ/СѓРґР°Р»СЏС‚СЊ С‡СѓР¶РёРµ СЃРѕРѕР±С‰РµРЅРёСЏ (РєР°Рє РЅР° Р±СЌРєРµРЅРґРµ). */
     canModerateForumMessages: Boolean,
     teamsRepository: TeamsRepository,
     forumSocket: TeamForumSocketManager,
@@ -352,7 +353,7 @@ private fun TeamForumListRoute(
                                                     R.string.team_forum_topic_meta,
                                                     t.messageCount,
                                                     t.lastMessageAt?.let { formatForumTime(it) }
-                                                        ?: "—",
+                                                        ?: "вЂ”",
                                                 ),
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -717,7 +718,18 @@ private fun TeamForumTopicChatRoute(
                 onDelete = { if (!deletingSelection) confirmBulkDelete = true },
             )
         }
-        Box(Modifier.weight(1f)) {
+        Box(
+            Modifier
+                .weight(1f)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.surfaceDim.copy(alpha = 0.38f),
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.08f),
+                        ),
+                    ),
+                ),
+        ) {
             if (loading && messages.isEmpty()) {
                 CircularProgressIndicator(
                     Modifier.align(Alignment.Center),
@@ -727,8 +739,8 @@ private fun TeamForumTopicChatRoute(
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp),
                 ) {
                     itemsIndexed(
                         sortedMessages,
@@ -743,25 +755,33 @@ private fun TeamForumTopicChatRoute(
                                 Box(
                                     Modifier
                                         .fillMaxWidth()
-                                        .padding(vertical = 8.dp),
+                                        .padding(vertical = 10.dp),
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    Text(
-                                        text = sep,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(999.dp),
+                                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
+                                        tonalElevation = 0.dp,
+                                        shadowElevation = 1.dp,
+                                    ) {
+                                        Text(
+                                            text = sep,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                                        )
+                                    }
                                 }
                             }
                         }
                         val mine = msg.senderUserId == currentUserId
-                        val canEdit = (mine || canModerateMessages) && msg.deletedAt.isNullOrBlank()
                         val inSelectionMode = selectedMessageIds.isNotEmpty()
                         val isSelected = msg.id in selectedMessageIds
                         ForumMessageBubble(
                             message = msg,
+                            sortedMessages = sortedMessages,
+                            messageIndex = idx,
                             isMine = mine,
-                            canEdit = canEdit,
                             inSelectionMode = inSelectionMode,
                             isSelected = isSelected,
                             highlighted = highlightMessageId == msg.id,
@@ -777,21 +797,20 @@ private fun TeamForumTopicChatRoute(
                                     }
                                 }
                             },
-                            onClick = {
-                                if (inSelectionMode) {
-                                    selectedMessageIds =
-                                        if (isSelected) selectedMessageIds - msg.id else selectedMessageIds + msg.id
+                            onToggleSelection = {
+                                selectedMessageIds =
+                                    if (isSelected) selectedMessageIds - msg.id else selectedMessageIds + msg.id
+                            },
+                            onSwipeReply = {
+                                if (msg.deletedAt.isNullOrBlank()) {
+                                    replyToMessage = msg
                                 }
                             },
-                            onLongPress = {
-                                if (!inSelectionMode) {
-                                    selectedMessageIds = setOf(msg.id)
-                                } else {
-                                    selectedMessageIds =
-                                        if (isSelected) selectedMessageIds - msg.id else selectedMessageIds + msg.id
+                            onOpenActions = {
+                                if (msg.deletedAt.isNullOrBlank()) {
+                                    activeActionMessageId = msg.id
                                 }
                             },
-                            onOpenActions = { if (!inSelectionMode && canEdit) activeActionMessageId = msg.id },
                         )
                     }
                 }
@@ -1111,7 +1130,7 @@ private fun ForumSelectionToolbar(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ForumMessageActionsSheet(
-    @Suppress("UNUSED_PARAMETER") message: TeamForumMessageDto,
+    message: TeamForumMessageDto,
     canEdit: Boolean,
     canDelete: Boolean,
     onDismiss: () -> Unit,
@@ -1119,6 +1138,7 @@ private fun ForumMessageActionsSheet(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val context = LocalContext.current
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -1126,6 +1146,20 @@ private fun ForumMessageActionsSheet(
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
+            Text(
+                text = message.senderUsername.trim().ifBlank { "—" },
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            TextButton(
+                onClick = {
+                    copyForumMessageToClipboard(context, message)
+                    onDismiss()
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.chat_action_copy))
+            }
             TextButton(onClick = onReply, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.chat_action_reply))
             }
@@ -1148,370 +1182,6 @@ private fun ForumMessageActionsSheet(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun ForumMessageBubble(
-    message: TeamForumMessageDto,
-    isMine: Boolean,
-    canEdit: Boolean,
-    inSelectionMode: Boolean,
-    isSelected: Boolean,
-    highlighted: Boolean,
-    onOpenImages: (List<String>, Int) -> Unit,
-    onJumpToMessage: (String) -> Unit,
-    onClick: () -> Unit,
-    onLongPress: () -> Unit,
-    onOpenActions: () -> Unit,
-) {
-    val deleted = !message.deletedAt.isNullOrBlank() &&
-        !message.deletedAt.equals("null", ignoreCase = true)
-    val ctx = LocalContext.current
-    val stickerStem = if (!deleted) ZlobyakaStickerPack.parseStem(message.text) else null
-    val floatingSticker = stickerStem != null && message.replyTo == null && !deleted
-    val bubbleBg = if (isMine) ChatTelegramOutgoingBubble else ChatTelegramIncomingBubble
-    val onBubble = if (isMine) ChatTelegramOutgoingOnBubble else ChatTelegramIncomingOnBubble
-    val timeMuted = if (isMine) ChatTelegramTimeMuted else ChatTelegramTimeMutedIncoming
-    val senderAccent = roleAccentColor("")
-    val nickname = message.senderUsername.trim()
-    val displayName = nickname.ifBlank { "—" }
-    val tagBracketMuted = ChatTelegramIncomingOnBubble.copy(alpha = 0.5f)
-
-    val timeStr = formatChatTime(message.createdAt)
-    val timeLabel = remember(timeStr, message.editedAt) {
-        if (timeStr.isBlank()) {
-            ""
-        } else if (!message.editedAt.isNullOrBlank()) {
-            "$timeStr · ${ctx.getString(R.string.chat_edited)}"
-        } else {
-            timeStr
-        }
-    }
-
-    val chainBottom = true
-    val bubbleShape = if (isMine) {
-        chatBubbleShapeOutgoing(chainBottom)
-    } else {
-        chatBubbleShapeIncoming(chainBottom)
-    }
-
-    val captionBarBg = if (isMine) {
-        lerp(ChatTelegramOutgoingBubble, Color.Black, 0.18f)
-    } else {
-        lerp(ChatTelegramIncomingBubble, Color.Black, 0.24f)
-    }
-
-    val clickMod = Modifier.combinedClickable(
-        onClick = {
-            if (inSelectionMode) {
-                onClick()
-            } else {
-                onClick()
-            }
-        },
-        onLongClick = {
-            if (inSelectionMode) {
-                onLongPress()
-            } else if (canEdit) {
-                onOpenActions()
-            } else {
-                onLongPress()
-            }
-        },
-    )
-
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val maxBubble = maxWidth * 0.82f
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            if (isMine) {
-                Spacer(Modifier.weight(1f))
-            }
-            if (!isMine && !deleted) {
-                ChatSenderAvatar(
-                    telegramUrl = null,
-                    size = ChatIncomingAvatarSize,
-                    modifier = Modifier.padding(end = ChatIncomingAvatarEndPad),
-                    fallbackName = displayName,
-                )
-            }
-    val baseBg = if (floatingSticker) Color.Transparent else bubbleBg
-            val selectionTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-            val highlightTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-            val finalBg = when {
-                isSelected -> lerp(baseBg, selectionTint, 0.65f)
-                highlighted -> lerp(baseBg, highlightTint, 0.55f)
-                else -> baseBg
-            }
-            Surface(
-                modifier = Modifier
-                    .widthIn(max = minOf(maxBubble, 300.dp))
-                    .then(clickMod),
-                color = finalBg,
-                shape = bubbleShape,
-                tonalElevation = 0.dp,
-                shadowElevation = 0.dp,
-            ) {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp)
-                        .padding(top = 10.dp, bottom = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
-                ) {
-                    if (!isMine && !deleted) {
-                        ChatBubbleAuthorHeader(
-                            teamTag = null,
-                            nickname = nickname.ifBlank { "—" },
-                            nicknameColor = senderAccent,
-                            tagBracketColor = tagBracketMuted,
-                            senderRole = "",
-                        )
-                    }
-
-                    if (inSelectionMode) {
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End,
-                        ) {
-                            Checkbox(
-                                checked = isSelected,
-                                onCheckedChange = { onClick() },
-                            )
-                        }
-                    }
-
-                    message.replyTo?.let { rp ->
-                        val rid = message.replyToMessageId
-                        if (!rid.isNullOrBlank()) {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = finalBg.copy(alpha = 0.42f),
-                                tonalElevation = 0.dp,
-                                shadowElevation = 0.dp,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onJumpToMessage(rid) },
-                            ) {
-                                Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
-                                    Text(
-                                        text = rp.senderUsername.trim().ifBlank { "—" },
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = senderAccent,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    Text(
-                                        text = com.lastasylum.alliance.ui.chat.replyPreviewText(rp.text),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = onBubble.copy(alpha = 0.75f),
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    when {
-                        deleted -> {
-                            Text(
-                                text = stringResource(R.string.team_forum_message_deleted),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = timeMuted,
-                            )
-                            if (timeLabel.isNotBlank()) {
-                                Row(
-                                    Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.End,
-                                ) {
-                                    Text(
-                                        text = timeLabel,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = timeMuted,
-                                    )
-                                }
-                            }
-                        }
-                        stickerStem != null -> {
-                            Box(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 2.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                AsyncImage(
-                                    model = ImageRequest.Builder(ctx)
-                                        .data(ZlobyakaStickerPack.assetUriForStem(stickerStem))
-                                        .size(384)
-                                        .crossfade(true)
-                                        .build(),
-                                    contentDescription = stringResource(R.string.cd_chat_sticker),
-                                    modifier = Modifier
-                                        .widthIn(max = 220.dp)
-                                        .heightIn(max = 200.dp)
-                                        .clip(RoundedCornerShape(12.dp)),
-                                    contentScale = ContentScale.Fit,
-                                )
-                            }
-                            if (timeLabel.isNotBlank()) {
-                                Row(
-                                    Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.End,
-                                ) {
-                                    Text(
-                                        text = timeLabel,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = timeMuted,
-                                    )
-                                }
-                            }
-                        }
-                        message.imageRelativeUrls.isNotEmpty() -> {
-                            val urls = message.imageRelativeUrls
-                            val hasCaption = message.text.isNotBlank()
-                            Column(
-                                Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(0.dp),
-                            ) {
-                                Box(Modifier.fillMaxWidth()) {
-                                    ForumAuthedAttachmentsGrid(
-                                        urls = urls,
-                                        onOpen = { idx -> onOpenImages(urls, idx) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                }
-                                if (hasCaption) {
-                                    TelegramImageCaptionBar(
-                                        caption = message.text.trimEnd(),
-                                        formattedTime = timeLabel,
-                                        captionBarBg = captionBarBg,
-                                        onBubble = onBubble,
-                                        timeMuted = timeMuted,
-                                    )
-                                } else if (timeLabel.isNotBlank()) {
-                                    Row(
-                                        Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.End,
-                                    ) {
-                                        Text(
-                                            text = timeLabel,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = timeMuted,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        else -> {
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.Bottom,
-                            ) {
-                                Text(
-                                    text = message.text,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = onBubble,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                if (timeLabel.isNotBlank()) {
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(
-                                        text = timeLabel,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = timeMuted,
-                                        modifier = Modifier.padding(bottom = 1.dp),
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            if (!isMine) {
-                Spacer(Modifier.weight(1f))
-            }
-        }
-    }
-}
-
-@Composable
-private fun ForumAuthedAttachmentsGrid(
-    urls: List<String>,
-    modifier: Modifier = Modifier,
-    onOpen: (Int) -> Unit,
-) {
-    // Reuse Telegram-like layout but feed it authed ImageRequests by wrapping the URLs into the same grid.
-    // We can't directly reuse TelegramLikeAttachmentsGrid because forum URLs require auth headers.
-    if (urls.isEmpty()) return
-    val ctx = LocalContext.current
-    val maxShown = 6
-    val shown = urls.take(maxShown)
-    val extra = (urls.size - shown.size).coerceAtLeast(0)
-    val corner = 12.dp
-    val gap = 4.dp
-
-    @Composable
-    fun tile(idx: Int, modifier: Modifier) {
-        val u = shown.getOrNull(idx) ?: return
-        val req = teamNewsAuthedImageRequest(ctx, u)
-        Box(
-            modifier = modifier
-                .clip(RoundedCornerShape(corner))
-                .clickable { onOpen(idx) },
-            contentAlignment = Alignment.Center,
-        ) {
-            if (req != null) {
-                AsyncImage(
-                    model = req,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
-            }
-            if (idx == shown.lastIndex && extra > 0) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.45f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = "+$extra",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = Color.White,
-                    )
-                }
-            }
-        }
-    }
-
-    // Minimal: 1 / 2 / 3+ grid (keep TelegramLikeAttachmentsGrid exact layout later if needed).
-    when (shown.size) {
-        1 -> {
-            tile(0, modifier.heightIn(max = 220.dp))
-        }
-        2 -> {
-            Row(modifier = modifier.height(160.dp), horizontalArrangement = Arrangement.spacedBy(gap)) {
-                tile(0, Modifier.weight(1f).fillMaxHeight())
-                tile(1, Modifier.weight(1f).fillMaxHeight())
-            }
-        }
-        else -> {
-            Column(modifier = modifier.height(220.dp), verticalArrangement = Arrangement.spacedBy(gap)) {
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(gap)) {
-                    tile(0, Modifier.weight(1f).fillMaxHeight())
-                    tile(1, Modifier.weight(1f).fillMaxHeight())
-                }
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(gap)) {
-                    tile(2, Modifier.weight(1f).fillMaxHeight())
-                    tile(3.coerceAtMost(shown.lastIndex), Modifier.weight(1f).fillMaxHeight())
-                }
-            }
-        }
-    }
-}
 
 @Composable
 private fun ForumImagesPreviewOverlay(

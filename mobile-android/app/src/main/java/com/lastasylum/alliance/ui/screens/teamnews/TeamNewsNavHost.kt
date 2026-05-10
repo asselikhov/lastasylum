@@ -2,12 +2,15 @@ package com.lastasylum.alliance.ui.screens.teamnews
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,7 +22,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -38,7 +40,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -46,6 +47,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
@@ -299,26 +301,44 @@ private fun TeamNewsListRoute(
                     )
                 }
                 else -> {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 88.dp, top = 2.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        MaterialTheme.colorScheme.surfaceDim.copy(alpha = 0.55f),
+                                        MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                                    ),
+                                ),
+                            ),
                     ) {
-                        items(
-                            count = newsItems.size,
-                            key = { index -> newsItems[index].id },
-                        ) { index ->
-                            val row = newsItems[index]
-                            TeamNewsCard(
-                                item = row,
-                                onClick = { onOpenDetail(row.id) },
-                                onEdit = {
-                                    val isAuthor = row.authorUserId == currentUserId
-                                    val isR5 = myTeamRole == "R5"
-                                    if (isAuthor || isR5) onEditFromList(row.id)
-                                },
-                                showEdit = row.authorUserId == currentUserId || myTeamRole == "R5",
-                            )
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(
+                                start = 14.dp,
+                                end = 14.dp,
+                                top = 20.dp,
+                                bottom = 88.dp,
+                            ),
+                            verticalArrangement = Arrangement.spacedBy(18.dp),
+                        ) {
+                            items(
+                                count = newsItems.size,
+                                key = { index -> newsItems[index].id },
+                            ) { index ->
+                                val row = newsItems[index]
+                                TeamNewsCard(
+                                    item = row,
+                                    onClick = { onOpenDetail(row.id) },
+                                    onEdit = {
+                                        val isAuthor = row.authorUserId == currentUserId
+                                        val isR5 = myTeamRole == "R5"
+                                        if (isAuthor || isR5) onEditFromList(row.id)
+                                    },
+                                    showEdit = row.authorUserId == currentUserId || myTeamRole == "R5",
+                                )
+                            }
                         }
                     }
                 }
@@ -334,25 +354,44 @@ private fun TeamNewsCard(
     onEdit: () -> Unit,
     showEdit: Boolean,
 ) {
-    val shape = RoundedCornerShape(20.dp)
+    val cardShape = RoundedCornerShape(26.dp)
     val hasHero = !item.firstImageRelativeUrl.isNullOrBlank()
-    val baseBg = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f)
-    val ring = MaterialTheme.colorScheme.primary.copy(alpha = 0.42f)
     val ringSoft = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
-    OutlinedCard(
+    Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        shape = shape,
-        border = BorderStroke(1.5.dp, ring),
-        colors = CardDefaults.outlinedCardColors(containerColor = baseBg),
+        shape = cardShape,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+        Row(
+            modifier = Modifier.height(IntrinsicSize.Min),
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(5.dp)
+                    .fillMaxHeight()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                MaterialTheme.colorScheme.primary,
+                                MaterialTheme.colorScheme.tertiary,
+                            ),
+                        ),
+                    ),
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(0.dp),
+            ) {
             if (hasHero) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(172.dp)
-                        .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)),
+                        .clip(RoundedCornerShape(topEnd = 26.dp)),
                 ) {
                     item.firstImageRelativeUrl?.let { raw ->
                         teamNewsAuthedImageRequest(LocalContext.current, raw)?.let { req ->
@@ -437,22 +476,20 @@ private fun TeamNewsCard(
                 }
                 HorizontalDivider(
                     thickness = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f),
                 )
             }
-            Surface(
-                color = if (hasHero) {
-                    lerp(baseBg, MaterialTheme.colorScheme.surfaceContainerLow, 0.35f)
-                } else {
-                    baseBg
-                },
-                tonalElevation = 0.dp,
-                shadowElevation = 0.dp,
-            ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 15.dp, vertical = 13.dp),
+                        .background(
+                            if (hasHero) {
+                                MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.42f)
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.25f)
+                            },
+                        )
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     if (!hasHero) {

@@ -76,6 +76,11 @@
     <string name="chat_reply_cancel">Отменить ответ</string>
     <string name="chat_deleting_progress">Удаление…</string>
     <string name="chat_action_reply">Ответить</string>
+    <string name="chat_action_copy">Копировать</string>
+    <string name="chat_copied_toast">Скопировано</string>
+    <string name="chat_message_clipboard_label">Сообщение</string>
+    <string name="chat_copy_sticker_line">Стикер «Злобяка»: %1$s</string>
+    <string name="chat_copy_image_placeholder">[Изображение]</string>
     <string name="chat_action_delete">Удалить сообщение</string>
     <string name="chat_action_forward">Переслать</string>
     <string name="chat_action_edit">Редактировать</string>

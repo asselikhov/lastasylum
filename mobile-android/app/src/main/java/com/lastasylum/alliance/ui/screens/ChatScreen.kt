@@ -61,6 +61,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.DeleteOutline
@@ -177,6 +178,7 @@ import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMuted
 import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMutedIncoming
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.roleAccentColor
+import com.lastasylum.alliance.ui.util.copyChatMessageToClipboard
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -3298,6 +3300,20 @@ private fun ChatMessageActionsSheet(
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                 )
+            }
+            OutlinedButton(
+                onClick = {
+                    copyChatMessageToClipboard(sheetContext, message)
+                    onDismiss()
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.ContentCopy,
+                    contentDescription = null,
+                    modifier = Modifier.padding(end = 6.dp),
+                )
+                Text(stringResource(R.string.chat_action_copy))
             }
             OutlinedButton(
                 onClick = onReply,
