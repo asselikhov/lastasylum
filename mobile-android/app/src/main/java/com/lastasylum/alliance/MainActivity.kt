@@ -27,7 +27,7 @@ class MainActivity : ComponentActivity() {
         WindowCompat.getInsetsController(window, window.decorView).apply {
             systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            // Manifest uses adjustNothing; chat/forum use composerImeAboveBottomNav to sit on IME while the tab bar stays visible.
+            // Manifest uses adjustResize so the system resizes the window above the IME (smooth, less layout jank than per-frame ime padding).
             // Hiding legacy three-button navigation strip so more vertical space is available for game/content.
             hide(WindowInsetsCompat.Type.navigationBars())
         }

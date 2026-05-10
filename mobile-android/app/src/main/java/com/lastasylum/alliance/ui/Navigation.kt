@@ -139,7 +139,7 @@ fun AppNavigation(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground,
-        // IME handled in chat/forum via [com.lastasylum.alliance.ui.util.composerImeAboveBottomNav].
+        // IME: MainActivity adjustResize shrinks content above keyboard; exclude IME from Scaffold padding to avoid double insets.
         contentWindowInsets = WindowInsets.safeDrawing.exclude(WindowInsets.ime),
         bottomBar = {
             Surface(

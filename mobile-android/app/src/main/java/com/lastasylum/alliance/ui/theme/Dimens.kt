@@ -17,7 +17,7 @@ object SquadRelayDimens {
     val cardInnerPadding = 14.dp
     val panelInnerPadding = 14.dp
     val composerInnerPadding = 10.dp
-    /** Зазор между нижним краем поля ввода и клавиатурой (дополнительно к [composerImeAboveBottomNav]). */
+    /** Небольшой зазор у композера над нижним краем области контента (над IME при adjustResize / в оверлее). */
     val keyboardComposerGap = 4.dp
     val headerSubtitleGap = 2.dp
     val listRowHorizontalPadding = 10.dp
