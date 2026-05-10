@@ -178,6 +178,10 @@ import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMuted
 import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMutedIncoming
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.roleAccentColor
+import com.lastasylum.alliance.ui.chat.MessageSheetActionRow
+import com.lastasylum.alliance.ui.chat.MessageSheetDividerSpaced
+import com.lastasylum.alliance.ui.chat.MessageSheetPreviewSurface
+import com.lastasylum.alliance.ui.util.chatMessageHasCopyableContent
 import com.lastasylum.alliance.ui.util.copyChatMessageToClipboard
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import coil.compose.AsyncImage
@@ -3256,126 +3260,110 @@ private fun ChatMessageActionsSheet(
                     horizontal = SquadRelayDimens.contentPaddingHorizontal,
                     vertical = SquadRelayDimens.itemGap,
                 ),
-            verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(
-                text = chatSenderDisplayWithTag(message.senderTeamTag, message.senderUsername),
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
             val sheetStickerStem = remember(message.text) { ZlobyakaStickerPack.parseStem(message.text) }
             val sheetContext = LocalContext.current
-            if (sheetStickerStem != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(sheetContext)
-                            .data(ZlobyakaStickerPack.assetUriForStem(sheetStickerStem))
-                            .size(200)
-                            .crossfade(true)
-                            .build(),
-                        contentDescription = stringResource(R.string.cd_chat_sticker),
-                        modifier = Modifier
-                            .size(72.dp)
-                            .clip(RoundedCornerShape(10.dp)),
-                        contentScale = ContentScale.Fit,
-                    )
+            val canCopy = chatMessageHasCopyableContent(message)
+            MessageSheetPreviewSurface {
+                Text(
+                    text = chatSenderDisplayWithTag(message.senderTeamTag, message.senderUsername),
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                if (sheetStickerStem != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(sheetContext)
+                                .data(ZlobyakaStickerPack.assetUriForStem(sheetStickerStem))
+                                .size(200)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = stringResource(R.string.cd_chat_sticker),
+                            modifier = Modifier
+                                .size(72.dp)
+                                .clip(RoundedCornerShape(10.dp)),
+                            contentScale = ContentScale.Fit,
+                        )
+                        Text(
+                            text = replyPreviewText(message.text),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 4,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                } else {
+                    val previewText = when {
+                        message.text.isNotBlank() -> message.text
+                        message.attachments.any { it.kind == "image" && it.url.isNotBlank() } ->
+                            stringResource(R.string.chat_copy_image_placeholder)
+                        else -> stringResource(R.string.chat_sheet_preview_empty)
+                    }
                     Text(
-                        text = replyPreviewText(message.text),
+                        text = previewText,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 3,
+                        maxLines = 5,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
                     )
                 }
-            } else {
-                Text(
-                    text = message.text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                )
             }
-            OutlinedButton(
+            MessageSheetDividerSpaced()
+            MessageSheetActionRow(
+                icon = Icons.Outlined.ContentCopy,
+                label = stringResource(R.string.chat_action_copy),
                 onClick = {
                     copyChatMessageToClipboard(sheetContext, message)
                     onDismiss()
                 },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.ContentCopy,
-                    contentDescription = null,
-                    modifier = Modifier.padding(end = 6.dp),
-                )
-                Text(stringResource(R.string.chat_action_copy))
-            }
-            OutlinedButton(
+                enabled = canCopy,
+            )
+            MessageSheetActionRow(
+                icon = Icons.AutoMirrored.Outlined.Reply,
+                label = stringResource(R.string.chat_action_reply),
                 onClick = onReply,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Outlined.Reply,
-                    contentDescription = null,
-                    modifier = Modifier.padding(end = 6.dp),
-                )
-                Text(stringResource(R.string.chat_action_reply))
-            }
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 listOf("👍", "❤️", "😂").forEach { e ->
                     OutlinedButton(
                         onClick = { onReact(e) },
                         modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
                     ) {
-                        Text(e)
+                        Text(e, style = MaterialTheme.typography.titleMedium)
                     }
                 }
             }
-            OutlinedButton(
+            MessageSheetActionRow(
+                icon = Icons.Outlined.ContentPaste,
+                label = stringResource(R.string.chat_action_forward),
                 onClick = onForward,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.ContentPaste,
-                    contentDescription = null,
-                    modifier = Modifier.padding(end = 6.dp),
-                )
-                Text(stringResource(R.string.chat_action_forward))
-            }
+            )
             if (mayEdit) {
-                OutlinedButton(
+                MessageSheetActionRow(
+                    icon = Icons.Outlined.Edit,
+                    label = stringResource(R.string.chat_action_edit),
                     onClick = onEdit,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Edit,
-                        contentDescription = null,
-                        modifier = Modifier.padding(end = 6.dp),
-                    )
-                    Text(stringResource(R.string.chat_action_edit))
-                }
+                )
             }
             if (canDelete) {
-                OutlinedButton(
+                MessageSheetActionRow(
+                    icon = Icons.Outlined.DeleteOutline,
+                    label = stringResource(R.string.chat_action_delete),
                     onClick = onDelete,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.DeleteOutline,
-                        contentDescription = null,
-                        modifier = Modifier.padding(end = 6.dp),
-                    )
-                    Text(stringResource(R.string.chat_action_delete))
-                }
+                    tint = MaterialTheme.colorScheme.error,
+                )
             }
+            Spacer(Modifier.height(8.dp))
         }
     }
 }

@@ -70,7 +70,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Checkbox
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -110,7 +109,16 @@ import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamForumTypingEvent
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.ui.screens.teamnews.teamNewsAuthedImageRequest
+import androidx.compose.material.icons.automirrored.outlined.Reply
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Edit
+import com.lastasylum.alliance.ui.chat.MessageSheetActionRow
+import com.lastasylum.alliance.ui.chat.MessageSheetDividerSpaced
+import com.lastasylum.alliance.ui.chat.MessageSheetPreviewSurface
+import com.lastasylum.alliance.ui.chat.replyPreviewText
 import com.lastasylum.alliance.ui.util.copyForumMessageToClipboard
+import com.lastasylum.alliance.ui.util.forumMessageHasCopyableContent
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -1139,45 +1147,104 @@ private fun ForumMessageActionsSheet(
     onDelete: () -> Unit,
 ) {
     val context = LocalContext.current
+    val stickerStem = remember(message.text) { ZlobyakaStickerPack.parseStem(message.text) }
+    val canCopy = forumMessageHasCopyableContent(message)
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(
-                text = message.senderUsername.trim().ifBlank { "—" },
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            TextButton(
+            MessageSheetPreviewSurface {
+                Text(
+                    text = message.senderUsername.trim().ifBlank { "—" },
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                when {
+                    stickerStem != null -> {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .data(ZlobyakaStickerPack.assetUriForStem(stickerStem))
+                                    .size(200)
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = stringResource(R.string.cd_chat_sticker),
+                                modifier = Modifier
+                                    .size(72.dp)
+                                    .clip(RoundedCornerShape(10.dp)),
+                                contentScale = ContentScale.Fit,
+                            )
+                            Text(
+                                text = replyPreviewText(message.text),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 4,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                    message.text.isNotBlank() -> {
+                        Text(
+                            text = message.text,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 5,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    message.imageRelativeUrls.isNotEmpty() -> {
+                        Text(
+                            text = stringResource(R.string.chat_copy_image_placeholder),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    else -> {
+                        Text(
+                            text = stringResource(R.string.chat_sheet_preview_empty),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            MessageSheetDividerSpaced()
+            MessageSheetActionRow(
+                icon = Icons.Outlined.ContentCopy,
+                label = stringResource(R.string.chat_action_copy),
                 onClick = {
                     copyForumMessageToClipboard(context, message)
                     onDismiss()
                 },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(stringResource(R.string.chat_action_copy))
-            }
-            TextButton(onClick = onReply, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.chat_action_reply))
-            }
-            TextButton(
+                enabled = canCopy,
+            )
+            MessageSheetActionRow(
+                icon = Icons.AutoMirrored.Outlined.Reply,
+                label = stringResource(R.string.chat_action_reply),
+                onClick = onReply,
+            )
+            MessageSheetActionRow(
+                icon = Icons.Outlined.Edit,
+                label = stringResource(R.string.chat_action_edit),
                 onClick = onEdit,
                 enabled = canEdit,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(stringResource(R.string.chat_action_edit))
-            }
-            TextButton(
+            )
+            MessageSheetActionRow(
+                icon = Icons.Outlined.DeleteOutline,
+                label = stringResource(R.string.chat_action_delete),
                 onClick = onDelete,
                 enabled = canDelete,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(stringResource(R.string.chat_action_delete), color = MaterialTheme.colorScheme.error)
-            }
-            Spacer(Modifier.padding(bottom = 8.dp))
+                tint = MaterialTheme.colorScheme.error,
+            )
+            Spacer(Modifier.height(8.dp))
         }
     }
 }

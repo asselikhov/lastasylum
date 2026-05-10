@@ -33,6 +33,22 @@ fun copyChatMessageToClipboard(context: Context, message: ChatMessage) {
     )
 }
 
+fun chatMessageHasCopyableContent(message: ChatMessage): Boolean {
+    if (!message.deletedAt.isNullOrBlank()) return false
+    if (ZlobyakaStickerPack.parseStem(message.text) != null) return true
+    if (message.text.isNotBlank()) return true
+    if (message.attachments.any { it.kind == "image" && it.url.isNotBlank() }) return true
+    return false
+}
+
+fun forumMessageHasCopyableContent(message: TeamForumMessageDto): Boolean {
+    if (!message.deletedAt.isNullOrBlank()) return false
+    if (ZlobyakaStickerPack.parseStem(message.text) != null) return true
+    if (message.text.isNotBlank()) return true
+    if (message.imageRelativeUrls.isNotEmpty()) return true
+    return false
+}
+
 fun copyForumMessageToClipboard(context: Context, message: TeamForumMessageDto) {
     if (!message.deletedAt.isNullOrBlank()) return
     val sticker = ZlobyakaStickerPack.parseStem(message.text)

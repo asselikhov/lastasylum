@@ -3,6 +3,7 @@ package com.lastasylum.alliance.ui.screens.teamnews
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -73,6 +74,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -359,12 +361,18 @@ private fun TeamNewsCard(
     val ringSoft = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
     Card(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f),
+                shape = cardShape,
+            ),
         shape = cardShape,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 5.dp),
     ) {
         Row(
             modifier = Modifier.height(IntrinsicSize.Min),
@@ -377,7 +385,7 @@ private fun TeamNewsCard(
                         Brush.verticalGradient(
                             colors = listOf(
                                 MaterialTheme.colorScheme.primary,
-                                MaterialTheme.colorScheme.tertiary,
+                                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.85f),
                             ),
                         ),
                     ),
@@ -386,23 +394,23 @@ private fun TeamNewsCard(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(0.dp),
             ) {
-            if (hasHero) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(172.dp)
-                        .clip(RoundedCornerShape(topEnd = 26.dp)),
-                ) {
-                    item.firstImageRelativeUrl?.let { raw ->
-                        teamNewsAuthedImageRequest(LocalContext.current, raw)?.let { req ->
-                            AsyncImage(
-                                model = req,
-                                contentDescription = null,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop,
-                            )
+                if (hasHero) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(178.dp)
+                            .clip(RoundedCornerShape(topEnd = 26.dp)),
+                    ) {
+                        item.firstImageRelativeUrl?.let { raw ->
+                            teamNewsAuthedImageRequest(LocalContext.current, raw)?.let { req ->
+                                AsyncImage(
+                                    model = req,
+                                    contentDescription = item.title,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                )
+                            }
                         }
-                    }
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -474,22 +482,22 @@ private fun TeamNewsCard(
                         )
                     }
                 }
-                HorizontalDivider(
-                    thickness = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f),
-                )
-            }
+                    HorizontalDivider(
+                        thickness = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.18f),
+                    )
+                }
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(
                             if (hasHero) {
-                                MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.42f)
+                                MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.38f)
                             } else {
-                                MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.25f)
+                                MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.22f)
                             },
                         )
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                        .padding(horizontal = 16.dp, vertical = 15.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     if (!hasHero) {
@@ -504,6 +512,7 @@ private fun TeamNewsCard(
                     Text(
                         text = item.excerpt,
                         style = MaterialTheme.typography.bodyMedium,
+                        lineHeight = 22.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = if (hasHero) 2 else 3,
                         overflow = TextOverflow.Ellipsis,
@@ -518,9 +527,11 @@ private fun TeamNewsCard(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.85f),
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.88f),
                                 border = BorderStroke(1.dp, ringSoft),
+                                tonalElevation = 0.dp,
+                                shadowElevation = 0.dp,
                             ) {
                                 Text(
                                     text = item.authorUsername,
@@ -528,7 +539,7 @@ private fun TeamNewsCard(
                                     color = MaterialTheme.colorScheme.primary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
                                 )
                             }
                             if (!hasHero) {
@@ -630,26 +641,43 @@ private fun TeamNewsDetailRoute(
                 Text(err ?: "", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(pad))
             }
             d != null -> {
-                Column(
+                Box(
                     Modifier
                         .padding(pad)
                         .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    MaterialTheme.colorScheme.surfaceDim.copy(alpha = 0.5f),
+                                    MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                                ),
+                            ),
+                        ),
+                ) {
+                Column(
+                    Modifier
+                        .fillMaxSize()
                         .verticalScroll(rememberScrollState()),
                 ) {
-                    val pagePad = 12.dp
+                    val pagePad = 14.dp
                     val hero: String? = d.imageRelativeUrls.firstOrNull() ?: d.firstImageRelativeUrl
                     hero?.let { rawPath: String ->
                         teamNewsAuthedImageRequest(context, rawPath)?.let { imgReq: ImageRequest ->
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(240.dp)
-                                    .padding(horizontal = pagePad, vertical = pagePad)
-                                    .clip(RoundedCornerShape(20.dp)),
+                                    .height(248.dp)
+                                    .padding(horizontal = pagePad, vertical = 16.dp)
+                                    .clip(RoundedCornerShape(26.dp))
+                                    .border(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f),
+                                        RoundedCornerShape(26.dp),
+                                    ),
                             ) {
                                 AsyncImage(
                                     model = imgReq,
-                                    contentDescription = null,
+                                    contentDescription = d.title,
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop,
                                 )
@@ -691,33 +719,61 @@ private fun TeamNewsDetailRoute(
                         }
                     }
 
-                    Surface(
+                    Card(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = pagePad)
-                            .padding(bottom = 14.dp),
-                        shape = RoundedCornerShape(20.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerLow,
-                        tonalElevation = 0.dp,
-                        shadowElevation = 0.dp,
+                            .padding(bottom = 16.dp)
+                            .border(
+                                1.dp,
+                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f),
+                                RoundedCornerShape(26.dp),
+                            ),
+                        shape = RoundedCornerShape(26.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
                     ) {
-                        Column(
-                            Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            if (hero == null) {
+                        Row(Modifier.height(IntrinsicSize.Min)) {
+                            Box(
+                                modifier = Modifier
+                                    .width(5.dp)
+                                    .fillMaxHeight()
+                                    .background(
+                                        Brush.verticalGradient(
+                                            colors = listOf(
+                                                MaterialTheme.colorScheme.primary,
+                                                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.85f),
+                                            ),
+                                        ),
+                                    ),
+                            )
+                            Column(
+                                Modifier
+                                    .weight(1f)
+                                    .padding(horizontal = 18.dp, vertical = 16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                if (hero == null) {
+                                    Text(
+                                        d.title,
+                                        style = MaterialTheme.typography.headlineSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    Text(
+                                        "${d.authorUsername} · ${formatNewsDateRu(d.createdAt)}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                                 Text(
-                                    d.title,
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                                Text(
-                                    "${d.authorUsername} · ${formatNewsDateRu(d.createdAt)}",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    d.body,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    lineHeight = 24.sp,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                 )
                             }
-                            Text(d.body, style = MaterialTheme.typography.bodyLarge)
                         }
                     }
                     val galleryPaths = remember(d.imageRelativeUrls, d.firstImageRelativeUrl) {
@@ -856,6 +912,7 @@ private fun TeamNewsDetailRoute(
                             }
                         }
                     }
+                }
                 }
             }
         }
