@@ -46,6 +46,7 @@ fun forumMessageHasCopyableContent(message: TeamForumMessageDto): Boolean {
     if (ZlobyakaStickerPack.parseStem(message.text) != null) return true
     if (message.text.isNotBlank()) return true
     if (message.imageRelativeUrls.isNotEmpty()) return true
+    if (!message.imageRelativeUrl.isNullOrBlank()) return true
     return false
 }
 
@@ -55,7 +56,8 @@ fun copyForumMessageToClipboard(context: Context, message: TeamForumMessageDto) 
     val text = when {
         sticker != null -> context.getString(R.string.chat_copy_sticker_line, sticker)
         message.text.isNotBlank() -> message.text
-        message.imageRelativeUrls.isNotEmpty() -> context.getString(R.string.chat_copy_image_placeholder)
+        message.imageRelativeUrls.isNotEmpty() ||
+            !message.imageRelativeUrl.isNullOrBlank() -> context.getString(R.string.chat_copy_image_placeholder)
         else -> return
     }
     copyPlainTextToClipboard(

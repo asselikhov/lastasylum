@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -58,6 +57,7 @@ import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarEndPad
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarSize
 import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
 import com.lastasylum.alliance.ui.chat.TelegramImageCaptionBar
+import com.lastasylum.alliance.ui.chat.TelegramLikeAttachmentsGrid
 import com.lastasylum.alliance.ui.chat.chatBubbleShapeIncoming
 import com.lastasylum.alliance.ui.chat.chatBubbleShapeOutgoing
 import com.lastasylum.alliance.ui.chat.forumBubbleClusterTopSpacing
@@ -65,7 +65,7 @@ import com.lastasylum.alliance.ui.chat.forumMessageClusterTightInnerTop
 import com.lastasylum.alliance.ui.chat.forumMessageIsClusterChainBottom
 import com.lastasylum.alliance.ui.chat.forumMessageShowsClusterHeader
 import com.lastasylum.alliance.ui.chat.replyPreviewText
-import com.lastasylum.alliance.ui.screens.teamnews.teamNewsAuthedImageRequest
+import com.lastasylum.alliance.ui.chat.resolvedChatAttachmentImageUrl
 import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingBubble
 import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingOnBubble
 import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingBubble
@@ -84,11 +84,13 @@ internal fun ForumMessageBubble(
     sortedMessages: List<TeamForumMessageDto>,
     messageIndex: Int,
     isMine: Boolean,
+    canDelete: Boolean,
     inSelectionMode: Boolean,
     isSelected: Boolean,
     highlighted: Boolean,
     onOpenImages: (List<String>, Int) -> Unit,
     onJumpToMessage: (String) -> Unit,
+    onBeginSelection: () -> Unit,
     onToggleSelection: () -> Unit,
     onSwipeReply: () -> Unit,
     onOpenActions: () -> Unit,
@@ -107,11 +109,18 @@ internal fun ForumMessageBubble(
     val tightClusterTop = forumMessageClusterTightInnerTop(sortedMessages, messageIndex)
 
     val stickerStem = if (!deleted) ZlobyakaStickerPack.parseStem(message.text) else null
+    val rawImagePaths = remember(message.id, message.imageRelativeUrls, message.imageRelativeUrl) {
+        mergedForumImagePaths(message)
+    }
+    val resolvedImageUrls = remember(rawImagePaths) {
+        rawImagePaths.map { resolvedChatAttachmentImageUrl(it) }
+    }
     val floatingSticker = stickerStem != null && message.replyTo == null && !deleted
     val bubbleBg = if (isMine) ChatTelegramOutgoingBubble else ChatTelegramIncomingBubble
     val onBubble = if (isMine) ChatTelegramOutgoingOnBubble else ChatTelegramIncomingOnBubble
     val timeMuted = if (isMine) ChatTelegramTimeMuted else ChatTelegramTimeMutedIncoming
     val senderAccent = roleAccentColor("")
+    val messageImageTapLabel = stringResource(R.string.cd_chat_message_image)
     val nickname = message.senderUsername.trim()
     val displayName = nickname.ifBlank { "—" }
     val tagBracketMuted = ChatTelegramIncomingOnBubble.copy(alpha = 0.5f)
@@ -172,13 +181,13 @@ internal fun ForumMessageBubble(
         }
         .combinedClickable(
             onClick = {
-                if (inSelectionMode) onToggleSelection()
+                if (inSelectionMode && canDelete) onToggleSelection()
             },
             onLongClick = {
                 if (deleted) return@combinedClickable
                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                if (inSelectionMode) {
-                    onToggleSelection()
+                if (canDelete) {
+                    if (inSelectionMode) onToggleSelection() else onBeginSelection()
                 } else {
                     onOpenActions()
                 }
@@ -213,7 +222,7 @@ internal fun ForumMessageBubble(
             if (isMine) {
                 Spacer(Modifier.weight(1f))
             }
-            if (!isMine && inSelectionMode) {
+            if (!isMine && inSelectionMode && canDelete) {
                 Checkbox(
                     checked = isSelected,
                     onCheckedChange = { onToggleSelection() },
@@ -227,7 +236,7 @@ internal fun ForumMessageBubble(
                     fallbackName = displayName,
                 )
             }
-            if (isMine && inSelectionMode) {
+            if (isMine && inSelectionMode && canDelete) {
                 Checkbox(
                     checked = isSelected,
                     onCheckedChange = { onToggleSelection() },
@@ -404,18 +413,20 @@ internal fun ForumMessageBubble(
                             }
 
                             when {
-                                message.imageRelativeUrls.isNotEmpty() -> {
-                                    val urls = message.imageRelativeUrls
+                                rawImagePaths.isNotEmpty() -> {
                                     val hasCaption = message.text.isNotBlank()
                                     Column(
                                         Modifier.fillMaxWidth(),
                                         verticalArrangement = Arrangement.spacedBy(0.dp),
                                     ) {
                                         Box(Modifier.fillMaxWidth()) {
-                                            ForumAuthedAttachmentsGrid(
-                                                urls = urls,
-                                                onOpen = { idx -> onOpenImages(urls, idx) },
+                                            TelegramLikeAttachmentsGrid(
+                                                urls = resolvedImageUrls,
+                                                contentDescription = messageImageTapLabel,
+                                                onOpen = { idx -> onOpenImages(resolvedImageUrls, idx) },
                                                 modifier = Modifier.fillMaxWidth(),
+                                                roundTileCorners = false,
+                                                bottomRound = !hasCaption,
                                             )
                                             if (!hasCaption && timeLabel.isNotBlank()) {
                                                 Surface(
@@ -481,76 +492,11 @@ internal fun ForumMessageBubble(
     }
 }
 
-@Composable
-internal fun ForumAuthedAttachmentsGrid(
-    urls: List<String>,
-    modifier: Modifier = Modifier,
-    onOpen: (Int) -> Unit,
-) {
-    if (urls.isEmpty()) return
-    val ctx = LocalContext.current
-    val maxShown = 6
-    val shown = urls.take(maxShown)
-    val extra = (urls.size - shown.size).coerceAtLeast(0)
-    val corner = 12.dp
-    val gap = 4.dp
-
-    @Composable
-    fun Tile(idx: Int, tileModifier: Modifier) {
-        val u = shown.getOrNull(idx) ?: return
-        val req = teamNewsAuthedImageRequest(ctx, u)
-        Box(
-            modifier = tileModifier
-                .clip(RoundedCornerShape(corner))
-                .clickable { onOpen(idx) },
-            contentAlignment = Alignment.Center,
-        ) {
-            if (req != null) {
-                AsyncImage(
-                    model = req,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
-            }
-            if (idx == shown.lastIndex && extra > 0) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.45f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = "+$extra",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = Color.White,
-                    )
-                }
-            }
-        }
+private fun mergedForumImagePaths(message: TeamForumMessageDto): List<String> {
+    val list = message.imageRelativeUrls.toMutableList()
+    val single = message.imageRelativeUrl?.trim()?.takeIf { it.isNotBlank() }
+    if (single != null && list.none { it == single }) {
+        list.add(0, single)
     }
-
-    when (shown.size) {
-        1 -> {
-            Tile(0, modifier.heightIn(max = 220.dp))
-        }
-        2 -> {
-            Row(modifier = modifier.height(160.dp), horizontalArrangement = Arrangement.spacedBy(gap)) {
-                Tile(0, Modifier.weight(1f).fillMaxHeight())
-                Tile(1, Modifier.weight(1f).fillMaxHeight())
-            }
-        }
-        else -> {
-            Column(modifier = modifier.height(220.dp), verticalArrangement = Arrangement.spacedBy(gap)) {
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(gap)) {
-                    Tile(0, Modifier.weight(1f).fillMaxHeight())
-                    Tile(1, Modifier.weight(1f).fillMaxHeight())
-                }
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(gap)) {
-                    Tile(2, Modifier.weight(1f).fillMaxHeight())
-                    Tile(3.coerceAtMost(shown.lastIndex), Modifier.weight(1f).fillMaxHeight())
-                }
-            }
-        }
-    }
+    return list.filter { it.isNotBlank() }.distinct()
 }

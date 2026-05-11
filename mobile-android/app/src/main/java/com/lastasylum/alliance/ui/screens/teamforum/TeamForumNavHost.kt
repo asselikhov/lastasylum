@@ -108,7 +108,6 @@ import com.lastasylum.alliance.data.teams.TeamForumSocketManager
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamForumTypingEvent
 import com.lastasylum.alliance.data.teams.TeamsRepository
-import com.lastasylum.alliance.ui.screens.teamnews.teamNewsAuthedImageRequest
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.DeleteOutline
@@ -116,12 +115,15 @@ import androidx.compose.material.icons.outlined.Edit
 import com.lastasylum.alliance.ui.chat.MessageSheetActionRow
 import com.lastasylum.alliance.ui.chat.MessageSheetDividerSpaced
 import com.lastasylum.alliance.ui.chat.MessageSheetPreviewSurface
+import com.lastasylum.alliance.ui.chat.chatAuthedImageRequest
 import com.lastasylum.alliance.ui.chat.replyPreviewText
 import com.lastasylum.alliance.ui.util.copyForumMessageToClipboard
 import com.lastasylum.alliance.ui.util.forumMessageHasCopyableContent
 import com.lastasylum.alliance.ui.util.toUserMessageRu
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
@@ -136,7 +138,9 @@ import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingOnBubble
 import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMuted
 import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMutedIncoming
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
+import java.io.File
 import java.io.InputStream
+import java.util.UUID
 import android.content.ContentResolver
 import android.os.ParcelFileDescriptor
 import java.time.Instant
@@ -619,29 +623,29 @@ private fun TeamForumTopicChatRoute(
         messages.add(msg)
     }
 
+    fun canDeleteForumMessage(msg: TeamForumMessageDto): Boolean {
+        val deleted = !msg.deletedAt.isNullOrBlank() &&
+            !msg.deletedAt.equals("null", ignoreCase = true)
+        if (deleted) return false
+        return msg.senderUserId == currentUserId || canModerateMessages
+    }
+
     fun uploadPickedImages(uris: List<Uri>) {
+        if (uris.isEmpty()) return
         scope.launch {
             uploadingImage = true
-            val cr = context.contentResolver
-            val fileIds = mutableListOf<String>()
-            var lastPreview: String? = null
-            for (uri in uris) {
-                val bytes = openUriInputStream(cr, uri)?.use { it.readBytes() }
-                if (bytes == null || bytes.isEmpty()) continue
-                val declared = cr.getType(uri)?.trim().orEmpty()
-                val sniffed = sniffImageMimeFromHeader(bytes)
-                val mime = resolveUploadImageMime(declared, sniffed) ?: continue
-                val name = "forum_${System.currentTimeMillis()}.${guessExt(mime)}"
-                teamsRepository.uploadForumImage(teamId, bytes, name, mime)
-                    .onSuccess { u ->
-                        fileIds.add(u.fileId)
-                        lastPreview = u.url
-                    }
-                    .onFailure { e -> error = e.toUserMessageRu(res) }
-            }
-            pendingImageFileIds = fileIds
-            pendingImageUrl = lastPreview
+            error = null
+            val result = uploadForumImagesFromUris(context, res, teamsRepository, teamId, uris)
             uploadingImage = false
+            result.onSuccess { (ids, preview) ->
+                pendingImageFileIds = ids
+                pendingImageUrl = preview
+            }
+            result.onFailure { e ->
+                pendingImageFileIds = emptyList()
+                pendingImageUrl = null
+                error = e.toUserMessageRu(res)
+            }
         }
     }
 
@@ -785,11 +789,13 @@ private fun TeamForumTopicChatRoute(
                         val mine = msg.senderUserId == currentUserId
                         val inSelectionMode = selectedMessageIds.isNotEmpty()
                         val isSelected = msg.id in selectedMessageIds
+                        val canDeleteMsg = canDeleteForumMessage(msg)
                         ForumMessageBubble(
                             message = msg,
                             sortedMessages = sortedMessages,
                             messageIndex = idx,
                             isMine = mine,
+                            canDelete = canDeleteMsg,
                             inSelectionMode = inSelectionMode,
                             isSelected = isSelected,
                             highlighted = highlightMessageId == msg.id,
@@ -804,6 +810,9 @@ private fun TeamForumTopicChatRoute(
                                         if (highlightMessageId == targetId) highlightMessageId = null
                                     }
                                 }
+                            },
+                            onBeginSelection = {
+                                selectedMessageIds = setOf(msg.id)
                             },
                             onToggleSelection = {
                                 selectedMessageIds =
@@ -832,20 +841,29 @@ private fun TeamForumTopicChatRoute(
             pendingImageUris = pendingImageUris,
             onClearPendingImage = { clearPendingAttachment() },
             pendingImageRemotePreviewUrl = pendingImageUrl,
+            postedImageFileIds = pendingImageFileIds,
             isSending = sending,
             isUploadingImage = uploadingImage,
             sendEnabled = true,
             canUseZlobyakaStickers = enabledStickerPackKeys.contains(ZlobyakaStickerPack.PACK_KEY),
             onSend = {
                 scope.launch {
+                    val trimmed = draft.trim()
+                    if (trimmed.isEmpty() && pendingImageFileIds.isEmpty()) {
+                        return@launch
+                    }
+                    if (uploadingImage) return@launch
                     sending = true
+                    val textForApi = trimmed.ifBlank {
+                        if (pendingImageFileIds.isNotEmpty()) " " else ""
+                    }
                     teamsRepository.postForumMessage(
                         teamId,
                         topicId,
-                        draft,
+                        textForApi,
                         replyToMessageId = replyToMessage?.id,
                         imageFileId = null,
-                        imageFileIds = pendingImageFileIds,
+                        imageFileIds = pendingImageFileIds.takeIf { it.isNotEmpty() },
                     )
                         .onSuccess {
                             mergeNew(it)
@@ -860,6 +878,7 @@ private fun TeamForumTopicChatRoute(
             onSendStickerPayload = { payload ->
                 scope.launch {
                     sending = true
+                    clearPendingAttachment()
                     teamsRepository.postForumMessage(
                         teamId = teamId,
                         topicId = topicId,
@@ -912,7 +931,11 @@ private fun TeamForumTopicChatRoute(
             confirmButton = {
                 TextButton(
                     enabled = !editBusy &&
-                        (editBody.trim().isNotEmpty() || !msg.imageRelativeUrl.isNullOrBlank()),
+                        (
+                            editBody.trim().isNotEmpty() ||
+                                msg.imageRelativeUrls.isNotEmpty() ||
+                                !msg.imageRelativeUrl.isNullOrBlank()
+                            ),
                     onClick = {
                         scope.launch {
                             editBusy = true
@@ -946,9 +969,12 @@ private fun TeamForumTopicChatRoute(
                 message = msg,
                 canEdit = (msg.senderUserId == currentUserId || canModerateMessages) &&
                     msg.deletedAt.isNullOrBlank() &&
-                    msg.text.isNotBlank(),
-                canDelete = (msg.senderUserId == currentUserId || canModerateMessages) &&
-                    msg.deletedAt.isNullOrBlank(),
+                    (
+                        msg.text.isNotBlank() ||
+                            msg.imageRelativeUrls.isNotEmpty() ||
+                            !msg.imageRelativeUrl.isNullOrBlank()
+                        ),
+                canDelete = canDeleteForumMessage(msg),
                 onDismiss = { activeActionMessageId = null },
                 onReply = {
                     replyToMessage = msg
@@ -996,6 +1022,20 @@ private fun TeamForumTopicChatRoute(
                             deletingSelection = true
                             val ids = selectedMessageIds.toList()
                             teamsRepository.bulkDeleteForumMessages(teamId, topicId, ids)
+                                .onSuccess {
+                                    val now = java.time.Instant.now().toString()
+                                    ids.forEach { mid ->
+                                        applyDeleted(
+                                            TeamForumMessageDeletedEvent(
+                                                teamId = teamId,
+                                                topicId = topicId,
+                                                messageId = mid,
+                                                deletedAt = now,
+                                                deletedByUserId = currentUserId,
+                                            ),
+                                        )
+                                    }
+                                }
                                 .onFailure { e -> error = e.toUserMessageRu(res) }
                             selectedMessageIds = emptySet()
                             confirmBulkDelete = false
@@ -1014,6 +1054,52 @@ private fun TeamForumTopicChatRoute(
             },
         )
     }
+}
+
+private suspend fun uploadForumImagesFromUris(
+    context: android.content.Context,
+    res: android.content.res.Resources,
+    teamsRepository: TeamsRepository,
+    teamId: String,
+    uris: List<Uri>,
+): Result<Pair<List<String>, String?>> = withContext(Dispatchers.IO) {
+    val cr = context.contentResolver
+    val cacheDir = context.cacheDir
+    val fileIds = mutableListOf<String>()
+    var lastPreview: String? = null
+    for (uri in uris) {
+        val tmp = File.createTempFile("forum_upload_${UUID.randomUUID()}", ".part", cacheDir)
+        try {
+            val input = openUriInputStream(cr, uri)
+                ?: return@withContext Result.failure(
+                    IllegalStateException(
+                        res.getString(R.string.chat_attachment_read_failed),
+                    ),
+                )
+            input.use { inp -> tmp.outputStream().use { out -> inp.copyTo(out) } }
+            if (tmp.length() == 0L) continue
+            val header = ByteArray(32)
+            tmp.inputStream().use { it.read(header) }
+            val sniffed = sniffImageMimeFromHeader(header)
+            val mime = resolveUploadImageMime(cr.getType(uri)?.trim().orEmpty(), sniffed)
+                ?: return@withContext Result.failure(
+                    IllegalStateException(
+                        res.getString(R.string.chat_attachment_unsupported),
+                    ),
+                )
+            val bytes = tmp.readBytes()
+            val name =
+                "forum_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(8)}.${guessExt(mime)}"
+            val uploaded = teamsRepository.uploadForumImage(teamId, bytes, name, mime).getOrElse { err ->
+                return@withContext Result.failure(err)
+            }
+            fileIds.add(uploaded.fileId)
+            lastPreview = uploaded.url
+        } finally {
+            runCatching { tmp.delete() }
+        }
+    }
+    Result.success(fileIds to lastPreview)
 }
 
 private fun openUriInputStream(cr: ContentResolver, uri: Uri): InputStream? {
@@ -1153,7 +1239,10 @@ private fun ForumMessageActionsSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(
+                    horizontal = SquadRelayDimens.contentPaddingHorizontal,
+                    vertical = SquadRelayDimens.itemGap,
+                ),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             MessageSheetPreviewSurface {
@@ -1200,7 +1289,8 @@ private fun ForumMessageActionsSheet(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    message.imageRelativeUrls.isNotEmpty() -> {
+                    message.imageRelativeUrls.isNotEmpty() ||
+                        !message.imageRelativeUrl.isNullOrBlank() -> {
                         Text(
                             text = stringResource(R.string.chat_copy_image_placeholder),
                             style = MaterialTheme.typography.bodyMedium,
@@ -1323,7 +1413,7 @@ private fun ForumImagesPreviewOverlay(
                 .transformable(state = transformState),
         ) {
             AsyncImage(
-                model = teamNewsAuthedImageRequest(context, url),
+                model = chatAuthedImageRequest(context, url),
                 contentDescription = stringResource(R.string.cd_chat_message_image),
                 modifier = Modifier
                     .fillMaxSize()

@@ -92,6 +92,8 @@ fun ForumTopicComposer(
     pendingImageUris: List<Uri>,
     onClearPendingImage: () -> Unit,
     pendingImageRemotePreviewUrl: String?,
+    /** Загруженные на сервер fileId (как во вкладке «Чат») — без них отправка только по локальным URI запрещена. */
+    postedImageFileIds: List<String>,
     isSending: Boolean,
     isUploadingImage: Boolean,
     sendEnabled: Boolean,
@@ -360,7 +362,7 @@ fun ForumTopicComposer(
                             },
                         )
                         val canSend = sendEnabled &&
-                            (draft.isNotBlank() || pendingImageUris.isNotEmpty() || !pendingImageRemotePreviewUrl.isNullOrBlank())
+                            (draft.isNotBlank() || postedImageFileIds.isNotEmpty())
                         val sendButtonEnabled = canSend && !isSending && !isUploadingImage
 
                         IconButton(
@@ -454,8 +456,7 @@ fun ForumTopicComposer(
                                 .aspectRatio(1f)
                                 .clip(RoundedCornerShape(12.dp))
                                 .clickable(
-                                    enabled = sendEnabled && !isSending && !isUploadingImage &&
-                                        canUseZlobyakaStickers,
+                                    enabled = !isSending && !isUploadingImage && canUseZlobyakaStickers,
                                     onClick = {
                                         onSendStickerPayload(ZlobyakaStickerPack.encode(stem))
                                         showMediaPanel = false
