@@ -311,6 +311,7 @@ private fun JSONObject.optionalStringField(key: String): String? {
 private fun JSONObject.toForumMessageDto(): TeamForumMessageDto? {
     val id = optString("id").takeIf { it.isNotBlank() } ?: return null
     val replyToObj = optJSONObject("replyTo")
+    val forwardedFromObj = optJSONObject("forwardedFrom")
     val urlsArr = optJSONArray("imageRelativeUrls")
     val urls = buildList<String> {
         if (urlsArr != null) {
@@ -326,6 +327,8 @@ private fun JSONObject.toForumMessageDto(): TeamForumMessageDto? {
         teamId = optString("teamId"),
         senderUserId = optString("senderUserId"),
         senderUsername = optString("senderUsername"),
+        senderRole = optString("senderRole").takeIf { it.isNotBlank() } ?: "R1",
+        senderTeamTag = optionalStringField("senderTeamTag"),
         text = optString("text"),
         replyToMessageId = optionalStringField("replyToMessageId"),
         replyTo = replyToObj?.let { obj ->
@@ -333,6 +336,8 @@ private fun JSONObject.toForumMessageDto(): TeamForumMessageDto? {
             com.lastasylum.alliance.data.teams.TeamForumReplyPreviewDto(
                 id = rid,
                 senderUsername = obj.optString("senderUsername"),
+                senderRole = obj.optString("senderRole").takeIf { it.isNotBlank() } ?: "R1",
+                senderTeamTag = obj.optionalStringField("senderTeamTag"),
                 text = obj.optString("text"),
             )
         },
@@ -341,6 +346,16 @@ private fun JSONObject.toForumMessageDto(): TeamForumMessageDto? {
         deletedByUserId = optionalStringField("deletedByUserId"),
         imageRelativeUrl = optionalStringField("imageRelativeUrl"),
         imageRelativeUrls = urls,
+        forwardedFrom = forwardedFromObj?.let { fwd ->
+            val mid = fwd.optString("messageId").takeIf { it.isNotBlank() } ?: return@let null
+            com.lastasylum.alliance.data.teams.TeamForumForwardedFromDto(
+                messageId = mid,
+                senderUserId = fwd.optString("senderUserId"),
+                senderUsername = fwd.optString("senderUsername"),
+                senderRole = fwd.optString("senderRole").takeIf { it.isNotBlank() } ?: "R1",
+                senderTeamTag = fwd.optionalStringField("senderTeamTag"),
+            )
+        },
         createdAt = optString("createdAt"),
         updatedAt = optionalStringField("updatedAt").orEmpty()
             .ifBlank { optString("createdAt") },

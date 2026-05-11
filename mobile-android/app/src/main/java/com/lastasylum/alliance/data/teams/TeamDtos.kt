@@ -214,6 +214,8 @@ data class TeamForumMessageDto(
     val teamId: String,
     val senderUserId: String,
     val senderUsername: String,
+    val senderRole: String = "R1",
+    val senderTeamTag: String? = null,
     val text: String,
     val replyToMessageId: String? = null,
     val replyTo: TeamForumReplyPreviewDto? = null,
@@ -222,14 +224,26 @@ data class TeamForumMessageDto(
     val deletedByUserId: String? = null,
     val imageRelativeUrl: String? = null,
     val imageRelativeUrls: List<String> = emptyList(),
+    val forwardedFrom: TeamForumForwardedFromDto? = null,
     val createdAt: String,
     val updatedAt: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class TeamForumForwardedFromDto(
+    val messageId: String,
+    val senderUserId: String,
+    val senderUsername: String,
+    val senderRole: String = "R1",
+    val senderTeamTag: String? = null,
 )
 
 @JsonClass(generateAdapter = true)
 data class TeamForumReplyPreviewDto(
     val id: String,
     val senderUsername: String,
+    val senderRole: String = "R1",
+    val senderTeamTag: String? = null,
     val text: String,
 )
 

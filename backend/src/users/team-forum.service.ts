@@ -41,14 +41,33 @@ export type TeamForumMessageRow = {
   teamId: string;
   senderUserId: string;
   senderUsername: string;
+  senderRole: PlayerTeamMemberRole;
+  senderTeamTag: string | null;
   text: string;
   replyToMessageId: string | null;
-  replyTo: { id: string; senderUsername: string; text: string } | null;
+  replyTo:
+    | {
+        id: string;
+        senderUsername: string;
+        senderRole: PlayerTeamMemberRole;
+        senderTeamTag: string | null;
+        text: string;
+      }
+    | null;
   editedAt: string | null;
   deletedAt: string | null;
   deletedByUserId: string | null;
   imageRelativeUrl: string | null;
   imageRelativeUrls: string[];
+  forwardedFrom:
+    | {
+        messageId: string;
+        senderUserId: string;
+        senderUsername: string;
+        senderRole: PlayerTeamMemberRole;
+        senderTeamTag: string | null;
+      }
+    | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -116,11 +135,15 @@ export class TeamForumService {
   private replyPreview(doc: TeamForumMessageDocument): {
     id: string;
     senderUsername: string;
+    senderRole: PlayerTeamMemberRole;
+    senderTeamTag: string | null;
     text: string;
   } {
     return {
       id: doc._id.toString(),
       senderUsername: doc.senderUsername,
+      senderRole: doc.senderRole ?? PlayerTeamMemberRole.R1,
+      senderTeamTag: doc.senderTeamTag ?? null,
       text: doc.text,
     };
   }
@@ -152,6 +175,8 @@ export class TeamForumService {
       teamId: teamIdStr,
       senderUserId: doc.senderUserId,
       senderUsername: doc.senderUsername,
+      senderRole: doc.senderRole ?? PlayerTeamMemberRole.R1,
+      senderTeamTag: doc.senderTeamTag ?? null,
       text: doc.deletedAt ? '' : doc.text,
       replyToMessageId: replyId,
       replyTo: reply,
@@ -167,6 +192,15 @@ export class TeamForumService {
           : legacyHasImage
             ? [`/teams/${teamIdStr}/news/attachments/${doc.imageFileId!.toString()}`]
             : [],
+      forwardedFrom: doc.forwardedFrom
+        ? {
+            messageId: doc.forwardedFrom.messageId.toString(),
+            senderUserId: doc.forwardedFrom.senderUserId,
+            senderUsername: doc.forwardedFrom.senderUsername,
+            senderRole: doc.forwardedFrom.senderRole ?? PlayerTeamMemberRole.R1,
+            senderTeamTag: doc.forwardedFrom.senderTeamTag ?? null,
+          }
+        : null,
       createdAt: doc.createdAt?.toISOString() ?? new Date().toISOString(),
       updatedAt: doc.updatedAt?.toISOString() ?? new Date().toISOString(),
     };
@@ -243,7 +277,7 @@ export class TeamForumService {
     before?: string,
     limitRaw?: number,
   ): Promise<TeamForumMessageRow[]> {
-    await this.teams.getTeamIfMemberOrThrow(teamId, userId);
+    const team = await this.teams.getTeamIfMemberOrThrow(teamId, userId);
     const teamOid = new Types.ObjectId(teamId);
     const topOid = new Types.ObjectId(topicId);
     const topic = await this.topicModel.findOne({
@@ -267,6 +301,33 @@ export class TeamForumService {
       .limit(limit)
       .lean();
     const docs = rows as unknown as TeamForumMessageDocument[];
+
+    // Backward compatibility: older forum messages may not have senderRole/senderTeamTag persisted.
+    // Fill missing values from team membership + sender user docs so UI role badges stay consistent.
+    const senderIds = [
+      ...new Set(docs.map((d) => d.senderUserId).filter((x) => Boolean(x))),
+    ];
+    const senderTeamTagMap = new Map(
+      (
+        await this.userModel
+          .find({ _id: { $in: senderIds.map((id) => new Types.ObjectId(id)) } })
+          .select('teamTag')
+          .lean<Array<{ _id: Types.ObjectId; teamTag?: string | null }>>()
+          .exec()
+      ).map((u) => [u._id.toString(), u.teamTag ?? null]),
+    );
+    for (const d of docs) {
+      const needRole = !(d as any).senderRole;
+      const needTag = (d as any).senderTeamTag == null;
+      if (needRole) {
+        (d as any).senderRole =
+          this.teams.getSquadRoleForUser(team, d.senderUserId) ??
+          PlayerTeamMemberRole.R1;
+      }
+      if (needTag) {
+        (d as any).senderTeamTag = senderTeamTagMap.get(d.senderUserId) ?? null;
+      }
+    }
     const replyIds = [
       ...new Set(
         docs
@@ -284,6 +345,39 @@ export class TeamForumService {
             })
             .lean()
         : [];
+
+    // Same backward compatibility for reply documents (may be older and missing senderRole/senderTeamTag).
+    if (replyDocs.length > 0) {
+      const replySenderIds = [
+        ...new Set(
+          (replyDocs as unknown as TeamForumMessageDocument[]).map((d) => d.senderUserId),
+        ),
+      ];
+      const replySenderTeamTagMap = new Map(
+        (
+          await this.userModel
+            .find({
+              _id: { $in: replySenderIds.map((id) => new Types.ObjectId(id)) },
+            })
+            .select('teamTag')
+            .lean<Array<{ _id: Types.ObjectId; teamTag?: string | null }>>()
+            .exec()
+        ).map((u) => [u._id.toString(), u.teamTag ?? null]),
+      );
+      for (const d of replyDocs as unknown as TeamForumMessageDocument[]) {
+        const needRole = !(d as any).senderRole;
+        const needTag = (d as any).senderTeamTag == null;
+        if (needRole) {
+          (d as any).senderRole =
+            this.teams.getSquadRoleForUser(team, d.senderUserId) ??
+            PlayerTeamMemberRole.R1;
+        }
+        if (needTag) {
+          (d as any).senderTeamTag =
+            replySenderTeamTagMap.get(d.senderUserId) ?? null;
+        }
+      }
+    }
     const replyMap = new Map(
       (replyDocs as unknown as TeamForumMessageDocument[]).map((d) => [
         d._id.toString(),
@@ -307,7 +401,7 @@ export class TeamForumService {
     imageFileIds?: string[],
     imageFileId?: string | null,
   ): Promise<TeamForumMessageRow> {
-    await this.teams.getTeamIfMemberOrThrow(teamId, userId);
+    const team = await this.teams.getTeamIfMemberOrThrow(teamId, userId);
     const teamOid = new Types.ObjectId(teamId);
     const topOid = new Types.ObjectId(topicId);
     const topic = await this.topicModel.findOne({
@@ -352,6 +446,10 @@ export class TeamForumService {
     }
     const username =
       typeof senderDoc.username === 'string' ? senderDoc.username : userId;
+    const senderRole =
+      this.teams.getSquadRoleForUser(team, userId) ??
+      PlayerTeamMemberRole.R1;
+    const senderTeamTag = senderDoc.teamTag ?? null;
     this.assertZlobyakaStickerPayload(trimmed);
     await this.stickerAccess.assertUserMaySendStickerMessage(
       senderDoc as UserDocument,
@@ -387,6 +485,8 @@ export class TeamForumService {
       teamId: teamOid,
       senderUserId: userId,
       senderUsername: username,
+      senderRole,
+      senderTeamTag,
       text: trimmed,
       replyToMessageId: replyTarget?._id ?? null,
       imageFileId: legacyMeta?.fileId ?? null,
@@ -396,11 +496,111 @@ export class TeamForumService {
       editedAt: null,
       deletedAt: null,
       deletedByUserId: null,
+      forwardedFrom: null,
     });
     topic.lastMessageAt = doc.createdAt ?? new Date();
     topic.messageCount = (topic.messageCount ?? 0) + 1;
     await topic.save();
     return this.messageRow(doc, replyTarget);
+  }
+
+  async forwardMessage(
+    teamId: string,
+    topicId: string,
+    userId: string,
+    sourceMessageId: string,
+  ): Promise<TeamForumMessageRow> {
+    const team = await this.teams.getTeamIfMemberOrThrow(teamId, userId);
+    const teamOid = new Types.ObjectId(teamId);
+    const topOid = new Types.ObjectId(topicId);
+
+    if (!Types.ObjectId.isValid(sourceMessageId)) {
+      throw new BadRequestException('Invalid source message id');
+    }
+    const srcOid = new Types.ObjectId(sourceMessageId);
+
+    const source = await this.messageModel
+      .findOne({
+        _id: srcOid,
+        teamId: teamOid,
+        topicId: topOid,
+        deletedAt: null,
+      })
+      .exec();
+    if (!source) {
+      throw new NotFoundException('Source message not found');
+    }
+
+    const actor = await this.userModel.findById(userId).exec();
+    if (!actor) {
+      throw new ForbiddenException('User not found');
+    }
+    const actorRole =
+      this.teams.getSquadRoleForUser(team, userId) ??
+      PlayerTeamMemberRole.R1;
+    const actorTeamTag = actor.teamTag ?? null;
+
+    const fwdText = (source.text ?? '').trim();
+    this.assertZlobyakaStickerPayload(fwdText);
+    await this.stickerAccess.assertUserMaySendStickerMessage(
+      actor,
+      fwdText,
+    );
+
+    const sourceRole =
+      source.senderRole ??
+      this.teams.getSquadRoleForUser(team, source.senderUserId) ??
+      PlayerTeamMemberRole.R1;
+
+    let sourceTeamTag = source.senderTeamTag ?? null;
+    if (sourceTeamTag == null) {
+      const srcUser = await this.userModel
+        .findById(source.senderUserId)
+        .select('teamTag')
+        .lean<{ teamTag?: string | null }>()
+        .exec();
+      sourceTeamTag = srcUser?.teamTag ?? null;
+    }
+
+    // Prefer album ids; legacy single-file path is preserved for backward compatibility.
+    const doc = await this.messageModel.create({
+      topicId: topOid,
+      teamId: teamOid,
+      senderUserId: userId,
+      senderUsername:
+        typeof actor.username === 'string' ? actor.username : userId,
+      senderRole: actorRole,
+      senderTeamTag: actorTeamTag,
+      text: fwdText,
+      replyToMessageId: null,
+      imageFileId: source.imageFileId ?? null,
+      imageFileIds: source.imageFileIds ?? [],
+      imageMimeType: source.imageMimeType ?? null,
+      imageSize: source.imageSize ?? null,
+      editedAt: null,
+      deletedAt: null,
+      deletedByUserId: null,
+      forwardedFrom: {
+        messageId: srcOid,
+        senderUserId: source.senderUserId,
+        senderUsername: source.senderUsername,
+        senderRole: sourceRole,
+        senderTeamTag: sourceTeamTag,
+      },
+    });
+
+    // Topic stats.
+    const topic = await this.topicModel.findOne({
+      _id: topOid,
+      teamId: teamOid,
+    });
+    if (topic) {
+      topic.lastMessageAt = doc.createdAt ?? new Date();
+      topic.messageCount = (topic.messageCount ?? 0) + 1;
+      await topic.save();
+    }
+
+    return this.messageRow(doc, null);
   }
 
   private async assertMayEditMessage(

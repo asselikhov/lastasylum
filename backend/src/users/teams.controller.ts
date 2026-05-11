@@ -332,6 +332,24 @@ export class TeamsController {
     return message;
   }
 
+  @Post(':teamId/forum/topics/:topicId/messages/:messageId/forward')
+  @Roles(AllianceRole.R2)
+  async forwardForumMessage(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Param('topicId') topicId: string,
+    @Param('messageId') messageId: string,
+  ) {
+    const message = await this.teamForum.forwardMessage(
+      teamId,
+      topicId,
+      req.user.userId,
+      messageId,
+    );
+    this.teamForumGateway.broadcastNewMessage(teamId, topicId, message);
+    return message;
+  }
+
   @Patch(':teamId/forum/topics/:topicId/messages/:messageId')
   @Roles(AllianceRole.R2)
   async patchForumMessage(

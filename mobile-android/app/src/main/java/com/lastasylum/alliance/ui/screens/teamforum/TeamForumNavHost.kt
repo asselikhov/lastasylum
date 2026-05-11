@@ -110,6 +110,7 @@ import com.lastasylum.alliance.data.teams.TeamForumTypingEvent
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
 import com.lastasylum.alliance.ui.chat.MessageSheetActionRow
@@ -975,6 +976,7 @@ private fun TeamForumTopicChatRoute(
                             !msg.imageRelativeUrl.isNullOrBlank()
                         ),
                 canDelete = canDeleteForumMessage(msg),
+                canForward = msg.deletedAt.isNullOrBlank(),
                 onDismiss = { activeActionMessageId = null },
                 onReply = {
                     replyToMessage = msg
@@ -1000,6 +1002,14 @@ private fun TeamForumTopicChatRoute(
                                     ),
                                 )
                             }
+                            .onFailure { e -> error = e.toUserMessageRu(res) }
+                    }
+                },
+                onForward = {
+                    activeActionMessageId = null
+                    scope.launch {
+                        teamsRepository.forwardForumMessage(teamId, topicId, msg.id)
+                            .onSuccess { mergeNew(it) }
                             .onFailure { e -> error = e.toUserMessageRu(res) }
                     }
                 },
@@ -1227,10 +1237,12 @@ private fun ForumMessageActionsSheet(
     message: TeamForumMessageDto,
     canEdit: Boolean,
     canDelete: Boolean,
+    canForward: Boolean,
     onDismiss: () -> Unit,
     onReply: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onForward: () -> Unit,
 ) {
     val context = LocalContext.current
     val stickerStem = remember(message.text) { ZlobyakaStickerPack.parseStem(message.text) }
@@ -1320,6 +1332,12 @@ private fun ForumMessageActionsSheet(
                 icon = Icons.AutoMirrored.Outlined.Reply,
                 label = stringResource(R.string.chat_action_reply),
                 onClick = onReply,
+            )
+            MessageSheetActionRow(
+                icon = Icons.Outlined.ContentPaste,
+                label = stringResource(R.string.chat_action_forward),
+                onClick = onForward,
+                enabled = canForward,
             )
             MessageSheetActionRow(
                 icon = Icons.Outlined.Edit,

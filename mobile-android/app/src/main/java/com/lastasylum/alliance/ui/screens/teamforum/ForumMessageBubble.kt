@@ -65,6 +65,7 @@ import com.lastasylum.alliance.ui.chat.forumMessageClusterTightInnerTop
 import com.lastasylum.alliance.ui.chat.forumMessageIsClusterChainBottom
 import com.lastasylum.alliance.ui.chat.forumMessageShowsClusterHeader
 import com.lastasylum.alliance.ui.chat.replyPreviewText
+import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.ui.chat.resolvedChatAttachmentImageUrl
 import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingBubble
 import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingOnBubble
@@ -119,7 +120,7 @@ internal fun ForumMessageBubble(
     val bubbleBg = if (isMine) ChatTelegramOutgoingBubble else ChatTelegramIncomingBubble
     val onBubble = if (isMine) ChatTelegramOutgoingOnBubble else ChatTelegramIncomingOnBubble
     val timeMuted = if (isMine) ChatTelegramTimeMuted else ChatTelegramTimeMutedIncoming
-    val senderAccent = roleAccentColor("")
+    val senderAccent = roleAccentColor(message.senderRole)
     val messageImageTapLabel = stringResource(R.string.cd_chat_message_image)
     val nickname = message.senderUsername.trim()
     val displayName = nickname.ifBlank { "—" }
@@ -288,11 +289,23 @@ internal fun ForumMessageBubble(
                     Column(modifier = floatMod) {
                         if (!isMine && showClusterHeader) {
                             ChatBubbleAuthorHeader(
-                                teamTag = null,
+                                teamTag = message.senderTeamTag,
                                 nickname = nickname.ifBlank { "—" },
                                 nicknameColor = senderAccent,
                                 tagBracketColor = tagBracketMuted,
-                                senderRole = "",
+                                senderRole = message.senderRole,
+                            )
+                        }
+                        message.forwardedFrom?.let { fwd ->
+                            Text(
+                                text = stringResource(
+                                    R.string.chat_forwarded_from,
+                                    chatSenderDisplayWithTag(fwd.senderTeamTag, fwd.senderUsername),
+                                ),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = onBubble.copy(alpha = 0.78f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                         Box(
@@ -352,13 +365,25 @@ internal fun ForumMessageBubble(
                                 .then(swipeModifier),
                             verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
                         ) {
+                            message.forwardedFrom?.let { fwd ->
+                                Text(
+                                    text = stringResource(
+                                        R.string.chat_forwarded_from,
+                                        chatSenderDisplayWithTag(fwd.senderTeamTag, fwd.senderUsername),
+                                    ),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = onBubble.copy(alpha = 0.78f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                             if (!isMine && showClusterHeader) {
                                 ChatBubbleAuthorHeader(
-                                    teamTag = null,
+                                    teamTag = message.senderTeamTag,
                                     nickname = nickname.ifBlank { "—" },
                                     nicknameColor = senderAccent,
                                     tagBracketColor = tagBracketMuted,
-                                    senderRole = "",
+                                    senderRole = message.senderRole,
                                 )
                             }
 
@@ -392,7 +417,10 @@ internal fun ForumMessageBubble(
                                             ),
                                         ) {
                                             Text(
-                                                text = rp.senderUsername.trim().ifBlank { "—" },
+                                                text = chatSenderDisplayWithTag(
+                                                    rp.senderTeamTag,
+                                                    rp.senderUsername,
+                                                ),
                                                 style = MaterialTheme.typography.labelMedium.copy(
                                                     fontWeight = FontWeight.SemiBold,
                                                 ),

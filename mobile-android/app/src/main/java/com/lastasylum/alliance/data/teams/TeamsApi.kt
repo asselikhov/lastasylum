@@ -172,4 +172,11 @@ interface TeamsApi {
         @Path("topicId") topicId: String,
         @Body body: BulkDeleteForumMessagesBody,
     ): OkResponse
+
+    @POST("teams/{teamId}/forum/topics/{topicId}/messages/{messageId}/forward")
+    suspend fun forwardForumMessage(
+        @Path("teamId") teamId: String,
+        @Path("topicId") topicId: String,
+        @Path("messageId") messageId: String,
+    ): TeamForumMessageDto
 }

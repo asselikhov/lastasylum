@@ -226,4 +226,17 @@ class TeamsRepository(
                 BulkDeleteForumMessagesBody(messageIds = ids),
             ).let { }
         }
+
+    suspend fun forwardForumMessage(
+        teamId: String,
+        topicId: String,
+        messageId: String,
+    ): Result<TeamForumMessageDto> =
+        runCatching {
+            teamsApi.forwardForumMessage(
+                teamId,
+                topicId,
+                messageId,
+            )
+        }
 }

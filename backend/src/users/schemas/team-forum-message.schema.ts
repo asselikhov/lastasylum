@@ -3,6 +3,7 @@ import { HydratedDocument, Types } from 'mongoose';
 import { PlayerTeam } from './player-team.schema';
 
 import { TeamForumTopic } from './team-forum-topic.schema';
+import { PlayerTeamMemberRole } from '../../common/enums/player-team-member-role.enum';
 
 export type TeamForumMessageDocument = HydratedDocument<TeamForumMessage>;
 
@@ -29,6 +30,17 @@ export class TeamForumMessage {
 
   @Prop({ required: true, trim: true })
   senderUsername: string;
+
+  /**
+   * Sender snapshot at send time.
+   * Matches in-app squad role strings: R1..R5.
+   */
+  @Prop({ required: true, type: String, trim: true, enum: Object.values(PlayerTeamMemberRole) })
+  senderRole: PlayerTeamMemberRole;
+
+  /** Sender team tag snapshot at send time (3-letter, may be null). */
+  @Prop({ type: String, default: null, trim: true })
+  senderTeamTag: string | null;
 
   @Prop({ type: String, required: true, trim: true, default: '' })
   text: string;
@@ -59,6 +71,27 @@ export class TeamForumMessage {
 
   @Prop({ type: String, default: null })
   deletedByUserId: string | null;
+
+  /** Forwarded message metadata (minimal; points to original forum message). */
+  @Prop({
+    type: {
+      messageId: { type: Types.ObjectId, required: true },
+      senderUserId: { type: String, required: true },
+      senderUsername: { type: String, required: true },
+      senderRole: { type: String, required: true },
+      senderTeamTag: { type: String, default: null },
+    },
+    default: null,
+  })
+  forwardedFrom:
+    | {
+        messageId: Types.ObjectId;
+        senderUserId: string;
+        senderUsername: string;
+        senderRole: PlayerTeamMemberRole;
+        senderTeamTag: string | null;
+      }
+    | null;
 
   createdAt?: Date;
   updatedAt?: Date;
