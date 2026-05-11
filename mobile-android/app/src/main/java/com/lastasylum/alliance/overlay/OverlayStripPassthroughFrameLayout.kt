@@ -25,7 +25,7 @@ internal class OverlayStripPassthroughFrameLayout(context: Context) : FrameLayou
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
             val lx = (ev.x - compose.left).toInt()
             val ly = (ev.y - compose.top).toInt()
-            if (dismissRectsInCompose.none { it.contains(lx, ly) }) return false
+            if (dismissRectsInCompose.none { !it.isEmpty && it.contains(lx, ly) }) return false
         }
         return super.dispatchTouchEvent(ev)
     }

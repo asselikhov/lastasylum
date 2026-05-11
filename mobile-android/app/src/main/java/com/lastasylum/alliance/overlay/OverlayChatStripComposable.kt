@@ -28,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -171,7 +172,15 @@ fun OverlayChatStrip(
                     compactStickers = compactStickers,
                     onDismiss = { onDismissMessage(msg) },
                     onReportDismissBounds = { mk, rect ->
+                        // During AnimatedVisibility exit the row is still composed; positioning callbacks
+                        // would re-register rects after LaunchedEffect cleared them — touches then hit
+                        // "dismiss" zones with no real target and block the game.
+                        if (leaving[mk] == true) return@OverlayChatStripMessage
                         dismissRegions[mk] = rect
+                        onDismissRegionsChanged(dismissRegions.values.toList())
+                    },
+                    onClearDismissRegion = { mk ->
+                        dismissRegions.remove(mk)
                         onDismissRegionsChanged(dismissRegions.values.toList())
                     },
                 )
@@ -225,6 +234,7 @@ private fun OverlayChatStripMessage(
     compactStickers: Boolean,
     onDismiss: () -> Unit,
     onReportDismissBounds: (String, Rect) -> Unit,
+    onClearDismissRegion: (String) -> Unit,
 ) {
     val bubbleBg = if (isMine) ChatTelegramOutgoingBubble else ChatTelegramIncomingBubble
     val onBubble = if (isMine) ChatTelegramOutgoingOnBubble else ChatTelegramIncomingOnBubble
@@ -254,6 +264,10 @@ private fun OverlayChatStripMessage(
     val stickerCap = if (compactStickers) 72.dp else 96.dp
     val stickerImg = if (compactStickers) 58.dp else 76.dp
     val dismissCd = stringResource(R.string.overlay_chat_dismiss_cd)
+
+    DisposableEffect(messageKey) {
+        onDispose { onClearDismissRegion(messageKey) }
+    }
 
     Surface(
         shape = shape,
