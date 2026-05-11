@@ -424,14 +424,22 @@ internal fun ForumMessageBubble(
                                                 style = MaterialTheme.typography.labelMedium.copy(
                                                     fontWeight = FontWeight.SemiBold,
                                                 ),
-                                                color = senderAccent,
+                                                color = if (isMine) {
+                                                    ChatTelegramOutgoingOnBubble.copy(alpha = 0.92f)
+                                                } else {
+                                                    ChatTelegramIncomingOnBubble.copy(alpha = 0.95f)
+                                                },
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
                                             )
                                             Text(
                                                 text = replyPreviewText(rp.text),
                                                 style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
-                                                color = onBubble.copy(alpha = 0.78f),
+                                                color = if (isMine) {
+                                                    ChatTelegramOutgoingOnBubble.copy(alpha = 0.78f)
+                                                } else {
+                                                    ChatTelegramIncomingOnBubble.copy(alpha = 0.72f)
+                                                },
                                                 maxLines = 4,
                                                 overflow = TextOverflow.Ellipsis,
                                             )
