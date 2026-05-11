@@ -426,14 +426,16 @@ class CombatOverlayService : Service() {
         scheduleStripTick()
     }
 
+    /** Throttle для Log при «панель скрыта» — не дёргаем FGS-текст при каждом тике гейта. */
     private var gateNotifyKey: String = ""
     private var cachedAccessTokenSub: Pair<String?, String?> = null to null
     private var lastStripRenderSignature: String? = null
     @Volatile
     private var gateCheckInFlight = false
     private var lastGateDiagLogMs: Long = 0L
-    private var lastKnownInGameMs: Long = 0L
     private var lastForegroundHintPkg: String? = null
+    /** Не вызывать [NotificationManager.notify] с тем же текстом подряд (лишние всплытия на части OEM). */
+    private var lastForegroundNotificationText: String? = null
 
     private val gameGateRunnable = object : Runnable {
         override fun run() {
@@ -509,15 +511,15 @@ class CombatOverlayService : Service() {
                 // Avoid a crash-loop with a half-initialized state.
                 runCatching { removeOverlayControl() }
                 _overlayVisible.value = false
-                updateNotification(getString(R.string.overlay_notif_waiting_for_game))
+                Log.w(TAG, "ensureOverlayIfPermitted: showOverlayControl failed, strip overlay")
             }
         }
     }
 
-    private fun notifyGateThrottled(content: String) {
+    private fun logGateStateThrottled(content: String) {
         if (content == gateNotifyKey) return
         gateNotifyKey = content
-        updateNotification(content)
+        Log.i(TAG, content)
     }
 
     private fun tickGameGate() {
@@ -543,6 +545,7 @@ class CombatOverlayService : Service() {
         val activityTokens = prefs.getOverlayTargetGameActivityTokens()
         serviceScope.launch {
             try {
+                GameForegroundGate.invalidateForegroundHintCache()
                 val hasUsageAccess = GameForegroundGate.hasUsageStatsAccess(this@CombatOverlayService)
                 val hintedComp = runCatching { GameForegroundGate.lastResumedComponent(this@CombatOverlayService) }.getOrNull()
                 val hintedPkg = hintedComp?.packageName
@@ -580,19 +583,13 @@ class CombatOverlayService : Service() {
                 }
                 mainHandler.post {
                     val nowMs = System.currentTimeMillis()
-                    if (shouldShow) {
-                        lastKnownInGameMs = nowMs
-                    }
-                    // MIUI/HyperOS: foreground heuristics may flicker for a few seconds even while the game is visible.
-                    // Keep overlay visible for a grace window to avoid chat strip detach/rebuild loops.
-                    val effectiveShow = shouldShow || (nowMs - lastKnownInGameMs) <= IN_GAME_GRACE_MS
                     if (prefs.isOverlayGameGateEnabled() && nowMs - lastGateDiagLogMs >= 25_000L) {
                         lastGateDiagLogMs = nowMs
                         val draw = canDrawOverlaysNow()
-                        if (!hasUsageAccess || !effectiveShow || !draw || overlayView == null) {
+                        if (!hasUsageAccess || !shouldShow || !draw || overlayView == null) {
                             Log.i(
                                 TAG,
-                                "overlayGate usage=$hasUsageAccess inGame=$effectiveShow rawInGame=$shouldShow " +
+                                "overlayGate usage=$hasUsageAccess inGame=$shouldShow " +
                                     "hint=${hintedPkg ?: "-"} drawOverlays=$draw overlayAttached=${overlayView != null} " +
                                     "targets=${targets.joinToString()}",
                             )
@@ -601,7 +598,7 @@ class CombatOverlayService : Service() {
                     applyGameGateState(
                         gameGateEnabled = true,
                         hasUsageAccess = hasUsageAccess,
-                        shouldShow = effectiveShow,
+                        shouldShow = shouldShow,
                     )
                 }
             } finally {
@@ -627,7 +624,9 @@ class CombatOverlayService : Service() {
             return
         }
         if (!hasUsageAccess) {
-            notifyGateThrottled(getString(R.string.overlay_notif_waiting_for_game))
+            logGateStateThrottled(
+                "overlayGate: нет доступа к статистике использования — панель скрыта",
+            )
             if (overlayView != null) {
                 removeOverlayControl()
             }
@@ -636,11 +635,11 @@ class CombatOverlayService : Service() {
         if (!shouldShow) {
             val hint = lastForegroundHintPkg?.takeIf { it.isNotBlank() }
             val content = if (hint != null) {
-                "${getString(R.string.overlay_notif_waiting_for_game)} ($hint)"
+                "overlayGate: ${getString(R.string.overlay_notif_waiting_for_game)} ($hint)"
             } else {
-                getString(R.string.overlay_notif_waiting_for_game)
+                "overlayGate: ${getString(R.string.overlay_notif_waiting_for_game)}"
             }
-            notifyGateThrottled(content)
+            logGateStateThrottled(content)
             if (overlayView != null) {
                 removeOverlayControl()
             }
@@ -744,6 +743,7 @@ class CombatOverlayService : Service() {
         _serviceRunning.value = false
         gateCheckInFlight = false
         mainHandler.removeCallbacks(gameGateRunnable)
+        lastForegroundNotificationText = null
         speechPipeline.destroy()
         overlayTicker.hideTicker()
         removeOverlayControl()
@@ -772,6 +772,8 @@ class CombatOverlayService : Service() {
     }
 
     private fun updateNotification(content: String) {
+        if (content == lastForegroundNotificationText) return
+        lastForegroundNotificationText = content
         OverlayForegroundNotifications.notify(
             this,
             content,
@@ -2137,10 +2139,11 @@ class CombatOverlayService : Service() {
     companion object {
         /** Частый prune ленты относительно TTL ~10 с. */
         private const val STRIP_TICK_MS = 2_500L
-        /** Реже дергать UsageStats — меньше нагрузки на CPU/binder рядом с игрой; скрытие оверлея после выхода из игры — до ~4s. */
-        private const val GAME_GATE_POLL_MS = 4_000L
-        /** Grace window for MIUI/HyperOS false negatives in UsageStats foreground detection. */
-        private const val IN_GAME_GRACE_MS = 12_000L
+        /**
+         * Период опроса usage-гейта. Раньше 4s из‑за нагрузки на binder — панель заметно запаздывала при смене игры/лаунчера.
+         * Перед каждым тиком сбрасывается кэш [GameForegroundGate.lastResumedComponent], поэтому умеренный интервал ок.
+         */
+        private const val GAME_GATE_POLL_MS = 650L
         private const val OVERLAY_HISTORY_LOAD = 150
         /** Matches backend / user schema: ingame | online | away */
         private const val OVERLAY_PRESENCE_INGAME = "ingame"

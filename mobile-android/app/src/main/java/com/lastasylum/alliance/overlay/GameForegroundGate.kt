@@ -274,8 +274,8 @@ object GameForegroundGate {
         val hasActivityFilter = allowed.isNotEmpty()
         val alliance = context.packageName
         val targetSet = targets.toSet()
-        // Не вызывать invalidateForegroundHintCache() здесь: каждый тик гейта сбрасывал кэш lastResumed (~1.5s)
-        // и лишний раз гонял queryEvents/UsageStats — лишняя нагрузка на binder при активной игре.
+        // Кэш lastResumed сбрасывает [CombatOverlayService.tickGameGate] перед опросом, чтобы не ждать [FOREGROUND_CACHE_MS]
+        // после смены приложения; здесь повторный invalidate не делаем.
         val hintedComp = lastResumedComponent(context)
         val hinted = hintedComp?.packageName
         // Never show the overlay while the SquadRelay app itself is in foreground.
