@@ -35,6 +35,10 @@ export type TeamMemberRow = {
   allianceRole: string;
   teamRole: string;
   telegramUsername: string | null;
+  /** ingame | online | away — для клиента «в игре / нет». */
+  presenceStatus: string | null;
+  /** ISO time последнего пинга присутствия (в т.ч. оверлей в игре). */
+  lastPresenceAt: string | null;
 };
 
 export type TeamJoinRequestRow = {
@@ -327,16 +331,24 @@ export class TeamsService {
     );
     const users = await this.userModel
       .find({ _id: { $in: team.squadMembers.map((m) => m.userId) } })
-      .select('username role telegramUsername')
+      .select('username role telegramUsername presenceStatus lastPresenceAt')
       .lean<
         Array<{
           _id: Types.ObjectId;
           username: string;
           role: string;
           telegramUsername?: string | null;
+          presenceStatus?: string | null;
+          lastPresenceAt?: Date | string | null;
         }>
       >()
       .exec();
+    const toIso = (v: Date | string | null | undefined): string | null => {
+      if (v == null) return null;
+      if (v instanceof Date) return v.toISOString();
+      if (typeof v === 'string' && v.trim().length > 0) return v.trim();
+      return null;
+    };
     const byId = new Map(
       users.map((u) => [
         u._id.toString(),
@@ -344,6 +356,8 @@ export class TeamsService {
           username: u.username,
           role: u.role,
           telegramUsername: u.telegramUsername ?? null,
+          presenceStatus: u.presenceStatus ?? null,
+          lastPresenceAt: toIso(u.lastPresenceAt),
         },
       ]),
     );
@@ -352,13 +366,16 @@ export class TeamsService {
       const teamRole =
         roleByUserId.get(id) ??
         (id === leaderStr ? PlayerTeamMemberRole.R5 : PlayerTeamMemberRole.R1);
+      const row = byId.get(id);
       return {
         userId: id,
-        username: byId.get(id)?.username ?? '?',
+        username: row?.username ?? '?',
         isLeader: id === leaderStr,
-        allianceRole: byId.get(id)?.role ?? 'R2',
+        allianceRole: row?.role ?? 'R2',
         teamRole,
-        telegramUsername: byId.get(id)?.telegramUsername ?? null,
+        telegramUsername: row?.telegramUsername ?? null,
+        presenceStatus: row?.presenceStatus ?? null,
+        lastPresenceAt: row?.lastPresenceAt ?? null,
       };
     });
     members.sort((a, b) => {

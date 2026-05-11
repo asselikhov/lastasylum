@@ -19,6 +19,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.ManageAccounts
@@ -43,6 +44,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -59,11 +61,36 @@ import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
-import com.lastasylum.alliance.ui.util.telegramDisplayHandle
 import com.lastasylum.alliance.ui.util.toUserMessageRu
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlinx.coroutines.launch
 
 private val squadRoleOrder = listOf("R5", "R4", "R3", "R2", "R1")
+
+/** Same freshness window as overlay «в игре» list (~3× heartbeat). */
+private const val INGAME_PRESENCE_STALE_MS = 135_000L
+
+private fun memberInGameNow(status: String?, lastPresenceAt: String?): Boolean {
+    val s = status?.trim()?.lowercase() ?: return false
+    if (s != "ingame") return false
+    val iso = lastPresenceAt?.trim().orEmpty()
+    if (iso.isEmpty()) return false
+    return runCatching {
+        val instant = Instant.parse(iso)
+        java.time.Duration.between(instant, Instant.now()).toMillis() <= INGAME_PRESENCE_STALE_MS
+    }.getOrDefault(false)
+}
+
+private fun formatLastInGameTimestampRu(iso: String?): String {
+    if (iso.isNullOrBlank()) return ""
+    return runCatching {
+        val z = java.time.ZonedDateTime.ofInstant(Instant.parse(iso.trim()), ZoneId.systemDefault())
+        z.format(DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale("ru")))
+    }.getOrDefault("")
+}
 
 fun squadRoleCode(member: PlayerTeamMemberDto): String {
     val raw = member.teamRole.trim().uppercase().takeIf { it.isNotEmpty() } ?: "R1"
@@ -230,19 +257,15 @@ private fun SquadRoleSectionHeader(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = sectionTitle,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        text = roleCode,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                Text(
+                    text = sectionTitle,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 Surface(
                     shape = RoundedCornerShape(8.dp),
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
@@ -275,9 +298,18 @@ private fun SquadMemberCard(
     val scope = rememberCoroutineScope()
     val res = LocalContext.current.resources
     val avatar = telegramAvatarUrl(member.telegramUsername)
-    val tgHandle = telegramDisplayHandle(member.telegramUsername)
-    val tgPlaceholder = stringResource(R.string.team_tg_not_set)
-    val tgLine = stringResource(R.string.team_tg_line, tgHandle ?: tgPlaceholder)
+    val unknownPresence = stringResource(R.string.team_member_last_in_game_unknown)
+    val lastInGameTemplate = stringResource(R.string.team_member_last_in_game_template)
+    val lastInGameLine = remember(member.lastPresenceAt, unknownPresence, lastInGameTemplate) {
+        val raw = formatLastInGameTimestampRu(member.lastPresenceAt)
+        val slot = raw.ifBlank { unknownPresence }
+        String.format(Locale.getDefault(), lastInGameTemplate, slot)
+    }
+    val inGameNow = remember(member.presenceStatus, member.lastPresenceAt) {
+        memberInGameNow(member.presenceStatus, member.lastPresenceAt)
+    }
+    val inGameCd = stringResource(R.string.team_member_in_game_cd)
+    val notInGameCd = stringResource(R.string.team_member_not_in_game_cd)
     val canEditThisMemberRole =
         isSquadLeader && !member.isLeader && member.userId != currentUserId
     val canRemove = isSquadLeader && !member.isLeader && member.userId != currentUserId
@@ -329,13 +361,28 @@ private fun SquadMemberCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = tgLine,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Circle,
+                        contentDescription = if (inGameNow) inGameCd else notInGameCd,
+                        modifier = Modifier.size(10.dp),
+                        tint = if (inGameNow) {
+                            Color(0xFF2E7D32)
+                        } else {
+                            MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)
+                        },
+                    )
+                    Text(
+                        text = lastInGameLine,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             if (isSquadLeader) {
                 Row(

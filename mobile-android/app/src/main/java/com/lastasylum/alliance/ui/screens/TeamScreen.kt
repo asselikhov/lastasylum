@@ -81,7 +81,7 @@ private fun isValidTeamTag3to4Letters(raw: String): Boolean {
     return count in 3..4
 }
 
-private enum class TeamMainSection {
+enum class TeamMainSection {
     News,
     Forum,
     Members,
@@ -92,6 +92,8 @@ private enum class TeamMainSection {
 fun TeamScreen(
     currentUserId: String,
     teamsRepository: TeamsRepository,
+    /** When set (e.g. overlay), open this section on first composition. */
+    initialMainSection: TeamMainSection? = null,
 ) {
     val context = LocalContext.current
     val app = remember { AppContainer.from(context.applicationContext) }
@@ -128,7 +130,9 @@ fun TeamScreen(
     var editTeamTagDraft by remember { mutableStateOf("") }
     var editNameBusy by remember { mutableStateOf(false) }
     var roleEditMember by remember { mutableStateOf<PlayerTeamMemberDto?>(null) }
-    var mainSectionOrdinal by rememberSaveable { mutableIntStateOf(TeamMainSection.News.ordinal) }
+    var mainSectionOrdinal by rememberSaveable {
+        mutableIntStateOf(initialMainSection?.ordinal ?: TeamMainSection.News.ordinal)
+    }
     var forumTabReselectSignal by remember { mutableStateOf(0) }
 
     LaunchedEffect(mainSectionOrdinal) {

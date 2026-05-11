@@ -23,6 +23,10 @@ data class PlayerTeamMemberDto(
     /** Squad role R1–R5 (R5 = leader). */
     val teamRole: String = "R1",
     val telegramUsername: String?,
+    /** ingame | online | away */
+    val presenceStatus: String? = null,
+    /** ISO-8601 last presence ping (overlay in-game, etc.). */
+    val lastPresenceAt: String? = null,
 )
 
 @JsonClass(generateAdapter = true)
