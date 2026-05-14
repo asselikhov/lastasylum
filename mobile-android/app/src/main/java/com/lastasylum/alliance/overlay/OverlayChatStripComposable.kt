@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -97,15 +98,23 @@ fun OverlayChatStrip(
     fun keyOf(msg: ChatMessage): String =
         msg._id?.takeIf { it.isNotBlank() } ?: msg.stableKey()
 
+    // Синхронно с реальным списком сообщений: иначе один layout после удаления из preview
+    // снова регистрирует rect по карточке, которая ещё в keep, а LaunchedEffect ещё не вызвал retainAll.
+    SideEffect {
+        val valid = latestMessages.map { keyOf(it) }.toSet()
+        val stale = dismissRegions.keys.filter { it !in valid }
+        if (stale.isNotEmpty()) {
+            stale.forEach { dismissRegions.remove(it) }
+            onDismissRegionsChanged(dismissRegions.values.toList())
+        }
+    }
+
     val cfg = LocalConfiguration.current
     val stripMaxHeight = remember(cfg.screenHeightDp) {
         (cfg.screenHeightDp * 0.56f).dp.coerceAtLeast(220.dp)
     }
 
     LaunchedEffect(latestMessages) {
-        val valid = latestMessages.map { keyOf(it) }.toSet()
-        dismissRegions.keys.retainAll { valid.contains(it) }
-        onDismissRegionsChanged(dismissRegions.values.toList())
         val keysBefore = keep.map { keyOf(it) }.toSet()
 
         latestMessages.forEach { m ->
@@ -176,6 +185,7 @@ fun OverlayChatStrip(
                         // would re-register rects after LaunchedEffect cleared them — touches then hit
                         // "dismiss" zones with no real target and block the game.
                         if (leaving[mk] == true) return@OverlayChatStripMessage
+                        if (latestMessages.none { keyOf(it) == mk }) return@OverlayChatStripMessage
                         dismissRegions[mk] = rect
                         onDismissRegionsChanged(dismissRegions.values.toList())
                     },

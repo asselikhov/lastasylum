@@ -35,7 +35,7 @@
     <string name="nav_title">SquadRelay • %1$s (%2$s)</string>
     <string name="cd_logout">Выйти</string>
     <string name="tab_chat">Чат</string>
-    <string name="tab_team">Сообщество</string>
+    <string name="tab_team">Команда</string>
     <string name="tab_overlay">Игра</string>
     <string name="tab_profile">Профиль</string>
     <string name="tab_admin">Админ</string>
@@ -296,6 +296,7 @@
     <string name="team_member_in_game_cd">Сейчас в игре</string>
     <string name="team_member_not_in_game_cd">Не в игре</string>
     <string name="overlay_team_cd">Команда</string>
+    <string name="overlay_cd_chat_and_team">Чат и команда</string>
     <string name="overlay_team_open_failed">Не удалось открыть «Команда» в оверлее. Проверьте разрешение «Поверх других приложений».</string>
     <string name="team_news_poll_badge">Опрос</string>
     <string name="team_news_new">Новая новость</string>
