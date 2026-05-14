@@ -5,7 +5,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-private val SquadRelayInversePrimary = Color(0xFFCDB7FF)
+private val SquadRelayInversePrimary = Color(0xFFC4B5FD)
 
 private val SquadRelayColorScheme = darkColorScheme(
     primary = SquadRelayPrimary,

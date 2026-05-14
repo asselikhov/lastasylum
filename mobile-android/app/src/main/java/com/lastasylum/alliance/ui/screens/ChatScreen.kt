@@ -72,10 +72,14 @@ import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.Mood
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -125,6 +129,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -136,6 +141,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontWeight
@@ -148,6 +154,7 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.data.chat.ChatAllianceIds
+import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
 import com.lastasylum.alliance.di.AppContainer
@@ -170,12 +177,6 @@ import com.lastasylum.alliance.ui.chat.chatBubbleShapeIncoming
 import com.lastasylum.alliance.ui.chat.chatBubbleShapeOutgoing
 import com.lastasylum.alliance.ui.chat.TelegramImageCaptionBar
 import com.lastasylum.alliance.ui.chat.TelegramLikeAttachmentsGrid
-import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingBubble
-import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingOnBubble
-import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingBubble
-import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingOnBubble
-import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMuted
-import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMutedIncoming
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.roleAccentColor
 import com.lastasylum.alliance.ui.chat.MessageSheetActionRow
@@ -189,6 +190,7 @@ import coil.request.ImageRequest
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -592,6 +594,7 @@ fun ChatScreen(
                         .fillMaxWidth()
                         .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
                 ) {
+            ChatRoomContextHeader(room = selectedRoom)
             ChatRoomsBar(
                 rooms = state.rooms,
                 selectedRoomId = selectedRoomId,
@@ -747,6 +750,9 @@ fun ChatScreen(
             if (showEdit) {
                 AlertDialog(
                     onDismissRequest = { showEdit = false },
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     title = { Text(stringResource(R.string.chat_edit_title)) },
                     text = {
                         OutlinedTextField(
@@ -806,6 +812,9 @@ fun ChatScreen(
     confirmDeleteMessage?.let {
         AlertDialog(
             onDismissRequest = onDismissDeleteMessage,
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.chat_delete_title)) },
             text = { Text(stringResource(R.string.chat_delete_body)) },
             confirmButton = {
@@ -827,6 +836,9 @@ fun ChatScreen(
     if (state.confirmBulkDelete && state.selectedMessageIds.isNotEmpty()) {
         AlertDialog(
             onDismissRequest = onDismissBulkDeleteConfirm,
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.chat_bulk_delete_title)) },
             text = {
                 Text(
@@ -910,13 +922,16 @@ private fun ChatSelectionToolbar(
     onClear: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val scheme = MaterialTheme.colorScheme
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = SquadRelayDimens.itemGap),
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(20.dp),
+        color = scheme.surface.copy(alpha = 0.52f),
         tonalElevation = 0.dp,
+        shadowElevation = 6.dp,
+        border = BorderStroke(1.dp, scheme.outline.copy(alpha = 0.18f)),
     ) {
         Row(
             modifier = Modifier
@@ -959,23 +974,25 @@ private fun ChatSelectionToolbar(
 
 @Composable
 private fun ChatDayDivider(label: String) {
+    val scheme = MaterialTheme.colorScheme
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 10.dp),
+            .padding(vertical = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
         Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.92f),
+            shape = RoundedCornerShape(20.dp),
+            color = scheme.surface.copy(alpha = 0.52f),
             tonalElevation = 0.dp,
-            shadowElevation = 0.dp,
+            shadowElevation = 3.dp,
+            border = BorderStroke(1.dp, scheme.primary.copy(alpha = 0.22f)),
         ) {
             Text(
                 text = label,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = scheme.onSurface.copy(alpha = 0.92f),
             )
         }
     }
@@ -1243,6 +1260,178 @@ private fun com.lastasylum.alliance.data.chat.ChatRoomDto.chatRoomVisualKind(): 
         else -> ChatRoomVisualKind.Other
     }
 
+@Composable
+private fun ChatRoomContextHeader(room: ChatRoomDto?) {
+    if (room == null) return
+    val scheme = MaterialTheme.colorScheme
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    var menuExpanded by remember { mutableStateOf(false) }
+    var showSearchDialog by remember { mutableStateOf(false) }
+    var showAboutDialog by remember { mutableStateOf(false) }
+    val kind = room.chatRoomVisualKind()
+    val raidHot = Color(0xFFFF6B35)
+    val (icon, accent) = when (kind) {
+        ChatRoomVisualKind.GlobalUnion -> Icons.Outlined.Public to Color(0xFF5C6BC0)
+        ChatRoomVisualKind.Raid -> Icons.Outlined.Bolt to raidHot
+        ChatRoomVisualKind.AllianceHub -> Icons.Outlined.Shield to Color(0xFF00897B)
+        ChatRoomVisualKind.Other -> Icons.Outlined.ChatBubbleOutline to scheme.primary
+    }
+    val subtitle = when (kind) {
+        ChatRoomVisualKind.GlobalUnion -> stringResource(R.string.chat_context_global)
+        ChatRoomVisualKind.Raid -> stringResource(R.string.chat_context_raid)
+        ChatRoomVisualKind.AllianceHub -> stringResource(R.string.chat_context_squad)
+        ChatRoomVisualKind.Other -> stringResource(R.string.chat_context_room)
+    }
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp),
+        shape = RoundedCornerShape(22.dp),
+        color = scheme.surface.copy(alpha = 0.48f),
+        tonalElevation = 0.dp,
+        shadowElevation = 5.dp,
+        border = BorderStroke(1.dp, scheme.outline.copy(alpha = 0.18f)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = accent.copy(alpha = 0.18f),
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp,
+                modifier = Modifier.size(44.dp),
+            ) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = accent,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 10.dp, end = 4.dp),
+            ) {
+                Text(
+                    text = room.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = scheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = { showSearchDialog = true }) {
+                    Icon(
+                        imageVector = Icons.Outlined.Search,
+                        contentDescription = stringResource(R.string.cd_chat_search),
+                        tint = scheme.onSurface,
+                    )
+                }
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(
+                            imageVector = Icons.Outlined.MoreVert,
+                            contentDescription = stringResource(R.string.cd_chat_room_menu),
+                            tint = scheme.onSurfaceVariant,
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.chat_room_menu_about)) },
+                            onClick = {
+                                menuExpanded = false
+                                showAboutDialog = true
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.chat_room_menu_copy_title)) },
+                            onClick = {
+                                menuExpanded = false
+                                clipboard.setText(AnnotatedString(room.title))
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.chat_title_copied),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+    if (showSearchDialog) {
+        AlertDialog(
+            onDismissRequest = { showSearchDialog = false },
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            title = { Text(stringResource(R.string.chat_search_title)) },
+            text = { Text(stringResource(R.string.chat_search_coming_soon)) },
+            confirmButton = {
+                TextButton(onClick = { showSearchDialog = false }) {
+                    Text(stringResource(R.string.chat_ok))
+                }
+            },
+        )
+    }
+    if (showAboutDialog) {
+        AlertDialog(
+            onDismissRequest = { showAboutDialog = false },
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            title = { Text(stringResource(R.string.chat_room_info_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = room.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = scheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = stringResource(R.string.chat_room_info_id_label) + ": " + room.id,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAboutDialog = false }) {
+                    Text(stringResource(R.string.chat_ok))
+                }
+            },
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChatRoomsBar(
@@ -1260,9 +1449,11 @@ private fun ChatRoomsBar(
         items(rooms, key = { it.id }) { room ->
             val selected = room.id == selectedRoomId
             val kind = room.chatRoomVisualKind()
+            val raidHot = Color(0xFFFF6B35)
+            val raidDeep = Color(0xFFE53935)
             val accent = when (kind) {
                 ChatRoomVisualKind.GlobalUnion -> Color(0xFF5C6BC0)
-                ChatRoomVisualKind.Raid -> Color(0xFFE65100)
+                ChatRoomVisualKind.Raid -> raidHot
                 ChatRoomVisualKind.AllianceHub -> Color(0xFF00897B)
                 ChatRoomVisualKind.Other -> scheme.primary
             }
@@ -1272,30 +1463,43 @@ private fun ChatRoomsBar(
                 ChatRoomVisualKind.AllianceHub -> Icons.Outlined.Shield
                 ChatRoomVisualKind.Other -> Icons.Outlined.ChatBubbleOutline
             }
-            val containerBrush = if (selected) {
-                Brush.horizontalGradient(
-                    listOf(
-                        accent.copy(alpha = 0.92f),
-                        lerp(accent, scheme.primary, 0.28f),
-                    ),
-                )
-            } else {
-                Brush.verticalGradient(
-                    listOf(
-                        scheme.surfaceContainerHigh,
-                        scheme.surfaceContainerHighest.copy(alpha = 0.92f),
-                    ),
-                )
+            val containerBrush = when {
+                selected && kind == ChatRoomVisualKind.Raid ->
+                    Brush.horizontalGradient(listOf(raidHot, raidDeep))
+                selected ->
+                    Brush.horizontalGradient(
+                        listOf(
+                            accent.copy(alpha = 0.92f),
+                            lerp(accent, scheme.primary, 0.28f),
+                        ),
+                    )
+                kind == ChatRoomVisualKind.Raid ->
+                    Brush.horizontalGradient(
+                        listOf(
+                            scheme.surface.copy(alpha = 0.52f),
+                            raidDeep.copy(alpha = 0.35f),
+                        ),
+                    )
+                else ->
+                    Brush.verticalGradient(
+                        listOf(
+                            scheme.surface.copy(alpha = 0.44f),
+                            scheme.surface.copy(alpha = 0.62f),
+                        ),
+                    )
             }
             Surface(
                 onClick = { onSelectRoom(room.id) },
                 shape = RoundedCornerShape(22.dp),
                 color = Color.Transparent,
                 shadowElevation = if (selected) 5.dp else 1.dp,
-                border = if (selected) {
-                    null
-                } else {
-                    BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = 0.55f))
+                border = when {
+                    selected && kind == ChatRoomVisualKind.Raid -> null
+                    selected -> null
+                    kind == ChatRoomVisualKind.Raid ->
+                        BorderStroke(1.dp, raidHot.copy(alpha = 0.65f))
+                    else ->
+                        BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = 0.55f))
                 },
             ) {
                 Row(
@@ -1307,7 +1511,11 @@ private fun ChatRoomsBar(
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        tint = if (selected) Color.White.copy(alpha = 0.95f) else accent,
+                        tint = when {
+                            selected -> Color.White.copy(alpha = 0.95f)
+                            kind == ChatRoomVisualKind.Raid -> raidHot
+                            else -> accent
+                        },
                         modifier = Modifier.size(20.dp),
                     )
                     Spacer(Modifier.width(8.dp))
@@ -1316,10 +1524,11 @@ private fun ChatRoomsBar(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.labelLarge,
-                        color = if (selected) {
-                            Color.White
-                        } else {
-                            scheme.onSurface
+                        color = when {
+                            selected -> Color.White
+                            kind == ChatRoomVisualKind.Raid ->
+                                scheme.onSurface.copy(alpha = 0.95f)
+                            else -> scheme.onSurface
                         },
                     )
                 }
@@ -1424,44 +1633,54 @@ private fun ChatComposer(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(pickedImageUris, key = { it.toString() }) { uri ->
-                        Box(
+                        val sheetScheme = MaterialTheme.colorScheme
+                        val thumbShape = RoundedCornerShape(14.dp)
+                        Surface(
                             modifier = Modifier
                                 .aspectRatio(1f)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
                                 .clickable {
                                     pickedImageUris.indexOf(uri).takeIf { it >= 0 }?.let(onOpenAttachmentPreview)
                                 },
+                            shape = thumbShape,
+                            color = sheetScheme.surface.copy(alpha = 0.42f),
+                            border = BorderStroke(
+                                1.dp,
+                                sheetScheme.outlineVariant.copy(alpha = 0.28f),
+                            ),
+                            tonalElevation = 0.dp,
+                            shadowElevation = 2.dp,
                         ) {
-                            AsyncImage(
-                                model = ImageRequest.Builder(context)
-                                    .data(uri)
-                                    .crossfade(true)
-                                    .build(),
-                                contentDescription = null,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop,
-                            )
-                            IconButton(
-                                onClick = { onRemovePickedImage(uri) },
-                                enabled = !readOnly && !isSending,
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .size(32.dp)
-                                    .padding(4.dp),
-                            ) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = Color.Black.copy(alpha = 0.38f),
-                                    tonalElevation = 0.dp,
-                                    shadowElevation = 0.dp,
+                            Box(Modifier.fillMaxSize()) {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(context)
+                                        .data(uri)
+                                        .crossfade(true)
+                                        .build(),
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                )
+                                IconButton(
+                                    onClick = { onRemovePickedImage(uri) },
+                                    enabled = !readOnly && !isSending,
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .size(32.dp)
+                                        .padding(4.dp),
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Cancel,
-                                        contentDescription = stringResource(R.string.chat_attachments_remove),
-                                        tint = Color.White,
-                                        modifier = Modifier.padding(5.dp),
-                                    )
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = Color.Black.copy(alpha = 0.38f),
+                                        tonalElevation = 0.dp,
+                                        shadowElevation = 0.dp,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Cancel,
+                                            contentDescription = stringResource(R.string.chat_attachments_remove),
+                                            tint = Color.White,
+                                            modifier = Modifier.padding(5.dp),
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1516,7 +1735,7 @@ private fun ChatComposer(
                     val extraCount = (pickedImageUris.size - shown.size).coerceAtLeast(0)
                     val gap = 6.dp
                     val tileShape = RoundedCornerShape(14.dp)
-                    val tileBg = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.55f)
+                    val tileBg = MaterialTheme.colorScheme.surface.copy(alpha = 0.52f)
 
                     fun openAt(uri: Uri) {
                         pickedImageUris.indexOf(uri).takeIf { it >= 0 }?.let(onOpenAttachmentPreview)
@@ -1524,34 +1743,44 @@ private fun ChatComposer(
 
                     @Composable
                     fun tile(uri: Uri, modifier: Modifier, isExtraTile: Boolean) {
-                        Box(
-                            modifier = modifier
-                                .clip(tileShape)
-                                .background(tileBg)
-                                .clickable {
-                                    if (isExtraTile) showAttachmentsSheet = true else openAt(uri)
-                                },
-                            contentAlignment = Alignment.Center,
+                        val scheme = MaterialTheme.colorScheme
+                        Surface(
+                            modifier = modifier.clickable {
+                                if (isExtraTile) showAttachmentsSheet = true else openAt(uri)
+                            },
+                            shape = tileShape,
+                            color = tileBg,
+                            border = BorderStroke(
+                                1.dp,
+                                scheme.outlineVariant.copy(alpha = 0.28f),
+                            ),
+                            tonalElevation = 0.dp,
+                            shadowElevation = 2.dp,
                         ) {
-                            AsyncImage(
-                                model = ImageRequest.Builder(context).data(uri).crossfade(false).build(),
-                                contentDescription = null,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop,
-                            )
-                            if (isExtraTile && extraCount > 0) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(Color.Black.copy(alpha = 0.45f)),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Text(
-                                        text = "+$extraCount",
-                                        style = MaterialTheme.typography.titleLarge,
-                                        color = Color.White,
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
+                            Box(
+                                Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(context).data(uri).crossfade(false).build(),
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                )
+                                if (isExtraTile && extraCount > 0) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Color.Black.copy(alpha = 0.45f)),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            text = "+$extraCount",
+                                            style = MaterialTheme.typography.titleLarge,
+                                            color = Color.White,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1625,11 +1854,13 @@ private fun ChatComposer(
                     }
                 }
                 replyToMessage?.let { reply ->
+                    val scheme = MaterialTheme.colorScheme
                     Surface(
-                        shape = MaterialTheme.shapes.medium,
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f),
+                        shape = RoundedCornerShape(20.dp),
+                        color = scheme.surface.copy(alpha = 0.48f),
                         tonalElevation = 0.dp,
-                        shadowElevation = 0.dp,
+                        shadowElevation = 4.dp,
+                        border = BorderStroke(1.dp, scheme.outline.copy(alpha = 0.18f)),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
@@ -1672,19 +1903,19 @@ private fun ChatComposer(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
+                        .padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(0.dp),
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(26.dp),
-                        color = Color.Transparent,
+                        shape = RoundedCornerShape(28.dp),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f),
                         border = BorderStroke(
                             1.dp,
-                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                            MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
                         ),
                         tonalElevation = 0.dp,
-                        shadowElevation = 0.dp,
+                        shadowElevation = 10.dp,
                         modifier = Modifier
                             .weight(1f)
                             .heightIn(min = SquadRelayDimens.composerMinHeight.coerceAtLeast(48.dp)),
@@ -1901,13 +2132,19 @@ private fun ChatComposer(
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         items(zlobStems, key = { it }) { stem ->
+                            val sch = MaterialTheme.colorScheme
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                color = sch.surface.copy(alpha = 0.45f),
+                                border = BorderStroke(
+                                    1.dp,
+                                    sch.outlineVariant.copy(alpha = 0.28f),
+                                ),
+                                tonalElevation = 0.dp,
+                                shadowElevation = 2.dp,
                                 modifier = Modifier
                                     .padding(4.dp)
                                     .aspectRatio(1f)
-                                    .clip(RoundedCornerShape(12.dp))
                                     .clickable(
                                         enabled = sendEnabled &&
                                             !readOnly &&
@@ -2360,7 +2597,11 @@ private fun ChatBubbleInnerColumn(
             )
         }
         if (!isMine && showClusterHeader) {
-            val tagMuted = ChatTelegramIncomingOnBubble.copy(alpha = 0.5f)
+            val tagMuted = if (isMine) {
+                Color.White.copy(alpha = 0.55f)
+            } else {
+                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+            }
             ChatBubbleAuthorHeader(
                 teamTag = stemTag,
                 nickname = nickname,
@@ -2384,9 +2625,9 @@ private fun ChatBubbleInnerColumn(
                     },
                 shape = RoundedCornerShape(10.dp),
                 color = if (isMine) {
-                    ChatTelegramOutgoingOnBubble.copy(alpha = 0.14f)
+                    Color.White.copy(alpha = 0.12f)
                 } else {
-                    ChatTelegramIncomingOnBubble.copy(alpha = 0.12f)
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
                 },
                 tonalElevation = 0.dp,
                 shadowElevation = 0.dp,
@@ -2403,20 +2644,12 @@ private fun ChatBubbleInnerColumn(
                             reply.senderUsername,
                         ),
                         style = MaterialTheme.typography.labelMedium,
-                        color = if (isMine) {
-                            ChatTelegramOutgoingOnBubble.copy(alpha = 0.92f)
-                        } else {
-                            ChatTelegramIncomingOnBubble.copy(alpha = 0.95f)
-                        },
+                        color = onBubble.copy(alpha = 0.92f),
                     )
                     Text(
                         text = replyPreviewText(reply),
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (isMine) {
-                            ChatTelegramOutgoingOnBubble.copy(alpha = 0.78f)
-                        } else {
-                            ChatTelegramIncomingOnBubble.copy(alpha = 0.72f)
-                        },
+                        color = onBubble.copy(alpha = 0.78f),
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -2451,41 +2684,55 @@ private fun ChatBubbleInnerColumn(
             if (imageAttachments.isNotEmpty()) {
                 val fullResolvedUrls =
                     imageAttachments.map { resolvedChatAttachmentImageUrl(it.url) }
+                val scheme = MaterialTheme.colorScheme
                 val captionBarBg = if (isMine) {
-                    lerp(ChatTelegramOutgoingBubble, Color.Black, 0.18f)
+                    lerp(scheme.primary, Color.Black, 0.22f).copy(alpha = 0.88f)
                 } else {
-                    lerp(ChatTelegramIncomingBubble, Color.Black, 0.24f)
+                    lerp(scheme.surface, Color.Black, 0.28f).copy(alpha = 0.82f)
                 }
                 val hasCaption = message.text.isNotBlank()
+                val gridFrame = BorderStroke(
+                    1.dp,
+                    if (isMine) Color.White.copy(alpha = 0.12f) else scheme.outline.copy(alpha = 0.2f),
+                )
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(0.dp),
                 ) {
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        TelegramLikeAttachmentsGrid(
-                            urls = fullResolvedUrls,
-                            contentDescription = messageImageTapLabel,
-                            onOpen = { idx -> openRemoteChatImagePreview(fullResolvedUrls, idx) },
-                            modifier = Modifier.fillMaxWidth(),
-                            roundTileCorners = false,
-                            bottomRound = !hasCaption,
-                        )
-                        if (!hasCaption && timeLabel.isNotBlank()) {
-                            Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = Color.Black.copy(alpha = 0.45f),
-                                tonalElevation = 0.dp,
-                                shadowElevation = 0.dp,
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .padding(6.dp),
-                            ) {
-                                Text(
-                                    text = timeLabel,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                                )
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        color = scheme.surface.copy(alpha = if (isMine) 0.14f else 0.24f),
+                        tonalElevation = 0.dp,
+                        shadowElevation = 3.dp,
+                        border = gridFrame,
+                    ) {
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            TelegramLikeAttachmentsGrid(
+                                urls = fullResolvedUrls,
+                                contentDescription = messageImageTapLabel,
+                                onOpen = { idx -> openRemoteChatImagePreview(fullResolvedUrls, idx) },
+                                modifier = Modifier.fillMaxWidth(),
+                                roundTileCorners = false,
+                                bottomRound = !hasCaption,
+                            )
+                            if (!hasCaption && timeLabel.isNotBlank()) {
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Color.Black.copy(alpha = 0.45f),
+                                    tonalElevation = 0.dp,
+                                    shadowElevation = 0.dp,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(6.dp),
+                                ) {
+                                    Text(
+                                        text = timeLabel,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color.White,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                    )
+                                }
                             }
                         }
                     }
@@ -2599,6 +2846,7 @@ private fun ChatFloatingImageAttachmentsBlock(
 ) {
     val openRemote = LocalOpenRemoteChatImagePreview.current
     val label = stringResource(R.string.cd_chat_message_image)
+    val scheme = MaterialTheme.colorScheme
     val floatMod = Modifier
         .widthIn(max = 280.dp)
         .then(bubbleClickModifier)
@@ -2608,21 +2856,29 @@ private fun ChatFloatingImageAttachmentsBlock(
     } else {
         chatBubbleShapeIncoming(isChainBottom)
     }
+    val frameBorder = BorderStroke(
+        1.dp,
+        if (isMine) Color.White.copy(alpha = 0.12f) else scheme.outline.copy(alpha = 0.2f),
+    )
     Column(modifier = floatMod) {
         if (!isMine && showClusterHeader) {
             ChatBubbleAuthorHeader(
                 teamTag = stemTag,
                 nickname = nickname,
                 nicknameColor = senderAccent,
-                tagBracketColor = ChatTelegramIncomingOnBubble.copy(alpha = 0.5f),
+                tagBracketColor = scheme.onSurface.copy(alpha = 0.5f),
                 senderRole = message.senderRole,
             )
         }
-        Box(
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = if (!isMine && showClusterHeader) 2.dp else 0.dp)
-                .clip(clipShape),
+                .padding(top = if (!isMine && showClusterHeader) 2.dp else 0.dp),
+            shape = clipShape,
+            color = scheme.surface.copy(alpha = if (isMine) 0.22f else 0.38f),
+            tonalElevation = 0.dp,
+            shadowElevation = 4.dp,
+            border = frameBorder,
         ) {
             val hasCaption = !caption.isNullOrBlank()
             Column {
@@ -2716,12 +2972,13 @@ private fun ChatAlbumRow(
     val nickname = message.senderUsername.trim().ifBlank { displayName }
     val isChainBottom = chatMessageIsClusterChainBottom(messages, messageIndex)
     val formattedTime = formatChatTime(message.createdAt)
-    val onBubble = if (isMine) ChatTelegramOutgoingOnBubble else ChatTelegramIncomingOnBubble
-    val timeMuted = if (isMine) ChatTelegramTimeMuted else ChatTelegramTimeMutedIncoming
+    val scheme = MaterialTheme.colorScheme
+    val onBubble = if (isMine) Color.White else scheme.onSurface
+    val timeMuted = if (isMine) Color.White.copy(alpha = 0.72f) else scheme.onSurfaceVariant.copy(alpha = 0.88f)
     val captionBarBg = if (isMine) {
-        lerp(ChatTelegramOutgoingBubble, Color.Black, 0.18f)
+        lerp(scheme.primary, Color.Black, 0.22f).copy(alpha = 0.88f)
     } else {
-        lerp(ChatTelegramIncomingBubble, Color.Black, 0.24f)
+        lerp(scheme.surface, Color.Black, 0.28f).copy(alpha = 0.82f)
     }
 
     val swipeModifier = if (messageId != null) {
@@ -2906,9 +3163,18 @@ private fun ChatBubbleRow(
         message.text.isBlank() &&
         message.replyTo == null
     val senderAccent = roleAccentColor(message.senderRole)
-    val bubbleBg = if (isMine) ChatTelegramOutgoingBubble else ChatTelegramIncomingBubble
-    val onBubble = if (isMine) ChatTelegramOutgoingOnBubble else ChatTelegramIncomingOnBubble
-    val timeMuted = if (isMine) ChatTelegramTimeMuted else ChatTelegramTimeMutedIncoming
+    val scheme = MaterialTheme.colorScheme
+    val bubbleBg = if (isMine) {
+        lerp(scheme.primary, scheme.surface, 0.28f).copy(alpha = 0.82f)
+    } else {
+        scheme.surface.copy(alpha = 0.52f)
+    }
+    val onBubble = if (isMine) Color.White else scheme.onSurface
+    val timeMuted = if (isMine) Color.White.copy(alpha = 0.72f) else scheme.onSurfaceVariant.copy(alpha = 0.88f)
+    val bubbleBorder = BorderStroke(
+        1.dp,
+        if (isMine) Color.White.copy(alpha = 0.14f) else scheme.outline.copy(alpha = 0.2f),
+    )
     val stemTag = message.senderTeamTag?.trim()?.takeIf { it.isNotEmpty() }
     val displayName = message.senderUsername.trim().ifBlank { senderLine }
     val nickname = message.senderUsername.trim().ifBlank { displayName }
@@ -3077,7 +3343,8 @@ private fun ChatBubbleRow(
                     shape = bubbleShape,
                     color = bubbleBg,
                     tonalElevation = 0.dp,
-                    shadowElevation = 0.dp,
+                    shadowElevation = if (isMine) 4.dp else 3.dp,
+                    border = bubbleBorder,
                 ) {
                     ChatBubbleInnerColumn(
                         message = message,
@@ -3138,7 +3405,7 @@ private fun ChatBubbleRow(
                             teamTag = stemTag,
                             nickname = nickname,
                             nicknameColor = senderAccent,
-                            tagBracketColor = ChatTelegramIncomingOnBubble.copy(alpha = 0.5f),
+                            tagBracketColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                             senderRole = message.senderRole,
                         )
                     }
@@ -3211,7 +3478,8 @@ private fun ChatBubbleRow(
                     shape = bubbleShape,
                     color = bubbleBg,
                     tonalElevation = 0.dp,
-                    shadowElevation = 0.dp,
+                    shadowElevation = if (isMine) 4.dp else 3.dp,
+                    border = bubbleBorder,
                 ) {
                     ChatBubbleInnerColumn(
                         message = message,

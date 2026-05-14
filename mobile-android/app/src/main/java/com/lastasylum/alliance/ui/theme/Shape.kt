@@ -7,7 +7,7 @@ import androidx.compose.ui.unit.dp
 val SquadRelayShapes = Shapes(
     extraSmall = RoundedCornerShape(5.dp),
     small = RoundedCornerShape(8.dp),
-    medium = RoundedCornerShape(12.dp),
-    large = RoundedCornerShape(16.dp),
-    extraLarge = RoundedCornerShape(18.dp),
+    medium = RoundedCornerShape(14.dp),
+    large = RoundedCornerShape(20.dp),
+    extraLarge = RoundedCornerShape(26.dp),
 )

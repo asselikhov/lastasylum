@@ -313,14 +313,15 @@ private fun TeamForumListRoute(
                             OutlinedCard(
                                 onClick = { onOpenTopic(t) },
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(18.dp),
+                                shape = RoundedCornerShape(22.dp),
                                 border = BorderStroke(
                                     1.dp,
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.38f),
+                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
                                 ),
                                 colors = CardDefaults.outlinedCardColors(
-                                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.48f),
                                 ),
+                                elevation = CardDefaults.outlinedCardElevation(defaultElevation = 6.dp),
                             ) {
                                 Row(
                                     Modifier
@@ -417,8 +418,8 @@ private fun TeamForumListRoute(
                         createTitle = ""
                         showCreate = true
                     },
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(16.dp),
@@ -432,6 +433,9 @@ private fun TeamForumListRoute(
     if (showCreate) {
         AlertDialog(
             onDismissRequest = { if (!createBusy) showCreate = false },
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.team_forum_new_topic_title)) },
             text = {
                 OutlinedTextField(
@@ -475,6 +479,9 @@ private fun TeamForumListRoute(
     editTopic?.let { topic ->
         AlertDialog(
             onDismissRequest = { if (!editBusy) editTopic = null },
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.team_forum_edit_topic_title)) },
             text = {
                 OutlinedTextField(
@@ -517,6 +524,9 @@ private fun TeamForumListRoute(
     deleteTopic?.let { topic ->
         AlertDialog(
             onDismissRequest = { deleteTopic = null },
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.team_forum_delete_topic_title)) },
             text = { Text(stringResource(R.string.team_forum_delete_topic_body, topic.title)) },
             confirmButton = {
@@ -771,11 +781,13 @@ private fun TeamForumTopicChatRoute(
                                         .padding(vertical = 10.dp),
                                     contentAlignment = Alignment.Center,
                                 ) {
+                                    val sch = MaterialTheme.colorScheme
                                     Surface(
                                         shape = RoundedCornerShape(999.dp),
-                                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
+                                        color = sch.surface.copy(alpha = 0.48f),
                                         tonalElevation = 0.dp,
-                                        shadowElevation = 1.dp,
+                                        shadowElevation = 4.dp,
+                                        border = BorderStroke(1.dp, sch.outline.copy(alpha = 0.18f)),
                                     ) {
                                         Text(
                                             text = sep,
@@ -919,6 +931,9 @@ private fun TeamForumTopicChatRoute(
     editMessage?.let { msg ->
         AlertDialog(
             onDismissRequest = { if (!editBusy) editMessage = null },
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.team_forum_edit_message_title)) },
             text = {
                 OutlinedTextField(
@@ -1020,6 +1035,9 @@ private fun TeamForumTopicChatRoute(
     if (confirmBulkDelete && selectedMessageIds.isNotEmpty()) {
         AlertDialog(
             onDismissRequest = { if (!deletingSelection) confirmBulkDelete = false },
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.chat_bulk_delete_title)) },
             text = {
                 Text(stringResource(R.string.chat_bulk_delete_body, selectedMessageIds.size))
@@ -1203,32 +1221,44 @@ private fun ForumSelectionToolbar(
     onClear: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
+    val scheme = MaterialTheme.colorScheme
+    Column(Modifier.fillMaxWidth()) {
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(bottom = 4.dp),
+            shape = RoundedCornerShape(20.dp),
+            color = scheme.surface.copy(alpha = 0.52f),
+            tonalElevation = 0.dp,
+            shadowElevation = 6.dp,
+            border = BorderStroke(1.dp, scheme.outline.copy(alpha = 0.18f)),
         ) {
-            IconButton(onClick = onClear, enabled = !isDeleting) {
-                Icon(Icons.Outlined.Close, contentDescription = null)
-            }
-            Text(
-                text = selectedCount.toString(),
-                style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.weight(1f),
-            )
-            IconButton(onClick = onDelete, enabled = !isDeleting) {
-                Icon(Icons.Outlined.DeleteOutline, contentDescription = null)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onClear, enabled = !isDeleting) {
+                    Icon(Icons.Outlined.Close, contentDescription = null)
+                }
+                Text(
+                    text = selectedCount.toString(),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = scheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = onDelete, enabled = !isDeleting) {
+                    Icon(
+                        Icons.Outlined.DeleteOutline,
+                        contentDescription = null,
+                        tint = scheme.error,
+                    )
+                }
             }
         }
+        HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.45f))
     }
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

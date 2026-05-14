@@ -4,7 +4,7 @@ import android.provider.Settings
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,13 +22,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.ui.components.AtmosphericBackground
+import com.lastasylum.alliance.ui.components.GlassSurface
 
 @Composable
 private fun rememberAnimatorScaleDisabled(): Boolean {
@@ -95,52 +96,53 @@ private fun LaunchSplashScaffold(
     progress: Float?,
     modifier: Modifier = Modifier,
 ) {
-    val gradient = Brush.verticalGradient(
-        colors = listOf(
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
-            MaterialTheme.colorScheme.surface,
-            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.25f),
-        ),
-    )
     Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(gradient),
+        modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
-        Column(
+        AtmosphericBackground(Modifier.fillMaxSize())
+        GlassSurface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+                .padding(horizontal = 28.dp),
+            shape = RoundedCornerShape(28.dp),
+            shadowElevation = 12.dp,
         ) {
-            Text(
-                text = stringResource(R.string.app_name),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center,
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-            if (progress == null) {
-                LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 26.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                val scheme = MaterialTheme.colorScheme
+                Text(
+                    text = stringResource(R.string.app_name),
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = scheme.onSurface,
+                    textAlign = TextAlign.Center,
                 )
-            } else {
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = scheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
                 )
+                if (progress == null) {
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = scheme.primary,
+                        trackColor = scheme.surface.copy(alpha = 0.38f),
+                    )
+                } else {
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = scheme.primary,
+                        trackColor = scheme.surface.copy(alpha = 0.38f),
+                    )
+                }
             }
         }
     }

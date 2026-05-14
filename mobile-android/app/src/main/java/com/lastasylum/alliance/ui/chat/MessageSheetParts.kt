@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.ui.chat
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,12 +27,14 @@ fun MessageSheetPreviewSurface(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
+    val scheme = MaterialTheme.colorScheme
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.65f),
+        color = scheme.surface.copy(alpha = 0.55f),
         tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
+        shadowElevation = 3.dp,
+        border = BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = 0.22f)),
     ) {
         Column(
             Modifier.padding(horizontal = 14.dp, vertical = 12.dp),

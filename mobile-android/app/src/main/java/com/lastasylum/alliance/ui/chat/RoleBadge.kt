@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.ui.chat
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -23,6 +24,9 @@ fun RoleBadge(
         modifier = modifier,
         shape = MaterialTheme.shapes.extraSmall,
         color = bg.copy(alpha = 0.9f),
+        border = BorderStroke(1.dp, fg.copy(alpha = 0.35f)),
+        tonalElevation = 0.dp,
+        shadowElevation = 1.dp,
     ) {
         Text(
             text = role,

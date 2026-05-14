@@ -16,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -27,6 +28,7 @@ import com.lastasylum.alliance.ui.auth.AuthViewModel
 import com.lastasylum.alliance.ui.auth.AuthViewModelFactory
 import com.lastasylum.alliance.ui.admin.AdminViewModelFactory
 import com.lastasylum.alliance.ui.chat.ChatViewModelFactory
+import com.lastasylum.alliance.ui.components.AtmosphericBackground
 import com.lastasylum.alliance.ui.theme.SquadRelayTheme
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.push.FcmTokenManager
@@ -88,53 +90,56 @@ fun SquadRelayApp() {
     SquadRelayTheme {
         Surface(
             modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.background,
+            color = Color.Transparent,
             contentColor = MaterialTheme.colorScheme.onBackground,
         ) {
             Box(Modifier.fillMaxSize()) {
-                when {
-                    authState.isCheckingStoredSession -> {
-                        SessionBootstrapSplash()
-                    }
-                    !authState.isAuthenticated -> {
-                        AuthScreen(
-                            isLoading = authState.isLoading,
-                            errorMessage = authState.error,
-                            infoMessage = authState.infoMessage,
-                            onLoginClick = authViewModel::login,
-                            onRegisterClick = authViewModel::register,
-                            onForgotPassword = authViewModel::forgotPassword,
-                            onResetPassword = authViewModel::resetPassword,
-                            onClearError = authViewModel::clearError,
-                        )
-                    }
-                    !postAuthSplashComplete -> {
-                        PostAuthLaunchSplash(onComplete = { postAuthSplashComplete = true })
-                    }
-                    else -> {
-                        Box(Modifier.fillMaxSize()) {
-                            AppNavigation(
-                                userId = authState.user?.id.orEmpty(),
-                                username = authState.user?.username.orEmpty(),
-                                role = authState.user?.role.orEmpty(),
-                                overlayTabVisible = authState.user?.overlayTabVisible == true,
-                                onLogout = authViewModel::logout,
-                                chatViewModelFactory = ChatViewModelFactory(
-                                    application = application,
-                                    repository = appContainer.chatRepository,
-                                    chatRoomPreferences = appContainer.chatRoomPreferences,
-                                    usersRepository = appContainer.usersRepository,
-                                    currentUserId = authState.user?.id.orEmpty(),
-                                    currentUserRole = authState.user?.role.orEmpty(),
-                                ),
-                                adminViewModelFactory = AdminViewModelFactory(
-                                    application = application,
-                                    usersRepository = appContainer.usersRepository,
-                                    chatRoomsRepository = appContainer.chatRoomsRepository,
-                                    adminRepository = appContainer.adminRepository,
-                                ),
+                AtmosphericBackground(Modifier.fillMaxSize())
+                Box(Modifier.fillMaxSize()) {
+                    when {
+                        authState.isCheckingStoredSession -> {
+                            SessionBootstrapSplash()
+                        }
+                        !authState.isAuthenticated -> {
+                            AuthScreen(
+                                isLoading = authState.isLoading,
+                                errorMessage = authState.error,
+                                infoMessage = authState.infoMessage,
+                                onLoginClick = authViewModel::login,
+                                onRegisterClick = authViewModel::register,
+                                onForgotPassword = authViewModel::forgotPassword,
+                                onResetPassword = authViewModel::resetPassword,
+                                onClearError = authViewModel::clearError,
                             )
-                            PermissionOnboardingGate()
+                        }
+                        !postAuthSplashComplete -> {
+                            PostAuthLaunchSplash(onComplete = { postAuthSplashComplete = true })
+                        }
+                        else -> {
+                            Box(Modifier.fillMaxSize()) {
+                                AppNavigation(
+                                    userId = authState.user?.id.orEmpty(),
+                                    username = authState.user?.username.orEmpty(),
+                                    role = authState.user?.role.orEmpty(),
+                                    overlayTabVisible = authState.user?.overlayTabVisible == true,
+                                    onLogout = authViewModel::logout,
+                                    chatViewModelFactory = ChatViewModelFactory(
+                                        application = application,
+                                        repository = appContainer.chatRepository,
+                                        chatRoomPreferences = appContainer.chatRoomPreferences,
+                                        usersRepository = appContainer.usersRepository,
+                                        currentUserId = authState.user?.id.orEmpty(),
+                                        currentUserRole = authState.user?.role.orEmpty(),
+                                    ),
+                                    adminViewModelFactory = AdminViewModelFactory(
+                                        application = application,
+                                        usersRepository = appContainer.usersRepository,
+                                        chatRoomsRepository = appContainer.chatRoomsRepository,
+                                        adminRepository = appContainer.adminRepository,
+                                    ),
+                                )
+                                PermissionOnboardingGate()
+                            }
                         }
                     }
                 }
@@ -143,7 +148,7 @@ fun SquadRelayApp() {
             pendingApkUrl?.let { url ->
                 AlertDialog(
                     onDismissRequest = { pendingApkUrl = null },
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
                     titleContentColor = MaterialTheme.colorScheme.onSurface,
                     textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     title = {

@@ -53,6 +53,9 @@ fun PermissionOnboardingGate() {
 
     AlertDialog(
         onDismissRequest = { },
+        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         title = { Text(stringResource(R.string.onboarding_permissions_title)) },
         text = {
             Column {

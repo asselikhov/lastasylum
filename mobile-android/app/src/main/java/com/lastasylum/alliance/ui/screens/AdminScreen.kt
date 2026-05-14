@@ -3,6 +3,7 @@ package com.lastasylum.alliance.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -554,6 +555,9 @@ fun AdminScreen(
     deleteTarget?.let { target ->
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.admin_delete_title)) },
             text = {
                 Text(
@@ -581,6 +585,9 @@ fun AdminScreen(
     renameRoomTarget?.let { room ->
         AlertDialog(
             onDismissRequest = { renameRoomTarget = null },
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.admin_rooms_rename)) },
             text = {
                 OutlinedTextField(
@@ -614,6 +621,9 @@ fun AdminScreen(
     deleteRoomTarget?.let { room ->
         AlertDialog(
             onDismissRequest = { deleteRoomTarget = null },
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.admin_rooms_delete_title)) },
             text = {
                 Text(stringResource(R.string.admin_rooms_delete_body, room.title))
@@ -642,12 +652,14 @@ fun AdminScreen(
 
 @Composable
 private fun adminSectionCard(content: @Composable ColumnScope.() -> Unit) {
+    val scheme = MaterialTheme.colorScheme
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shadowElevation = 4.dp,
+        color = scheme.surface.copy(alpha = 0.52f),
+        border = BorderStroke(1.dp, scheme.outline.copy(alpha = 0.18f)),
     ) {
         Column(
             modifier = Modifier.padding(SquadRelayDimens.cardInnerPadding),
@@ -745,12 +757,14 @@ private fun AdminMemberCard(
     }
     val isSelf = member.id == currentUserId
     val context = LocalContext.current
+    val scheme = MaterialTheme.colorScheme
 
     Surface(
         shape = MaterialTheme.shapes.large,
         tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shadowElevation = 4.dp,
+        color = scheme.surface.copy(alpha = 0.52f),
+        border = BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = 0.22f)),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(

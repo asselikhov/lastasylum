@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.ui.screens.teamforum
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -67,12 +68,6 @@ import com.lastasylum.alliance.ui.chat.forumMessageShowsClusterHeader
 import com.lastasylum.alliance.ui.chat.replyPreviewText
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.ui.chat.resolvedChatAttachmentImageUrl
-import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingBubble
-import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingOnBubble
-import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingBubble
-import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingOnBubble
-import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMuted
-import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMutedIncoming
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.roleAccentColor
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -117,14 +112,23 @@ internal fun ForumMessageBubble(
         rawImagePaths.map { resolvedChatAttachmentImageUrl(it) }
     }
     val floatingSticker = stickerStem != null && message.replyTo == null && !deleted
-    val bubbleBg = if (isMine) ChatTelegramOutgoingBubble else ChatTelegramIncomingBubble
-    val onBubble = if (isMine) ChatTelegramOutgoingOnBubble else ChatTelegramIncomingOnBubble
-    val timeMuted = if (isMine) ChatTelegramTimeMuted else ChatTelegramTimeMutedIncoming
+    val scheme = MaterialTheme.colorScheme
+    val bubbleBg = if (isMine) {
+        lerp(scheme.primary, scheme.surface, 0.28f).copy(alpha = 0.82f)
+    } else {
+        scheme.surface.copy(alpha = 0.52f)
+    }
+    val onBubble = if (isMine) Color.White else scheme.onSurface
+    val timeMuted = if (isMine) Color.White.copy(alpha = 0.72f) else scheme.onSurfaceVariant.copy(alpha = 0.85f)
+    val bubbleBorder = BorderStroke(
+        1.dp,
+        if (isMine) Color.White.copy(alpha = 0.14f) else scheme.outline.copy(alpha = 0.2f),
+    )
     val senderAccent = roleAccentColor(message.senderRole)
     val messageImageTapLabel = stringResource(R.string.cd_chat_message_image)
     val nickname = message.senderUsername.trim()
     val displayName = nickname.ifBlank { "—" }
-    val tagBracketMuted = ChatTelegramIncomingOnBubble.copy(alpha = 0.5f)
+    val tagBracketMuted = (if (isMine) Color.White else scheme.onSurface).copy(alpha = 0.5f)
 
     val timeStr = com.lastasylum.alliance.ui.chat.formatChatTime(message.createdAt)
     val timeLabel = remember(timeStr, message.editedAt) {
@@ -144,9 +148,9 @@ internal fun ForumMessageBubble(
     }
 
     val captionBarBg = if (isMine) {
-        lerp(ChatTelegramOutgoingBubble, Color.Black, 0.18f)
+        lerp(bubbleBg, Color.Black, 0.15f)
     } else {
-        lerp(ChatTelegramIncomingBubble, Color.Black, 0.24f)
+        lerp(bubbleBg, Color.Black, 0.22f)
     }
 
     val swipeModifier = if (!deleted) {
@@ -253,7 +257,8 @@ internal fun ForumMessageBubble(
                         color = finalBg,
                         shape = bubbleShape,
                         tonalElevation = 0.dp,
-                        shadowElevation = 0.dp,
+                        shadowElevation = 2.dp,
+                        border = BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = 0.28f)),
                     ) {
                         Column(
                             Modifier
@@ -355,7 +360,8 @@ internal fun ForumMessageBubble(
                         color = finalBg,
                         shape = bubbleShape,
                         tonalElevation = 0.dp,
-                        shadowElevation = 0.dp,
+                        shadowElevation = if (isMine) 4.dp else 3.dp,
+                        border = bubbleBorder,
                     ) {
                         Column(
                             Modifier
@@ -403,9 +409,9 @@ internal fun ForumMessageBubble(
                                             ),
                                         shape = RoundedCornerShape(10.dp),
                                         color = if (isMine) {
-                                            ChatTelegramOutgoingOnBubble.copy(alpha = 0.14f)
+                                            Color.White.copy(alpha = 0.12f)
                                         } else {
-                                            ChatTelegramIncomingOnBubble.copy(alpha = 0.12f)
+                                            scheme.onSurface.copy(alpha = 0.1f)
                                         },
                                         tonalElevation = 0.dp,
                                         shadowElevation = 0.dp,
@@ -425,9 +431,9 @@ internal fun ForumMessageBubble(
                                                     fontWeight = FontWeight.SemiBold,
                                                 ),
                                                 color = if (isMine) {
-                                                    ChatTelegramOutgoingOnBubble.copy(alpha = 0.92f)
+                                                    Color.White.copy(alpha = 0.92f)
                                                 } else {
-                                                    ChatTelegramIncomingOnBubble.copy(alpha = 0.95f)
+                                                    scheme.onSurface.copy(alpha = 0.95f)
                                                 },
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
@@ -436,9 +442,9 @@ internal fun ForumMessageBubble(
                                                 text = replyPreviewText(rp.text),
                                                 style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
                                                 color = if (isMine) {
-                                                    ChatTelegramOutgoingOnBubble.copy(alpha = 0.78f)
+                                                    Color.White.copy(alpha = 0.78f)
                                                 } else {
-                                                    ChatTelegramIncomingOnBubble.copy(alpha = 0.72f)
+                                                    scheme.onSurface.copy(alpha = 0.72f)
                                                 },
                                                 maxLines = 4,
                                                 overflow = TextOverflow.Ellipsis,

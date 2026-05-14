@@ -197,8 +197,9 @@ fun ForumTopicComposer(
                     Surface(
                         shape = RoundedCornerShape(50),
                         color = Color.Black.copy(alpha = 0.38f),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.22f)),
                         tonalElevation = 0.dp,
-                        shadowElevation = 0.dp,
+                        shadowElevation = 1.dp,
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.Cancel,
@@ -221,11 +222,13 @@ fun ForumTopicComposer(
             verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
         ) {
             replyTo?.let { msg ->
+                val scheme = MaterialTheme.colorScheme
                 Surface(
-                    shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f),
+                    shape = RoundedCornerShape(20.dp),
+                    color = scheme.surface.copy(alpha = 0.48f),
                     tonalElevation = 0.dp,
-                    shadowElevation = 0.dp,
+                    shadowElevation = 4.dp,
+                    border = BorderStroke(1.dp, scheme.outline.copy(alpha = 0.18f)),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
@@ -273,13 +276,13 @@ fun ForumTopicComposer(
             ) {
                 Surface(
                     shape = RoundedCornerShape(26.dp),
-                    color = Color.Transparent,
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.52f),
                     border = BorderStroke(
                         1.dp,
-                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
                     ),
                     tonalElevation = 0.dp,
-                    shadowElevation = 0.dp,
+                    shadowElevation = 8.dp,
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = SquadRelayDimens.composerMinHeight.coerceAtLeast(48.dp)),
@@ -448,13 +451,19 @@ fun ForumTopicComposer(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     items(zlobStems, key = { it }) { stem ->
+                        val sch = MaterialTheme.colorScheme
                         Surface(
                             shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            color = sch.surface.copy(alpha = 0.45f),
+                            border = BorderStroke(
+                                1.dp,
+                                sch.outlineVariant.copy(alpha = 0.28f),
+                            ),
+                            tonalElevation = 0.dp,
+                            shadowElevation = 2.dp,
                             modifier = Modifier
                                 .padding(4.dp)
                                 .aspectRatio(1f)
-                                .clip(RoundedCornerShape(12.dp))
                                 .clickable(
                                     enabled = !isSending && !isUploadingImage && canUseZlobyakaStickers,
                                     onClick = {

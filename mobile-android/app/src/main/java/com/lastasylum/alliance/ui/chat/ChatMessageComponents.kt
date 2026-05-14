@@ -69,7 +69,7 @@ fun ChatSenderAvatar(
         color = fill,
         border = BorderStroke(1.dp, ring),
         tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
+        shadowElevation = 1.dp,
     ) {
         Box(
             modifier = Modifier.fillMaxSize(),

@@ -29,9 +29,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -61,6 +59,7 @@ import com.lastasylum.alliance.data.users.MyProfileDto
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.screens.teamforum.TeamForumNavHost
 import com.lastasylum.alliance.ui.screens.teamnews.TeamNewsNavHost
+import com.lastasylum.alliance.ui.components.TeamHeroStrip
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.delay
@@ -210,12 +209,16 @@ fun TeamScreen(
                         .weight(1f),
                 ) {
                     error?.let { err ->
+                        val scheme = MaterialTheme.colorScheme
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(bottom = 4.dp),
                             shape = MaterialTheme.shapes.medium,
-                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f),
+                            color = scheme.errorContainer.copy(alpha = 0.55f),
+                            tonalElevation = 0.dp,
+                            shadowElevation = 4.dp,
+                            border = BorderStroke(1.dp, scheme.error.copy(alpha = 0.35f)),
                         ) {
                             Text(
                                 text = err,
@@ -229,10 +232,14 @@ fun TeamScreen(
                     }
 
                     if (profile?.playerTeamId.isNullOrBlank()) {
+                        val scheme = MaterialTheme.colorScheme
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
                             shape = MaterialTheme.shapes.large,
-                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            color = scheme.surface.copy(alpha = 0.52f),
+                            tonalElevation = 0.dp,
+                            shadowElevation = 6.dp,
+                            border = BorderStroke(1.dp, scheme.outline.copy(alpha = 0.18f)),
                         ) {
                             Column(
                                 modifier = Modifier
@@ -399,55 +406,35 @@ fun TeamScreen(
                                         }
                                     }
                                 }
+                                TeamHeroStrip(
+                                    Modifier.padding(
+                                        horizontal = SquadRelayDimens.panelInnerPadding,
+                                        vertical = 6.dp,
+                                    ),
+                                )
                                 HorizontalDivider(
                                     modifier = Modifier.padding(horizontal = SquadRelayDimens.panelInnerPadding),
                                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f),
                                     thickness = 1.dp,
                                 )
-                                Surface(
+                                TeamSectionPills(
+                                    selectedSection = TeamMainSection.entries[mainSectionOrdinal],
+                                    onSelect = { section ->
+                                        if (section == TeamMainSection.Forum &&
+                                            TeamMainSection.entries[mainSectionOrdinal] == TeamMainSection.Forum
+                                        ) {
+                                            forumTabReselectSignal++
+                                        } else {
+                                            mainSectionOrdinal = section.ordinal
+                                        }
+                                    },
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(
                                             horizontal = SquadRelayDimens.panelInnerPadding,
-                                            vertical = 4.dp,
+                                            vertical = 6.dp,
                                         ),
-                                    shape = RoundedCornerShape(14.dp),
-                                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.42f),
-                                    border = BorderStroke(
-                                        1.dp,
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.28f),
-                                    ),
-                                    tonalElevation = 1.dp,
-                                    shadowElevation = 0.dp,
-                                ) {
-                                    PrimaryTabRow(
-                                        selectedTabIndex = mainSectionOrdinal,
-                                        containerColor = Color.Transparent,
-                                        divider = {},
-                                    ) {
-                                        Tab(
-                                            selected = mainSectionOrdinal == TeamMainSection.News.ordinal,
-                                            onClick = { mainSectionOrdinal = TeamMainSection.News.ordinal },
-                                            text = { Text(stringResource(R.string.team_tab_news)) },
-                                        )
-                                        Tab(
-                                            selected = mainSectionOrdinal == TeamMainSection.Forum.ordinal,
-                                            onClick = {
-                                                if (mainSectionOrdinal == TeamMainSection.Forum.ordinal) {
-                                                    forumTabReselectSignal++
-                                                } else {
-                                                    mainSectionOrdinal = TeamMainSection.Forum.ordinal
-                                                }
-                                            },
-                                            text = { Text(stringResource(R.string.team_tab_forum)) },
-                                        )
-                                        Tab(
-                                            selected = mainSectionOrdinal == TeamMainSection.Members.ordinal,
-                                            onClick = { mainSectionOrdinal = TeamMainSection.Members.ordinal },
-                                            text = { Text(stringResource(R.string.team_tab_members)) },
-                                        )
-                                    }
-                                }
+                                )
                                 when (TeamMainSection.entries[mainSectionOrdinal]) {
                                     TeamMainSection.News -> {
                                         TeamNewsNavHost(
@@ -517,6 +504,9 @@ fun TeamScreen(
     if (showCreate) {
         AlertDialog(
             onDismissRequest = { if (!createBusy) showCreate = false },
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.profile_player_team_create_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -591,6 +581,9 @@ fun TeamScreen(
     if (showJoin) {
         AlertDialog(
             onDismissRequest = { if (!joinActionBusy) showJoin = false },
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.profile_player_team_join_title)) },
             text = {
                 Column(
@@ -677,6 +670,9 @@ fun TeamScreen(
     if (showJoinInbox) {
         AlertDialog(
             onDismissRequest = { if (!inboxBusy) showJoinInbox = false },
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.profile_join_inbox_title)) },
             text = {
                 Box(
@@ -749,6 +745,9 @@ fun TeamScreen(
     if (showAddMemberDialog && teamIdForDialogs != null) {
         AlertDialog(
             onDismissRequest = { if (!membersBusy) showAddMemberDialog = false },
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.team_add_member_dialog_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -795,6 +794,9 @@ fun TeamScreen(
     if (showEditTeamNameDialog && teamIdForDialogs != null) {
         AlertDialog(
             onDismissRequest = { if (!editNameBusy) showEditTeamNameDialog = false },
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.team_edit_team_name_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -860,6 +862,51 @@ fun TeamScreen(
                 teamsRepository = teamsRepository,
                 onError = { msg -> error = msg },
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TeamSectionPills(
+    selectedSection: TeamMainSection,
+    onSelect: (TeamMainSection) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TeamMainSection.entries.forEach { section ->
+            val titleRes = when (section) {
+                TeamMainSection.News -> R.string.team_tab_news
+                TeamMainSection.Forum -> R.string.team_tab_forum
+                TeamMainSection.Members -> R.string.team_tab_members
+            }
+            val selected = section == selectedSection
+            Surface(
+                onClick = { onSelect(section) },
+                shape = RoundedCornerShape(22.dp),
+                color = if (selected) scheme.primary else scheme.surface.copy(alpha = 0.42f),
+                border = if (selected) {
+                    null
+                } else {
+                    BorderStroke(1.dp, scheme.outline.copy(alpha = 0.24f))
+                },
+                shadowElevation = if (selected) 6.dp else 2.dp,
+                tonalElevation = 0.dp,
+            ) {
+                Text(
+                    text = stringResource(titleRes),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (selected) Color.White else scheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }

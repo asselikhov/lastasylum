@@ -1,15 +1,23 @@
 package com.lastasylum.alliance.ui
 
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.exclude
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
@@ -17,10 +25,10 @@ import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.RadioButtonChecked
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.runtime.Composable
@@ -29,9 +37,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -40,8 +52,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.foundation.BorderStroke
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.ui.components.AtmosphericBackground
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -138,88 +152,117 @@ fun AppNavigation(
     val msgStickerSaved = stringResource(R.string.admin_sticker_saved)
     Scaffold(
         modifier = modifier,
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
         contentColor = MaterialTheme.colorScheme.onBackground,
         // IME: MainActivity adjustResize shrinks content above keyboard; exclude IME from Scaffold padding to avoid double insets.
         contentWindowInsets = WindowInsets.safeDrawing.exclude(WindowInsets.ime),
         bottomBar = {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                tonalElevation = 0.dp,
-                shadowElevation = 0.dp,
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceEvenly,
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+                    tonalElevation = 0.dp,
+                    shadowElevation = 14.dp,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
                 ) {
-                    visibleTabs.forEach { tab ->
-                        val isSelected =
-                            currentDestination?.hierarchy?.any { it.route == tab.route } == true
-                        IconButton(
-                            onClick = {
-                                navController.navigate(tab.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 2.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                    ) {
+                        visibleTabs.forEach { tab ->
+                            val isSelected =
+                                currentDestination?.hierarchy?.any { it.route == tab.route } == true
+                            val tint = if (isSelected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                            val label = stringResource(tab.titleRes)
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 56.dp)
+                                    .padding(horizontal = 2.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(
+                                        if (isSelected) {
+                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                                        } else {
+                                            Color.Transparent
+                                        },
+                                    )
+                                    .clickable {
+                                        navController.navigate(tab.route) {
+                                            popUpTo(navController.graph.findStartDestination().id) {
+                                                saveState = true
+                                            }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center,
+                                ) {
+                                    when (tab) {
+                                        AppTab.CHAT -> Icon(
+                                            imageVector = Icons.Outlined.ChatBubbleOutline,
+                                            contentDescription = label,
+                                            tint = tint,
+                                            modifier = Modifier.size(22.dp),
+                                        )
+
+                                        AppTab.OVERLAY -> Icon(
+                                            imageVector = Icons.Outlined.RadioButtonChecked,
+                                            contentDescription = label,
+                                            tint = tint,
+                                            modifier = Modifier.size(22.dp),
+                                        )
+
+                                        AppTab.PROFILE -> Icon(
+                                            imageVector = Icons.Outlined.PersonOutline,
+                                            contentDescription = label,
+                                            tint = tint,
+                                            modifier = Modifier.size(22.dp),
+                                        )
+
+                                        AppTab.ADMIN -> Icon(
+                                            imageVector = Icons.Outlined.AdminPanelSettings,
+                                            contentDescription = label,
+                                            tint = tint,
+                                            modifier = Modifier.size(22.dp),
+                                        )
+
+                                        AppTab.TEAM -> Icon(
+                                            imageVector = Icons.Outlined.Groups,
+                                            contentDescription = label,
+                                            tint = tint,
+                                            modifier = Modifier.size(22.dp),
+                                        )
                                     }
-                                    launchSingleTop = true
-                                    restoreState = true
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontSize = 10.sp,
+                                            lineHeight = 12.sp,
+                                        ),
+                                        color = tint,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(top = 2.dp, start = 2.dp, end = 2.dp),
+                                    )
                                 }
-                            },
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            when (tab) {
-                                AppTab.CHAT -> Icon(
-                                    imageVector = Icons.Outlined.ChatBubbleOutline,
-                                    contentDescription = stringResource(tab.titleRes),
-                                    tint = if (isSelected) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                )
-
-                                AppTab.OVERLAY -> Icon(
-                                    imageVector = Icons.Outlined.RadioButtonChecked,
-                                    contentDescription = stringResource(tab.titleRes),
-                                    tint = if (isSelected) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                )
-
-                                AppTab.PROFILE -> Icon(
-                                    imageVector = Icons.Outlined.PersonOutline,
-                                    contentDescription = stringResource(tab.titleRes),
-                                    tint = if (isSelected) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                )
-
-                                AppTab.ADMIN -> Icon(
-                                    imageVector = Icons.Outlined.AdminPanelSettings,
-                                    contentDescription = stringResource(tab.titleRes),
-                                    tint = if (isSelected) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                )
-
-                                AppTab.TEAM -> Icon(
-                                    imageVector = Icons.Outlined.Groups,
-                                    contentDescription = stringResource(tab.titleRes),
-                                    tint = if (isSelected) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                )
                             }
                         }
                     }
@@ -227,10 +270,16 @@ fun AppNavigation(
             }
         },
     ) { contentPadding ->
-        NavHost(
+        Box(
+            modifier = Modifier
+                .padding(contentPadding)
+                .fillMaxSize(),
+        ) {
+            AtmosphericBackground(Modifier.fillMaxSize())
+            NavHost(
             navController = navController,
             startDestination = AppTab.CHAT.route,
-            modifier = Modifier.padding(contentPadding),
+            modifier = Modifier.fillMaxSize(),
             enterTransition = { EnterTransition.None },
             exitTransition = { ExitTransition.None },
             popEnterTransition = { EnterTransition.None },
@@ -357,6 +406,7 @@ fun AppNavigation(
                     onClearStickerAccessError = adminViewModel::clearStickerAccessError,
                 )
             }
+        }
         }
     }
 }

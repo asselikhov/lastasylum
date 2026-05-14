@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -227,12 +228,14 @@ private fun SquadRoleSectionHeader(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val sectionToggleCd = stringResource(R.string.team_role_section_toggle_cd, roleCode)
+    val scheme = MaterialTheme.colorScheme
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(18.dp),
+        color = scheme.surface.copy(alpha = 0.48f),
         tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
+        shadowElevation = 3.dp,
+        border = BorderStroke(1.dp, scheme.outline.copy(alpha = 0.16f)),
     ) {
         Row(
             modifier = Modifier
@@ -314,12 +317,14 @@ private fun SquadMemberCard(
         isSquadLeader && !member.isLeader && member.userId != currentUserId
     val canRemove = isSquadLeader && !member.isLeader && member.userId != currentUserId
 
+    val scheme = MaterialTheme.colorScheme
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        shadowElevation = 0.dp,
+        color = scheme.surface.copy(alpha = 0.58f),
+        tonalElevation = 0.dp,
+        shadowElevation = 4.dp,
+        border = BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = 0.22f)),
     ) {
         Row(
             modifier = Modifier

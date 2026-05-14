@@ -235,8 +235,8 @@ private fun TeamNewsListRoute(
             if (canPublishNews) {
                 FloatingActionButton(
                     onClick = onCreate,
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
                 ) {
                     Icon(Icons.Default.Add, contentDescription = stringResource(R.string.team_news_new))
                 }
@@ -320,26 +320,63 @@ private fun TeamNewsListRoute(
                             contentPadding = PaddingValues(
                                 start = 14.dp,
                                 end = 14.dp,
-                                top = 20.dp,
+                                top = 16.dp,
                                 bottom = 88.dp,
                             ),
                             verticalArrangement = Arrangement.spacedBy(18.dp),
                         ) {
-                            items(
-                                count = newsItems.size,
-                                key = { index -> newsItems[index].id },
-                            ) { index ->
-                                val row = newsItems[index]
-                                TeamNewsCard(
-                                    item = row,
-                                    onClick = { onOpenDetail(row.id) },
-                                    onEdit = {
-                                        val isAuthor = row.authorUserId == currentUserId
-                                        val isR5 = myTeamRole == "R5"
-                                        if (isAuthor || isR5) onEditFromList(row.id)
-                                    },
-                                    showEdit = row.authorUserId == currentUserId || myTeamRole == "R5",
+                            item {
+                                Text(
+                                    text = stringResource(R.string.team_news_feed_heading),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.padding(bottom = 2.dp),
                                 )
+                            }
+                            if (newsItems.isNotEmpty()) {
+                                val featured = newsItems[0]
+                                val others = newsItems.drop(1)
+                                item(key = featured.id) {
+                                    TeamNewsCard(
+                                        item = featured,
+                                        onClick = { onOpenDetail(featured.id) },
+                                        onEdit = {
+                                            val isAuthor = featured.authorUserId == currentUserId
+                                            val isR5 = myTeamRole == "R5"
+                                            if (isAuthor || isR5) onEditFromList(featured.id)
+                                        },
+                                        showEdit = featured.authorUserId == currentUserId || myTeamRole == "R5",
+                                    )
+                                }
+                                if (others.isNotEmpty()) {
+                                    item(key = "team-news-other-heading") {
+                                        Text(
+                                            text = stringResource(R.string.team_news_other_heading),
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onBackground,
+                                            modifier = Modifier.padding(top = 4.dp, bottom = 10.dp),
+                                        )
+                                    }
+                                    item(key = "team-news-other-row") {
+                                        LazyRow(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                            contentPadding = PaddingValues(end = 2.dp),
+                                        ) {
+                                            items(
+                                                items = others,
+                                                key = { it.id },
+                                            ) { row ->
+                                                TeamNewsCompactCard(
+                                                    item = row,
+                                                    onClick = { onOpenDetail(row.id) },
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -358,7 +395,8 @@ private fun TeamNewsCard(
 ) {
     val cardShape = RoundedCornerShape(26.dp)
     val hasHero = !item.firstImageRelativeUrl.isNullOrBlank()
-    val ringSoft = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+    val scheme = MaterialTheme.colorScheme
+    val ringSoft = scheme.outlineVariant.copy(alpha = 0.45f)
     Card(
         onClick = onClick,
         modifier = Modifier
@@ -370,9 +408,9 @@ private fun TeamNewsCard(
             ),
         shape = cardShape,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.58f),
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 5.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp, pressedElevation = 10.dp),
     ) {
         Row(
             modifier = Modifier.height(IntrinsicSize.Min),
@@ -492,9 +530,9 @@ private fun TeamNewsCard(
                         .fillMaxWidth()
                         .background(
                             if (hasHero) {
-                                MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.38f)
+                                scheme.surface.copy(alpha = 0.36f)
                             } else {
-                                MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.22f)
+                                scheme.surface.copy(alpha = 0.22f)
                             },
                         )
                         .padding(horizontal = 16.dp, vertical = 15.dp),
@@ -528,15 +566,15 @@ private fun TeamNewsCard(
                         ) {
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.88f),
+                                color = scheme.surface.copy(alpha = 0.52f),
                                 border = BorderStroke(1.dp, ringSoft),
                                 tonalElevation = 0.dp,
-                                shadowElevation = 0.dp,
+                                shadowElevation = 2.dp,
                             ) {
                                 Text(
                                     text = item.authorUsername,
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.primary,
+                                    color = scheme.primary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
@@ -563,6 +601,84 @@ private fun TeamNewsCard(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TeamNewsCompactCard(
+    item: TeamNewsListItemDto,
+    onClick: () -> Unit,
+) {
+    val cardShape = RoundedCornerShape(20.dp)
+    val hasHero = !item.firstImageRelativeUrl.isNullOrBlank()
+    val ctx = LocalContext.current
+    Card(
+        onClick = onClick,
+        modifier = Modifier
+            .width(212.dp)
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f),
+                shape = cardShape,
+            ),
+        shape = cardShape,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.58f),
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp, pressedElevation = 8.dp),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            if (hasHero) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(96.dp)
+                        .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)),
+                ) {
+                    item.firstImageRelativeUrl?.let { raw ->
+                        teamNewsAuthedImageRequest(ctx, raw)?.let { req ->
+                            AsyncImage(
+                                model = req,
+                                contentDescription = item.title,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                            )
+                        }
+                    }
+                }
+            }
+            Column(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (item.hasPoll) {
+                    Text(
+                        text = stringResource(R.string.team_news_poll_badge),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                    )
+                }
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = formatNewsDateRu(item.createdAt),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
@@ -731,9 +847,9 @@ private fun TeamNewsDetailRoute(
                             ),
                         shape = RoundedCornerShape(26.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.58f),
                         ),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
                     ) {
                         Row(Modifier.height(IntrinsicSize.Min)) {
                             Box(
@@ -816,13 +932,18 @@ private fun TeamNewsDetailRoute(
                     if (poll != null) {
                         val p = poll
                         Spacer(Modifier.height(20.dp))
-                        key(d.updatedAt) {
+                            key(d.updatedAt) {
                             Card(
                                 Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                ),
                                 shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.52f),
+                                ),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                                border = BorderStroke(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f),
+                                ),
                             ) {
                                 Column(
                                     Modifier.padding(18.dp),
@@ -921,6 +1042,9 @@ private fun TeamNewsDetailRoute(
     if (deleteOpen && d != null) {
         AlertDialog(
             onDismissRequest = { deleteOpen = false },
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.team_news_delete)) },
             text = { Text(stringResource(R.string.team_news_delete_confirm)) },
             confirmButton = {

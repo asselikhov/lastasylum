@@ -35,8 +35,8 @@
     <string name="nav_title">SquadRelay • %1$s (%2$s)</string>
     <string name="cd_logout">Выйти</string>
     <string name="tab_chat">Чат</string>
-    <string name="tab_team">Команда</string>
-    <string name="tab_overlay">Оверлей</string>
+    <string name="tab_team">Сообщество</string>
+    <string name="tab_overlay">Игра</string>
     <string name="tab_profile">Профиль</string>
     <string name="tab_admin">Админ</string>
 
@@ -68,6 +68,19 @@
     <string name="chat_ok">Понятно</string>
     <string name="chat_empty_state">Пока нет сообщений — напишите первым.</string>
     <string name="chat_no_rooms">Комнаты чата недоступны. Проверьте сеть или попробуйте позже.</string>
+    <string name="chat_context_global">Общий канал всех альянсов</string>
+    <string name="chat_context_raid">Рейдовый канал</string>
+    <string name="chat_context_squad">Канал отряда</string>
+    <string name="chat_context_room">Комната чата</string>
+    <string name="chat_search_title">Поиск</string>
+    <string name="chat_search_coming_soon">Поиск по сообщениям появится в следующей версии.</string>
+    <string name="chat_room_menu_about">О комнате</string>
+    <string name="chat_room_menu_copy_title">Копировать название</string>
+    <string name="chat_room_info_title">Комната</string>
+    <string name="chat_room_info_id_label">Идентификатор</string>
+    <string name="chat_title_copied">Название скопировано</string>
+    <string name="cd_chat_search">Поиск по сообщениям</string>
+    <string name="cd_chat_room_menu">Меню комнаты</string>
     <string name="chat_global_team_notice">Чтобы писать в комнате «Союз» (все альянсы), укажите в профиле полное название команды и тег из трёх букв.</string>
     <string name="chat_global_team_required">Сначала укажите в профиле название команды и трёхбуквенный тег — без этого сообщения в «Союз» недоступны.</string>
     <string name="cd_chat_message">Сообщение от %1$s, роль %2$s: %3$s</string>
@@ -245,6 +258,8 @@
     <string name="team_remove_member_cd">Исключить из команды</string>
     <string name="team_screen_title">Команда</string>
     <string name="team_tab_news">Новости</string>
+    <string name="team_news_feed_heading">Лента новостей</string>
+    <string name="team_news_other_heading">Другие новости</string>
     <string name="team_tab_forum">Форум</string>
     <string name="team_tab_members">Участники</string>
     <string name="team_forum_empty">Пока нет тем. Создайте первую (доступно заместителю и лидеру отряда).</string>
