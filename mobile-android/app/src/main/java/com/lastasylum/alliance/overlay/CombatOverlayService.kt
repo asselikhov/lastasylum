@@ -808,6 +808,35 @@ class CombatOverlayService : Service() {
         }
         val nonEmpty = rects.filterNot { it.isEmpty }
         (chatStripHost as? OverlayStripPassthroughFrameLayout)?.dismissRectsInCompose = nonEmpty
+        syncChatStripWindowTouchPassthrough()
+    }
+
+    /**
+     * Когда зон крестика нет, на окно ленты ставим [FLAG_NOT_TOUCHABLE]: иначе на части OEM
+     * касания по «пустому» месту после закрытия карточек остаются в оверлее и блокируют игру,
+     * даже если корень ленты не забирает жест в [OverlayStripPassthroughFrameLayout].
+     */
+    private fun syncChatStripWindowTouchPassthrough() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { syncChatStripWindowTouchPassthrough() }
+            return
+        }
+        val host = chatStripHost as? OverlayStripPassthroughFrameLayout ?: return
+        val params = chatStripParams ?: return
+        val mgr = windowManager ?: systemWindowManager() ?: return
+        if (!host.isAttachedToWindow) return
+        val hasDismissZones = host.dismissRectsInCompose.isNotEmpty()
+        val mask = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        val newFlags = if (hasDismissZones) {
+            params.flags and mask.inv()
+        } else {
+            params.flags or mask
+        }
+        if (params.flags == newFlags) return
+        params.flags = newFlags
+        runCatching { mgr.updateViewLayout(host, params) }.onFailure { e ->
+            Log.w(TAG, "syncChatStripWindowTouchPassthrough updateViewLayout failed", e)
+        }
     }
 
     private fun refreshOverlayChatStrip() {
@@ -1068,6 +1097,7 @@ class CombatOverlayService : Service() {
         chatStripParams = params
         chatStripClipRoot = clipRoot
         chatStripLines = null
+        syncChatStripWindowTouchPassthrough()
         // Seed a visible placeholder immediately if we don't have content yet.
         if (chatStripPreviewFlow.value.isEmpty()) {
             setStripPlainMessage(getString(R.string.overlay_strip_no_room))
