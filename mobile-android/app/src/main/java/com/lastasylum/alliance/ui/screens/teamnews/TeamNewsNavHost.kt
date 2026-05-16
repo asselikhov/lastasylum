@@ -1430,8 +1430,10 @@ private fun TeamNewsEditorRoute(
                             } else {
                                 null
                             }
-                        val publishTitle = if (pollOnly) "" else title.trim()
-                        val publishBody = if (pollOnly) "" else body.trim()
+                        val publishTitle =
+                            if (pollOnly) null else title.trim().takeIf { it.isNotEmpty() }
+                        val publishBody =
+                            if (pollOnly) null else body.trim().takeIf { it.isNotEmpty() }
                         val publishImages = if (pollOnly) emptyList() else imageIds.toList()
                         if (newsId == null) {
                             teamsRepository.createTeamNews(

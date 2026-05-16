@@ -97,11 +97,20 @@ export class TeamNewsService {
     poll: CreateTeamNewsDto['poll'],
   ): TeamNews['poll'] | null {
     if (!poll) return null;
+    const question = poll.question?.trim() ?? '';
+    const optionTexts = (poll.optionTexts ?? [])
+      .map((text) => text.trim())
+      .filter((text) => text.length > 0);
+    if (!question || optionTexts.length < 2) {
+      throw new BadRequestException(
+        'Poll requires a question and at least two options',
+      );
+    }
     return {
-      question: poll.question.trim(),
-      options: poll.optionTexts.map((text) => ({
+      question,
+      options: optionTexts.map((text) => ({
         id: randomUUID(),
-        text: text.trim(),
+        text,
       })),
       votes: [],
     };
@@ -317,13 +326,7 @@ export class TeamNewsService {
     const poll = this.buildPollFromInput(dto.poll);
     const titleRaw = (dto.title ?? '').trim();
     const bodyRaw = (dto.body ?? '').trim();
-    if (poll) {
-      if (!poll.question || poll.options.length < 2) {
-        throw new BadRequestException(
-          'Poll requires a question and at least two options',
-        );
-      }
-    } else if (!titleRaw || !bodyRaw) {
+    if (!poll && (!titleRaw || !bodyRaw)) {
       throw new BadRequestException('Title and body are required without a poll');
     }
     const title = poll && !titleRaw ? poll.question : titleRaw;

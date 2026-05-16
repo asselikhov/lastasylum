@@ -326,6 +326,7 @@
     <string name="team_news_retry">Повторить</string>
     <string name="team_news_fill_required">Заполните заголовок и текст</string>
     <string name="team_news_poll_invalid">Для опроса нужен вопрос и минимум два варианта</string>
+    <string name="team_news_publish_forbidden">Публиковать новости и опросы могут только R4 и R5</string>
     <string name="team_news_editor_mode_news">Новость</string>
     <string name="team_news_editor_mode_poll">Только опрос</string>
     <string name="team_news_poll_only_hint">Заголовок и текст не нужны — участники голосуют по вариантам ниже.</string>

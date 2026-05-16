@@ -15,7 +15,7 @@ import { TeamNewsPollInputDto } from './create-team-news.dto';
 export class UpdateTeamNewsDto {
   @IsOptional()
   @IsString()
-  @Length(1, 200)
+  @MaxLength(200)
   title?: string;
 
   @IsOptional()

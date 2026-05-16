@@ -101,5 +101,12 @@ private fun translateKnownServerMessage(english: String, resources: Resources): 
         resources.getString(R.string.chat_attachment_only_images_server)
     english.contains("CHAT_ATTACHMENT_R2_PUT_FAILED", ignoreCase = true) ->
         resources.getString(R.string.chat_attachment_r2_put_failed)
+    english.contains("Poll requires a question", ignoreCase = true) ||
+        english.contains("at least two options", ignoreCase = true) ->
+        resources.getString(R.string.team_news_poll_invalid)
+    english.contains("Title and body are required without a poll", ignoreCase = true) ->
+        resources.getString(R.string.team_news_fill_required)
+    english.contains("Only squad roles R4 and R5 can publish", ignoreCase = true) ->
+        resources.getString(R.string.team_news_publish_forbidden)
     else -> english
 }

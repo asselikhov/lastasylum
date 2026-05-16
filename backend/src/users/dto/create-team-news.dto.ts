@@ -7,6 +7,7 @@ import {
   IsString,
   Length,
   MaxLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 
@@ -24,16 +25,15 @@ export class TeamNewsPollInputDto {
 }
 
 export class CreateTeamNewsDto {
-  /** Необязателен, если есть опрос — подставится вопрос опроса. */
-  @IsOptional()
+  /** Без опроса обязателен (1–200); с опросом поле можно не передавать. */
+  @ValidateIf((o) => !o.poll)
   @IsString()
-  @MaxLength(200)
+  @Length(1, 200)
   title?: string;
 
-  /** Необязателен для поста «только опрос». */
-  @IsOptional()
+  @ValidateIf((o) => !o.poll)
   @IsString()
-  @MaxLength(20000)
+  @Length(1, 20000)
   body?: string;
 
   @IsOptional()

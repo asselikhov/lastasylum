@@ -164,8 +164,9 @@ data class TeamNewsPollCreateBody(
 
 @JsonClass(generateAdapter = true)
 data class CreateTeamNewsBody(
-    val title: String,
-    val body: String,
+    /** null для поста «только опрос» — поле не уходит в JSON (Moshi omit null). */
+    val title: String? = null,
+    val body: String? = null,
     val imageFileIds: List<String> = emptyList(),
     val poll: TeamNewsPollCreateBody? = null,
 )
