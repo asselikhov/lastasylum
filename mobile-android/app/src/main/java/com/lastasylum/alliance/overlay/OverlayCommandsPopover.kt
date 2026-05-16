@@ -52,7 +52,7 @@ class OverlayCommandsPopover(
     }
 
     private fun hideCoordOnly() {
-        OverlayChatInteractionHold.suppressGameForegroundGate = false
+        OverlayChatInteractionHold.clearSuppressUnlessFullscreenPanel()
         removeShell(coordScrim)
         coordScrim = null
     }
@@ -493,7 +493,7 @@ class OverlayCommandsPopover(
         }
 
         if (runCatching { windowManager.addView(scrim, params) }.isFailure) {
-            OverlayChatInteractionHold.suppressGameForegroundGate = false
+            OverlayChatInteractionHold.clearSuppressUnlessFullscreenPanel()
             return
         }
 

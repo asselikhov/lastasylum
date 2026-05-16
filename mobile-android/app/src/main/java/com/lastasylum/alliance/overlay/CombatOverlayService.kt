@@ -333,6 +333,20 @@ class CombatOverlayService : Service() {
                         }
                         owner.activityResultRegistry.dispatchResult(requestCode, android.app.Activity.RESULT_OK, data)
                     }
+                    OverlaySystemDialogActivity.ACTION_OVERLAY_GET_CONTENT_RESULT -> {
+                        val uri = if (android.os.Build.VERSION.SDK_INT >= 33) {
+                            i.getParcelableExtra(OverlaySystemDialogActivity.EXTRA_URI, Uri::class.java)
+                        } else {
+                            @Suppress("DEPRECATION")
+                            i.getParcelableExtra(OverlaySystemDialogActivity.EXTRA_URI)
+                        }
+                        val data = if (uri != null) Intent().setData(uri) else Intent()
+                        owner.activityResultRegistry.dispatchResult(
+                            requestCode,
+                            android.app.Activity.RESULT_OK,
+                            data,
+                        )
+                    }
                     OverlaySystemDialogActivity.ACTION_OVERLAY_MIC_PERMISSION_RESULT -> {
                         val granted = i.getBooleanExtra(OverlaySystemDialogActivity.EXTRA_GRANTED, false)
                         val data = Intent().apply {
@@ -369,6 +383,8 @@ class CombatOverlayService : Service() {
                 val kind = when (contract) {
                     is androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia ->
                         OverlaySystemDialogActivity.KIND_PICK_IMAGES
+                    is androidx.activity.result.contract.ActivityResultContracts.GetContent ->
+                        OverlaySystemDialogActivity.KIND_GET_CONTENT
                     is androidx.activity.result.contract.ActivityResultContracts.RequestPermission ->
                         OverlaySystemDialogActivity.KIND_REQUEST_MIC
                     else -> null
@@ -385,6 +401,10 @@ class CombatOverlayService : Service() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     putExtra(OverlaySystemDialogActivity.EXTRA_KIND, kind)
                     putExtra(OverlaySystemDialogActivity.EXTRA_REQUEST_CODE, requestCode)
+                    if (kind == OverlaySystemDialogActivity.KIND_GET_CONTENT) {
+                        val mime = (input as? String)?.takeIf { it.isNotBlank() } ?: "image/*"
+                        putExtra(OverlaySystemDialogActivity.EXTRA_CONTENT_MIME, mime)
+                    }
                 }
                 suspendOverlayWindowsForSystemActivity()
                 try {
@@ -487,10 +507,27 @@ class CombatOverlayService : Service() {
     private fun repairDetachedOverlayShellIfNeeded() {
         val v = overlayView ?: return
         val wm = windowManager
-        if (wm != null && !v.isAttachedToWindow) {
-            Log.w(TAG, "repairDetachedOverlayShellIfNeeded: overlay shell was detached, rebuilding")
-            removeOverlayControl()
-        }
+        if (wm == null || v.isAttachedToWindow) return
+        Log.w(
+            TAG,
+            "repairDetachedOverlayShellIfNeeded: overlay shell detached (chatPanel=$overlayChatTeamPanelVisible), rebuilding shell only",
+        )
+        // Не вызывать removeOverlayControl(): на части ROM addView полноэкранного чата временно отцепляет
+        // пузырь панели — полный teardown закрывал бы чат и требовал переключать «Показывать панель».
+        overlayView = null
+        overlayBubble = null
+        overlayHistoryFab = null
+        overlayMainWindowParams = null
+        overlayOuterRow = null
+        overlayControlsStack = null
+        overlayMessageRow = null
+        overlayMessageFabColumn = null
+        overlayBtnMessageFab = null
+        overlayCollapseButton = null
+        overlayPanelAnchoredEnd = false
+        overlayPanelStableAnchorWidthPx = 0
+        _overlayVisible.value = false
+        runCatching { showOverlayControl() }
     }
 
     private fun systemWindowManager(): WindowManager? =
@@ -562,6 +599,7 @@ class CombatOverlayService : Service() {
                     // [overlayChatTeamPanelVisible] is @Volatile so IO reads see main-thread updates; full-screen image
                     // dialogs set [OverlayChatInteractionHold] while open (Compose Dialog window timing).
                     if (overlayChatTeamPanelVisible ||
+                        OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible ||
                         OverlayChatInteractionHold.suppressGameForegroundGate ||
                         OverlayChatInteractionHold.suppressGameForegroundGateForOverlayPanel
                     ) {
@@ -626,7 +664,7 @@ class CombatOverlayService : Service() {
             logGateStateThrottled(
                 "overlayGate: нет доступа к статистике использования — панель скрыта",
             )
-            if (overlayView != null) {
+            if (overlayView != null && !overlayChatTeamPanelVisible) {
                 removeOverlayControl()
             }
             return
@@ -639,7 +677,7 @@ class CombatOverlayService : Service() {
                 "overlayGate: ${getString(R.string.overlay_notif_waiting_for_game)}"
             }
             logGateStateThrottled(content)
-            if (overlayView != null) {
+            if (overlayView != null && !overlayChatTeamPanelVisible) {
                 removeOverlayControl()
             }
             return
@@ -647,7 +685,7 @@ class CombatOverlayService : Service() {
         gateNotifyKey = ""
         if (!canDrawOverlaysNow()) {
             updateNotification(getString(R.string.overlay_notif_permission_required))
-            if (overlayView != null) {
+            if (overlayView != null && !overlayChatTeamPanelVisible) {
                 removeOverlayControl()
             }
             return
@@ -744,7 +782,8 @@ class CombatOverlayService : Service() {
         lastForegroundNotificationText = null
         speechPipeline.destroy()
         overlayTicker.hideTicker()
-        removeOverlayControl()
+        runCatching { hideOverlayChatTeamPanel() }
+        removeOverlayControl(force = true)
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -1645,6 +1684,8 @@ class CombatOverlayService : Service() {
         val root = overlayChatTeamRoot
         val hadVisible = overlayChatTeamPanelVisible
         overlayChatTeamPanelVisible = false
+        OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = false
+        OverlayChatInteractionHold.clearSuppressUnlessFullscreenPanel()
         if (hadVisible) {
             updateStripDismissScreenRects(emptyList())
             if (clearStrip) {
@@ -1759,10 +1800,7 @@ class CombatOverlayService : Service() {
         overlayAllianceOnlinePopover.hide()
         overlayCommandsPopover.hide()
         OverlayChatInteractionHold.suppressGameForegroundGate = true
-        mainHandler.postDelayed(
-            { OverlayChatInteractionHold.suppressGameForegroundGate = false },
-            2500L,
-        )
+        OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = true
         overlayUnreadChatCount = 0
         mainHandler.post { updateOverlayChatBadge() }
         val manager = windowManager ?: return
@@ -1783,6 +1821,7 @@ class CombatOverlayService : Service() {
                 overlaySystemResultReceiver,
                 IntentFilter().apply {
                     addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_PICK_IMAGES_RESULT)
+                    addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_GET_CONTENT_RESULT)
                     addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_MIC_PERMISSION_RESULT)
                 },
                 ContextCompat.RECEIVER_NOT_EXPORTED,
@@ -1817,6 +1856,7 @@ class CombatOverlayService : Service() {
                     LocalOnBackPressedDispatcherOwner provides owner,
                     LocalLifecycleOwner provides owner,
                     LocalSavedStateRegistryOwner provides owner,
+                    LocalOverlayUiMode provides true,
                 ) {
                     SquadRelayTheme {
                         Surface(
@@ -1962,6 +2002,8 @@ class CombatOverlayService : Service() {
             overlayChatTeamRoot = null
             overlayChatTeamParams = null
             overlayChatTeamPanelVisible = false
+            OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = false
+            OverlayChatInteractionHold.clearSuppressUnlessFullscreenPanel()
             runCatching { unregisterReceiver(overlaySystemResultReceiver) }
             overlayChatTeamComposeOwner?.destroy()
             overlayChatTeamComposeOwner = null
@@ -1975,6 +2017,7 @@ class CombatOverlayService : Service() {
         overlayChatTeamRoot = root
         overlayChatTeamParams = params
         overlayChatTeamPanelVisible = true
+        OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = true
         rebalanceOverlayFullscreenZOrder()
         ViewCompat.requestApplyInsets(root)
     }
@@ -1983,7 +2026,11 @@ class CombatOverlayService : Service() {
         return (value * density).toInt()
     }
 
-    private fun removeOverlayControl() {
+    private fun removeOverlayControl(force: Boolean = false) {
+        if (!force && (overlayChatTeamPanelVisible || OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible)) {
+            Log.i(TAG, "removeOverlayControl: skipped while fullscreen chat/team panel is open")
+            return
+        }
         resumeOverlayWindowsAfterSystemActivity()
         recordingStartRunnable?.let { mainHandler.removeCallbacks(it) }
         recordingStartRunnable = null

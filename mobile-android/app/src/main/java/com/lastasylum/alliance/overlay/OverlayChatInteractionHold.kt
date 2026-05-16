@@ -13,4 +13,18 @@ object OverlayChatInteractionHold {
      */
     @Volatile
     var suppressGameForegroundGateForOverlayPanel: Boolean = false
+
+    /**
+     * Полноэкранное окно «Чат + Команда» в оверлее открыто ([CombatOverlayService.showOverlayChatTeamPanel]).
+     * Дублирует флаг сервиса для UI-слоя и защиты от ложного [repairDetachedOverlayShellIfNeeded].
+     */
+    @Volatile
+    var isFullscreenChatTeamPanelVisible: Boolean = false
+
+    /** Сбросить suppress только если не открыта полноэкранная панель чата/команды. */
+    fun clearSuppressUnlessFullscreenPanel() {
+        if (!isFullscreenChatTeamPanelVisible) {
+            suppressGameForegroundGate = false
+        }
+    }
 }

@@ -1398,7 +1398,7 @@ private fun ForumImagesPreviewOverlay(
 
     DisposableEffect(Unit) {
         OverlayChatInteractionHold.suppressGameForegroundGate = true
-        onDispose { OverlayChatInteractionHold.suppressGameForegroundGate = false }
+        onDispose { OverlayChatInteractionHold.clearSuppressUnlessFullscreenPanel() }
     }
     BackHandler(onBack = onDismiss)
     BoxWithConstraints(

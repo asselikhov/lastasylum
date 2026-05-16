@@ -152,6 +152,8 @@ import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.overlay.LocalOverlayUiMode
+import com.lastasylum.alliance.overlay.OverlayInteractionSuppressEffect
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.ui.chat.ChatState
 import com.lastasylum.alliance.ui.chat.ChatVoicePhase
@@ -437,6 +439,7 @@ fun ChatScreen(
     onToggleReaction: (String, String) -> Unit,
 ) {
     val context = LocalContext.current
+    val overlayUi = LocalOverlayUiMode.current
     val activityResultOwner = LocalActivityResultRegistryOwner.current
     val canHandleBack = LocalOnBackPressedDispatcherOwner.current != null
     var hasMicPermission by remember {
@@ -887,11 +890,14 @@ fun ChatScreen(
                         startIndex = start,
                         onDismiss = { attachmentPreviewStartIndex = null },
                         onOpenExternal = { uri ->
+                            if (overlayUi) {
+                                OverlayChatInteractionHold.suppressGameForegroundGate = true
+                            }
                             val i = Intent(Intent.ACTION_VIEW).apply {
                                 setDataAndType(uri, "image/*")
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
-                            ctx.startActivity(i)
+                            runCatching { ctx.startActivity(i) }
                         },
                         onRemove = { uri ->
                             onRemovePickedImage(uri)
@@ -1439,6 +1445,7 @@ private fun ChatComposer(
     }
 
     if (showAttachmentsSheet) {
+        OverlayInteractionSuppressEffect()
         ModalBottomSheet(onDismissRequest = { showAttachmentsSheet = false }) {
             Column(
                 modifier = Modifier
@@ -2060,7 +2067,7 @@ private fun AttachmentPreviewOverlay(
 
     DisposableEffect(Unit) {
         OverlayChatInteractionHold.suppressGameForegroundGate = true
-        onDispose { OverlayChatInteractionHold.suppressGameForegroundGate = false }
+        onDispose { OverlayChatInteractionHold.clearSuppressUnlessFullscreenPanel() }
     }
     BackHandler(onBack = onDismiss)
     BoxWithConstraints(
@@ -2239,7 +2246,7 @@ private fun RemoteChatImagesPreviewOverlay(
 
     DisposableEffect(Unit) {
         OverlayChatInteractionHold.suppressGameForegroundGate = true
-        onDispose { OverlayChatInteractionHold.suppressGameForegroundGate = false }
+        onDispose { OverlayChatInteractionHold.clearSuppressUnlessFullscreenPanel() }
     }
     BackHandler(onBack = onDismiss)
     BoxWithConstraints(
@@ -3359,6 +3366,7 @@ private fun ChatMessageActionsSheet(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    OverlayInteractionSuppressEffect()
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier

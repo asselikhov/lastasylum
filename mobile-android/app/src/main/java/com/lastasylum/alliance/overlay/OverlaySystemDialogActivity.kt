@@ -19,6 +19,7 @@ class OverlaySystemDialogActivity : ComponentActivity() {
 
         when (intent?.getStringExtra(EXTRA_KIND)) {
             KIND_PICK_IMAGES -> pickImages()
+            KIND_GET_CONTENT -> pickContent()
             KIND_REQUEST_MIC -> requestMic()
             else -> finish()
         }
@@ -44,6 +45,23 @@ class OverlaySystemDialogActivity : ComponentActivity() {
         launcher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
     }
 
+    private fun pickContent() {
+        val requestCode = intent?.getIntExtra(EXTRA_REQUEST_CODE, -1) ?: -1
+        val mime = intent?.getStringExtra(EXTRA_CONTENT_MIME) ?: "image/*"
+        val launcher = registerForActivityResult(
+            ActivityResultContracts.GetContent(),
+        ) { uri ->
+            sendBroadcast(
+                Intent(ACTION_OVERLAY_GET_CONTENT_RESULT)
+                    .setPackage(packageName)
+                    .putExtra(EXTRA_REQUEST_CODE, requestCode)
+                    .putExtra(EXTRA_URI, uri),
+            )
+            finish()
+        }
+        launcher.launch(mime)
+    }
+
     private fun requestMic() {
         val requestCode = intent?.getIntExtra(EXTRA_REQUEST_CODE, -1) ?: -1
         val launcher = registerForActivityResult(
@@ -64,12 +82,16 @@ class OverlaySystemDialogActivity : ComponentActivity() {
         const val EXTRA_KIND = "kind"
         const val EXTRA_REQUEST_CODE = "request_code"
         const val KIND_PICK_IMAGES = "pick_images"
+        const val KIND_GET_CONTENT = "get_content"
         const val KIND_REQUEST_MIC = "request_mic"
 
         const val ACTION_OVERLAY_PICK_IMAGES_RESULT = "com.lastasylum.alliance.overlay.PICK_IMAGES_RESULT"
+        const val ACTION_OVERLAY_GET_CONTENT_RESULT = "com.lastasylum.alliance.overlay.GET_CONTENT_RESULT"
         const val ACTION_OVERLAY_MIC_PERMISSION_RESULT = "com.lastasylum.alliance.overlay.MIC_PERMISSION_RESULT"
 
         const val EXTRA_URIS = "uris"
+        const val EXTRA_URI = "uri"
+        const val EXTRA_CONTENT_MIME = "content_mime"
         const val EXTRA_GRANTED = "granted"
     }
 }
