@@ -544,6 +544,31 @@ class CombatOverlayService : Service() {
         runCatching { showOverlayControl() }
     }
 
+    /**
+     * На части ROM addView AlertDialog/системного окна временно отцепляет полноэкранный чат/команду.
+     * Восстанавливаем то же [overlayChatTeamRoot], не пересоздавая Compose.
+     */
+    private fun repairDetachedOverlayChatTeamPanelIfNeeded() {
+        if (!overlayChatTeamPanelVisible && !OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible) {
+            return
+        }
+        val root = overlayChatTeamRoot ?: return
+        val params = overlayChatTeamParams ?: return
+        val mgr = windowManager ?: systemWindowManager() ?: return
+        if (root.isAttachedToWindow) return
+        Log.w(TAG, "repairDetachedOverlayChatTeamPanelIfNeeded: fullscreen chat/team detached, re-attaching")
+        runCatching { mgr.addView(root, params) }
+            .onSuccess { rebalanceOverlayFullscreenZOrder() }
+            .onFailure { e ->
+                Log.e(TAG, "repairDetachedOverlayChatTeamPanelIfNeeded: re-attach failed", e)
+            }
+    }
+
+    private fun shouldKeepOverlayWindows(): Boolean =
+        overlayChatTeamPanelVisible ||
+            OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible ||
+            OverlayChatInteractionHold.isGameForegroundGateSuppressed()
+
     private fun systemWindowManager(): WindowManager? =
         runCatching { getSystemService(Context.WINDOW_SERVICE) as WindowManager }.getOrNull()
 
@@ -555,6 +580,7 @@ class CombatOverlayService : Service() {
             return
         }
         repairDetachedOverlayShellIfNeeded()
+        repairDetachedOverlayChatTeamPanelIfNeeded()
         if (overlayView == null) {
             val result = runCatching { showOverlayControl() }
             if (result.isFailure) {
@@ -612,11 +638,7 @@ class CombatOverlayService : Service() {
                     // Some OEM ROMs may report SquadRelay as "resumed" when touching overlay windows.
                     // [overlayChatTeamPanelVisible] is @Volatile so IO reads see main-thread updates; full-screen image
                     // dialogs set [OverlayChatInteractionHold] while open (Compose Dialog window timing).
-                    if (overlayChatTeamPanelVisible ||
-                        OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible ||
-                        OverlayChatInteractionHold.suppressGameForegroundGate ||
-                        OverlayChatInteractionHold.suppressGameForegroundGateForOverlayPanel
-                    ) {
+                    if (shouldKeepOverlayWindows()) {
                         true
                     } else if (targets.isEmpty()) {
                         // If the user enabled "only in game" but did not configure target packages yet,
@@ -678,7 +700,7 @@ class CombatOverlayService : Service() {
             logGateStateThrottled(
                 "overlayGate: нет доступа к статистике использования — панель скрыта",
             )
-            if (overlayView != null && !overlayChatTeamPanelVisible) {
+            if (overlayView != null && !shouldKeepOverlayWindows()) {
                 removeOverlayControl()
             }
             return
@@ -691,7 +713,7 @@ class CombatOverlayService : Service() {
                 "overlayGate: ${getString(R.string.overlay_notif_waiting_for_game)}"
             }
             logGateStateThrottled(content)
-            if (overlayView != null && !overlayChatTeamPanelVisible) {
+            if (overlayView != null && !shouldKeepOverlayWindows()) {
                 removeOverlayControl()
             }
             return
@@ -699,7 +721,7 @@ class CombatOverlayService : Service() {
         gateNotifyKey = ""
         if (!canDrawOverlaysNow()) {
             updateNotification(getString(R.string.overlay_notif_permission_required))
-            if (overlayView != null && !overlayChatTeamPanelVisible) {
+            if (overlayView != null && !shouldKeepOverlayWindows()) {
                 removeOverlayControl()
             }
             return
@@ -1230,7 +1252,9 @@ class CombatOverlayService : Service() {
             }
         }
         cancelStripTick()
-        hideOverlayChatTeamPanel()
+        if (overlayChatTeamPanelVisible || OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible) {
+            hideOverlayChatTeamPanel()
+        }
         stripBuffer.clear()
         lastStripRenderSignature = null
         overlayMessageListener?.let { listener ->
@@ -1263,6 +1287,7 @@ class CombatOverlayService : Service() {
 
     private fun showOverlayControl() {
         repairDetachedOverlayShellIfNeeded()
+        repairDetachedOverlayChatTeamPanelIfNeeded()
         if (overlayView != null && windowManager == null) {
             Log.w(TAG, "showOverlayControl: clearing orphan overlayView (no WindowManager)")
             overlayView = null
@@ -1890,7 +1915,11 @@ class CombatOverlayService : Service() {
                     LocalOverlayUiMode provides true,
                 ) {
                     SquadRelayTheme {
-                        BackHandler { hideOverlayChatTeamPanel() }
+                        BackHandler(
+                            enabled = !OverlayChatInteractionHold.blocksFullscreenPanelBack(),
+                        ) {
+                            hideOverlayChatTeamPanel()
+                        }
                         Surface(
                             modifier = Modifier.fillMaxSize(),
                             color = MaterialTheme.colorScheme.surface,
@@ -2152,8 +2181,8 @@ class CombatOverlayService : Service() {
     }
 
     private fun removeOverlayControl(force: Boolean = false) {
-        if (!force && (overlayChatTeamPanelVisible || OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible)) {
-            Log.i(TAG, "removeOverlayControl: skipped while fullscreen chat/team panel is open")
+        if (!force && shouldKeepOverlayWindows()) {
+            Log.i(TAG, "removeOverlayControl: skipped while overlay chat/team UI is active")
             return
         }
         resumeOverlayWindowsAfterSystemActivity()

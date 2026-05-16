@@ -60,7 +60,8 @@ import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.screens.teamforum.TeamForumNavHost
 import com.lastasylum.alliance.ui.screens.teamnews.TeamNewsNavHost
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
-import com.lastasylum.alliance.overlay.OverlayInteractionSuppressEffect
+import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
+import com.lastasylum.alliance.overlay.OverlayModalScope
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import androidx.compose.foundation.background
@@ -202,11 +203,6 @@ fun TeamScreen(
     val isLeader = profile?.isPlayerTeamLeader == true
     val pending = profile?.pendingPlayerTeamJoinRequests ?: 0
     val overlayUi = LocalOverlayUiMode.current
-    val overlayModalOpen = showCreate || showJoin || showJoinInbox || showAddMemberDialog ||
-        showEditTeamNameDialog || roleEditMember != null
-    if (overlayUi && overlayModalOpen) {
-        OverlayInteractionSuppressEffect()
-    }
 
     Column(
         modifier = Modifier
@@ -276,6 +272,7 @@ fun TeamScreen(
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(
                                     onClick = {
+                                        OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
                                         createName = ""
                                         createTag = ""
                                         createError = null
@@ -287,6 +284,7 @@ fun TeamScreen(
                                 }
                                 OutlinedButton(
                                     onClick = {
+                                        OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
                                         joinSearch = ""
                                         joinResults = emptyList()
                                         joinFeedback = null
@@ -368,6 +366,7 @@ fun TeamScreen(
                                     if (isLeader) {
                                         IconButton(
                                             onClick = {
+                                                OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
                                                 addNameDraft = ""
                                                 showAddMemberDialog = true
                                             },
@@ -381,6 +380,7 @@ fun TeamScreen(
                                         }
                                         IconButton(
                                             onClick = {
+                                                OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
                                                 editTeamNameDraft = team.displayName.trim()
                                                 editTeamTagDraft = team.tag.trim()
                                                 showEditTeamNameDialog = true
@@ -404,6 +404,7 @@ fun TeamScreen(
                                         ) {
                                             IconButton(
                                                 onClick = {
+                                                    OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
                                                     showJoinInbox = true
                                                     scope.launch {
                                                         inboxBusy = true
@@ -484,7 +485,10 @@ fun TeamScreen(
                                             onReload = { reloadProfileAndTeam() },
                                             onError = { msg -> error = msg },
                                             teamsRepository = teamsRepository,
-                                            onRequestEditMemberRole = { m -> roleEditMember = m },
+                                            onRequestEditMemberRole = { m ->
+                                                OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
+                                                roleEditMember = m
+                                            },
                                             modifier = Modifier
                                                 .weight(1f, fill = true)
                                                 .fillMaxWidth(),
@@ -499,6 +503,7 @@ fun TeamScreen(
     }
 
     if (showCreate) {
+        OverlayModalScope {
         AlertDialog(
             onDismissRequest = { if (!createBusy) showCreate = false },
             containerColor = SquadRelaySurfaces.dialogColor(),
@@ -573,9 +578,11 @@ fun TeamScreen(
                 }
             },
         )
+        }
     }
 
     if (showJoin) {
+        OverlayModalScope {
         AlertDialog(
             onDismissRequest = { if (!joinActionBusy) showJoin = false },
             containerColor = SquadRelaySurfaces.dialogColor(),
@@ -662,9 +669,11 @@ fun TeamScreen(
                 }
             },
         )
+        }
     }
 
     if (showJoinInbox) {
+        OverlayModalScope {
         AlertDialog(
             onDismissRequest = { if (!inboxBusy) showJoinInbox = false },
             containerColor = SquadRelaySurfaces.dialogColor(),
@@ -736,10 +745,12 @@ fun TeamScreen(
                 }
             },
         )
+        }
     }
 
     val teamIdForDialogs = teamDetail?.id
     if (showAddMemberDialog && teamIdForDialogs != null) {
+        OverlayModalScope {
         AlertDialog(
             onDismissRequest = { if (!membersBusy) showAddMemberDialog = false },
             containerColor = SquadRelaySurfaces.dialogColor(),
@@ -786,9 +797,11 @@ fun TeamScreen(
                 }
             },
         )
+        }
     }
 
     if (showEditTeamNameDialog && teamIdForDialogs != null) {
+        OverlayModalScope {
         AlertDialog(
             onDismissRequest = { if (!editNameBusy) showEditTeamNameDialog = false },
             containerColor = SquadRelaySurfaces.dialogColor(),
@@ -847,10 +860,12 @@ fun TeamScreen(
                 }
             },
         )
+        }
     }
 
     roleEditMember?.let { member ->
         if (teamIdForDialogs != null) {
+            OverlayModalScope {
             SquadMemberRoleEditDialog(
                 member = member,
                 onDismiss = { roleEditMember = null },
@@ -859,6 +874,7 @@ fun TeamScreen(
                 teamsRepository = teamsRepository,
                 onError = { msg -> error = msg },
             )
+            }
         }
     }
 }

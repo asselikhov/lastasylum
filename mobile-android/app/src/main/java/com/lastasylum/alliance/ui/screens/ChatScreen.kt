@@ -154,6 +154,7 @@ import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayInteractionSuppressEffect
+import com.lastasylum.alliance.overlay.OverlayModalScope
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.ui.chat.ChatState
 import com.lastasylum.alliance.ui.chat.ChatVoicePhase
@@ -745,6 +746,7 @@ fun ChatScreen(
             var showEdit by remember(message._id) { mutableStateOf(false) }
             var editDraft by remember(message._id) { mutableStateOf(message.text) }
             if (showEdit) {
+                OverlayModalScope {
                 AlertDialog(
                     onDismissRequest = { showEdit = false },
                     containerColor = SquadRelaySurfaces.dialogColor(),
@@ -772,6 +774,7 @@ fun ChatScreen(
                         TextButton(onClick = { showEdit = false }) { Text(stringResource(R.string.chat_edit_cancel)) }
                     },
                 )
+                }
             }
             ChatMessageActionsSheet(
                 message = message,
@@ -797,6 +800,7 @@ fun ChatScreen(
                     message._id?.let { onToggleReaction(it, emoji) }
                 },
                 onEdit = {
+                    OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
                     showEdit = true
                 },
                 onDelete = {
@@ -807,6 +811,7 @@ fun ChatScreen(
     }
 
     confirmDeleteMessage?.let {
+        OverlayModalScope {
         AlertDialog(
             onDismissRequest = onDismissDeleteMessage,
             containerColor = SquadRelaySurfaces.dialogColor(),
@@ -828,9 +833,11 @@ fun ChatScreen(
                 }
             },
         )
+        }
     }
 
     if (state.confirmBulkDelete && state.selectedMessageIds.isNotEmpty()) {
+        OverlayModalScope {
         AlertDialog(
             onDismissRequest = onDismissBulkDeleteConfirm,
             containerColor = SquadRelaySurfaces.dialogColor(),
@@ -865,6 +872,7 @@ fun ChatScreen(
                 }
             },
         )
+        }
     }
 
             remoteChatImagePreview?.let { (urls, start) ->
@@ -2000,10 +2008,7 @@ private fun AttachmentPreviewOverlay(
     var offsetY by remember(uri) { mutableStateOf(0f) }
     val context = LocalContext.current
 
-    DisposableEffect(Unit) {
-        OverlayChatInteractionHold.suppressGameForegroundGate = true
-        onDispose { OverlayChatInteractionHold.clearSuppressUnlessFullscreenPanel() }
-    }
+    OverlayInteractionSuppressEffect()
     BackHandler(onBack = onDismiss)
     BoxWithConstraints(
         modifier = modifier
@@ -2179,10 +2184,7 @@ private fun RemoteChatImagesPreviewOverlay(
     var offsetY by remember(url) { mutableStateOf(0f) }
     val context = LocalContext.current
 
-    DisposableEffect(Unit) {
-        OverlayChatInteractionHold.suppressGameForegroundGate = true
-        onDispose { OverlayChatInteractionHold.clearSuppressUnlessFullscreenPanel() }
-    }
+    OverlayInteractionSuppressEffect()
     BackHandler(onBack = onDismiss)
     BoxWithConstraints(
         modifier = modifier

@@ -12,7 +12,16 @@ val LocalOverlayUiMode = staticCompositionLocalOf { false }
 fun OverlayInteractionSuppressEffect() {
     if (!LocalOverlayUiMode.current) return
     DisposableEffect(Unit) {
-        OverlayChatInteractionHold.suppressGameForegroundGate = true
-        onDispose { OverlayChatInteractionHold.clearSuppressUnlessFullscreenPanel() }
+        OverlayChatInteractionHold.acquireGameForegroundSuppress()
+        onDispose { OverlayChatInteractionHold.releaseGameForegroundSuppress() }
     }
+}
+
+/** Оборачивает модальный UI в оверлее (AlertDialog и т.п.) подсчётом suppress для game gate. */
+@Composable
+fun OverlayModalScope(content: @Composable () -> Unit) {
+    if (LocalOverlayUiMode.current) {
+        OverlayInteractionSuppressEffect()
+    }
+    content()
 }

@@ -120,6 +120,10 @@ import com.lastasylum.alliance.ui.chat.chatAuthedImageRequest
 import com.lastasylum.alliance.ui.chat.replyPreviewText
 import com.lastasylum.alliance.ui.util.copyForumMessageToClipboard
 import com.lastasylum.alliance.ui.util.forumMessageHasCopyableContent
+import com.lastasylum.alliance.overlay.LocalOverlayUiMode
+import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
+import com.lastasylum.alliance.overlay.OverlayInteractionSuppressEffect
+import com.lastasylum.alliance.overlay.OverlayModalScope
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -149,7 +153,6 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 
 private object ForumRoutes {
     const val LIST = "forum_list"
@@ -244,6 +247,7 @@ private fun TeamForumListRoute(
 ) {
     val context = LocalContext.current
     val res = context.resources
+    val overlayUi = LocalOverlayUiMode.current
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -404,6 +408,7 @@ private fun TeamForumListRoute(
                                                     DropdownMenuItem(
                                                         text = { Text(stringResource(R.string.team_forum_edit_topic)) },
                                                         onClick = {
+                                                            OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
                                                             menuTopic = null
                                                             editTopic = t
                                                             editTitle = t.title
@@ -412,6 +417,7 @@ private fun TeamForumListRoute(
                                                     DropdownMenuItem(
                                                         text = { Text(stringResource(R.string.team_forum_delete_topic)) },
                                                         onClick = {
+                                                            OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
                                                             menuTopic = null
                                                             deleteTopic = t
                                                         },
@@ -429,6 +435,7 @@ private fun TeamForumListRoute(
             if (canManageTopics) {
                 FloatingActionButton(
                     onClick = {
+                        OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
                         createTitle = ""
                         showCreate = true
                     },
@@ -445,6 +452,7 @@ private fun TeamForumListRoute(
     }
 
     if (showCreate) {
+        OverlayModalScope {
         AlertDialog(
             onDismissRequest = { if (!createBusy) showCreate = false },
             containerColor = SquadRelaySurfaces.dialogColor(),
@@ -488,9 +496,11 @@ private fun TeamForumListRoute(
                 }
             },
         )
+        }
     }
 
     editTopic?.let { topic ->
+        OverlayModalScope {
         AlertDialog(
             onDismissRequest = { if (!editBusy) editTopic = null },
             containerColor = SquadRelaySurfaces.dialogColor(),
@@ -533,9 +543,11 @@ private fun TeamForumListRoute(
                 }
             },
         )
+        }
     }
 
     deleteTopic?.let { topic ->
+        OverlayModalScope {
         AlertDialog(
             onDismissRequest = { deleteTopic = null },
             containerColor = SquadRelaySurfaces.dialogColor(),
@@ -565,6 +577,7 @@ private fun TeamForumListRoute(
                 }
             },
         )
+        }
     }
 }
 
@@ -586,6 +599,7 @@ private fun TeamForumTopicChatRoute(
 
     val context = LocalContext.current
     val res = context.resources
+    val overlayUi = LocalOverlayUiMode.current
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val messages = remember { mutableStateListOf<TeamForumMessageDto>() }
@@ -752,7 +766,12 @@ private fun TeamForumTopicChatRoute(
                 selectedCount = selectedMessageIds.size,
                 isDeleting = deletingSelection,
                 onClear = { if (!deletingSelection) selectedMessageIds = emptySet() },
-                onDelete = { if (!deletingSelection) confirmBulkDelete = true },
+                onDelete = {
+                    if (!deletingSelection) {
+                        OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
+                        confirmBulkDelete = true
+                    }
+                },
             )
         }
         Box(
@@ -934,6 +953,7 @@ private fun TeamForumTopicChatRoute(
     // legacy menu dialog removed (replaced with bottom sheet)
 
     editMessage?.let { msg ->
+        OverlayModalScope {
         AlertDialog(
             onDismissRequest = { if (!editBusy) editMessage = null },
             containerColor = SquadRelaySurfaces.dialogColor(),
@@ -979,6 +999,7 @@ private fun TeamForumTopicChatRoute(
                 }
             },
         )
+        }
     }
 
     val activeActionMessage = remember(activeActionMessageId, messages) {
@@ -1003,6 +1024,7 @@ private fun TeamForumTopicChatRoute(
                     activeActionMessageId = null
                 },
                 onEdit = {
+                    OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
                     editMessage = msg
                     editBody = msg.text
                     activeActionMessageId = null
@@ -1038,6 +1060,7 @@ private fun TeamForumTopicChatRoute(
     }
 
     if (confirmBulkDelete && selectedMessageIds.isNotEmpty()) {
+        OverlayModalScope {
         AlertDialog(
             onDismissRequest = { if (!deletingSelection) confirmBulkDelete = false },
             containerColor = SquadRelaySurfaces.dialogColor(),
@@ -1086,6 +1109,7 @@ private fun TeamForumTopicChatRoute(
                 ) { Text(stringResource(R.string.chat_delete_cancel)) }
             },
         )
+        }
     }
 }
 
@@ -1287,6 +1311,7 @@ private fun ForumMessageActionsSheet(
     val context = LocalContext.current
     val stickerStem = remember(message.text) { ZlobyakaStickerPack.parseStem(message.text) }
     val canCopy = forumMessageHasCopyableContent(message)
+    OverlayInteractionSuppressEffect()
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -1414,10 +1439,7 @@ private fun ForumImagesPreviewOverlay(
     var offsetY by remember(url) { mutableStateOf(0f) }
     val context = LocalContext.current
 
-    DisposableEffect(Unit) {
-        OverlayChatInteractionHold.suppressGameForegroundGate = true
-        onDispose { OverlayChatInteractionHold.clearSuppressUnlessFullscreenPanel() }
-    }
+    OverlayInteractionSuppressEffect()
     BackHandler(onBack = onDismiss)
     BoxWithConstraints(
         modifier = modifier

@@ -74,6 +74,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import com.lastasylum.alliance.overlay.LocalOverlayUiMode
+import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
+import com.lastasylum.alliance.overlay.OverlayModalScope
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
@@ -905,6 +908,7 @@ private fun TeamNewsDetailRoute(
 ) {
     val context = LocalContext.current
     val res = context.resources
+    val overlayUi = LocalOverlayUiMode.current
     var detail by remember { mutableStateOf<TeamNewsDetailDto?>(null) }
     var loading by remember { mutableStateOf(true) }
     var err by remember { mutableStateOf<String?>(null) }
@@ -955,7 +959,10 @@ private fun TeamNewsDetailRoute(
                         TextButton(onClick = { onEdit(d.id) }) {
                             Text(stringResource(R.string.team_news_edit))
                         }
-                        IconButton(onClick = { deleteOpen = true }) {
+                        IconButton(onClick = {
+                            OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
+                            deleteOpen = true
+                        }) {
                             Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.team_news_delete))
                         }
                     }
@@ -1187,6 +1194,7 @@ private fun TeamNewsDetailRoute(
     }
 
     if (deleteOpen && d != null) {
+        OverlayModalScope {
         AlertDialog(
             onDismissRequest = { deleteOpen = false },
             containerColor = SquadRelaySurfaces.dialogColor(),
@@ -1213,6 +1221,7 @@ private fun TeamNewsDetailRoute(
                 }
             },
         )
+        }
     }
 }
 
