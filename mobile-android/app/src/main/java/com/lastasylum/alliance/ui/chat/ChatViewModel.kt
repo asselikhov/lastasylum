@@ -537,6 +537,9 @@ class ChatViewModel(
                 .onSuccess { updated ->
                     applyIncomingMessage(updated)
                 }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(error = e.toUserMessageRu(res))
+                }
         }
     }
 
@@ -549,6 +552,9 @@ class ChatViewModel(
                 .onSuccess { updated ->
                     applyIncomingMessage(updated)
                 }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(error = e.toUserMessageRu(res))
+                }
         }
     }
 
@@ -559,6 +565,9 @@ class ChatViewModel(
             repository.forwardMessage(messageId, roomId)
                 .onSuccess { forwarded ->
                     applyIncomingMessage(forwarded)
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(error = e.toUserMessageRu(res))
                 }
         }
     }

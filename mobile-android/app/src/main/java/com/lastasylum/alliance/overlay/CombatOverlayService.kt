@@ -28,7 +28,6 @@ import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.view.ViewGroup
-import android.util.Base64
 import android.util.Log
 import android.widget.ImageView
 import android.widget.Toast
@@ -59,6 +58,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -75,6 +75,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
+import com.lastasylum.alliance.data.auth.JwtAccessTokenClaims
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.layout.OverlayLayoutDp
@@ -97,7 +98,6 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalSavedStateRegistryOwner
-import org.json.JSONObject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -395,6 +395,11 @@ class CombatOverlayService : Service() {
                         "Действие недоступно в оверлее",
                         Toast.LENGTH_SHORT,
                     ).show()
+                    activityResultRegistry.dispatchResult(
+                        requestCode,
+                        android.app.Activity.RESULT_CANCELED,
+                        Intent(),
+                    )
                     return
                 }
                 val i = Intent(this@CombatOverlayService, OverlaySystemDialogActivity::class.java).apply {
@@ -417,6 +422,11 @@ class CombatOverlayService : Service() {
                         e.toUserMessageRu(resources),
                         Toast.LENGTH_SHORT,
                     ).show()
+                    activityResultRegistry.dispatchResult(
+                        requestCode,
+                        android.app.Activity.RESULT_CANCELED,
+                        Intent(),
+                    )
                 }
             }
         }
@@ -448,7 +458,6 @@ class CombatOverlayService : Service() {
 
     /** Throttle для Log при «панель скрыта» — не дёргаем FGS-текст при каждом тике гейта. */
     private var gateNotifyKey: String = ""
-    private var cachedAccessTokenSub: Pair<String?, String?> = null to null
     private var lastStripRenderSignature: String? = null
     @Volatile
     private var gateCheckInFlight = false
@@ -1001,29 +1010,12 @@ class CombatOverlayService : Service() {
         lastStripRenderSignature = signature
     }
 
-    private fun jwtSubFromAccessToken(): String? {
-        val token = runCatching { AppContainer.from(this).tokenStore.getAccessToken() }.getOrNull()
-        val cached = cachedAccessTokenSub
-        if (cached.first == token) return cached.second
-        if (token == null) {
-            cachedAccessTokenSub = null to null
-            return null
-        }
-        val parts = token.split('.')
-        if (parts.size < 2) return null
-        var payload = parts[1].replace('-', '+').replace('_', '/')
-        when (payload.length % 4) {
-            2 -> payload += "=="
-            3 -> payload += "="
-            else -> {}
-        }
-        return runCatching {
-            val json = String(Base64.decode(payload, Base64.DEFAULT), Charsets.UTF_8)
-            JSONObject(json).optString("sub", "").takeIf { it.isNotBlank() }
-        }.getOrNull().also { parsed ->
-            cachedAccessTokenSub = token to parsed
-        }
-    }
+    private fun accessTokenOrNull(): String? =
+        runCatching { AppContainer.from(this).tokenStore.getAccessToken() }.getOrNull()
+
+    private fun jwtSubFromAccessToken(): String? = JwtAccessTokenClaims.sub(accessTokenOrNull())
+
+    private fun jwtRoleFromAccessToken(): String = JwtAccessTokenClaims.role(accessTokenOrNull()).orEmpty()
 
     private fun removeChatStripWindow(forManager: WindowManager? = null) {
         val mgr = forManager ?: windowManager ?: systemWindowManager() ?: return
@@ -1832,15 +1824,16 @@ class CombatOverlayService : Service() {
                 val container = remember { AppContainer.from(this@CombatOverlayService) }
                 val app = this@CombatOverlayService.applicationContext as android.app.Application
                 val userId = remember { jwtSubFromAccessToken().orEmpty() }
+                val userRole = remember { jwtRoleFromAccessToken() }
                 var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab) }
-                val vm = remember {
+                val vm = remember(userId, userRole) {
                     overlayChatViewModel ?: ChatViewModel(
                         application = app,
                         repository = container.chatRepository,
                         chatRoomPreferences = container.chatRoomPreferences,
                         usersRepository = container.usersRepository,
                         currentUserId = userId,
-                        currentUserRole = "",
+                        currentUserRole = userRole,
                     ).also {
                         overlayChatViewModel = it
                         it.refreshChat()
@@ -1859,6 +1852,7 @@ class CombatOverlayService : Service() {
                     LocalOverlayUiMode provides true,
                 ) {
                     SquadRelayTheme {
+                        BackHandler { hideOverlayChatTeamPanel() }
                         Surface(
                             modifier = Modifier.fillMaxSize(),
                             color = MaterialTheme.colorScheme.surface,
@@ -1911,7 +1905,7 @@ class CombatOverlayService : Service() {
                                             TeamScreen(
                                                 currentUserId = userId,
                                                 teamsRepository = container.teamsRepository,
-                                                initialMainSection = TeamMainSection.Members,
+                                                initialMainSection = TeamMainSection.News,
                                             )
                                         }
                                     }

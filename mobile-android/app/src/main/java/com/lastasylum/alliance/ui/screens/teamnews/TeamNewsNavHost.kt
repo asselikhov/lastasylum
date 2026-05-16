@@ -423,6 +423,26 @@ private enum class TeamNewsEditorMode {
 }
 
 @Composable
+private fun TeamNewsNavInvalidArgs(onBack: () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = stringResource(R.string.team_news_load_error),
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        TextButton(onClick = onBack, modifier = Modifier.padding(top = 12.dp)) {
+            Text(stringResource(R.string.team_news_cd_back))
+        }
+    }
+}
+
+@Composable
 fun TeamNewsNavHost(
     teamId: String,
     currentUserId: String,
@@ -453,7 +473,11 @@ fun TeamNewsNavHost(
             route = "news_detail/{newsId}",
             arguments = listOf(navArgument("newsId") { type = NavType.StringType }),
         ) { entry ->
-            val id = entry.arguments?.getString("newsId") ?: return@composable
+            val id = entry.arguments?.getString("newsId")
+            if (id.isNullOrBlank()) {
+                TeamNewsNavInvalidArgs(onBack = { nav.popBackStack() })
+                return@composable
+            }
             TeamNewsDetailRoute(
                 teamId = teamId,
                 newsId = id,
@@ -477,7 +501,11 @@ fun TeamNewsNavHost(
             route = "news_edit/{newsId}",
             arguments = listOf(navArgument("newsId") { type = NavType.StringType }),
         ) { entry ->
-            val id = entry.arguments?.getString("newsId") ?: return@composable
+            val id = entry.arguments?.getString("newsId")
+            if (id.isNullOrBlank()) {
+                TeamNewsNavInvalidArgs(onBack = { nav.popBackStack() })
+                return@composable
+            }
             TeamNewsEditorRoute(
                 teamId = teamId,
                 newsId = id,
@@ -1144,6 +1172,7 @@ private fun TeamNewsDetailRoute(
                                         scope.launch {
                                             teamsRepository.voteTeamNews(teamId, newsId, oid)
                                                 .onSuccess { voted -> detail = voted }
+                                                .onFailure { e -> err = e.toUserMessageRu(res) }
                                             voteBusy = false
                                         }
                                     },
@@ -1171,6 +1200,7 @@ private fun TeamNewsDetailRoute(
                         scope.launch {
                             teamsRepository.deleteTeamNews(teamId, d.id)
                                 .onSuccess { deleteOpen = false; onBack() }
+                                .onFailure { e -> err = e.toUserMessageRu(res) }
                         }
                     },
                 ) {
@@ -1249,7 +1279,11 @@ private fun TeamNewsEditorRoute(
         scope.launch {
             val cr = context.contentResolver
             val mime = cr.getType(uri) ?: "image/jpeg"
-            val bytes = cr.openInputStream(uri)?.use { it.readBytes() } ?: return@launch
+            val bytes = cr.openInputStream(uri)?.use { it.readBytes() }
+                ?: run {
+                    err = res.getString(R.string.chat_attachment_read_failed)
+                    return@launch
+                }
             val name = "upload_${System.currentTimeMillis()}.jpg"
             teamsRepository.uploadTeamNewsImage(teamId, bytes, name, mime)
                 .onSuccess { uploaded -> imageIds.add(uploaded.fileId) }

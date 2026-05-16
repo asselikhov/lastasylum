@@ -319,6 +319,12 @@
     <string name="team_news_gallery_image_cd">Фотография к новости</string>
     <string name="team_news_empty">Пока нет новостей</string>
     <string name="team_news_load_error">Не удалось загрузить новости</string>
+    <string name="team_news_vote_failed">Не удалось сохранить голос. Попробуйте снова.</string>
+    <string name="team_news_delete_failed">Не удалось удалить новость</string>
+    <string name="team_join_search_failed">Не удалось выполнить поиск команд</string>
+    <string name="team_inbox_load_failed">Не удалось загрузить заявки</string>
+    <string name="chat_action_failed">Не удалось выполнить действие. Попробуйте снова.</string>
+    <string name="chat_open_external_failed">Не удалось открыть файл</string>
     <string name="team_news_delete_confirm">Удалить эту новость?</string>
     <string name="team_news_pick_image">Добавить изображение</string>
     <string name="team_news_saving">Сохранение…</string>

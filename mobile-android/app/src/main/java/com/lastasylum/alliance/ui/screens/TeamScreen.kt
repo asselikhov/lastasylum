@@ -59,6 +59,8 @@ import com.lastasylum.alliance.data.users.MyProfileDto
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.screens.teamforum.TeamForumNavHost
 import com.lastasylum.alliance.ui.screens.teamnews.TeamNewsNavHost
+import com.lastasylum.alliance.overlay.LocalOverlayUiMode
+import com.lastasylum.alliance.overlay.OverlayInteractionSuppressEffect
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import androidx.compose.foundation.background
@@ -190,12 +192,21 @@ fun TeamScreen(
         joinSearchBusy = true
         teamsRepository.searchTeams(q)
             .onSuccess { joinResults = it }
-            .onFailure { joinResults = emptyList() }
+            .onFailure { e ->
+                joinResults = emptyList()
+                joinFeedback = e.toUserMessageRu(res)
+            }
         joinSearchBusy = false
     }
 
     val isLeader = profile?.isPlayerTeamLeader == true
     val pending = profile?.pendingPlayerTeamJoinRequests ?: 0
+    val overlayUi = LocalOverlayUiMode.current
+    val overlayModalOpen = showCreate || showJoin || showJoinInbox || showAddMemberDialog ||
+        showEditTeamNameDialog || roleEditMember != null
+    if (overlayUi && overlayModalOpen) {
+        OverlayInteractionSuppressEffect()
+    }
 
     Column(
         modifier = Modifier
@@ -398,7 +409,10 @@ fun TeamScreen(
                                                         inboxBusy = true
                                                         teamsRepository.listPendingJoinRequests()
                                                             .onSuccess { inboxRequests = it }
-                                                            .onFailure { inboxRequests = emptyList() }
+                                                            .onFailure { e ->
+                                                                inboxRequests = emptyList()
+                                                                error = e.toUserMessageRu(res)
+                                                            }
                                                         inboxBusy = false
                                                     }
                                                 },

@@ -207,7 +207,15 @@ fun TeamForumNavHost(
             route = "forum_topic/{topicId}",
             arguments = listOf(navArgument("topicId") { type = NavType.StringType }),
         ) { entry ->
-            val topicId = entry.arguments?.getString("topicId") ?: return@composable
+            val topicId = entry.arguments?.getString("topicId")
+            if (topicId.isNullOrBlank()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    TextButton(onClick = { nav.popBackStack() }) {
+                        Text(stringResource(R.string.team_news_cd_back))
+                    }
+                }
+                return@composable
+            }
             val title = topicTitles[topicId].orEmpty()
             TeamForumTopicChatRoute(
                 teamId = teamId,
@@ -1118,6 +1126,11 @@ private suspend fun uploadForumImagesFromUris(
         } finally {
             runCatching { tmp.delete() }
         }
+    }
+    if (fileIds.isEmpty() && uris.isNotEmpty()) {
+        return@withContext Result.failure(
+            IllegalStateException(res.getString(R.string.chat_attachment_read_failed)),
+        )
     }
     Result.success(fileIds to lastPreview)
 }

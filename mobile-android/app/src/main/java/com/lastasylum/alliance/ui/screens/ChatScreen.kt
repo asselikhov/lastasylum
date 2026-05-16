@@ -898,6 +898,13 @@ fun ChatScreen(
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
                             runCatching { ctx.startActivity(i) }
+                                .onFailure {
+                                    Toast.makeText(
+                                        ctx,
+                                        ctx.getString(R.string.chat_open_external_failed),
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
                         },
                         onRemove = { uri ->
                             onRemovePickedImage(uri)
