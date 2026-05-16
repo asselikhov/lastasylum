@@ -14,6 +14,8 @@ import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.teams.TeamForumSocketManager
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.users.UsersRepository
+import com.lastasylum.alliance.data.voice.VoiceChatSession
+import com.lastasylum.alliance.data.voice.VoiceSocketManager
 
 class AppContainer private constructor(context: Context) {
     private val appContext = context.applicationContext
@@ -26,14 +28,20 @@ class AppContainer private constructor(context: Context) {
     val onboardingPreferences: OnboardingPreferences = OnboardingPreferences(appContext)
 
     private val chatSocketManager = ChatSocketManager()
+    private val voiceSocketManager = VoiceSocketManager()
     private val teamForumSocketManager = TeamForumSocketManager()
 
     @Volatile
     private var chatRepositoryInstance: ChatRepository? = null
 
+    /** Set by [com.lastasylum.alliance.overlay.CombatOverlayService] while overlay voice is active. */
+    @Volatile
+    var overlayVoiceSession: VoiceChatSession? = null
+
     private val authorizedClients by lazy {
         NetworkModule.createAuthorizedClients(tokenStore) {
             chatRepositoryInstance?.onAccessTokenRefreshed()
+            overlayVoiceSession?.onAccessTokenRefreshed()
             teamForumSocketManager.reconnectWithFreshToken()
         }
     }
@@ -77,6 +85,20 @@ class AppContainer private constructor(context: Context) {
     }
 
     val teamForumSocket: TeamForumSocketManager get() = teamForumSocketManager
+
+    fun newVoiceChatSession(
+        onStateChanged: (micOn: Boolean, soundOn: Boolean) -> Unit,
+        onMicForegroundChanged: (micActive: Boolean) -> Unit,
+        onActiveSpeakersChanged: (count: Int) -> Unit = {},
+    ): VoiceChatSession = VoiceChatSession(
+        context = appContext,
+        tokenStore = tokenStore,
+        userSettings = userSettingsPreferences,
+        socketManager = voiceSocketManager,
+        onStateChanged = onStateChanged,
+        onMicForegroundChanged = onMicForegroundChanged,
+        onActiveSpeakersChanged = onActiveSpeakersChanged,
+    )
 
     companion object {
         @Volatile

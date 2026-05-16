@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.IntentFilter
 import android.content.BroadcastReceiver
 import android.content.Intent
+import android.Manifest
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.content.ClipData
 import android.net.Uri
@@ -76,6 +78,7 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.data.auth.JwtAccessTokenClaims
+import com.lastasylum.alliance.data.voice.VoiceChatSession
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.layout.OverlayLayoutDp
@@ -208,7 +211,10 @@ class CombatOverlayService : Service() {
             },
         )
     }
-    private var recordingStartRunnable: Runnable? = null
+    private var overlayVoiceControls: OverlayVoiceControls? = null
+    private var voiceSession: VoiceChatSession? = null
+    private var pendingVoiceMicEnable = false
+    private var voicePermissionReceiverRegistered = false
     /** True: только кнопка разворота; по нажатию — остальные кнопки панели. */
     private var panelCollapsed = false
     private var chatStripClipRoot: FrameLayout? = null
@@ -487,7 +493,6 @@ class CombatOverlayService : Service() {
             stopSelf()
             return
         }
-        speechPipeline.initIfAvailable()
         OverlayForegroundNotifications.ensureChannel(this)
         val notification = OverlayForegroundNotifications.build(
             this,
@@ -774,8 +779,8 @@ class CombatOverlayService : Service() {
                 }
                 tickGameGate()
                 when (intent?.action) {
-                    ACTION_START_RECORDING -> speechPipeline.startRecording()
-                    ACTION_STOP_RECORDING -> speechPipeline.stopRecording()
+                    ACTION_START_RECORDING -> ensureVoiceSession().setMicEnabled(true)
+                    ACTION_STOP_RECORDING -> ensureVoiceSession().setMicEnabled(false)
                 }
             }
         }
@@ -790,6 +795,7 @@ class CombatOverlayService : Service() {
         mainHandler.removeCallbacks(gameGateRunnable)
         lastForegroundNotificationText = null
         speechPipeline.destroy()
+        stopOverlayVoice()
         overlayTicker.hideTicker()
         runCatching { hideOverlayChatTeamPanel() }
         removeOverlayControl(force = true)
@@ -1135,8 +1141,36 @@ class CombatOverlayService : Service() {
         }
     }
 
+    private val voiceMicPermissionReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val i = intent ?: return
+            if (i.action != OverlaySystemDialogActivity.ACTION_OVERLAY_MIC_PERMISSION_RESULT) return
+            if (i.getIntExtra(OverlaySystemDialogActivity.EXTRA_REQUEST_CODE, -1) != VOICE_MIC_PERMISSION_REQUEST) {
+                return
+            }
+            mainHandler.post {
+                val granted = i.getBooleanExtra(OverlaySystemDialogActivity.EXTRA_GRANTED, false)
+                if (granted && pendingVoiceMicEnable) {
+                    ensureVoiceSession().setMicEnabled(true)
+                    overlayVoiceControls?.applyState(
+                        ensureVoiceSession().micOn,
+                        ensureVoiceSession().soundOn,
+                    )
+                } else if (!granted) {
+                    Toast.makeText(
+                        this@CombatOverlayService,
+                        R.string.overlay_voice_mic_permission_needed,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+                pendingVoiceMicEnable = false
+            }
+        }
+    }
+
     private fun beginOverlayChatSubscription() {
         if (overlayMessageListener != null) return
+        registerVoiceMicPermissionReceiver()
         cancelStripTick()
         val listener: (ChatMessage) -> Unit = { msg ->
             mainHandler.post {
@@ -1157,6 +1191,7 @@ class CombatOverlayService : Service() {
             AppContainer.from(this).chatRepository.addOverlayMessageListener(listener)
             scheduleStripTick()
             presenceHeartbeat.start()
+            startOverlayVoiceIfRaidAvailable()
         }
         serviceScope.launch {
             val container = AppContainer.from(this@CombatOverlayService)
@@ -1184,6 +1219,8 @@ class CombatOverlayService : Service() {
     }
 
     private fun endOverlayChatSubscription() {
+        stopOverlayVoice()
+        unregisterVoiceMicPermissionReceiver()
         presenceHeartbeat.stop()
         serviceScope.launch {
             runCatching {
@@ -1286,7 +1323,6 @@ class CombatOverlayService : Service() {
         var isDragging = false
         var dragArmed = false
         var dragArmRunnable: Runnable? = null
-        var startedRecording = false
         val dragThreshold = OverlayWindowDragHelper.dragSlopPx(this)
         val fabCtx = OverlayTickerUi.themedFabContext(this@CombatOverlayService)
         fun makeMiniFab(iconRes: Int, cd: String): FloatingActionButton =
@@ -1313,10 +1349,30 @@ class CombatOverlayService : Service() {
             iconRes = R.drawable.ic_overlay_chat,
             cd = getString(R.string.overlay_cd_chat_and_team),
         )
-        val btnMic = makeMiniFab(
-            iconRes = R.drawable.ic_overlay_mic,
-            cd = getString(R.string.overlay_ptt_start),
-        )
+        val voiceControls = OverlayVoiceControls(
+            context = this,
+            fabCtx = fabCtx,
+            dp = { dp(it) },
+            makeMiniFab = ::makeMiniFab,
+        ).also { controls ->
+            controls.onSoundToggle = {
+                if (!panelCollapsed) {
+                    ensureVoiceSession().toggleSound()
+                }
+            }
+            controls.onMicToggle = {
+                if (!panelCollapsed) {
+                    val session = ensureVoiceSession()
+                    if (!session.micOn && !session.hasRecordAudioPermission()) {
+                        pendingVoiceMicEnable = true
+                        requestOverlayVoiceMicPermission()
+                    } else {
+                        session.toggleMic()
+                    }
+                }
+            }
+        }
+        overlayVoiceControls = voiceControls
 
         val lockIcon = ImageView(this).apply {
             setImageResource(R.drawable.ic_overlay_lock_open)
@@ -1380,8 +1436,8 @@ class CombatOverlayService : Service() {
                 },
             )
             addView(
-                btnMic,
-                LinearLayout.LayoutParams(fabColW, dp(44)).apply {
+                voiceControls.root,
+                LinearLayout.LayoutParams(fabColW, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                     topMargin = gap
                 },
             )
@@ -1460,13 +1516,14 @@ class CombatOverlayService : Service() {
                 messageRow.visibility = View.VISIBLE
                 btnMessage.visibility = View.INVISIBLE
                 chatTeamHost.visibility = View.INVISIBLE
-                btnMic.visibility = View.INVISIBLE
+                voiceControls.root.visibility = View.INVISIBLE
+                voiceControls.collapse()
                 lockIcon.visibility = View.INVISIBLE
             } else {
                 messageRow.visibility = View.VISIBLE
                 btnMessage.visibility = View.VISIBLE
                 chatTeamHost.visibility = View.VISIBLE
-                btnMic.visibility = View.VISIBLE
+                voiceControls.root.visibility = View.VISIBLE
                 lockIcon.visibility = View.VISIBLE
             }
             btnCollapse.setImageResource(if (panelCollapsed) R.drawable.ic_overlay_ui_expand else R.drawable.ic_overlay_ui_collapse)
@@ -1515,30 +1572,11 @@ class CombatOverlayService : Service() {
             refreshLockIcon()
         }
 
-        btnMic.setOnTouchListener { _, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    startedRecording = false
-                    val delayedStart = Runnable {
-                        startedRecording = true
-                        speechPipeline.startRecording()
-                    }
-                    recordingStartRunnable = delayedStart
-                    mainHandler.postDelayed(delayedStart, 100L)
-                    true
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    recordingStartRunnable?.let { mainHandler.removeCallbacks(it) }
-                    recordingStartRunnable = null
-                    if (startedRecording) {
-                        speechPipeline.stopRecording()
-                    }
-                    startedRecording = false
-                    true
-                }
-                else -> false
-            }
-        }
+        val voicePrefs = AppContainer.from(this@CombatOverlayService).userSettingsPreferences
+        voiceControls.applyState(
+            voicePrefs.isOverlayVoiceMicEnabled(),
+            voicePrefs.isOverlayVoiceSoundEnabled(),
+        )
 
         btnCollapse.setOnTouchListener { v, event ->
             val dragLocked = AppContainer.from(this@CombatOverlayService).userSettingsPreferences.isOverlayDragLocked()
@@ -2020,14 +2058,105 @@ class CombatOverlayService : Service() {
         return (value * density).toInt()
     }
 
+    private fun ensureVoiceSession(): VoiceChatSession {
+        voiceSession?.let { return it }
+        val container = AppContainer.from(this)
+        return container.newVoiceChatSession(
+            onStateChanged = { micOn, soundOn ->
+                overlayVoiceControls?.applyState(micOn, soundOn)
+            },
+            onMicForegroundChanged = { micActive ->
+                updateVoiceForegroundService(micActive)
+            },
+            onActiveSpeakersChanged = { count ->
+                overlayVoiceControls?.setActiveSpeakerCount(count)
+            },
+        ).also {
+            voiceSession = it
+            container.overlayVoiceSession = it
+        }
+    }
+
+    private fun startOverlayVoiceIfRaidAvailable() {
+        val raidId = AppContainer.from(this).chatRoomPreferences.getRaidRoomId() ?: return
+        val userId = jwtSubFromAccessToken().orEmpty()
+        if (userId.isBlank()) return
+        val session = ensureVoiceSession()
+        session.start(raidId, userId)
+        overlayVoiceControls?.applyState(session.micOn, session.soundOn)
+    }
+
+    private fun stopOverlayVoice() {
+        voiceSession?.stop()
+        voiceSession = null
+        AppContainer.from(this).overlayVoiceSession = null
+        overlayVoiceControls?.collapse()
+        updateVoiceForegroundService(false)
+    }
+
+    private fun updateVoiceForegroundService(micActive: Boolean) {
+        val hasMic = micActive &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        val types = if (hasMic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        } else {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        }
+        val text = if (hasMic) {
+            getString(R.string.overlay_notif_voice_active)
+        } else {
+            lastForegroundNotificationText ?: getString(R.string.overlay_notif_combat_active)
+        }
+        val notification = OverlayForegroundNotifications.build(
+            this,
+            text,
+            AppContainer.from(this).userSettingsPreferences.isQuietMode(),
+        )
+        ServiceCompat.startForeground(
+            this,
+            OverlayForegroundNotifications.NOTIFICATION_ID,
+            notification,
+            types,
+        )
+    }
+
+    private fun requestOverlayVoiceMicPermission() {
+        registerVoiceMicPermissionReceiver()
+        val intent = android.content.Intent(this, OverlaySystemDialogActivity::class.java).apply {
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            putExtra(OverlaySystemDialogActivity.EXTRA_KIND, OverlaySystemDialogActivity.KIND_REQUEST_MIC)
+            putExtra(OverlaySystemDialogActivity.EXTRA_REQUEST_CODE, VOICE_MIC_PERMISSION_REQUEST)
+        }
+        runCatching { startActivity(intent) }
+    }
+
+    private fun registerVoiceMicPermissionReceiver() {
+        if (voicePermissionReceiverRegistered) return
+        runCatching {
+            ContextCompat.registerReceiver(
+                this,
+                voiceMicPermissionReceiver,
+                IntentFilter(OverlaySystemDialogActivity.ACTION_OVERLAY_MIC_PERMISSION_RESULT),
+                ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
+            voicePermissionReceiverRegistered = true
+        }
+    }
+
+    private fun unregisterVoiceMicPermissionReceiver() {
+        if (!voicePermissionReceiverRegistered) return
+        runCatching { unregisterReceiver(voiceMicPermissionReceiver) }
+        voicePermissionReceiverRegistered = false
+    }
+
     private fun removeOverlayControl(force: Boolean = false) {
         if (!force && (overlayChatTeamPanelVisible || OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible)) {
             Log.i(TAG, "removeOverlayControl: skipped while fullscreen chat/team panel is open")
             return
         }
         resumeOverlayWindowsAfterSystemActivity()
-        recordingStartRunnable?.let { mainHandler.removeCallbacks(it) }
-        recordingStartRunnable = null
         speechPipeline.cancelActiveSession()
         endOverlayChatSubscription()
         overlayTicker.hideTicker()
@@ -2075,6 +2204,7 @@ class CombatOverlayService : Service() {
         private const val OVERLAY_DIAG_TAG = "SR_OverlayDiag"
 
         const val ACTION_START_RECORDING = "com.squadrelay.action.START_RECORDING"
+        private const val VOICE_MIC_PERMISSION_REQUEST = 9107
         const val ACTION_STOP_RECORDING = "com.squadrelay.action.STOP_RECORDING"
         const val ACTION_STOP_SERVICE = "com.squadrelay.action.STOP_SERVICE"
         /** Stops overlay runtime without clearing the user's "show panel" preference. */

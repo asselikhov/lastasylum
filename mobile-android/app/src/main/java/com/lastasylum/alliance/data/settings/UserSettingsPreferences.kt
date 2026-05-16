@@ -66,6 +66,22 @@ class UserSettingsPreferences(context: Context) {
             .apply()
     }
 
+    /** Слышать голос союзников в рейде (оверлей). */
+    fun isOverlayVoiceSoundEnabled(): Boolean =
+        prefs.getBoolean(KEY_OVERLAY_VOICE_SOUND, true)
+
+    fun setOverlayVoiceSoundEnabled(value: Boolean) {
+        prefs.edit().putBoolean(KEY_OVERLAY_VOICE_SOUND, value).apply()
+    }
+
+    /** Передавать свой голос в рейд (оверлей). */
+    fun isOverlayVoiceMicEnabled(): Boolean =
+        prefs.getBoolean(KEY_OVERLAY_VOICE_MIC, false)
+
+    fun setOverlayVoiceMicEnabled(value: Boolean) {
+        prefs.edit().putBoolean(KEY_OVERLAY_VOICE_MIC, value).apply()
+    }
+
     /**
      * Если включено — боевой оверлей в идеале только при открытой игре ([getOverlayTargetGamePackage]).
      * На части прошивок без «Данных об использовании» гейт не может это проверить — тогда панель всё равно
@@ -157,6 +173,8 @@ class UserSettingsPreferences(context: Context) {
         private const val KEY_OVERLAY_TARGET_ACTIVITY_TOKENS = "overlay_target_game_activity_tokens"
         private const val KEY_OVERLAY_PANEL_POS_X_PX = "overlay_panel_pos_x_px"
         private const val KEY_OVERLAY_PANEL_POS_Y_PX = "overlay_panel_pos_y_px"
+        private const val KEY_OVERLAY_VOICE_SOUND = "overlay_voice_sound"
+        private const val KEY_OVERLAY_VOICE_MIC = "overlay_voice_mic"
         private const val KEY_OVERLAY_TARGET_LEGACY_MIGRATED = "overlay_target_legacy_migrated_v1"
         private const val KEY_OVERLAY_TARGET_PLAY_MIGRATED = "overlay_target_play_migrated_v2"
 

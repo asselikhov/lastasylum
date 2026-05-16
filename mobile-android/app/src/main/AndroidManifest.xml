@@ -13,6 +13,8 @@
     <!-- Боевой оверлей: фоновая синхронизация чата/сокета + уведомление (не тип microphone — иначе API 34
          требует RECORD_AUDIO и «eligible state» уже при onCreate, что ломает автоперезапуск и часть сценариев). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
@@ -54,7 +56,7 @@
             android:name=".overlay.CombatOverlayService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="dataSync|microphone" />
 
         <service
             android:name=".push.SquadRelayFirebaseMessagingService"

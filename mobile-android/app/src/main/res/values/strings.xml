@@ -141,6 +141,17 @@
     <string name="overlay_ptt_start">Начать запись (PTT)</string>
     <string name="overlay_ptt_stop">Остановить запись (PTT)</string>
     <string name="overlay_ptt_caption">НАЖМИ И ГОВОРИ</string>
+    <string name="overlay_voice_hub_cd">Голосовой чат</string>
+    <string name="overlay_voice_hub_collapse_cd">Свернуть голосовой чат</string>
+    <string name="overlay_voice_sound_cd">Звук</string>
+    <string name="overlay_voice_sound_on_cd">Звук включён — слышите союзников</string>
+    <string name="overlay_voice_sound_off_cd">Звук выключен</string>
+    <string name="overlay_voice_mic_cd">Микрофон</string>
+    <string name="overlay_voice_mic_on_cd">Микрофон включён — вас слышат</string>
+    <string name="overlay_voice_mic_off_cd">Микрофон выключен</string>
+    <string name="overlay_notif_voice_active">Голосовой чат: микрофон активен</string>
+    <string name="overlay_voice_mic_permission_needed">Разрешите микрофон для голосового чата</string>
+    <string name="overlay_voice_speakers_cd">В эфире: %1$d</string>
 
     <!-- Profile -->
     <string name="profile_header_title">Профиль</string>
