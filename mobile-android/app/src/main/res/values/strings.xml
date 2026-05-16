@@ -326,6 +326,10 @@
     <string name="team_news_retry">Повторить</string>
     <string name="team_news_fill_required">Заполните заголовок и текст</string>
     <string name="team_news_poll_invalid">Для опроса нужен вопрос и минимум два варианта</string>
+    <string name="team_news_editor_mode_news">Новость</string>
+    <string name="team_news_editor_mode_poll">Только опрос</string>
+    <string name="team_news_poll_only_hint">Заголовок и текст не нужны — участники голосуют по вариантам ниже.</string>
+    <string name="team_news_poll_voters_empty">Пока никто не выбрал этот вариант</string>
     <string name="team_no_team_title">Вы еще не состоите в команде</string>
     <string name="team_no_team_body">Создайте свою команду или отправьте заявку на вступление в существующую.</string>
     <string name="team_squad_pick_r4">R4 — старейшины команды</string>

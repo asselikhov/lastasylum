@@ -19,6 +19,8 @@ object SquadRelayDimens {
     val composerInnerPadding = 10.dp
     /** Небольшой зазор у композера над нижним краем области контента (над IME при adjustResize / в оверлее). */
     val keyboardComposerGap = 4.dp
+    /** Зазор между панелью ввода чата и нижней навигацией (вкладка «Чат»). */
+    val chatComposerNavGap = 14.dp
     val headerSubtitleGap = 2.dp
     val listRowHorizontalPadding = 10.dp
     val listRowVerticalPadding = 10.dp

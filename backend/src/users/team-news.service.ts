@@ -26,6 +26,9 @@ export type TeamNewsListRow = {
   createdAt: string;
   updatedAt: string;
   hasPoll: boolean;
+  pollOnly: boolean;
+  pollQuestion: string | null;
+  pollOptions: Array<{ id: string; text: string }> | null;
   firstImageRelativeUrl: string | null;
   pollTallies: Array<{ optionId: string; count: number }>;
   myVoteOptionId: string | null;
@@ -37,7 +40,12 @@ export type TeamNewsDetail = TeamNewsListRow & {
   poll: null | {
     question: string;
     options: Array<{ id: string; text: string }>;
-    votes: Array<{ userId: string; username: string; optionId: string }>;
+    votes: Array<{
+      userId: string;
+      username: string;
+      telegramUsername: string | null;
+      optionId: string;
+    }>;
     tallies: Array<{ optionId: string; count: number }>;
     myVoteOptionId: string | null;
   };
@@ -123,14 +131,39 @@ export class TeamNewsService {
   private async usernamesFor(
     ids: string[],
   ): Promise<Map<string, string>> {
+    const profiles = await this.userProfilesFor(ids);
+    return new Map(
+      [...profiles.entries()].map(([id, p]) => [id, p.username]),
+    );
+  }
+
+  private async userProfilesFor(
+    ids: string[],
+  ): Promise<
+    Map<string, { username: string; telegramUsername: string | null }>
+  > {
     const unique = [...new Set(ids)].filter((id) => Types.ObjectId.isValid(id));
     if (unique.length === 0) return new Map();
     const users = await this.userModel
       .find({ _id: { $in: unique.map((i) => new Types.ObjectId(i)) } })
-      .select('username')
-      .lean<Array<{ _id: Types.ObjectId; username: string }>>()
+      .select('username telegramUsername')
+      .lean<
+        Array<{
+          _id: Types.ObjectId;
+          username: string;
+          telegramUsername?: string | null;
+        }>
+      >()
       .exec();
-    return new Map(users.map((u) => [u._id.toString(), u.username]));
+    return new Map(
+      users.map((u) => [
+        u._id.toString(),
+        {
+          username: u.username,
+          telegramUsername: u.telegramUsername ?? null,
+        },
+      ]),
+    );
   }
 
   private toListRow(
@@ -145,8 +178,13 @@ export class TeamNewsService {
       doc.imageAttachments.length > 0
         ? `/teams/${doc.teamId.toString()}/news/attachments/${doc.imageAttachments[0].fileId.toString()}`
         : null;
+    const bodyTrim = doc.body.trim();
     const excerpt =
-      doc.body.length > 220 ? `${doc.body.slice(0, 217).trimEnd()}…` : doc.body;
+      bodyTrim.length > 220
+        ? `${bodyTrim.slice(0, 217).trimEnd()}…`
+        : bodyTrim;
+    const pollOnly =
+      !!poll && bodyTrim.length === 0 && doc.imageAttachments.length === 0;
     const created = (doc as unknown as { createdAt?: Date }).createdAt;
     const updated = (doc as unknown as { updatedAt?: Date }).updatedAt;
     return {
@@ -159,6 +197,9 @@ export class TeamNewsService {
       createdAt: created?.toISOString() ?? new Date(0).toISOString(),
       updatedAt: updated?.toISOString() ?? new Date(0).toISOString(),
       hasPoll: !!poll,
+      pollOnly,
+      pollQuestion: poll?.question ?? null,
+      pollOptions: poll?.options.map((o) => ({ id: o.id, text: o.text })) ?? null,
       firstImageRelativeUrl: first,
       pollTallies: tallies,
       myVoteOptionId,
@@ -225,7 +266,13 @@ export class TeamNewsService {
       .exec();
     if (!doc) throw new NotFoundException('News not found');
     const pollVoterIds = doc.poll?.votes.map((v) => v.userId) ?? [];
-    const names = await this.usernamesFor([doc.authorUserId, ...pollVoterIds]);
+    const profiles = await this.userProfilesFor([
+      doc.authorUserId,
+      ...pollVoterIds,
+    ]);
+    const names = new Map(
+      [...profiles.entries()].map(([id, p]) => [id, p.username]),
+    );
     const base = this.toListRow(doc, names, userId);
     const images = doc.imageAttachments.map(
       (a) =>
@@ -237,7 +284,9 @@ export class TeamNewsService {
           options: doc.poll.options,
           votes: doc.poll.votes.map((v) => ({
             userId: v.userId,
-            username: names.get(v.userId) ?? '—',
+            username: profiles.get(v.userId)?.username ?? '—',
+            telegramUsername:
+              profiles.get(v.userId)?.telegramUsername ?? null,
             optionId: v.optionId,
           })),
           tallies: this.pollTallies(doc.poll),
@@ -266,11 +315,24 @@ export class TeamNewsService {
       userId,
     );
     const poll = this.buildPollFromInput(dto.poll);
+    const titleRaw = (dto.title ?? '').trim();
+    const bodyRaw = (dto.body ?? '').trim();
+    if (poll) {
+      if (!poll.question || poll.options.length < 2) {
+        throw new BadRequestException(
+          'Poll requires a question and at least two options',
+        );
+      }
+    } else if (!titleRaw || !bodyRaw) {
+      throw new BadRequestException('Title and body are required without a poll');
+    }
+    const title = poll && !titleRaw ? poll.question : titleRaw;
+    const body = bodyRaw;
     const created = await this.newsModel.create({
       teamId: teamOid,
       authorUserId: userId,
-      title: dto.title.trim(),
-      body: dto.body.trim(),
+      title,
+      body,
       imageAttachments: imgs,
       poll,
     });
@@ -295,12 +357,21 @@ export class TeamNewsService {
       .exec();
     if (!doc) throw new NotFoundException('News not found');
     this.assertCanEditOrDelete(team, doc, userId);
-    if (dto.title != null) doc.title = dto.title.trim();
+    if (dto.title != null) {
+      const t = dto.title.trim();
+      doc.title = t.length > 0 ? t : (doc.poll?.question ?? doc.title);
+    }
     if (dto.body != null) doc.body = dto.body.trim();
     if (dto.clearPoll === true) {
       doc.poll = null;
     } else if (dto.poll) {
-      doc.poll = this.buildPollFromInput(dto.poll);
+      const builtPoll = this.buildPollFromInput(dto.poll);
+      doc.poll = builtPoll;
+      const bodyEmpty = doc.body.trim().length === 0;
+      const noImages = doc.imageAttachments.length === 0;
+      if (builtPoll && bodyEmpty && noImages) {
+        doc.title = builtPoll.question;
+      }
     }
     if (dto.imageFileIds != null) {
       const teamOid = new Types.ObjectId(teamId);

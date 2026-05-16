@@ -24,13 +24,17 @@ export class TeamNewsPollInputDto {
 }
 
 export class CreateTeamNewsDto {
+  /** Необязателен, если есть опрос — подставится вопрос опроса. */
+  @IsOptional()
   @IsString()
-  @Length(1, 200)
-  title: string;
+  @MaxLength(200)
+  title?: string;
 
+  /** Необязателен для поста «только опрос». */
+  @IsOptional()
   @IsString()
   @MaxLength(20000)
-  body: string;
+  body?: string;
 
   @IsOptional()
   @IsArray()

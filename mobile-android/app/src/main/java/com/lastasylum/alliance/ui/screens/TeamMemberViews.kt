@@ -109,14 +109,7 @@ private fun groupMembersBySquadRole(
 }
 
 @Composable
-private fun squadRoleSectionTitle(roleCode: String): String = when (roleCode) {
-    "R5" -> stringResource(R.string.team_squad_section_r5)
-    "R4" -> stringResource(R.string.team_squad_section_r4)
-    "R3" -> stringResource(R.string.team_squad_section_r3)
-    "R2" -> stringResource(R.string.team_squad_section_r2)
-    "R1" -> stringResource(R.string.team_squad_section_r1)
-    else -> roleCode
-}
+private fun squadRoleSectionTitle(roleCode: String): String = roleCode
 
 @Composable
 fun SquadTeamRoster(

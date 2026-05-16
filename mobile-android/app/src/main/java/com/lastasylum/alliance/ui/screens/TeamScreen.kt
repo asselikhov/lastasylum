@@ -59,8 +59,14 @@ import com.lastasylum.alliance.data.users.MyProfileDto
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.screens.teamforum.TeamForumNavHost
 import com.lastasylum.alliance.ui.screens.teamnews.TeamNewsNavHost
-import com.lastasylum.alliance.ui.components.TeamHeroStrip
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.lerp
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -406,17 +412,6 @@ fun TeamScreen(
                                         }
                                     }
                                 }
-                                TeamHeroStrip(
-                                    Modifier.padding(
-                                        horizontal = SquadRelayDimens.panelInnerPadding,
-                                        vertical = 6.dp,
-                                    ),
-                                )
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = SquadRelayDimens.panelInnerPadding),
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f),
-                                    thickness = 1.dp,
-                                )
                                 TeamSectionPills(
                                     selectedSection = TeamMainSection.entries[mainSectionOrdinal],
                                     onSelect = { section ->
@@ -874,38 +869,80 @@ private fun TeamSectionPills(
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
-    Row(
+    val sections = TeamMainSection.entries
+    val barShape = RoundedCornerShape(16.dp)
+    val accent = scheme.primary
+    Box(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        contentAlignment = Alignment.Center,
     ) {
-        TeamMainSection.entries.forEach { section ->
-            val titleRes = when (section) {
-                TeamMainSection.News -> R.string.team_tab_news
-                TeamMainSection.Forum -> R.string.team_tab_forum
-                TeamMainSection.Members -> R.string.team_tab_members
-            }
-            val selected = section == selectedSection
-            Surface(
-                onClick = { onSelect(section) },
-                shape = RoundedCornerShape(22.dp),
-                color = if (selected) scheme.primary else scheme.surface.copy(alpha = 0.42f),
-                border = if (selected) {
-                    null
-                } else {
-                    BorderStroke(1.dp, scheme.outline.copy(alpha = 0.24f))
-                },
-                shadowElevation = if (selected) 6.dp else 2.dp,
-                tonalElevation = 0.dp,
+        Surface(
+            shape = barShape,
+            color = scheme.surface.copy(alpha = 0.44f),
+            tonalElevation = 0.dp,
+            shadowElevation = 5.dp,
+            border = BorderStroke(1.dp, scheme.outline.copy(alpha = 0.22f)),
+        ) {
+            Row(
+                modifier = Modifier.height(IntrinsicSize.Min),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = stringResource(titleRes),
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (selected) Color.White else scheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                sections.forEachIndexed { index, section ->
+                    val titleRes = when (section) {
+                        TeamMainSection.News -> R.string.team_tab_news
+                        TeamMainSection.Forum -> R.string.team_tab_forum
+                        TeamMainSection.Members -> R.string.team_tab_members
+                    }
+                    val selected = section == selectedSection
+                    val segmentShape = when {
+                        sections.size == 1 -> barShape
+                        index == 0 -> RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp)
+                        index == sections.lastIndex -> RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp)
+                        else -> RoundedCornerShape(0.dp)
+                    }
+                    val selectedBrush = Brush.horizontalGradient(
+                        listOf(
+                            accent.copy(alpha = 0.92f),
+                            lerp(accent, Color(0xFF1A1028), 0.5f),
+                        ),
+                    )
+                    Box(
+                        modifier = Modifier.height(IntrinsicSize.Min),
+                    ) {
+                        if (selected) {
+                            Box(
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .clip(segmentShape)
+                                    .background(selectedBrush),
+                            )
+                        }
+                        Surface(
+                            onClick = { onSelect(section) },
+                            shape = segmentShape,
+                            color = Color.Transparent,
+                            shadowElevation = 0.dp,
+                        ) {
+                            Text(
+                                text = stringResource(titleRes),
+                                modifier = Modifier.padding(horizontal = 18.dp, vertical = 11.dp),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                color = if (selected) Color.White else scheme.onSurface.copy(alpha = 0.92f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    if (index < sections.lastIndex) {
+                        Box(
+                            modifier = Modifier
+                                .width(1.dp)
+                                .height(28.dp)
+                                .background(scheme.outline.copy(alpha = 0.28f)),
+                        )
+                    }
+                }
             }
         }
     }

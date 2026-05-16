@@ -96,6 +96,9 @@ data class TeamNewsListItemDto(
     val createdAt: String,
     val updatedAt: String,
     val hasPoll: Boolean,
+    val pollOnly: Boolean = false,
+    val pollQuestion: String? = null,
+    val pollOptions: List<TeamNewsPollOptionDto>? = null,
     val firstImageRelativeUrl: String?,
     val pollTallies: List<TeamNewsPollTallyDto> = emptyList(),
     val myVoteOptionId: String? = null,
@@ -119,6 +122,7 @@ data class TeamNewsPollVoteDto(
     val optionId: String,
     /** Отображаемый ник; с бэкенда с версии poll voter enrichment. */
     val username: String? = null,
+    val telegramUsername: String? = null,
 )
 
 @JsonClass(generateAdapter = true)
@@ -141,6 +145,9 @@ data class TeamNewsDetailDto(
     val createdAt: String,
     val updatedAt: String,
     val hasPoll: Boolean,
+    val pollOnly: Boolean = false,
+    val pollQuestion: String? = null,
+    val pollOptions: List<TeamNewsPollOptionDto>? = null,
     val firstImageRelativeUrl: String?,
     val pollTallies: List<TeamNewsPollTallyDto> = emptyList(),
     val myVoteOptionId: String? = null,
