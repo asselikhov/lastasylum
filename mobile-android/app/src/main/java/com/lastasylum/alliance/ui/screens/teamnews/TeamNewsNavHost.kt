@@ -625,9 +625,9 @@ private fun TeamNewsListRoute(
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(
-                                start = 14.dp,
-                                end = 14.dp,
-                                top = 16.dp,
+                                start = SquadRelayDimens.contentPaddingHorizontal,
+                                end = SquadRelayDimens.contentPaddingHorizontal,
+                                top = 12.dp,
                                 bottom = 88.dp,
                             ),
                             verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -670,7 +670,7 @@ private fun TeamNewsCard(
     onEdit: () -> Unit,
     showEdit: Boolean,
 ) {
-    val cardShape = RoundedCornerShape(26.dp)
+    val cardShape = RoundedCornerShape(24.dp)
     val hasHero = !item.firstImageRelativeUrl.isNullOrBlank()
     val scheme = MaterialTheme.colorScheme
     val ringSoft = scheme.outlineVariant.copy(alpha = 0.45f)

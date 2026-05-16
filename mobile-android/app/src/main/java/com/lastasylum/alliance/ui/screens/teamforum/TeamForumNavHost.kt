@@ -315,14 +315,19 @@ private fun TeamForumListRoute(
                 }
                 else -> {
                     LazyColumn(
-                        contentPadding = PaddingValues(bottom = 88.dp, top = 2.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(
+                            start = SquadRelayDimens.contentPaddingHorizontal,
+                            end = SquadRelayDimens.contentPaddingHorizontal,
+                            top = 8.dp,
+                            bottom = 88.dp,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         items(topics, key = { it.id }) { t ->
                             OutlinedCard(
                                 onClick = { onOpenTopic(t) },
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(22.dp),
+                                shape = RoundedCornerShape(24.dp),
                                 border = BorderStroke(
                                     1.dp,
                                     MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),

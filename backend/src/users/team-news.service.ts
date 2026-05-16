@@ -329,7 +329,8 @@ export class TeamNewsService {
     if (!poll && (!titleRaw || !bodyRaw)) {
       throw new BadRequestException('Title and body are required without a poll');
     }
-    const title = poll && !titleRaw ? poll.question : titleRaw;
+    const titleSource = poll && !titleRaw ? poll.question : titleRaw;
+    const title = titleSource.slice(0, 500);
     const body = bodyRaw;
     const created = await this.newsModel.create({
       teamId: teamOid,

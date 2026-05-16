@@ -258,7 +258,7 @@ private fun SquadRoleSectionHeader(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f, fill = true),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )

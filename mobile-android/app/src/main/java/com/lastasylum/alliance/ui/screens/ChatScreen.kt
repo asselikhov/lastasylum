@@ -1267,7 +1267,6 @@ private fun com.lastasylum.alliance.data.chat.ChatRoomDto.chatRoomVisualKind(): 
         else -> ChatRoomVisualKind.Other
     }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChatRoomsBar(
     rooms: List<com.lastasylum.alliance.data.chat.ChatRoomDto>,
@@ -1276,121 +1275,50 @@ private fun ChatRoomsBar(
 ) {
     if (rooms.isEmpty()) return
     val scheme = MaterialTheme.colorScheme
-    val barShape = RoundedCornerShape(16.dp)
     val raidHot = Color(0xFFFF6B35)
     val raidDeep = Color(0xFF8B3A1A)
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 10.dp),
-        shape = barShape,
-        color = SquadRelaySurfaces.subtleColor(),
-        tonalElevation = 0.dp,
-        shadowElevation = 3.dp,
-        border = SquadRelaySurfaces.panelBorder(),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(IntrinsicSize.Min),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            rooms.forEachIndexed { index, room ->
-                val selected = room.id == selectedRoomId
-                val kind = room.chatRoomVisualKind()
-                val accent = when (kind) {
-                    ChatRoomVisualKind.GlobalUnion -> Color(0xFF5C6BC0)
-                    ChatRoomVisualKind.Raid -> raidHot
-                    ChatRoomVisualKind.AllianceHub -> Color(0xFF00897B)
-                    ChatRoomVisualKind.Other -> scheme.primary
-                }
-                val icon = when (kind) {
-                    ChatRoomVisualKind.GlobalUnion -> Icons.Outlined.Public
-                    ChatRoomVisualKind.Raid -> Icons.Outlined.Bolt
-                    ChatRoomVisualKind.AllianceHub -> Icons.Outlined.Shield
-                    ChatRoomVisualKind.Other -> Icons.Outlined.ChatBubbleOutline
-                }
-                val segmentShape = when {
-                    rooms.size == 1 -> barShape
-                    index == 0 -> RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp)
-                    index == rooms.lastIndex -> RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp)
-                    else -> RoundedCornerShape(0.dp)
-                }
-                val selectedBrush = when {
-                    kind == ChatRoomVisualKind.Raid ->
-                        Brush.horizontalGradient(listOf(raidHot, raidDeep))
-                    else ->
-                        Brush.horizontalGradient(
-                            listOf(
-                                accent.copy(alpha = 0.9f),
-                                lerp(accent, Color(0xFF1A1028), 0.55f),
-                            ),
-                        )
-                }
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight(),
-                ) {
-                    if (selected) {
-                        Box(
-                            modifier = Modifier
-                                .matchParentSize()
-                                .clip(segmentShape)
-                                .background(selectedBrush),
-                        )
-                    }
-                    Surface(
-                        onClick = { onSelectRoom(room.id) },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = segmentShape,
-                        color = Color.Transparent,
-                        shadowElevation = 0.dp,
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 11.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = null,
-                                tint = when {
-                                    selected -> Color.White.copy(alpha = 0.95f)
-                                    kind == ChatRoomVisualKind.Raid -> raidHot.copy(alpha = 0.9f)
-                                    else -> accent.copy(alpha = 0.88f)
-                                },
-                                modifier = Modifier.size(18.dp),
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = room.title,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                                color = when {
-                                    selected -> Color.White
-                                    else -> scheme.onSurface.copy(alpha = 0.92f)
-                                },
-                            )
-                        }
-                    }
-                }
-                if (index < rooms.lastIndex) {
-                    Box(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .fillMaxHeight()
-                            .padding(vertical = 8.dp)
-                            .background(scheme.outline.copy(alpha = 0.28f)),
-                    )
-                }
-            }
+    val tabs = rooms.map { room ->
+        val kind = room.chatRoomVisualKind()
+        val accent = when (kind) {
+            ChatRoomVisualKind.GlobalUnion -> Color(0xFF5C6BC0)
+            ChatRoomVisualKind.Raid -> raidHot
+            ChatRoomVisualKind.AllianceHub -> Color(0xFF00897B)
+            ChatRoomVisualKind.Other -> scheme.primary
         }
+        val icon = when (kind) {
+            ChatRoomVisualKind.GlobalUnion -> Icons.Outlined.Public
+            ChatRoomVisualKind.Raid -> Icons.Outlined.Bolt
+            ChatRoomVisualKind.AllianceHub -> Icons.Outlined.Shield
+            ChatRoomVisualKind.Other -> Icons.Outlined.ChatBubbleOutline
+        }
+        val selectedBrush = when (kind) {
+            ChatRoomVisualKind.Raid ->
+                Brush.horizontalGradient(listOf(raidHot, raidDeep))
+            else ->
+                Brush.horizontalGradient(
+                    listOf(
+                        accent.copy(alpha = 0.9f),
+                        lerp(accent, Color(0xFF1A1028), 0.55f),
+                    ),
+                )
+        }
+        com.lastasylum.alliance.ui.components.SquadSegmentTab(
+            id = room.id,
+            label = room.title,
+            icon = icon,
+            selectedBrush = selectedBrush,
+            unselectedIconTint = when (kind) {
+                ChatRoomVisualKind.Raid -> raidHot.copy(alpha = 0.9f)
+                else -> accent.copy(alpha = 0.88f)
+            },
+        )
     }
+    com.lastasylum.alliance.ui.components.SquadSegmentTabBar(
+        tabs = tabs,
+        selectedId = selectedRoomId,
+        onSelect = onSelectRoom,
+        modifier = Modifier.padding(bottom = 10.dp),
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)

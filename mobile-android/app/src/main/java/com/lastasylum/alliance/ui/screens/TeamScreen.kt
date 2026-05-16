@@ -454,11 +454,7 @@ fun TeamScreen(
                                             teamsRepository = teamsRepository,
                                             modifier = Modifier
                                                 .weight(1f, fill = true)
-                                                .fillMaxWidth()
-                                                .padding(
-                                                    horizontal = SquadRelayDimens.itemGap,
-                                                    vertical = 2.dp,
-                                                ),
+                                                .fillMaxWidth(),
                                         )
                                     }
                                     TeamMainSection.Forum -> {
@@ -474,11 +470,7 @@ fun TeamScreen(
                                             enabledStickerPackKeys = enabledStickerPackKeys,
                                             modifier = Modifier
                                                 .weight(1f, fill = true)
-                                                .fillMaxWidth()
-                                                .padding(
-                                                    horizontal = SquadRelayDimens.itemGap,
-                                                    vertical = 4.dp,
-                                                ),
+                                                .fillMaxWidth(),
                                         )
                                     }
                                     TeamMainSection.Members -> {
@@ -495,11 +487,7 @@ fun TeamScreen(
                                             onRequestEditMemberRole = { m -> roleEditMember = m },
                                             modifier = Modifier
                                                 .weight(1f, fill = true)
-                                                .fillMaxWidth()
-                                                .padding(
-                                                    horizontal = SquadRelayDimens.itemGap,
-                                                    vertical = SquadRelayDimens.itemGap,
-                                                ),
+                                                .fillMaxWidth(),
                                         )
                                     }
                                 }
@@ -875,89 +863,29 @@ fun TeamScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TeamSectionPills(
     selectedSection: TeamMainSection,
     onSelect: (TeamMainSection) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val scheme = MaterialTheme.colorScheme
-    val sections = TeamMainSection.entries
-    val barShape = RoundedCornerShape(16.dp)
-    val accent = scheme.primary
-    Box(
-        modifier = modifier.fillMaxWidth(),
-        contentAlignment = Alignment.Center,
-    ) {
-        Surface(
-            shape = barShape,
-            color = SquadRelaySurfaces.subtleColor(),
-            tonalElevation = 0.dp,
-            shadowElevation = 3.dp,
-            border = SquadRelaySurfaces.panelBorder(),
-        ) {
-            Row(
-                modifier = Modifier.height(IntrinsicSize.Min),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                sections.forEachIndexed { index, section ->
-                    val titleRes = when (section) {
-                        TeamMainSection.News -> R.string.team_tab_news
-                        TeamMainSection.Forum -> R.string.team_tab_forum
-                        TeamMainSection.Members -> R.string.team_tab_members
-                    }
-                    val selected = section == selectedSection
-                    val segmentShape = when {
-                        sections.size == 1 -> barShape
-                        index == 0 -> RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp)
-                        index == sections.lastIndex -> RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp)
-                        else -> RoundedCornerShape(0.dp)
-                    }
-                    val selectedBrush = Brush.horizontalGradient(
-                        listOf(
-                            accent.copy(alpha = 0.92f),
-                            lerp(accent, Color(0xFF1A1028), 0.5f),
-                        ),
-                    )
-                    Box(
-                        modifier = Modifier.height(IntrinsicSize.Min),
-                    ) {
-                        if (selected) {
-                            Box(
-                                modifier = Modifier
-                                    .matchParentSize()
-                                    .clip(segmentShape)
-                                    .background(selectedBrush),
-                            )
-                        }
-                        Surface(
-                            onClick = { onSelect(section) },
-                            shape = segmentShape,
-                            color = Color.Transparent,
-                            shadowElevation = 0.dp,
-                        ) {
-                            Text(
-                                text = stringResource(titleRes),
-                                modifier = Modifier.padding(horizontal = 18.dp, vertical = 11.dp),
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                                color = if (selected) Color.White else scheme.onSurface.copy(alpha = 0.92f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                    if (index < sections.lastIndex) {
-                        Box(
-                            modifier = Modifier
-                                .width(1.dp)
-                                .height(28.dp)
-                                .background(scheme.outline.copy(alpha = 0.28f)),
-                        )
-                    }
-                }
-            }
+    val tabs = TeamMainSection.entries.map { section ->
+        val titleRes = when (section) {
+            TeamMainSection.News -> R.string.team_tab_news
+            TeamMainSection.Forum -> R.string.team_tab_forum
+            TeamMainSection.Members -> R.string.team_tab_members
         }
+        com.lastasylum.alliance.ui.components.SquadSegmentTab(
+            id = section.name,
+            label = stringResource(titleRes),
+        )
     }
+    com.lastasylum.alliance.ui.components.SquadSegmentTabBar(
+        tabs = tabs,
+        selectedId = selectedSection.name,
+        onSelect = { id ->
+            TeamMainSection.entries.firstOrNull { it.name == id }?.let(onSelect)
+        },
+        modifier = modifier,
+    )
 }

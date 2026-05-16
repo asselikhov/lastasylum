@@ -53,7 +53,8 @@ export class TeamNews {
   @Prop({ required: true, index: true })
   authorUserId: string;
 
-  @Prop({ required: true, trim: true, maxlength: 200 })
+  /** До 500 — совпадает с лимитом текста опроса при посте «только опрос». */
+  @Prop({ required: true, trim: true, maxlength: 500 })
   title: string;
 
   @Prop({ required: true, trim: true, maxlength: 20000 })
