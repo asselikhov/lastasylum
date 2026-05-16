@@ -172,6 +172,7 @@ import com.lastasylum.alliance.ui.chat.chatBubbleShapeOutgoing
 import com.lastasylum.alliance.ui.chat.TelegramImageCaptionBar
 import com.lastasylum.alliance.ui.chat.TelegramLikeAttachmentsGrid
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
+import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.theme.roleAccentColor
 import com.lastasylum.alliance.ui.chat.MessageSheetActionRow
 import com.lastasylum.alliance.ui.chat.MessageSheetDividerSpaced
@@ -743,7 +744,7 @@ fun ChatScreen(
             if (showEdit) {
                 AlertDialog(
                     onDismissRequest = { showEdit = false },
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                    containerColor = SquadRelaySurfaces.dialogColor(),
                     titleContentColor = MaterialTheme.colorScheme.onSurface,
                     textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     title = { Text(stringResource(R.string.chat_edit_title)) },
@@ -805,7 +806,7 @@ fun ChatScreen(
     confirmDeleteMessage?.let {
         AlertDialog(
             onDismissRequest = onDismissDeleteMessage,
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            containerColor = SquadRelaySurfaces.dialogColor(),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.chat_delete_title)) },
@@ -829,7 +830,7 @@ fun ChatScreen(
     if (state.confirmBulkDelete && state.selectedMessageIds.isNotEmpty()) {
         AlertDialog(
             onDismissRequest = onDismissBulkDeleteConfirm,
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            containerColor = SquadRelaySurfaces.dialogColor(),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.chat_bulk_delete_title)) },
@@ -1270,10 +1271,10 @@ private fun ChatRoomsBar(
             .fillMaxWidth()
             .padding(bottom = 10.dp),
         shape = barShape,
-        color = scheme.surface.copy(alpha = 0.42f),
+        color = SquadRelaySurfaces.subtleColor(),
         tonalElevation = 0.dp,
-        shadowElevation = 4.dp,
-        border = BorderStroke(1.dp, scheme.outline.copy(alpha = 0.22f)),
+        shadowElevation = 3.dp,
+        border = SquadRelaySurfaces.panelBorder(),
     ) {
         Row(
             modifier = Modifier
@@ -1696,13 +1697,12 @@ private fun ChatComposer(
                     }
                 }
                 replyToMessage?.let { reply ->
-                    val scheme = MaterialTheme.colorScheme
                     Surface(
                         shape = RoundedCornerShape(20.dp),
-                        color = scheme.surface.copy(alpha = 0.48f),
+                        color = SquadRelaySurfaces.subtleColor(0.48f),
                         tonalElevation = 0.dp,
-                        shadowElevation = 4.dp,
-                        border = BorderStroke(1.dp, scheme.outline.copy(alpha = 0.18f)),
+                        shadowElevation = 3.dp,
+                        border = SquadRelaySurfaces.panelBorder(),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
@@ -1751,13 +1751,10 @@ private fun ChatComposer(
                 ) {
                     Surface(
                         shape = RoundedCornerShape(28.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f),
-                        border = BorderStroke(
-                            1.dp,
-                            MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
-                        ),
+                        color = SquadRelaySurfaces.panelColor(),
+                        border = SquadRelaySurfaces.panelBorder(),
                         tonalElevation = 0.dp,
-                        shadowElevation = 10.dp,
+                        shadowElevation = 4.dp,
                         modifier = Modifier
                             .weight(1f)
                             .heightIn(min = SquadRelayDimens.composerMinHeight.coerceAtLeast(48.dp)),

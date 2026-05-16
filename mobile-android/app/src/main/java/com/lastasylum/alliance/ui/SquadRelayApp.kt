@@ -29,6 +29,7 @@ import com.lastasylum.alliance.ui.auth.AuthViewModelFactory
 import com.lastasylum.alliance.ui.admin.AdminViewModelFactory
 import com.lastasylum.alliance.ui.chat.ChatViewModelFactory
 import com.lastasylum.alliance.ui.components.AtmosphericBackground
+import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.theme.SquadRelayTheme
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.push.FcmTokenManager
@@ -148,7 +149,7 @@ fun SquadRelayApp() {
             pendingApkUrl?.let { url ->
                 AlertDialog(
                     onDismissRequest = { pendingApkUrl = null },
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                    containerColor = SquadRelaySurfaces.dialogColor(),
                     titleContentColor = MaterialTheme.colorScheme.onSurface,
                     textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     title = {

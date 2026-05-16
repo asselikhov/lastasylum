@@ -28,7 +28,12 @@ fun AtmosphericBackground(modifier: Modifier = Modifier) {
                 if (w <= 0f || h <= 0f) return@drawBehind
                 drawRect(
                     brush = Brush.verticalGradient(
-                        colors = listOf(SquadRelayVoidTop, SquadRelayBackground, SquadRelayVoidBottom),
+                        colors = listOf(
+                            SquadRelayVoidTop,
+                            SquadRelayBackground,
+                            SquadRelayBackground,
+                            SquadRelayVoidBottom,
+                        ),
                         startY = 0f,
                         endY = h,
                     ),
@@ -36,26 +41,36 @@ fun AtmosphericBackground(modifier: Modifier = Modifier) {
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            SquadRelayAtmosphericPurple.copy(alpha = 0.38f),
+                            SquadRelayAtmosphericPurple.copy(alpha = 0.22f),
                             Color.Transparent,
                         ),
-                        center = Offset(w * 0.12f, h * 0.08f),
-                        radius = w.coerceAtLeast(h) * 0.85f,
+                        center = Offset(w * 0.1f, h * 0.12f),
+                        radius = w.coerceAtLeast(h) * 0.72f,
                     ),
-                    radius = w.coerceAtLeast(h) * 0.85f,
-                    center = Offset(w * 0.12f, h * 0.08f),
+                    radius = w.coerceAtLeast(h) * 0.72f,
+                    center = Offset(w * 0.1f, h * 0.12f),
                 )
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            SquadRelayAtmosphericSky.copy(alpha = 0.22f),
+                            SquadRelayAtmosphericSky.copy(alpha = 0.12f),
                             Color.Transparent,
                         ),
-                        center = Offset(w * 0.9f, h * 0.9f),
-                        radius = w.coerceAtLeast(h) * 0.65f,
+                        center = Offset(w * 0.88f, h * 0.88f),
+                        radius = w.coerceAtLeast(h) * 0.55f,
                     ),
-                    radius = w.coerceAtLeast(h) * 0.65f,
-                    center = Offset(w * 0.9f, h * 0.9f),
+                    radius = w.coerceAtLeast(h) * 0.55f,
+                    center = Offset(w * 0.88f, h * 0.88f),
+                )
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            SquadRelayVoidTop.copy(alpha = 0.55f),
+                            Color.Transparent,
+                        ),
+                        startY = 0f,
+                        endY = h * 0.14f,
+                    ),
                 )
             },
     )

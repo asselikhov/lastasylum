@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Тёмный windowBackground / status / nav — без светлой полосы под системными иконками. -->
+    <style name="Theme.SquadRelay" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/squad_relay_background</item>
+        <item name="android:statusBarColor">@color/squad_relay_void_top</item>
+        <item name="android:navigationBarColor">@color/squad_relay_void_bottom</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>

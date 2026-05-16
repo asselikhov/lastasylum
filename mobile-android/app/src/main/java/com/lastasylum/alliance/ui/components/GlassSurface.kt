@@ -10,25 +10,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 
-/** Frosted-style panel: translucent fill + hairline border (no backdrop blur; stable on API 28+). */
+/** Frosted-style panel: единый тон с остальным UI (no backdrop blur; stable on API 28+). */
 @Composable
 fun GlassSurface(
     modifier: Modifier = Modifier,
     shape: Shape? = null,
-    shadowElevation: Dp = 6.dp,
+    shadowElevation: Dp = 3.dp,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val resolvedShape = shape ?: MaterialTheme.shapes.large
-    val fill = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f)
-    val edge = MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)
     Surface(
         modifier = modifier,
         shape = resolvedShape,
-        color = fill,
+        color = SquadRelaySurfaces.barColor(),
         tonalElevation = 0.dp,
         shadowElevation = shadowElevation,
-        border = BorderStroke(1.dp, edge),
+        border = SquadRelaySurfaces.panelBorder(),
     ) {
         Box(content = content)
     }

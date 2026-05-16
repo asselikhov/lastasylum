@@ -61,6 +61,7 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
+import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import java.time.Instant
@@ -221,14 +222,13 @@ private fun SquadRoleSectionHeader(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val sectionToggleCd = stringResource(R.string.team_role_section_toggle_cd, roleCode)
-    val scheme = MaterialTheme.colorScheme
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
-        color = scheme.surface.copy(alpha = 0.48f),
+        color = SquadRelaySurfaces.subtleColor(0.48f),
         tonalElevation = 0.dp,
-        shadowElevation = 3.dp,
-        border = BorderStroke(1.dp, scheme.outline.copy(alpha = 0.16f)),
+        shadowElevation = 2.dp,
+        border = SquadRelaySurfaces.panelBorder(),
     ) {
         Row(
             modifier = Modifier

@@ -56,6 +56,7 @@ import androidx.compose.foundation.BorderStroke
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.components.AtmosphericBackground
+import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -166,10 +167,10 @@ fun AppNavigation(
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(28.dp),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+                    color = SquadRelaySurfaces.barColor(),
                     tonalElevation = 0.dp,
-                    shadowElevation = 14.dp,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
+                    shadowElevation = 4.dp,
+                    border = SquadRelaySurfaces.panelBorder(),
                 ) {
                     Row(
                         modifier = Modifier

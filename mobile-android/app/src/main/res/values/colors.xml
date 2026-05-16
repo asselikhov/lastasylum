@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="squad_relay_background">#FF060816</color>
+    <color name="squad_relay_void_top">#FF070B14</color>
+    <color name="squad_relay_void_bottom">#FF04060D</color>
+</resources>

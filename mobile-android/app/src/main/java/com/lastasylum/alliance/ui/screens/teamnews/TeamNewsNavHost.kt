@@ -98,6 +98,7 @@ import com.lastasylum.alliance.data.teams.UpdateTeamNewsBody
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
+import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
@@ -147,7 +148,7 @@ private fun TeamNewsPollVoterChips(
             val label = vote.username?.trim().orEmpty().ifBlank { "?" }
             Surface(
                 shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f),
+                color = SquadRelaySurfaces.panelColor(),
                 border = BorderStroke(
                     1.dp,
                     MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
@@ -244,7 +245,7 @@ private fun TeamNewsPollOptionsPreview(
                 color = if (selected) {
                     MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
                 } else {
-                    MaterialTheme.colorScheme.surface.copy(alpha = 0.35f)
+                    SquadRelaySurfaces.subtleColor(0.35f)
                 },
                 border = BorderStroke(
                     1.dp,
@@ -337,7 +338,7 @@ private fun TeamNewsPollVoteBlock(
                 color = if (isSelected) {
                     MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
                 } else {
-                    MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)
+                    SquadRelaySurfaces.subtleColor()
                 },
                 border = BorderStroke(
                     1.dp,
@@ -593,18 +594,6 @@ private fun TeamNewsListRoute(
                     )
                 }
                 else -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        MaterialTheme.colorScheme.surfaceDim.copy(alpha = 0.55f),
-                                        MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-                                    ),
-                                ),
-                            ),
-                    ) {
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(
@@ -640,7 +629,6 @@ private fun TeamNewsListRoute(
                                 )
                             }
                         }
-                    }
                 }
             }
         }
@@ -668,10 +656,8 @@ private fun TeamNewsCard(
                 shape = cardShape,
             ),
         shape = cardShape,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.58f),
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp, pressedElevation = 10.dp),
+        colors = SquadRelaySurfaces.cardColors(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp, pressedElevation = 6.dp),
     ) {
         Row(
             modifier = Modifier.height(IntrinsicSize.Min),
@@ -790,11 +776,7 @@ private fun TeamNewsCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(
-                            if (hasHero) {
-                                scheme.surface.copy(alpha = 0.36f)
-                            } else {
-                                scheme.surface.copy(alpha = 0.22f)
-                            },
+                            SquadRelaySurfaces.subtleColor(if (hasHero) 0.36f else 0.28f),
                         )
                         .padding(horizontal = 16.dp, vertical = 15.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -842,7 +824,7 @@ private fun TeamNewsCard(
                         ) {
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
-                                color = scheme.surface.copy(alpha = 0.52f),
+                                color = SquadRelaySurfaces.subtleColor(0.52f),
                                 border = BorderStroke(1.dp, ringSoft),
                                 tonalElevation = 0.dp,
                                 shadowElevation = 2.dp,
@@ -963,21 +945,9 @@ private fun TeamNewsDetailRoute(
                 Text(err ?: "", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(pad))
             }
             d != null -> {
-                Box(
-                    Modifier
-                        .padding(pad)
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    MaterialTheme.colorScheme.surfaceDim.copy(alpha = 0.5f),
-                                    MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-                                ),
-                            ),
-                        ),
-                ) {
                 Column(
                     Modifier
+                        .padding(pad)
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState()),
                 ) {
@@ -1054,10 +1024,8 @@ private fun TeamNewsDetailRoute(
                                     RoundedCornerShape(26.dp),
                                 ),
                             shape = RoundedCornerShape(26.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.58f),
-                            ),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+                        colors = SquadRelaySurfaces.cardColors(),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
                         ) {
                             Row(Modifier.height(IntrinsicSize.Min)) {
                                 Box(
@@ -1161,10 +1129,8 @@ private fun TeamNewsDetailRoute(
                                     .padding(horizontal = pagePad)
                                     .padding(bottom = 20.dp),
                                 shape = RoundedCornerShape(22.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.58f),
-                                ),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+                        colors = SquadRelaySurfaces.cardColors(),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
                                 border = BorderStroke(
                                     1.dp,
                                     MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f),
@@ -1187,7 +1153,6 @@ private fun TeamNewsDetailRoute(
                         }
                     }
                 }
-                }
             }
         }
     }
@@ -1195,7 +1160,7 @@ private fun TeamNewsDetailRoute(
     if (deleteOpen && d != null) {
         AlertDialog(
             onDismissRequest = { deleteOpen = false },
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            containerColor = SquadRelaySurfaces.dialogColor(),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.team_news_delete)) },
@@ -1351,7 +1316,7 @@ private fun TeamNewsEditorRoute(
                             color = if (selected) {
                                 MaterialTheme.colorScheme.primary
                             } else {
-                                MaterialTheme.colorScheme.surface.copy(alpha = 0.45f)
+                                SquadRelaySurfaces.subtleColor(0.45f)
                             },
                             border = if (selected) {
                                 null

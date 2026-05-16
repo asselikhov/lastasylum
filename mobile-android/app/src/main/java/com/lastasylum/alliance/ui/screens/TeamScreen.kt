@@ -60,6 +60,7 @@ import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.screens.teamforum.TeamForumNavHost
 import com.lastasylum.alliance.ui.screens.teamnews.TeamNewsNavHost
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
+import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
@@ -238,14 +239,13 @@ fun TeamScreen(
                     }
 
                     if (profile?.playerTeamId.isNullOrBlank()) {
-                        val scheme = MaterialTheme.colorScheme
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
                             shape = MaterialTheme.shapes.large,
-                            color = scheme.surface.copy(alpha = 0.52f),
+                            color = SquadRelaySurfaces.panelColor(0.52f),
                             tonalElevation = 0.dp,
-                            shadowElevation = 6.dp,
-                            border = BorderStroke(1.dp, scheme.outline.copy(alpha = 0.18f)),
+                            shadowElevation = 3.dp,
+                            border = SquadRelaySurfaces.panelBorder(),
                         ) {
                             Column(
                                 modifier = Modifier
@@ -499,7 +499,7 @@ fun TeamScreen(
     if (showCreate) {
         AlertDialog(
             onDismissRequest = { if (!createBusy) showCreate = false },
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            containerColor = SquadRelaySurfaces.dialogColor(),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.profile_player_team_create_title)) },
@@ -576,7 +576,7 @@ fun TeamScreen(
     if (showJoin) {
         AlertDialog(
             onDismissRequest = { if (!joinActionBusy) showJoin = false },
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            containerColor = SquadRelaySurfaces.dialogColor(),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.profile_player_team_join_title)) },
@@ -665,7 +665,7 @@ fun TeamScreen(
     if (showJoinInbox) {
         AlertDialog(
             onDismissRequest = { if (!inboxBusy) showJoinInbox = false },
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            containerColor = SquadRelaySurfaces.dialogColor(),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.profile_join_inbox_title)) },
@@ -740,7 +740,7 @@ fun TeamScreen(
     if (showAddMemberDialog && teamIdForDialogs != null) {
         AlertDialog(
             onDismissRequest = { if (!membersBusy) showAddMemberDialog = false },
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            containerColor = SquadRelaySurfaces.dialogColor(),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.team_add_member_dialog_title)) },
@@ -789,7 +789,7 @@ fun TeamScreen(
     if (showEditTeamNameDialog && teamIdForDialogs != null) {
         AlertDialog(
             onDismissRequest = { if (!editNameBusy) showEditTeamNameDialog = false },
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            containerColor = SquadRelaySurfaces.dialogColor(),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.team_edit_team_name_title)) },
@@ -878,10 +878,10 @@ private fun TeamSectionPills(
     ) {
         Surface(
             shape = barShape,
-            color = scheme.surface.copy(alpha = 0.44f),
+            color = SquadRelaySurfaces.subtleColor(),
             tonalElevation = 0.dp,
-            shadowElevation = 5.dp,
-            border = BorderStroke(1.dp, scheme.outline.copy(alpha = 0.22f)),
+            shadowElevation = 3.dp,
+            border = SquadRelaySurfaces.panelBorder(),
         ) {
             Row(
                 modifier = Modifier.height(IntrinsicSize.Min),

@@ -20,6 +20,7 @@ import androidx.core.content.ContextCompat
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.OverlayPermissions
+import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 
 @Composable
 fun PermissionOnboardingGate() {
@@ -53,7 +54,7 @@ fun PermissionOnboardingGate() {
 
     AlertDialog(
         onDismissRequest = { },
-        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+        containerColor = SquadRelaySurfaces.dialogColor(),
         titleContentColor = MaterialTheme.colorScheme.onSurface,
         textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         title = { Text(stringResource(R.string.onboarding_permissions_title)) },

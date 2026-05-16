@@ -55,6 +55,7 @@ import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.users.TeamMemberDto
 import com.lastasylum.alliance.ui.admin.AdminUiState
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
+import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 
 private fun copyTeamId(context: Context, text: String) {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -555,7 +556,7 @@ fun AdminScreen(
     deleteTarget?.let { target ->
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            containerColor = SquadRelaySurfaces.dialogColor(),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.admin_delete_title)) },
@@ -585,7 +586,7 @@ fun AdminScreen(
     renameRoomTarget?.let { room ->
         AlertDialog(
             onDismissRequest = { renameRoomTarget = null },
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            containerColor = SquadRelaySurfaces.dialogColor(),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.admin_rooms_rename)) },
@@ -621,7 +622,7 @@ fun AdminScreen(
     deleteRoomTarget?.let { room ->
         AlertDialog(
             onDismissRequest = { deleteRoomTarget = null },
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            containerColor = SquadRelaySurfaces.dialogColor(),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.admin_rooms_delete_title)) },
@@ -658,7 +659,7 @@ private fun adminSectionCard(content: @Composable ColumnScope.() -> Unit) {
         shape = MaterialTheme.shapes.large,
         tonalElevation = 0.dp,
         shadowElevation = 4.dp,
-        color = scheme.surface.copy(alpha = 0.52f),
+        color = SquadRelaySurfaces.panelColor(0.52f),
         border = BorderStroke(1.dp, scheme.outline.copy(alpha = 0.18f)),
     ) {
         Column(
@@ -763,7 +764,7 @@ private fun AdminMemberCard(
         shape = MaterialTheme.shapes.large,
         tonalElevation = 0.dp,
         shadowElevation = 4.dp,
-        color = scheme.surface.copy(alpha = 0.52f),
+        color = SquadRelaySurfaces.panelColor(0.52f),
         border = BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = 0.22f)),
         modifier = Modifier.fillMaxWidth(),
     ) {

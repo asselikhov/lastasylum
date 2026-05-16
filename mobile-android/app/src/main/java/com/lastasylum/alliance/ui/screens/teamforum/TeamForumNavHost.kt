@@ -139,6 +139,7 @@ import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingOnBubble
 import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMuted
 import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMutedIncoming
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
+import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import java.io.File
 import java.io.InputStream
 import java.util.UUID
@@ -319,7 +320,7 @@ private fun TeamForumListRoute(
                                     MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
                                 ),
                                 colors = CardDefaults.outlinedCardColors(
-                                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.48f),
+                                    containerColor = SquadRelaySurfaces.subtleColor(0.48f),
                                 ),
                                 elevation = CardDefaults.outlinedCardElevation(defaultElevation = 6.dp),
                             ) {
@@ -433,7 +434,7 @@ private fun TeamForumListRoute(
     if (showCreate) {
         AlertDialog(
             onDismissRequest = { if (!createBusy) showCreate = false },
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            containerColor = SquadRelaySurfaces.dialogColor(),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.team_forum_new_topic_title)) },
@@ -479,7 +480,7 @@ private fun TeamForumListRoute(
     editTopic?.let { topic ->
         AlertDialog(
             onDismissRequest = { if (!editBusy) editTopic = null },
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            containerColor = SquadRelaySurfaces.dialogColor(),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.team_forum_edit_topic_title)) },
@@ -524,7 +525,7 @@ private fun TeamForumListRoute(
     deleteTopic?.let { topic ->
         AlertDialog(
             onDismissRequest = { deleteTopic = null },
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            containerColor = SquadRelaySurfaces.dialogColor(),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.team_forum_delete_topic_title)) },
@@ -742,16 +743,7 @@ private fun TeamForumTopicChatRoute(
             )
         }
         Box(
-            Modifier
-                .weight(1f)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.surfaceDim.copy(alpha = 0.38f),
-                            MaterialTheme.colorScheme.surface.copy(alpha = 0.08f),
-                        ),
-                    ),
-                ),
+            Modifier.weight(1f),
         ) {
             if (loading && messages.isEmpty()) {
                 CircularProgressIndicator(
@@ -784,7 +776,7 @@ private fun TeamForumTopicChatRoute(
                                     val sch = MaterialTheme.colorScheme
                                     Surface(
                                         shape = RoundedCornerShape(999.dp),
-                                        color = sch.surface.copy(alpha = 0.48f),
+                                        color = SquadRelaySurfaces.subtleColor(0.48f),
                                         tonalElevation = 0.dp,
                                         shadowElevation = 4.dp,
                                         border = BorderStroke(1.dp, sch.outline.copy(alpha = 0.18f)),
@@ -931,7 +923,7 @@ private fun TeamForumTopicChatRoute(
     editMessage?.let { msg ->
         AlertDialog(
             onDismissRequest = { if (!editBusy) editMessage = null },
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            containerColor = SquadRelaySurfaces.dialogColor(),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.team_forum_edit_message_title)) },
@@ -1035,7 +1027,7 @@ private fun TeamForumTopicChatRoute(
     if (confirmBulkDelete && selectedMessageIds.isNotEmpty()) {
         AlertDialog(
             onDismissRequest = { if (!deletingSelection) confirmBulkDelete = false },
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            containerColor = SquadRelaySurfaces.dialogColor(),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.chat_bulk_delete_title)) },
@@ -1228,7 +1220,7 @@ private fun ForumSelectionToolbar(
                 .fillMaxWidth()
                 .padding(bottom = 4.dp),
             shape = RoundedCornerShape(20.dp),
-            color = scheme.surface.copy(alpha = 0.52f),
+            color = SquadRelaySurfaces.panelColor(0.52f),
             tonalElevation = 0.dp,
             shadowElevation = 6.dp,
             border = BorderStroke(1.dp, scheme.outline.copy(alpha = 0.18f)),

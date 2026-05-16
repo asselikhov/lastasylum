@@ -1,5 +1,6 @@
 package com.lastasylum.alliance
 
+import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -12,6 +13,10 @@ import com.lastasylum.alliance.ui.SquadRelayApp
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
+        @Suppress("DEPRECATION")
+        window.statusBarColor = Color.parseColor("#FF070B14")
+        @Suppress("DEPRECATION")
+        window.navigationBarColor = Color.parseColor("#FF04060D")
         WindowCompat.getInsetsController(window, window.decorView).apply {
             isAppearanceLightStatusBars = false
             isAppearanceLightNavigationBars = false
