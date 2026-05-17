@@ -39,7 +39,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.outlined.ModeEditOutline
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.AlertDialog
+import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -1185,12 +1185,9 @@ private fun TeamNewsDetailRoute(
     }
 
     if (deleteOpen && d != null) {
-        OverlayModalScope {
-        AlertDialog(
+        OverlayModalScope(preparedByCaller = true) {
+        OverlayAwareAlertDialog(
             onDismissRequest = { deleteOpen = false },
-            containerColor = SquadRelaySurfaces.dialogColor(),
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.team_news_delete)) },
             text = { Text(stringResource(R.string.team_news_delete_confirm)) },
             confirmButton = {

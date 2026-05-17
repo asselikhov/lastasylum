@@ -51,8 +51,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.CircularProgressIndicator
@@ -1023,7 +1021,6 @@ private fun TeamForumTopicChatRoute(
                     activeActionMessageId = null
                 },
                 onEdit = {
-                    OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
                     editMessage = msg
                     editBody = msg.text
                     activeActionMessageId = null
@@ -1050,7 +1047,7 @@ private fun TeamForumTopicChatRoute(
     }
 
     if (confirmBulkDelete && selectedMessageIds.isNotEmpty()) {
-        OverlayModalScope {
+        OverlayModalScope(preparedByCaller = true) {
         OverlayAwareAlertDialog(
             onDismissRequest = { if (!deletingSelection) confirmBulkDelete = false },
             title = { Text(stringResource(R.string.chat_bulk_delete_title)) },

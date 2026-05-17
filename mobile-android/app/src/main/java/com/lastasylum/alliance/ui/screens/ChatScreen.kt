@@ -86,7 +86,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -629,7 +628,12 @@ fun ChatScreen(
                     selectedCount = state.selectedMessageIds.size,
                     isDeleting = state.isDeletingSelection,
                     onClear = onClearMessageSelection,
-                    onDelete = onRequestBulkDelete,
+                    onDelete = {
+                        if (overlayUi) {
+                            OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
+                        }
+                        onRequestBulkDelete()
+                    },
                 )
             }
 
@@ -804,13 +808,11 @@ fun ChatScreen(
                 onReact = { emoji ->
                     message._id?.let { onToggleReaction(it, emoji) }
                 },
-                onEdit = {
+                onEdit = { showEdit = true },
+                onDelete = {
                     if (overlayUi) {
                         OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
                     }
-                    showEdit = true
-                },
-                onDelete = {
                     message._id?.let(onRequestDeleteMessage)
                     onDismissMessageActions()
                 },
@@ -835,7 +837,7 @@ fun ChatScreen(
     }
 
     confirmDeleteMessage?.let {
-        OverlayModalScope {
+        OverlayModalScope(preparedByCaller = true) {
         OverlayAwareAlertDialog(
             onDismissRequest = onDismissDeleteMessage,
             title = { Text(stringResource(R.string.chat_delete_title)) },
@@ -858,7 +860,7 @@ fun ChatScreen(
     }
 
     if (state.confirmBulkDelete && state.selectedMessageIds.isNotEmpty()) {
-        OverlayModalScope {
+        OverlayModalScope(preparedByCaller = true) {
         OverlayAwareAlertDialog(
             onDismissRequest = onDismissBulkDeleteConfirm,
             title = { Text(stringResource(R.string.chat_bulk_delete_title)) },

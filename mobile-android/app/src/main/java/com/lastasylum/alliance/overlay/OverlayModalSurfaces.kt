@@ -57,6 +57,7 @@ private fun OverlayInWindowBottomSheet(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    OverlayInteractionSuppressEffect()
     BackHandler(onBack = onDismissRequest)
     Box(
         modifier = modifier
@@ -105,6 +106,7 @@ fun OverlayAwareAlertDialog(
     dismissButton: @Composable (() -> Unit)? = null,
 ) {
     if (LocalOverlayUiMode.current) {
+        OverlayInteractionSuppressEffect()
         BackHandler(onBack = onDismissRequest)
         Box(
             modifier = modifier
@@ -174,6 +176,7 @@ fun OverlayAwareDialog(
     content: @Composable () -> Unit,
 ) {
     if (LocalOverlayUiMode.current) {
+        OverlayInteractionSuppressEffect()
         BackHandler(onBack = onDismissRequest)
         Box(
             modifier = Modifier
