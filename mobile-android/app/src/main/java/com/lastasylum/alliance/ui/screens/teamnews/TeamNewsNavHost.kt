@@ -635,15 +635,6 @@ private fun TeamNewsListRoute(
                             ),
                             verticalArrangement = Arrangement.spacedBy(18.dp),
                         ) {
-                            item {
-                                Text(
-                                    text = stringResource(R.string.team_news_feed_heading),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onBackground,
-                                    modifier = Modifier.padding(bottom = 2.dp),
-                                )
-                            }
                             items(
                                 items = newsItems,
                                 key = { it.id },
@@ -1412,16 +1403,15 @@ private fun TeamNewsEditorRoute(
                         TextButton(onClick = { imageIds.removeAt(idx) }) { Text("×") }
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = { includePoll = !includePoll }) {
-                        Text(
-                            if (includePoll) stringResource(R.string.team_news_remove_poll)
-                            else stringResource(R.string.team_news_add_poll),
-                        )
+                if (newsId != null && includePoll) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { includePoll = false }) {
+                            Text(stringResource(R.string.team_news_remove_poll))
+                        }
                     }
                 }
             }
-            if (includePoll || editorMode == TeamNewsEditorMode.PollOnly) {
+            if (editorMode == TeamNewsEditorMode.PollOnly || (newsId != null && includePoll)) {
                 OutlinedTextField(
                     value = pollQuestion,
                     onValueChange = { v -> pollQuestion = v.take(500) },
@@ -1449,7 +1439,8 @@ private fun TeamNewsEditorRoute(
             Button(
                 onClick = {
                     val pollOnly = editorMode == TeamNewsEditorMode.PollOnly
-                    val wantsPoll = includePoll || pollOnly
+                    val wantsPoll =
+                        pollOnly || (newsId != null && includePoll)
                     if (wantsPoll) {
                         val filled = pollOptions.count { o -> o.isNotBlank() }
                         if (pollQuestion.isBlank() || filled < 2) {

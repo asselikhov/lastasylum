@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import mongoose, { Model, Types } from 'mongoose';
 import { PlayerTeamMemberRole } from '../common/enums/player-team-member-role.enum';
 import { User } from './schemas/user.schema';
 import { TeamNews, TeamNewsDocument } from './schemas/team-news.schema';
@@ -137,6 +137,26 @@ export class TeamNewsService {
     return v?.optionId ?? null;
   }
 
+  private idString(value: unknown): string {
+    if (value == null) return '';
+    if (typeof value === 'string') return value;
+    if (value instanceof Types.ObjectId) return value.toString();
+    if (typeof value === 'object' && 'toString' in value) {
+      return String((value as { toString(): string }).toString());
+    }
+    return String(value);
+  }
+
+  private rethrowMongooseValidation(err: unknown): never {
+    if (err instanceof mongoose.Error.ValidationError) {
+      const msg = Object.values(err.errors)
+        .map((e) => e.message)
+        .join('; ');
+      throw new BadRequestException(msg || 'Invalid news data');
+    }
+    throw err;
+  }
+
   private async usernamesFor(
     ids: string[],
   ): Promise<Map<string, string>> {
@@ -183,9 +203,10 @@ export class TeamNewsService {
     const poll = doc.poll;
     const tallies = poll ? this.pollTallies(poll) : [];
     const myVoteOptionId = poll ? this.myVote(poll, viewerUserId) : null;
+    const teamIdStr = this.idString(doc.teamId);
     const first =
       doc.imageAttachments.length > 0
-        ? `/teams/${doc.teamId.toString()}/news/attachments/${doc.imageAttachments[0].fileId.toString()}`
+        ? `/teams/${teamIdStr}/news/attachments/${this.idString(doc.imageAttachments[0].fileId)}`
         : null;
     const bodyTrim = doc.body.trim();
     const excerpt =
@@ -197,8 +218,8 @@ export class TeamNewsService {
     const created = (doc as unknown as { createdAt?: Date }).createdAt;
     const updated = (doc as unknown as { updatedAt?: Date }).updatedAt;
     return {
-      id: (doc as unknown as { _id: Types.ObjectId })._id.toString(),
-      teamId: doc.teamId.toString(),
+      id: this.idString((doc as unknown as { _id: unknown })._id),
+      teamId: teamIdStr,
       title: doc.title,
       excerpt,
       authorUserId: doc.authorUserId,
@@ -283,9 +304,10 @@ export class TeamNewsService {
       [...profiles.entries()].map(([id, p]) => [id, p.username]),
     );
     const base = this.toListRow(doc, names, userId);
+    const teamIdStr = this.idString(doc.teamId);
     const images = doc.imageAttachments.map(
       (a) =>
-        `/teams/${doc.teamId.toString()}/news/attachments/${a.fileId.toString()}`,
+        `/teams/${teamIdStr}/news/attachments/${this.idString(a.fileId)}`,
     );
     const pollOut = doc.poll
       ? {
@@ -332,15 +354,20 @@ export class TeamNewsService {
     const titleSource = poll && !titleRaw ? poll.question : titleRaw;
     const title = titleSource.slice(0, 500);
     const body = bodyRaw;
-    const created = await this.newsModel.create({
-      teamId: teamOid,
-      authorUserId: userId,
-      title,
-      body,
-      imageAttachments: imgs,
-      poll,
-    });
-    return this.getOne(teamId, created._id.toString(), userId);
+    let created: TeamNewsDocument;
+    try {
+      created = await this.newsModel.create({
+        teamId: teamOid,
+        authorUserId: userId,
+        title,
+        body,
+        imageAttachments: imgs,
+        poll,
+      });
+    } catch (err) {
+      this.rethrowMongooseValidation(err);
+    }
+    return this.getOne(teamId, this.idString(created._id), userId);
   }
 
   async update(

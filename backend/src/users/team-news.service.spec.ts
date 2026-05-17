@@ -34,11 +34,11 @@ describe('TeamNewsService poll create', () => {
           _id: { toString: () => createdId },
           teamId: { toString: () => teamId },
           authorUserId: userId,
-          title: 'x'.repeat(240),
+          title: 'В'.repeat(240),
           body: '',
           imageAttachments: [],
           poll: {
-            question: 'x'.repeat(240),
+            question: 'В'.repeat(240),
             options: [
               { id: 'a', text: 'One' },
               { id: 'b', text: 'Two' },
@@ -95,5 +95,19 @@ describe('TeamNewsService poll create', () => {
         poll: expect.objectContaining({ question: longQ }),
       }),
     );
+  });
+
+  it('returns detail after poll-only create via getOne', async () => {
+    const longQ = 'В'.repeat(240);
+    const detail = await service.create(teamId, userId, {
+      poll: {
+        question: longQ,
+        optionTexts: ['Да', 'Нет'],
+      },
+    });
+    expect(detail.id).toBe(createdId);
+    expect(detail.hasPoll).toBe(true);
+    expect(detail.poll?.question).toBe(longQ);
+    expect(detail.authorUsername).toBe('tester');
   });
 });

@@ -28,6 +28,7 @@ import androidx.compose.material.icons.outlined.PersonRemove
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.IconButton
@@ -141,7 +142,12 @@ fun SquadTeamRoster(
     val grouped = remember(filteredMembers) { groupMembersBySquadRole(filteredMembers) }
     var collapsedRoles by remember { mutableStateOf(setOf<String>()) }
 
-    Column(modifier = modifier.fillMaxWidth().fillMaxSize()) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .fillMaxSize()
+            .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
+    ) {
         androidx.compose.material3.OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
@@ -222,14 +228,7 @@ private fun SquadRoleSectionHeader(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val sectionToggleCd = stringResource(R.string.team_role_section_toggle_cd, roleCode)
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        color = SquadRelaySurfaces.subtleColor(0.48f),
-        tonalElevation = 0.dp,
-        shadowElevation = 2.dp,
-        border = SquadRelaySurfaces.panelBorder(),
-    ) {
+    Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -239,7 +238,7 @@ private fun SquadRoleSectionHeader(
                     interactionSource = interaction,
                     indication = ripple(bounded = true),
                 )
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .padding(vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -248,33 +247,31 @@ private fun SquadRoleSectionHeader(
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
             )
-            Row(
-                Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            Text(
+                text = sectionTitle,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
             ) {
                 Text(
-                    text = sectionTitle,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f, fill = true),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
+                    text = memberCount.toString(),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                 )
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                ) {
-                    Text(
-                        text = memberCount.toString(),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                    )
-                }
             }
         }
+        HorizontalDivider(
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+            thickness = 0.5.dp,
+        )
     }
 }
 

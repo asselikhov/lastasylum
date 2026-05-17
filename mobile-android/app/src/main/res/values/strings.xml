@@ -269,7 +269,6 @@
     <string name="team_remove_member_cd">Исключить из команды</string>
     <string name="team_screen_title">Команда</string>
     <string name="team_tab_news">Новости</string>
-    <string name="team_news_feed_heading">Лента новостей</string>
     <string name="team_news_other_heading">Другие новости</string>
     <string name="team_tab_forum">Форум</string>
     <string name="team_tab_members">Участники</string>
@@ -318,7 +317,6 @@
     <string name="team_news_save">Сохранить</string>
     <string name="team_news_poll_question_hint">Вопрос опроса</string>
     <string name="team_news_poll_option_hint">Вариант %1$d</string>
-    <string name="team_news_add_poll">Добавить опрос</string>
     <string name="team_news_remove_poll">Убрать опрос</string>
     <string name="team_news_add_option">Добавить вариант</string>
     <string name="team_news_vote">Проголосовать</string>
@@ -345,7 +343,7 @@
     <string name="team_news_poll_invalid">Для опроса нужен вопрос и минимум два варианта</string>
     <string name="team_news_publish_forbidden">Публиковать новости и опросы могут только R4 и R5</string>
     <string name="team_news_editor_mode_news">Новость</string>
-    <string name="team_news_editor_mode_poll">Только опрос</string>
+    <string name="team_news_editor_mode_poll">Опрос</string>
     <string name="team_news_poll_only_hint">Заголовок и текст не нужны — участники голосуют по вариантам ниже.</string>
     <string name="team_news_poll_voters_empty">Пока никто не выбрал этот вариант</string>
     <string name="team_no_team_title">Вы еще не состоите в команде</string>

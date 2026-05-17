@@ -7,6 +7,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GameForegroundGateTest {
+    private fun fc(packageName: String, className: String? = null) =
+        GameForegroundGate.ForegroundComponent(packageName, className)
+
     @Test
     fun eligible_whenTargetInForeground() {
         assertTrue(
@@ -84,8 +87,11 @@ class GameForegroundGateTest {
         assertEquals(
             "com.phs.global",
             GameForegroundGate.selectMeaningfulForegroundResume(
-                listOf("com.phs.global", "com.android.systemui"),
-            ),
+                listOf(
+                    fc("com.phs.global"),
+                    fc("com.android.systemui"),
+                ),
+            )?.packageName,
         )
     }
 
@@ -94,8 +100,11 @@ class GameForegroundGateTest {
         assertEquals(
             "com.android.systemui",
             GameForegroundGate.selectMeaningfulForegroundResume(
-                listOf("com.android.systemui", "com.android.systemui"),
-            ),
+                listOf(
+                    fc("com.android.systemui"),
+                    fc("com.android.systemui"),
+                ),
+            )?.packageName,
         )
     }
 
@@ -104,8 +113,11 @@ class GameForegroundGateTest {
         assertEquals(
             "com.miui.home",
             GameForegroundGate.selectMeaningfulForegroundResume(
-                listOf("com.phs.global", "com.miui.home"),
-            ),
+                listOf(
+                    fc("com.phs.global"),
+                    fc("com.miui.home"),
+                ),
+            )?.packageName,
         )
     }
 
