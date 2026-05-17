@@ -352,6 +352,9 @@ export class TeamNewsService {
       throw new BadRequestException('Title and body are required without a poll');
     }
     const titleSource = poll && !titleRaw ? poll.question : titleRaw;
+    if (!titleSource) {
+      throw new BadRequestException('Title is required');
+    }
     const title = titleSource.slice(0, 500);
     const body = bodyRaw;
     let created: TeamNewsDocument;

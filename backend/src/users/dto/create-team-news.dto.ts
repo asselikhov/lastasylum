@@ -24,14 +24,18 @@ export class TeamNewsPollInputDto {
   optionTexts: string[];
 }
 
+function hasPollInput(o: CreateTeamNewsDto): boolean {
+  return o.poll != null && typeof o.poll === 'object';
+}
+
 export class CreateTeamNewsDto {
   /** Без опроса обязателен (1–200); с опросом поле можно не передавать. */
-  @ValidateIf((o) => !o.poll)
+  @ValidateIf((o) => !hasPollInput(o))
   @IsString()
   @Length(1, 200)
   title?: string;
 
-  @ValidateIf((o) => !o.poll)
+  @ValidateIf((o) => !hasPollInput(o))
   @IsString()
   @Length(1, 20000)
   body?: string;

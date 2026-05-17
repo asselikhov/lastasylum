@@ -1403,15 +1403,19 @@ private fun TeamNewsEditorRoute(
                         TextButton(onClick = { imageIds.removeAt(idx) }) { Text("×") }
                     }
                 }
-                if (newsId != null && includePoll) {
+                if (includePoll) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(onClick = { includePoll = false }) {
                             Text(stringResource(R.string.team_news_remove_poll))
                         }
                     }
+                } else if (newsId == null || editorMode == TeamNewsEditorMode.News) {
+                    TextButton(onClick = { includePoll = true }) {
+                        Text(stringResource(R.string.team_news_editor_mode_poll))
+                    }
                 }
             }
-            if (editorMode == TeamNewsEditorMode.PollOnly || (newsId != null && includePoll)) {
+            if (editorMode == TeamNewsEditorMode.PollOnly || includePoll) {
                 OutlinedTextField(
                     value = pollQuestion,
                     onValueChange = { v -> pollQuestion = v.take(500) },
@@ -1439,8 +1443,7 @@ private fun TeamNewsEditorRoute(
             Button(
                 onClick = {
                     val pollOnly = editorMode == TeamNewsEditorMode.PollOnly
-                    val wantsPoll =
-                        pollOnly || (newsId != null && includePoll)
+                    val wantsPoll = pollOnly || includePoll
                     if (wantsPoll) {
                         val filled = pollOptions.count { o -> o.isNotBlank() }
                         if (pollQuestion.isBlank() || filled < 2) {

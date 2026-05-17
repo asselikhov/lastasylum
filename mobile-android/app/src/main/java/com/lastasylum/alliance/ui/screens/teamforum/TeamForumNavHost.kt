@@ -638,16 +638,16 @@ private fun TeamForumTopicChatRoute(
         }
     }
 
+    fun removeMessage(messageId: String) {
+        messages.removeAll { it.id == messageId }
+        if (activeActionMessageId == messageId) activeActionMessageId = null
+        selectedMessageIds = selectedMessageIds - messageId
+        if (replyToMessage?.id == messageId) replyToMessage = null
+        if (editMessage?.id == messageId) editMessage = null
+    }
+
     fun applyDeleted(ev: TeamForumMessageDeletedEvent) {
-        val i = messages.indexOfFirst { it.id == ev.messageId }
-        if (i >= 0) {
-            messages[i] = messages[i].copy(
-                text = "",
-                imageRelativeUrl = null,
-                deletedAt = ev.deletedAt ?: messages[i].deletedAt,
-                deletedByUserId = ev.deletedByUserId ?: messages[i].deletedByUserId,
-            )
-        }
+        removeMessage(ev.messageId)
     }
 
     fun mergeNew(msg: TeamForumMessageDto) {
@@ -688,7 +688,14 @@ private fun TeamForumTopicChatRoute(
         clearPendingAttachment()
         draft = ""
         teamsRepository.listForumMessages(teamId, topicId, before = null, limit = 50)
-            .onSuccess { page -> messages.addAll(page) }
+            .onSuccess { page ->
+                messages.addAll(
+                    page.filter { m ->
+                        m.deletedAt.isNullOrBlank() ||
+                            m.deletedAt.equals("null", ignoreCase = true)
+                    },
+                )
+            }
             .onFailure { e -> error = e.toUserMessageRu(res) }
         loading = false
     }
@@ -1025,17 +1032,7 @@ private fun TeamForumTopicChatRoute(
                     activeActionMessageId = null
                     scope.launch {
                         teamsRepository.deleteForumMessage(teamId, topicId, msg.id)
-                            .onSuccess {
-                                applyDeleted(
-                                    TeamForumMessageDeletedEvent(
-                                        teamId = teamId,
-                                        topicId = topicId,
-                                        messageId = msg.id,
-                                        deletedAt = java.time.Instant.now().toString(),
-                                        deletedByUserId = currentUserId,
-                                    ),
-                                )
-                            }
+                            .onSuccess { removeMessage(msg.id) }
                             .onFailure { e -> error = e.toUserMessageRu(res) }
                     }
                 },
@@ -1068,20 +1065,7 @@ private fun TeamForumTopicChatRoute(
                             deletingSelection = true
                             val ids = selectedMessageIds.toList()
                             teamsRepository.bulkDeleteForumMessages(teamId, topicId, ids)
-                                .onSuccess {
-                                    val now = java.time.Instant.now().toString()
-                                    ids.forEach { mid ->
-                                        applyDeleted(
-                                            TeamForumMessageDeletedEvent(
-                                                teamId = teamId,
-                                                topicId = topicId,
-                                                messageId = mid,
-                                                deletedAt = now,
-                                                deletedByUserId = currentUserId,
-                                            ),
-                                        )
-                                    }
-                                }
+                                .onSuccess { ids.forEach { removeMessage(it) } }
                                 .onFailure { e -> error = e.toUserMessageRu(res) }
                             selectedMessageIds = emptySet()
                             confirmBulkDelete = false

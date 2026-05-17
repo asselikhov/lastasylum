@@ -407,13 +407,13 @@ export class TeamsController {
       ? dto.messageIds.map((x) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean)
       : [];
     const deletedAt = new Date().toISOString();
-    await this.teamForum.bulkDeleteMessages(
+    const deletedIds = await this.teamForum.bulkDeleteMessages(
       teamId,
       topicId,
       ids,
       req.user.userId,
     );
-    for (const id of ids) {
+    for (const id of deletedIds) {
       this.teamForumGateway.broadcastMessageDeleted(
         teamId,
         topicId,

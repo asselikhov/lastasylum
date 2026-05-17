@@ -122,18 +122,6 @@ export class TeamForumService {
     }
   }
 
-  /** Older messages may lack senderRole; Mongoose still validates on save. */
-  private ensureMessageSenderSnapshot(
-    msg: TeamForumMessageDocument,
-    team: Awaited<ReturnType<TeamsService['getTeamIfMemberOrThrow']>>,
-  ): void {
-    if (!msg.senderRole) {
-      msg.senderRole =
-        this.teams.getSquadRoleForUser(team, msg.senderUserId) ??
-        PlayerTeamMemberRole.R1;
-    }
-  }
-
   private asIdString(v: unknown): string | null {
     if (v == null) return null;
     if (typeof v === 'string') return v;
@@ -303,6 +291,7 @@ export class TeamForumService {
     const filter: Record<string, unknown> = {
       topicId: topOid,
       teamId: teamOid,
+      deletedAt: null,
     };
     if (before && Types.ObjectId.isValid(before)) {
       filter._id = { $lt: new Types.ObjectId(before) };
@@ -683,16 +672,22 @@ export class TeamForumService {
       _id: msgOid,
       topicId: topOid,
       teamId: teamOid,
+      deletedAt: null,
     });
-    if (!msg || msg.deletedAt) {
+    if (!msg) {
       throw new NotFoundException('Message not found');
     }
-    const team = await this.teams.getTeamIfMemberOrThrow(teamId, userId);
+    await this.teams.getTeamIfMemberOrThrow(teamId, userId);
     await this.assertMayEditMessage(teamId, msg, userId);
-    msg.deletedAt = new Date();
-    msg.deletedByUserId = userId;
-    this.ensureMessageSenderSnapshot(msg, team);
-    await msg.save();
+    const res = await this.messageModel.deleteOne({
+      _id: msgOid,
+      topicId: topOid,
+      teamId: teamOid,
+    });
+    if (res.deletedCount !== 1) {
+      throw new NotFoundException('Message not found');
+    }
+    await this.decrementTopicMessageCount(topOid, teamOid, 1);
   }
 
   async bulkDeleteMessages(
@@ -700,13 +695,13 @@ export class TeamForumService {
     topicId: string,
     messageIds: string[],
     userId: string,
-  ): Promise<void> {
-    const team = await this.teams.getTeamIfMemberOrThrow(teamId, userId);
+  ): Promise<string[]> {
+    await this.teams.getTeamIfMemberOrThrow(teamId, userId);
     const teamOid = new Types.ObjectId(teamId);
     const topOid = new Types.ObjectId(topicId);
     const uniq = [...new Set(messageIds.map((x) => x.trim()).filter(Boolean))];
     const valid = uniq.filter((id) => Types.ObjectId.isValid(id));
-    if (valid.length === 0) return;
+    if (valid.length === 0) return [];
 
     const docs = await this.messageModel.find({
       _id: { $in: valid.map((id) => new Types.ObjectId(id)) },
@@ -717,10 +712,34 @@ export class TeamForumService {
 
     for (const msg of docs) {
       await this.assertMayEditMessage(teamId, msg, userId);
-      msg.deletedAt = new Date();
-      msg.deletedByUserId = userId;
-      this.ensureMessageSenderSnapshot(msg, team);
-      await msg.save();
     }
+    if (docs.length === 0) return [];
+
+    const ids = docs.map((m) => m._id);
+    const res = await this.messageModel.deleteMany({
+      _id: { $in: ids },
+      teamId: teamOid,
+      topicId: topOid,
+    });
+    if (res.deletedCount > 0) {
+      await this.decrementTopicMessageCount(topOid, teamOid, res.deletedCount);
+    }
+    return docs.map((m) => m._id.toString());
+  }
+
+  private async decrementTopicMessageCount(
+    topicId: Types.ObjectId,
+    teamId: Types.ObjectId,
+    count: number,
+  ): Promise<void> {
+    if (count <= 0) return;
+    await this.topicModel.updateOne(
+      { _id: topicId, teamId },
+      { $inc: { messageCount: -count } },
+    );
+    await this.topicModel.updateOne(
+      { _id: topicId, teamId, messageCount: { $lt: 0 } },
+      { $set: { messageCount: 0 } },
+    );
   }
 }
