@@ -649,7 +649,6 @@ fun ChatScreen(
                 onClearError = onClearError,
                 inSelectionMode = inSelectionMode,
                 selectedMessageIds = state.selectedMessageIds,
-                onBeginMessageSelection = onBeginMessageSelection,
                 onToggleMessageSelection = onToggleMessageSelection,
             )
         }
@@ -1060,7 +1059,6 @@ private fun ChatMessagesLazyList(
     onClearError: () -> Unit,
     inSelectionMode: Boolean,
     selectedMessageIds: Set<String>,
-    onBeginMessageSelection: (String) -> Unit,
     onToggleMessageSelection: (String) -> Unit,
 ) {
     val overlayUi = LocalOverlayUiMode.current
@@ -1320,22 +1318,15 @@ private fun ChatRoomsBar(
             ChatRoomVisualKind.AllianceHub -> Icons.Outlined.Shield
             ChatRoomVisualKind.Other -> Icons.Outlined.ChatBubbleOutline
         }
-        val selectedBrush = when (kind) {
-            ChatRoomVisualKind.Raid ->
-                Brush.horizontalGradient(listOf(raidHot, raidDeep))
-            else ->
-                Brush.horizontalGradient(
-                    listOf(
-                        accent.copy(alpha = 0.9f),
-                        lerp(accent, Color(0xFF1A1028), 0.55f),
-                    ),
-                )
+        val selectedBg = when (kind) {
+            ChatRoomVisualKind.Raid -> raidDeep
+            else -> accent.copy(alpha = 0.90f)
         }
         com.lastasylum.alliance.ui.components.SquadSegmentTab(
             id = room.id,
             label = room.title,
             icon = icon,
-            selectedBrush = selectedBrush,
+            selectedContainerColor = selectedBg,
             unselectedIconTint = when (kind) {
                 ChatRoomVisualKind.Raid -> raidHot.copy(alpha = 0.9f)
                 else -> accent.copy(alpha = 0.88f)

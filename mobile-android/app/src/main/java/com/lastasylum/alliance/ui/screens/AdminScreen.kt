@@ -26,7 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.PersonOff
 import androidx.compose.material.icons.outlined.Route
-import androidx.compose.material.icons.outlined.Chat
+import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -107,6 +107,7 @@ fun AdminScreen(
 ) {
     val context = LocalContext.current
     var selectedMember by remember { mutableStateOf<TeamMemberDto?>(null) }
+    var removeFromTeamTarget by remember { mutableStateOf<TeamMemberDto?>(null) }
     var deleteUserTarget by remember { mutableStateOf<TeamMemberDto?>(null) }
     var deleteRoomTarget by remember { mutableStateOf<ChatRoomDto?>(null) }
     var renameRoomTarget by remember { mutableStateOf<ChatRoomDto?>(null) }
@@ -132,11 +133,11 @@ fun AdminScreen(
             title = title,
             showBack = showBack,
             onBack = onNavigateBack,
-            onRefresh = when (state.route) {
+            onRefresh = when (val route = state.route) {
                 AdminRoute.Hub -> onRefreshOverview
                 AdminRoute.PlayerTeams -> onRefreshPlayerTeams
                 is AdminRoute.PlayerTeamDetail -> {
-                    { onRefreshTeamMembers((state.route as AdminRoute.PlayerTeamDetail).teamId) }
+                    { onRefreshTeamMembers(route.teamId) }
                 }
                 AdminRoute.UsersWithoutTeam -> onRefreshUsersWithoutTeam
                 AdminRoute.ChatRouting -> onRefreshAlliances
@@ -230,7 +231,10 @@ fun AdminScreen(
                 currentUserId = currentUserId,
                 onDismiss = { selectedMember = null },
                 onApprove = { onApprove(member.id); selectedMember = null },
-                onRemoveFromTeam = { onRemoveFromTeam(member.id); selectedMember = null },
+                onRemoveFromTeam = {
+                    removeFromTeamTarget = member
+                    selectedMember = null
+                },
                 onRestorePending = { onRestorePending(member.id); selectedMember = null },
                 onSetRole = { role -> onSetRole(member.id, role) },
                 onRename = { name -> onRename(member.id, name) },
@@ -258,8 +262,22 @@ fun AdminScreen(
                     if (state.stickerAccessLoading) {
                         CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                     }
-                    state.stickerAccessError?.let {
-                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    state.stickerAccessError?.let { err ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                err,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = onClearStickerAccessError) {
+                                Text(stringResource(R.string.admin_dismiss_error))
+                            }
+                        }
                     }
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf("R2", "R3", "R4", "R5").forEach { role ->
@@ -281,6 +299,33 @@ fun AdminScreen(
             },
             dismissButton = {
                 TextButton(onClick = onCloseStickerSettings) {
+                    Text(stringResource(R.string.admin_delete_cancel))
+                }
+            },
+        )
+    }
+
+    removeFromTeamTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { removeFromTeamTarget = null },
+            containerColor = SquadRelaySurfaces.dialogColor(),
+            title = { Text(stringResource(R.string.admin_remove_team_confirm_title)) },
+            text = { Text(stringResource(R.string.admin_remove_team_confirm_body, target.username)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onRemoveFromTeam(target.id)
+                        removeFromTeamTarget = null
+                    },
+                ) {
+                    Text(
+                        stringResource(R.string.admin_btn_remove_team),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { removeFromTeamTarget = null }) {
                     Text(stringResource(R.string.admin_delete_cancel))
                 }
             },
@@ -449,7 +494,7 @@ private fun AdminHubContent(
         }
         item {
             AdminHubTile(
-                icon = { Icon(Icons.Outlined.Chat, null, tint = MaterialTheme.colorScheme.primary) },
+                icon = { Icon(Icons.AutoMirrored.Outlined.Chat, null, tint = MaterialTheme.colorScheme.primary) },
                 title = stringResource(R.string.admin_rooms_title),
                 subtitle = stringResource(R.string.admin_hub_rooms_sub),
                 onClick = { onOpenRoute(AdminRoute.ChatRooms) },

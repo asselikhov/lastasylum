@@ -196,6 +196,8 @@
     <string name="admin_field_status">Статус: %1$s</string>
     <string name="admin_btn_approve">Принять в команду</string>
     <string name="admin_btn_remove_team">Убрать из команды</string>
+    <string name="admin_remove_team_confirm_title">Убрать из команды?</string>
+    <string name="admin_remove_team_confirm_body">Пользователь «%1$s» будет исключён из состава команды.</string>
     <string name="admin_btn_mark_pending">Вернуть в ожидание</string>
     <string name="admin_role_change">Сменить роль</string>
     <string name="admin_rename">Никнейм</string>
@@ -285,6 +287,8 @@
     <string name="team_add_member_btn">Добавить</string>
     <string name="team_remove_member">Исключить</string>
     <string name="team_remove_member_cd">Исключить из команды</string>
+    <string name="team_remove_member_confirm_title">Исключить из команды?</string>
+    <string name="team_remove_member_confirm_body">Участник «%1$s» будет исключён из состава. Его можно снова пригласить позже.</string>
     <string name="team_screen_title">Команда</string>
     <string name="team_tab_news">Новости</string>
     <string name="team_news_other_heading">Другие новости</string>

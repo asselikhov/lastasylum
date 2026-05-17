@@ -28,7 +28,6 @@ import androidx.compose.material.icons.outlined.PersonRemove
 import androidx.compose.material.icons.outlined.Search
 import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.IconButton
@@ -268,10 +267,6 @@ private fun SquadRoleSectionHeader(
                 )
             }
         }
-        HorizontalDivider(
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
-            thickness = 0.5.dp,
-        )
     }
 }
 
@@ -306,6 +301,7 @@ private fun SquadMemberCard(
     val canEditThisMemberRole =
         isSquadLeader && !member.isLeader && member.userId != currentUserId
     val canRemove = isSquadLeader && !member.isLeader && member.userId != currentUserId
+    var removeConfirmTarget by remember(member.userId) { mutableStateOf(false) }
 
     val scheme = MaterialTheme.colorScheme
     Surface(
@@ -399,15 +395,7 @@ private fun SquadMemberCard(
                     }
                     if (canRemove) {
                         IconButton(
-                            onClick = {
-                                scope.launch {
-                                    onBusyChange(true)
-                                    teamsRepository.removeMember(teamId, member.userId)
-                                        .onSuccess { onReload() }
-                                        .onFailure { e -> onError(e.toUserMessageRu(res)) }
-                                    onBusyChange(false)
-                                }
-                            },
+                            onClick = { removeConfirmTarget = true },
                             enabled = !busy,
                             modifier = Modifier.size(44.dp),
                         ) {
@@ -421,6 +409,44 @@ private fun SquadMemberCard(
                 }
             }
         }
+    }
+
+    if (removeConfirmTarget) {
+        OverlayAwareAlertDialog(
+            onDismissRequest = { if (!busy) removeConfirmTarget = false },
+            title = { Text(stringResource(R.string.team_remove_member_confirm_title)) },
+            text = {
+                Text(stringResource(R.string.team_remove_member_confirm_body, member.username))
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !busy,
+                    onClick = {
+                        removeConfirmTarget = false
+                        scope.launch {
+                            onBusyChange(true)
+                            teamsRepository.removeMember(teamId, member.userId)
+                                .onSuccess { onReload() }
+                                .onFailure { e -> onError(e.toUserMessageRu(res)) }
+                            onBusyChange(false)
+                        }
+                    },
+                ) {
+                    Text(
+                        stringResource(R.string.team_remove_member),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !busy,
+                    onClick = { removeConfirmTarget = false },
+                ) {
+                    Text(stringResource(R.string.profile_action_cancel))
+                }
+            },
+        )
     }
 }
 

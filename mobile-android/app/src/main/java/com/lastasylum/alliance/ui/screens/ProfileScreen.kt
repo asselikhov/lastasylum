@@ -363,31 +363,19 @@ fun ProfileScreen(
             }
         }
 
-        val logoutEdge = Brush.linearGradient(
-            listOf(
-                MaterialTheme.colorScheme.primary,
-                MaterialTheme.colorScheme.error,
-                MaterialTheme.colorScheme.secondary,
-            ),
-        )
-        Box(
+        TextButton(
+            onClick = onLogout,
             modifier = Modifier
-                .fillMaxWidth()
-                .background(logoutEdge, MaterialTheme.shapes.large)
-                .padding(2.dp),
+                .align(Alignment.CenterHorizontally)
+                .padding(top = 2.dp, bottom = 4.dp),
+            colors = ButtonDefaults.textButtonColors(
+                contentColor = MaterialTheme.colorScheme.error,
+            ),
         ) {
-            Button(
-                onClick = onLogout,
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.large,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = SquadRelaySurfaces.dialogColor(),
-                    contentColor = MaterialTheme.colorScheme.error,
-                ),
-                elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp, pressedElevation = 0.dp),
-            ) {
-                Text(stringResource(R.string.profile_logout))
-            }
+            Text(
+                text = stringResource(R.string.profile_logout),
+                style = MaterialTheme.typography.labelLarge,
+            )
         }
     }
 

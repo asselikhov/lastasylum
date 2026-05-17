@@ -25,9 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -37,7 +35,7 @@ data class SquadSegmentTab(
     val id: String,
     val label: String,
     val icon: ImageVector? = null,
-    val selectedBrush: Brush? = null,
+    val selectedContainerColor: Color? = null,
     val unselectedIconTint: Color? = null,
 )
 
@@ -86,12 +84,8 @@ fun SquadSegmentTabBar(
                     )
                     else -> RoundedCornerShape(0.dp)
                 }
-                val brush = tab.selectedBrush ?: Brush.horizontalGradient(
-                    listOf(
-                        defaultAccent.copy(alpha = 0.92f),
-                        lerp(defaultAccent, Color(0xFF1A1028), 0.5f),
-                    ),
-                )
+                val selectedBg = tab.selectedContainerColor
+                    ?: defaultAccent.copy(alpha = 0.90f)
                 val iconTint = when {
                     selected -> Color.White.copy(alpha = 0.95f)
                     else -> tab.unselectedIconTint ?: defaultAccent.copy(alpha = 0.88f)
@@ -104,7 +98,7 @@ fun SquadSegmentTabBar(
                         .clip(segmentShape)
                         .then(
                             if (selected) {
-                                Modifier.background(brush)
+                                Modifier.background(selectedBg)
                             } else {
                                 Modifier
                             },
