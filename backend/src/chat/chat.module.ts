@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from '../auth/auth.module';
 import { PushModule } from '../push/push.module';
@@ -26,9 +26,9 @@ import {
 
 @Module({
   imports: [
-    AuthModule,
-    PushModule,
-    UsersModule,
+    forwardRef(() => AuthModule),
+    forwardRef(() => PushModule),
+    forwardRef(() => UsersModule),
     StorageModule,
     MongooseModule.forFeature([
       { name: Message.name, schema: MessageSchema },

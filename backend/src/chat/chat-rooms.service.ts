@@ -1,5 +1,7 @@
 import {
   ConflictException,
+  forwardRef,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -24,6 +26,7 @@ export class ChatRoomsService {
     private readonly messageModel: Model<MessageDocument>,
     @InjectModel(PlayerTeam.name)
     private readonly playerTeamModel: Model<PlayerTeamDocument>,
+    @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
   ) {}
 

@@ -8,7 +8,7 @@ import {
 } from '@nestjs/websockets';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { Server, Socket } from 'socket.io';
+import { Namespace, Socket } from 'socket.io';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
 import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/global-chat-alliance-id';
@@ -64,7 +64,7 @@ type VoicePeerState = {
 })
 export class VoiceGateway {
   @WebSocketServer()
-  server: Server;
+  server: Namespace;
 
   private readonly frameTimestamps = new Map<string, number[]>();
 
@@ -241,13 +241,11 @@ export class VoiceGateway {
     exceptSocketId: string,
     packet: Buffer,
   ): void {
-    const room = this.server?.sockets.adapter.rooms.get(
-      this.voiceRoomKey(roomId),
-    );
+    const room = this.server?.adapter.rooms.get(this.voiceRoomKey(roomId));
     if (!room) return;
     for (const socketId of room) {
       if (socketId === exceptSocketId) continue;
-      const peer = this.server.sockets.sockets.get(socketId) as
+      const peer = this.server.sockets.get(socketId) as
         | AuthSocket
         | undefined;
       if (!peer?.data?.soundOn) continue;
@@ -314,14 +312,12 @@ export class VoiceGateway {
     roomId: string,
     exceptSocketId: string,
   ): VoicePeerState[] {
-    const room = this.server?.sockets.adapter.rooms.get(
-      this.voiceRoomKey(roomId),
-    );
+    const room = this.server?.adapter.rooms.get(this.voiceRoomKey(roomId));
     if (!room) return [];
     const peers: VoicePeerState[] = [];
     for (const socketId of room) {
       if (socketId === exceptSocketId) continue;
-      const peerSocket = this.server.sockets.sockets.get(socketId) as
+      const peerSocket = this.server.sockets.get(socketId) as
         | AuthSocket
         | undefined;
       if (!peerSocket?.data?.user) continue;

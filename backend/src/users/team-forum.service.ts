@@ -122,6 +122,18 @@ export class TeamForumService {
     }
   }
 
+  /** Older messages may lack senderRole; Mongoose still validates on save. */
+  private ensureMessageSenderSnapshot(
+    msg: TeamForumMessageDocument,
+    team: Awaited<ReturnType<TeamsService['getTeamIfMemberOrThrow']>>,
+  ): void {
+    if (!msg.senderRole) {
+      msg.senderRole =
+        this.teams.getSquadRoleForUser(team, msg.senderUserId) ??
+        PlayerTeamMemberRole.R1;
+    }
+  }
+
   private asIdString(v: unknown): string | null {
     if (v == null) return null;
     if (typeof v === 'string') return v;
@@ -675,9 +687,11 @@ export class TeamForumService {
     if (!msg || msg.deletedAt) {
       throw new NotFoundException('Message not found');
     }
+    const team = await this.teams.getTeamIfMemberOrThrow(teamId, userId);
     await this.assertMayEditMessage(teamId, msg, userId);
     msg.deletedAt = new Date();
     msg.deletedByUserId = userId;
+    this.ensureMessageSenderSnapshot(msg, team);
     await msg.save();
   }
 
@@ -687,7 +701,7 @@ export class TeamForumService {
     messageIds: string[],
     userId: string,
   ): Promise<void> {
-    await this.teams.getTeamIfMemberOrThrow(teamId, userId);
+    const team = await this.teams.getTeamIfMemberOrThrow(teamId, userId);
     const teamOid = new Types.ObjectId(teamId);
     const topOid = new Types.ObjectId(topicId);
     const uniq = [...new Set(messageIds.map((x) => x.trim()).filter(Boolean))];
@@ -705,6 +719,7 @@ export class TeamForumService {
       await this.assertMayEditMessage(teamId, msg, userId);
       msg.deletedAt = new Date();
       msg.deletedByUserId = userId;
+      this.ensureMessageSenderSnapshot(msg, team);
       await msg.save();
     }
   }
