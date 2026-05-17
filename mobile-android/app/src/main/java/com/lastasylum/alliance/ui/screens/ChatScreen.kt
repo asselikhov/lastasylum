@@ -64,6 +64,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.Lock
@@ -181,7 +182,11 @@ import com.lastasylum.alliance.ui.chat.MessageSheetActionRow
 import com.lastasylum.alliance.ui.chat.MessageSheetDividerSpaced
 import com.lastasylum.alliance.ui.chat.MessageSheetPreviewSurface
 import com.lastasylum.alliance.ui.util.chatMessageHasCopyableContent
+import com.lastasylum.alliance.ui.util.appendTextToDraft
+import com.lastasylum.alliance.ui.util.chatMessageHasPasteableText
+import com.lastasylum.alliance.ui.util.chatMessageTextForComposer
 import com.lastasylum.alliance.ui.util.copyChatMessageToClipboard
+import com.lastasylum.alliance.ui.util.readClipboardPlainText
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -776,13 +781,14 @@ fun ChatScreen(
                 )
                 }
             }
+            val sheetCanDelete = canDeleteChatMessage(
+                message = message,
+                currentUserId = state.currentUserId,
+                currentUserRole = state.currentUserRole,
+            )
             ChatMessageActionsSheet(
                 message = message,
-                canDelete = canDeleteChatMessage(
-                    message = message,
-                    currentUserId = state.currentUserId,
-                    currentUserRole = state.currentUserRole,
-                ),
+                canDelete = sheetCanDelete,
                 mayEdit = message._id != null &&
                     message.deletedAt == null &&
                     message.senderId == state.currentUserId &&
@@ -805,6 +811,22 @@ fun ChatScreen(
                 },
                 onDelete = {
                     message._id?.let(onRequestDeleteMessage)
+                    onDismissMessageActions()
+                },
+                onSelect = {
+                    message._id?.let(onBeginMessageSelection)
+                    onDismissMessageActions()
+                },
+                onPasteToInput = {
+                    chatMessageTextForComposer(message)?.let { text ->
+                        onDraftChange(appendTextToDraft(draftMessage, text))
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.chat_pasted_to_input_toast),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                    onDismissMessageActions()
                 },
             )
         }
@@ -1793,6 +1815,30 @@ private fun ChatComposer(
                             IconButton(
                                 onClick = {
                                     if (readOnly) return@IconButton
+                                    readClipboardPlainText(context)?.let { clip ->
+                                        onDraftChange(appendTextToDraft(draft, clip))
+                                        focusRequester.requestFocus()
+                                        keyboard?.show()
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(R.string.chat_pasted_to_input_toast),
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                },
+                                enabled = !readOnly && !isSending,
+                                modifier = Modifier.size(44.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.ContentPaste,
+                                    contentDescription = stringResource(R.string.chat_composer_paste_cd),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+
+                            IconButton(
+                                onClick = {
+                                    if (readOnly) return@IconButton
                                     focusManager.clearFocus()
                                     keyboard?.hide()
                                     pickImagesLauncher?.launch(
@@ -2345,6 +2391,7 @@ private fun ChatBubbleInnerColumn(
     onJumpToQuotedMessage: (String) -> Unit,
     deleting: Boolean,
     canDelete: Boolean,
+    onImageLongPress: () -> Unit,
 ) {
     val openRemoteChatImagePreview = LocalOpenRemoteChatImagePreview.current
     val bubblePadH = if (stickerStem != null) 8.dp else 12.dp
@@ -2498,6 +2545,7 @@ private fun ChatBubbleInnerColumn(
                                 modifier = Modifier.fillMaxWidth(),
                                 roundTileCorners = false,
                                 bottomRound = !hasCaption,
+                                onLongPress = onImageLongPress,
                             )
                             if (!hasCaption && timeLabel.isNotBlank()) {
                                 Surface(
@@ -2626,6 +2674,7 @@ private fun ChatFloatingImageAttachmentsBlock(
     swipeModifier: Modifier,
     deleting: Boolean,
     canDelete: Boolean,
+    onImageLongPress: () -> Unit,
 ) {
     val openRemote = LocalOpenRemoteChatImagePreview.current
     val label = stringResource(R.string.cd_chat_message_image)
@@ -2673,6 +2722,7 @@ private fun ChatFloatingImageAttachmentsBlock(
                         modifier = Modifier.fillMaxWidth(),
                         roundTileCorners = true,
                         bottomRound = !hasCaption,
+                        onLongPress = onImageLongPress,
                     )
                     if (!hasCaption && formattedTime.isNotBlank()) {
                         Surface(
@@ -2802,15 +2852,27 @@ private fun ChatAlbumRow(
                 }
             },
             onLongClick = {
-                if (messageId.isNullOrBlank()) return@combinedClickable
-                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                if (canDelete) {
-                    if (inSelectionMode) onToggleSelection(messageId) else onBeginSelection(messageId)
-                } else {
-                    onOpenActions(messageId)
-                }
+                handleChatMessageLongPress(
+                    messageId = messageId,
+                    inSelectionMode = inSelectionMode,
+                    canDelete = canDelete,
+                    haptics = haptics,
+                    onOpenActions = onOpenActions,
+                    onToggleSelection = onToggleSelection,
+                )
             },
         )
+
+    val imageLongPress: () -> Unit = {
+        handleChatMessageLongPress(
+            messageId = messageId,
+            inSelectionMode = inSelectionMode,
+            canDelete = canDelete,
+            haptics = haptics,
+            onOpenActions = onOpenActions,
+            onToggleSelection = onToggleSelection,
+        )
+    }
 
     if (isMine) {
         Row(
@@ -2847,6 +2909,7 @@ private fun ChatAlbumRow(
                 swipeModifier = swipeModifier,
                 deleting = deleting,
                 canDelete = canDelete,
+                onImageLongPress = imageLongPress,
             )
         }
     } else {
@@ -2890,6 +2953,7 @@ private fun ChatAlbumRow(
                 swipeModifier = swipeModifier,
                 deleting = deleting,
                 canDelete = canDelete,
+                onImageLongPress = imageLongPress,
             )
         }
     }
@@ -3020,19 +3084,27 @@ private fun ChatBubbleRow(
                 }
             },
             onLongClick = {
-                if (messageId.isNullOrBlank()) return@combinedClickable
-                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                if (canDelete) {
-                    if (inSelectionMode) {
-                        onToggleSelection(messageId)
-                    } else {
-                        onBeginSelection(messageId)
-                    }
-                } else {
-                    onOpenActions(messageId)
-                }
+                handleChatMessageLongPress(
+                    messageId = messageId,
+                    inSelectionMode = inSelectionMode,
+                    canDelete = canDelete,
+                    haptics = haptics,
+                    onOpenActions = onOpenActions,
+                    onToggleSelection = onToggleSelection,
+                )
             },
         )
+
+    val imageLongPress: () -> Unit = {
+        handleChatMessageLongPress(
+            messageId = messageId,
+            inSelectionMode = inSelectionMode,
+            canDelete = canDelete,
+            haptics = haptics,
+            onOpenActions = onOpenActions,
+            onToggleSelection = onToggleSelection,
+        )
+    }
 
     if (isMine) {
         Row(
@@ -3117,6 +3189,7 @@ private fun ChatBubbleRow(
                     swipeModifier = swipeModifier,
                     deleting = deleting,
                     canDelete = canDelete,
+                    onImageLongPress = imageLongPress,
                 )
             } else {
                 Surface(
@@ -3148,6 +3221,7 @@ private fun ChatBubbleRow(
                         onJumpToQuotedMessage = onJumpToQuotedMessage,
                         deleting = deleting,
                         canDelete = canDelete,
+                        onImageLongPress = imageLongPress,
                     )
                 }
             }
@@ -3252,6 +3326,7 @@ private fun ChatBubbleRow(
                     swipeModifier = swipeModifier,
                     deleting = deleting,
                     canDelete = canDelete,
+                    onImageLongPress = imageLongPress,
                 )
             } else {
                 Surface(
@@ -3283,6 +3358,7 @@ private fun ChatBubbleRow(
                         onJumpToQuotedMessage = onJumpToQuotedMessage,
                         deleting = deleting,
                         canDelete = canDelete,
+                        onImageLongPress = imageLongPress,
                     )
                 }
             }
@@ -3302,6 +3378,8 @@ private fun ChatMessageActionsSheet(
     onReact: (String) -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onSelect: () -> Unit,
+    onPasteToInput: () -> Unit,
 ) {
     OverlayInteractionSuppressEffect()
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -3377,6 +3455,12 @@ private fun ChatMessageActionsSheet(
                 enabled = canCopy,
             )
             MessageSheetActionRow(
+                icon = Icons.Outlined.ContentPaste,
+                label = stringResource(R.string.chat_action_paste_to_input),
+                onClick = onPasteToInput,
+                enabled = chatMessageHasPasteableText(message),
+            )
+            MessageSheetActionRow(
                 icon = Icons.AutoMirrored.Outlined.Reply,
                 label = stringResource(R.string.chat_action_reply),
                 onClick = onReply,
@@ -3409,6 +3493,11 @@ private fun ChatMessageActionsSheet(
             }
             if (canDelete) {
                 MessageSheetActionRow(
+                    icon = Icons.Outlined.SelectAll,
+                    label = stringResource(R.string.chat_action_select),
+                    onClick = onSelect,
+                )
+                MessageSheetActionRow(
                     icon = Icons.Outlined.DeleteOutline,
                     label = stringResource(R.string.chat_action_delete),
                     onClick = onDelete,
@@ -3423,4 +3512,20 @@ private fun ChatMessageActionsSheet(
 private fun chatMessageKey(message: ChatMessage): String {
     return message._id
         ?: "${message.senderId}_${message.createdAt}_${message.text.hashCode()}"
+}
+
+private fun handleChatMessageLongPress(
+    messageId: String?,
+    inSelectionMode: Boolean,
+    canDelete: Boolean,
+    haptics: androidx.compose.ui.hapticfeedback.HapticFeedback,
+    onOpenActions: (String) -> Unit,
+    onToggleSelection: (String) -> Unit,
+) {
+    if (messageId.isNullOrBlank()) return
+    haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+    when {
+        inSelectionMode && canDelete -> onToggleSelection(messageId)
+        else -> onOpenActions(messageId)
+    }
 }

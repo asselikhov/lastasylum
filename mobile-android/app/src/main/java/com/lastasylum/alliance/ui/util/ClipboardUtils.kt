@@ -41,6 +41,31 @@ fun chatMessageHasCopyableContent(message: ChatMessage): Boolean {
     return false
 }
 
+/** Текст для вставки в композер (без плейсхолдера «изображение»). */
+fun chatMessageTextForComposer(message: ChatMessage): String? {
+    if (!message.deletedAt.isNullOrBlank()) return null
+    if (ZlobyakaStickerPack.parseStem(message.text) != null) return null
+    return message.text.trim().takeIf { it.isNotEmpty() }
+}
+
+fun chatMessageHasPasteableText(message: ChatMessage): Boolean =
+    chatMessageTextForComposer(message) != null
+
+fun readClipboardPlainText(context: Context): String? {
+    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return null
+    val clip = cm.primaryClip ?: return null
+    if (clip.itemCount == 0) return null
+    return clip.getItemAt(0).coerceToText(context)?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+}
+
+fun appendTextToDraft(current: String, addition: String): String {
+    val add = addition.trim()
+    if (add.isEmpty()) return current
+    if (current.isBlank()) return add
+    val sep = if (current.endsWith(' ') || current.endsWith('\n')) "" else " "
+    return current + sep + add
+}
+
 fun forumMessageHasCopyableContent(message: TeamForumMessageDto): Boolean {
     if (!message.deletedAt.isNullOrBlank()) return false
     if (ZlobyakaStickerPack.parseStem(message.text) != null) return true

@@ -3,7 +3,9 @@ package com.lastasylum.alliance.ui.chat
 import android.content.Context
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -176,6 +178,7 @@ fun TelegramImageCaptionBar(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TelegramLikeAttachmentsGrid(
     urls: List<String>,
@@ -185,6 +188,7 @@ fun TelegramLikeAttachmentsGrid(
     roundTileCorners: Boolean = true,
     bottomRound: Boolean = true,
     enabled: Boolean = true,
+    onLongPress: (() -> Unit)? = null,
 ) {
     if (urls.isEmpty()) return
     // Telegram-like albums: show up to 6 tiles; for more, overlay +N on the last one.
@@ -247,12 +251,18 @@ fun TelegramLikeAttachmentsGrid(
                 .clip(tileShapeFor(shown.size, idx))
                 .then(
                     if (enabled) {
-                        Modifier
-                            .semantics {
-                                this.contentDescription = contentDescription
-                                role = Role.Button
-                            }
-                            .clickable { onOpen(idx) }
+                        val semanticsMod = Modifier.semantics {
+                            this.contentDescription = contentDescription
+                            role = Role.Button
+                        }
+                        if (onLongPress != null) {
+                            semanticsMod.combinedClickable(
+                                onClick = { onOpen(idx) },
+                                onLongClick = onLongPress,
+                            )
+                        } else {
+                            semanticsMod.clickable { onOpen(idx) }
+                        }
                     } else {
                         Modifier
                     },
