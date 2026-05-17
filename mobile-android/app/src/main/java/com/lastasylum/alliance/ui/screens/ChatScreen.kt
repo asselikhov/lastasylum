@@ -186,7 +186,6 @@ import com.lastasylum.alliance.ui.util.appendTextToDraft
 import com.lastasylum.alliance.ui.util.chatMessageHasPasteableText
 import com.lastasylum.alliance.ui.util.chatMessageTextForComposer
 import com.lastasylum.alliance.ui.util.copyChatMessageToClipboard
-import com.lastasylum.alliance.ui.util.readClipboardPlainText
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -1194,7 +1193,6 @@ private fun ChatMessagesLazyList(
                                 isSelected = message._id != null && message._id in selectedMessageIds,
                                 otherReadUptoMessageId = state.otherReadUptoMessageId,
                                 onOpenActions = { id -> onOpenMessageActions(id) },
-                                onBeginSelection = onBeginMessageSelection,
                                 onToggleSelection = onToggleMessageSelection,
                                 onSwipeReply = onReplyToMessage,
                                 onJumpToQuotedMessage = jumpToQuotedMessage,
@@ -1222,7 +1220,6 @@ private fun ChatMessagesLazyList(
                                 inSelectionMode = inSelectionMode,
                                 isSelected = message._id != null && message._id in selectedMessageIds,
                                 onOpenActions = { id -> onOpenMessageActions(id) },
-                                onBeginSelection = onBeginMessageSelection,
                                 onToggleSelection = onToggleMessageSelection,
                                 onSwipeReply = onReplyToMessage,
                                 _onJumpToQuotedMessage = jumpToQuotedMessage,
@@ -1811,30 +1808,7 @@ private fun ChatComposer(
                                 !readOnly &&
                                 (draft.isNotBlank() || pickedImageUris.isNotEmpty())
                             val sendButtonEnabled = canSend && !isSending
-
-                            IconButton(
-                                onClick = {
-                                    if (readOnly) return@IconButton
-                                    readClipboardPlainText(context)?.let { clip ->
-                                        onDraftChange(appendTextToDraft(draft, clip))
-                                        focusRequester.requestFocus()
-                                        keyboard?.show()
-                                        Toast.makeText(
-                                            context,
-                                            context.getString(R.string.chat_pasted_to_input_toast),
-                                            Toast.LENGTH_SHORT,
-                                        ).show()
-                                    }
-                                },
-                                enabled = !readOnly && !isSending,
-                                modifier = Modifier.size(44.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.ContentPaste,
-                                    contentDescription = stringResource(R.string.chat_composer_paste_cd),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
+                            val showSendButton = canSend || isSending
 
                             IconButton(
                                 onClick = {
@@ -1899,27 +1873,25 @@ private fun ChatComposer(
                                 )
                             }
 
-                            IconButton(
-                                onClick = { if (sendButtonEnabled) onSendDraft() },
-                                enabled = sendButtonEnabled || isSending,
-                                modifier = Modifier.size(44.dp),
-                            ) {
-                                if (isSending) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(20.dp),
-                                        strokeWidth = 2.dp,
-                                        color = MaterialTheme.colorScheme.primary,
-                                    )
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Outlined.Send,
-                                        contentDescription = stringResource(R.string.chat_send),
-                                        tint = if (canSend) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
-                                        },
-                                    )
+                            if (showSendButton) {
+                                IconButton(
+                                    onClick = { if (sendButtonEnabled) onSendDraft() },
+                                    enabled = sendButtonEnabled || isSending,
+                                    modifier = Modifier.size(44.dp),
+                                ) {
+                                    if (isSending) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(20.dp),
+                                            strokeWidth = 2.dp,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Outlined.Send,
+                                            contentDescription = stringResource(R.string.chat_send),
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -2781,7 +2753,6 @@ private fun ChatAlbumRow(
     inSelectionMode: Boolean,
     isSelected: Boolean,
     onOpenActions: (String) -> Unit,
-    onBeginSelection: (String) -> Unit,
     onToggleSelection: (String) -> Unit,
     onSwipeReply: (String) -> Unit,
     _onJumpToQuotedMessage: (String) -> Unit,
@@ -2974,7 +2945,6 @@ private fun ChatBubbleRow(
     isSelected: Boolean,
     otherReadUptoMessageId: String?,
     onOpenActions: (String) -> Unit,
-    onBeginSelection: (String) -> Unit,
     onToggleSelection: (String) -> Unit,
     onSwipeReply: (String) -> Unit,
     onJumpToQuotedMessage: (String) -> Unit,

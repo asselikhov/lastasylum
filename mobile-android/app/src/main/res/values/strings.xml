@@ -92,7 +92,6 @@
     <string name="chat_action_copy">Копировать</string>
     <string name="chat_action_paste_to_input">Вставить в поле ввода</string>
     <string name="chat_action_select">Выбрать</string>
-    <string name="chat_composer_paste_cd">Вставить из буфера</string>
     <string name="chat_pasted_to_input_toast">Текст вставлен в поле ввода</string>
     <string name="chat_copied_toast">Скопировано</string>
     <string name="chat_message_clipboard_label">Сообщение</string>
