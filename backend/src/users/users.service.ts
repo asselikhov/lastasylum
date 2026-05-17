@@ -64,7 +64,7 @@ export class UsersService {
       email: input.email.toLowerCase(),
       passwordHash: input.passwordHash,
       role: input.role ?? AllianceRole.R2,
-      membershipStatus: TeamMembershipStatus.PENDING,
+      membershipStatus: TeamMembershipStatus.ACTIVE,
     });
   }
 

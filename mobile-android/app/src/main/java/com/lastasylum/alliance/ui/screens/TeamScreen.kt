@@ -5,23 +5,31 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -43,7 +51,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -62,14 +73,11 @@ import com.lastasylum.alliance.ui.screens.teamnews.TeamNewsNavHost
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.overlay.OverlayModalScope
+import com.lastasylum.alliance.ui.components.GlassSurface
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.lerp
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.delay
@@ -246,56 +254,29 @@ fun TeamScreen(
                     }
 
                     if (profile?.playerTeamId.isNullOrBlank()) {
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.large,
-                            color = SquadRelaySurfaces.panelColor(0.52f),
-                            tonalElevation = 0.dp,
-                            shadowElevation = 3.dp,
-                            border = SquadRelaySurfaces.panelBorder(),
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
+                            contentAlignment = Alignment.Center,
                         ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp),
-                            ) {
-                            Text(
-                                text = stringResource(R.string.team_no_team_title),
-                                style = MaterialTheme.typography.titleMedium,
+                            TeamNoTeamOnboardingCard(
+                                onCreateTeam = {
+                                    OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
+                                    createName = ""
+                                    createTag = ""
+                                    createError = null
+                                    showCreate = true
+                                },
+                                onJoinTeam = {
+                                    OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
+                                    joinSearch = ""
+                                    joinResults = emptyList()
+                                    joinFeedback = null
+                                    showJoin = true
+                                },
                             )
-                            Text(
-                                text = stringResource(R.string.team_no_team_body),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(
-                                    onClick = {
-                                        OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
-                                        createName = ""
-                                        createTag = ""
-                                        createError = null
-                                        showCreate = true
-                                    },
-                                    shape = MaterialTheme.shapes.large,
-                                ) {
-                                    Text(stringResource(R.string.profile_player_team_create))
-                                }
-                                OutlinedButton(
-                                    onClick = {
-                                        OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
-                                        joinSearch = ""
-                                        joinResults = emptyList()
-                                        joinFeedback = null
-                                        showJoin = true
-                                    },
-                                    shape = MaterialTheme.shapes.large,
-                                ) {
-                                    Text(stringResource(R.string.profile_player_team_join))
-                                }
-                            }
-                            }
                         }
                     } else if (teamDetail != null) {
                         val team = teamDetail!!
@@ -874,6 +855,146 @@ fun TeamScreen(
                 teamsRepository = teamsRepository,
                 onError = { msg -> error = msg },
             )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TeamNoTeamOnboardingCard(
+    onCreateTeam: () -> Unit,
+    onJoinTeam: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val cardShape = RoundedCornerShape(28.dp)
+    GlassSurface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .widthIn(max = 400.dp),
+        shape = cardShape,
+        shadowElevation = 8.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(0.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                scheme.primary.copy(alpha = 0.38f),
+                                scheme.primary.copy(alpha = 0.06f),
+                            ),
+                        ),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Groups,
+                    contentDescription = null,
+                    modifier = Modifier.size(40.dp),
+                    tint = scheme.primary,
+                )
+            }
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = stringResource(R.string.team_no_team_title),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = scheme.onSurface,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = stringResource(R.string.team_no_team_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = scheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                lineHeight = MaterialTheme.typography.bodyMedium.lineHeight * 1.15f,
+            )
+            Spacer(Modifier.height(28.dp))
+            Button(
+                onClick = onCreateTeam,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 52.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = scheme.primary,
+                    contentColor = Color.White,
+                ),
+                elevation = ButtonDefaults.buttonElevation(
+                    defaultElevation = 4.dp,
+                    pressedElevation = 2.dp,
+                ),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.profile_player_team_create),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = stringResource(R.string.team_no_team_create_hint),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.82f),
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(
+                onClick = onJoinTeam,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 52.dp),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, scheme.outline.copy(alpha = 0.35f)),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = scheme.onSurface,
+                ),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.PersonAdd,
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp),
+                        tint = scheme.primary,
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.profile_player_team_join),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = scheme.onSurface,
+                        )
+                        Text(
+                            text = stringResource(R.string.team_no_team_join_hint),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = scheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
         }
     }
