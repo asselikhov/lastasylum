@@ -19,6 +19,10 @@ import {
   ChatRoomReadStateSchema,
 } from './schemas/chat-room-read-state.schema';
 import { StorageModule } from '../storage/storage.module';
+import {
+  PlayerTeam,
+  PlayerTeamSchema,
+} from '../users/schemas/player-team.schema';
 
 @Module({
   imports: [
@@ -31,6 +35,7 @@ import { StorageModule } from '../storage/storage.module';
       { name: ChatAttachment.name, schema: ChatAttachmentSchema },
       { name: ChatRoom.name, schema: ChatRoomSchema },
       { name: ChatRoomReadState.name, schema: ChatRoomReadStateSchema },
+      { name: PlayerTeam.name, schema: PlayerTeamSchema },
     ]),
   ],
   controllers: [ChatController],

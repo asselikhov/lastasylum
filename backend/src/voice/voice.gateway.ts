@@ -12,6 +12,7 @@ import { Server, Socket } from 'socket.io';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
 import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/global-chat-alliance-id';
+import { resolveChatAllianceScope } from '../chat/chat-alliance-scope';
 import { UsersService } from '../users/users.service';
 import { ChatRoomsService } from '../chat/chat-rooms.service';
 import { parseAllowedOriginsFromEnv } from '../common/config/allowed-origins';
@@ -297,7 +298,7 @@ export class VoiceGateway {
     }
     const mayJoin =
       room.allianceId === GLOBAL_CHAT_ALLIANCE_ID ||
-      room.allianceId === user.allianceName;
+      room.allianceId === resolveChatAllianceScope(user);
     if (!mayJoin) {
       throw new WsException('Room is not available for your alliance');
     }

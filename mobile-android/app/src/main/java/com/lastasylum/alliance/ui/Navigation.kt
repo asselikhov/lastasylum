@@ -363,48 +363,39 @@ fun AppNavigation(
                 AdminScreen(
                     currentUserId = userId,
                     state = adminState,
-                    onRefresh = adminViewModel::refresh,
+                    onNavigateBack = adminViewModel::navigateBack,
+                    onOpenRoute = adminViewModel::openRoute,
+                    onOpenPlayerTeam = adminViewModel::openPlayerTeam,
+                    onTeamSearchChange = adminViewModel::setTeamSearchQuery,
+                    onUserSearchChange = adminViewModel::setUserSearchQuery,
+                    onRefreshOverview = adminViewModel::refreshOverview,
+                    onRefreshPlayerTeams = adminViewModel::refreshPlayerTeams,
+                    onRefreshTeamMembers = adminViewModel::refreshTeamMembers,
+                    onRefreshUsersWithoutTeam = adminViewModel::refreshUsersWithoutTeam,
                     onRefreshAlliances = adminViewModel::refreshAlliances,
-                    onClearAlliancesError = adminViewModel::clearAlliancesError,
-                    onSetFilterAlliance = adminViewModel::setFilterAllianceCode,
-                    onMemberSearchChange = adminViewModel::setMemberSearchQuery,
                     onAllianceOverlayChange = { publicId, enabled ->
-                        adminViewModel.setAllianceOverlayEnabled(publicId, enabled, msgOverlaySaved)
+                        adminViewModel.setAllianceOverlay(publicId, enabled, msgOverlaySaved)
                     },
-                    onApprove = { id ->
-                        adminViewModel.setMembership(id, "active", msgApproved)
-                    },
-                    onRemoveFromTeam = { id ->
-                        adminViewModel.setMembership(id, "removed", msgRemoved)
-                    },
-                    onRestorePending = { id ->
-                        adminViewModel.setMembership(id, "pending", msgPending)
-                    },
-                    onSetRole = { memberId, newRole ->
-                        adminViewModel.setRole(memberId, newRole, msgRole)
-                    },
-                    onRename = { memberId, newName ->
-                        adminViewModel.setUsername(memberId, newName, msgRename)
-                    },
-                    onDeleteUser = { memberId ->
-                        adminViewModel.deleteUser(memberId, msgDeleted)
-                    },
-                    onDismissError = adminViewModel::clearError,
+                    onOpenStickerSettings = adminViewModel::openStickerSettings,
+                    onCloseStickerSettings = adminViewModel::closeStickerSettings,
+                    onToggleStickerAllianceRole = adminViewModel::toggleStickerAllianceRole,
+                    onSaveStickerAccess = { adminViewModel.saveStickerAccess(msgStickerSaved) },
+                    onClearStickerAccessError = adminViewModel::clearStickerAccessError,
                     onRefreshRooms = adminViewModel::refreshRooms,
-                    onCreateRoom = { title ->
-                        adminViewModel.createChatRoom(title, msgRoomCreated)
-                    },
+                    onCreateRoom = { title -> adminViewModel.createChatRoom(title, msgRoomCreated) },
                     onRenameRoom = { roomId, title ->
                         adminViewModel.renameChatRoom(roomId, title, msgRoomRenamed)
                     },
-                    onDeleteRoom = { roomId ->
-                        adminViewModel.deleteChatRoom(roomId, msgRoomDeleted)
-                    },
-                    onClearRoomSnack = adminViewModel::clearRoomSnack,
-                    onToggleStickerAllianceRole = adminViewModel::toggleStickerAllianceRole,
-                    onToggleStickerUserGrant = adminViewModel::toggleStickerUserGrant,
-                    onSaveStickerAccess = { adminViewModel.saveStickerAccess(msgStickerSaved) },
-                    onClearStickerAccessError = adminViewModel::clearStickerAccessError,
+                    onDeleteRoom = { roomId -> adminViewModel.deleteChatRoom(roomId, msgRoomDeleted) },
+                    onApprove = { id -> adminViewModel.setMembership(id, "active", msgApproved) },
+                    onRemoveFromTeam = { id -> adminViewModel.setMembership(id, "removed", msgRemoved) },
+                    onRestorePending = { id -> adminViewModel.setMembership(id, "pending", msgPending) },
+                    onSetRole = { memberId, newRole -> adminViewModel.setRole(memberId, newRole, msgRole) },
+                    onRename = { memberId, newName -> adminViewModel.setUsername(memberId, newName, msgRename) },
+                    onDeleteUser = { memberId -> adminViewModel.deleteUser(memberId, msgDeleted) },
+                    onClearActionError = adminViewModel::clearActionError,
+                    onClearRoomError = adminViewModel::clearRoomError,
+                    onDismissSnack = adminViewModel::clearSnack,
                 )
             }
         }

@@ -7,6 +7,11 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/global-chat-alliance-id';
 import { UsersService } from '../users/users.service';
+import { PlayerTeam, PlayerTeamDocument } from '../users/schemas/player-team.schema';
+import {
+  isPlayerTeamChatScope,
+  parsePlayerTeamIdFromChatScope,
+} from './chat-alliance-scope';
 import { ChatRoom, ChatRoomDocument } from './schemas/chat-room.schema';
 import { Message, MessageDocument } from './schemas/message.schema';
 
@@ -17,6 +22,8 @@ export class ChatRoomsService {
     private readonly roomModel: Model<ChatRoomDocument>,
     @InjectModel(Message.name)
     private readonly messageModel: Model<MessageDocument>,
+    @InjectModel(PlayerTeam.name)
+    private readonly playerTeamModel: Model<PlayerTeamDocument>,
     private readonly usersService: UsersService,
   ) {}
 
@@ -29,12 +36,11 @@ export class ChatRoomsService {
   }
 
   /**
-   * Global «Союз» + this alliance's rooms (excludes legacy per-alliance "Общий"/"Общая" rows).
+   * Global «Союз» + hub/raid for [chatScope] (player team `pt:<id>` or legacy alliance key).
    */
-  async listRoomsVisibleToUser(userAllianceName: string) {
+  async listRoomsVisibleToUser(chatScope: string) {
     await this.ensureGlobalGeneralRoom();
-    await this.ensureAllianceHubRoom(userAllianceName);
-    await this.ensureAllianceRaidRoom(userAllianceName);
+    await this.ensureAllianceChatRoomsForScope(chatScope);
     const [globalRooms, allianceRooms] = await Promise.all([
       this.roomModel
         .find({ allianceId: GLOBAL_CHAT_ALLIANCE_ID, archivedAt: null })
@@ -43,7 +49,7 @@ export class ChatRoomsService {
         .exec(),
       this.roomModel
         .find({
-          allianceId: userAllianceName,
+          allianceId: chatScope,
           archivedAt: null,
           title: { $nin: ['Общий', 'Общая'] },
         })
@@ -52,6 +58,35 @@ export class ChatRoomsService {
         .exec(),
     ]);
     return [...globalRooms, ...allianceRooms];
+  }
+
+  /** Ensure hub + raid exist for a chat scope (call when someone joins a player team). */
+  async ensureAllianceChatRoomsForScope(
+    chatScope: string,
+    hubTitleHint?: string,
+  ): Promise<void> {
+    const hubTitle =
+      hubTitleHint?.trim() ||
+      (await this.resolveHubTitleForScope(chatScope));
+    await this.ensureAllianceHubRoom(chatScope, hubTitle);
+    await this.ensureAllianceRaidRoom(chatScope);
+  }
+
+  private async resolveHubTitleForScope(chatScope: string): Promise<string> {
+    const teamId = parsePlayerTeamIdFromChatScope(chatScope);
+    if (teamId) {
+      const team = await this.playerTeamModel
+        .findById(teamId)
+        .select('displayName')
+        .lean<{ displayName?: string }>()
+        .exec();
+      const t = team?.displayName?.trim();
+      if (t) return t.slice(0, 64);
+    }
+    if (!isPlayerTeamChatScope(chatScope)) {
+      return this.usersService.resolveAllianceChatHubTitle(chatScope);
+    }
+    return chatScope;
   }
 
   findById(roomId: string) {
@@ -168,9 +203,13 @@ export class ChatRoomsService {
   /**
    * Alliance-only room (sortOrder 1): title follows team display name from members, else alliance key.
    */
-  async ensureAllianceHubRoom(allianceId: string): Promise<void> {
+  async ensureAllianceHubRoom(
+    allianceId: string,
+    displayTitleOverride?: string,
+  ): Promise<void> {
     const displayTitle =
-      await this.usersService.resolveAllianceChatHubTitle(allianceId);
+      displayTitleOverride?.trim() ||
+      (await this.resolveHubTitleForScope(allianceId));
     let hub = await this.roomModel
       .findOne({ allianceId, sortOrder: 1, archivedAt: null })
       .exec();

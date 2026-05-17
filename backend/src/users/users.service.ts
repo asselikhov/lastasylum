@@ -86,26 +86,56 @@ export class UsersService {
   /** R5 admin: optional alliance filter, optional text search, pagination. */
   async listUsersForAdmin(opts: {
     allianceCode?: string;
+    withoutTeam?: boolean;
     q?: string;
     skip: number;
     limit: number;
   }): Promise<UserDocument[]> {
     const filter: Record<string, unknown> = {};
+    const and: Record<string, unknown>[] = [];
+    if (opts.withoutTeam) {
+      and.push({
+        $or: [{ playerTeamId: null }, { playerTeamId: { $exists: false } }],
+      });
+    }
     if (opts.allianceCode?.trim()) {
       filter.allianceName = opts.allianceCode.trim();
     }
     if (opts.q?.trim()) {
       const esc = opts.q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      filter.$or = [
-        { username: new RegExp(esc, 'i') },
-        { email: new RegExp(esc, 'i') },
-      ];
+      and.push({
+        $or: [
+          { username: new RegExp(esc, 'i') },
+          { email: new RegExp(esc, 'i') },
+        ],
+      });
+    }
+    if (and.length === 1) {
+      Object.assign(filter, and[0]);
+    } else if (and.length > 1) {
+      filter.$and = and;
     }
     return this.userModel
       .find(filter)
       .sort({ allianceName: 1, membershipStatus: 1, role: 1, username: 1 })
       .skip(opts.skip)
       .limit(opts.limit)
+      .exec();
+  }
+
+  async listUsersWithoutTeamForAdmin(opts: {
+    q?: string;
+    skip: number;
+    limit: number;
+  }): Promise<UserDocument[]> {
+    return this.listUsersForAdmin({ ...opts, withoutTeam: true });
+  }
+
+  async countUsersWithoutTeam(): Promise<number> {
+    return this.userModel
+      .countDocuments({
+        $or: [{ playerTeamId: null }, { playerTeamId: { $exists: false } }],
+      })
       .exec();
   }
 
@@ -368,17 +398,24 @@ export class UsersService {
   }
 
   async collectPushTokensForAlliance(
-    allianceName: string,
+    allianceId: string,
     excludeUserId: string,
   ): Promise<string[]> {
     if (!Types.ObjectId.isValid(excludeUserId)) return [];
+    const filter: Record<string, unknown> = {
+      membershipStatus: TeamMembershipStatus.ACTIVE,
+      _id: { $ne: new Types.ObjectId(excludeUserId) },
+      pushFcmTokens: { $exists: true, $ne: [] },
+    };
+    if (allianceId.startsWith('pt:')) {
+      const teamId = allianceId.slice(3);
+      if (!Types.ObjectId.isValid(teamId)) return [];
+      filter.playerTeamId = new Types.ObjectId(teamId);
+    } else {
+      filter.allianceName = allianceId;
+    }
     const users = await this.userModel
-      .find({
-        allianceName,
-        membershipStatus: TeamMembershipStatus.ACTIVE,
-        _id: { $ne: new Types.ObjectId(excludeUserId) },
-        pushFcmTokens: { $exists: true, $ne: [] },
-      })
+      .find(filter)
       .select('pushFcmTokens')
       .lean()
       .exec();

@@ -2,9 +2,13 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
+import { ChatRoomsService } from '../chat/chat-rooms.service';
+import { playerTeamChatAllianceId } from '../chat/chat-alliance-scope';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
@@ -41,6 +45,23 @@ export type TeamMemberRow = {
   lastPresenceAt: string | null;
 };
 
+export type PlayerTeamAdminRow = {
+  id: string;
+  tag: string;
+  displayName: string;
+  leaderUserId: string;
+  leaderUsername: string;
+  memberCount: number;
+  /** Distinct chat routing keys (allianceName) among members. */
+  chatRoutingSummary: string;
+};
+
+export type AdminTeamMemberRow = TeamMemberRow & {
+  email: string;
+  membershipStatus: string;
+  allianceName: string;
+};
+
 export type TeamJoinRequestRow = {
   id: string;
   requesterUserId: string;
@@ -73,7 +94,43 @@ export class TeamsService {
     @InjectModel(TeamJoinRequest.name)
     private readonly joinRequestModel: Model<TeamJoinRequestDocument>,
     @InjectModel(User.name) private readonly userModel: Model<User>,
+    @Inject(forwardRef(() => ChatRoomsService))
+    private readonly chatRoomsService: ChatRoomsService,
   ) {}
+
+  private async ensurePlayerTeamChatRooms(
+    team: PlayerTeamDocument,
+  ): Promise<void> {
+    await this.chatRoomsService.ensureAllianceChatRoomsForScope(
+      playerTeamChatAllianceId(team._id.toString()),
+      team.displayName,
+    );
+  }
+
+  private async applyPlayerTeamMembershipToUser(
+    team: PlayerTeamDocument,
+    userId: Types.ObjectId,
+    squadRole: PlayerTeamMemberRole,
+  ): Promise<void> {
+    const leader = await this.userModel.findById(team.leaderUserId).exec();
+    await this.ensurePlayerTeamChatRooms(team);
+    await this.userModel
+      .updateOne(
+        { _id: userId },
+        {
+          $set: {
+            playerTeamId: team._id,
+            teamDisplayName: team.displayName,
+            teamTag: team.tag,
+            ...(leader
+              ? { allianceName: leader.allianceName }
+              : {}),
+          },
+        },
+      )
+      .exec();
+    void squadRole;
+  }
 
   private normalizeTag(raw: string): string {
     const chars = [...raw.trim()];
@@ -290,6 +347,7 @@ export class TeamsService {
       }
       throw e;
     }
+    await this.ensurePlayerTeamChatRooms(team);
     await this.userModel
       .updateOne(
         { _id: userId },
@@ -550,18 +608,11 @@ export class TeamsService {
         },
       )
       .exec();
-    await this.userModel
-      .updateOne(
-        { _id: rid },
-        {
-          $set: {
-            playerTeamId: team._id,
-            teamDisplayName: team.displayName,
-            teamTag: team.tag,
-          },
-        },
-      )
-      .exec();
+    await this.applyPlayerTeamMembershipToUser(
+      team,
+      rid,
+      PlayerTeamMemberRole.R1,
+    );
     reqDoc.status = TeamJoinRequestStatus.ACCEPTED;
     await reqDoc.save();
     return { ok: true };
@@ -616,18 +667,11 @@ export class TeamsService {
         },
       )
       .exec();
-    await this.userModel
-      .updateOne(
-        { _id: tid },
-        {
-          $set: {
-            playerTeamId: team._id,
-            teamDisplayName: team.displayName,
-            teamTag: team.tag,
-          },
-        },
-      )
-      .exec();
+    await this.applyPlayerTeamMembershipToUser(
+      team,
+      tid,
+      PlayerTeamMemberRole.R1,
+    );
     return { ok: true };
   }
 
@@ -738,5 +782,115 @@ export class TeamsService {
       throw new NotFoundException('Member not on this team');
     }
     return { ok: true };
+  }
+
+  async countTeams(): Promise<number> {
+    return this.teamModel.countDocuments({}).exec();
+  }
+
+  async listAllTeamsForAdmin(): Promise<PlayerTeamAdminRow[]> {
+    const teams = await this.teamModel
+      .find({})
+      .sort({ displayName: 1, tag: 1 })
+      .exec();
+    const out: PlayerTeamAdminRow[] = [];
+    for (const team of teams) {
+      await this.migrateLegacyIfNeeded(team);
+      const leader = await this.userModel
+        .findById(team.leaderUserId)
+        .select('username')
+        .lean<{ username?: string }>()
+        .exec();
+      const memberUsers = await this.userModel
+        .find({ playerTeamId: team._id })
+        .select('allianceName')
+        .lean<Array<{ allianceName?: string }>>()
+        .exec();
+      const routes = [
+        ...new Set(
+          memberUsers
+            .map((u) => u.allianceName?.trim())
+            .filter((v): v is string => Boolean(v)),
+        ),
+      ];
+      out.push({
+        id: team._id.toString(),
+        tag: team.tag,
+        displayName: team.displayName,
+        leaderUserId: team.leaderUserId.toString(),
+        leaderUsername: leader?.username?.trim() || '—',
+        memberCount: team.squadMembers.length,
+        chatRoutingSummary: routes.length > 0 ? routes.join(', ') : '—',
+      });
+    }
+    return out;
+  }
+
+  async getTeamDetailForAdmin(teamId: string): Promise<{
+    id: string;
+    tag: string;
+    displayName: string;
+    leaderUserId: string;
+    members: AdminTeamMemberRow[];
+  } | null> {
+    if (!Types.ObjectId.isValid(teamId)) {
+      return null;
+    }
+    const team = await this.teamModel.findById(teamId).exec();
+    if (!team) {
+      return null;
+    }
+    await this.migrateLegacyIfNeeded(team);
+    const users = await this.userModel
+      .find({ _id: { $in: team.squadMembers.map((m) => m.userId) } })
+      .select(
+        'username email role telegramUsername presenceStatus lastPresenceAt membershipStatus allianceName',
+      )
+      .lean<
+        Array<{
+          _id: Types.ObjectId;
+          username: string;
+          email: string;
+          role: string;
+          telegramUsername?: string | null;
+          presenceStatus?: string | null;
+          lastPresenceAt?: Date | string | null;
+          membershipStatus?: string;
+          allianceName?: string;
+        }>
+      >()
+      .exec();
+    const roleByUserId = new Map(
+      team.squadMembers.map((m) => [m.userId.toString(), m.role]),
+    );
+    const toIso = (v: Date | string | null | undefined): string | null => {
+      if (v == null) return null;
+      if (v instanceof Date) return v.toISOString();
+      return String(v);
+    };
+    const members: AdminTeamMemberRow[] = users.map((u) => {
+      const uid = u._id.toString();
+      return {
+        userId: uid,
+        username: u.username,
+        email: u.email,
+        isLeader: team.leaderUserId.equals(u._id),
+        allianceRole: u.role,
+        teamRole: roleByUserId.get(uid) ?? 'R1',
+        telegramUsername: u.telegramUsername ?? null,
+        presenceStatus: u.presenceStatus ?? null,
+        lastPresenceAt: toIso(u.lastPresenceAt),
+        membershipStatus: u.membershipStatus ?? 'active',
+        allianceName: u.allianceName?.trim() || '—',
+      };
+    });
+    members.sort((a, b) => squadRoleRank(b.teamRole) - squadRoleRank(a.teamRole));
+    return {
+      id: team._id.toString(),
+      tag: team.tag,
+      displayName: team.displayName,
+      leaderUserId: team.leaderUserId.toString(),
+      members,
+    };
   }
 }

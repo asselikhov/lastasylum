@@ -7,6 +7,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/global-chat-alliance-id';
+import { resolveChatAllianceScope } from './chat-alliance-scope';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
 import { UserDocument } from '../users/schemas/user.schema';
@@ -147,9 +148,10 @@ export class ChatService {
         roomObjectId: room._id,
       };
     }
-    if (room.allianceId === user.allianceName) {
+    const chatScope = resolveChatAllianceScope(user);
+    if (room.allianceId === chatScope) {
       return {
-        allianceId: user.allianceName,
+        allianceId: chatScope,
         roomObjectId: room._id,
       };
     }
@@ -620,7 +622,7 @@ export class ChatService {
     }
     if (
       message.allianceId !== GLOBAL_CHAT_ALLIANCE_ID &&
-      message.allianceId !== actor.allianceName
+      message.allianceId !== resolveChatAllianceScope(actor)
     ) {
       throw new ForbiddenException(
         'Message is not available for your alliance',

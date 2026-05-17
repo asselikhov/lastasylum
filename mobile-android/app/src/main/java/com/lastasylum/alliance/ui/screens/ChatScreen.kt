@@ -146,7 +146,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
-import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatRoomDto
@@ -154,6 +153,9 @@ import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
+import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
+import com.lastasylum.alliance.overlay.OverlayAwareBottomSheet
+import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.overlay.OverlayInteractionSuppressEffect
 import com.lastasylum.alliance.overlay.OverlayModalScope
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
@@ -747,15 +749,13 @@ fun ChatScreen(
 
     if (!inSelectionMode) {
         activeActionMessage?.let { message ->
+            OverlayModalScope(preparedByCaller = true) {
             var showEdit by remember(message._id) { mutableStateOf(false) }
             var editDraft by remember(message._id) { mutableStateOf(message.text) }
             if (showEdit) {
                 OverlayModalScope {
-                AlertDialog(
+                OverlayAwareAlertDialog(
                     onDismissRequest = { showEdit = false },
-                    containerColor = SquadRelaySurfaces.dialogColor(),
-                    titleContentColor = MaterialTheme.colorScheme.onSurface,
-                    textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     title = { Text(stringResource(R.string.chat_edit_title)) },
                     text = {
                         OutlinedTextField(
@@ -805,7 +805,9 @@ fun ChatScreen(
                     message._id?.let { onToggleReaction(it, emoji) }
                 },
                 onEdit = {
-                    OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
+                    if (overlayUi) {
+                        OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
+                    }
                     showEdit = true
                 },
                 onDelete = {
@@ -828,16 +830,14 @@ fun ChatScreen(
                     onDismissMessageActions()
                 },
             )
+            }
         }
     }
 
     confirmDeleteMessage?.let {
         OverlayModalScope {
-        AlertDialog(
+        OverlayAwareAlertDialog(
             onDismissRequest = onDismissDeleteMessage,
-            containerColor = SquadRelaySurfaces.dialogColor(),
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.chat_delete_title)) },
             text = { Text(stringResource(R.string.chat_delete_body)) },
             confirmButton = {
@@ -859,11 +859,8 @@ fun ChatScreen(
 
     if (state.confirmBulkDelete && state.selectedMessageIds.isNotEmpty()) {
         OverlayModalScope {
-        AlertDialog(
+        OverlayAwareAlertDialog(
             onDismissRequest = onDismissBulkDeleteConfirm,
-            containerColor = SquadRelaySurfaces.dialogColor(),
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.chat_bulk_delete_title)) },
             text = {
                 Text(
@@ -1064,6 +1061,7 @@ private fun ChatMessagesLazyList(
     onBeginMessageSelection: (String) -> Unit,
     onToggleMessageSelection: (String) -> Unit,
 ) {
+    val overlayUi = LocalOverlayUiMode.current
     val minSystemViewport = (LocalConfiguration.current.screenHeightDp * 0.55f).dp.coerceAtLeast(280.dp)
     val timeline = remember(state.messages) { buildChatTimeline(state.messages) }
     LazyColumn(
@@ -1192,6 +1190,7 @@ private fun ChatMessagesLazyList(
                                 inSelectionMode = inSelectionMode,
                                 isSelected = message._id != null && message._id in selectedMessageIds,
                                 otherReadUptoMessageId = state.otherReadUptoMessageId,
+                                overlayUi = overlayUi,
                                 onOpenActions = { id -> onOpenMessageActions(id) },
                                 onToggleSelection = onToggleMessageSelection,
                                 onSwipeReply = onReplyToMessage,
@@ -1219,6 +1218,7 @@ private fun ChatMessagesLazyList(
                                 deleting = state.deletingMessageId == message._id,
                                 inSelectionMode = inSelectionMode,
                                 isSelected = message._id != null && message._id in selectedMessageIds,
+                                overlayUi = overlayUi,
                                 onOpenActions = { id -> onOpenMessageActions(id) },
                                 onToggleSelection = onToggleMessageSelection,
                                 onSwipeReply = onReplyToMessage,
@@ -1407,8 +1407,8 @@ private fun ChatComposer(
     }
 
     if (showAttachmentsSheet) {
-        OverlayInteractionSuppressEffect()
-        ModalBottomSheet(onDismissRequest = { showAttachmentsSheet = false }) {
+        OverlayModalScope {
+        OverlayAwareBottomSheet(onDismissRequest = { showAttachmentsSheet = false }) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1499,6 +1499,7 @@ private fun ChatComposer(
                     }
                 }
             }
+        }
         }
     }
 
@@ -2752,6 +2753,7 @@ private fun ChatAlbumRow(
     deleting: Boolean,
     inSelectionMode: Boolean,
     isSelected: Boolean,
+    overlayUi: Boolean,
     onOpenActions: (String) -> Unit,
     onToggleSelection: (String) -> Unit,
     onSwipeReply: (String) -> Unit,
@@ -2828,6 +2830,7 @@ private fun ChatAlbumRow(
                     inSelectionMode = inSelectionMode,
                     canDelete = canDelete,
                     haptics = haptics,
+                    overlayUi = overlayUi,
                     onOpenActions = onOpenActions,
                     onToggleSelection = onToggleSelection,
                 )
@@ -2840,6 +2843,7 @@ private fun ChatAlbumRow(
             inSelectionMode = inSelectionMode,
             canDelete = canDelete,
             haptics = haptics,
+            overlayUi = overlayUi,
             onOpenActions = onOpenActions,
             onToggleSelection = onToggleSelection,
         )
@@ -2943,6 +2947,7 @@ private fun ChatBubbleRow(
     deleting: Boolean,
     inSelectionMode: Boolean,
     isSelected: Boolean,
+    overlayUi: Boolean,
     otherReadUptoMessageId: String?,
     onOpenActions: (String) -> Unit,
     onToggleSelection: (String) -> Unit,
@@ -3059,6 +3064,7 @@ private fun ChatBubbleRow(
                     inSelectionMode = inSelectionMode,
                     canDelete = canDelete,
                     haptics = haptics,
+                    overlayUi = overlayUi,
                     onOpenActions = onOpenActions,
                     onToggleSelection = onToggleSelection,
                 )
@@ -3071,6 +3077,7 @@ private fun ChatBubbleRow(
             inSelectionMode = inSelectionMode,
             canDelete = canDelete,
             haptics = haptics,
+            overlayUi = overlayUi,
             onOpenActions = onOpenActions,
             onToggleSelection = onToggleSelection,
         )
@@ -3351,8 +3358,7 @@ private fun ChatMessageActionsSheet(
     onSelect: () -> Unit,
     onPasteToInput: () -> Unit,
 ) {
-    OverlayInteractionSuppressEffect()
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    OverlayAwareBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -3489,6 +3495,7 @@ private fun handleChatMessageLongPress(
     inSelectionMode: Boolean,
     canDelete: Boolean,
     haptics: androidx.compose.ui.hapticfeedback.HapticFeedback,
+    overlayUi: Boolean,
     onOpenActions: (String) -> Unit,
     onToggleSelection: (String) -> Unit,
 ) {
@@ -3496,6 +3503,11 @@ private fun handleChatMessageLongPress(
     haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
     when {
         inSelectionMode && canDelete -> onToggleSelection(messageId)
-        else -> onOpenActions(messageId)
+        else -> {
+            if (overlayUi) {
+                OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
+            }
+            onOpenActions(messageId)
+        }
     }
 }

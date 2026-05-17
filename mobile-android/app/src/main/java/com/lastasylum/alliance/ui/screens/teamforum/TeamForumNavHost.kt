@@ -122,6 +122,8 @@ import com.lastasylum.alliance.ui.util.copyForumMessageToClipboard
 import com.lastasylum.alliance.ui.util.forumMessageHasCopyableContent
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
+import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
+import com.lastasylum.alliance.overlay.OverlayAwareBottomSheet
 import com.lastasylum.alliance.overlay.OverlayInteractionSuppressEffect
 import com.lastasylum.alliance.overlay.OverlayModalScope
 import com.lastasylum.alliance.ui.util.toUserMessageRu
@@ -452,12 +454,9 @@ private fun TeamForumListRoute(
     }
 
     if (showCreate) {
-        OverlayModalScope {
-        AlertDialog(
+        OverlayModalScope(preparedByCaller = true) {
+        OverlayAwareAlertDialog(
             onDismissRequest = { if (!createBusy) showCreate = false },
-            containerColor = SquadRelaySurfaces.dialogColor(),
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.team_forum_new_topic_title)) },
             text = {
                 OutlinedTextField(
@@ -500,12 +499,9 @@ private fun TeamForumListRoute(
     }
 
     editTopic?.let { topic ->
-        OverlayModalScope {
-        AlertDialog(
+        OverlayModalScope(preparedByCaller = true) {
+        OverlayAwareAlertDialog(
             onDismissRequest = { if (!editBusy) editTopic = null },
-            containerColor = SquadRelaySurfaces.dialogColor(),
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.team_forum_edit_topic_title)) },
             text = {
                 OutlinedTextField(
@@ -547,12 +543,9 @@ private fun TeamForumListRoute(
     }
 
     deleteTopic?.let { topic ->
-        OverlayModalScope {
-        AlertDialog(
+        OverlayModalScope(preparedByCaller = true) {
+        OverlayAwareAlertDialog(
             onDismissRequest = { deleteTopic = null },
-            containerColor = SquadRelaySurfaces.dialogColor(),
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.team_forum_delete_topic_title)) },
             text = { Text(stringResource(R.string.team_forum_delete_topic_body, topic.title)) },
             confirmButton = {
@@ -862,6 +855,7 @@ private fun TeamForumTopicChatRoute(
                             },
                             onOpenActions = {
                                 if (msg.deletedAt.isNullOrBlank()) {
+                                    OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
                                     activeActionMessageId = msg.id
                                 }
                             },
@@ -953,12 +947,9 @@ private fun TeamForumTopicChatRoute(
     // legacy menu dialog removed (replaced with bottom sheet)
 
     editMessage?.let { msg ->
-        OverlayModalScope {
-        AlertDialog(
+        OverlayModalScope(preparedByCaller = true) {
+        OverlayAwareAlertDialog(
             onDismissRequest = { if (!editBusy) editMessage = null },
-            containerColor = SquadRelaySurfaces.dialogColor(),
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.team_forum_edit_message_title)) },
             text = {
                 OutlinedTextField(
@@ -1007,6 +998,7 @@ private fun TeamForumTopicChatRoute(
     }
     if (selectedMessageIds.isEmpty()) {
         activeActionMessage?.let { msg ->
+            OverlayModalScope(preparedByCaller = true) {
             ForumMessageActionsSheet(
                 message = msg,
                 canEdit = (msg.senderUserId == currentUserId || canModerateMessages) &&
@@ -1056,16 +1048,14 @@ private fun TeamForumTopicChatRoute(
                     }
                 },
             )
+            }
         }
     }
 
     if (confirmBulkDelete && selectedMessageIds.isNotEmpty()) {
         OverlayModalScope {
-        AlertDialog(
+        OverlayAwareAlertDialog(
             onDismissRequest = { if (!deletingSelection) confirmBulkDelete = false },
-            containerColor = SquadRelaySurfaces.dialogColor(),
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.chat_bulk_delete_title)) },
             text = {
                 Text(stringResource(R.string.chat_bulk_delete_body, selectedMessageIds.size))
@@ -1311,8 +1301,7 @@ private fun ForumMessageActionsSheet(
     val context = LocalContext.current
     val stickerStem = remember(message.text) { ZlobyakaStickerPack.parseStem(message.text) }
     val canCopy = forumMessageHasCopyableContent(message)
-    OverlayInteractionSuppressEffect()
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    OverlayAwareBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()

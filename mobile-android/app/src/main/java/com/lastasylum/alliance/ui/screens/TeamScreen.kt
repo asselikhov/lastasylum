@@ -27,7 +27,7 @@ import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.AlertDialog
+import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
@@ -484,12 +484,9 @@ fun TeamScreen(
     }
 
     if (showCreate) {
-        OverlayModalScope {
-        AlertDialog(
+        OverlayModalScope(preparedByCaller = true) {
+        OverlayAwareAlertDialog(
             onDismissRequest = { if (!createBusy) showCreate = false },
-            containerColor = SquadRelaySurfaces.dialogColor(),
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.profile_player_team_create_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -563,12 +560,9 @@ fun TeamScreen(
     }
 
     if (showJoin) {
-        OverlayModalScope {
-        AlertDialog(
+        OverlayModalScope(preparedByCaller = true) {
+        OverlayAwareAlertDialog(
             onDismissRequest = { if (!joinActionBusy) showJoin = false },
-            containerColor = SquadRelaySurfaces.dialogColor(),
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.profile_player_team_join_title)) },
             text = {
                 Column(
@@ -654,12 +648,9 @@ fun TeamScreen(
     }
 
     if (showJoinInbox) {
-        OverlayModalScope {
-        AlertDialog(
+        OverlayModalScope(preparedByCaller = true) {
+        OverlayAwareAlertDialog(
             onDismissRequest = { if (!inboxBusy) showJoinInbox = false },
-            containerColor = SquadRelaySurfaces.dialogColor(),
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.profile_join_inbox_title)) },
             text = {
                 Box(
@@ -731,12 +722,9 @@ fun TeamScreen(
 
     val teamIdForDialogs = teamDetail?.id
     if (showAddMemberDialog && teamIdForDialogs != null) {
-        OverlayModalScope {
-        AlertDialog(
+        OverlayModalScope(preparedByCaller = true) {
+        OverlayAwareAlertDialog(
             onDismissRequest = { if (!membersBusy) showAddMemberDialog = false },
-            containerColor = SquadRelaySurfaces.dialogColor(),
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.team_add_member_dialog_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -782,12 +770,9 @@ fun TeamScreen(
     }
 
     if (showEditTeamNameDialog && teamIdForDialogs != null) {
-        OverlayModalScope {
-        AlertDialog(
+        OverlayModalScope(preparedByCaller = true) {
+        OverlayAwareAlertDialog(
             onDismissRequest = { if (!editNameBusy) showEditTeamNameDialog = false },
-            containerColor = SquadRelaySurfaces.dialogColor(),
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.team_edit_team_name_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -846,7 +831,7 @@ fun TeamScreen(
 
     roleEditMember?.let { member ->
         if (teamIdForDialogs != null) {
-            OverlayModalScope {
+            OverlayModalScope(preparedByCaller = true) {
             SquadMemberRoleEditDialog(
                 member = member,
                 onDismiss = { roleEditMember = null },

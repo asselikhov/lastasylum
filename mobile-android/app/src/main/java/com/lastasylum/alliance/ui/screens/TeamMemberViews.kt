@@ -26,7 +26,7 @@ import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.ManageAccounts
 import androidx.compose.material.icons.outlined.PersonRemove
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material3.AlertDialog
+import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -448,7 +448,7 @@ fun SquadMemberRoleEditDialog(
     val initial = if (options.any { it.code == initialCode }) initialCode else "R1"
     var selected by remember(member.userId) { mutableStateOf(initial) }
     var saving by remember { mutableStateOf(false) }
-    AlertDialog(
+    OverlayAwareAlertDialog(
         onDismissRequest = { if (!saving) onDismiss() },
         title = {
             Text(

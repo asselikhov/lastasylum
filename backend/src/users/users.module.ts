@@ -1,4 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { ChatModule } from '../chat/chat.module';
 import { MongooseModule } from '@nestjs/mongoose';
 import { TeamForumSocketModule } from './team-forum-socket.module';
 import { AdminAlliancesController } from './admin-alliances.controller';
@@ -13,6 +14,7 @@ import {
   TeamJoinRequestSchema,
 } from './schemas/team-join-request.schema';
 import { User, UserSchema } from './schemas/user.schema';
+import { AdminTeamsController } from './admin-teams.controller';
 import { TeamsController } from './teams.controller';
 import { TeamsService } from './teams.service';
 import { UsersController } from './users.controller';
@@ -52,6 +54,7 @@ import { StickerAccessService } from './sticker-access.service';
 @Module({
   imports: [
     StorageModule,
+    forwardRef(() => ChatModule),
     forwardRef(() => TeamForumSocketModule),
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
@@ -74,6 +77,7 @@ import { StickerAccessService } from './sticker-access.service';
     AdminAlliancesController,
     AdminStickerAccessController,
     TeamsController,
+    AdminTeamsController,
   ],
   providers: [
     UsersService,

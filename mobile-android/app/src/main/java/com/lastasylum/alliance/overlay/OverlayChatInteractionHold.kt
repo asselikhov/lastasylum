@@ -44,11 +44,16 @@ object OverlayChatInteractionHold {
     }
 
     /**
-     * Вызвать из onClick до `showDialog = true`, чтобы гейт не успел снять окна до [OverlayInteractionSuppressEffect].
-     * Не увеличивает [overlayModalSuppressDepth] — счётчик ведёт только DisposableEffect модалки.
+     * Вызвать синхронно до открытия sheet/dialog (long-press, onClick), чтобы game gate и BackHandler панели
+     * не успели снять оверлей до первого кадра Compose с [OverlayInteractionSuppressEffect].
      */
     fun prepareOverlayModalInteraction(isOverlayUi: Boolean) {
-        if (isOverlayUi) suppressGameForegroundGate = true
+        if (isOverlayUi) acquireGameForegroundSuppress()
+    }
+
+    /** Парный сброс после [prepareOverlayModalInteraction], если модалка не открылась (ошибка/отмена). */
+    fun cancelPreparedOverlayModalInteraction(isOverlayUi: Boolean) {
+        if (isOverlayUi) releaseGameForegroundSuppress()
     }
 
     fun isOverlayModalSuppressActive(): Boolean =

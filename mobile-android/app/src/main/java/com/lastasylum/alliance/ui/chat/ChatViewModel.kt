@@ -80,8 +80,14 @@ class ChatViewModel(
     init {
         viewModelScope.launch {
             for (message in incomingMessages) {
-                val roomId = _state.value.selectedRoomId ?: continue
-                if (message.roomId.isNotBlank() && message.roomId != roomId) continue
+                val primary = _state.value.selectedRoomId
+                val raid = chatRoomPreferences.getRaidRoomId()
+                if (primary == null) continue
+                val inSubscribedRoom =
+                    message.roomId.isBlank() ||
+                        message.roomId == primary ||
+                        (!raid.isNullOrBlank() && message.roomId == raid)
+                if (!inSubscribedRoom) continue
                 applyIncomingMessage(message)
             }
         }

@@ -17,11 +17,27 @@ fun OverlayInteractionSuppressEffect() {
     }
 }
 
-/** Оборачивает модальный UI в оверлее (AlertDialog и т.п.) подсчётом suppress для game gate. */
+/**
+ * Оборачивает модальный UI в оверлее подсчётом suppress для game gate.
+ * Если перед открытием уже вызван [OverlayChatInteractionHold.prepareOverlayModalInteraction],
+ * не дублирует acquire — только удерживает счётчик на время жизни composable.
+ */
 @Composable
-fun OverlayModalScope(content: @Composable () -> Unit) {
-    if (LocalOverlayUiMode.current) {
-        OverlayInteractionSuppressEffect()
+fun OverlayModalScope(
+    preparedByCaller: Boolean = false,
+    content: @Composable () -> Unit,
+) {
+    if (!LocalOverlayUiMode.current) {
+        content()
+        return
+    }
+    DisposableEffect(preparedByCaller) {
+        if (!preparedByCaller) {
+            OverlayChatInteractionHold.acquireGameForegroundSuppress()
+        }
+        onDispose {
+            OverlayChatInteractionHold.releaseGameForegroundSuppress()
+        }
     }
     content()
 }

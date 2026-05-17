@@ -4,15 +4,15 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
@@ -20,19 +20,30 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.PersonOff
+import androidx.compose.material.icons.outlined.Route
+import androidx.compose.material.icons.outlined.Chat
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -43,540 +54,252 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.data.admin.AdminTeamMemberDto
 import com.lastasylum.alliance.data.admin.AllianceAdminDto
+import com.lastasylum.alliance.data.admin.PlayerTeamAdminDto
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.users.TeamMemberDto
+import com.lastasylum.alliance.ui.admin.AdminRoute
 import com.lastasylum.alliance.ui.admin.AdminUiState
+import com.lastasylum.alliance.ui.admin.toTeamMemberDto
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 
-private fun copyTeamId(context: Context, text: String) {
-    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    cm.setPrimaryClip(ClipData.newPlainText("team_id", text))
-}
-
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AdminScreen(
     currentUserId: String,
     state: AdminUiState,
-    onRefresh: () -> Unit,
+    onNavigateBack: () -> Unit,
+    onOpenRoute: (AdminRoute) -> Unit,
+    onOpenPlayerTeam: (PlayerTeamAdminDto) -> Unit,
+    onTeamSearchChange: (String) -> Unit,
+    onUserSearchChange: (String) -> Unit,
+    onRefreshOverview: () -> Unit,
+    onRefreshPlayerTeams: () -> Unit,
+    onRefreshTeamMembers: (String) -> Unit,
+    onRefreshUsersWithoutTeam: () -> Unit,
     onRefreshAlliances: () -> Unit,
-    onClearAlliancesError: () -> Unit,
-    onSetFilterAlliance: (String?) -> Unit,
-    onMemberSearchChange: (String) -> Unit,
     onAllianceOverlayChange: (String, Boolean) -> Unit,
+    onOpenStickerSettings: (String) -> Unit,
+    onCloseStickerSettings: () -> Unit,
+    onToggleStickerAllianceRole: (String, Boolean) -> Unit,
+    onSaveStickerAccess: () -> Unit,
+    onClearStickerAccessError: () -> Unit,
+    onRefreshRooms: () -> Unit,
+    onCreateRoom: (String) -> Unit,
+    onRenameRoom: (String, String) -> Unit,
+    onDeleteRoom: (String) -> Unit,
     onApprove: (String) -> Unit,
     onRemoveFromTeam: (String) -> Unit,
     onRestorePending: (String) -> Unit,
     onSetRole: (String, String) -> Unit,
     onRename: (String, String) -> Unit,
     onDeleteUser: (String) -> Unit,
-    onDismissError: () -> Unit,
-    onRefreshRooms: () -> Unit,
-    onCreateRoom: (String) -> Unit,
-    onRenameRoom: (String, String) -> Unit,
-    onDeleteRoom: (String) -> Unit,
-    onClearRoomSnack: () -> Unit,
-    onToggleStickerAllianceRole: (String, Boolean) -> Unit = { _, _ -> },
-    onToggleStickerUserGrant: (String, Boolean) -> Unit = { _, _ -> },
-    onSaveStickerAccess: () -> Unit = {},
-    onClearStickerAccessError: () -> Unit = {},
+    onClearActionError: () -> Unit,
+    onClearRoomError: () -> Unit,
+    onDismissSnack: () -> Unit,
 ) {
-    var deleteTarget by remember { mutableStateOf<TeamMemberDto?>(null) }
+    val context = LocalContext.current
+    var selectedMember by remember { mutableStateOf<TeamMemberDto?>(null) }
+    var deleteUserTarget by remember { mutableStateOf<TeamMemberDto?>(null) }
     var deleteRoomTarget by remember { mutableStateOf<ChatRoomDto?>(null) }
     var renameRoomTarget by remember { mutableStateOf<ChatRoomDto?>(null) }
     var renameDraft by remember { mutableStateOf("") }
     var newRoomTitle by remember { mutableStateOf("") }
-    val context = LocalContext.current
-    val chipScroll = rememberScrollState()
 
-    LazyColumn(
+    val title = when (val route = state.route) {
+        AdminRoute.Hub -> stringResource(R.string.admin_screen_title)
+        AdminRoute.PlayerTeams -> stringResource(R.string.admin_hub_teams)
+        is AdminRoute.PlayerTeamDetail -> route.title
+        AdminRoute.UsersWithoutTeam -> stringResource(R.string.admin_hub_users_without_team)
+        AdminRoute.ChatRouting -> stringResource(R.string.admin_hub_chat_routing)
+        AdminRoute.ChatRooms -> stringResource(R.string.admin_rooms_title)
+    }
+    val showBack = state.route != AdminRoute.Hub
+
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .imePadding(),
-        contentPadding = PaddingValues(
-            horizontal = SquadRelayDimens.contentPaddingHorizontal,
-            vertical = SquadRelayDimens.screenTopPadding,
-        ),
-        verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.sectionGap),
     ) {
-        item {
-            Text(
-                text = stringResource(R.string.admin_screen_title),
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-        }
+        AdminTopBar(
+            title = title,
+            showBack = showBack,
+            onBack = onNavigateBack,
+            onRefresh = when (state.route) {
+                AdminRoute.Hub -> onRefreshOverview
+                AdminRoute.PlayerTeams -> onRefreshPlayerTeams
+                is AdminRoute.PlayerTeamDetail -> {
+                    { onRefreshTeamMembers((state.route as AdminRoute.PlayerTeamDetail).teamId) }
+                }
+                AdminRoute.UsersWithoutTeam -> onRefreshUsersWithoutTeam
+                AdminRoute.ChatRouting -> onRefreshAlliances
+                AdminRoute.ChatRooms -> onRefreshRooms
+            },
+            refreshing = state.overviewLoading || state.playerTeamsLoading ||
+                state.teamMembersLoading || state.usersWithoutTeamLoading ||
+                state.alliancesLoading || state.roomsLoading,
+        )
 
-        item {
-            adminSectionCard {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = stringResource(R.string.admin_section_teams),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    OutlinedButton(
-                        onClick = onRefreshAlliances,
-                        enabled = !state.alliancesLoading,
-                        shape = MaterialTheme.shapes.large,
-                        modifier = Modifier.semantics {
-                            contentDescription = context.getString(R.string.admin_cd_refresh_teams)
-                        },
-                    ) {
-                        Text(stringResource(R.string.admin_refresh))
-                    }
-                }
-                if (state.alliancesLoading && state.alliances.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 12.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        CircularProgressIndicator(
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
-                state.alliancesError?.takeIf { it.isNotBlank() }?.let { err ->
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = err,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        TextButton(onClick = onClearAlliancesError) {
-                            Text(stringResource(R.string.admin_dismiss_error))
-                        }
-                    }
-                }
-                if (!state.alliancesLoading && state.alliances.isEmpty() && state.alliancesError.isNullOrBlank()) {
-                    Text(
-                        text = stringResource(R.string.admin_members_empty),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else {
-                    state.alliances.forEachIndexed { index, row ->
-                        if (index > 0) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(vertical = 4.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant,
-                            )
-                        }
-                        AdminAllianceRow(
-                            row = row,
-                            onCopyId = { copyTeamId(context, row.publicId) },
-                            onOverlayChange = { enabled ->
-                                onAllianceOverlayChange(row.publicId, enabled)
-                            },
-                        )
-                    }
-                }
-            }
-        }
-
-        item {
-            adminSectionCard {
-                Text(
-                    text = stringResource(R.string.admin_section_members),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
+        state.snackMessage?.let { msg ->
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal, vertical = 4.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shape = MaterialTheme.shapes.medium,
+            ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .horizontalScroll(chipScroll),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    FilterChip(
-                        selected = state.filterAllianceCode == null,
-                        onClick = { onSetFilterAlliance(null) },
-                        label = { Text(stringResource(R.string.admin_filter_all_teams)) },
-                    )
-                    state.alliances.forEach { a ->
-                        FilterChip(
-                            selected = state.filterAllianceCode == a.allianceCode,
-                            onClick = {
-                                onSetFilterAlliance(
-                                    if (state.filterAllianceCode == a.allianceCode) null else a.allianceCode,
-                                )
-                            },
-                            label = {
-                                Text(
-                                    text = a.allianceCode,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            },
-                        )
-                    }
-                }
-                if (state.filterAllianceCode != null) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(vertical = 8.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
-                    )
-                    Text(
-                        text = stringResource(R.string.admin_sticker_section_title),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        text = stringResource(R.string.admin_sticker_roles_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (state.stickerAccessLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .padding(vertical = 8.dp)
-                                .size(22.dp),
-                            strokeWidth = 2.dp,
-                        )
-                    }
-                    state.stickerAccessError?.takeIf { it.isNotBlank() }?.let { err ->
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                text = err,
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                            TextButton(onClick = onClearStickerAccessError) {
-                                Text(stringResource(R.string.admin_dismiss_error))
-                            }
-                        }
-                    }
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        listOf("R2", "R3", "R4", "R5").forEach { role ->
-                            FilterChip(
-                                selected = state.stickerRolesZlobyaka.contains(role),
-                                onClick = {
-                                    onToggleStickerAllianceRole(
-                                        role,
-                                        !state.stickerRolesZlobyaka.contains(role),
-                                    )
-                                },
-                                label = { Text(role) },
-                            )
-                        }
-                    }
-                    Button(
-                        onClick = onSaveStickerAccess,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = MaterialTheme.shapes.large,
-                        enabled = !state.stickerAccessLoading,
-                    ) {
-                        Text(stringResource(R.string.admin_sticker_save))
-                    }
-                }
-                OutlinedTextField(
-                    value = state.memberSearchQuery,
-                    onValueChange = onMemberSearchChange,
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    shape = MaterialTheme.shapes.medium,
-                    label = { Text(stringResource(R.string.admin_members_search_hint)) },
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = stringResource(R.string.admin_members_title),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f),
-                    )
-                    OutlinedButton(
-                        onClick = onRefresh,
-                        enabled = !state.isLoading,
-                        shape = MaterialTheme.shapes.large,
-                        modifier = Modifier.semantics {
-                            contentDescription = context.getString(R.string.admin_cd_refresh_members)
-                        },
-                    ) {
-                        Text(stringResource(R.string.admin_refresh))
-                    }
-                    if (state.isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .padding(start = 8.dp)
-                                .size(22.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
-            }
-        }
-
-        item {
-            adminSectionCard {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = stringResource(R.string.admin_rooms_title),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    OutlinedButton(
-                        onClick = onRefreshRooms,
-                        enabled = !state.roomsLoading,
-                        shape = MaterialTheme.shapes.large,
-                        modifier = Modifier.semantics {
-                            contentDescription = context.getString(R.string.admin_cd_refresh_rooms)
-                        },
-                    ) {
-                        Text(stringResource(R.string.admin_refresh))
-                    }
-                }
-                Text(
-                    text = stringResource(R.string.admin_rooms_subtitle),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    OutlinedTextField(
-                        value = newRoomTitle,
-                        onValueChange = { newRoomTitle = it },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                        shape = MaterialTheme.shapes.medium,
-                        label = { Text(stringResource(R.string.admin_rooms_new_hint)) },
-                    )
-                    Button(
-                        onClick = {
-                            onCreateRoom(newRoomTitle)
-                            newRoomTitle = ""
-                        },
-                        enabled = newRoomTitle.isNotBlank(),
-                        shape = MaterialTheme.shapes.large,
-                    ) {
-                        Text(stringResource(R.string.admin_rooms_create))
-                    }
-                }
-                if (state.roomsLoading && state.rooms.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        CircularProgressIndicator(
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
-                state.roomError?.takeIf { it.isNotBlank() }?.let { roomErrorText ->
-                    Text(
-                        text = roomErrorText,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                state.roomSnack?.takeIf { it.isNotBlank() }?.let { roomSnackText ->
-                    Row(
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = roomSnackText,
-                            color = MaterialTheme.colorScheme.primary,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f),
-                        )
-                        TextButton(onClick = onClearRoomSnack) {
-                            Text(stringResource(R.string.admin_dismiss_error))
-                        }
-                    }
-                }
-                if (!state.roomsLoading && state.rooms.isEmpty()) {
-                    Text(
-                        text = stringResource(R.string.admin_rooms_empty),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else {
-                    state.rooms.forEach { room ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = room.title,
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.weight(1f),
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                TextButton(
-                                    onClick = {
-                                        renameRoomTarget = room
-                                        renameDraft = room.title
-                                    },
-                                    modifier = Modifier.semantics {
-                                        contentDescription = context.getString(
-                                            R.string.admin_cd_rename_room,
-                                            room.title,
-                                        )
-                                    },
-                                ) {
-                                    Text(stringResource(R.string.admin_rooms_rename))
-                                }
-                                TextButton(
-                                    onClick = { deleteRoomTarget = room },
-                                    modifier = Modifier.semantics {
-                                        contentDescription = context.getString(
-                                            R.string.admin_cd_delete_room,
-                                            room.title,
-                                        )
-                                    },
-                                ) {
-                                    Text(
-                                        stringResource(R.string.admin_rooms_delete),
-                                        color = MaterialTheme.colorScheme.error,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        item {
-            when {
-                state.isLoading && state.members.isEmpty() -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 16.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        CircularProgressIndicator(
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
-                !state.isLoading && state.members.isEmpty() && state.error.isNullOrBlank() -> {
-                    Text(
-                        text = stringResource(R.string.admin_members_empty),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 12.dp),
-                    )
-                }
-            }
-        }
-        item {
-            val membersErrorText = state.error
-            if (!membersErrorText.isNullOrBlank()) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = membersErrorText,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 5,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    TextButton(onClick = onDismissError) {
+                    Text(msg, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    TextButton(onClick = onDismissSnack) {
                         Text(stringResource(R.string.admin_dismiss_error))
                     }
                 }
             }
         }
-        item {
-            val snackMessageText = state.snackMessage
-            if (!snackMessageText.isNullOrBlank()) {
-                Text(
-                    text = snackMessageText,
-                    color = MaterialTheme.colorScheme.primary,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
+
+        state.actionError?.let { err ->
+            AdminErrorBanner(err, onDismiss = onClearActionError)
         }
-        items(state.members, key = { it.id }) { member ->
-            AdminMemberCard(
-                member = member,
-                currentUserId = currentUserId,
-                onApprove = { onApprove(member.id) },
-                onRemoveFromTeam = { onRemoveFromTeam(member.id) },
-                onRestorePending = { onRestorePending(member.id) },
-                onSetRole = { role -> onSetRole(member.id, role) },
-                onRename = { name -> onRename(member.id, name) },
-                onDeleteClick = { deleteTarget = member },
-                showStickerUserGrant = state.filterAllianceCode != null,
-                stickerUserGrantEnabled = state.stickerUsersZlobyaka.contains(member.id),
-                onStickerUserGrantChange = { enabled ->
-                    onToggleStickerUserGrant(member.id, enabled)
+
+        when (state.route) {
+            AdminRoute.Hub -> AdminHubContent(
+                state = state,
+                onOpenRoute = onOpenRoute,
+            )
+            AdminRoute.PlayerTeams -> AdminPlayerTeamsContent(
+                state = state,
+                onSearchChange = onTeamSearchChange,
+                onTeamClick = onOpenPlayerTeam,
+            )
+            is AdminRoute.PlayerTeamDetail -> AdminTeamMembersContent(
+                state = state,
+                onMemberClick = { m ->
+                    selectedMember = m.toTeamMemberDto(state.selectedTeam)
                 },
+            )
+            AdminRoute.UsersWithoutTeam -> AdminUsersWithoutTeamContent(
+                state = state,
+                onSearchChange = onUserSearchChange,
+                onUserClick = { selectedMember = it },
+            )
+            AdminRoute.ChatRouting -> AdminChatRoutingContent(
+                state = state,
+                onOverlayChange = onAllianceOverlayChange,
+                onStickerClick = onOpenStickerSettings,
+                context = context,
+            )
+            AdminRoute.ChatRooms -> AdminChatRoomsContent(
+                state = state,
+                newRoomTitle = newRoomTitle,
+                onNewRoomTitleChange = { newRoomTitle = it },
+                onCreateRoom = {
+                    onCreateRoom(newRoomTitle)
+                    newRoomTitle = ""
+                },
+                onRenameRoom = { room ->
+                    renameRoomTarget = room
+                    renameDraft = room.title
+                },
+                onDeleteRoom = { deleteRoomTarget = it },
+                onClearRoomError = onClearRoomError,
             )
         }
     }
 
-    deleteTarget?.let { target ->
+    selectedMember?.let { member ->
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { selectedMember = null },
+            sheetState = sheetState,
+        ) {
+            AdminUserActionsSheet(
+                member = member,
+                currentUserId = currentUserId,
+                onDismiss = { selectedMember = null },
+                onApprove = { onApprove(member.id); selectedMember = null },
+                onRemoveFromTeam = { onRemoveFromTeam(member.id); selectedMember = null },
+                onRestorePending = { onRestorePending(member.id); selectedMember = null },
+                onSetRole = { role -> onSetRole(member.id, role) },
+                onRename = { name -> onRename(member.id, name) },
+                onDelete = { deleteUserTarget = member; selectedMember = null },
+            )
+        }
+    }
+
+    if (state.stickerAllianceCode != null) {
         AlertDialog(
-            onDismissRequest = { deleteTarget = null },
+            onDismissRequest = onCloseStickerSettings,
             containerColor = SquadRelaySurfaces.dialogColor(),
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            title = { Text(stringResource(R.string.admin_delete_title)) },
-            text = {
+            title = {
                 Text(
-                    stringResource(R.string.admin_delete_body, target.username),
+                    stringResource(R.string.admin_sticker_section_title) + " · " + state.stickerAllianceCode,
                 )
             },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        stringResource(R.string.admin_sticker_roles_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (state.stickerAccessLoading) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    }
+                    state.stickerAccessError?.let {
+                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("R2", "R3", "R4", "R5").forEach { role ->
+                            FilterChip(
+                                selected = state.stickerRolesZlobyaka.contains(role),
+                                onClick = {
+                                    onToggleStickerAllianceRole(role, !state.stickerRolesZlobyaka.contains(role))
+                                },
+                                label = { Text(role) },
+                            )
+                        }
+                    }
+                }
+            },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        onDeleteUser(target.id)
-                        deleteTarget = null
-                    },
-                ) {
-                    Text(stringResource(R.string.admin_delete_confirm))
+                Button(onClick = onSaveStickerAccess, enabled = !state.stickerAccessLoading) {
+                    Text(stringResource(R.string.admin_sticker_save))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) {
+                TextButton(onClick = onCloseStickerSettings) {
+                    Text(stringResource(R.string.admin_delete_cancel))
+                }
+            },
+        )
+    }
+
+    deleteUserTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { deleteUserTarget = null },
+            containerColor = SquadRelaySurfaces.dialogColor(),
+            title = { Text(stringResource(R.string.admin_delete_title)) },
+            text = { Text(stringResource(R.string.admin_delete_body, target.username)) },
+            confirmButton = {
+                TextButton(onClick = { onDeleteUser(target.id); deleteUserTarget = null }) {
+                    Text(stringResource(R.string.admin_delete_confirm), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteUserTarget = null }) {
                     Text(stringResource(R.string.admin_delete_cancel))
                 }
             },
@@ -587,17 +310,14 @@ fun AdminScreen(
         AlertDialog(
             onDismissRequest = { renameRoomTarget = null },
             containerColor = SquadRelaySurfaces.dialogColor(),
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.admin_rooms_rename)) },
             text = {
                 OutlinedTextField(
                     value = renameDraft,
                     onValueChange = { renameDraft = it },
                     singleLine = true,
-                    shape = MaterialTheme.shapes.medium,
-                    label = { Text(stringResource(R.string.admin_room_new_title)) },
                     modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.admin_room_new_title)) },
                 )
             },
             confirmButton = {
@@ -607,9 +327,7 @@ fun AdminScreen(
                         renameRoomTarget = null
                     },
                     enabled = renameDraft.isNotBlank(),
-                ) {
-                    Text(stringResource(R.string.admin_save_nickname))
-                }
+                ) { Text(stringResource(R.string.admin_save_nickname)) }
             },
             dismissButton = {
                 TextButton(onClick = { renameRoomTarget = null }) {
@@ -623,23 +341,11 @@ fun AdminScreen(
         AlertDialog(
             onDismissRequest = { deleteRoomTarget = null },
             containerColor = SquadRelaySurfaces.dialogColor(),
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.admin_rooms_delete_title)) },
-            text = {
-                Text(stringResource(R.string.admin_rooms_delete_body, room.title))
-            },
+            text = { Text(stringResource(R.string.admin_rooms_delete_body, room.title)) },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        onDeleteRoom(room.id)
-                        deleteRoomTarget = null
-                    },
-                ) {
-                    Text(
-                        stringResource(R.string.admin_delete_confirm),
-                        color = MaterialTheme.colorScheme.error,
-                    )
+                TextButton(onClick = { onDeleteRoom(room.id); deleteRoomTarget = null }) {
+                    Text(stringResource(R.string.admin_delete_confirm), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
@@ -652,262 +358,550 @@ fun AdminScreen(
 }
 
 @Composable
-private fun adminSectionCard(content: @Composable ColumnScope.() -> Unit) {
-    val scheme = MaterialTheme.colorScheme
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        tonalElevation = 0.dp,
-        shadowElevation = 4.dp,
-        color = SquadRelaySurfaces.panelColor(0.52f),
-        border = BorderStroke(1.dp, scheme.outline.copy(alpha = 0.18f)),
+private fun AdminTopBar(
+    title: String,
+    showBack: Boolean,
+    onBack: () -> Unit,
+    onRefresh: (() -> Unit)?,
+    refreshing: Boolean,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(
-            modifier = Modifier.padding(SquadRelayDimens.cardInnerPadding),
-            verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
-            content = content,
+        if (showBack) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+            }
+        } else {
+            Box(Modifier.size(48.dp))
+        }
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
         )
+        if (onRefresh != null) {
+            if (refreshing) {
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .padding(end = 12.dp)
+                        .size(22.dp),
+                    strokeWidth = 2.dp,
+                )
+            } else {
+                TextButton(onClick = onRefresh, modifier = Modifier.padding(end = 4.dp)) {
+                    Text(stringResource(R.string.admin_refresh))
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun AdminAllianceRow(
-    row: AllianceAdminDto,
-    onCopyId: () -> Unit,
-    onOverlayChange: (Boolean) -> Unit,
+private fun AdminHubContent(
+    state: AdminUiState,
+    onOpenRoute: (AdminRoute) -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    LazyColumn(
+        contentPadding = PaddingValues(
+            horizontal = SquadRelayDimens.contentPaddingHorizontal,
+            vertical = SquadRelayDimens.itemGap,
+        ),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        item {
             Text(
-                text = stringResource(R.string.admin_team_internal_code),
-                style = MaterialTheme.typography.labelMedium,
+                stringResource(R.string.admin_hub_subtitle),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            state.overviewError?.let { AdminErrorBanner(it) {} }
+        }
+        item {
+            AdminHubTile(
+                icon = { Icon(Icons.Outlined.Groups, null, tint = MaterialTheme.colorScheme.primary) },
+                title = stringResource(R.string.admin_hub_teams),
+                subtitle = stringResource(R.string.admin_hub_teams_sub, state.playerTeamCount),
+                onClick = { onOpenRoute(AdminRoute.PlayerTeams) },
+            )
+        }
+        item {
+            AdminHubTile(
+                icon = { Icon(Icons.Outlined.PersonOff, null, tint = MaterialTheme.colorScheme.primary) },
+                title = stringResource(R.string.admin_hub_users_without_team),
+                subtitle = stringResource(R.string.admin_hub_users_without_team_sub, state.usersWithoutTeamCount),
+                onClick = { onOpenRoute(AdminRoute.UsersWithoutTeam) },
+            )
+        }
+        item {
+            AdminHubTile(
+                icon = { Icon(Icons.Outlined.Route, null, tint = MaterialTheme.colorScheme.primary) },
+                title = stringResource(R.string.admin_hub_chat_routing),
+                subtitle = stringResource(R.string.admin_hub_chat_routing_sub),
+                onClick = { onOpenRoute(AdminRoute.ChatRouting) },
+            )
+        }
+        item {
+            AdminHubTile(
+                icon = { Icon(Icons.Outlined.Chat, null, tint = MaterialTheme.colorScheme.primary) },
+                title = stringResource(R.string.admin_rooms_title),
+                subtitle = stringResource(R.string.admin_hub_rooms_sub),
+                onClick = { onOpenRoute(AdminRoute.ChatRooms) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun AdminHubTile(
+    icon: @Composable () -> Unit,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = SquadRelaySurfaces.panelColor(0.48f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            icon()
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AdminPlayerTeamsContent(
+    state: AdminUiState,
+    onSearchChange: (String) -> Unit,
+    onTeamClick: (PlayerTeamAdminDto) -> Unit,
+) {
+    val q = state.teamSearchQuery.trim().lowercase()
+    val filtered = remember(state.playerTeams, q) {
+        if (q.isEmpty()) state.playerTeams
+        else state.playerTeams.filter {
+            it.displayName.lowercase().contains(q) ||
+                it.tag.lowercase().contains(q) ||
+                it.leaderUsername.lowercase().contains(q) ||
+                it.chatRoutingSummary.lowercase().contains(q)
+        }
+    }
+    LazyColumn(
+        contentPadding = PaddingValues(
+            horizontal = SquadRelayDimens.contentPaddingHorizontal,
+            vertical = 8.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item {
+            OutlinedTextField(
+                value = state.teamSearchQuery,
+                onValueChange = onSearchChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text(stringResource(R.string.admin_teams_search_hint)) },
+            )
+            state.playerTeamsError?.let { AdminErrorBanner(it) {} }
+        }
+        if (filtered.isEmpty() && !state.playerTeamsLoading) {
+            item {
+                Text(
+                    stringResource(R.string.admin_teams_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 24.dp),
+                )
+            }
+        }
+        items(filtered, key = { it.id }) { team ->
+            AdminTeamListRow(team = team, onClick = { onTeamClick(team) })
+        }
+    }
+}
+
+@Composable
+private fun AdminTeamListRow(
+    team: PlayerTeamAdminDto,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = SquadRelaySurfaces.panelColor(0.4f),
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(
+                    "[${team.tag}] ${team.displayName}",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    stringResource(R.string.admin_team_members_count, team.memberCount),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Text(
+                stringResource(R.string.admin_team_leader, team.leaderUsername),
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = row.allianceCode,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
+                stringResource(R.string.admin_team_routing, team.chatRoutingSummary),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                text = stringResource(R.string.admin_team_public_id),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 6.dp),
-            )
-            Text(
-                text = row.publicId,
-                style = MaterialTheme.typography.bodyMedium,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = stringResource(R.string.admin_team_members_count, row.memberCount),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 2.dp),
-            )
-            TextButton(onClick = onCopyId, modifier = Modifier.padding(top = 2.dp)) {
-                Text(stringResource(R.string.admin_copy_team_id))
+        }
+    }
+}
+
+@Composable
+private fun AdminTeamMembersContent(
+    state: AdminUiState,
+    onMemberClick: (AdminTeamMemberDto) -> Unit,
+) {
+    LazyColumn(
+        contentPadding = PaddingValues(
+            horizontal = SquadRelayDimens.contentPaddingHorizontal,
+            vertical = 8.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item {
+            state.teamMembersError?.let { AdminErrorBanner(it) {} }
+            state.selectedTeam?.let { team ->
+                Text(
+                    stringResource(R.string.admin_team_routing, team.chatRoutingSummary),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        if (state.teamMembers.isEmpty() && !state.teamMembersLoading) {
+            item {
+                Text(
+                    stringResource(R.string.admin_members_empty),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 16.dp),
+                )
+            }
+        }
+        items(state.teamMembers, key = { it.userId }) { member ->
+            AdminMemberListRow(member = member, onClick = { onMemberClick(member) })
+        }
+    }
+}
+
+@Composable
+private fun AdminUsersWithoutTeamContent(
+    state: AdminUiState,
+    onSearchChange: (String) -> Unit,
+    onUserClick: (TeamMemberDto) -> Unit,
+) {
+    LazyColumn(
+        contentPadding = PaddingValues(
+            horizontal = SquadRelayDimens.contentPaddingHorizontal,
+            vertical = 8.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item {
+            OutlinedTextField(
+                value = state.userSearchQuery,
+                onValueChange = onSearchChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text(stringResource(R.string.admin_members_search_hint)) },
+            )
+            state.usersWithoutTeamError?.let { AdminErrorBanner(it) {} }
+        }
+        if (state.usersWithoutTeam.isEmpty() && !state.usersWithoutTeamLoading) {
+            item {
+                Text(
+                    stringResource(R.string.admin_users_without_team_empty),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 16.dp),
+                )
+            }
+        }
+        items(state.usersWithoutTeam, key = { it.id }) { user ->
+            AdminMemberListRow(
+                username = user.username,
+                subtitle = "${user.role} · ${user.allianceName} · ${user.email}",
+                onClick = { onUserClick(user) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun AdminMemberListRow(
+    member: AdminTeamMemberDto,
+    onClick: () -> Unit,
+) {
+    AdminMemberListRow(
+        username = member.username + if (member.isLeader) " ★" else "",
+        subtitle = "${member.teamRole} · ${member.allianceRole} · ${member.allianceName}",
+        onClick = onClick,
+    )
+}
+
+@Composable
+private fun AdminMemberListRow(
+    username: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = SquadRelaySurfaces.panelColor(0.38f),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(username, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+            }
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun AdminChatRoutingContent(
+    state: AdminUiState,
+    onOverlayChange: (String, Boolean) -> Unit,
+    onStickerClick: (String) -> Unit,
+    context: Context,
+) {
+    LazyColumn(
+        contentPadding = PaddingValues(
+            horizontal = SquadRelayDimens.contentPaddingHorizontal,
+            vertical = 8.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        item {
             Text(
-                text = stringResource(R.string.admin_overlay_switch),
-                style = MaterialTheme.typography.labelSmall,
+                stringResource(R.string.admin_chat_routing_hint),
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 4.dp),
             )
-            Switch(
-                checked = row.overlayEnabled,
-                onCheckedChange = onOverlayChange,
-            )
+            state.alliancesError?.let { AdminErrorBanner(it) {} }
+        }
+        items(state.alliances, key = { it.publicId }) { row ->
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+                color = SquadRelaySurfaces.panelColor(0.4f),
+            ) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(row.allianceCode, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        row.publicId,
+                        fontFamily = FontFamily.Monospace,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        stringResource(R.string.admin_team_members_count, row.memberCount),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(stringResource(R.string.admin_overlay_switch), style = MaterialTheme.typography.bodySmall)
+                        Switch(checked = row.overlayEnabled, onCheckedChange = { onOverlayChange(row.publicId, it) })
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = {
+                            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            cm.setPrimaryClip(ClipData.newPlainText("id", row.publicId))
+                        }) { Text(stringResource(R.string.admin_copy_team_id)) }
+                        TextButton(onClick = { onStickerClick(row.allianceCode) }) {
+                            Text(stringResource(R.string.admin_sticker_short))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdminChatRoomsContent(
+    state: AdminUiState,
+    newRoomTitle: String,
+    onNewRoomTitleChange: (String) -> Unit,
+    onCreateRoom: () -> Unit,
+    onRenameRoom: (ChatRoomDto) -> Unit,
+    onDeleteRoom: (ChatRoomDto) -> Unit,
+    onClearRoomError: () -> Unit,
+) {
+    LazyColumn(
+        contentPadding = PaddingValues(
+            horizontal = SquadRelayDimens.contentPaddingHorizontal,
+            vertical = 8.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item {
+            Text(stringResource(R.string.admin_rooms_subtitle), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = newRoomTitle,
+                    onValueChange = onNewRoomTitleChange,
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.admin_rooms_new_hint)) },
+                )
+                Button(onClick = onCreateRoom, enabled = newRoomTitle.isNotBlank()) {
+                    Text(stringResource(R.string.admin_rooms_create))
+                }
+            }
+            state.roomError?.let { AdminErrorBanner(it, onDismiss = onClearRoomError) }
+        }
+        items(state.rooms, key = { it.id }) { room ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(room.title, style = MaterialTheme.typography.bodyMedium)
+                    Text(room.allianceId ?: "—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                TextButton(onClick = { onRenameRoom(room) }) { Text(stringResource(R.string.admin_rooms_rename)) }
+                TextButton(onClick = { onDeleteRoom(room) }) {
+                    Text(stringResource(R.string.admin_rooms_delete), color = MaterialTheme.colorScheme.error)
+                }
+            }
         }
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AdminMemberCard(
+private fun AdminUserActionsSheet(
     member: TeamMemberDto,
     currentUserId: String,
+    onDismiss: () -> Unit,
     onApprove: () -> Unit,
     onRemoveFromTeam: () -> Unit,
     onRestorePending: () -> Unit,
     onSetRole: (String) -> Unit,
     onRename: (String) -> Unit,
-    onDeleteClick: () -> Unit,
-    showStickerUserGrant: Boolean = false,
-    stickerUserGrantEnabled: Boolean = false,
-    onStickerUserGrantChange: ((Boolean) -> Unit)? = null,
+    onDelete: () -> Unit,
 ) {
     var draftName by remember(member.id) { mutableStateOf(member.username) }
-    LaunchedEffect(member.username) {
-        draftName = member.username
-    }
-
+    LaunchedEffect(member.username) { draftName = member.username }
     val statusLabel = when (member.membershipStatus) {
         "pending" -> stringResource(R.string.admin_status_pending)
         "removed" -> stringResource(R.string.admin_status_removed)
         else -> stringResource(R.string.admin_status_active)
     }
-    val isSelf = member.id == currentUserId
-    val context = LocalContext.current
-    val scheme = MaterialTheme.colorScheme
-
-    Surface(
-        shape = MaterialTheme.shapes.large,
-        tonalElevation = 0.dp,
-        shadowElevation = 4.dp,
-        color = SquadRelaySurfaces.panelColor(0.52f),
-        border = BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = 0.22f)),
-        modifier = Modifier.fillMaxWidth(),
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(SquadRelayDimens.cardInnerPadding),
-            verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+        Text(member.username, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Text(member.email, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(stringResource(R.string.admin_field_status, statusLabel), style = MaterialTheme.typography.bodySmall)
+        Text(stringResource(R.string.admin_field_role, member.role), style = MaterialTheme.typography.bodySmall)
+        member.teamTag?.let {
+            Text("[$it] ${member.teamDisplayName.orEmpty()}", style = MaterialTheme.typography.bodySmall)
+        }
+        HorizontalDivider()
+        when (member.membershipStatus) {
+            "pending" -> Button(onClick = onApprove, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.admin_btn_approve))
+            }
+            "active" -> OutlinedButton(onClick = onRemoveFromTeam, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.admin_btn_remove_team))
+            }
+            "removed" -> OutlinedButton(onClick = onRestorePending, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.admin_btn_mark_pending))
+            }
+        }
+        Text(stringResource(R.string.admin_role_change), style = MaterialTheme.typography.labelMedium)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("R2", "R3", "R4", "R5").forEach { r ->
+                OutlinedButton(onClick = { onSetRole(r) }) { Text(r) }
+            }
+        }
+        OutlinedTextField(
+            value = draftName,
+            onValueChange = { draftName = it },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text(stringResource(R.string.admin_new_nickname)) },
+        )
+        Button(
+            onClick = { onRename(draftName); onDismiss() },
+            enabled = draftName.length >= 3 && draftName != member.username,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text(stringResource(R.string.admin_save_nickname)) }
+        if (member.id != currentUserId) {
+            TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.admin_delete_account), color = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdminErrorBanner(message: String, onDismiss: (() -> Unit)? = null) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.errorContainer,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Row(
+            Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = member.username,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text = member.role,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-            Text(
-                text = member.email,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            val teamId = member.alliancePublicId?.takeIf { it.isNotBlank() }
-            if (teamId != null) {
-                Text(
-                    text = stringResource(R.string.admin_team_public_id) + ": " + teamId,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Text(
-                text = stringResource(R.string.admin_field_status, statusLabel),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            if (showStickerUserGrant && onStickerUserGrantChange != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = stringResource(R.string.admin_sticker_user_switch),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Switch(
-                        checked = stickerUserGrantEnabled,
-                        onCheckedChange = onStickerUserGrantChange,
-                    )
-                }
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                if (member.membershipStatus == "pending") {
-                    Button(
-                        onClick = onApprove,
-                        modifier = Modifier.weight(1f),
-                        shape = MaterialTheme.shapes.large,
-                    ) {
-                        Text(stringResource(R.string.admin_btn_approve))
-                    }
-                }
-                if (member.membershipStatus == "active") {
-                    OutlinedButton(
-                        onClick = onRemoveFromTeam,
-                        modifier = Modifier.weight(1f),
-                        shape = MaterialTheme.shapes.large,
-                    ) {
-                        Text(stringResource(R.string.admin_btn_remove_team))
-                    }
-                }
-                if (member.membershipStatus == "removed") {
-                    OutlinedButton(
-                        onClick = onRestorePending,
-                        modifier = Modifier.weight(1f),
-                        shape = MaterialTheme.shapes.large,
-                    ) {
-                        Text(stringResource(R.string.admin_btn_mark_pending))
-                    }
-                }
-            }
-
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                listOf("R2", "R3", "R4", "R5").forEach { r ->
-                    OutlinedButton(
-                        onClick = { onSetRole(r) },
-                        shape = MaterialTheme.shapes.small,
-                        modifier = Modifier.semantics {
-                            contentDescription = context.getString(R.string.admin_cd_set_role, r)
-                        },
-                    ) {
-                        Text(r)
-                    }
-                }
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedTextField(
-                    value = draftName,
-                    onValueChange = { draftName = it },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    shape = MaterialTheme.shapes.medium,
-                    label = { Text(stringResource(R.string.admin_new_nickname)) },
-                )
-                Button(
-                    onClick = { onRename(draftName) },
-                    enabled = draftName.length >= 3 && draftName != member.username,
-                    shape = MaterialTheme.shapes.large,
-                ) {
-                    Text(stringResource(R.string.admin_save_nickname))
-                }
-            }
-
-            if (!isSelf) {
-                TextButton(onClick = onDeleteClick) {
-                    Text(
-                        stringResource(R.string.admin_delete_account),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            }
+            Text(message, color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+            onDismiss?.let { TextButton(onClick = it) { Text(stringResource(R.string.admin_dismiss_error)) } }
         }
     }
 }

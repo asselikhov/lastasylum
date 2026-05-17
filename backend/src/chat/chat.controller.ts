@@ -23,6 +23,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/global-chat-alliance-id';
+import { resolveChatAllianceScope } from './chat-alliance-scope';
 import { UsersService } from '../users/users.service';
 import { PushNotificationsService } from '../push/push-notifications.service';
 import { ChatGateway } from './chat.gateway';
@@ -79,7 +80,9 @@ export class ChatController {
     if (!user) {
       throw new BadRequestException('User not found');
     }
-    return this.chatRoomsService.listRoomsVisibleToUser(user.allianceName);
+    return this.chatRoomsService.listRoomsVisibleToUser(
+      resolveChatAllianceScope(user),
+    );
   }
 
   @Post('rooms')
@@ -94,7 +97,7 @@ export class ChatController {
       throw new BadRequestException('User not found');
     }
     return this.chatRoomsService.createRoom(
-      user.allianceName,
+      resolveChatAllianceScope(user),
       dto.title,
       dto.sortOrder,
     );
@@ -112,7 +115,10 @@ export class ChatController {
     if (!user) {
       throw new BadRequestException('User not found');
     }
-    return this.chatRoomsService.updateRoom(roomId, user.allianceName, {
+    return this.chatRoomsService.updateRoom(
+      roomId,
+      resolveChatAllianceScope(user),
+      {
       title: dto.title,
       sortOrder: dto.sortOrder,
       archived: dto.archived,
@@ -130,7 +136,10 @@ export class ChatController {
     if (!user) {
       throw new BadRequestException('User not found');
     }
-    await this.chatRoomsService.deleteRoom(roomId, user.allianceName);
+    await this.chatRoomsService.deleteRoom(
+      roomId,
+      resolveChatAllianceScope(user),
+    );
     return { success: true };
   }
 
@@ -195,7 +204,7 @@ export class ChatController {
             : '';
       void this.pushNotifications
         .notifyAllianceChatMessage({
-          allianceId: authorUser.allianceName,
+          allianceId: message.allianceId,
           excludeUserId: req.user.userId,
           title: `${req.user.username}`,
           body: preview,

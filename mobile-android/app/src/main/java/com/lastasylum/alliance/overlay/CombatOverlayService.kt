@@ -542,6 +542,7 @@ class CombatOverlayService : Service() {
         overlayPanelStableAnchorWidthPx = 0
         _overlayVisible.value = false
         runCatching { showOverlayControl() }
+        repairDetachedOverlayChatTeamPanelIfNeeded()
     }
 
     /**
@@ -1915,8 +1916,12 @@ class CombatOverlayService : Service() {
                     LocalOverlayUiMode provides true,
                 ) {
                     SquadRelayTheme {
+                        val blockPanelBack = OverlayChatInteractionHold.blocksFullscreenPanelBack() ||
+                            chatState.activeActionMessageId != null ||
+                            chatState.confirmDeleteMessageId != null ||
+                            chatState.confirmBulkDelete
                         BackHandler(
-                            enabled = !OverlayChatInteractionHold.blocksFullscreenPanelBack(),
+                            enabled = !blockPanelBack,
                         ) {
                             hideOverlayChatTeamPanel()
                         }

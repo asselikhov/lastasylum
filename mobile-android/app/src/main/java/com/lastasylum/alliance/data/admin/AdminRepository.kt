@@ -1,8 +1,32 @@
 package com.lastasylum.alliance.data.admin
 
+import com.lastasylum.alliance.data.users.TeamMemberDto
+
 class AdminRepository(
     private val adminApi: AdminApi,
 ) {
+    suspend fun getOverview(): Result<AdminOverviewDto> =
+        runCatching { adminApi.getOverview() }
+
+    suspend fun listPlayerTeams(): Result<List<PlayerTeamAdminDto>> =
+        runCatching { adminApi.listPlayerTeams() }
+
+    suspend fun getPlayerTeam(teamId: String): Result<PlayerTeamDetailAdminDto> =
+        runCatching { adminApi.getPlayerTeam(teamId) }
+
+    suspend fun listUsersWithoutTeam(
+        q: String? = null,
+        skip: Int = 0,
+        limit: Int = 300,
+    ): Result<List<TeamMemberDto>> =
+        runCatching {
+            adminApi.listUsersWithoutTeam(
+                q = q?.trim()?.takeIf { it.isNotEmpty() },
+                skip = skip,
+                limit = limit,
+            )
+        }
+
     suspend fun listAlliances(): Result<List<AllianceAdminDto>> =
         runCatching { adminApi.listAlliances() }
 

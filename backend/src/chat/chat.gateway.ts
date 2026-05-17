@@ -12,6 +12,7 @@ import { Server, Socket } from 'socket.io';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
 import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/global-chat-alliance-id';
+import { resolveChatAllianceScope } from './chat-alliance-scope';
 import { UsersService } from '../users/users.service';
 import { ChatRoomsService } from './chat-rooms.service';
 import { parseAllowedOriginsFromEnv } from '../common/config/allowed-origins';
@@ -114,9 +115,10 @@ export class ChatGateway {
     if (!user || !room || room.archivedAt) {
       throw new WsException('Room not found');
     }
+    const chatScope = resolveChatAllianceScope(user);
     const mayJoin =
       room.allianceId === GLOBAL_CHAT_ALLIANCE_ID ||
-      room.allianceId === user.allianceName;
+      room.allianceId === chatScope;
     if (!mayJoin) {
       throw new WsException('Room is not available for your alliance');
     }
@@ -176,9 +178,10 @@ export class ChatGateway {
     if (!user || !room || room.archivedAt) {
       throw new WsException('Room not found');
     }
+    const chatScope = resolveChatAllianceScope(user);
     const mayType =
       room.allianceId === GLOBAL_CHAT_ALLIANCE_ID ||
-      room.allianceId === user.allianceName;
+      room.allianceId === chatScope;
     if (!mayType) {
       throw new WsException('Room is not available for your alliance');
     }

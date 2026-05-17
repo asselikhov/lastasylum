@@ -117,6 +117,7 @@ export class UsersController {
   async listAllianceMembers(
     @Req() req: { user: RequestUser },
     @Query('allianceCode') allianceCode?: string,
+    @Query('withoutTeam') withoutTeam?: string,
     @Query('q') q?: string,
     @Query('skip') skipRaw?: string,
     @Query('limit') limitRaw?: string,
@@ -135,6 +136,7 @@ export class UsersController {
       );
       usersList = await this.usersService.listUsersForAdmin({
         allianceCode: allianceCode?.trim() || undefined,
+        withoutTeam: withoutTeam === 'true' || withoutTeam === '1',
         q: q?.trim() || undefined,
         skip,
         limit,
