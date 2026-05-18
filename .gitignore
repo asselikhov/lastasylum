@@ -10,8 +10,11 @@ local.properties
 
 google-services.json
 **/google-services.json
+!**/google-services.json.example
 *-firebase-adminsdk*.json
 **/firebase-adminsdk*.json
+backend/firebase-service-account.json
+mobile-android/*-firebase-adminsdk*.json
 *.jks
 *.keystore
 *.p12

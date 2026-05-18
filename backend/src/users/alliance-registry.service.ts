@@ -108,7 +108,7 @@ export class AllianceRegistryService {
       .findOneAndUpdate(
         { publicId: trimmed },
         { $set: { overlayEnabled } },
-        { new: true },
+        { returnDocument: 'after' },
       )
       .lean<{
         allianceCode: string;

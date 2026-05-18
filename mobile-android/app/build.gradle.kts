@@ -1,10 +1,15 @@
+import groovy.json.JsonSlurper
 import java.util.Properties
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp") version "1.9.24-1.0.20"
+    // Firebase: google-services.json → BuildConfig; init in SquadRelayApplication (no gms plugin:
+    // devDebug uses applicationIdSuffix ".debug" and needs a second Firebase Android app).
 }
+
+val squadRelayAndroidPackage = "com.lastasylum.alliance"
 
 val squadRelayLocalProperties = Properties().apply {
     // Монорепо: часто local.properties лежит в корне репозитория; приоритет у mobile-android/local.properties.
@@ -20,6 +25,46 @@ fun propEsc(key: String): String =
     squadRelayLocalProperties.getProperty(key)?.trim().orEmpty()
         .replace("\\", "\\\\")
         .replace("\"", "\\\"")
+
+/** Values from app/google-services.json when present (see google-services.json.example). */
+data class FirebaseClientConfig(
+    val projectId: String,
+    val appId: String,
+    val apiKey: String,
+)
+
+@Suppress("UNCHECKED_CAST")
+fun firebaseFromGoogleServicesJson(): FirebaseClientConfig {
+    val jsonFile = file("google-services.json").takeIf { it.exists() } ?: return FirebaseClientConfig("", "", "")
+    return runCatching {
+        val root = JsonSlurper().parseText(jsonFile.readText()) as Map<String, Any?>
+        val projectInfo = root["project_info"] as? Map<String, Any?> ?: return FirebaseClientConfig("", "", "")
+        val projectId = projectInfo["project_id"]?.toString().orEmpty()
+        val clients = root["client"] as? List<*> ?: return FirebaseClientConfig("", "", "")
+        for (entry in clients) {
+            val client = entry as? Map<String, Any?> ?: continue
+            val clientInfo = client["client_info"] as? Map<String, Any?> ?: continue
+            val androidInfo = clientInfo["android_client_info"] as? Map<String, Any?> ?: continue
+            val pkg = androidInfo["package_name"]?.toString().orEmpty()
+            if (pkg != squadRelayAndroidPackage) continue
+            val appId = clientInfo["mobilesdk_app_id"]?.toString().orEmpty()
+            val apiKeys = client["api_key"] as? List<*> ?: continue
+            val apiKey = apiKeys.firstOrNull()?.let { row ->
+                (row as? Map<*, *>)?.get("current_key")?.toString()
+            }.orEmpty()
+            return FirebaseClientConfig(projectId, appId, apiKey)
+        }
+        FirebaseClientConfig("", "", "")
+    }.getOrDefault(FirebaseClientConfig("", "", ""))
+}
+
+fun firebaseBuildConfigString(localKey: String, fromJson: String): String {
+    val fromProps = propEsc(localKey)
+    val value = fromProps.ifEmpty { fromJson.trim() }
+    return value.replace("\\", "\\\\").replace("\"", "\\\"")
+}
+
+val firebaseFromJson = firebaseFromGoogleServicesJson()
 
 /** Публичный бэкенд (Render). И prod, и dev по умолчанию — чтобы телефон работал без LAN. */
 val squadRelayPublicBackendUrl = "https://lastasylum-backend.onrender.com/"
@@ -40,9 +85,21 @@ android {
             useSupportLibrary = true
         }
         buildConfigField("long", "BUILD_TIME_MS", "${System.currentTimeMillis()}L")
-        buildConfigField("String", "FIREBASE_PROJECT_ID", "\"${propEsc("squadrelay.firebase.projectId")}\"")
-        buildConfigField("String", "FIREBASE_APP_ID", "\"${propEsc("squadrelay.firebase.appId")}\"")
-        buildConfigField("String", "FIREBASE_API_KEY", "\"${propEsc("squadrelay.firebase.apiKey")}\"")
+        buildConfigField(
+            "String",
+            "FIREBASE_PROJECT_ID",
+            "\"${firebaseBuildConfigString("squadrelay.firebase.projectId", firebaseFromJson.projectId)}\"",
+        )
+        buildConfigField(
+            "String",
+            "FIREBASE_APP_ID",
+            "\"${firebaseBuildConfigString("squadrelay.firebase.appId", firebaseFromJson.appId)}\"",
+        )
+        buildConfigField(
+            "String",
+            "FIREBASE_API_KEY",
+            "\"${firebaseBuildConfigString("squadrelay.firebase.apiKey", firebaseFromJson.apiKey)}\"",
+        )
         buildConfigField("String", "CERT_PINS", "\"${propEsc("squadrelay.certPins")}\"")
     }
 
@@ -80,7 +137,7 @@ android {
             )
         }
         debug {
-            applicationIdSuffix = ".debug"
+            // No applicationIdSuffix: one Firebase Android app (google-services.json) + FCM on devDebug.
             versionNameSuffix = "-debug"
         }
     }

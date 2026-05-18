@@ -169,7 +169,7 @@ export class UsersService {
     role: AllianceRole,
   ): Promise<UserDocument | null> {
     return this.userModel
-      .findByIdAndUpdate(userId, { role }, { new: true })
+      .findByIdAndUpdate(userId, { role }, { returnDocument: 'after' })
       .exec();
   }
 
@@ -182,7 +182,7 @@ export class UsersService {
       update.refreshTokenHash = null;
     }
     return this.userModel
-      .findByIdAndUpdate(userId, update, { new: true })
+      .findByIdAndUpdate(userId, update, { returnDocument: 'after' })
       .exec();
   }
 
@@ -201,7 +201,7 @@ export class UsersService {
       throw new ConflictException('Username is already taken');
     }
     return this.userModel
-      .findByIdAndUpdate(userId, { username: trimmed }, { new: true })
+      .findByIdAndUpdate(userId, { username: trimmed }, { returnDocument: 'after' })
       .exec();
   }
 
@@ -222,7 +222,7 @@ export class UsersService {
     mutedUntil: Date | null,
   ): Promise<UserDocument | null> {
     return this.userModel
-      .findByIdAndUpdate(userId, { mutedUntil }, { new: true })
+      .findByIdAndUpdate(userId, { mutedUntil }, { returnDocument: 'after' })
       .exec();
   }
 
@@ -261,7 +261,7 @@ export class UsersService {
             passwordResetExpires: 1,
           },
         },
-        { new: true },
+        { returnDocument: 'after' },
       )
       .exec();
   }
@@ -309,7 +309,7 @@ export class UsersService {
       .findByIdAndUpdate(
         userId,
         { $set: { excavationPushEnabled } },
-        { new: true },
+        { returnDocument: 'after' },
       )
       .exec();
   }
@@ -340,7 +340,7 @@ export class UsersService {
       .findByIdAndUpdate(
         userId,
         { $set: { telegramUsername: normalized } },
-        { new: true },
+        { returnDocument: 'after' },
       )
       .exec();
   }

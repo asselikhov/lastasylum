@@ -44,9 +44,19 @@ chmod +x setup.sh
 
 Эмулятор: `http://10.0.2.2:3000/`.
 
-## Firebase (опционально)
+## Firebase (push / FCM)
 
-В `local.properties`:
+Проект в [Firebase Console](https://console.firebase.google.com/) создаёте **вы** (нужен Google-аккаунт). Секреты в git не кладём.
+
+**Мастер (Windows):** из корня репозитория:
+
+```powershell
+.\backend\scripts\setup-firebase.ps1
+```
+
+Скрипт запишет `backend/.env`, `local.properties` и покажет, что вставить в **Render → Environment**.
+
+**Вручную — Android** (`local.properties` в корне репо и/или `mobile-android/`):
 
 ```properties
 squadrelay.firebase.projectId=...
@@ -54,7 +64,16 @@ squadrelay.firebase.appId=1:...:android:...
 squadrelay.firebase.apiKey=...
 ```
 
-На сервере — `FIREBASE_SERVICE_ACCOUNT_JSON` в `backend/.env`. Ключ API ограничьте в Google Cloud по package name и SHA-1.
+**Вручную — Render / backend:** одна переменная `FIREBASE_SERVICE_ACCOUNT_JSON` = весь JSON сервисного аккаунта **в одну строку** (Firebase Console → Project settings → Service accounts → Generate new private key).
+
+Проверка локально:
+
+```bash
+cd backend
+node scripts/test-fcm-config.mjs
+```
+
+После деплоя на Render в логах: `Firebase Admin initialized for FCM`. Ключ API ограничьте в Google Cloud по package `com.lastasylum.alliance` и SHA-1.
 
 ## Продакшен (Render)
 

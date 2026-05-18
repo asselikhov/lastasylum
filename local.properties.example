@@ -10,7 +10,9 @@
 # If unset, dev/prod flavors use the public backend URL from build.gradle.kts.
 # squadrelay.api.baseUrl=http://10.0.2.2:3000/
 
-# Optional: Firebase (FCM). Restrict the API key in Google Cloud Console by package name.
+# Optional: Firebase (FCM). Easiest: copy Firebase Console download to
+# mobile-android/app/google-services.json (see app/google-services.json.example).
+# Or set keys manually (override google-services.json):
 # squadrelay.firebase.projectId=
 # squadrelay.firebase.appId=
 # squadrelay.firebase.apiKey=

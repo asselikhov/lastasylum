@@ -34,13 +34,19 @@ squadrelay.api.baseUrl=http://10.0.2.2:3000/
 
 ## Firebase (опционально)
 
-```properties
-squadrelay.firebase.projectId=...
-squadrelay.firebase.appId=1:...:android:...
-squadrelay.firebase.apiKey=...
+1. Firebase Console → Android app `com.lastasylum.alliance` → скачайте `google-services.json` в **`app/google-services.json`** (шаблон: `app/google-services.json.example`, файл в git не коммитится).
+2. Gradle подхватит Project ID / App ID / API key в `BuildConfig` (плагин `com.google.gms.google-services` + ручная инициализация в `SquadRelayApplication`).
+3. Альтернатива: три ключа в `local.properties` (`squadrelay.firebase.*`) — перекрывают json.
+
+На сервере (Render) нужен **`FIREBASE_SERVICE_ACCOUNT_JSON`** (сервисный аккаунт, не `google-services.json`).
+
+Из корня репозитория:
+
+```powershell
+.\setup-firebase.ps1
 ```
 
-На сервере нужен `FIREBASE_SERVICE_ACCOUNT_JSON`. Ограничьте API key в Google Cloud по package + SHA-1.
+Положите скачанный ключ в `backend/firebase-service-account.json` и запустите скрипт снова — он обновит `backend/.env` и покажет, что вставить в Render.
 
 ## Certificate pinning (опционально)
 

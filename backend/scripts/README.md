@@ -28,6 +28,26 @@ node scripts/<script>.mjs
 | [`lookup-user.mjs`](lookup-user.mjs) | Find user by username/email fragment | — |
 | [`test-smtp.mjs`](test-smtp.mjs) | Send test email via `SMTP_*` in `.env` | `SMTP_*` |
 | [`setup-smtp.ps1`](setup-smtp.ps1) | Interactive wizard: write `.env` + Render checklist (Windows) | — |
+| [`setup-firebase.ps1`](setup-firebase.ps1) | FCM: service account → `.env`, Android `local.properties`, Render checklist | — |
+| [`test-fcm-config.mjs`](test-fcm-config.mjs) | Verify `FIREBASE_SERVICE_ACCOUNT_JSON`; optional send if `TEST_FCM_TOKEN` set | `TEST_FCM_TOKEN` (optional) |
+
+### Push notifications (Firebase / FCM)
+
+Production push is **off** until `FIREBASE_SERVICE_ACCOUNT_JSON` is set on Render. Android APK needs `squadrelay.firebase.*` in `local.properties` (see repo `local.properties.example`).
+
+```powershell
+# From repo root (recommended):
+.\setup-firebase.ps1
+
+# Or only sync Android + .env when service account file is present:
+cd backend
+node scripts/apply-firebase-from-google-services.mjs
+node scripts/test-fcm-config.mjs
+```
+
+Drop Firebase **service account** JSON at `backend/firebase-service-account.json` (gitignored), then re-run.
+
+Paste `FIREBASE_SERVICE_ACCOUNT_JSON` into **Render → Environment**, rebuild/reinstall the app, then check Mongo `pushFcmTokens` after login.
 
 ### Password reset email (SMTP)
 
