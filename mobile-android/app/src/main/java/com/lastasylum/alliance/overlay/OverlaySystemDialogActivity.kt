@@ -91,7 +91,8 @@ class OverlaySystemDialogActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        if (!deliveredResult) {
+        // Галерея может уничтожить activity без результата (isFinishing=false) — не снимать оверлей раньше времени.
+        if (isFinishing && !deliveredResult) {
             notifyOverlaySystemUiFinished()
         }
         super.onDestroy()

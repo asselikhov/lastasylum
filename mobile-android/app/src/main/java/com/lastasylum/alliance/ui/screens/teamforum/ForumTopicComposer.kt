@@ -78,6 +78,8 @@ import coil.request.ImageRequest
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
 import com.lastasylum.alliance.data.teams.TeamForumMessageDto
+import com.lastasylum.alliance.overlay.LocalOverlayUiMode
+import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.ui.chat.replyPreviewText
 import com.lastasylum.alliance.ui.screens.teamnews.teamNewsAuthedImageRequest
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
@@ -116,6 +118,7 @@ fun ForumTopicComposer(
     var showAttachMenu by remember { mutableStateOf(false) }
     val isUploadingAttachment = isUploadingImage || isUploadingFile
     val context = LocalContext.current
+    val overlayUi = LocalOverlayUiMode.current
     val activityResultOwner = LocalActivityResultRegistryOwner.current
     val canHandleBack = LocalOnBackPressedDispatcherOwner.current != null
     val zlobStems = remember(context) { ZlobyakaStickerPack.listSortedStems(context) }
@@ -434,6 +437,7 @@ fun ForumTopicComposer(
                                     } else {
                                         focusManager.clearFocus()
                                         keyboard?.hide()
+                                        OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
                                         pickImagesLauncher?.launch(
                                             PickVisualMediaRequest(
                                                 ActivityResultContracts.PickVisualMedia.ImageOnly,
@@ -468,6 +472,7 @@ fun ForumTopicComposer(
                                         showAttachMenu = false
                                         focusManager.clearFocus()
                                         keyboard?.hide()
+                                        OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
                                         pickImagesLauncher?.launch(
                                             PickVisualMediaRequest(
                                                 ActivityResultContracts.PickVisualMedia.ImageOnly,
@@ -479,6 +484,7 @@ fun ForumTopicComposer(
                                     text = { Text(stringResource(R.string.chat_attach_menu_apk)) },
                                     onClick = {
                                         showAttachMenu = false
+                                        OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
                                         pickApkLauncher?.launch("application/*")
                                     },
                                 )

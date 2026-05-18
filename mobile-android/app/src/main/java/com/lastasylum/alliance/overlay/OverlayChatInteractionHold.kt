@@ -26,6 +26,33 @@ object OverlayChatInteractionHold {
     @Volatile
     private var overlayModalSuppressDepth: Int = 0
 
+    /**
+     * Пока открыт системный пикер ([OverlaySystemDialogActivity] / галерея).
+     * Не снимать оверлей по usage-stats «SquadRelay на экране» и не трогать окно чата преждевременно.
+     */
+    @Volatile
+    private var overlaySystemPickerSessionDepth: Int = 0
+
+    fun beginOverlaySystemPickerSession() {
+        synchronized(suppressLock) {
+            overlaySystemPickerSessionDepth++
+            suppressGameForegroundGate = true
+        }
+    }
+
+    fun endOverlaySystemPickerSession() {
+        synchronized(suppressLock) {
+            overlaySystemPickerSessionDepth =
+                (overlaySystemPickerSessionDepth - 1).coerceAtLeast(0)
+            if (overlaySystemPickerSessionDepth == 0 && overlayModalSuppressDepth == 0) {
+                clearSuppressUnlessFullscreenPanel()
+            }
+        }
+    }
+
+    fun isOverlaySystemPickerSessionActive(): Boolean =
+        synchronized(suppressLock) { overlaySystemPickerSessionDepth > 0 }
+
     /** Счётчик модалок/sheet в оверлее (AlertDialog, bottom sheet и т.п.). */
     fun acquireGameForegroundSuppress() {
         synchronized(suppressLock) {
@@ -62,14 +89,15 @@ object OverlayChatInteractionHold {
     fun isGameForegroundGateSuppressed(): Boolean =
         suppressGameForegroundGate ||
             suppressGameForegroundGateForOverlayPanel ||
-            isOverlayModalSuppressActive()
+            isOverlayModalSuppressActive() ||
+            isOverlaySystemPickerSessionActive()
 
     /** Блокировать BackHandler полноэкранной панели, пока открыта модалка в оверлее. */
     fun blocksFullscreenPanelBack(): Boolean = isOverlayModalSuppressActive()
 
-    /** Сбросить suppress только если не открыта полноэкранная панель чата/команды. */
+    /** Сбросить suppress только если не открыта полноэкранная панель чата/команды и не активен системный пикер. */
     fun clearSuppressUnlessFullscreenPanel() {
-        if (!isFullscreenChatTeamPanelVisible) {
+        if (!isFullscreenChatTeamPanelVisible && !isOverlaySystemPickerSessionActive()) {
             suppressGameForegroundGate = false
         }
     }
@@ -85,6 +113,7 @@ object OverlayChatInteractionHold {
         if (chatTeamPanelVisible || isFullscreenChatTeamPanelVisible) return
         if (commandsPopoverShowing) return
         if (isOverlayModalSuppressActive()) return
+        if (isOverlaySystemPickerSessionActive()) return
         synchronized(suppressLock) {
             overlayModalSuppressDepth = 0
             suppressGameForegroundGate = false

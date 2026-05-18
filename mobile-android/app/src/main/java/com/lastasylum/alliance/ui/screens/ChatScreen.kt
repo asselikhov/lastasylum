@@ -1422,6 +1422,7 @@ private fun ChatComposer(
     var showMediaPanel by remember { mutableStateOf(false) }
     var showAttachmentsSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val overlayUi = LocalOverlayUiMode.current
     val activityResultOwner = LocalActivityResultRegistryOwner.current
     val canHandleBack = LocalOnBackPressedDispatcherOwner.current != null
     val zlobStems = remember(context) { ZlobyakaStickerPack.listSortedStems(context) }
@@ -1434,6 +1435,13 @@ private fun ChatComposer(
             onResult = { uris ->
                 if (!readOnly && uris.isNotEmpty()) {
                     onPickImages(uris)
+                    if (overlayUi) {
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.chat_attachments_added, uris.size),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
                 }
             },
         )
@@ -1874,6 +1882,7 @@ private fun ChatComposer(
                                         ).show()
                                         return@IconButton
                                     }
+                                    OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
                                     launcher.launch(
                                         PickVisualMediaRequest(
                                             ActivityResultContracts.PickVisualMedia.ImageOnly,
