@@ -1291,6 +1291,7 @@ private fun TeamNewsEditorRoute(
     var includePoll by remember { mutableStateOf(false) }
     var pollQuestion by remember { mutableStateOf("") }
     val pollOptions = remember { mutableStateListOf("", "") }
+    val pollOptionIds = remember { mutableStateListOf<String?>(null, null) }
     var loading by remember { mutableStateOf(newsId != null) }
     var saving by remember { mutableStateOf(false) }
     var err by remember { mutableStateOf<String?>(null) }
@@ -1312,7 +1313,11 @@ private fun TeamNewsEditorRoute(
                     includePoll = true
                     pollQuestion = p.question
                     pollOptions.clear()
-                    p.options.forEach { pollOptions.add(it.text) }
+                    pollOptionIds.clear()
+                    p.options.forEach { opt ->
+                        pollOptions.add(opt.text)
+                        pollOptionIds.add(opt.id)
+                    }
                     val pollOnlyPost =
                         d.pollOnly ||
                             (d.body.trim().isEmpty() && d.imageRelativeUrls.isEmpty())
@@ -1490,7 +1495,10 @@ private fun TeamNewsEditorRoute(
                 }
                 if (pollOptions.size < 8) {
                     TextButton(
-                        onClick = { pollOptions.add("") },
+                        onClick = {
+                            pollOptions.add("")
+                            pollOptionIds.add(null)
+                        },
                     ) {
                         Text(stringResource(R.string.team_news_add_option))
                     }
@@ -1516,9 +1524,18 @@ private fun TeamNewsEditorRoute(
                     scope.launch {
                         val pollBody =
                             if (wantsPoll) {
+                                val optionPairs = pollOptions.indices.mapNotNull { i ->
+                                    val text = pollOptions[i].trim()
+                                    if (text.isEmpty()) null else text to pollOptionIds.getOrNull(i)
+                                }
                                 TeamNewsPollCreateBody(
                                     question = pollQuestion.trim(),
-                                    optionTexts = pollOptions.map { o -> o.trim() }.filter { o -> o.isNotEmpty() },
+                                    optionTexts = optionPairs.map { it.first },
+                                    optionIds = if (newsId != null) {
+                                        optionPairs.map { (_, id) -> id.orEmpty() }
+                                    } else {
+                                        null
+                                    },
                                 )
                             } else {
                                 null

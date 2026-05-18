@@ -1288,33 +1288,6 @@ class CombatOverlayService : Service() {
 
     private fun syncOverlayVoiceExpandLayout() {
         overlayVoiceControls?.setExpandTowardStart(overlayPanelAnchoredEnd)
-        val gravity = if (overlayPanelAnchoredEnd) {
-            Gravity.END or Gravity.CENTER_VERTICAL
-        } else {
-            Gravity.START or Gravity.CENTER_VERTICAL
-        }
-        (overlayVoiceControls?.root?.layoutParams as? FrameLayout.LayoutParams)?.gravity = gravity
-        overlayVoiceAnchor?.requestLayout()
-    }
-
-    /** После раскрытия голоса влево сдвигаем x окна, чтобы хаб остался на месте. */
-    private fun requestOverlayPanelRelayoutWithAnchor() {
-        val wr = overlayView ?: return
-        val p = overlayMainWindowParams ?: return
-        val mgr = windowManager ?: return
-        val widthBefore = wr.width
-        wr.requestLayout()
-        wr.post {
-            if (!wr.isAttachedToWindow) return@post
-            val widthAfter = wr.width
-            if (widthBefore > 0 && widthAfter > 0 && widthAfter != widthBefore &&
-                overlayVoiceControls?.expandTowardStart == true
-            ) {
-                p.x = (p.x - (widthAfter - widthBefore)).coerceAtLeast(0)
-            }
-            runCatching { mgr.updateViewLayout(wr, p) }
-            syncOverlayPanelEdgeLayout()
-        }
     }
 
     private fun showOverlayControl() {
@@ -1378,8 +1351,10 @@ class CombatOverlayService : Service() {
         var startTouchX = 0f
         var startTouchY = 0f
         var isDragging = false
-        var dragArmed = false
-        var dragArmRunnable: Runnable? = null
+        var dragScreenW = 0
+        var dragScreenH = 0
+        var dragClampW = 0
+        var dragClampH = 0
         val dragThreshold = OverlayWindowDragHelper.dragSlopPx(this)
         val fabCtx = OverlayTickerUi.themedFabContext(this@CombatOverlayService)
         fun makeMiniFab(iconRes: Int, cd: String): FloatingActionButton =
@@ -1510,9 +1485,8 @@ class CombatOverlayService : Service() {
                 addView(
                     voiceControls.root,
                     FrameLayout.LayoutParams(
-                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        fabColW,
                         FrameLayout.LayoutParams.WRAP_CONTENT,
-                        Gravity.START or Gravity.CENTER_VERTICAL,
                     ),
                 )
             }
@@ -1574,7 +1548,6 @@ class CombatOverlayService : Service() {
             )
         }
 
-        voiceControls.onExpansionChanged = { requestOverlayPanelRelayoutWithAnchor() }
         syncOverlayVoiceExpandLayout()
 
         overlayOuterRow = outerRow
@@ -1600,7 +1573,7 @@ class CombatOverlayService : Service() {
                 messageRow.visibility = View.VISIBLE
                 btnMessage.visibility = View.GONE
                 chatTeamHost.visibility = View.GONE
-                voiceControls.root.visibility = View.VISIBLE
+                voiceControls.root.visibility = View.GONE
                 voiceControls.collapse()
             } else {
                 messageRow.visibility = View.VISIBLE
@@ -1642,11 +1615,7 @@ class CombatOverlayService : Service() {
 
         refreshLockIcon()
         voiceControls.btnHub.setOnClickListener {
-            if (panelCollapsed) {
-                panelCollapsed = false
-                applyControlsVisibility()
-                voiceControls.setExpanded(true)
-            } else {
+            if (!panelCollapsed) {
                 voiceControls.toggleExpanded()
             }
         }
@@ -1689,51 +1658,42 @@ class CombatOverlayService : Service() {
         btnCollapse.setOnTouchListener { v, event ->
             val dragLocked = AppContainer.from(this@CombatOverlayService).userSettingsPreferences.isOverlayDragLocked()
             if (dragLocked) return@setOnTouchListener false
+            val panelParams = overlayMainWindowParams ?: return@setOnTouchListener false
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     OverlayChatInteractionHold.suppressGameForegroundGateForOverlayPanel = true
                     (v.parent as? ViewGroup)?.requestDisallowInterceptTouchEvent(true)
-                    initialX = overlayMainWindowParams!!.x
-                    initialY = overlayMainWindowParams!!.y
+                    initialX = panelParams.x
+                    initialY = panelParams.y
                     startTouchX = event.rawX
                     startTouchY = event.rawY
                     isDragging = false
-                    dragArmed = false
-                    dragArmRunnable?.let { mainHandler.removeCallbacks(it) }
-                    val arm = Runnable { dragArmed = true }
-                    dragArmRunnable = arm
-                    mainHandler.postDelayed(arm, 180L)
+                    dragScreenW = resources.displayMetrics.widthPixels
+                    dragScreenH = resources.displayMetrics.heightPixels
+                    dragClampW = windowRoot.width.takeIf { it > 0 }?.coerceAtLeast(dp(48)) ?: dp(120)
+                    dragClampH = windowRoot.height.takeIf { it > 0 }?.coerceAtLeast(dp(48)) ?: dp(180)
                     false
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val deltaX = (event.rawX - startTouchX).toInt()
                     val deltaY = (event.rawY - startTouchY).toInt()
-                    if (!isDragging && dragArmed &&
+                    if (!isDragging &&
                         (kotlin.math.abs(deltaX) > dragThreshold || kotlin.math.abs(deltaY) > dragThreshold)
                     ) {
                         isDragging = true
                     }
                     if (isDragging) {
-                        val screenWidth = resources.displayMetrics.widthPixels
-                        val screenHeight = resources.displayMetrics.heightPixels
-                        val rootW = windowRoot.width.takeIf { it > 0 }?.coerceAtLeast(dp(48)) ?: dp(120)
-                        val rootH = windowRoot.height.takeIf { it > 0 }?.coerceAtLeast(dp(48)) ?: dp(180)
-                        // Invalid range in coerceIn (e.g. rootW > screenWidth) crashes the process — same guard as OverlayWindowDragHelper.
-                        val maxX = (screenWidth - rootW).coerceAtLeast(0)
-                        val maxY = (screenHeight - rootH).coerceAtLeast(0)
+                        val maxX = (dragScreenW - dragClampW).coerceAtLeast(0)
+                        val maxY = (dragScreenH - dragClampH).coerceAtLeast(0)
                         val nextX = (initialX + deltaX).coerceIn(0, maxX)
                         val nextY = (initialY - deltaY).coerceIn(0, maxY) // gravity=BOTTOM
-                        overlayMainWindowParams!!.x = nextX
-                        overlayMainWindowParams!!.y = nextY
-                        val layoutOk = runCatching {
-                            manager.updateViewLayout(windowRoot, overlayMainWindowParams)
-                        }.onFailure { e ->
-                            Log.w(TAG, "overlay drag updateViewLayout failed", e)
-                        }.isSuccess
-                        if (layoutOk) {
-                            overlayTicker.syncTickerPosition()
-                            runCatching { syncOverlayPanelEdgeLayout() }.onFailure { e ->
-                                Log.w(TAG, "syncOverlayPanelEdgeLayout during drag failed", e)
+                        if (panelParams.x != nextX || panelParams.y != nextY) {
+                            panelParams.x = nextX
+                            panelParams.y = nextY
+                            runCatching {
+                                manager.updateViewLayout(windowRoot, panelParams)
+                            }.onFailure { e ->
+                                Log.w(TAG, "overlay drag updateViewLayout failed", e)
                             }
                         }
                         true
@@ -1743,23 +1703,18 @@ class CombatOverlayService : Service() {
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     OverlayChatInteractionHold.suppressGameForegroundGateForOverlayPanel = false
-                    dragArmRunnable?.let { mainHandler.removeCallbacks(it) }
-                    dragArmRunnable = null
                     if (isDragging) {
                         runCatching { syncOverlayPanelEdgeLayout() }.onFailure { e ->
                             Log.w(TAG, "syncOverlayPanelEdgeLayout after drag failed", e)
                         }
-                        // Persist last drag position so the panel doesn't jump after rebuild/restart.
-                        overlayMainWindowParams?.let { p ->
-                            AppContainer.from(this@CombatOverlayService).userSettingsPreferences.setOverlayPanelPosPx(
-                                x = p.x,
-                                y = p.y,
-                            )
-                        }
+                        overlayTicker.syncTickerPosition()
+                        AppContainer.from(this@CombatOverlayService).userSettingsPreferences.setOverlayPanelPosPx(
+                            x = panelParams.x,
+                            y = panelParams.y,
+                        )
                     }
                     val consumed = isDragging
                     isDragging = false
-                    dragArmed = false
                     consumed
                 }
                 else -> false

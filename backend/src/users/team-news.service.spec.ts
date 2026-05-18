@@ -137,3 +137,127 @@ describe('TeamNewsService poll create', () => {
     expect(detail.authorUsername).toBe('tester');
   });
 });
+
+describe('TeamNewsService poll update', () => {
+  const teamId = '507f1f77bcf86cd799439011';
+  const userId = '507f1f77bcf86cd799439012';
+  const newsId = '507f1f77bcf86cd799439099';
+
+  const existingPoll = {
+    question: 'Старый вопрос?',
+    options: [
+      { id: 'opt-a', text: 'Да' },
+      { id: 'opt-b', text: 'Нет' },
+    ],
+    votes: [
+      { userId: '507f1f77bcf86cd799439013', optionId: 'opt-a' },
+      { userId: '507f1f77bcf86cd799439014', optionId: 'opt-b' },
+    ],
+  };
+
+  const teams = {
+    getTeamIfMemberOrThrow: jest.fn().mockResolvedValue({
+      _id: teamId,
+      members: [{ userId, teamRole: 'R4' }],
+    }),
+    getSquadRoleForUser: jest.fn().mockReturnValue('R4'),
+  };
+
+  const attachments = {
+    assertTeamImageSlots: jest.fn().mockResolvedValue([]),
+  };
+
+  const doc = {
+    _id: new Types.ObjectId(newsId),
+    teamId: new Types.ObjectId(teamId),
+    authorUserId: userId,
+    title: 'News',
+    body: 'Body',
+    imageAttachments: [],
+    poll: { ...existingPoll, votes: [...existingPoll.votes] },
+    save: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const leanRow = () => ({
+    _id: { toString: () => newsId },
+    teamId: { toString: () => teamId },
+    authorUserId: userId,
+    title: doc.title,
+    body: doc.body,
+    imageAttachments: [],
+    poll: doc.poll,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  const newsModel = {
+    findOne: jest.fn().mockReturnValue({
+      exec: jest.fn().mockResolvedValue(doc),
+      lean: jest.fn().mockReturnValue({
+        exec: jest.fn().mockImplementation(async () => leanRow()),
+      }),
+    }),
+  };
+
+  const userModel = {
+    find: jest.fn().mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue([
+            { _id: userId, username: 'editor', telegramUsername: null },
+            {
+              _id: '507f1f77bcf86cd799439013',
+              username: 'v1',
+              telegramUsername: null,
+            },
+            {
+              _id: '507f1f77bcf86cd799439014',
+              username: 'v2',
+              telegramUsername: null,
+            },
+          ]),
+        }),
+      }),
+    }),
+  };
+
+  let service: TeamNewsService;
+
+  beforeEach(async () => {
+    doc.poll = {
+      ...existingPoll,
+      votes: [...existingPoll.votes],
+    };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        TeamNewsService,
+        { provide: getModelToken(TeamNews.name), useValue: newsModel },
+        { provide: getModelToken(User.name), useValue: userModel },
+        { provide: TeamsService, useValue: teams },
+        { provide: TeamNewsAttachmentsService, useValue: attachments },
+      ],
+    }).compile();
+    service = moduleRef.get(TeamNewsService);
+    jest.clearAllMocks();
+  });
+
+  it('preserves votes when poll question and option texts are edited', async () => {
+    await service.update(teamId, newsId, userId, {
+      poll: {
+        question: 'Новый вопрос?',
+        optionTexts: ['Да (уточнено)', 'Нет'],
+        optionIds: ['opt-a', 'opt-b'],
+      },
+    });
+    expect(doc.poll?.votes).toHaveLength(2);
+    expect(doc.poll?.votes.map((v) => v.optionId).sort()).toEqual([
+      'opt-a',
+      'opt-b',
+    ]);
+    expect(doc.poll?.options[0]).toEqual({
+      id: 'opt-a',
+      text: 'Да (уточнено)',
+    });
+    expect(doc.save).toHaveBeenCalled();
+  });
+});

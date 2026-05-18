@@ -160,6 +160,8 @@ data class TeamNewsDetailDto(
 data class TeamNewsPollCreateBody(
     val question: String,
     val optionTexts: List<String>,
+    /** При редактировании — id вариантов с сервера, чтобы сохранить голоса. */
+    val optionIds: List<String>? = null,
 )
 
 @JsonClass(generateAdapter = true)

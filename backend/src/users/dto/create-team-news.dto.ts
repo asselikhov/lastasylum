@@ -22,6 +22,13 @@ export class TeamNewsPollInputDto {
   @IsString({ each: true })
   @Length(1, 200, { each: true })
   optionTexts: string[];
+
+  /** При редактировании — те же id вариантов, что в опросе (сохраняет голоса). */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(8)
+  @IsString({ each: true })
+  optionIds?: string[];
 }
 
 function hasPollInput(o: CreateTeamNewsDto): boolean {

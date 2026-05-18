@@ -95,6 +95,7 @@ export class TeamNewsService {
 
   private buildPollFromInput(
     poll: CreateTeamNewsDto['poll'],
+    existingPoll?: TeamNews['poll'] | null,
   ): TeamNews['poll'] | null {
     if (!poll) return null;
     const question = poll.question?.trim() ?? '';
@@ -106,13 +107,39 @@ export class TeamNewsService {
         'Poll requires a question and at least two options',
       );
     }
+    const rawIds = poll.optionIds ?? [];
+    if (rawIds.length > 0 && rawIds.length !== optionTexts.length) {
+      throw new BadRequestException(
+        'Poll optionIds length must match optionTexts',
+      );
+    }
+    const existingById = new Map(
+      (existingPoll?.options ?? []).map((o) => [o.id, o] as const),
+    );
+    const options = optionTexts.map((text, index) => {
+      const explicitId = rawIds[index]?.trim();
+      if (explicitId && existingById.has(explicitId)) {
+        return { id: explicitId, text };
+      }
+      const prevByIndex = existingPoll?.options[index];
+      if (prevByIndex) {
+        return { id: prevByIndex.id, text };
+      }
+      const prevByText = existingPoll?.options.find(
+        (o) => o.text.trim() === text,
+      );
+      if (prevByText) {
+        return { id: prevByText.id, text };
+      }
+      return { id: randomUUID(), text };
+    });
+    const validIds = new Set(options.map((o) => o.id));
+    const votes =
+      existingPoll?.votes.filter((v) => validIds.has(v.optionId)) ?? [];
     return {
       question,
-      options: optionTexts.map((text) => ({
-        id: randomUUID(),
-        text,
-      })),
-      votes: [],
+      options,
+      votes,
     };
   }
 
@@ -399,7 +426,7 @@ export class TeamNewsService {
     if (dto.clearPoll === true) {
       doc.poll = null;
     } else if (dto.poll) {
-      const builtPoll = this.buildPollFromInput(dto.poll);
+      const builtPoll = this.buildPollFromInput(dto.poll, doc.poll);
       doc.poll = builtPoll;
       const bodyEmpty = doc.body.trim().length === 0;
       const noImages = doc.imageAttachments.length === 0;
