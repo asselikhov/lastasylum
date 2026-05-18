@@ -5,7 +5,6 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.result.PickVisualMediaRequest
@@ -14,6 +13,9 @@ import androidx.core.os.bundleOf
 
 /**
  * Прозрачный хост для системного пикера/разрешений из оверлея (Service не может быть Activity Result owner).
+ *
+ * Перед запуском [CombatOverlayService] снимает полноэкранный overlay-чат с [WindowManager]:
+ * иначе TYPE_APPLICATION_OVERLAY перекрывает обычную Activity пикера.
  */
 class OverlaySystemDialogActivity : ComponentActivity() {
     private var pendingRequestCode: Int = -1
@@ -40,7 +42,6 @@ class OverlaySystemDialogActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        applyOverlayWindowTypeIfAllowed()
         super.onCreate(savedInstanceState)
         pendingRequestCode = intent?.getIntExtra(EXTRA_REQUEST_CODE, -1) ?: -1
         pendingKind = intent?.getStringExtra(EXTRA_KIND)
@@ -48,21 +49,6 @@ class OverlaySystemDialogActivity : ComponentActivity() {
             return
         }
         launchPendingKind()
-    }
-
-    /**
-     * Окно поверх TYPE_APPLICATION_OVERLAY чата: иначе пикер под оверлеем, а чат приходилось прятать (GONE).
-     */
-    private fun applyOverlayWindowTypeIfAllowed() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        if (!Settings.canDrawOverlays(this)) return
-        window.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            window.attributes = window.attributes.apply {
-                layoutInDisplayCutoutMode =
-                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-            }
-        }
     }
 
     private fun launchPendingKind() {
@@ -91,7 +77,6 @@ class OverlaySystemDialogActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        // Галерея может уничтожить activity без результата (isFinishing=false) — не снимать оверлей раньше времени.
         if (isFinishing && !deliveredResult) {
             notifyOverlaySystemUiFinished()
         }
@@ -159,7 +144,6 @@ class OverlaySystemDialogActivity : ComponentActivity() {
         const val ACTION_OVERLAY_PICK_IMAGES_RESULT = "com.lastasylum.alliance.overlay.PICK_IMAGES_RESULT"
         const val ACTION_OVERLAY_GET_CONTENT_RESULT = "com.lastasylum.alliance.overlay.GET_CONTENT_RESULT"
         const val ACTION_OVERLAY_MIC_PERMISSION_RESULT = "com.lastasylum.alliance.overlay.MIC_PERMISSION_RESULT"
-        /** Пикер/диалог закрыт без результата — восстановить окна оверлея в сервисе. */
         const val ACTION_OVERLAY_SYSTEM_UI_FINISHED =
             "com.lastasylum.alliance.overlay.SYSTEM_UI_FINISHED"
 

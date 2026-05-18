@@ -25,11 +25,11 @@ import coil.request.SuccessResult
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.users.TeamMemberDto
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.data.voice.TeamVoicePresenceStore
+import com.lastasylum.alliance.ui.util.isOverlayIngameNow
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import java.time.Duration
-import java.time.Instant
 
 /**
  * Full-screen dim + card listing alliance members with [ingame] presence and a fresh ping
@@ -312,6 +312,8 @@ class OverlayAllianceOnlinePopover(
         }
 
     private fun memberRow(member: TeamMemberDto): LinearLayout {
+        val inGameNow = isOverlayIngameNow(member.presenceStatus, member.lastPresenceAt)
+        val voicePeer = TeamVoicePresenceStore.peers.value[member.id]
         val avatarSide = dp(36)
         val avatarUrl = telegramAvatarUrl(member.telegramUsername)
         val letter = member.username.trim().take(1).uppercase().ifBlank { "?" }
@@ -376,11 +378,59 @@ class OverlayAllianceOnlinePopover(
             )
         }
 
+        val nameRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
         val name = TextView(context).apply {
             text = member.username
             setTextColor(Color.parseColor("#FFF1F5FF"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             maxLines = 2
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        nameRow.addView(name)
+        if (inGameNow) {
+            nameRow.addView(
+                overlayVoiceBadge(
+                    iconRes = if (voicePeer?.micOn == true) {
+                        R.drawable.ic_overlay_mic_on
+                    } else {
+                        R.drawable.ic_overlay_mic_off
+                    },
+                    active = voicePeer?.micOn == true,
+                    accent = Color.parseColor("#FF2E7D32"),
+                ),
+                LinearLayout.LayoutParams(dp(22), dp(22)).apply {
+                    marginStart = dp(6)
+                },
+            )
+            nameRow.addView(
+                overlayVoiceBadge(
+                    iconRes = if (voicePeer?.soundOn == true) {
+                        R.drawable.ic_overlay_volume_on
+                    } else {
+                        R.drawable.ic_overlay_volume_off
+                    },
+                    active = voicePeer?.soundOn == true,
+                    accent = Color.parseColor("#FF1565C0"),
+                ),
+                LinearLayout.LayoutParams(dp(22), dp(22)).apply {
+                    marginStart = dp(4)
+                },
+            )
+        }
+
+        val presenceDot = View(context).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(10), dp(10)).apply {
+                marginEnd = dp(8)
+            }
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(
+                    if (inGameNow) Color.parseColor("#FF2E7D32") else Color.parseColor("#66888888"),
+                )
+            }
         }
 
         return LinearLayout(context).apply {
@@ -393,31 +443,41 @@ class OverlayAllianceOnlinePopover(
                 setColor(Color.parseColor("#33101828"))
             }
             addView(avatarHost)
+            addView(presenceDot)
             addView(
-                name,
+                nameRow,
                 LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
             )
         }
     }
 
-    private companion object {
-        /** ~3× overlay heartbeat (45s) so a single missed ping does not drop the row. */
-        private const val STALE_MS = 135_000L
-        private const val REFRESH_INTERVAL_MS = 35_000L
-
-        private fun parsePresenceFresh(lastPresenceAt: String?, staleMs: Long): Boolean {
-            if (lastPresenceAt.isNullOrBlank()) return false
-            return runCatching {
-                val instant = Instant.parse(lastPresenceAt)
-                Duration.between(instant, Instant.now()).toMillis() <= staleMs
-            }.getOrDefault(false)
+    private fun overlayVoiceBadge(iconRes: Int, active: Boolean, accent: Int): FrameLayout =
+        FrameLayout(context).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(7).toFloat()
+                setColor(if (active) accent else Color.parseColor("#5537415C"))
+            }
+            addView(
+                ImageView(context).apply {
+                    setImageResource(iconRes)
+                    scaleType = ImageView.ScaleType.CENTER_INSIDE
+                    setPadding(dp(4), dp(4), dp(4), dp(4))
+                },
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                ),
+            )
         }
+
+    private companion object {
+        private const val REFRESH_INTERVAL_MS = 35_000L
 
         fun filterOverlayOnlineMembers(members: List<TeamMemberDto>): List<TeamMemberDto> =
             members.filter { m ->
                 m.membershipStatus == "active" &&
-                    m.presenceStatus?.trim()?.lowercase() == "ingame" &&
-                    parsePresenceFresh(m.lastPresenceAt, STALE_MS)
+                    isOverlayIngameNow(m.presenceStatus, m.lastPresenceAt)
             }.sortedBy { it.username.lowercase() }
     }
 }

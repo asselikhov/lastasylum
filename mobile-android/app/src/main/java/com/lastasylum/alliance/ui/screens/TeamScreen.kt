@@ -226,6 +226,15 @@ fun TeamScreen(
     val pending = profile?.pendingPlayerTeamJoinRequests ?: 0
     val overlayUi = LocalOverlayUiMode.current
 
+    LaunchedEffect(overlayUi, mainSectionOrdinal) {
+        if (!overlayUi) return@LaunchedEffect
+        if (mainSectionOrdinal != TeamMainSection.Members.ordinal) return@LaunchedEffect
+        while (true) {
+            delay(45_000L)
+            reloadProfileAndTeam()
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -496,6 +505,7 @@ fun TeamScreen(
                                             SquadTeamRoster(
                                                 members = team.members,
                                                 isSquadLeader = isLeader,
+                                                myTeamRole = myTeamRole,
                                                 currentUserId = currentUserId,
                                                 teamId = team.id,
                                                 busy = membersBusy,
@@ -757,6 +767,10 @@ fun TeamScreen(
     }
 
     val teamIdForDialogs = teamDetail?.id
+    val rosterMyTeamRole = remember(teamDetail, currentUserId) {
+        teamDetail?.members?.find { it.userId == currentUserId }?.teamRole ?: "R1"
+    }
+    val rosterIsLeader = profile?.isPlayerTeamLeader == true
     if (showAddMemberDialog && teamIdForDialogs != null) {
         OverlayModalScope(preparedByCaller = true) {
         OverlayAwareAlertDialog(
@@ -870,6 +884,7 @@ fun TeamScreen(
             OverlayModalScope(preparedByCaller = true) {
             SquadMemberRoleEditDialog(
                 member = member,
+                maxAssignableRole = maxAssignableSquadRole(rosterMyTeamRole, rosterIsLeader),
                 onDismiss = { roleEditMember = null },
                 onSaved = { reloadProfileAndTeam() },
                 teamId = teamIdForDialogs,

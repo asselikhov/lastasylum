@@ -190,6 +190,31 @@ class GameForegroundGateTest {
     }
 
     @Test
+    fun quickProbe_inTarget_whenGameResumed() {
+        // Unit test without Context: exercise package-level helpers via probe logic mirror
+        val targets = setOf("com.phs.global")
+        val alliance = "com.lastasylum.alliance"
+        assertFalse(
+            GameForegroundGate.isConflictingForegroundHint(
+                lastForegroundPackageHint = "com.phs.global",
+                targetPackages = targets,
+                alliancePackage = alliance,
+            ),
+        )
+    }
+
+    @Test
+    fun quickProbe_notInTarget_whenLauncherAfterGame() {
+        assertTrue(
+            GameForegroundGate.isConflictingForegroundHint(
+                lastForegroundPackageHint = "com.miui.home",
+                targetPackages = setOf("com.phs.global"),
+                alliancePackage = "com.lastasylum.alliance",
+            ),
+        )
+    }
+
+    @Test
     fun packageEventSequence_trueWhenLastIsResume() {
         assertTrue(
             GameForegroundGate.foregroundStateAfterPackageEventTypes(

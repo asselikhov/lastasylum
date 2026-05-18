@@ -416,6 +416,9 @@
     <string name="team_no_team_create_hint">Станьте лидером отряда и пригласите союзников</string>
     <string name="team_no_team_join_hint">Поиск по тегу или названию команды</string>
     <string name="team_squad_pick_r5">R5 — лидер отряда (заместитель)</string>
+    <string name="team_squad_assign_r5_forbidden">Только ранг R5 может назначать участникам ранг R5</string>
+    <string name="team_squad_change_r5_member_forbidden">Только ранг R5 может менять ранг участника с рангом R5</string>
+    <string name="team_squad_change_rank_forbidden">Только ранги R4 и R5 могут менять роли участников</string>
     <string name="team_squad_pick_r4">R4 — старейшины команды</string>
     <string name="team_squad_pick_r3">R3 — основные участники / ветераны</string>
     <string name="team_squad_pick_r2">R2 — активные участники</string>
@@ -483,10 +486,10 @@
     <string name="overlay_history_empty_send">Введите текст сообщения</string>
     <string name="overlay_online_cd">Участники альянса в игре с оверлеем</string>
     <string name="overlay_online_title">В игре (оверлей)</string>
-    <string name="overlay_online_subtitle">Свежий пинг: «в игре» или «онлайн»</string>
+    <string name="overlay_online_subtitle">В игре с активной панелью оверлея (свежий пинг)</string>
     <string name="overlay_online_refresh_cd">Обновить список</string>
     <string name="overlay_online_loading">Загрузка…</string>
-    <string name="overlay_online_empty">Сейчас никого нет со свежим пингом (статусы «в игре» или «онлайн»).</string>
+    <string name="overlay_online_empty">Сейчас никого нет в игре с активным оверлеем.</string>
     <string name="overlay_online_error">Не удалось загрузить список.</string>
     <string name="overlay_online_close_cd">Закрыть список</string>
     <string name="overlay_cd_commands">Быстрые команды</string>

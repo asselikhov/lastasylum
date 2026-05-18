@@ -219,6 +219,8 @@ class OverlayVoiceControls(
         )
     }
 
+    fun isExpanded(): Boolean = expanded
+
     fun toggleExpanded() {
         setExpanded(!expanded)
     }

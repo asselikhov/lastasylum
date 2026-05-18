@@ -13,7 +13,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
   PlayerTeamMemberRole,
-  SQUAD_ROLES_ASSIGNABLE_BY_LEADER,
+  SQUAD_ROLES_ASSIGNABLE_BY_R4,
+  SQUAD_ROLES_ASSIGNABLE_BY_R5,
 } from '../common/enums/player-team-member-role.enum';
 import { User, UserDocument } from './schemas/user.schema';
 import { PlayerTeam, PlayerTeamDocument } from './schemas/player-team.schema';
@@ -304,6 +305,17 @@ export class TeamsService {
     const uid = new Types.ObjectId(userId);
     const m = team.squadMembers.find((x) => x.userId.equals(uid));
     return m?.role ?? null;
+  }
+
+  /** Stored squad role, or R5 for [PlayerTeamDocument.leaderUserId]. */
+  resolveSquadRoleForMember(
+    team: PlayerTeamDocument,
+    userId: string,
+  ): PlayerTeamMemberRole {
+    if (team.leaderUserId.toString() === userId) {
+      return PlayerTeamMemberRole.R5;
+    }
+    return this.getSquadRoleForUser(team, userId) ?? PlayerTeamMemberRole.R1;
   }
 
   /** Squad rank for chat/UI (not alliance app role on User.role). */
@@ -835,22 +847,62 @@ export class TeamsService {
 
   async updateMemberSquadRole(
     teamId: string,
-    leaderUserId: string,
+    actorUserId: string,
     targetUserId: string,
     rawRole: string,
   ): Promise<{ ok: true }> {
-    const team = await this.assertTeamLeader(teamId, leaderUserId);
+    if (!Types.ObjectId.isValid(teamId)) {
+      throw new NotFoundException('Team not found');
+    }
+    const team = await this.teamModel.findById(teamId).exec();
+    if (!team) {
+      throw new NotFoundException('Team not found');
+    }
+    await this.migrateLegacyIfNeeded(team);
+    this.assertMember(team, actorUserId);
+
     if (team.leaderUserId.toString() === targetUserId) {
       throw new BadRequestException('Cannot change the leader squad role');
     }
+
     const roleNorm = rawRole.trim().toUpperCase();
     if (
-      !SQUAD_ROLES_ASSIGNABLE_BY_LEADER.includes(
+      !Object.values(PlayerTeamMemberRole).includes(
         roleNorm as PlayerTeamMemberRole,
       )
     ) {
       throw new BadRequestException('Invalid squad role');
     }
+    const role = roleNorm as PlayerTeamMemberRole;
+
+    const actorRole = this.resolveSquadRoleForMember(team, actorUserId);
+    const actorRank = squadRoleRank(actorRole);
+    if (actorRank < squadRoleRank(PlayerTeamMemberRole.R4)) {
+      throw new ForbiddenException(
+        'Only squad roles R4 and R5 can change member ranks',
+      );
+    }
+
+    const allowed =
+      actorRank >= squadRoleRank(PlayerTeamMemberRole.R5)
+        ? SQUAD_ROLES_ASSIGNABLE_BY_R5
+        : SQUAD_ROLES_ASSIGNABLE_BY_R4;
+    if (!allowed.includes(role)) {
+      throw new ForbiddenException(
+        'Only squad role R5 can assign rank R5',
+      );
+    }
+
+    const targetRole = this.resolveSquadRoleForMember(team, targetUserId);
+    if (
+      actorRank === squadRoleRank(PlayerTeamMemberRole.R4) &&
+      squadRoleRank(targetRole) >= squadRoleRank(PlayerTeamMemberRole.R5)
+    ) {
+      throw new ForbiddenException(
+        'Only squad role R5 can change the rank of an R5 member',
+      );
+    }
+
     const tid = new Types.ObjectId(targetUserId);
     if (!team.squadMembers.some((m) => m.userId.equals(tid))) {
       throw new NotFoundException('Member not on this team');
@@ -858,7 +910,7 @@ export class TeamsService {
     const res = await this.teamModel
       .updateOne(
         { _id: team._id },
-        { $set: { 'squadMembers.$[m].role': roleNorm } },
+        { $set: { 'squadMembers.$[m].role': role } },
         {
           arrayFilters: [{ 'm.userId': tid }],
         },

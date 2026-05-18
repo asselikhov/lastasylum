@@ -33,6 +33,19 @@ object GameForegroundGate {
     @Volatile
     private var usageAccessCacheValue: Boolean = false
 
+    @Volatile
+    private var mergedStatsCachedAtMs: Long = 0L
+
+    @Volatile
+    private var mergedStatsCache: List<UsageStats> = emptyList()
+
+    /** Быстрый ответ по кэшированному RESUME; [NEED_FULL_HEURISTICS] — тяжёлый [shouldShowOverlay]. */
+    enum class QuickForegroundProbe {
+        IN_TARGET,
+        NOT_IN_TARGET,
+        NEED_FULL_HEURISTICS,
+    }
+
     data class ForegroundComponent(
         val packageName: String,
         val className: String?,
@@ -52,6 +65,39 @@ object GameForegroundGate {
     /** Сброс кэша [lastResumedPackage], чтобы гейт не держал игру «на экране» 1.5s после смены приложения. */
     fun invalidateForegroundHintCache() {
         cachedForeground = null
+        mergedStatsCachedAtMs = 0L
+        mergedStatsCache = emptyList()
+    }
+
+    /**
+     * Лёгкий путь для [CombatOverlayService.tickGameGate]: без queryUsageStats, если RESUME однозначен.
+     */
+    fun quickTargetForegroundProbe(
+        context: Context,
+        targetGamePackages: Collection<String>,
+        allowedActivitySubstrings: Collection<String> = emptyList(),
+        alliancePackage: String = context.packageName,
+    ): QuickForegroundProbe {
+        val targets = targetGamePackages.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (targets.isEmpty()) return QuickForegroundProbe.NOT_IN_TARGET
+        if (!hasUsageStatsAccess(context)) return QuickForegroundProbe.NOT_IN_TARGET
+        val targetSet = targets.toSet()
+        val allowed = allowedActivitySubstrings.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        val hintedComp = lastResumedComponent(context) ?: return QuickForegroundProbe.NEED_FULL_HEURISTICS
+        val hinted = hintedComp.packageName
+        if (hinted == alliancePackage) return QuickForegroundProbe.NOT_IN_TARGET
+        if (isConflictingForegroundHint(hinted, targetSet, alliancePackage)) {
+            return QuickForegroundProbe.NOT_IN_TARGET
+        }
+        if (!targetSet.contains(hinted)) return QuickForegroundProbe.NEED_FULL_HEURISTICS
+        if (allowed.isEmpty()) return QuickForegroundProbe.IN_TARGET
+        val cls = hintedComp.className?.trim().orEmpty()
+        if (cls.isBlank()) return QuickForegroundProbe.IN_TARGET
+        return if (allowed.any { token -> cls.contains(token, ignoreCase = true) }) {
+            QuickForegroundProbe.IN_TARGET
+        } else {
+            QuickForegroundProbe.NOT_IN_TARGET
+        }
     }
 
     fun hasUsageStatsAccess(context: Context): Boolean {
@@ -235,9 +281,24 @@ object GameForegroundGate {
         endMs: Long,
         lookbackMs: Long,
     ): String? {
-        val stats = queryUsageStatsMerged(usm, endMs, lookbackMs)
+        val stats = queryUsageStatsMergedCached(usm, endMs, lookbackMs)
         if (stats.isEmpty()) return null
         return stats.maxByOrNull { it.lastTimeUsed }?.packageName
+    }
+
+    private fun queryUsageStatsMergedCached(
+        usm: UsageStatsManager,
+        endMs: Long,
+        lookbackMs: Long,
+    ): List<UsageStats> {
+        val cachedAt = mergedStatsCachedAtMs
+        if (cachedAt > 0L && endMs - cachedAt <= MERGED_STATS_CACHE_MS && mergedStatsCache.isNotEmpty()) {
+            return mergedStatsCache
+        }
+        val fresh = queryUsageStatsMerged(usm, endMs, lookbackMs)
+        mergedStatsCachedAtMs = endMs
+        mergedStatsCache = fresh
+        return fresh
     }
 
     private fun queryUsageStatsMerged(
@@ -252,7 +313,7 @@ object GameForegroundGate {
         if (daily.isNotEmpty()) return daily
         val weekly = usm.queryUsageStats(UsageStatsManager.INTERVAL_WEEKLY, begin, endMs).orEmpty()
         if (weekly.isNotEmpty()) return weekly
-        return usm.queryUsageStats(UsageStatsManager.INTERVAL_MONTHLY, begin, endMs).orEmpty()
+        return emptyList()
     }
 
     /**
@@ -274,8 +335,6 @@ object GameForegroundGate {
         val hasActivityFilter = allowed.isNotEmpty()
         val alliance = context.packageName
         val targetSet = targets.toSet()
-        // Кэш lastResumed сбрасывает [CombatOverlayService.tickGameGate] перед опросом, чтобы не ждать [FOREGROUND_CACHE_MS]
-        // после смены приложения; здесь повторный invalidate не делаем.
         val hintedComp = lastResumedComponent(context)
         val hinted = hintedComp?.packageName
         // Never show the overlay while the SquadRelay app itself is in foreground.
@@ -322,7 +381,7 @@ object GameForegroundGate {
             return true
         }
         val stats = runCatching {
-            queryUsageStatsMerged(usm, end, USAGE_STATS_LOOKBACK_MS)
+            queryUsageStatsMergedCached(usm, end, USAGE_STATS_LOOKBACK_MS)
         }.getOrDefault(emptyList())
         // MIUI/HyperOS: события и lastTimeUsed часто «молчат» в Unity; TTF между тиками гейта растёт только в фокусе.
         if (!isConflictingForegroundHint(hinted, targetSet, alliance) &&
@@ -495,6 +554,9 @@ object GameForegroundGate {
     }
 
     private const val FOREGROUND_CACHE_MS = 1_500L
+
+    /** Кэш merged queryUsageStats внутри одного тика / короткой серии тиков гейта. */
+    private const val MERGED_STATS_CACHE_MS = 2_500L
 
     private const val USAGE_ACCESS_CACHE_MS = 15_000L
 

@@ -114,5 +114,11 @@ private fun translateKnownServerMessage(english: String, resources: Resources): 
         resources.getString(R.string.team_news_fill_required)
     english.contains("Only squad roles R4 and R5 can publish", ignoreCase = true) ->
         resources.getString(R.string.team_news_publish_forbidden)
+    english.contains("Only squad role R5 can assign rank R5", ignoreCase = true) ->
+        resources.getString(R.string.team_squad_assign_r5_forbidden)
+    english.contains("Only squad role R5 can change the rank of an R5 member", ignoreCase = true) ->
+        resources.getString(R.string.team_squad_change_r5_member_forbidden)
+    english.contains("Only squad roles R4 and R5 can change member ranks", ignoreCase = true) ->
+        resources.getString(R.string.team_squad_change_rank_forbidden)
     else -> english
 }

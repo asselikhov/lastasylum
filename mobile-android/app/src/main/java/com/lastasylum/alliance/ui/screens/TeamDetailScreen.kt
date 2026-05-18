@@ -111,6 +111,9 @@ fun TeamDetailScreen(
     }
 
     val isLeader = detail?.leaderUserId == currentUserId
+    val myTeamRole = remember(detail, currentUserId) {
+        detail?.members?.find { it.userId == currentUserId }?.teamRole ?: "R1"
+    }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -199,6 +202,7 @@ fun TeamDetailScreen(
                         SquadTeamRoster(
                             members = d.members,
                             isSquadLeader = isLeader,
+                            myTeamRole = myTeamRole,
                             currentUserId = currentUserId,
                             teamId = teamId,
                             busy = busy,
@@ -325,6 +329,7 @@ fun TeamDetailScreen(
     roleEditMember?.let { member ->
         SquadMemberRoleEditDialog(
             member = member,
+            maxAssignableRole = maxAssignableSquadRole(myTeamRole, isLeader),
             onDismiss = { roleEditMember = null },
             onSaved = { reload() },
             teamId = teamId,

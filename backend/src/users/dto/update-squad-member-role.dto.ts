@@ -1,8 +1,8 @@
 import { IsIn, IsString } from 'class-validator';
 
-/** Leader may assign R1–R4 only (R5 is reserved for the squad creator). */
+/** R4 may assign R1–R4; R5 may assign R1–R5 (enforced in [TeamsService.updateMemberSquadRole]). */
 export class UpdateSquadMemberRoleDto {
   @IsString()
-  @IsIn(['R1', 'R2', 'R3', 'R4'])
+  @IsIn(['R1', 'R2', 'R3', 'R4', 'R5'])
   role!: string;
 }

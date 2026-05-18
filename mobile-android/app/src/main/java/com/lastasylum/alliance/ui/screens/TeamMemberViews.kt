@@ -92,6 +92,33 @@ fun squadRoleCode(member: PlayerTeamMemberDto): String {
     return if (member.isLeader) "R5" else raw
 }
 
+internal fun squadRoleRank(code: String): Int = when (code.trim().uppercase()) {
+    "R5" -> 5
+    "R4" -> 4
+    "R3" -> 3
+    "R2" -> 2
+    "R1" -> 1
+    else -> 0
+}
+
+/** R5 (и создатель команды) — до R5; R4 — только до R4. */
+internal fun maxAssignableSquadRole(myTeamRole: String, isTeamCreator: Boolean): String =
+    if (isTeamCreator || squadRoleRank(myTeamRole) >= 5) "R5" else "R4"
+
+internal fun canManageMemberSquadRole(
+    myTeamRole: String,
+    isTeamCreator: Boolean,
+    member: PlayerTeamMemberDto,
+    currentUserId: String,
+): Boolean {
+    if (member.isLeader || member.userId == currentUserId) return false
+    val actorRank = if (isTeamCreator) 5 else squadRoleRank(myTeamRole)
+    if (actorRank < 4) return false
+    val targetRank = squadRoleRank(squadRoleCode(member))
+    if (actorRank == 4 && targetRank >= 5) return false
+    return true
+}
+
 private fun groupMembersBySquadRole(
     members: List<PlayerTeamMemberDto>,
 ): List<Pair<String, List<PlayerTeamMemberDto>>> {
@@ -109,6 +136,7 @@ private fun squadRoleSectionTitle(roleCode: String): String = roleCode
 fun SquadTeamRoster(
     members: List<PlayerTeamMemberDto>,
     isSquadLeader: Boolean,
+    myTeamRole: String,
     currentUserId: String,
     teamId: String,
     busy: Boolean,
@@ -187,6 +215,7 @@ fun SquadTeamRoster(
                         SquadMemberCard(
                             member = member,
                             isSquadLeader = isSquadLeader,
+                            myTeamRole = myTeamRole,
                             currentUserId = currentUserId,
                             teamId = teamId,
                             busy = busy,
@@ -406,6 +435,7 @@ private fun TeamMemberVoiceBadge(
 private fun SquadMemberCard(
     member: PlayerTeamMemberDto,
     isSquadLeader: Boolean,
+    myTeamRole: String,
     currentUserId: String,
     teamId: String,
     busy: Boolean,
@@ -435,8 +465,12 @@ private fun SquadMemberCard(
     val voiceSoundOn = voicePeer?.soundOn == true
     val inGameCd = stringResource(R.string.team_member_in_game_cd)
     val notInGameCd = stringResource(R.string.team_member_not_in_game_cd)
-    val canEditThisMemberRole =
-        isSquadLeader && !member.isLeader && member.userId != currentUserId
+    val canEditThisMemberRole = canManageMemberSquadRole(
+        myTeamRole = myTeamRole,
+        isTeamCreator = isSquadLeader,
+        member = member,
+        currentUserId = currentUserId,
+    )
     val canRemove = isSquadLeader && !member.isLeader && member.userId != currentUserId
     val canManage = canEditThisMemberRole || canRemove
     var removeConfirmTarget by remember(member.userId) { mutableStateOf(false) }
@@ -496,7 +530,7 @@ private fun SquadMemberCard(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
                     )
-                    if (inGameNow && overlayVisible) {
+                    if (inGameNow && (overlayUi || overlayVisible)) {
                         TeamMemberVoiceBadges(
                             micOn = voiceMicOn,
                             soundOn = voiceSoundOn,
@@ -649,6 +683,7 @@ private data class SquadRoleOption(val code: String, val titleRes: Int)
 @Composable
 fun SquadMemberRoleEditDialog(
     member: PlayerTeamMemberDto,
+    maxAssignableRole: String,
     onDismiss: () -> Unit,
     onSaved: () -> Unit,
     teamId: String,
@@ -658,13 +693,14 @@ fun SquadMemberRoleEditDialog(
     val context = LocalContext.current
     val res = context.resources
     val scope = rememberCoroutineScope()
+    val maxRank = squadRoleRank(maxAssignableRole)
     val options = listOf(
         SquadRoleOption("R5", R.string.team_squad_pick_r5),
         SquadRoleOption("R4", R.string.team_squad_pick_r4),
         SquadRoleOption("R3", R.string.team_squad_pick_r3),
         SquadRoleOption("R2", R.string.team_squad_pick_r2),
         SquadRoleOption("R1", R.string.team_squad_pick_r1),
-    )
+    ).filter { squadRoleRank(it.code) <= maxRank }
     val initialCode = member.teamRole.trim().uppercase().takeIf { it.isNotEmpty() } ?: "R1"
     val initial = if (options.any { it.code == initialCode }) initialCode else "R1"
     var selected by remember(member.userId) { mutableStateOf(initial) }

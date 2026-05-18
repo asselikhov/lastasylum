@@ -284,6 +284,8 @@ class CombatOverlayService : Service() {
         val params: WindowManager.LayoutParams,
         val prevFlags: Int,
         val prevVisibility: Int,
+        /** Окно снято с [WindowManager], чтобы системный пикер (обычная Activity) был поверх. */
+        val detachedForPicker: Boolean = false,
     )
 
     /** Снимок окон overlay на время системного пикера (TYPE_APPLICATION_OVERLAY выше Activity — иначе галерея «под» чатом). */
@@ -319,7 +321,9 @@ class CombatOverlayService : Service() {
                 runCatching { mgr.updateViewLayout(view, params) }
             }
         }
-        // Панель и ленту прячем; полноэкранный чат/темы не трогаем — иначе «прозрачный» оверлей и detach на OEM.
+        // Панель и ленту прячем. Полноэкранный чат снимаем с WM: TYPE_APPLICATION_OVERLAY всегда выше
+        // обычной Activity — Photo Picker иначе остаётся под чатом и не кликается.
+        detachOverlayChatPanelForPicker(mgr)
         snap(overlayMainWindowParams, overlayView, hideFromScreen = true)
         snap(chatStripParams, chatStripHost, hideFromScreen = true)
         overlayTicker.applyTouchPassthrough(true)
@@ -328,15 +332,43 @@ class CombatOverlayService : Service() {
         quickCommandsPopover.hide()
     }
 
+    private fun detachOverlayChatPanelForPicker(mgr: WindowManager) {
+        val root = overlayChatTeamRoot ?: return
+        val params = overlayChatTeamParams ?: return
+        if (!root.isAttachedToWindow) return
+        overlayTouchPassthroughSnaps.add(
+            OverlayWindowFlagSnap(
+                view = root,
+                params = params,
+                prevFlags = params.flags,
+                prevVisibility = root.visibility,
+                detachedForPicker = true,
+            ),
+        )
+        runCatching { mgr.removeView(root) }
+            .onFailure { e ->
+                Log.w(TAG, "detachOverlayChatPanelForPicker: removeView failed", e)
+            }
+    }
+
     private fun resumeOverlayWindowsAfterSystemActivity() {
         val mgr = windowManager
         val hadSuspendedWindows = overlayTouchPassthroughSnaps.isNotEmpty()
         if (hadSuspendedWindows && mgr != null) {
             for (snap in overlayTouchPassthroughSnaps) {
-                snap.params.flags = snap.prevFlags
-                snap.view.visibility = snap.prevVisibility
-                if (snap.view.isAttachedToWindow) {
-                    runCatching { mgr.updateViewLayout(snap.view, snap.params) }
+                if (snap.detachedForPicker) {
+                    if (!snap.view.isAttachedToWindow) {
+                        runCatching { mgr.addView(snap.view, snap.params) }
+                            .onFailure { e ->
+                                Log.e(TAG, "resumeOverlayWindows: re-attach chat panel failed", e)
+                            }
+                    }
+                } else {
+                    snap.params.flags = snap.prevFlags
+                    snap.view.visibility = snap.prevVisibility
+                    if (snap.view.isAttachedToWindow) {
+                        runCatching { mgr.updateViewLayout(snap.view, snap.params) }
+                    }
                 }
             }
             overlayTouchPassthroughSnaps.clear()
@@ -345,6 +377,7 @@ class CombatOverlayService : Service() {
         if (OverlayChatInteractionHold.isOverlaySystemPickerSessionActive()) {
             OverlayChatInteractionHold.endOverlaySystemPickerSession()
         }
+        rebalanceOverlayFullscreenZOrder()
         repairDetachedOverlayChatTeamPanelIfNeeded()
         repairDetachedOverlayShellIfNeeded()
     }
@@ -457,7 +490,8 @@ class CombatOverlayService : Service() {
                     addFlags(
                         Intent.FLAG_ACTIVITY_NEW_TASK or
                             Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                            Intent.FLAG_ACTIVITY_SINGLE_TOP,
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                            Intent.FLAG_ACTIVITY_NO_ANIMATION,
                     )
                     putExtra(OverlaySystemDialogActivity.EXTRA_KIND, kind)
                     putExtra(OverlaySystemDialogActivity.EXTRA_REQUEST_CODE, requestCode)
@@ -467,21 +501,23 @@ class CombatOverlayService : Service() {
                     }
                 }
                 suspendOverlayWindowsForSystemActivity()
-                try {
-                    startActivity(i)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Overlay system dialog start failed", e)
-                    resumeOverlayWindowsAfterSystemActivity()
-                    Toast.makeText(
-                        this@CombatOverlayService,
-                        e.toUserMessageRu(resources),
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                    activityResultRegistry.dispatchResult(
-                        requestCode,
-                        android.app.Activity.RESULT_CANCELED,
-                        Intent(),
-                    )
+                mainHandler.post {
+                    try {
+                        startActivity(i)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Overlay system dialog start failed", e)
+                        resumeOverlayWindowsAfterSystemActivity()
+                        Toast.makeText(
+                            this@CombatOverlayService,
+                            e.toUserMessageRu(resources),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                        activityResultRegistry.dispatchResult(
+                            requestCode,
+                            android.app.Activity.RESULT_CANCELED,
+                            Intent(),
+                        )
+                    }
                 }
             }
         }
@@ -524,11 +560,12 @@ class CombatOverlayService : Service() {
     private var lastForegroundNotificationText: String? = null
     private var lastForegroundMicActive: Boolean = false
 
-    private val gameGateRunnable = object : Runnable {
-        override fun run() {
-            runCatching { tickGameGate() }
-            mainHandler.postDelayed(this, GAME_GATE_POLL_MS)
-        }
+    private val gameGateRunnable = Runnable {
+        runCatching { tickGameGate() }
+    }
+
+    private val overlayVoiceConnectRunnable = Runnable {
+        startOverlayVoiceIfRaidAvailable()
     }
 
     override fun onCreate() {
@@ -563,7 +600,7 @@ class CombatOverlayService : Service() {
         isServiceInstanceActive = true
         _serviceRunning.value = true
         _overlayVisible.value = false
-        mainHandler.post(gameGateRunnable)
+        mainHandler.post { tickGameGate() }
     }
 
     /**
@@ -612,6 +649,12 @@ class CombatOverlayService : Service() {
      * Восстанавливаем то же [overlayChatTeamRoot], не пересоздавая Compose.
      */
     private fun repairDetachedOverlayChatTeamPanelIfNeeded() {
+        if (OverlayChatInteractionHold.isOverlaySystemPickerSessionActive()) {
+            return
+        }
+        if (overlayTouchPassthroughSnaps.any { it.detachedForPicker }) {
+            return
+        }
         if (!overlayChatTeamPanelVisible && !OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible) {
             return
         }
@@ -680,9 +723,10 @@ class CombatOverlayService : Service() {
         val activityTokens = prefs.getOverlayTargetGameActivityTokens()
         serviceScope.launch {
             try {
-                GameForegroundGate.invalidateForegroundHintCache()
                 val hasUsageAccess = GameForegroundGate.hasUsageStatsAccess(this@CombatOverlayService)
-                val hintedComp = runCatching { GameForegroundGate.lastResumedComponent(this@CombatOverlayService) }.getOrNull()
+                val hintedComp = runCatching {
+                    GameForegroundGate.lastResumedComponent(this@CombatOverlayService)
+                }.getOrNull()
                 val hintedPkg = hintedComp?.packageName
                 lastForegroundHintPkg = hintedPkg
                 if (activityTokens.isNotEmpty()) {
@@ -692,12 +736,25 @@ class CombatOverlayService : Service() {
                     )
                 }
                 val targetSet = targets.toSet()
-                val inGame = hasUsageAccess && targets.isNotEmpty() &&
-                    GameForegroundGate.shouldShowOverlay(
+                val inGame = if (!hasUsageAccess || targets.isEmpty()) {
+                    false
+                } else {
+                    val probe = GameForegroundGate.quickTargetForegroundProbe(
                         context = this@CombatOverlayService,
                         targetGamePackages = targets,
                         allowedActivitySubstrings = activityTokens,
                     )
+                    when (probe) {
+                        GameForegroundGate.QuickForegroundProbe.IN_TARGET -> true
+                        GameForegroundGate.QuickForegroundProbe.NOT_IN_TARGET -> false
+                        GameForegroundGate.QuickForegroundProbe.NEED_FULL_HEURISTICS ->
+                            GameForegroundGate.shouldShowOverlay(
+                                context = this@CombatOverlayService,
+                                targetGamePackages = targets,
+                                allowedActivitySubstrings = activityTokens,
+                            )
+                    }
+                }
                 val nowMs = System.currentTimeMillis()
                 if (inGame) {
                     lastOverlayInGameAtMs = nowMs
@@ -732,13 +789,50 @@ class CombatOverlayService : Service() {
                         hasUsageAccess = hasUsageAccess,
                         shouldShow = shouldShow,
                     )
+                    gateCheckInFlight = false
+                    scheduleGameGateTick(nextGameGateDelayMs())
                 }
-            } finally {
+            } catch (_: Throwable) {
                 mainHandler.post {
                     gateCheckInFlight = false
+                    scheduleGameGateTick(nextGameGateDelayMs())
                 }
             }
         }
+    }
+
+    private fun scheduleGameGateTick(delayMs: Long = nextGameGateDelayMs()) {
+        mainHandler.removeCallbacks(gameGateRunnable)
+        mainHandler.postDelayed(gameGateRunnable, delayMs)
+    }
+
+    private fun nextGameGateDelayMs(): Long {
+        if (overlayView != null) return GAME_GATE_POLL_ACTIVE_MS
+        if (overlayChatTeamPanelVisible || OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible) {
+            return GAME_GATE_POLL_ACTIVE_MS
+        }
+        if (shouldKeepOverlayWindows()) return GAME_GATE_POLL_WARM_MS
+        val now = System.currentTimeMillis()
+        if (now - lastOverlayInGameAtMs < OVERLAY_INGAME_GRACE_MS) return GAME_GATE_POLL_WARM_MS
+        return GAME_GATE_POLL_IDLE_MS
+    }
+
+    private fun scheduleOverlayVoiceConnect() {
+        cancelOverlayVoiceConnectScheduled()
+        val prefs = AppContainer.from(this).userSettingsPreferences
+        if (!prefs.isOverlayVoiceMicEnabled() && !prefs.isOverlayVoiceSoundEnabled()) {
+            return
+        }
+        mainHandler.postDelayed(overlayVoiceConnectRunnable, OVERLAY_VOICE_CONNECT_DELAY_MS)
+    }
+
+    private fun cancelOverlayVoiceConnectScheduled() {
+        mainHandler.removeCallbacks(overlayVoiceConnectRunnable)
+    }
+
+    private fun ensureOverlayVoiceStarted() {
+        cancelOverlayVoiceConnectScheduled()
+        startOverlayVoiceIfRaidAvailable()
     }
 
     private fun applyGameGateState(
@@ -826,6 +920,7 @@ class CombatOverlayService : Service() {
     private fun shutdownRuntimeOnly(startId: Int): Int {
         gateCheckInFlight = false
         mainHandler.removeCallbacks(gameGateRunnable)
+        cancelOverlayVoiceConnectScheduled()
         runCatching { hideOverlayChatTeamPanel() }
         runCatching { overlayTicker.hideTicker() }
         runCatching { quickCommandsPopover.hide() }
@@ -900,6 +995,7 @@ class CombatOverlayService : Service() {
         _serviceRunning.value = false
         gateCheckInFlight = false
         mainHandler.removeCallbacks(gameGateRunnable)
+        cancelOverlayVoiceConnectScheduled()
         lastForegroundNotificationText = null
         lastForegroundMicActive = false
         speechPipeline.destroy()
@@ -952,7 +1048,8 @@ class CombatOverlayService : Service() {
 
     private fun scheduleStripTick() {
         mainHandler.removeCallbacks(stripTickRunnable)
-        mainHandler.postDelayed(stripTickRunnable, STRIP_TICK_MS)
+        val delay = if (panelCollapsed) STRIP_TICK_COLLAPSED_MS else STRIP_TICK_MS
+        mainHandler.postDelayed(stripTickRunnable, delay)
     }
 
     private fun cancelStripTick() {
@@ -1304,7 +1401,7 @@ class CombatOverlayService : Service() {
             AppContainer.from(this).chatRepository.addOverlayMessageListener(listener)
             scheduleStripTick()
             presenceHeartbeat.start()
-            startOverlayVoiceIfRaidAvailable()
+            scheduleOverlayVoiceConnect()
         }
         serviceScope.launch {
             val container = AppContainer.from(this@CombatOverlayService)
@@ -1332,6 +1429,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun endOverlayChatSubscription() {
+        cancelOverlayVoiceConnectScheduled()
         stopOverlayVoice()
         unregisterVoiceMicPermissionReceiver()
         presenceHeartbeat.stop()
@@ -1486,11 +1584,13 @@ class CombatOverlayService : Service() {
         ).also { controls ->
             controls.onSoundToggle = {
                 if (!panelCollapsed) {
+                    ensureOverlayVoiceStarted()
                     ensureVoiceSession().toggleSound()
                 }
             }
             controls.onMicToggle = {
                 if (!panelCollapsed) {
+                    ensureOverlayVoiceStarted()
                     val session = ensureVoiceSession()
                     if (!session.micOn && !session.hasRecordAudioPermission()) {
                         pendingVoiceMicEnable = true
@@ -1501,6 +1601,9 @@ class CombatOverlayService : Service() {
                 }
             }
             controls.onExpansionChanged = voiceExpansion@{
+                if (controls.isExpanded()) {
+                    ensureOverlayVoiceStarted()
+                }
                 val mgr = windowManager
                 val wr = overlayView
                 val p = overlayMainWindowParams
@@ -1712,7 +1815,11 @@ class CombatOverlayService : Service() {
         refreshLockIcon()
         voiceControls.btnHub.setOnClickListener {
             if (!panelCollapsed) {
+                val willExpand = !voiceControls.isExpanded()
                 voiceControls.toggleExpanded()
+                if (willExpand) {
+                    ensureOverlayVoiceStarted()
+                }
             }
         }
         panelCollapsed = true
@@ -2377,11 +2484,16 @@ class CombatOverlayService : Service() {
     companion object {
         /** Частый prune ленты относительно TTL ~10 с. */
         private const val STRIP_TICK_MS = 2_500L
-        /**
-         * Период опроса usage-гейта. Раньше 4s из‑за нагрузки на binder — панель заметно запаздывала при смене игры/лаунчера.
-         * Перед каждым тиком сбрасывается кэш [GameForegroundGate.lastResumedComponent], поэтому умеренный интервал ок.
-         */
-        private const val GAME_GATE_POLL_MS = 650L
+        /** Реже обновляем ленту, пока панель свёрнута (только кнопка разворота). */
+        private const val STRIP_TICK_COLLAPSED_MS = 5_000L
+        /** Панель на экране — отзывчивый гейт. */
+        private const val GAME_GATE_POLL_ACTIVE_MS = 900L
+        /** Недавно были в игре / открыт чат — чаще, чем в простое. */
+        private const val GAME_GATE_POLL_WARM_MS = 1_800L
+        /** FGS включён, оверлей скрыт: редкий опрос usage stats. */
+        private const val GAME_GATE_POLL_IDLE_MS = 3_500L
+        /** Голос: отложенный connect, если mic/sound были включены в прошлой сессии. */
+        private const val OVERLAY_VOICE_CONNECT_DELAY_MS = 4_000L
         /** Краткий grace при ложном «не в игре» во время чата/пикера; не применяется при явном лаунчере/другом приложении. */
         private const val OVERLAY_INGAME_GRACE_MS = 2_500L
         private const val OVERLAY_HISTORY_LOAD = 150
@@ -2452,6 +2564,7 @@ class CombatOverlayService : Service() {
         /** После смены пакета/activity-фильтра — пересчитать показ оверлея. */
         fun requestGateRecheckIfRunning(context: Context) {
             if (!isServiceInstanceActive) return
+            GameForegroundGate.invalidateForegroundHintCache()
             val intent = Intent(context, CombatOverlayService::class.java).apply {
                 action = ACTION_TICK_GAME_GATE
             }
