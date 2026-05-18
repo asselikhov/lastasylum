@@ -44,6 +44,7 @@ data class MyProfileDto(
     val pendingPlayerTeamJoinRequests: Int = 0,
     val enabledStickerPacks: List<String> = emptyList(),
     val excavationPushEnabled: Boolean = true,
+    val pushNotificationsRegistered: Boolean = false,
 )
 
 @JsonClass(generateAdapter = true)

@@ -44,6 +44,7 @@ import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.GameForegroundGate
 import com.lastasylum.alliance.overlay.OverlayPermissions
+import com.lastasylum.alliance.push.FcmTokenManager
 import com.lastasylum.alliance.ui.components.SettingsSection
 import com.lastasylum.alliance.ui.components.SettingsToggleRow
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
@@ -67,11 +68,13 @@ fun OverlayControlScreen() {
     var targetActivities by remember { mutableStateOf(prefs.getOverlayTargetGameActivityTokens().joinToString(",")) }
     var overlayEnabled by remember { mutableStateOf(prefs.isOverlayPanelEnabled()) }
     var excavationPushEnabled by remember { mutableStateOf(prefs.isExcavationPushEnabled()) }
+    var pushRegisteredOnServer by remember { mutableStateOf<Boolean?>(null) }
 
     LaunchedEffect(Unit) {
         appContainer.usersRepository.getMyProfile().getOrNull()?.let { profile ->
             prefs.setExcavationPushEnabled(profile.excavationPushEnabled)
             excavationPushEnabled = profile.excavationPushEnabled
+            pushRegisteredOnServer = profile.pushNotificationsRegistered
         }
     }
 
@@ -277,6 +280,24 @@ fun OverlayControlScreen() {
                             },
                         )
                     }
+                }
+            }
+
+            if (pushRegisteredOnServer == false) {
+                item {
+                    SettingsHintCard(
+                        message = stringResource(R.string.settings_push_not_registered_hint),
+                        actionLabel = stringResource(R.string.settings_push_register_retry),
+                        onAction = {
+                            scope.launch {
+                                FcmTokenManager.registerWithBackend(appContext)
+                                appContainer.usersRepository.getMyProfile().getOrNull()?.let { profile ->
+                                    pushRegisteredOnServer = profile.pushNotificationsRegistered
+                                }
+                            }
+                        },
+                        isError = true,
+                    )
                 }
             }
 

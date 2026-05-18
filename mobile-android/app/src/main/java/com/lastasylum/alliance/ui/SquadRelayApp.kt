@@ -33,6 +33,7 @@ import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.theme.SquadRelayTheme
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.push.FcmTokenManager
+import com.lastasylum.alliance.push.PushTokenRegistrationEffect
 import com.lastasylum.alliance.ui.onboarding.PermissionOnboardingGate
 import com.lastasylum.alliance.update.fetchNewerApkDownloadUrl
 import com.lastasylum.alliance.update.openApkDownload
@@ -138,6 +139,9 @@ fun SquadRelayApp() {
                                         chatRoomsRepository = appContainer.chatRoomsRepository,
                                         adminRepository = appContainer.adminRepository,
                                     ),
+                                )
+                                PushTokenRegistrationEffect(
+                                    enabled = authState.isAuthenticated && postAuthSplashComplete,
                                 )
                                 PermissionOnboardingGate()
                             }

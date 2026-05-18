@@ -36,6 +36,8 @@ export type SafeUser = {
   /** Alliance sticker packs this account may send (wire keys, e.g. zlobyaka). */
   enabledStickerPacks: string[];
   excavationPushEnabled: boolean;
+  /** True when at least one FCM device token is stored (push can be delivered). */
+  pushNotificationsRegistered: boolean;
 };
 
 @Injectable()
@@ -298,6 +300,7 @@ export class UsersService {
       ...teamFields,
       enabledStickerPacks,
       excavationPushEnabled: user.excavationPushEnabled !== false,
+      pushNotificationsRegistered: (user.pushFcmTokens?.length ?? 0) > 0,
     };
   }
 

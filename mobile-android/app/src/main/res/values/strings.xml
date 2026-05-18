@@ -509,6 +509,8 @@
     <string name="overlay_cmd_column_excavation">Раскопки</string>
     <string name="settings_excavation_push_title">Уведомления о раскопках</string>
     <string name="settings_excavation_push_subtitle">Push, когда союзник отметил координаты раскопок, а вы не в игре с оверлеем</string>
+    <string name="settings_push_not_registered_hint">Сервер не видит этот телефон для push. Разрешите уведомления и нажмите «Повторить» (нужен свежий APK с Firebase).</string>
+    <string name="settings_push_register_retry">Повторить регистрацию push</string>
     <string name="excavation_push_channel_name">Раскопки альянса</string>
     <string name="excavation_push_channel_desc">Срочные координаты раскопок от союзников</string>
     <string name="excavation_push_default_title">⛏ Раскопки</string>

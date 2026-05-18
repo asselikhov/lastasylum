@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Logger,
   NotFoundException,
   Param,
   Patch,
@@ -37,6 +38,8 @@ type RequestUser = {
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class UsersController {
+  private readonly logger = new Logger(UsersController.name);
+
   constructor(private readonly usersService: UsersService) {}
 
   @Get('me')
@@ -58,6 +61,9 @@ export class UsersController {
     @Body() dto: RegisterPushTokenDto,
   ) {
     await this.usersService.registerPushToken(req.user.userId, dto.token);
+    this.logger.log(
+      `push-token registered userId=${req.user.userId} len=${dto.token.length}`,
+    );
     return { success: true };
   }
 
