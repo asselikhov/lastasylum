@@ -142,6 +142,7 @@ import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingBubble
 import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingOnBubble
 import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMuted
 import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMutedIncoming
+import com.lastasylum.alliance.ui.components.team.ForumTopicFeedCard
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import java.io.File
@@ -325,109 +326,51 @@ private fun TeamForumListRoute(
                             top = 8.dp,
                             bottom = 88.dp,
                         ),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
-                        items(topics, key = { it.id }) { t ->
-                            OutlinedCard(
+                        itemsIndexed(topics, key = { _, t -> t.id }) { index, t ->
+                            ForumTopicFeedCard(
+                                topic = t,
+                                listIndex = index,
+                                messageMeta = t.lastMessageAt?.let { formatForumTime(it) } ?: "—",
                                 onClick = { onOpenTopic(t) },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(24.dp),
-                                border = BorderStroke(
-                                    1.dp,
-                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
-                                ),
-                                colors = CardDefaults.outlinedCardColors(
-                                    containerColor = SquadRelaySurfaces.subtleColor(0.48f),
-                                ),
-                                elevation = CardDefaults.outlinedCardElevation(defaultElevation = 6.dp),
-                            ) {
-                                Row(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .height(IntrinsicSize.Min),
-                                ) {
-                                    Box(
-                                        Modifier
-                                            .width(4.dp)
-                                            .fillMaxHeight()
-                                            .background(
-                                                Brush.verticalGradient(
-                                                    colors = listOf(
-                                                        MaterialTheme.colorScheme.primary,
-                                                        MaterialTheme.colorScheme.tertiary,
+                                menu = {
+                                    if (canManageTopics) {
+                                        Box {
+                                            IconButton(onClick = { menuTopic = t }) {
+                                                Icon(
+                                                    Icons.Filled.MoreVert,
+                                                    contentDescription = stringResource(
+                                                        R.string.team_forum_topic_menu_cd,
                                                     ),
-                                                ),
-                                            ),
-                                    )
-                                    Row(
-                                        Modifier
-                                            .weight(1f)
-                                            .padding(horizontal = 12.dp, vertical = 12.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Outlined.ChatBubbleOutline,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.62f),
-                                            modifier = Modifier.size(26.dp),
-                                        )
-                                        Column(Modifier.weight(1f)) {
-                                            Text(
-                                                text = t.title,
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.SemiBold,
-                                                maxLines = 2,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
-                                            Text(
-                                                text = stringResource(
-                                                    R.string.team_forum_topic_meta,
-                                                    t.messageCount,
-                                                    t.lastMessageAt?.let { formatForumTime(it) }
-                                                        ?: "вЂ”",
-                                                ),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
-                                        if (canManageTopics) {
-                                            Box {
-                                                IconButton(onClick = { menuTopic = t }) {
-                                                    Icon(
-                                                        Icons.Filled.MoreVert,
-                                                        contentDescription = stringResource(
-                                                            R.string.team_forum_topic_menu_cd,
-                                                        ),
-                                                    )
-                                                }
-                                                DropdownMenu(
-                                                    expanded = menuTopic?.id == t.id,
-                                                    onDismissRequest = { menuTopic = null },
-                                                ) {
-                                                    DropdownMenuItem(
-                                                        text = { Text(stringResource(R.string.team_forum_edit_topic)) },
-                                                        onClick = {
-                                                            OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
-                                                            menuTopic = null
-                                                            editTopic = t
-                                                            editTitle = t.title
-                                                        },
-                                                    )
-                                                    DropdownMenuItem(
-                                                        text = { Text(stringResource(R.string.team_forum_delete_topic)) },
-                                                        onClick = {
-                                                            OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
-                                                            menuTopic = null
-                                                            deleteTopic = t
-                                                        },
-                                                    )
-                                                }
+                                                )
+                                            }
+                                            DropdownMenu(
+                                                expanded = menuTopic?.id == t.id,
+                                                onDismissRequest = { menuTopic = null },
+                                            ) {
+                                                DropdownMenuItem(
+                                                    text = { Text(stringResource(R.string.team_forum_edit_topic)) },
+                                                    onClick = {
+                                                        OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
+                                                        menuTopic = null
+                                                        editTopic = t
+                                                        editTitle = t.title
+                                                    },
+                                                )
+                                                DropdownMenuItem(
+                                                    text = { Text(stringResource(R.string.team_forum_delete_topic)) },
+                                                    onClick = {
+                                                        OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
+                                                        menuTopic = null
+                                                        deleteTopic = t
+                                                    },
+                                                )
                                             }
                                         }
                                     }
-                                }
-                            }
+                                },
+                            )
                         }
                     }
                 }

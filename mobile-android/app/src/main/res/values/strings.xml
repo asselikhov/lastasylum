@@ -326,6 +326,7 @@
     <string name="team_tab_members">Участники</string>
     <string name="team_forum_empty">Пока нет тем. Создайте первую (доступно заместителю и лидеру отряда).</string>
     <string name="team_forum_topic_meta">Сообщений: %1$d · %2$s</string>
+    <string name="team_forum_messages_pill">%1$d сообщ.</string>
     <string name="team_forum_topic_menu_cd">Меню темы</string>
     <string name="team_forum_edit_topic">Переименовать тему</string>
     <string name="team_forum_delete_topic">Удалить тему</string>

@@ -103,6 +103,11 @@ import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.teams.UpdateTeamNewsBody
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
+import com.lastasylum.alliance.ui.components.team.TeamNewsFeedCard
+import com.lastasylum.alliance.ui.components.team.formatTeamFeedDateRu
+import com.lastasylum.alliance.ui.components.team.TeamPollPreviewBlock
+import com.lastasylum.alliance.ui.components.team.TeamPollQuestionHeader
+import com.lastasylum.alliance.ui.components.team.TeamPollVoteOptionSurface
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import kotlinx.coroutines.launch
@@ -116,13 +121,6 @@ private object TeamNewsRoutes {
     fun detail(id: String) = "news_detail/$id"
     fun edit(id: String) = "news_edit/$id"
 }
-
-private fun formatNewsDateRu(iso: String): String =
-    runCatching {
-        val instant = Instant.parse(iso)
-        val fmt = DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", java.util.Locale("ru"))
-        fmt.format(instant.atZone(ZoneId.systemDefault()))
-    }.getOrElse { iso }
 
 private fun pollVotersForOption(
     votes: List<TeamNewsPollVoteDto>,
@@ -256,97 +254,6 @@ private fun TeamNewsPollVoterChips(
     }
 }
 
-@Composable
-private fun TeamNewsPollOptionsPreview(
-    question: String,
-    options: List<TeamNewsPollOptionDto>,
-    tallies: List<com.lastasylum.alliance.data.teams.TeamNewsPollTallyDto>,
-    myVoteOptionId: String?,
-    modifier: Modifier = Modifier,
-) {
-    val totalVotes = tallies.sumOf { it.count }
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            AssistChip(
-                onClick = {},
-                enabled = false,
-                label = { Text(stringResource(R.string.team_news_poll_badge)) },
-                colors = AssistChipDefaults.assistChipColors(
-                    disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
-                    disabledLabelColor = MaterialTheme.colorScheme.primary,
-                ),
-            )
-            if (totalVotes > 0) {
-                Text(
-                    text = stringResource(R.string.team_news_votes_count, totalVotes),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        Text(
-            text = question,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        options.forEach { opt ->
-            val cnt = tallies.find { it.optionId == opt.id }?.count ?: 0
-            val share = if (totalVotes > 0) cnt.toFloat() / totalVotes else 0f
-            val selected = myVoteOptionId == opt.id
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = if (selected) {
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                } else {
-                    SquadRelaySurfaces.subtleColor(0.35f)
-                },
-                border = BorderStroke(
-                    1.dp,
-                    if (selected) {
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
-                    } else {
-                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)
-                    },
-                ),
-            ) {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Text(
-                        text = opt.text,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                    )
-                    LinearProgressIndicator(
-                        progress = { share },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(6.dp)
-                            .clip(RoundedCornerShape(4.dp)),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                    )
-                    Text(
-                        text = stringResource(R.string.team_news_poll_option_votes, cnt),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TeamNewsPollVoteBlock(
@@ -363,95 +270,25 @@ private fun TeamNewsPollVoteBlock(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            AssistChip(
-                onClick = {},
-                enabled = false,
-                label = { Text(stringResource(R.string.team_news_poll_badge)) },
-                colors = AssistChipDefaults.assistChipColors(
-                    disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
-                    disabledLabelColor = MaterialTheme.colorScheme.primary,
-                ),
-            )
-            Text(
-                text = stringResource(R.string.team_news_votes_count, totalVotes),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Text(
-            text = poll.question,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
-        )
+        TeamPollQuestionHeader(question = poll.question, totalVotes = totalVotes)
         poll.options.forEach { opt ->
             val cnt = poll.tallies.find { it.optionId == opt.id }?.count ?: 0
             val share = if (totalVotes > 0) cnt.toFloat() / totalVotes else 0f
             val optionVoters = pollVotersForOption(poll.votes, opt.id)
             val isSelected = selected == opt.id
-            Surface(
-                onClick = { selected = opt.id },
-                shape = RoundedCornerShape(16.dp),
-                color = if (isSelected) {
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                } else {
-                    SquadRelaySurfaces.subtleColor()
-                },
-                border = BorderStroke(
-                    1.dp,
-                    if (isSelected) {
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                    } else {
-                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
-                    },
-                ),
-            ) {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(
-                            selected = isSelected,
-                            onClick = { selected = opt.id },
-                        )
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                opt.text,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            LinearProgressIndicator(
-                                progress = { share },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(7.dp)
-                                    .clip(RoundedCornerShape(4.dp)),
-                                color = MaterialTheme.colorScheme.primary,
-                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                stringResource(R.string.team_news_poll_option_votes, cnt),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
+            TeamPollVoteOptionSurface(
+                text = opt.text,
+                voteCount = cnt,
+                share = share,
+                selected = isSelected,
+                onSelect = { selected = opt.id },
+                contentBelow = {
                     TeamNewsPollVotersReveal(
                         optionText = opt.text,
                         voters = optionVoters,
                     )
-                }
-            }
+                },
+            )
         }
         Button(
             onClick = {
@@ -694,13 +531,13 @@ private fun TeamNewsListRoute(
                                 top = 12.dp,
                                 bottom = 88.dp,
                             ),
-                            verticalArrangement = Arrangement.spacedBy(18.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
                         ) {
                             items(
                                 items = newsItems,
                                 key = { it.id },
                             ) { item ->
-                                TeamNewsCard(
+                                TeamNewsFeedCard(
                                     item = item,
                                     onClick = { onOpenDetail(item.id) },
                                     onEdit = {
@@ -712,235 +549,6 @@ private fun TeamNewsListRoute(
                                 )
                             }
                         }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TeamNewsCard(
-    item: TeamNewsListItemDto,
-    onClick: () -> Unit,
-    onEdit: () -> Unit,
-    showEdit: Boolean,
-) {
-    val cardShape = RoundedCornerShape(24.dp)
-    val hasHero = !item.firstImageRelativeUrl.isNullOrBlank()
-    val scheme = MaterialTheme.colorScheme
-    val ringSoft = scheme.outlineVariant.copy(alpha = 0.45f)
-    Card(
-        onClick = onClick,
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f),
-                shape = cardShape,
-            ),
-        shape = cardShape,
-        colors = SquadRelaySurfaces.cardColors(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp, pressedElevation = 6.dp),
-    ) {
-        Row(
-            modifier = Modifier.height(IntrinsicSize.Min),
-        ) {
-            Box(
-                modifier = Modifier
-                    .width(5.dp)
-                    .fillMaxHeight()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.primary,
-                                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.85f),
-                            ),
-                        ),
-                    ),
-            )
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(0.dp),
-            ) {
-                if (hasHero) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(178.dp)
-                            .clip(RoundedCornerShape(topEnd = 26.dp)),
-                    ) {
-                        item.firstImageRelativeUrl?.let { raw ->
-                            teamNewsAuthedImageRequest(LocalContext.current, raw)?.let { req ->
-                                AsyncImage(
-                                    model = req,
-                                    contentDescription = item.title,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop,
-                                )
-                            }
-                        }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Transparent,
-                                        Color.Black.copy(alpha = 0.62f),
-                                    ),
-                                    startY = 40f,
-                                ),
-                            ),
-                    )
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            AssistChip(
-                                onClick = {},
-                                enabled = false,
-                                label = {
-                                    Text(
-                                        text = formatNewsDateRu(item.createdAt),
-                                        maxLines = 1,
-                                    )
-                                },
-                                colors = AssistChipDefaults.assistChipColors(
-                                    containerColor = Color.Black.copy(alpha = 0.42f),
-                                    labelColor = Color.White.copy(alpha = 0.92f),
-                                    disabledContainerColor = Color.Black.copy(alpha = 0.42f),
-                                    disabledLabelColor = Color.White.copy(alpha = 0.92f),
-                                ),
-                                border = AssistChipDefaults.assistChipBorder(
-                                    enabled = false,
-                                    borderColor = Color.White.copy(alpha = 0.14f),
-                                ),
-                            )
-                            if (item.hasPoll) {
-                                AssistChip(
-                                    onClick = {},
-                                    enabled = false,
-                                    label = { Text(stringResource(R.string.team_news_poll_badge), maxLines = 1) },
-                                    colors = AssistChipDefaults.assistChipColors(
-                                        containerColor = Color.Black.copy(alpha = 0.42f),
-                                        labelColor = Color.White.copy(alpha = 0.92f),
-                                        disabledContainerColor = Color.Black.copy(alpha = 0.42f),
-                                        disabledLabelColor = Color.White.copy(alpha = 0.92f),
-                                    ),
-                                    border = AssistChipDefaults.assistChipBorder(
-                                        enabled = false,
-                                        borderColor = Color.White.copy(alpha = 0.14f),
-                                    ),
-                                )
-                            }
-                        }
-                        Text(
-                            text = item.title,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.White,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-                    HorizontalDivider(
-                        thickness = 1.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.18f),
-                    )
-                }
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            SquadRelaySurfaces.subtleColor(if (hasHero) 0.36f else 0.28f),
-                        )
-                        .padding(horizontal = 16.dp, vertical = 15.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    val pollQuestion = item.pollQuestion?.trim().orEmpty()
-                    val pollOptions = item.pollOptions.orEmpty()
-                    val showPollPreview =
-                        item.hasPoll && pollQuestion.isNotEmpty() && pollOptions.size >= 2
-                    if (showPollPreview) {
-                        TeamNewsPollOptionsPreview(
-                            question = pollQuestion,
-                            options = pollOptions,
-                            tallies = item.pollTallies,
-                            myVoteOptionId = item.myVoteOptionId,
-                        )
-                    } else {
-                        if (!hasHero) {
-                            Text(
-                                text = item.title,
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        if (item.excerpt.isNotBlank()) {
-                            Text(
-                                text = item.excerpt,
-                                style = MaterialTheme.typography.bodyMedium,
-                                lineHeight = 22.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = if (hasHero) 2 else 3,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = SquadRelaySurfaces.subtleColor(0.52f),
-                                border = BorderStroke(1.dp, ringSoft),
-                                tonalElevation = 0.dp,
-                                shadowElevation = 2.dp,
-                            ) {
-                                Text(
-                                    text = item.authorUsername,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = scheme.primary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                                )
-                            }
-                            if (!hasHero) {
-                                Text(
-                                    text = formatNewsDateRu(item.createdAt),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
-                        if (showEdit) {
-                            IconButton(onClick = onEdit) {
-                                Icon(
-                                    imageVector = Icons.Outlined.ModeEditOutline,
-                                    contentDescription = stringResource(R.string.team_news_edit),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -1092,7 +700,7 @@ private fun TeamNewsDetailRoute(
                                         overflow = TextOverflow.Ellipsis,
                                     )
                                     Text(
-                                        text = "${d.authorUsername} · ${formatNewsDateRu(d.createdAt)}",
+                                        text = "${d.authorUsername} · ${formatTeamFeedDateRu(d.createdAt)}",
                                         style = MaterialTheme.typography.labelMedium,
                                         color = Color.White.copy(alpha = 0.86f),
                                         maxLines = 1,
@@ -1146,7 +754,7 @@ private fun TeamNewsDetailRoute(
                                             fontWeight = FontWeight.SemiBold,
                                         )
                                         Text(
-                                            "${d.authorUsername} · ${formatNewsDateRu(d.createdAt)}",
+                                            "${d.authorUsername} · ${formatTeamFeedDateRu(d.createdAt)}",
                                             style = MaterialTheme.typography.labelMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
@@ -1169,7 +777,7 @@ private fun TeamNewsDetailRoute(
                                 .padding(horizontal = pagePad, vertical = 8.dp),
                         ) {
                             Text(
-                                "${d.authorUsername} · ${formatNewsDateRu(d.createdAt)}",
+                                "${d.authorUsername} · ${formatTeamFeedDateRu(d.createdAt)}",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
