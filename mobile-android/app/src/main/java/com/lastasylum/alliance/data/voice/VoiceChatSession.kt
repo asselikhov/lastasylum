@@ -58,6 +58,7 @@ class VoiceChatSession(
     }
 
     private val peerListener: (VoicePeerEvent) -> Unit = { event ->
+        TeamVoicePresenceStore.apply(event)
         when (event) {
             is VoicePeerEvent.Joined -> audioPipeline.setRemotePeerMic(event.peer.userId, event.peer.micOn)
             is VoicePeerEvent.State -> audioPipeline.setRemotePeerMic(event.peer.userId, event.peer.micOn)
@@ -102,6 +103,7 @@ class VoiceChatSession(
         socketManager.removeFrameListener(frameListener)
         socketManager.removePeerListener(peerListener)
         socketManager.disconnect()
+        TeamVoicePresenceStore.clear()
         audioPipeline.release()
         remoteSpeechUntilMs.clear()
         mainHandler.removeCallbacks(speakerUpdateRunnable)
@@ -165,6 +167,11 @@ class VoiceChatSession(
     }
 
     private fun notifyState() {
-        mainHandler.post { onStateChanged(micOn, soundOn) }
+        mainHandler.post {
+            localUserId?.let { uid ->
+                TeamVoicePresenceStore.setLocal(uid, "", micOn, soundOn)
+            }
+            onStateChanged(micOn, soundOn)
+        }
     }
 }

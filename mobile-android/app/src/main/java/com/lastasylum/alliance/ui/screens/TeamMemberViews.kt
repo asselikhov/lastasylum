@@ -2,6 +2,7 @@ package com.lastasylum.alliance.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -51,10 +52,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.layout.ContentScale
@@ -68,6 +72,10 @@ import coil.compose.AsyncImage
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
 import com.lastasylum.alliance.data.teams.TeamsRepository
+import com.lastasylum.alliance.data.voice.TeamVoicePresenceStore
+import com.lastasylum.alliance.data.voice.VoicePeerState
+import com.lastasylum.alliance.overlay.CombatOverlayService
+import com.lastasylum.alliance.ui.team.TeamVoiceRosterPresenceBinding
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
@@ -126,6 +134,14 @@ fun SquadTeamRoster(
     }
     val grouped = remember(filteredMembers) { groupMembersBySquadRole(filteredMembers) }
     var expandedRoles by remember { mutableStateOf(setOf<String>()) }
+    val voicePeers by TeamVoicePresenceStore.peers.collectAsStateWithLifecycle()
+    val overlayVisible by CombatOverlayService.overlayVisible.collectAsStateWithLifecycle()
+
+    TeamVoiceRosterPresenceBinding(
+        active = true,
+        overlayVisible = overlayVisible,
+        currentUserId = currentUserId,
+    )
 
     Column(
         modifier = modifier
@@ -181,6 +197,7 @@ fun SquadTeamRoster(
                             onError = onError,
                             teamsRepository = teamsRepository,
                             onRequestEditMemberRole = onRequestEditMemberRole,
+                            voicePeer = voicePeers[member.userId],
                         )
                     }
                 }
@@ -309,6 +326,80 @@ private fun SquadRoleSectionHeader(
     }
 }
 
+@Composable
+private fun TeamMemberVoiceBadges(
+    micOn: Boolean,
+    soundOn: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    if (!micOn && !soundOn) return
+    val micCd = stringResource(R.string.team_member_voice_mic_on_cd)
+    val soundCd = stringResource(R.string.team_member_voice_sound_on_cd)
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (micOn) {
+            TeamMemberVoiceBadge(
+                iconRes = R.drawable.ic_overlay_mic_on,
+                contentDescription = micCd,
+                accent = Color(0xFF2E7D32),
+                accentGlow = Color(0xFF81C784),
+            )
+        }
+        if (soundOn) {
+            TeamMemberVoiceBadge(
+                iconRes = R.drawable.ic_overlay_volume_on,
+                contentDescription = soundCd,
+                accent = Color(0xFF1565C0),
+                accentGlow = Color(0xFF64B5F6),
+            )
+        }
+    }
+}
+
+@Composable
+private fun TeamMemberVoiceBadge(
+    iconRes: Int,
+    contentDescription: String,
+    accent: Color,
+    accentGlow: Color,
+) {
+    Box(
+        modifier = Modifier
+            .size(22.dp)
+            .clip(RoundedCornerShape(7.dp))
+            .background(
+                Brush.linearGradient(
+                    colors = listOf(
+                        accent.copy(alpha = 0.92f),
+                        accent.copy(alpha = 0.72f),
+                    ),
+                ),
+            )
+            .border(
+                width = 1.dp,
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        accentGlow.copy(alpha = 0.55f),
+                        accent.copy(alpha = 0.35f),
+                    ),
+                ),
+                shape = RoundedCornerShape(7.dp),
+            )
+            .semantics { this.contentDescription = contentDescription },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            painter = painterResource(iconRes),
+            contentDescription = null,
+            modifier = Modifier.size(13.dp),
+            tint = Color.White,
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SquadMemberCard(
@@ -322,6 +413,7 @@ private fun SquadMemberCard(
     onError: (String?) -> Unit,
     teamsRepository: TeamsRepository,
     onRequestEditMemberRole: (PlayerTeamMemberDto) -> Unit,
+    voicePeer: VoicePeerState?,
 ) {
     val scope = rememberCoroutineScope()
     val res = LocalContext.current.resources
@@ -336,6 +428,8 @@ private fun SquadMemberCard(
     val inGameNow = remember(member.presenceStatus, member.lastPresenceAt) {
         isOverlayIngameNow(member.presenceStatus, member.lastPresenceAt)
     }
+    val voiceMicOn = voicePeer?.micOn == true
+    val voiceSoundOn = voicePeer?.soundOn == true
     val inGameCd = stringResource(R.string.team_member_in_game_cd)
     val notInGameCd = stringResource(R.string.team_member_not_in_game_cd)
     val canEditThisMemberRole =
@@ -386,14 +480,26 @@ private fun SquadMemberCard(
                 }
             }
             Column(Modifier.weight(1f)) {
-                Text(
-                    text = member.username,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = member.username,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (inGameNow) {
+                        TeamMemberVoiceBadges(
+                            micOn = voiceMicOn,
+                            soundOn = voiceSoundOn,
+                        )
+                    }
+                }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),

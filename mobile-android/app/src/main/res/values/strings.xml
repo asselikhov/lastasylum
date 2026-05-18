@@ -363,6 +363,8 @@
     <string name="team_member_last_in_game_unknown">нет данных</string>
     <string name="team_member_in_game_cd">Сейчас в игре</string>
     <string name="team_member_not_in_game_cd">Не в игре</string>
+    <string name="team_member_voice_mic_on_cd">Микрофон включён</string>
+    <string name="team_member_voice_sound_on_cd">Звук включён</string>
     <string name="overlay_team_cd">Команда</string>
     <string name="overlay_cd_chat_and_team">Чат и команда</string>
     <string name="overlay_team_open_failed">Не удалось открыть «Команда» в оверлее. Проверьте разрешение «Поверх других приложений».</string>

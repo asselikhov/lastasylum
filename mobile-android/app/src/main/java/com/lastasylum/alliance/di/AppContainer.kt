@@ -86,6 +86,8 @@ class AppContainer private constructor(context: Context) {
 
     val teamForumSocket: TeamForumSocketManager get() = teamForumSocketManager
 
+    val voiceSocket: VoiceSocketManager get() = voiceSocketManager
+
     fun newVoiceChatSession(
         onStateChanged: (micOn: Boolean, soundOn: Boolean) -> Unit,
         onMicForegroundChanged: (micActive: Boolean) -> Unit,
