@@ -64,6 +64,7 @@ class AuthViewModel(
             _state.value = _state.value.copy(isLoading = true, error = null, infoMessage = null)
             authRepository.login(email, password)
                 .onSuccess { user ->
+                    runCatching { FcmTokenManager.registerWithBackend(getApplication()) }
                     _state.value = AuthState(
                         isCheckingStoredSession = false,
                         isLoading = false,
@@ -91,6 +92,7 @@ class AuthViewModel(
                 .onSuccess { result ->
                     when (result) {
                         is RegisterResult.LoggedIn -> {
+                            runCatching { FcmTokenManager.registerWithBackend(getApplication()) }
                             _state.value = AuthState(
                                 isCheckingStoredSession = false,
                                 isLoading = false,
@@ -201,6 +203,7 @@ class AuthViewModel(
 
         authRepository.refreshSession()
             .onSuccess { user ->
+                runCatching { FcmTokenManager.registerWithBackend(getApplication()) }
                 _state.value = AuthState(
                     isCheckingStoredSession = false,
                     isLoading = false,

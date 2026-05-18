@@ -49,6 +49,11 @@ Drop Firebase **service account** JSON at `backend/firebase-service-account.json
 
 Paste `FIREBASE_SERVICE_ACCOUNT_JSON` into **Render → Environment**, rebuild/reinstall the app, then check Mongo `pushFcmTokens` after login.
 
+```bash
+node scripts/diagnose-excavation-push.mjs
+node scripts/diagnose-excavation-push.mjs <senderMongoUserId>
+```
+
 ### Password reset email (SMTP)
 
 Production mail is **off** until `SMTP_HOST` is set on the server (Render Environment). Local wizard:

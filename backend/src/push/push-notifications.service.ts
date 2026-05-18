@@ -43,7 +43,13 @@ export class PushNotificationsService implements OnModuleInit {
       input.allianceId,
       input.excludeUserId,
     );
-    if (tokens.length === 0) return;
+    if (tokens.length === 0) {
+      this.logger.warn(
+        `FCM excavation: no device tokens for allianceId=${input.allianceId} ` +
+          `(excludeUserId=${input.excludeUserId}). Recipients need pushFcmTokens and must not be fresh ingame.`,
+      );
+      return;
+    }
     const unique = [...new Set(tokens)].slice(0, 500);
     const title = '⛏ Раскопки';
     const body =
@@ -80,8 +86,12 @@ export class PushNotificationsService implements OnModuleInit {
         },
       });
       if (res.failureCount > 0) {
-        this.logger.debug(
+        this.logger.warn(
           `FCM excavation partial failure: ${res.failureCount}/${unique.length}`,
+        );
+      } else {
+        this.logger.log(
+          `FCM excavation sent to ${unique.length} device token(s) (allianceId=${input.allianceId})`,
         );
       }
     } catch (e) {

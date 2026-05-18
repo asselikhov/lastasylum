@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.ui
 
 import androidx.activity.ComponentActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -61,8 +62,10 @@ import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.components.AtmosphericBackground
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.overlay.CombatOverlayService
+import com.lastasylum.alliance.push.FcmTokenManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import com.lastasylum.alliance.ui.admin.AdminViewModel
@@ -114,12 +117,17 @@ fun AppNavigation(
     }
 
     // FGS поднимаем только когда пользователь ушёл из SquadRelay (в игру/домой), не при открытии приложения.
-    DisposableEffect(activity, overlayTabVisible) {
+    DisposableEffect(activity, overlayTabVisible, userId) {
         val appContext = activity.applicationContext
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> {
                     CombatOverlayService.requestGateRecheckIfRunning(appContext)
+                    if (userId.isNotBlank()) {
+                        activity.lifecycleScope.launch(Dispatchers.IO) {
+                            runCatching { FcmTokenManager.registerWithBackend(appContext) }
+                        }
+                    }
                 }
                 Lifecycle.Event.ON_STOP -> {
                     if (overlayTabVisible) {
