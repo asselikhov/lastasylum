@@ -12,4 +12,5 @@ export const SQUAD_ROLES_ASSIGNABLE_BY_LEADER: PlayerTeamMemberRole[] = [
   PlayerTeamMemberRole.R2,
   PlayerTeamMemberRole.R3,
   PlayerTeamMemberRole.R4,
+  PlayerTeamMemberRole.R5,
 ];

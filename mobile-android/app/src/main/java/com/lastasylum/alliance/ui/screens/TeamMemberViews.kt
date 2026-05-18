@@ -659,12 +659,13 @@ fun SquadMemberRoleEditDialog(
     val res = context.resources
     val scope = rememberCoroutineScope()
     val options = listOf(
+        SquadRoleOption("R5", R.string.team_squad_pick_r5),
         SquadRoleOption("R4", R.string.team_squad_pick_r4),
         SquadRoleOption("R3", R.string.team_squad_pick_r3),
         SquadRoleOption("R2", R.string.team_squad_pick_r2),
         SquadRoleOption("R1", R.string.team_squad_pick_r1),
     )
-    val initialCode = member.teamRole.takeIf { it != "R5" } ?: "R1"
+    val initialCode = member.teamRole.trim().uppercase().takeIf { it.isNotEmpty() } ?: "R1"
     val initial = if (options.any { it.code == initialCode }) initialCode else "R1"
     var selected by remember(member.userId) { mutableStateOf(initial) }
     var saving by remember { mutableStateOf(false) }
