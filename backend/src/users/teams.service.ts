@@ -819,6 +819,10 @@ export class TeamsService {
         { $set: { teamDisplayName: nameVal, teamTag: tagNorm } },
       )
       .exec();
+    await this.chatRoomsService.ensureAllianceChatRoomsForScope(
+      playerTeamChatAllianceId(team._id.toString()),
+      nameVal,
+    );
     return { ok: true };
   }
 

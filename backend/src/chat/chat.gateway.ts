@@ -11,8 +11,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
-import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/global-chat-alliance-id';
-import { resolveChatAllianceScope } from './chat-alliance-scope';
+import { userMayAccessChatRoom } from './chat-room-access';
 import { UsersService } from '../users/users.service';
 import { ChatRoomsService } from './chat-rooms.service';
 import { parseAllowedOriginsFromEnv } from '../common/config/allowed-origins';
@@ -115,11 +114,7 @@ export class ChatGateway {
     if (!user || !room || room.archivedAt) {
       throw new WsException('Room not found');
     }
-    const chatScope = resolveChatAllianceScope(user);
-    const mayJoin =
-      room.allianceId === GLOBAL_CHAT_ALLIANCE_ID ||
-      room.allianceId === chatScope;
-    if (!mayJoin) {
+    if (!userMayAccessChatRoom(user, room)) {
       throw new WsException('Room is not available for your alliance');
     }
     if (
@@ -178,11 +173,7 @@ export class ChatGateway {
     if (!user || !room || room.archivedAt) {
       throw new WsException('Room not found');
     }
-    const chatScope = resolveChatAllianceScope(user);
-    const mayType =
-      room.allianceId === GLOBAL_CHAT_ALLIANCE_ID ||
-      room.allianceId === chatScope;
-    if (!mayType) {
+    if (!userMayAccessChatRoom(user, room)) {
       throw new WsException('Room is not available for your alliance');
     }
     if (

@@ -82,6 +82,10 @@
     <string name="cd_chat_search">Поиск по сообщениям</string>
     <string name="cd_chat_room_menu">Меню комнаты</string>
     <string name="chat_global_team_notice">Чтобы писать в комнате «Союз» (все альянсы), укажите в профиле полное название команды и тег из трёх букв.</string>
+    <string name="chat_room_union_hint">Все альянсы и игроки без команды</string>
+    <string name="chat_room_team_hint">Только ваша команда</string>
+    <string name="chat_room_raid_hint">Рейд · лента в оверлее</string>
+    <string name="chat_no_team_only_union">Вступите в команду или создайте свою — откроются комната команды и «Рейд».</string>
     <string name="chat_global_team_required">Сначала укажите в профиле название команды и трёхбуквенный тег — без этого сообщения в «Союз» недоступны.</string>
     <string name="cd_chat_message">Сообщение от %1$s, роль %2$s: %3$s</string>
     <string name="err_chat_no_room">Откройте вкладку «Чат», чтобы подтянуть комнату «Рейд», затем снова запишите голос.</string>

@@ -10,6 +10,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/global-chat-alliance-id';
 import { resolveChatAllianceScope } from './chat-alliance-scope';
+import { userMayAccessChatRoom } from './chat-room-access';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { PlayerTeamMemberRole } from '../common/enums/player-team-member-role.enum';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
@@ -180,20 +181,13 @@ export class ChatService {
     if (!room || room.archivedAt) {
       throw new ForbiddenException('Room not found');
     }
-    if (room.allianceId === GLOBAL_CHAT_ALLIANCE_ID) {
-      return {
-        allianceId: GLOBAL_CHAT_ALLIANCE_ID,
-        roomObjectId: room._id,
-      };
+    if (!userMayAccessChatRoom(user, room)) {
+      throw new ForbiddenException('Room is not available for your alliance');
     }
-    const chatScope = resolveChatAllianceScope(user);
-    if (room.allianceId === chatScope) {
-      return {
-        allianceId: chatScope,
-        roomObjectId: room._id,
-      };
-    }
-    throw new ForbiddenException('Room is not available for your alliance');
+    return {
+      allianceId: room.allianceId,
+      roomObjectId: room._id,
+    };
   }
 
   private asIdString(

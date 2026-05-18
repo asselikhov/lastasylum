@@ -103,7 +103,9 @@ class ChatViewModel(
             val hasTeam = loadTeamProfileGate()
             val roomsResult = repository.listRooms()
             _state.value = if (roomsResult.isSuccess) {
-                val nextRooms = roomsResult.getOrElse { _state.value.rooms }
+                val nextRooms = sortChatRoomsForDisplay(
+                roomsResult.getOrElse { _state.value.rooms },
+            )
                 syncRaidRoomPreference(nextRooms)
                 _state.value.copy(
                     hasTeamProfileForGlobalChat = hasTeam,
@@ -115,11 +117,24 @@ class ChatViewModel(
         }
     }
 
+    private fun sortChatRoomsForDisplay(rooms: List<ChatRoomDto>): List<ChatRoomDto> =
+        rooms.sortedWith(
+            compareBy<ChatRoomDto> { room ->
+                when {
+                    room.allianceId == ChatAllianceIds.GLOBAL -> 0
+                    room.sortOrder == 1 -> 1
+                    room.title == "Рейд" -> 2
+                    else -> 3
+                }
+            }.thenBy { it.sortOrder }.thenBy { it.title },
+        )
+
     private fun syncRaidRoomPreference(rooms: List<ChatRoomDto>) {
         val raid = rooms.firstOrNull { room ->
             room.title == "Рейд" &&
                 room.allianceId != null &&
-                room.allianceId != ChatAllianceIds.GLOBAL
+                room.allianceId != ChatAllianceIds.GLOBAL &&
+                room.allianceId.startsWith("pt:")
         }
         if (raid != null) {
             chatRoomPreferences.setRaidRoomId(raid.id)
@@ -150,7 +165,7 @@ class ChatViewModel(
 
     private suspend fun bootstrap() {
         _state.value = _state.value.copy(isRoomsLoading = true, error = null)
-        val rooms = repository.listRooms().getOrElse { e ->
+        val roomsRaw = repository.listRooms().getOrElse { e ->
             _draftMessage.value = ""
             _typingPeers.value = emptyMap()
             _state.value = ChatState(
@@ -163,6 +178,7 @@ class ChatViewModel(
             )
             return
         }
+        val rooms = sortChatRoomsForDisplay(roomsRaw)
         if (rooms.isEmpty()) {
             _draftMessage.value = ""
             _typingPeers.value = emptyMap()

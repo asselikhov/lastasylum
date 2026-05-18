@@ -13,7 +13,9 @@ import { PlayerTeam, PlayerTeamDocument } from '../users/schemas/player-team.sch
 import {
   isPlayerTeamChatScope,
   parsePlayerTeamIdFromChatScope,
+  playerTeamChatAllianceId,
 } from './chat-alliance-scope';
+import type { User } from '../users/schemas/user.schema';
 import { ChatRoom, ChatRoomDocument } from './schemas/chat-room.schema';
 import { Message, MessageDocument } from './schemas/message.schema';
 
@@ -39,28 +41,36 @@ export class ChatRoomsService {
   }
 
   /**
-   * Global «Союз» + hub/raid for [chatScope] (player team `pt:<id>` or legacy alliance key).
+   * «Союз» for everyone; team hub (display name) + «Рейд» only when [user.playerTeamId] is set.
    */
-  async listRoomsVisibleToUser(chatScope: string) {
+  async listRoomsVisibleToUser(
+    user: Pick<User, 'allianceName' | 'playerTeamId'>,
+  ) {
     await this.ensureGlobalGeneralRoom();
+    const globalRooms = await this.roomModel
+      .find({ allianceId: GLOBAL_CHAT_ALLIANCE_ID, archivedAt: null })
+      .sort({ sortOrder: 1, title: 1 })
+      .lean()
+      .exec();
+
+    const teamId = user.playerTeamId?.toString();
+    if (!teamId) {
+      return globalRooms;
+    }
+
+    const chatScope = playerTeamChatAllianceId(teamId);
     await this.ensureAllianceChatRoomsForScope(chatScope);
-    const [globalRooms, allianceRooms] = await Promise.all([
-      this.roomModel
-        .find({ allianceId: GLOBAL_CHAT_ALLIANCE_ID, archivedAt: null })
-        .sort({ sortOrder: 1, title: 1 })
-        .lean()
-        .exec(),
-      this.roomModel
-        .find({
-          allianceId: chatScope,
-          archivedAt: null,
-          title: { $nin: ['Общий', 'Общая'] },
-        })
-        .sort({ sortOrder: 1, title: 1 })
-        .lean()
-        .exec(),
-    ]);
-    return [...globalRooms, ...allianceRooms];
+    const teamRooms = await this.roomModel
+      .find({
+        allianceId: chatScope,
+        archivedAt: null,
+        title: { $nin: ['Общий', 'Общая'] },
+      })
+      .sort({ sortOrder: 1, title: 1 })
+      .lean()
+      .exec();
+
+    return [...globalRooms, ...teamRooms];
   }
 
   /** Ensure hub + raid exist for a chat scope (call when someone joins a player team). */

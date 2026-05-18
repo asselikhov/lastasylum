@@ -607,6 +607,29 @@ fun ChatScreen(
                 onSelectRoom = onSelectRoom,
             )
 
+            val onlyUnionRoom = state.rooms.size == 1 &&
+                state.rooms.first().allianceId == ChatAllianceIds.GLOBAL
+            if (onlyUnionRoom) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    shape = MaterialTheme.shapes.medium,
+                    color = SquadRelaySurfaces.panelColor(0.4f),
+                    border = BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
+                    ),
+                ) {
+                    Text(
+                        text = stringResource(R.string.chat_no_team_only_union),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
             if (showGlobalTeamNotice) {
                 Surface(
                     modifier = Modifier

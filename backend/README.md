@@ -78,6 +78,18 @@ npm run start:dev
 - `DELETE /users/me/push-tokens` - clear all FCM tokens for the user (JWT)
 - `POST /users/me/presence` - update presence heartbeat (`status` string, JWT)
 
+## Chat rooms (per player team)
+
+Each **player team** gets three rooms in the Chat tab:
+
+| Room | Scope | `ChatRoom.allianceId` |
+|------|--------|------------------------|
+| **Союз** | All alliances and users without a team | `__global__` |
+| **Team name** (display name) | Members of that team only | `pt:<teamMongoId>` |
+| **Рейд** | Same team; messages feed the combat overlay strip | `pt:<teamMongoId>` |
+
+Users **without** `playerTeamId` only see **Союз**. Rooms are provisioned when a team is created or joined (`TeamsService` → `ChatRoomsService.ensureAllianceChatRoomsForScope`).
+
 ## WebSocket overview
 
 Namespace: `/chat`

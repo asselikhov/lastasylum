@@ -80,9 +80,7 @@ export class ChatController {
     if (!user) {
       throw new BadRequestException('User not found');
     }
-    return this.chatRoomsService.listRoomsVisibleToUser(
-      resolveChatAllianceScope(user),
-    );
+    return this.chatRoomsService.listRoomsVisibleToUser(user);
   }
 
   @Post('rooms')
