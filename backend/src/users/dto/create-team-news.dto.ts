@@ -31,11 +31,13 @@ function hasPollInput(o: CreateTeamNewsDto): boolean {
 export class CreateTeamNewsDto {
   /** Без опроса обязателен (1–200); с опросом поле можно не передавать. */
   @ValidateIf((o) => !hasPollInput(o))
+  @IsOptional()
   @IsString()
   @Length(1, 200)
   title?: string;
 
   @ValidateIf((o) => !hasPollInput(o))
+  @IsOptional()
   @IsString()
   @Length(1, 20000)
   body?: string;

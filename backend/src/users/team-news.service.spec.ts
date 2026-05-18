@@ -1,7 +1,8 @@
 import { Test } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
+import mongoose, { Types } from 'mongoose';
 import { TeamNewsService } from './team-news.service';
-import { TeamNews } from './schemas/team-news.schema';
+import { TeamNews, TeamNewsSchema } from './schemas/team-news.schema';
 import { User } from './schemas/user.schema';
 import { TeamsService } from './teams.service';
 import { TeamNewsAttachmentsService } from './team-news-attachments.service';
@@ -95,6 +96,31 @@ describe('TeamNewsService poll create', () => {
         poll: expect.objectContaining({ question: longQ }),
       }),
     );
+  });
+
+  it('mongoose schema allows empty body for poll-only posts', () => {
+    const M =
+      mongoose.models.TeamNewsSchemaPollOnlyTest ??
+      mongoose.model(
+        'TeamNewsSchemaPollOnlyTest',
+        TeamNewsSchema,
+        'team_news_schema_test',
+      );
+    const doc = new M({
+      teamId: new Types.ObjectId(),
+      authorUserId: userId,
+      title: 'Вопрос',
+      body: '',
+      poll: {
+        question: 'Вопрос',
+        options: [
+          { id: 'a', text: 'Да' },
+          { id: 'b', text: 'Нет' },
+        ],
+        votes: [],
+      },
+    });
+    expect(doc.validateSync()).toBeUndefined();
   });
 
   it('returns detail after poll-only create via getOne', async () => {

@@ -57,7 +57,8 @@ export class TeamNews {
   @Prop({ required: true, trim: true, maxlength: 500 })
   title: string;
 
-  @Prop({ required: true, trim: true, maxlength: 20000 })
+  /** Пустая строка для постов «только опрос» (Mongoose `required` отклоняет `''`). */
+  @Prop({ type: String, default: '', trim: true, maxlength: 20000 })
   body: string;
 
   @Prop({ type: [ImageSlotSchema], default: [] })

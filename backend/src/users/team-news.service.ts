@@ -356,7 +356,7 @@ export class TeamNewsService {
       throw new BadRequestException('Title is required');
     }
     const title = titleSource.slice(0, 500);
-    const body = bodyRaw;
+    const body = bodyRaw || '';
     let created: TeamNewsDocument;
     try {
       created = await this.newsModel.create({
@@ -395,7 +395,7 @@ export class TeamNewsService {
       const t = dto.title.trim();
       doc.title = t.length > 0 ? t : (doc.poll?.question ?? doc.title);
     }
-    if (dto.body != null) doc.body = dto.body.trim();
+    if (dto.body != null) doc.body = dto.body.trim() || '';
     if (dto.clearPoll === true) {
       doc.poll = null;
     } else if (dto.poll) {
