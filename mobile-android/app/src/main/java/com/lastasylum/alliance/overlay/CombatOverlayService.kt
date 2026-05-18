@@ -64,6 +64,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -102,6 +103,8 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lastasylum.alliance.BuildConfig
 import androidx.compose.ui.platform.LocalSavedStateRegistryOwner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -271,6 +274,10 @@ class CombatOverlayService : Service() {
     private var overlayHistoryStatus: TextView? = null
     private val overlayHistoryDedupeIds = mutableSetOf<String>()
     private var overlayChatViewModel: ChatViewModel? = null
+    /** URIs from picker if result arrived while Compose owner was torn down. */
+    private var pendingOverlayPickedImageUris: List<Uri>? = null
+    private var deferredHideOverlayChatTeamPanel = false
+    private var deferredHideOverlayClearStrip = true
     /** Владелец Compose для ленты сообщений (отдельное окно). */
     private var overlayStripComposeOwner: OverlayChatComposeOwner? = null
     private var overlayCollapseButton: ImageView? = null
@@ -376,6 +383,11 @@ class CombatOverlayService : Service() {
         rebalanceOverlayFullscreenZOrder()
         repairDetachedOverlayChatTeamPanelIfNeeded()
         repairDetachedOverlayShellIfNeeded()
+        if (deferredHideOverlayChatTeamPanel) {
+            val clearStrip = deferredHideOverlayClearStrip
+            deferredHideOverlayChatTeamPanel = false
+            hideOverlayChatTeamPanelNow(clearStrip)
+        }
     }
 
     private fun extractPickerUris(intent: Intent): List<Uri> =
@@ -402,15 +414,61 @@ class CombatOverlayService : Service() {
         owner.activityResultRegistry.dispatchResult(requestCode, resultCode, data)
     }
 
+    private fun deliverOverlayPickImagesResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: Intent,
+        fallbackUris: List<Uri>,
+    ) {
+        if (overlayChatTeamComposeOwner != null) {
+            deliverOverlayActivityResult(requestCode, resultCode, data)
+            return
+        }
+        if (resultCode == android.app.Activity.RESULT_OK && fallbackUris.isNotEmpty()) {
+            stashPendingOverlayPickedImages(fallbackUris)
+            overlayChatViewModel?.onImagesPicked(fallbackUris)
+        }
+    }
+
+    private fun deliverOverlayGetContentResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: Intent,
+        fallbackUri: Uri?,
+    ) {
+        if (overlayChatTeamComposeOwner != null) {
+            deliverOverlayActivityResult(requestCode, resultCode, data)
+            return
+        }
+        if (resultCode == android.app.Activity.RESULT_OK && fallbackUri != null) {
+            stashPendingOverlayPickedImages(listOf(fallbackUri))
+            overlayChatViewModel?.onImagesPicked(listOf(fallbackUri))
+        }
+    }
+
+    private fun stashPendingOverlayPickedImages(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        val merged = (pendingOverlayPickedImageUris.orEmpty() + uris)
+            .distinctBy { it.toString() }
+            .take(12)
+        pendingOverlayPickedImageUris = merged
+    }
+
+    private fun flushPendingOverlayPickedImages() {
+        val pending = pendingOverlayPickedImageUris ?: return
+        pendingOverlayPickedImageUris = null
+        overlayChatViewModel?.onImagesPicked(pending)
+    }
+
     private val overlaySystemResultReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val i = intent ?: return
             val requestCode = i.getIntExtra(OverlaySystemDialogActivity.EXTRA_REQUEST_CODE, -1)
             if (requestCode < 0) return
             mainHandler.post {
-                resumeOverlayWindowsAfterSystemActivity()
                 when (i.action) {
                     OverlaySystemDialogActivity.ACTION_OVERLAY_ACTIVITY_CANCELED -> {
+                        resumeOverlayWindowsAfterSystemActivity()
                         deliverOverlayActivityResult(
                             requestCode = requestCode,
                             resultCode = android.app.Activity.RESULT_CANCELED,
@@ -424,6 +482,7 @@ class CombatOverlayService : Service() {
                                 getString(R.string.chat_attachment_read_failed),
                                 Toast.LENGTH_LONG,
                             ).show()
+                            resumeOverlayWindowsAfterSystemActivity()
                             deliverOverlayActivityResult(
                                 requestCode = requestCode,
                                 resultCode = android.app.Activity.RESULT_CANCELED,
@@ -431,20 +490,24 @@ class CombatOverlayService : Service() {
                             )
                             return@post
                         }
+                        if (i.getBooleanExtra(OverlaySystemDialogActivity.EXTRA_PARTIAL_COPY_FAILED, false)) {
+                            val picked = i.getIntExtra(OverlaySystemDialogActivity.EXTRA_PICKED_COUNT, 0)
+                            val copied = i.getIntExtra(OverlaySystemDialogActivity.EXTRA_COPIED_COUNT, 0)
+                            Toast.makeText(
+                                this@CombatOverlayService,
+                                getString(R.string.chat_attachment_partial_read_failed, copied, picked),
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
                         val uris = extractPickerUris(i)
                         val data = OverlayImagePickDelivery.intentForPickedImages(uris)
-                        mainHandler.post {
-                            val owner = overlayChatTeamComposeOwner
-                            if (owner != null) {
-                                deliverOverlayActivityResult(
-                                    requestCode = requestCode,
-                                    resultCode = android.app.Activity.RESULT_OK,
-                                    data = data,
-                                )
-                            } else if (uris.isNotEmpty()) {
-                                overlayChatViewModel?.onImagesPicked(uris)
-                            }
-                        }
+                        resumeOverlayWindowsAfterSystemActivity()
+                        deliverOverlayPickImagesResult(
+                            requestCode = requestCode,
+                            resultCode = android.app.Activity.RESULT_OK,
+                            data = data,
+                            fallbackUris = uris,
+                        )
                     }
                     OverlaySystemDialogActivity.ACTION_OVERLAY_GET_CONTENT_RESULT -> {
                         if (i.getBooleanExtra(OverlaySystemDialogActivity.EXTRA_COPY_FAILED, false)) {
@@ -453,6 +516,7 @@ class CombatOverlayService : Service() {
                                 getString(R.string.chat_attachment_read_failed),
                                 Toast.LENGTH_LONG,
                             ).show()
+                            resumeOverlayWindowsAfterSystemActivity()
                             deliverOverlayActivityResult(
                                 requestCode = requestCode,
                                 resultCode = android.app.Activity.RESULT_CANCELED,
@@ -467,13 +531,13 @@ class CombatOverlayService : Service() {
                             i.getParcelableExtra(OverlaySystemDialogActivity.EXTRA_URI)
                         }
                         val data = OverlayImagePickDelivery.intentForGetContent(uri)
-                        mainHandler.post {
-                            deliverOverlayActivityResult(
-                                requestCode = requestCode,
-                                resultCode = android.app.Activity.RESULT_OK,
-                                data = data,
-                            )
-                        }
+                        resumeOverlayWindowsAfterSystemActivity()
+                        deliverOverlayGetContentResult(
+                            requestCode = requestCode,
+                            resultCode = android.app.Activity.RESULT_OK,
+                            data = data,
+                            fallbackUri = uri,
+                        )
                     }
                     OverlaySystemDialogActivity.ACTION_OVERLAY_MIC_PERMISSION_RESULT -> {
                         val granted = i.getBooleanExtra(OverlaySystemDialogActivity.EXTRA_GRANTED, false)
@@ -483,6 +547,7 @@ class CombatOverlayService : Service() {
                                 intArrayOf(if (granted) 0 else -1),
                             )
                         }
+                        resumeOverlayWindowsAfterSystemActivity()
                         deliverOverlayActivityResult(
                             requestCode = requestCode,
                             resultCode = android.app.Activity.RESULT_OK,
@@ -512,15 +577,7 @@ class CombatOverlayService : Service() {
                 input: I,
                 options: ActivityOptionsCompat?,
             ) {
-                val kind = when (contract) {
-                    is androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia ->
-                        OverlaySystemDialogActivity.KIND_PICK_IMAGES
-                    is androidx.activity.result.contract.ActivityResultContracts.GetContent ->
-                        OverlaySystemDialogActivity.KIND_GET_CONTENT
-                    is androidx.activity.result.contract.ActivityResultContracts.RequestPermission ->
-                        OverlaySystemDialogActivity.KIND_REQUEST_MIC
-                    else -> null
-                }
+                val kind = OverlayActivityResultKind.kindFor(contract)
                 if (kind == null) {
                     Toast.makeText(
                         this@CombatOverlayService,
@@ -590,14 +647,28 @@ class CombatOverlayService : Service() {
     }
 
     private val stripTickRunnable = Runnable {
+        val before = stripBuffer.visibleForPreview().size
         stripBuffer.prune()
-        refreshOverlayChatStrip()
+        if (before != stripBuffer.visibleForPreview().size) {
+            lastStripRenderSignature = null
+            scheduleRefreshOverlayChatStrip()
+        }
         scheduleStripTick()
+    }
+
+    private var stripUiCoalescePosted = false
+    private val stripUiCoalesceRunnable = Runnable {
+        stripUiCoalescePosted = false
+        refreshOverlayChatStripNow()
     }
 
     /** Throttle для Log при «панель скрыта» — не дёргаем FGS-текст при каждом тике гейта. */
     private var gateNotifyKey: String = ""
     private var lastStripRenderSignature: String? = null
+    private var chatStripZOrderLifted = false
+    private var lastAppliedGateShouldShow: Boolean? = null
+    private var stableGatePollTicks = 0
+    private var lastPanelDragWmUpdateMs = 0L
     @Volatile
     private var gateCheckInFlight = false
     private var lastGateDiagLogMs: Long = 0L
@@ -762,7 +833,10 @@ class CombatOverlayService : Service() {
             }
             return
         }
-        if (gateCheckInFlight) return
+        if (gateCheckInFlight) {
+            scheduleGameGateTick(nextGameGateDelayMs())
+            return
+        }
         gateCheckInFlight = true
         val targets = prefs.getOverlayTargetGamePackages()
         val activityTokens = prefs.getOverlayTargetGameActivityTokens()
@@ -793,7 +867,7 @@ class CombatOverlayService : Service() {
                         GameForegroundGate.QuickForegroundProbe.IN_TARGET -> true
                         GameForegroundGate.QuickForegroundProbe.NOT_IN_TARGET -> false
                         GameForegroundGate.QuickForegroundProbe.NEED_FULL_HEURISTICS ->
-                            GameForegroundGate.shouldShowOverlay(
+                            GameForegroundGate.shouldShowOverlayCached(
                                 context = this@CombatOverlayService,
                                 targetGamePackages = targets,
                                 allowedActivitySubstrings = activityTokens,
@@ -852,6 +926,12 @@ class CombatOverlayService : Service() {
     }
 
     private fun nextGameGateDelayMs(): Long {
+        if (overlayView != null &&
+            stableGatePollTicks >= 4 &&
+            lastAppliedGateShouldShow == true
+        ) {
+            return GAME_GATE_POLL_STABLE_MS
+        }
         if (overlayView != null) return GAME_GATE_POLL_ACTIVE_MS
         if (overlayChatTeamPanelVisible || OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible) {
             return GAME_GATE_POLL_ACTIVE_MS
@@ -884,6 +964,12 @@ class CombatOverlayService : Service() {
         hasUsageAccess: Boolean,
         shouldShow: Boolean,
     ) {
+        stableGatePollTicks = if (shouldShow == lastAppliedGateShouldShow) {
+            stableGatePollTicks + 1
+        } else {
+            0
+        }
+        lastAppliedGateShouldShow = shouldShow
         if (!shouldShow) {
             dismissOverlayUiBecauseNotInGame(
                 logWaitingForGame = true,
@@ -1114,14 +1200,32 @@ class CombatOverlayService : Service() {
         refreshOverlayChatStrip()
     }
 
+    private var lastStripDismissRects: List<Rect> = emptyList()
+
     private fun updateStripDismissScreenRects(rects: List<Rect>) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             mainHandler.post { updateStripDismissScreenRects(rects) }
             return
         }
         val nonEmpty = rects.filterNot { it.isEmpty }
+        if (stripDismissRectsEqual(lastStripDismissRects, nonEmpty)) return
+        lastStripDismissRects = nonEmpty
         (chatStripHost as? OverlayStripPassthroughFrameLayout)?.dismissRectsInCompose = nonEmpty
         syncChatStripWindowTouchPassthrough()
+    }
+
+    private fun stripDismissRectsEqual(a: List<Rect>, b: List<Rect>): Boolean {
+        if (a.size != b.size) return false
+        for (i in a.indices) {
+            val left = a[i]
+            val right = b[i]
+            if (left.left != right.left || left.top != right.top ||
+                left.right != right.right || left.bottom != right.bottom
+            ) {
+                return false
+            }
+        }
+        return true
     }
 
     /**
@@ -1152,37 +1256,39 @@ class CombatOverlayService : Service() {
         }
     }
 
-    private fun refreshOverlayChatStrip() {
+    private fun scheduleRefreshOverlayChatStrip() {
         if (Looper.myLooper() != Looper.getMainLooper()) {
-            mainHandler.post { refreshOverlayChatStrip() }
+            mainHandler.post { scheduleRefreshOverlayChatStrip() }
             return
         }
+        if (stripUiCoalescePosted) return
+        stripUiCoalescePosted = true
+        mainHandler.post(stripUiCoalesceRunnable)
+    }
+
+    private fun refreshOverlayChatStrip() = scheduleRefreshOverlayChatStrip()
+
+    private fun refreshOverlayChatStripNow() {
         stripBuffer.prune()
         val preview = stripBuffer.visibleForPreview()
         val signature = preview.joinToString(separator = "|") { msg ->
             val key = msg._id?.takeIf { it.isNotBlank() } ?: msg.stableKey()
-            val att = msg.attachments.joinToString(";") { a -> "${a.kind}:${a.url}:${a.mimeType ?: ""}" }
-            "$key:${msg.text.hashCode()}:${msg.senderRole}:${msg.senderId}:" +
-                "${msg.senderTeamTag ?: ""}:${msg.senderTelegramUsername ?: ""}:$att"
+            val imageCount = msg.attachments.count { it.kind == "image" && it.url.isNotBlank() }
+            "$key:${msg.text.length}:${msg.senderRole}:${msg.senderId}:$imageCount"
         }
         if (signature == lastStripRenderSignature) return
-        Log.d(
-            OVERLAY_DIAG_TAG,
-            "stripRefresh apply preview=${preview.size} sigLen=${signature.length} " +
-                preview.joinToString { m ->
-                    "id=${m._id} room=${m.roomId} len=${m.text.length}"
-                },
-        )
+        if (BuildConfig.DEBUG) {
+            Log.d(
+                OVERLAY_DIAG_TAG,
+                "stripRefresh apply preview=${preview.size} sigLen=${signature.length}",
+            )
+        }
         chatStripPreviewFlow.value = preview
         lastStripRenderSignature = signature
-        // Ensure the top strip window exists and is visible whenever preview changes.
-        mainHandler.post {
-            val wm = windowManager ?: systemWindowManager() ?: return@post
-            runCatching { ensureChatStripWindow(wm) }
-            chatStripHost?.visibility =
-                if (overlayChatTeamPanelVisible) View.GONE else View.VISIBLE
-            rebalanceOverlayChatStripZOrder()
-        }
+        val wm = windowManager ?: systemWindowManager() ?: return
+        runCatching { ensureChatStripWindow(wm) }
+        chatStripHost?.visibility =
+            if (overlayChatTeamPanelVisible) View.GONE else View.VISIBLE
     }
 
     /**
@@ -1291,6 +1397,8 @@ class CombatOverlayService : Service() {
         chatStripClipRoot = null
         chatStripLines = null
         chatStripCompose = null
+        chatStripZOrderLifted = false
+        lastStripDismissRects = emptyList()
         overlayStripComposeOwner?.destroy()
         overlayStripComposeOwner = null
     }
@@ -1335,8 +1443,8 @@ class CombatOverlayService : Service() {
 
         val compose = ComposeView(this).apply {
             setContent {
-                val preview by chatStripPreviewFlow.collectAsState()
-                val selfId = jwtSubFromAccessToken()
+                val preview by chatStripPreviewFlow.collectAsStateWithLifecycle(owner)
+                val selfId = remember { jwtSubFromAccessToken().orEmpty() }
                 SquadRelayTheme {
                     OverlayChatStrip(
                         messages = preview,
@@ -1394,6 +1502,7 @@ class CombatOverlayService : Service() {
         chatStripClipRoot = clipRoot
         chatStripLines = null
         syncChatStripWindowTouchPassthrough()
+        requestChatStripZOrderLift()
     }
 
     private val voiceMicPermissionReceiver = object : BroadcastReceiver() {
@@ -1933,10 +2042,14 @@ class CombatOverlayService : Service() {
                         if (panelParams.x != nextX || panelParams.y != nextY) {
                             panelParams.x = nextX
                             panelParams.y = nextY
-                            runCatching {
-                                manager.updateViewLayout(windowRoot, panelParams)
-                            }.onFailure { e ->
-                                Log.w(TAG, "overlay drag updateViewLayout failed", e)
+                            val now = System.currentTimeMillis()
+                            if (now - lastPanelDragWmUpdateMs >= PANEL_DRAG_WM_MIN_INTERVAL_MS) {
+                                lastPanelDragWmUpdateMs = now
+                                runCatching {
+                                    manager.updateViewLayout(windowRoot, panelParams)
+                                }.onFailure { e ->
+                                    Log.w(TAG, "overlay drag updateViewLayout failed", e)
+                                }
                             }
                         }
                         true
@@ -2016,6 +2129,15 @@ class CombatOverlayService : Service() {
             mainHandler.post { hideOverlayChatTeamPanel(clearStrip) }
             return
         }
+        if (OverlayChatInteractionHold.isOverlaySystemPickerSessionActive()) {
+            deferredHideOverlayChatTeamPanel = true
+            deferredHideOverlayClearStrip = clearStrip
+            return
+        }
+        hideOverlayChatTeamPanelNow(clearStrip)
+    }
+
+    private fun hideOverlayChatTeamPanelNow(clearStrip: Boolean = true) {
         resumeOverlayWindowsAfterSystemActivity()
         val root = overlayChatTeamRoot
         val hadVisible = overlayChatTeamPanelVisible
@@ -2023,6 +2145,7 @@ class CombatOverlayService : Service() {
         OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = false
         OverlayChatInteractionHold.releaseGameForegroundSuppress()
         if (hadVisible) {
+            chatStripZOrderLifted = false
             updateStripDismissScreenRects(emptyList())
             if (clearStrip) {
                 stripBuffer.clear()
@@ -2043,6 +2166,8 @@ class CombatOverlayService : Service() {
         overlayHistoryStatus = null
         overlayHistoryDedupeIds.clear()
         overlayChatViewModel = null
+        pendingOverlayPickedImageUris = null
+        deferredHideOverlayChatTeamPanel = false
         runCatching { AppContainer.from(this).chatRepository.notifyOverlayChatPanelClosed() }
         runCatching { unregisterReceiver(overlaySystemResultReceiver) }
         overlayChatTeamComposeOwner?.destroy()
@@ -2117,19 +2242,24 @@ class CombatOverlayService : Service() {
         }
     }
 
-    /** Поднять ленту поверх остальных окон оверлея этого процесса (порядок addView на части OEM). */
-    private fun rebalanceOverlayChatStripZOrder() {
+    /** Поднять ленту поверх остальных окон оверлея (дорого: remove/add; не на каждое сообщение). */
+    private fun requestChatStripZOrderLift() {
+        if (chatStripZOrderLifted) return
         val host = chatStripHost ?: return
         val mgr = windowManager ?: systemWindowManager() ?: return
         val p = chatStripParams ?: return
         if (!host.isAttachedToWindow) return
+        chatStripZOrderLifted = true
         runCatching {
             mgr.removeView(host)
             mgr.addView(host, p)
         }.onFailure { e ->
-            Log.w(TAG, "rebalanceOverlayChatStripZOrder failed", e)
+            chatStripZOrderLifted = false
+            Log.w(TAG, "requestChatStripZOrderLift failed", e)
         }
     }
+
+    private fun rebalanceOverlayChatStripZOrder() = requestChatStripZOrderLift()
 
     private fun showOverlayChatTeamPanel(initialTabIndex: Int = 0) {
         overlayChatViewModel?.refreshChatForOverlay()
@@ -2186,10 +2316,15 @@ class CombatOverlayService : Service() {
                         it.refreshChatForOverlay()
                     }
                 }
-                val chatState by vm.state.collectAsState()
-                val draftMessage by vm.draftMessage.collectAsState()
-                val pickedImageUris by vm.pickedImageUris.collectAsState()
-                val typingPeers by vm.typingPeers.collectAsState()
+                LaunchedEffect(vm) {
+                    flushPendingOverlayPickedImages()
+                }
+                val chatState by vm.state.collectAsStateWithLifecycle(owner)
+                val draftMessage by vm.draftMessage.collectAsStateWithLifecycle(owner)
+                val pickedImageUris by vm.pickedImageUris.collectAsStateWithLifecycle(owner)
+                val typingPeers by vm.typingPeers.collectAsStateWithLifecycle(owner)
+                val chatVoicePhase by vm.chatVoicePhase.collectAsStateWithLifecycle(owner)
+                val otherReadUptoMessageId by vm.otherReadUptoMessageId.collectAsStateWithLifecycle(owner)
 
                 CompositionLocalProvider(
                     LocalActivityResultRegistryOwner provides owner,
@@ -2241,6 +2376,8 @@ class CombatOverlayService : Service() {
                                                 typingPeers = typingPeers,
                                                 draftMessage = draftMessage,
                                                 pickedImageUris = pickedImageUris,
+                                                chatVoicePhase = chatVoicePhase,
+                                                otherReadUptoMessageId = otherReadUptoMessageId,
                                                 onSelectRoom = vm::selectRoom,
                                                 onClearError = vm::clearError,
                                                 onLoadOlder = vm::loadOlderMessages,
@@ -2533,6 +2670,9 @@ class CombatOverlayService : Service() {
         private const val STRIP_TICK_COLLAPSED_MS = 5_000L
         /** Панель на экране — отзывчивый гейт. */
         private const val GAME_GATE_POLL_ACTIVE_MS = 900L
+        /** Стабильно «в игре» — реже тяжёлых проверок usage stats. */
+        private const val GAME_GATE_POLL_STABLE_MS = 2_500L
+        private const val PANEL_DRAG_WM_MIN_INTERVAL_MS = 16L
         /** Недавно были в игре / открыт чат — чаще, чем в простое. */
         private const val GAME_GATE_POLL_WARM_MS = 1_800L
         /** FGS включён, оверлей скрыт: редкий опрос usage stats. */

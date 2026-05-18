@@ -44,4 +44,11 @@ class OverlayImagePickDeliveryTest {
         assertEquals(uri, data.data)
         assertNotNull(data.data)
     }
+
+    @Test
+    fun parseGetContent_roundTripsThroughContractParser() {
+        val uri = Uri.parse("content://test/photo")
+        val data = OverlayImagePickDelivery.intentForGetContent(uri)
+        assertEquals(uri, OverlayImagePickDelivery.parseGetContent(Activity.RESULT_OK, data))
+    }
 }

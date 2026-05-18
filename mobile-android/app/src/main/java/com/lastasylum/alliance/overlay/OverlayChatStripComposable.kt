@@ -30,8 +30,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -79,6 +81,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
+@OptIn(FlowPreview::class)
 @Composable
 fun OverlayChatStrip(
     messages: List<ChatMessage>,
@@ -98,15 +101,18 @@ fun OverlayChatStrip(
     fun keyOf(msg: ChatMessage): String =
         msg._id?.takeIf { it.isNotBlank() } ?: msg.stableKey()
 
-    // Синхронно с реальным списком сообщений: иначе один layout после удаления из preview
-    // снова регистрирует rect по карточке, которая ещё в keep, а LaunchedEffect ещё не вызвал retainAll.
-    SideEffect {
+    LaunchedEffect(latestMessages) {
         val valid = latestMessages.map { keyOf(it) }.toSet()
         val stale = dismissRegions.keys.filter { it !in valid }
         if (stale.isNotEmpty()) {
             stale.forEach { dismissRegions.remove(it) }
-            onDismissRegionsChanged(dismissRegions.values.toList())
         }
+    }
+
+    LaunchedEffect(Unit) {
+        snapshotFlow { dismissRegions.values.toList() }
+            .debounce(48)
+            .collect { rects -> onDismissRegionsChanged(rects) }
     }
 
     val cfg = LocalConfiguration.current
@@ -186,12 +192,19 @@ fun OverlayChatStrip(
                         // "dismiss" zones with no real target and block the game.
                         if (leaving[mk] == true) return@OverlayChatStripMessage
                         if (latestMessages.none { keyOf(it) == mk }) return@OverlayChatStripMessage
+                        val prev = dismissRegions[mk]
+                        if (prev != null &&
+                            kotlin.math.abs(prev.left - rect.left) < 2 &&
+                            kotlin.math.abs(prev.top - rect.top) < 2 &&
+                            kotlin.math.abs(prev.right - rect.right) < 2 &&
+                            kotlin.math.abs(prev.bottom - rect.bottom) < 2
+                        ) {
+                            return@OverlayChatStripMessage
+                        }
                         dismissRegions[mk] = rect
-                        onDismissRegionsChanged(dismissRegions.values.toList())
                     },
                     onClearDismissRegion = { mk ->
                         dismissRegions.remove(mk)
-                        onDismissRegionsChanged(dismissRegions.values.toList())
                     },
                 )
             }

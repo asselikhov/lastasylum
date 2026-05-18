@@ -325,11 +325,15 @@ fun AppNavigation(
                 val draftMessage by chatViewModel.draftMessage.collectAsStateWithLifecycle()
                 val pickedImageUris by chatViewModel.pickedImageUris.collectAsStateWithLifecycle()
                 val typingPeers by chatViewModel.typingPeers.collectAsStateWithLifecycle()
+                val chatVoicePhase by chatViewModel.chatVoicePhase.collectAsStateWithLifecycle()
+                val otherReadUptoMessageId by chatViewModel.otherReadUptoMessageId.collectAsStateWithLifecycle()
                 ChatScreen(
                     state = chatState,
                     typingPeers = typingPeers,
                     draftMessage = draftMessage,
                     pickedImageUris = pickedImageUris,
+                    chatVoicePhase = chatVoicePhase,
+                    otherReadUptoMessageId = otherReadUptoMessageId,
                     onSelectRoom = chatViewModel::selectRoom,
                     onClearError = chatViewModel::clearError,
                     onLoadOlder = chatViewModel::loadOlderMessages,

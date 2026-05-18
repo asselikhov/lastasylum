@@ -60,6 +60,7 @@
     <string name="cd_chat_message_image">Изображение во вложении. Нажмите, чтобы открыть на весь экран.</string>
     <string name="chat_attachment_prepare_failed">Файл изображения пустой или повреждён. Попробуйте выбрать другой файл.</string>
     <string name="chat_attachment_read_failed">Не удалось прочитать изображение (нет доступа к файлу или он недоступен). Попробуйте выбрать снова через «Прикрепить».</string>
+    <string name="chat_attachment_partial_read_failed">Добавлено %1$d из %2$d: часть файлов не удалось прочитать.</string>
     <string name="chat_attachment_unsupported">Формат файла не распознан как изображение. Выберите JPEG, PNG или WebP.</string>
     <string name="chat_attachment_only_images_server">Сервер принимает только изображения (JPEG, PNG и т.д.).</string>
     <string name="chat_attachment_r2_put_failed">Не удалось сохранить файл в хранилище (R2). Проверьте переменные R2_* на сервере и повторите попытку позже.</string>

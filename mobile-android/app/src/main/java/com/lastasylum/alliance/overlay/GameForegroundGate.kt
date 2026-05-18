@@ -39,6 +39,17 @@ object GameForegroundGate {
     @Volatile
     private var mergedStatsCache: List<UsageStats> = emptyList()
 
+    private val fullHeuristicCacheLock = Any()
+
+    @Volatile
+    private var fullHeuristicCacheAtMs: Long = 0L
+
+    @Volatile
+    private var fullHeuristicCacheValue: Boolean = false
+
+    @Volatile
+    private var fullHeuristicCacheKey: String = ""
+
     /** Быстрый ответ по кэшированному RESUME; [NEED_FULL_HEURISTICS] — тяжёлый [shouldShowOverlay]. */
     enum class QuickForegroundProbe {
         IN_TARGET,
@@ -67,6 +78,10 @@ object GameForegroundGate {
         cachedForeground = null
         mergedStatsCachedAtMs = 0L
         mergedStatsCache = emptyList()
+        synchronized(fullHeuristicCacheLock) {
+            fullHeuristicCacheAtMs = 0L
+            fullHeuristicCacheKey = ""
+        }
     }
 
     /**
@@ -323,6 +338,35 @@ object GameForegroundGate {
      *
      * [targetGamePackages] — один или несколько applicationId (например release и debug через запятую в настройках).
      */
+    /**
+     * Дорогой путь ([shouldShowOverlay]): кэшируется на [FULL_HEURISTIC_CACHE_MS], чтобы
+     * [CombatOverlayService.tickGameGate] не гонял queryUsageStats каждые ~900 ms.
+     */
+    fun shouldShowOverlayCached(
+        context: Context,
+        targetGamePackages: Collection<String>,
+        allowedActivitySubstrings: Collection<String> = emptyList(),
+    ): Boolean {
+        val targetsKey = targetGamePackages.map { it.trim() }.filter { it.isNotEmpty() }.sorted().joinToString(",")
+        val allowedKey = allowedActivitySubstrings.map { it.trim() }.filter { it.isNotEmpty() }.sorted().joinToString(",")
+        val cacheKey = "$targetsKey|$allowedKey"
+        val now = System.currentTimeMillis()
+        synchronized(fullHeuristicCacheLock) {
+            if (cacheKey == fullHeuristicCacheKey &&
+                now - fullHeuristicCacheAtMs < FULL_HEURISTIC_CACHE_MS
+            ) {
+                return fullHeuristicCacheValue
+            }
+        }
+        val result = shouldShowOverlay(context, targetGamePackages, allowedActivitySubstrings)
+        synchronized(fullHeuristicCacheLock) {
+            fullHeuristicCacheKey = cacheKey
+            fullHeuristicCacheAtMs = now
+            fullHeuristicCacheValue = result
+        }
+        return result
+    }
+
     fun shouldShowOverlay(
         context: Context,
         targetGamePackages: Collection<String>,
@@ -553,7 +597,8 @@ object GameForegroundGate {
         return last == target
     }
 
-    private const val FOREGROUND_CACHE_MS = 1_500L
+    private const val FOREGROUND_CACHE_MS = 2_500L
+    private const val FULL_HEURISTIC_CACHE_MS = 2_500L
 
     /** Кэш merged queryUsageStats внутри одного тика / короткой серии тиков гейта. */
     private const val MERGED_STATS_CACHE_MS = 2_500L

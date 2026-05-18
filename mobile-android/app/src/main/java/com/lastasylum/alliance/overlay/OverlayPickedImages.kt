@@ -3,11 +3,13 @@ package com.lastasylum.alliance.overlay
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
 import java.io.File
+import java.io.InputStream
 import java.util.UUID
 
 /**
@@ -33,8 +35,7 @@ object OverlayPickedImages {
                     Intent.FLAG_GRANT_READ_URI_PERMISSION,
                 )
             }
-            val input = context.contentResolver.openInputStream(source)
-                ?: return@runCatching null
+            val input = openUriInputStream(context, source) ?: return@runCatching null
             input.use { inp ->
                 outFile.outputStream().use { out -> inp.copyTo(out) }
             }
@@ -50,6 +51,22 @@ object OverlayPickedImages {
         }.onFailure { e ->
             Log.w(TAG, "copyOne failed for $source", e)
         }.getOrNull()
+    }
+
+    private fun openUriInputStream(context: Context, uri: Uri): InputStream? {
+        val cr = context.contentResolver
+        runCatching { cr.openInputStream(uri) }.getOrNull()?.let { return it }
+        val pfd = runCatching { cr.openFileDescriptor(uri, "r") }.getOrNull()
+        if (pfd != null) {
+            runCatching { return ParcelFileDescriptor.AutoCloseInputStream(pfd) }
+            runCatching { pfd.close() }
+        }
+        val afd = runCatching { cr.openAssetFileDescriptor(uri, "r") }.getOrNull()
+        if (afd != null) {
+            runCatching { return afd.createInputStream() }
+            runCatching { afd.close() }
+        }
+        return null
     }
 
     private fun guessExtension(context: Context, uri: Uri): String {

@@ -38,6 +38,7 @@ object OverlayWindowDragHelper {
         var startRawX = 0f
         var startRawY = 0f
         var dragging = false
+        var lastWmUpdateMs = 0L
         val threshold = dragSlopPx(context)
         val dm = context.resources.displayMetrics
         fun dp(v: Int): Int = (v * dm.density).toInt().coerceAtLeast(1)
@@ -77,7 +78,11 @@ object OverlayWindowDragHelper {
                         val h = view.height.coerceAtLeast(dp(minHitSizeDp))
                         params.x = (initialX + dx).coerceIn(0, (sw - w).coerceAtLeast(0))
                         params.y = (initialY + dy).coerceIn(0, (sh - h).coerceAtLeast(0))
-                        runCatching { windowManager.updateViewLayout(view, params) }
+                        val now = System.currentTimeMillis()
+                        if (now - lastWmUpdateMs >= 16L) {
+                            lastWmUpdateMs = now
+                            runCatching { windowManager.updateViewLayout(view, params) }
+                        }
                     }
                     true
                 }

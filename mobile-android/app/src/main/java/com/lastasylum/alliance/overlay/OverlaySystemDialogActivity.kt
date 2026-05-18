@@ -89,6 +89,7 @@ class OverlaySystemDialogActivity : ComponentActivity() {
         val requestCode = pendingRequestCode
         val copied = OverlayPickedImages.copyToCache(this, uris)
         val copyFailed = uris.isNotEmpty() && copied.isEmpty()
+        val partialCopyFailed = uris.isNotEmpty() && copied.isNotEmpty() && copied.size < uris.size
         sendBroadcast(
             Intent(ACTION_OVERLAY_PICK_IMAGES_RESULT)
                 .setPackage(packageName)
@@ -97,6 +98,9 @@ class OverlaySystemDialogActivity : ComponentActivity() {
                         EXTRA_REQUEST_CODE to requestCode,
                         EXTRA_URIS to ArrayList(copied),
                         EXTRA_COPY_FAILED to copyFailed,
+                        EXTRA_PARTIAL_COPY_FAILED to partialCopyFailed,
+                        EXTRA_PICKED_COUNT to uris.size,
+                        EXTRA_COPIED_COUNT to copied.size,
                     ),
                 ),
         )
@@ -162,5 +166,8 @@ class OverlaySystemDialogActivity : ComponentActivity() {
         const val EXTRA_CONTENT_MIME = "content_mime"
         const val EXTRA_GRANTED = "granted"
         const val EXTRA_COPY_FAILED = "copy_failed"
+        const val EXTRA_PARTIAL_COPY_FAILED = "partial_copy_failed"
+        const val EXTRA_PICKED_COUNT = "picked_count"
+        const val EXTRA_COPIED_COUNT = "copied_count"
     }
 }

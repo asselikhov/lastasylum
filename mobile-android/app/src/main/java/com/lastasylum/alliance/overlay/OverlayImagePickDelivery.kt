@@ -25,4 +25,9 @@ object OverlayImagePickDelivery {
 
     fun intentForGetContent(uri: Uri?): Intent =
         if (uri != null) Intent().setData(uri) else Intent()
+
+    fun parseGetContent(resultCode: Int, data: Intent?): Uri? {
+        if (resultCode != android.app.Activity.RESULT_OK || data == null) return null
+        return ActivityResultContracts.GetContent().parseResult(resultCode, data)
+    }
 }

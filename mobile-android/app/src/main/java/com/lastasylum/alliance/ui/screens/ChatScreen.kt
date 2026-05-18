@@ -202,6 +202,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -220,6 +222,25 @@ private fun chatAuthedImageRequest(context: Context, url: String): ImageRequest 
         }
         .crossfade(true)
         .build()
+
+private fun openPickedImageInExternalViewer(context: Context, uri: Uri): Boolean {
+    val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(uri, "image/*")
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    val resolved = context.packageManager.resolveActivity(
+        viewIntent,
+        PackageManager.MATCH_DEFAULT_ONLY,
+    ) ?: return false
+    runCatching {
+        context.grantUriPermission(
+            resolved.activityInfo.packageName,
+            uri,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION,
+        )
+    }
+    return runCatching { context.startActivity(viewIntent) }.isSuccess
+}
 
 private data class ChatListLoadSignal(
     val lastVisibleIndex: Int,
@@ -422,6 +443,8 @@ fun ChatScreen(
     typingPeers: Map<String, String>,
     draftMessage: String,
     pickedImageUris: List<Uri>,
+    chatVoicePhase: ChatVoicePhase = ChatVoicePhase.Idle,
+    otherReadUptoMessageId: String? = null,
     onSelectRoom: (String) -> Unit,
     onClearError: () -> Unit,
     onLoadOlder: () -> Unit,
@@ -545,6 +568,7 @@ fun ChatScreen(
     val isLoadingRef = rememberUpdatedState(state.isLoading)
     val onLoadOlderRef = rememberUpdatedState(onLoadOlder)
 
+    @OptIn(FlowPreview::class)
     LaunchedEffect(listState) {
         snapshotFlow {
             val info = listStateRef.value.layoutInfo
@@ -555,6 +579,7 @@ fun ChatScreen(
             ChatListLoadSignal(lastIdx, total, hasMore, busy)
         }
             .distinctUntilChanged()
+            .debounce(80)
             .collect { sig ->
                 if (sig.totalItems > 4 &&
                     sig.lastVisibleIndex >= sig.totalItems - 2 &&
@@ -681,6 +706,7 @@ fun ChatScreen(
                     .weight(1f, fill = true)
                     .fillMaxWidth(),
                 state = state,
+                otherReadUptoMessageId = otherReadUptoMessageId,
                 listState = listState,
                 jumpToQuotedMessage = jumpToQuotedMessage,
                 onOpenMessageActions = onOpenMessageActions,
@@ -746,7 +772,7 @@ fun ChatScreen(
                         pickedImageUris = pickedImageUris,
                         replyToMessage = state.replyToMessage,
                         isSending = state.isSending,
-                        chatVoicePhase = state.chatVoicePhase,
+                        chatVoicePhase = chatVoicePhase,
                         sendEnabled = !globalComposerLocked,
                         readOnly = globalComposerLocked,
                         canUseZlobyakaStickers = state.enabledStickerPackKeys.contains(
@@ -969,22 +995,17 @@ fun ChatScreen(
                                 OverlayChatInteractionHold.acquireGameForegroundSuppress()
                                 externalGalleryGateHeld = true
                             }
-                            val i = Intent(Intent.ACTION_VIEW).apply {
-                                setDataAndType(uri, "image/*")
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            runCatching { ctx.startActivity(i) }
-                                .onFailure {
-                                    if (externalGalleryGateHeld) {
-                                        OverlayChatInteractionHold.releaseGameForegroundSuppress()
-                                        externalGalleryGateHeld = false
-                                    }
-                                    Toast.makeText(
-                                        ctx,
-                                        ctx.getString(R.string.chat_open_external_failed),
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
+                            if (!openPickedImageInExternalViewer(ctx, uri)) {
+                                if (externalGalleryGateHeld) {
+                                    OverlayChatInteractionHold.releaseGameForegroundSuppress()
+                                    externalGalleryGateHeld = false
                                 }
+                                Toast.makeText(
+                                    ctx,
+                                    ctx.getString(R.string.chat_open_external_failed),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
                         },
                         onRemove = { uri ->
                             onRemovePickedImage(uri)
@@ -1105,6 +1126,7 @@ private fun ChatTypingBanner(typingPeers: Map<String, String>) {
 private fun ChatMessagesLazyList(
     modifier: Modifier = Modifier,
     state: ChatState,
+    otherReadUptoMessageId: String?,
     listState: LazyListState,
     jumpToQuotedMessage: (String) -> Unit,
     onOpenMessageActions: (String) -> Unit,
@@ -1242,7 +1264,7 @@ private fun ChatMessagesLazyList(
                                 deleting = state.deletingMessageId == message._id,
                                 inSelectionMode = inSelectionMode,
                                 isSelected = message._id != null && message._id in selectedMessageIds,
-                                otherReadUptoMessageId = state.otherReadUptoMessageId,
+                                otherReadUptoMessageId = otherReadUptoMessageId,
                                 overlayUi = overlayUi,
                                 onOpenActions = { id -> onOpenMessageActions(id) },
                                 onToggleSelection = onToggleMessageSelection,
@@ -1357,7 +1379,11 @@ private fun ChatRoomsBar(
     val scheme = MaterialTheme.colorScheme
     val raidHot = Color(0xFFFF6B35)
     val raidDeep = Color(0xFF8B3A1A)
-    val tabs = rooms.map { room ->
+    val roomsKey = remember(rooms) {
+        rooms.joinToString("|") { "${it.id}:${it.unreadCount}:${it.title}:${it.sortOrder}" }
+    }
+    val tabs = remember(roomsKey, selectedRoomId) {
+        rooms.map { room ->
         val kind = room.chatRoomVisualKind()
         val accent = when (kind) {
             ChatRoomVisualKind.GlobalUnion -> Color(0xFF5C6BC0)
@@ -1386,6 +1412,7 @@ private fun ChatRoomsBar(
             },
             unreadCount = room.unreadCount,
         )
+        }
     }
     com.lastasylum.alliance.ui.components.SquadSegmentTabBar(
         tabs = tabs,

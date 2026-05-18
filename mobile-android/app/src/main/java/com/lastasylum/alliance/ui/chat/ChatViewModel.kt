@@ -73,6 +73,14 @@ class ChatViewModel(
     private val _typingPeers = MutableStateFlow<Map<String, String>>(emptyMap())
     val typingPeers: StateFlow<Map<String, String>> = _typingPeers.asStateFlow()
 
+    /** Isolated from [state] so mic animation does not recompose the message list. */
+    private val _chatVoicePhase = MutableStateFlow(ChatVoicePhase.Idle)
+    val chatVoicePhase: StateFlow<ChatVoicePhase> = _chatVoicePhase.asStateFlow()
+
+    /** Isolated from [state] so read receipts do not recompose the whole chat screen. */
+    private val _otherReadUptoMessageId = MutableStateFlow<String?>(null)
+    val otherReadUptoMessageId: StateFlow<String?> = _otherReadUptoMessageId.asStateFlow()
+
     private val knownMessageIds = LinkedHashSet<String>()
     private val typingPeerJobs = mutableMapOf<String, Job>()
     private val typingPeerJobsLock = Any()
@@ -496,9 +504,10 @@ class ChatViewModel(
                 newestMessageKey = null,
                 scrollToLatestNonce = 0L,
                 sendFailure = null,
-                otherReadUptoMessageId = null,
             )
+            _otherReadUptoMessageId.value = null
         } else {
+            _otherReadUptoMessageId.value = null
             _state.value = _state.value.copy(
                 isRoomsLoading = false,
                 rooms = clearUnreadForRoom(rooms, roomId),
@@ -743,7 +752,7 @@ class ChatViewModel(
     fun onImagesPicked(uris: List<Uri>) {
         if (uris.isEmpty()) return
         val current = _pickedImageUris.value
-        val merged = (current + uris).distinct()
+        val merged = (current + uris).distinctBy { it.toString() }
         _pickedImageUris.value = merged.take(12)
     }
 
@@ -981,10 +990,10 @@ class ChatViewModel(
             }
             return
         }
-        _state.update { st ->
-            val cur = st.otherReadUptoMessageId
-            val next = if (cur == null || cur < event.messageId) event.messageId else cur
-            st.copy(otherReadUptoMessageId = next)
+        val roomId = _state.value.selectedRoomId
+        if (!roomId.isNullOrBlank() && event.roomId.isNotBlank() && event.roomId != roomId) return
+        _otherReadUptoMessageId.update { cur ->
+            if (cur == null || cur < event.messageId) event.messageId else cur
         }
     }
 
@@ -1088,7 +1097,7 @@ class ChatViewModel(
             context = app,
             mainHandler = mainHandler,
             scope = viewModelScope,
-            setPhase = { phase -> _state.update { it.copy(chatVoicePhase = phase) } },
+            setPhase = { phase -> _chatVoicePhase.value = phase },
             onRecognizedText = { text -> sendMessage(text) },
             onNotify = { msg ->
                 mainHandler.post {

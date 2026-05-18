@@ -472,7 +472,7 @@ class OverlayAllianceOnlinePopover(
         }
 
     private companion object {
-        private const val REFRESH_INTERVAL_MS = 35_000L
+        private const val REFRESH_INTERVAL_MS = 60_000L
 
         fun filterOverlayOnlineMembers(members: List<TeamMemberDto>): List<TeamMemberDto> =
             members.filter { m ->
