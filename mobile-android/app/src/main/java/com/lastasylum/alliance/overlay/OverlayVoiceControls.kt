@@ -44,7 +44,6 @@ class OverlayVoiceControls(
 
     init {
         val btnSize = dp(44)
-        val gap = dp(6)
 
         btnHub = makeMiniFab(R.drawable.ic_overlay_mic, context.getString(R.string.overlay_voice_hub_cd))
         btnSound = makeMiniFab(R.drawable.ic_overlay_volume_on, context.getString(R.string.overlay_voice_sound_cd))

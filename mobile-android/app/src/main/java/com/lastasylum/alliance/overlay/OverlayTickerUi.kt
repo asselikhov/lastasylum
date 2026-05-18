@@ -121,16 +121,14 @@ object OverlayTickerUi {
         view.minimumHeight = side
         val pad = dp(context, if (sideDp <= 20f) 3f else 5f).toInt()
         view.setPadding(pad, pad, pad, pad)
-        applyOverlayLockChipVisual(context, view, locked = false, sideDp = sideDp)
+        applyOverlayLockChipVisual(context, view, locked = false)
     }
 
     /** Визуал «заблокировано / можно перетаскивать» для чипа замка. */
-    @JvmOverloads
     fun applyOverlayLockChipVisual(
         context: Context,
         view: ImageView,
         locked: Boolean,
-        sideDp: Float = 26f,
     ) {
         val strokeDp = if (locked) 1.75f else 1.25f
         val fill = if (locked) "#F02A2418" else "#F01A1F2B"
