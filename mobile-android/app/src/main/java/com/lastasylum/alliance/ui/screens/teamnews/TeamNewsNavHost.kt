@@ -47,8 +47,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -78,6 +76,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
+import com.lastasylum.alliance.overlay.OverlayAwareBottomSheet
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.overlay.OverlayModalScope
 import androidx.compose.ui.res.stringResource
@@ -135,6 +134,7 @@ private fun TeamNewsPollVotersReveal(
     voters: List<TeamNewsPollVoteDto>,
     modifier: Modifier = Modifier,
 ) {
+    val overlayUi = LocalOverlayUiMode.current
     var showSheet by remember { mutableStateOf(false) }
     val count = voters.size
     if (count == 0) {
@@ -147,7 +147,10 @@ private fun TeamNewsPollVotersReveal(
         return
     }
     TextButton(
-        onClick = { showSheet = true },
+        onClick = {
+            OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
+            showSheet = true
+        },
         modifier = modifier,
         contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp),
     ) {
@@ -158,11 +161,8 @@ private fun TeamNewsPollVotersReveal(
         )
     }
     if (showSheet) {
-        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
+        OverlayAwareBottomSheet(
             onDismissRequest = { showSheet = false },
-            sheetState = sheetState,
-            containerColor = SquadRelaySurfaces.dialogColor(),
         ) {
             Column(
                 modifier = Modifier
@@ -174,6 +174,7 @@ private fun TeamNewsPollVotersReveal(
                     text = stringResource(R.string.team_news_poll_voters_sheet_title, optionText),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 TeamNewsPollVoterChips(voters = voters)
                 Spacer(Modifier.height(16.dp))
