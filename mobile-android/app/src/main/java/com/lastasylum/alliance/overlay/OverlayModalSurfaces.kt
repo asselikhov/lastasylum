@@ -20,14 +20,70 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.ui.res.stringResource
+import com.lastasylum.alliance.R
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
+
+/**
+ * Host для sheet «Кто голосовал» на уровне всего экрана оверлея (не внутри карточки опроса).
+ */
+@Composable
+fun OverlayPollVotersSheetHost(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    var sheetRequest by remember { mutableStateOf<OverlayPollVotersRequest?>(null) }
+    val showSheet: (OverlayPollVotersRequest) -> Unit = { request ->
+        OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
+        sheetRequest = request
+    }
+    androidx.compose.runtime.CompositionLocalProvider(
+        LocalShowOverlayPollVotersSheet provides showSheet,
+    ) {
+        Box(modifier = modifier.fillMaxSize()) {
+            content()
+            sheetRequest?.let { request ->
+                OverlayModalScope(preparedByCaller = true) {
+                    OverlayAwareBottomSheet(onDismissRequest = { sheetRequest = null }) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Text(
+                                text = stringResource(
+                                    R.string.team_news_poll_voters_sheet_title,
+                                    request.optionText,
+                                ),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            com.lastasylum.alliance.ui.screens.teamnews.TeamNewsPollVoterChips(
+                                voters = request.voters,
+                            )
+                            Spacer(Modifier.height(16.dp))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 /**
  * Bottom sheet that stays inside the overlay window on [LocalOverlayUiMode].

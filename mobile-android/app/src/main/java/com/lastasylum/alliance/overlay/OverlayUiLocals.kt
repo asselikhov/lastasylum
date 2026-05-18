@@ -3,9 +3,19 @@ package com.lastasylum.alliance.overlay
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.staticCompositionLocalOf
+import com.lastasylum.alliance.data.teams.TeamNewsPollVoteDto
 
 /** True when [ChatScreen] / [TeamScreen] run inside the overlay fullscreen panel (not MainActivity). */
 val LocalOverlayUiMode = staticCompositionLocalOf { false }
+
+/** Запрос на полноэкранный sheet «Кто голосовал» в оверлее (не внутри карточки варианта). */
+data class OverlayPollVotersRequest(
+    val optionText: String,
+    val voters: List<TeamNewsPollVoteDto>,
+)
+
+val LocalShowOverlayPollVotersSheet =
+    staticCompositionLocalOf<((OverlayPollVotersRequest) -> Unit)?> { null }
 
 /** Удерживает usage-гейт, пока открыт sheet/dialog в оверлее (дополнительно к флагу полноэкранной панели). */
 @Composable

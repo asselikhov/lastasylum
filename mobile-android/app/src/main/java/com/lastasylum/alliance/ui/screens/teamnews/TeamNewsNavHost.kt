@@ -76,9 +76,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
+import com.lastasylum.alliance.overlay.LocalShowOverlayPollVotersSheet
 import com.lastasylum.alliance.overlay.OverlayAwareBottomSheet
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.overlay.OverlayModalScope
+import com.lastasylum.alliance.overlay.OverlayPollVotersRequest
+import com.lastasylum.alliance.overlay.OverlayPollVotersSheetHost
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
@@ -135,6 +138,7 @@ private fun TeamNewsPollVotersReveal(
     modifier: Modifier = Modifier,
 ) {
     val overlayUi = LocalOverlayUiMode.current
+    val showOverlaySheet = LocalShowOverlayPollVotersSheet.current
     var showSheet by remember { mutableStateOf(false) }
     val count = voters.size
     if (count == 0) {
@@ -148,8 +152,17 @@ private fun TeamNewsPollVotersReveal(
     }
     TextButton(
         onClick = {
-            OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
-            showSheet = true
+            if (overlayUi && showOverlaySheet != null) {
+                showOverlaySheet(
+                    OverlayPollVotersRequest(
+                        optionText = optionText,
+                        voters = voters,
+                    ),
+                )
+            } else {
+                OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
+                showSheet = true
+            }
         },
         modifier = modifier,
         contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp),
@@ -160,7 +173,7 @@ private fun TeamNewsPollVotersReveal(
             color = MaterialTheme.colorScheme.primary,
         )
     }
-    if (showSheet) {
+    if (showSheet && !overlayUi) {
         OverlayAwareBottomSheet(
             onDismissRequest = { showSheet = false },
         ) {
@@ -185,7 +198,7 @@ private fun TeamNewsPollVotersReveal(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TeamNewsPollVoterChips(
+internal fun TeamNewsPollVoterChips(
     voters: List<TeamNewsPollVoteDto>,
     modifier: Modifier = Modifier,
 ) {
@@ -352,12 +365,14 @@ fun TeamNewsNavHost(
     teamsRepository: TeamsRepository,
     modifier: Modifier = Modifier,
 ) {
+    val overlayUi = LocalOverlayUiMode.current
     val nav = rememberNavController()
-    NavHost(
-        navController = nav,
-        startDestination = TeamNewsRoutes.LIST,
-        modifier = modifier,
-    ) {
+    val navHost = @Composable {
+        NavHost(
+            navController = nav,
+            startDestination = TeamNewsRoutes.LIST,
+            modifier = Modifier.fillMaxSize(),
+        ) {
         composable(TeamNewsRoutes.LIST) {
             TeamNewsListRoute(
                 teamId = teamId,
@@ -414,6 +429,16 @@ fun TeamNewsNavHost(
                 onBack = { nav.popBackStack() },
                 onDone = { nav.popBackStack() },
             )
+        }
+        }
+    }
+    if (overlayUi) {
+        OverlayPollVotersSheetHost(modifier = modifier) {
+            navHost()
+        }
+    } else {
+        Box(modifier = modifier) {
+            navHost()
         }
     }
 }

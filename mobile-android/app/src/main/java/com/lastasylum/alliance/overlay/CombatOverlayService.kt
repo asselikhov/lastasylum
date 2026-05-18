@@ -536,6 +536,15 @@ class CombatOverlayService : Service() {
         val v = overlayView ?: return
         val wm = windowManager
         if (wm == null || v.isAttachedToWindow) return
+        val params = overlayMainWindowParams
+        if (params != null) {
+            Log.w(TAG, "repairDetachedOverlayShellIfNeeded: re-attaching overlay shell")
+            runCatching { wm.addView(v, params) }
+                .onSuccess { return }
+                .onFailure { e ->
+                    Log.w(TAG, "repairDetachedOverlayShellIfNeeded: re-attach failed, rebuilding", e)
+                }
+        }
         Log.w(
             TAG,
             "repairDetachedOverlayShellIfNeeded: overlay shell detached (chatPanel=$overlayChatTeamPanelVisible), rebuilding shell only",
@@ -582,6 +591,7 @@ class CombatOverlayService : Service() {
     private fun shouldKeepOverlayWindows(): Boolean =
         overlayChatTeamPanelVisible ||
             OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible ||
+            overlayCommandsPopover.isShowing() ||
             OverlayChatInteractionHold.isGameForegroundGateSuppressed()
 
     private fun systemWindowManager(): WindowManager? =
@@ -1642,12 +1652,9 @@ class CombatOverlayService : Service() {
             if (panelCollapsed) return@setOnClickListener
             val mgr = windowManager ?: return@setOnClickListener
             overlayAllianceOnlinePopover.hide()
-            OverlayChatInteractionHold.suppressGameForegroundGate = true
-            mainHandler.postDelayed(
-                { OverlayChatInteractionHold.suppressGameForegroundGate = false },
-                2500L,
-            )
+            OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
             overlayCommandsPopover.toggle(mgr)
+            mainHandler.post { repairDetachedOverlayShellIfNeeded() }
         }
 
         lockIcon.setOnClickListener {

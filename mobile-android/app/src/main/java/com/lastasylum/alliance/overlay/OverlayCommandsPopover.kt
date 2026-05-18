@@ -41,6 +41,7 @@ class OverlayCommandsPopover(
     private var menuScrim: FrameLayout? = null
     private var coordScrim: FrameLayout? = null
     private var attachedWindowManager: WindowManager? = null
+    private var gameGateSuppressHeld = false
 
     fun isShowing(): Boolean = menuScrim != null || coordScrim != null
 
@@ -49,12 +50,27 @@ class OverlayCommandsPopover(
         removeShell(menuScrim)
         menuScrim = null
         attachedWindowManager = null
+        releaseGameGateSuppress()
     }
 
     private fun hideCoordOnly() {
-        OverlayChatInteractionHold.clearSuppressUnlessFullscreenPanel()
         removeShell(coordScrim)
         coordScrim = null
+        if (!isShowing()) {
+            releaseGameGateSuppress()
+        }
+    }
+
+    private fun acquireGameGateSuppress() {
+        if (gameGateSuppressHeld) return
+        OverlayChatInteractionHold.acquireGameForegroundSuppress()
+        gameGateSuppressHeld = true
+    }
+
+    private fun releaseGameGateSuppress() {
+        if (!gameGateSuppressHeld) return
+        OverlayChatInteractionHold.releaseGameForegroundSuppress()
+        gameGateSuppressHeld = false
     }
 
     private fun removeShell(shell: FrameLayout?) {
@@ -435,6 +451,7 @@ class OverlayCommandsPopover(
 
         if (runCatching { windowManager.addView(scrim, params) }.isFailure) return
 
+        acquireGameGateSuppress()
         menuScrim = scrim
         attachedWindowManager = windowManager
     }
@@ -444,7 +461,7 @@ class OverlayCommandsPopover(
         commandLabel: String,
         excavation: Boolean,
     ) {
-        OverlayChatInteractionHold.suppressGameForegroundGate = true
+        acquireGameGateSuppress()
 
         val close = iconCloseButton()
 
@@ -637,7 +654,9 @@ class OverlayCommandsPopover(
         }
 
         if (runCatching { windowManager.addView(scrim, params) }.isFailure) {
-            OverlayChatInteractionHold.clearSuppressUnlessFullscreenPanel()
+            if (!isShowing()) {
+                releaseGameGateSuppress()
+            }
             return
         }
 
