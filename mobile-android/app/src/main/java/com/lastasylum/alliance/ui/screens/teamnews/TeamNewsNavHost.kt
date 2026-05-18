@@ -62,6 +62,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -612,6 +613,7 @@ private fun TeamNewsListRoute(
     }
 
     Scaffold(
+        containerColor = Color.Transparent,
         floatingActionButton = {
             if (canPublishNews) {
                 FloatingActionButton(
@@ -985,8 +987,13 @@ private fun TeamNewsDetailRoute(
     val poll = d?.poll
 
     Scaffold(
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent,
+                ),
                 title = {
                     Text(
                         d?.poll?.question?.takeIf { it.isNotBlank() }
@@ -1353,8 +1360,13 @@ private fun TeamNewsEditorRoute(
     }
 
     Scaffold(
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent,
+                ),
                 title = {
                     Text(
                         if (newsId == null) stringResource(R.string.team_news_new)

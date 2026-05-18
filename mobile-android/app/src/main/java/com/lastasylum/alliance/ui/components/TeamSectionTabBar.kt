@@ -1,8 +1,9 @@
 package com.lastasylum.alliance.ui.components
 
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -14,7 +15,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,10 +30,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -41,6 +42,8 @@ import androidx.compose.ui.unit.sp
 import com.lastasylum.alliance.ui.theme.SquadRelayPrimary
 import com.lastasylum.alliance.ui.theme.SquadRelaySecondary
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
+
+private const val TAB_ANIM_MS = 200
 
 data class TeamSectionTabSpec(
     val id: String,
@@ -51,8 +54,8 @@ data class TeamSectionTabSpec(
 )
 
 /**
- * Панель разделов команды (Новости / Форум / Участники): стеклянная подложка,
- * скользящий градиентный индикатор и иконка + подпись в каждом сегменте.
+ * Панель разделов команды: лёгкий сдвиг индикатора через [graphicsLayer] (без relayout),
+ * без пружины и теней — плавное переключение без рывков.
  */
 @Composable
 fun TeamSectionTabBar(
@@ -65,55 +68,65 @@ fun TeamSectionTabBar(
     val scheme = MaterialTheme.colorScheme
     val selectedIndex = tabs.indexOfFirst { it.id == selectedId }.coerceAtLeast(0)
     val selectedTab = tabs[selectedIndex]
-    val outerShape = RoundedCornerShape(20.dp)
-    val segmentShape = RoundedCornerShape(14.dp)
-    val inset = 5.dp
+    val outerShape = RoundedCornerShape(18.dp)
+    val segmentShape = RoundedCornerShape(12.dp)
+    val inset = 4.dp
+    val animSpec = tween<Float>(durationMillis = TAB_ANIM_MS, easing = FastOutSlowInEasing)
+    val colorAnimSpec = tween<Color>(durationMillis = TAB_ANIM_MS, easing = FastOutSlowInEasing)
+
+    val gradStart by animateColorAsState(
+        targetValue = selectedTab.accentStart,
+        animationSpec = colorAnimSpec,
+        label = "teamTabGradStart",
+    )
+    val gradEnd by animateColorAsState(
+        targetValue = selectedTab.accentEnd,
+        animationSpec = colorAnimSpec,
+        label = "teamTabGradEnd",
+    )
 
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = outerShape,
-        color = SquadRelaySurfaces.panelColor(alpha = 0.50f),
+        color = SquadRelaySurfaces.panelColor(alpha = 0.48f),
         tonalElevation = 0.dp,
-        shadowElevation = 6.dp,
-        border = SquadRelaySurfaces.panelBorder(alpha = 0.20f),
+        shadowElevation = 0.dp,
+        border = SquadRelaySurfaces.panelBorder(alpha = 0.18f),
     ) {
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(inset)
-                .height(56.dp),
+                .height(50.dp),
         ) {
             val tabWidth = maxWidth / tabs.size
-            val indicatorOffset by animateDpAsState(
-                targetValue = tabWidth * selectedIndex,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessMediumLow,
-                ),
-                label = "teamSectionIndicator",
+            val density = LocalDensity.current
+            val targetOffsetPx = with(density) { (tabWidth * selectedIndex).toPx() }
+            val indicatorOffsetPx by animateFloatAsState(
+                targetValue = targetOffsetPx,
+                animationSpec = animSpec,
+                label = "teamSectionIndicatorPx",
             )
 
-            Box(
-                modifier = Modifier
-                    .offset(x = indicatorOffset)
-                    .width(tabWidth)
-                    .fillMaxHeight()
-                    .shadow(
-                        elevation = 8.dp,
-                        shape = segmentShape,
-                        ambientColor = selectedTab.accentStart.copy(alpha = 0.35f),
-                        spotColor = selectedTab.accentEnd.copy(alpha = 0.45f),
-                    )
-                    .clip(segmentShape)
-                    .background(
-                        Brush.linearGradient(
-                            colors = listOf(
-                                selectedTab.accentStart.copy(alpha = 0.95f),
-                                selectedTab.accentEnd.copy(alpha = 0.88f),
+            Box(modifier = Modifier.matchParentSize()) {
+                Box(
+                    modifier = Modifier
+                        .width(tabWidth)
+                        .fillMaxHeight()
+                        .graphicsLayer {
+                            translationX = indicatorOffsetPx
+                        }
+                        .clip(segmentShape)
+                        .background(
+                            Brush.linearGradient(
+                                colors = listOf(
+                                    gradStart.copy(alpha = 0.93f),
+                                    gradEnd.copy(alpha = 0.86f),
+                                ),
                             ),
                         ),
-                    ),
-            )
+                )
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -121,6 +134,16 @@ fun TeamSectionTabBar(
             ) {
                 tabs.forEachIndexed { index, tab ->
                     val selected = index == selectedIndex
+                    val iconTint = if (selected) {
+                        Color.White.copy(alpha = 0.98f)
+                    } else {
+                        tab.accentStart.copy(alpha = 0.70f)
+                    }
+                    val labelColor = if (selected) {
+                        Color.White.copy(alpha = 0.96f)
+                    } else {
+                        scheme.onSurface.copy(alpha = 0.66f)
+                    }
                     val interaction = remember(tab.id) { MutableInteractionSource() }
                     Column(
                         modifier = Modifier
@@ -132,35 +155,27 @@ fun TeamSectionTabBar(
                                 indication = ripple(bounded = true, color = tab.accentStart),
                                 onClick = { onSelect(tab.id) },
                             )
-                            .padding(vertical = 6.dp, horizontal = 4.dp),
+                            .padding(vertical = 5.dp, horizontal = 2.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
                         Icon(
                             imageVector = tab.icon,
                             contentDescription = null,
-                            modifier = Modifier.size(if (selected) 22.dp else 20.dp),
-                            tint = if (selected) {
-                                Color.White.copy(alpha = 0.98f)
-                            } else {
-                                tab.accentStart.copy(alpha = 0.72f)
-                            },
+                            modifier = Modifier.size(20.dp),
+                            tint = iconTint,
                         )
                         Text(
                             text = tab.label,
-                            modifier = Modifier.padding(top = 3.dp),
+                            modifier = Modifier.padding(top = 2.dp),
                             maxLines = 1,
                             textAlign = TextAlign.Center,
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontSize = 11.sp,
-                                letterSpacing = 0.2.sp,
+                                letterSpacing = 0.15.sp,
                             ),
                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                            color = if (selected) {
-                                Color.White.copy(alpha = 0.96f)
-                            } else {
-                                scheme.onSurface.copy(alpha = 0.68f)
-                            },
+                            color = labelColor,
                         )
                     }
                 }
