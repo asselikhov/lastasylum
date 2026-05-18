@@ -20,8 +20,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Article
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Groups
@@ -1010,7 +1010,7 @@ private fun TeamSectionPills(
             TeamMainSection.News -> TeamSectionTabSpec(
                 id = section.name,
                 label = stringResource(R.string.team_tab_news),
-                icon = Icons.Outlined.Article,
+                icon = Icons.AutoMirrored.Outlined.Article,
                 accentStart = TeamSectionTabAccents.newsStart,
                 accentEnd = TeamSectionTabAccents.newsEnd,
             )

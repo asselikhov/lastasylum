@@ -1641,8 +1641,6 @@ class CombatOverlayService : Service() {
         btnMessage.setOnClickListener {
             if (panelCollapsed) return@setOnClickListener
             val mgr = windowManager ?: return@setOnClickListener
-            val wr = overlayView ?: return@setOnClickListener
-            val p = overlayMainWindowParams ?: return@setOnClickListener
             overlayAllianceOnlinePopover.hide()
             OverlayChatInteractionHold.suppressGameForegroundGate = true
             mainHandler.postDelayed(
