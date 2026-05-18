@@ -1,15 +1,15 @@
 package com.lastasylum.alliance.ui.components
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -34,7 +34,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -43,7 +46,10 @@ import com.lastasylum.alliance.ui.theme.SquadRelayPrimary
 import com.lastasylum.alliance.ui.theme.SquadRelaySecondary
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 
-private const val TAB_ANIM_MS = 200
+private val tabIndicatorSpring = spring<Float>(
+    dampingRatio = Spring.DampingRatioNoBouncy,
+    stiffness = Spring.StiffnessMedium,
+)
 
 data class TeamSectionTabSpec(
     val id: String,
@@ -71,20 +77,6 @@ fun TeamSectionTabBar(
     val outerShape = RoundedCornerShape(18.dp)
     val segmentShape = RoundedCornerShape(12.dp)
     val inset = 4.dp
-    val animSpec = tween<Float>(durationMillis = TAB_ANIM_MS, easing = FastOutSlowInEasing)
-    val colorAnimSpec = tween<Color>(durationMillis = TAB_ANIM_MS, easing = FastOutSlowInEasing)
-
-    val gradStart by animateColorAsState(
-        targetValue = selectedTab.accentStart,
-        animationSpec = colorAnimSpec,
-        label = "teamTabGradStart",
-    )
-    val gradEnd by animateColorAsState(
-        targetValue = selectedTab.accentEnd,
-        animationSpec = colorAnimSpec,
-        label = "teamTabGradEnd",
-    )
-
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = outerShape,
@@ -104,7 +96,7 @@ fun TeamSectionTabBar(
             val targetOffsetPx = with(density) { (tabWidth * selectedIndex).toPx() }
             val indicatorOffsetPx by animateFloatAsState(
                 targetValue = targetOffsetPx,
-                animationSpec = animSpec,
+                animationSpec = tabIndicatorSpring,
                 label = "teamSectionIndicatorPx",
             )
 
@@ -120,8 +112,8 @@ fun TeamSectionTabBar(
                         .background(
                             Brush.linearGradient(
                                 colors = listOf(
-                                    gradStart.copy(alpha = 0.93f),
-                                    gradEnd.copy(alpha = 0.86f),
+                                    selectedTab.accentStart.copy(alpha = 0.93f),
+                                    selectedTab.accentEnd.copy(alpha = 0.86f),
                                 ),
                             ),
                         ),
@@ -181,6 +173,39 @@ fun TeamSectionTabBar(
                 }
             }
         }
+    }
+}
+
+/**
+ * Раздел остаётся в дереве композиции (состояние списков/навигации сохраняется),
+ * но скрыт и не принимает касания, пока не активен.
+ */
+@Composable
+fun TeamRetainedSection(
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .zIndex(if (visible) 1f else 0f)
+            .graphicsLayer { alpha = if (visible) 1f else 0f }
+            .then(
+                if (visible) {
+                    Modifier
+                } else {
+                    Modifier.pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                awaitPointerEvent(PointerEventPass.Initial)
+                            }
+                        }
+                    }
+                },
+            ),
+    ) {
+        content()
     }
 }
 

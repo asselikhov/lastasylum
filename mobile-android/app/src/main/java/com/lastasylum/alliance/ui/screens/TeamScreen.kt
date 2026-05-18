@@ -78,6 +78,7 @@ import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.overlay.OverlayModalScope
 import com.lastasylum.alliance.ui.components.GlassSurface
 import com.lastasylum.alliance.ui.components.TeamSectionTabAccents
+import com.lastasylum.alliance.ui.components.TeamRetainedSection
 import com.lastasylum.alliance.ui.components.TeamSectionTabBar
 import com.lastasylum.alliance.ui.components.TeamSectionTabSpec
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
@@ -155,6 +156,13 @@ fun TeamScreen(
     var roleEditMember by remember { mutableStateOf<PlayerTeamMemberDto?>(null) }
     var mainSectionOrdinal by rememberSaveable {
         mutableIntStateOf(initialMainSection?.ordinal ?: TeamMainSection.News.ordinal)
+    }
+    var visitedSectionOrdinals by remember(initialMainSection) {
+        val initial = buildSet {
+            add(TeamMainSection.News.ordinal)
+            initialMainSection?.let { add(it.ordinal) }
+        }
+        mutableStateOf(initial)
     }
     var forumTabReselectSignal by remember { mutableStateOf(0) }
 
@@ -422,11 +430,13 @@ fun TeamScreen(
                                         }
                                     }
                                 }
+                                val activeSection = TeamMainSection.entries[mainSectionOrdinal]
                                 TeamSectionPills(
-                                    selectedSection = TeamMainSection.entries[mainSectionOrdinal],
+                                    selectedSection = activeSection,
                                     onSelect = { section ->
+                                        visitedSectionOrdinals = visitedSectionOrdinals + section.ordinal
                                         if (section == TeamMainSection.Forum &&
-                                            TeamMainSection.entries[mainSectionOrdinal] == TeamMainSection.Forum
+                                            activeSection == TeamMainSection.Forum
                                         ) {
                                             forumTabReselectSignal++
                                         } else {
@@ -440,54 +450,66 @@ fun TeamScreen(
                                             vertical = 8.dp,
                                         ),
                                 )
-                                when (TeamMainSection.entries[mainSectionOrdinal]) {
-                                    TeamMainSection.News -> {
-                                        TeamNewsNavHost(
-                                            teamId = team.id,
-                                            currentUserId = currentUserId,
-                                            myTeamRole = myTeamRole,
-                                            canPublishNews = canPublishNews,
-                                            teamsRepository = teamsRepository,
-                                            modifier = Modifier
-                                                .weight(1f, fill = true)
-                                                .fillMaxWidth(),
-                                        )
+                                val sectionModifier = Modifier
+                                    .weight(1f, fill = true)
+                                    .fillMaxWidth()
+                                Box(sectionModifier) {
+                                    if (TeamMainSection.News.ordinal in visitedSectionOrdinals) {
+                                        TeamRetainedSection(
+                                            visible = activeSection == TeamMainSection.News,
+                                            modifier = Modifier.fillMaxSize(),
+                                        ) {
+                                            TeamNewsNavHost(
+                                                teamId = team.id,
+                                                currentUserId = currentUserId,
+                                                myTeamRole = myTeamRole,
+                                                canPublishNews = canPublishNews,
+                                                teamsRepository = teamsRepository,
+                                                modifier = Modifier.fillMaxSize(),
+                                            )
+                                        }
                                     }
-                                    TeamMainSection.Forum -> {
-                                        TeamForumNavHost(
-                                            teamId = team.id,
-                                            currentUserId = currentUserId,
-                                            canManageTopics = canManageForumTopics,
-                                            canModerateForumMessages = canModerateForumMessages,
-                                            teamsRepository = teamsRepository,
-                                            forumSocket = app.teamForumSocket,
-                                            tokenStore = app.tokenStore,
-                                            forumTabReselectSignal = forumTabReselectSignal,
-                                            enabledStickerPackKeys = enabledStickerPackKeys,
-                                            modifier = Modifier
-                                                .weight(1f, fill = true)
-                                                .fillMaxWidth(),
-                                        )
+                                    if (TeamMainSection.Forum.ordinal in visitedSectionOrdinals) {
+                                        TeamRetainedSection(
+                                            visible = activeSection == TeamMainSection.Forum,
+                                            modifier = Modifier.fillMaxSize(),
+                                        ) {
+                                            TeamForumNavHost(
+                                                teamId = team.id,
+                                                currentUserId = currentUserId,
+                                                canManageTopics = canManageForumTopics,
+                                                canModerateForumMessages = canModerateForumMessages,
+                                                teamsRepository = teamsRepository,
+                                                forumSocket = app.teamForumSocket,
+                                                tokenStore = app.tokenStore,
+                                                forumTabReselectSignal = forumTabReselectSignal,
+                                                enabledStickerPackKeys = enabledStickerPackKeys,
+                                                modifier = Modifier.fillMaxSize(),
+                                            )
+                                        }
                                     }
-                                    TeamMainSection.Members -> {
-                                        SquadTeamRoster(
-                                            members = team.members,
-                                            isSquadLeader = isLeader,
-                                            currentUserId = currentUserId,
-                                            teamId = team.id,
-                                            busy = membersBusy,
-                                            onBusyChange = { membersBusy = it },
-                                            onReload = { reloadProfileAndTeam() },
-                                            onError = { msg -> error = msg },
-                                            teamsRepository = teamsRepository,
-                                            onRequestEditMemberRole = { m ->
-                                                OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
-                                                roleEditMember = m
-                                            },
-                                            modifier = Modifier
-                                                .weight(1f, fill = true)
-                                                .fillMaxWidth(),
-                                        )
+                                    if (TeamMainSection.Members.ordinal in visitedSectionOrdinals) {
+                                        TeamRetainedSection(
+                                            visible = activeSection == TeamMainSection.Members,
+                                            modifier = Modifier.fillMaxSize(),
+                                        ) {
+                                            SquadTeamRoster(
+                                                members = team.members,
+                                                isSquadLeader = isLeader,
+                                                currentUserId = currentUserId,
+                                                teamId = team.id,
+                                                busy = membersBusy,
+                                                onBusyChange = { membersBusy = it },
+                                                onReload = { reloadProfileAndTeam() },
+                                                onError = { msg -> error = msg },
+                                                teamsRepository = teamsRepository,
+                                                onRequestEditMemberRole = { m ->
+                                                    OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
+                                                    roleEditMember = m
+                                                },
+                                                modifier = Modifier.fillMaxSize(),
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -1005,29 +1027,34 @@ private fun TeamSectionPills(
     onSelect: (TeamMainSection) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val tabs = TeamMainSection.entries.map { section ->
+    val newsLabel = stringResource(R.string.team_tab_news)
+    val forumLabel = stringResource(R.string.team_tab_forum)
+    val membersLabel = stringResource(R.string.team_tab_members)
+    val tabs = remember(newsLabel, forumLabel, membersLabel) {
+        TeamMainSection.entries.map { section ->
         when (section) {
             TeamMainSection.News -> TeamSectionTabSpec(
                 id = section.name,
-                label = stringResource(R.string.team_tab_news),
+                label = newsLabel,
                 icon = Icons.AutoMirrored.Outlined.Article,
                 accentStart = TeamSectionTabAccents.newsStart,
                 accentEnd = TeamSectionTabAccents.newsEnd,
             )
             TeamMainSection.Forum -> TeamSectionTabSpec(
                 id = section.name,
-                label = stringResource(R.string.team_tab_forum),
+                label = forumLabel,
                 icon = Icons.Outlined.Forum,
                 accentStart = TeamSectionTabAccents.forumStart,
                 accentEnd = TeamSectionTabAccents.forumEnd,
             )
             TeamMainSection.Members -> TeamSectionTabSpec(
                 id = section.name,
-                label = stringResource(R.string.team_tab_members),
+                label = membersLabel,
                 icon = Icons.Outlined.Groups,
                 accentStart = TeamSectionTabAccents.membersStart,
                 accentEnd = TeamSectionTabAccents.membersEnd,
             )
+        }
         }
     }
     TeamSectionTabBar(
