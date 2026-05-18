@@ -3,7 +3,10 @@ package com.lastasylum.alliance.overlay
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,6 +19,7 @@ class OverlaySystemDialogActivity : ComponentActivity() {
     private var pendingRequestCode: Int = -1
     private var pendingKind: String? = null
     private var launchedPicker: Boolean = false
+    private var deliveredResult: Boolean = false
 
     private val pickImagesLauncher = registerForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(maxItems = 12),
@@ -36,6 +40,7 @@ class OverlaySystemDialogActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        applyOverlayWindowTypeIfAllowed()
         super.onCreate(savedInstanceState)
         pendingRequestCode = intent?.getIntExtra(EXTRA_REQUEST_CODE, -1) ?: -1
         pendingKind = intent?.getStringExtra(EXTRA_KIND)
@@ -43,6 +48,21 @@ class OverlaySystemDialogActivity : ComponentActivity() {
             return
         }
         launchPendingKind()
+    }
+
+    /**
+     * Окно поверх TYPE_APPLICATION_OVERLAY чата: иначе пикер под оверлеем, а чат приходилось прятать (GONE).
+     */
+    private fun applyOverlayWindowTypeIfAllowed() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        if (!Settings.canDrawOverlays(this)) return
+        window.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
     }
 
     private fun launchPendingKind() {
@@ -70,7 +90,22 @@ class OverlaySystemDialogActivity : ComponentActivity() {
         outState.putBoolean(STATE_LAUNCHED, launchedPicker)
     }
 
+    override fun onDestroy() {
+        if (!deliveredResult) {
+            notifyOverlaySystemUiFinished()
+        }
+        super.onDestroy()
+    }
+
+    private fun notifyOverlaySystemUiFinished() {
+        sendBroadcast(
+            Intent(ACTION_OVERLAY_SYSTEM_UI_FINISHED)
+                .setPackage(packageName),
+        )
+    }
+
     private fun deliverPickImages(uris: List<Uri>) {
+        deliveredResult = true
         val requestCode = pendingRequestCode
         val copied = OverlayPickedImages.copyToCache(this, uris)
         sendBroadcast(
@@ -87,6 +122,7 @@ class OverlaySystemDialogActivity : ComponentActivity() {
     }
 
     private fun deliverGetContent(uri: Uri?) {
+        deliveredResult = true
         val requestCode = pendingRequestCode
         val copied = uri?.let { OverlayPickedImages.copyToCache(this, listOf(it)).firstOrNull() }
         sendBroadcast(
@@ -99,6 +135,7 @@ class OverlaySystemDialogActivity : ComponentActivity() {
     }
 
     private fun deliverMicPermission(granted: Boolean) {
+        deliveredResult = true
         val requestCode = pendingRequestCode
         sendBroadcast(
             Intent(ACTION_OVERLAY_MIC_PERMISSION_RESULT)
@@ -121,6 +158,9 @@ class OverlaySystemDialogActivity : ComponentActivity() {
         const val ACTION_OVERLAY_PICK_IMAGES_RESULT = "com.lastasylum.alliance.overlay.PICK_IMAGES_RESULT"
         const val ACTION_OVERLAY_GET_CONTENT_RESULT = "com.lastasylum.alliance.overlay.GET_CONTENT_RESULT"
         const val ACTION_OVERLAY_MIC_PERMISSION_RESULT = "com.lastasylum.alliance.overlay.MIC_PERMISSION_RESULT"
+        /** Пикер/диалог закрыт без результата — восстановить окна оверлея в сервисе. */
+        const val ACTION_OVERLAY_SYSTEM_UI_FINISHED =
+            "com.lastasylum.alliance.overlay.SYSTEM_UI_FINISHED"
 
         const val EXTRA_URIS = "uris"
         const val EXTRA_URI = "uri"

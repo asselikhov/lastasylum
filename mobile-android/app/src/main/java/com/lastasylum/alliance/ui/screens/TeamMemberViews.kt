@@ -31,21 +31,22 @@ import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.PersonRemove
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
+import com.lastasylum.alliance.overlay.OverlayAwareBottomSheet
+import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
+import com.lastasylum.alliance.overlay.OverlayModalScope
 import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.ripple
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -77,7 +78,6 @@ import com.lastasylum.alliance.data.voice.VoicePeerState
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.ui.team.TeamVoiceRosterPresenceBinding
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
-import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import com.lastasylum.alliance.ui.util.formatPresenceTimestampRu
@@ -105,7 +105,6 @@ private fun groupMembersBySquadRole(
 @Composable
 private fun squadRoleSectionTitle(roleCode: String): String = roleCode
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SquadTeamRoster(
     members: List<PlayerTeamMemberDto>,
@@ -403,7 +402,6 @@ private fun TeamMemberVoiceBadge(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SquadMemberCard(
     member: PlayerTeamMemberDto,
@@ -421,6 +419,7 @@ private fun SquadMemberCard(
 ) {
     val scope = rememberCoroutineScope()
     val res = LocalContext.current.resources
+    val overlayUi = LocalOverlayUiMode.current
     val avatar = telegramAvatarUrl(member.telegramUsername)
     val unknownPresence = stringResource(R.string.team_member_last_in_game_unknown)
     val lastInGameTemplate = stringResource(R.string.team_member_last_in_game_template)
@@ -529,7 +528,10 @@ private fun SquadMemberCard(
             }
             if (canManage) {
                 IconButton(
-                    onClick = { showActionsSheet = true },
+                    onClick = {
+                        OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
+                        showActionsSheet = true
+                    },
                     enabled = !busy,
                     modifier = Modifier.size(40.dp),
                 ) {
@@ -544,63 +546,61 @@ private fun SquadMemberCard(
     }
 
     if (showActionsSheet) {
-        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
-            onDismissRequest = { showActionsSheet = false },
-            sheetState = sheetState,
-            containerColor = SquadRelaySurfaces.dialogColor(),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.team_member_actions_title, member.username),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                if (canEditThisMemberRole) {
-                    Button(
-                        onClick = {
-                            showActionsSheet = false
-                            onRequestEditMemberRole(member)
-                        },
-                        enabled = !busy,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(stringResource(R.string.team_member_action_change_role))
-                    }
-                }
-                if (canRemove) {
-                    OutlinedButton(
-                        onClick = {
-                            showActionsSheet = false
-                            removeConfirmTarget = true
-                        },
-                        enabled = !busy,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        OverlayModalScope(preparedByCaller = true) {
+            OverlayAwareBottomSheet(onDismissRequest = { showActionsSheet = false }) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.team_member_actions_title, member.username),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                    if (canEditThisMemberRole) {
+                        Button(
+                            onClick = {
+                                showActionsSheet = false
+                                onRequestEditMemberRole(member)
+                            },
+                            enabled = !busy,
+                            modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Icon(
-                                imageVector = Icons.Outlined.PersonRemove,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.error,
-                            )
-                            Text(
-                                stringResource(R.string.team_remove_member),
-                                color = MaterialTheme.colorScheme.error,
-                            )
+                            Text(stringResource(R.string.team_member_action_change_role))
                         }
                     }
+                    if (canRemove) {
+                        OutlinedButton(
+                            onClick = {
+                                showActionsSheet = false
+                                OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
+                                removeConfirmTarget = true
+                            },
+                            enabled = !busy,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.PersonRemove,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                                Text(
+                                    stringResource(R.string.team_remove_member),
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
                 }
-                Spacer(Modifier.height(12.dp))
             }
         }
     }

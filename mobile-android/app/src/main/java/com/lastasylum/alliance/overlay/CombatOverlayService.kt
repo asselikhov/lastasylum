@@ -295,7 +295,11 @@ class CombatOverlayService : Service() {
         if (firstSuspend) {
             OverlayChatInteractionHold.acquireGameForegroundSuppress()
         }
-        fun snap(params: WindowManager.LayoutParams?, view: View?) {
+        fun snap(
+            params: WindowManager.LayoutParams?,
+            view: View?,
+            hideFromScreen: Boolean,
+        ) {
             if (params == null || view == null || !view.isAttachedToWindow) return
             overlayTouchPassthroughSnaps.add(
                 OverlayWindowFlagSnap(
@@ -305,7 +309,7 @@ class CombatOverlayService : Service() {
                     prevVisibility = view.visibility,
                 ),
             )
-            if (view.visibility != View.GONE) {
+            if (hideFromScreen && view.visibility != View.GONE) {
                 view.visibility = View.GONE
             }
             val with = params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
@@ -314,9 +318,11 @@ class CombatOverlayService : Service() {
                 runCatching { mgr.updateViewLayout(view, params) }
             }
         }
-        snap(overlayMainWindowParams, overlayView)
-        snap(overlayChatTeamParams, overlayChatTeamRoot)
-        snap(chatStripParams, chatStripHost)
+        snap(overlayMainWindowParams, overlayView, hideFromScreen = true)
+        // Полноэкранный чат не прячем: иначе «прозрачный» фон и игра под оверлеем. Пикер поверх — через
+        // TYPE_APPLICATION_OVERLAY у [OverlaySystemDialogActivity].
+        snap(overlayChatTeamParams, overlayChatTeamRoot, hideFromScreen = false)
+        snap(chatStripParams, chatStripHost, hideFromScreen = true)
         overlayTicker.applyTouchPassthrough(true)
         overlayCommandsPopover.hide()
         overlayAllianceOnlinePopover.hide()
@@ -349,6 +355,9 @@ class CombatOverlayService : Service() {
             if (requestCode < 0) return
             mainHandler.post {
                 resumeOverlayWindowsAfterSystemActivity()
+                if (i.action == OverlaySystemDialogActivity.ACTION_OVERLAY_SYSTEM_UI_FINISHED) {
+                    return@post
+                }
                 val owner = overlayChatTeamComposeOwner ?: return@post
                 when (i.action) {
                     OverlaySystemDialogActivity.ACTION_OVERLAY_PICK_IMAGES_RESULT -> {
@@ -516,6 +525,8 @@ class CombatOverlayService : Service() {
     private var gateCheckInFlight = false
     private var lastGateDiagLogMs: Long = 0L
     private var lastForegroundHintPkg: String? = null
+    @Volatile
+    private var lastOverlayInGameAtMs: Long = 0L
     /** Не вызывать [NotificationManager.notify] с тем же текстом подряд (лишние всплытия на части OEM). */
     private var lastForegroundNotificationText: String? = null
     private var lastForegroundMicActive: Boolean = false
@@ -686,34 +697,37 @@ class CombatOverlayService : Service() {
                         "activityGate hint pkg=${hintedComp?.packageName ?: "-"} cls=${hintedComp?.className ?: "-"} tokens=${activityTokens.joinToString()}",
                     )
                 }
-                val shouldShow = if (hasUsageAccess) {
-                    // While the user is interacting with the overlay chat UI, do not hide the overlay.
-                    // Some OEM ROMs may report SquadRelay as "resumed" when touching overlay windows.
-                    // [overlayChatTeamPanelVisible] is @Volatile so IO reads see main-thread updates; full-screen image
-                    // dialogs set [OverlayChatInteractionHold] while open (Compose Dialog window timing).
-                    if (shouldKeepOverlayWindows()) {
-                        true
-                    } else if (targets.isEmpty()) {
-                        false
-                    } else {
-                        GameForegroundGate.shouldShowOverlay(
-                            context = this@CombatOverlayService,
-                            targetGamePackages = targets,
-                            allowedActivitySubstrings = activityTokens,
-                        )
-                    }
-                } else {
-                    false
+                val targetSet = targets.toSet()
+                val inGame = hasUsageAccess && targets.isNotEmpty() &&
+                    GameForegroundGate.shouldShowOverlay(
+                        context = this@CombatOverlayService,
+                        targetGamePackages = targets,
+                        allowedActivitySubstrings = activityTokens,
+                    )
+                val nowMs = System.currentTimeMillis()
+                if (inGame) {
+                    lastOverlayInGameAtMs = nowMs
+                }
+                val shouldShow = when {
+                    inGame -> true
+                    shouldKeepOverlayWindows() &&
+                        nowMs - lastOverlayInGameAtMs < OVERLAY_INGAME_GRACE_MS &&
+                        !GameForegroundGate.isConflictingForegroundHint(
+                            hintedPkg,
+                            targetSet,
+                            packageName,
+                        ) -> true
+                    else -> false
                 }
                 mainHandler.post {
-                    val nowMs = System.currentTimeMillis()
-                    if (nowMs - lastGateDiagLogMs >= 25_000L) {
-                        lastGateDiagLogMs = nowMs
+                    val diagNowMs = System.currentTimeMillis()
+                    if (diagNowMs - lastGateDiagLogMs >= 25_000L) {
+                        lastGateDiagLogMs = diagNowMs
                         val draw = canDrawOverlaysNow()
                         if (!hasUsageAccess || !shouldShow || !draw || overlayView == null) {
                             Log.i(
                                 TAG,
-                                "overlayGate usage=$hasUsageAccess inGame=$shouldShow " +
+                                "overlayGate usage=$hasUsageAccess show=$shouldShow " +
                                     "hint=${hintedPkg ?: "-"} drawOverlays=$draw overlayAttached=${overlayView != null} " +
                                     "targets=${targets.joinToString()}",
                             )
@@ -737,35 +751,56 @@ class CombatOverlayService : Service() {
         shouldShow: Boolean,
     ) {
         if (!shouldShow) {
-            // Закрыть «Быстрые команды» и сбросить suppress, иначе панель не снимется с экрана.
-            overlayCommandsPopover.hide()
-            overlayAllianceOnlinePopover.hide()
-            OverlayChatInteractionHold.clearStaleSuppressForGameBackground(
-                chatTeamPanelVisible = overlayChatTeamPanelVisible,
-                commandsPopoverShowing = overlayCommandsPopover.isShowing(),
+            dismissOverlayUiBecauseNotInGame(
+                logWaitingForGame = true,
             )
+            return
         }
         // Heuristics (TTF / lastUsed) иногда ещё «видят» игру один тик после открытия SquadRelay.
-        // Не снимать панель, пока открыт системный пикер (хост — это же SquadRelay).
         if (lastForegroundHintPkg == packageName &&
             !shouldKeepOverlayWindows() &&
             overlayTouchPassthroughSnaps.isEmpty()
         ) {
-            if (overlayView != null) {
-                removeOverlayControl()
-            }
+            dismissOverlayUiBecauseNotInGame(logWaitingForGame = false)
             return
         }
         if (!hasUsageAccess) {
             logGateStateThrottled(
                 "overlayGate: нет доступа к статистике использования — панель скрыта",
             )
-            if (overlayView != null && !shouldKeepOverlayWindows()) {
-                removeOverlayControl()
+            if (overlayView != null) {
+                removeOverlayControl(force = true)
             }
             return
         }
-        if (!shouldShow) {
+        gateNotifyKey = ""
+        if (!canDrawOverlaysNow()) {
+            logGateStateThrottled("overlayGate: нет разрешения «поверх других приложений»")
+            if (overlayView != null) {
+                removeOverlayControl(force = true)
+            }
+            return
+        }
+        ensureOverlayIfPermitted()
+    }
+
+    /**
+     * Снимает панель/чат при уходе из игры. Не опирается на [shouldKeepOverlayWindows]: suppress/пикер
+     * иначе оставляют оверлей «висеть» после сворачивания или закрытия игры.
+     */
+    private fun dismissOverlayUiBecauseNotInGame(logWaitingForGame: Boolean) {
+        overlayCommandsPopover.hide()
+        overlayAllianceOnlinePopover.hide()
+        quickCommandsPopover.hide()
+        OverlayChatInteractionHold.clearStaleSuppressForGameBackground(
+            chatTeamPanelVisible = false,
+            commandsPopoverShowing = false,
+        )
+        resumeOverlayWindowsAfterSystemActivity()
+        if (overlayChatTeamPanelVisible || OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible) {
+            hideOverlayChatTeamPanel()
+        }
+        if (logWaitingForGame) {
             val hint = lastForegroundHintPkg?.takeIf { it.isNotBlank() }
             val content = if (hint != null) {
                 "overlayGate: ${getString(R.string.overlay_notif_waiting_for_game)} ($hint)"
@@ -773,20 +808,10 @@ class CombatOverlayService : Service() {
                 "overlayGate: ${getString(R.string.overlay_notif_waiting_for_game)}"
             }
             logGateStateThrottled(content)
-            if (overlayView != null && !shouldKeepOverlayWindows()) {
-                removeOverlayControl()
-            }
-            return
         }
-        gateNotifyKey = ""
-        if (!canDrawOverlaysNow()) {
-            logGateStateThrottled("overlayGate: нет разрешения «поверх других приложений»")
-            if (overlayView != null && !shouldKeepOverlayWindows()) {
-                removeOverlayControl()
-            }
-            return
+        if (overlayView != null) {
+            removeOverlayControl(force = true)
         }
-        ensureOverlayIfPermitted()
     }
 
     private fun canDrawOverlaysNow(): Boolean {
@@ -1983,6 +2008,7 @@ class CombatOverlayService : Service() {
                     addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_PICK_IMAGES_RESULT)
                     addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_GET_CONTENT_RESULT)
                     addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_MIC_PERMISSION_RESULT)
+                    addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_SYSTEM_UI_FINISHED)
                 },
                 ContextCompat.RECEIVER_NOT_EXPORTED,
             )
@@ -2355,6 +2381,8 @@ class CombatOverlayService : Service() {
          * Перед каждым тиком сбрасывается кэш [GameForegroundGate.lastResumedComponent], поэтому умеренный интервал ок.
          */
         private const val GAME_GATE_POLL_MS = 650L
+        /** Краткий grace при ложном «не в игре» во время чата/пикера; не применяется при явном лаунчере/другом приложении. */
+        private const val OVERLAY_INGAME_GRACE_MS = 2_500L
         private const val OVERLAY_HISTORY_LOAD = 150
         /** Matches backend / user schema: ingame | online | away */
         private const val OVERLAY_PRESENCE_INGAME = "ingame"
