@@ -206,6 +206,7 @@ data class TeamForumTopicDto(
     val createdByUserId: String,
     val messageCount: Int,
     val unreadCount: Int = 0,
+    val lastReadMessageId: String? = null,
     val lastMessageAt: String? = null,
     val createdAt: String,
     val updatedAt: String,

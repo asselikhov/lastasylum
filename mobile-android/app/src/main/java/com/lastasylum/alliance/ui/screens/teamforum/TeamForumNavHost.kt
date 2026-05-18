@@ -101,7 +101,10 @@ import androidx.navigation.navArgument
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.auth.TokenStore
+import com.lastasylum.alliance.data.effectiveUnreadCount
+import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.teams.TeamForumMessageDto
+import com.lastasylum.alliance.data.teams.TeamForumPreferences
 import com.lastasylum.alliance.data.teams.TeamForumMessageDeletedEvent
 import com.lastasylum.alliance.data.teams.TeamForumSocketManager
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
@@ -260,6 +263,8 @@ private fun TeamForumListRoute(
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     val topics = remember { mutableStateListOf<TeamForumTopicDto>() }
+    val forumPrefs = remember { TeamForumPreferences(context) }
+    val lastReadByTopic = remember { mutableStateMapOf<String, String>() }
     var menuTopic by remember { mutableStateOf<TeamForumTopicDto?>(null) }
     var showCreate by remember { mutableStateOf(false) }
     var createTitle by remember { mutableStateOf("") }
@@ -269,6 +274,22 @@ private fun TeamForumListRoute(
     var editBusy by remember { mutableStateOf(false) }
     var deleteTopic by remember { mutableStateOf<TeamForumTopicDto?>(null) }
 
+    fun hydrateReadCursorsFromTopics(rows: List<TeamForumTopicDto>) {
+        rows.forEach { topic ->
+            topic.lastReadMessageId?.trim()?.takeIf { it.isNotBlank() }?.let { mid ->
+                lastReadByTopic[topic.id] = mid
+                forumPrefs.setLastReadMessageId(teamId, topic.id, mid)
+            }
+        }
+    }
+
+    fun effectiveTopicUnread(topic: TeamForumTopicDto): Int =
+        effectiveUnreadCount(
+            serverUnread = topic.unreadCount,
+            lastReadMessageId = topic.lastReadMessageId,
+            localLastReadMessageId = lastReadByTopic[topic.id],
+        )
+
     fun reload() {
         scope.launch {
             loading = true
@@ -276,11 +297,30 @@ private fun TeamForumListRoute(
             teamsRepository.listForumTopics(teamId)
                 .onSuccess {
                     topics.clear()
-                    topics.addAll(it)
+                    hydrateReadCursorsFromTopics(it)
+                    topics.addAll(
+                        it.map { topic ->
+                            topic.copy(unreadCount = effectiveTopicUnread(topic))
+                        },
+                    )
                     it.forEach { t -> topicTitles[t.id] = t.title }
+                    it.filter { topic ->
+                        topic.unreadCount > 0 && effectiveTopicUnread(topic) == 0
+                    }.forEach { topic ->
+                        val localLast = lastReadByTopic[topic.id]
+                            ?: topic.lastReadMessageId?.trim().orEmpty().takeIf { it.isNotBlank() }
+                            ?: return@forEach
+                        teamsRepository.markForumTopicRead(teamId, topic.id, localLast)
+                    }
                 }
                 .onFailure { e -> error = e.toUserMessageRu(res) }
             loading = false
+        }
+    }
+
+    LaunchedEffect(teamId) {
+        forumPrefs.loadAllLastReadMessageIds(teamId).forEach { (topicId, messageId) ->
+            lastReadByTopic[topicId] = messageId
         }
     }
 
@@ -340,7 +380,9 @@ private fun TeamForumListRoute(
                                 topic = t,
                                 listIndex = index,
                                 messageMeta = t.lastMessageAt?.let { formatForumTime(it) } ?: "—",
-                                onClick = { onOpenTopic(t) },
+                                onClick = {
+                                    onOpenTopic(t.copy(unreadCount = 0))
+                                },
                                 menu = {
                                     if (canManageTopics) {
                                         Box {
@@ -560,6 +602,8 @@ private fun TeamForumTopicChatRoute(
     val sortedMessages by remember {
         derivedStateOf { messages.sortedBy { it.createdAt } }
     }
+    val forumPrefs = remember { TeamForumPreferences(context) }
+    var lastReadCursor by remember { mutableStateOf<String?>(null) }
 
     var editMessage by remember { mutableStateOf<TeamForumMessageDto?>(null) }
     var editBody by remember { mutableStateOf("") }
@@ -604,9 +648,28 @@ private fun TeamForumTopicChatRoute(
         removeMessage(ev.messageId)
     }
 
+    fun mergeReadCursor(messageId: String) {
+        if (messageId.isBlank()) return
+        val prev = lastReadCursor
+        if (prev != null && !isObjectIdNewer(messageId, prev)) return
+        lastReadCursor = messageId
+        forumPrefs.setLastReadMessageId(teamId, topicId, messageId)
+    }
+
+    fun markTopicReadToLatest(forceSync: Boolean = false) {
+        val newestId = sortedMessages.lastOrNull()?.id ?: return
+        val prev = lastReadCursor
+        if (!forceSync && prev != null && !isObjectIdNewer(newestId, prev)) return
+        scope.launch {
+            teamsRepository.markForumTopicRead(teamId, topicId, newestId)
+                .onSuccess { mergeReadCursor(newestId) }
+        }
+    }
+
     fun mergeNew(msg: TeamForumMessageDto) {
         if (messages.any { it.id == msg.id }) return
         messages.add(msg)
+        markTopicReadToLatest()
     }
 
     fun canDeleteForumMessage(msg: TeamForumMessageDto): Boolean {
@@ -672,12 +735,19 @@ private fun TeamForumTopicChatRoute(
                         m.deletedAt.equals("null", ignoreCase = true)
                 }
                 messages.addAll(visible)
-                visible.firstOrNull()?.id?.let { newestId ->
-                    teamsRepository.markForumTopicRead(teamId, topicId, newestId)
-                }
             }
             .onFailure { e -> error = e.toUserMessageRu(res) }
         loading = false
+    }
+
+    LaunchedEffect(teamId, topicId) {
+        lastReadCursor = forumPrefs.getLastReadMessageId(teamId, topicId)
+    }
+
+    LaunchedEffect(sortedMessages.lastOrNull()?.id) {
+        if (sortedMessages.isNotEmpty()) {
+            markTopicReadToLatest()
+        }
     }
 
     LaunchedEffect(sortedMessages.size, sortedMessages.lastOrNull()?.id) {
@@ -712,6 +782,7 @@ private fun TeamForumTopicChatRoute(
             topicId,
         ) { tokenStore.getAccessToken() }
         onDispose {
+            markTopicReadToLatest(forceSync = true)
             forumSocket.removeMessageListener(onNew)
             forumSocket.removeMessageEditedListener(onEdited)
             forumSocket.removeMessageDeletedListener(onDeleted)

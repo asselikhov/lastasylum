@@ -34,6 +34,7 @@ export type TeamForumTopicRow = {
   createdByUserId: string;
   messageCount: number;
   unreadCount: number;
+  lastReadMessageId: string | null;
   lastMessageAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -111,7 +112,11 @@ export class TeamForumService {
 
   private topicRow(
     doc: TeamForumTopicDocument,
-    extras?: { messageCount?: number; unreadCount?: number },
+    extras?: {
+      messageCount?: number;
+      unreadCount?: number;
+      lastReadMessageId?: string | null;
+    },
   ): TeamForumTopicRow {
     return {
       id: doc._id.toString(),
@@ -120,10 +125,35 @@ export class TeamForumService {
       createdByUserId: doc.createdByUserId,
       messageCount: extras?.messageCount ?? doc.messageCount ?? 0,
       unreadCount: extras?.unreadCount ?? 0,
+      lastReadMessageId: extras?.lastReadMessageId ?? null,
       lastMessageAt: doc.lastMessageAt ? doc.lastMessageAt.toISOString() : null,
       createdAt: doc.createdAt?.toISOString() ?? new Date().toISOString(),
       updatedAt: doc.updatedAt?.toISOString() ?? new Date().toISOString(),
     };
+  }
+
+  private async readStatesByTopicIds(
+    userId: string,
+    topicIds: Types.ObjectId[],
+  ): Promise<Map<string, string>> {
+    if (topicIds.length === 0) return new Map();
+    const readStates = await this.topicReadStateModel
+      .find({ userId, topicId: { $in: topicIds } })
+      .lean()
+      .exec();
+    return new Map(
+      readStates.map((r) => [
+        (r.topicId as Types.ObjectId).toString(),
+        r.lastReadMessageId,
+      ]),
+    );
+  }
+
+  async getLastReadMessageIdsByTopicIds(
+    userId: string,
+    topicIds: Types.ObjectId[],
+  ): Promise<Map<string, string>> {
+    return this.readStatesByTopicIds(userId, topicIds);
   }
 
   private async countUnreadForumMessages(
@@ -132,16 +162,7 @@ export class TeamForumService {
   ): Promise<Map<string, number>> {
     const out = new Map<string, number>();
     if (topicIds.length === 0) return out;
-    const readStates = await this.topicReadStateModel
-      .find({ userId, topicId: { $in: topicIds } })
-      .lean()
-      .exec();
-    const readByTopic = new Map(
-      readStates.map((r) => [
-        (r.topicId as Types.ObjectId).toString(),
-        r.lastReadMessageId,
-      ]),
-    );
+    const readByTopic = await this.readStatesByTopicIds(userId, topicIds);
     await Promise.all(
       topicIds.map(async (topicOid) => {
         const key = topicOid.toString();
@@ -177,14 +198,27 @@ export class TeamForumService {
     if (!topic) {
       throw new NotFoundException('Topic not found');
     }
-    await this.topicReadStateModel
-      .updateOne(
-        { topicId: topOid, userId },
-        { $set: { lastReadMessageId: messageId } },
-        { upsert: true },
-      )
+    const messageOid = new Types.ObjectId(messageId);
+    const existing = await this.topicReadStateModel
+      .findOne({ topicId: topOid, userId })
+      .lean()
       .exec();
-    return { topicId, messageId };
+    const prev = existing?.lastReadMessageId?.trim();
+    const advanced =
+      !prev ||
+      !Types.ObjectId.isValid(prev) ||
+      messageOid > new Types.ObjectId(prev);
+    const lastReadMessageId = advanced ? messageId : prev!;
+    if (advanced) {
+      await this.topicReadStateModel
+        .updateOne(
+          { topicId: topOid, userId },
+          { $set: { lastReadMessageId: messageId } },
+          { upsert: true },
+        )
+        .exec();
+    }
+    return { topicId, messageId: lastReadMessageId };
   }
 
   private assertZlobyakaStickerPayload(text: string): void {
@@ -307,6 +341,7 @@ export class TeamForumService {
       countAgg.map((c) => [c._id.toString(), c.count]),
     );
     const unreadMap = await this.countUnreadForumMessages(userId, topicIds);
+    const lastReadMap = await this.getLastReadMessageIdsByTopicIds(userId, topicIds);
     return rows.map((r) => {
       const doc = r as unknown as TeamForumTopicDocument;
       const id = doc._id.toString();
@@ -319,6 +354,7 @@ export class TeamForumService {
       return this.topicRow(doc, {
         messageCount: actualCount,
         unreadCount: unreadMap.get(id) ?? 0,
+        lastReadMessageId: lastReadMap.get(id) ?? null,
       });
     });
   }

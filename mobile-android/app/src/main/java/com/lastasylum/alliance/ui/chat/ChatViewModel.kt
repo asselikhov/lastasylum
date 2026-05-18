@@ -8,6 +8,8 @@ import android.os.Looper
 import android.os.ParcelFileDescriptor
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.lastasylum.alliance.data.effectiveUnreadCount
+import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatMessageDeletedEvent
@@ -37,7 +39,6 @@ import java.util.Locale
 import java.util.UUID
 
 private const val PAGE_SIZE = 30
-private val OBJECT_ID_HEX = Regex("^[a-fA-F0-9]{24}$")
 
 private data class RoomMessageCache(
     val messages: List<ChatMessage>,
@@ -81,6 +82,7 @@ class ChatViewModel(
     private val roomMessageCache = mutableMapOf<String, RoomMessageCache>()
     /** Latest message id we successfully marked read per room (avoids regress + duplicate bumps). */
     private val lastMarkedReadByRoom = mutableMapOf<String, String>()
+    private var unreadSyncJob: Job? = null
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var chatVoiceRecognizer: ChatVoiceRecognizer? = null
@@ -99,8 +101,8 @@ class ChatViewModel(
                     applyIncomingMessage(message)
                 } else if (message.senderId != currentUserId) {
                     val mid = message._id ?: continue
-                    if (!shouldIncrementUnreadForMessage(roomId, mid)) continue
-                    bumpRoomUnread(roomId)
+                    if (!shouldTrackUnreadForMessage(roomId, mid)) continue
+                    scheduleUnreadSyncFromServer()
                 }
             }
         }
@@ -339,15 +341,25 @@ class ChatViewModel(
         val viewingSelected =
             !selected.isNullOrBlank() && _state.value.messages.isNotEmpty()
         return serverRooms.map { room ->
-            if (viewingSelected && room.id == selected) {
+            val base = if (viewingSelected && room.id == selected) {
                 room.copy(unreadCount = 0)
             } else {
                 room
             }
+            base.copy(
+                unreadCount = effectiveUnreadForRoom(base),
+            )
         }
     }
 
-    private fun shouldIncrementUnreadForMessage(roomId: String, messageId: String): Boolean {
+    private fun effectiveUnreadForRoom(room: ChatRoomDto): Int =
+        effectiveUnreadCount(
+            serverUnread = room.unreadCount,
+            lastReadMessageId = room.lastReadMessageId,
+            localLastReadMessageId = lastMarkedReadByRoom[room.id],
+        )
+
+    private fun shouldTrackUnreadForMessage(roomId: String, messageId: String): Boolean {
         val lastRead = lastMarkedReadByRoom[roomId]
         if (lastRead != null && !isObjectIdNewer(messageId, lastRead)) {
             return false
@@ -360,6 +372,14 @@ class ChatViewModel(
         return true
     }
 
+    private fun scheduleUnreadSyncFromServer() {
+        unreadSyncJob?.cancel()
+        unreadSyncJob = viewModelScope.launch {
+            delay(350)
+            syncRoomsFromServer()
+        }
+    }
+
     private suspend fun reconfirmReadForVisibleRoom() {
         val roomId = _state.value.selectedRoomId ?: return
         val newestId = _state.value.messages.firstOrNull()?._id ?: return
@@ -369,24 +389,23 @@ class ChatViewModel(
     /** Server unread can lag; re-push persisted read cursor for rooms that still show a badge. */
     private suspend fun reconcileStaleServerUnread(rooms: List<ChatRoomDto>) {
         for (room in rooms) {
+            if (effectiveUnreadForRoom(room) > 0) continue
             if (room.unreadCount <= 0) continue
-            val localLast = lastMarkedReadByRoom[room.id] ?: continue
-            markRoomReadUpTo(room.id, localLast)
+            val localLast = lastMarkedReadByRoom[room.id]
+                ?: room.lastReadMessageId?.trim().orEmpty().takeIf { it.isNotBlank() }
+                ?: continue
+            markRoomReadUpTo(room.id, localLast, forceSync = true)
         }
     }
 
-    private fun isObjectIdNewer(candidate: String, baseline: String?): Boolean {
-        if (baseline.isNullOrBlank()) return true
-        if (!OBJECT_ID_HEX.matches(candidate)) return true
-        if (!OBJECT_ID_HEX.matches(baseline)) return true
-        if (candidate.length != baseline.length) return candidate.length > baseline.length
-        return candidate > baseline
-    }
-
-    private suspend fun markRoomReadUpTo(roomId: String, messageId: String) {
+    private suspend fun markRoomReadUpTo(
+        roomId: String,
+        messageId: String,
+        forceSync: Boolean = false,
+    ) {
         if (roomId.isBlank() || messageId.isBlank()) return
         val prev = lastMarkedReadByRoom[roomId]
-        if (prev != null && !isObjectIdNewer(messageId, prev)) return
+        if (!forceSync && prev != null && !isObjectIdNewer(messageId, prev)) return
         repository.markRoomRead(roomId, messageId)
             .onSuccess {
                 mergeReadCursor(roomId, messageId)
@@ -406,20 +425,6 @@ class ChatViewModel(
             onTyping = ::onTypingFromPeer,
             onRead = ::onRoomReadEvent,
         )
-    }
-
-    private fun bumpRoomUnread(roomId: String) {
-        _state.update { st ->
-            st.copy(
-                rooms = st.rooms.map { room ->
-                    if (room.id == roomId) {
-                        room.copy(unreadCount = room.unreadCount + 1)
-                    } else {
-                        room
-                    }
-                },
-            )
-        }
     }
 
     private suspend fun openRoom(
