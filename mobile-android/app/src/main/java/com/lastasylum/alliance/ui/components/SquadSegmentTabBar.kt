@@ -60,8 +60,8 @@ fun SquadSegmentTabBar(
         shape = barShape,
         color = SquadRelaySurfaces.subtleColor(),
         tonalElevation = 0.dp,
-        shadowElevation = 3.dp,
-        border = SquadRelaySurfaces.panelBorder(),
+        shadowElevation = 2.dp,
+        border = SquadRelaySurfaces.panelBorder(alpha = 0.14f),
     ) {
         Row(
             modifier = Modifier
@@ -113,7 +113,7 @@ fun SquadSegmentTabBar(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 11.dp),
+                            .padding(horizontal = 10.dp, vertical = 10.dp),
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {

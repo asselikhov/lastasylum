@@ -26,4 +26,8 @@ object SquadRelayDimens {
     val listRowVerticalPadding = 10.dp
     val sectionTitlePaddingVertical = 2.dp
     val composerMinHeight = 44.dp
+
+    /** См. [com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthFraction]. */
+    val chatBubbleMaxWidthFraction = 0.88f
+    val chatBubbleMaxWidthCap = 360.dp
 }

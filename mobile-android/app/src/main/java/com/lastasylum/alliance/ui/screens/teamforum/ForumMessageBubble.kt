@@ -56,6 +56,7 @@ import com.lastasylum.alliance.data.teams.TeamForumMessageDto
 import com.lastasylum.alliance.ui.chat.ChatBubbleAuthorHeader
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarEndPad
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarSize
+import com.lastasylum.alliance.ui.chat.chatBubbleWidth
 import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
 import com.lastasylum.alliance.ui.chat.TelegramImageCaptionBar
 import com.lastasylum.alliance.ui.chat.TelegramLikeAttachmentsGrid
@@ -217,7 +218,10 @@ internal fun ForumMessageBubble(
     }
 
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val maxBubble = minOf(maxWidth * 0.82f, 300.dp)
+        val maxBubble = minOf(
+            maxWidth * com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthFraction,
+            com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthCap,
+        )
         Row(
             Modifier
                 .fillMaxWidth()
@@ -252,7 +256,10 @@ internal fun ForumMessageBubble(
                 deleted -> {
                     Surface(
                         modifier = Modifier
-                            .widthIn(max = maxBubble)
+                            .chatBubbleWidth(
+                                maxBubble = maxBubble,
+                                expandToMax = true,
+                            )
                             .then(bubbleClickModifier),
                         color = finalBg,
                         shape = bubbleShape,
@@ -355,7 +362,15 @@ internal fun ForumMessageBubble(
                 else -> {
                     Surface(
                         modifier = Modifier
-                            .widthIn(max = if (stickerStem != null) 280.dp else maxBubble)
+                            .chatBubbleWidth(
+                                maxBubble = maxBubble,
+                                expandToMax = stickerStem == null,
+                                compactMax = if (stickerStem != null) {
+                                    minOf(maxBubble, 280.dp)
+                                } else {
+                                    maxBubble
+                                },
+                            )
                             .then(bubbleClickModifier),
                         color = finalBg,
                         shape = bubbleShape,

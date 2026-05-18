@@ -307,8 +307,8 @@ fun TeamScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(
-                                            horizontal = SquadRelayDimens.panelInnerPadding,
-                                            vertical = 10.dp,
+                                            horizontal = SquadRelayDimens.contentPaddingHorizontal,
+                                            vertical = 8.dp,
                                         ),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
@@ -422,7 +422,7 @@ fun TeamScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(
-                                            horizontal = SquadRelayDimens.panelInnerPadding,
+                                            horizontal = SquadRelayDimens.contentPaddingHorizontal,
                                             vertical = 6.dp,
                                         ),
                                 )
