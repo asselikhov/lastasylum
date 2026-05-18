@@ -24,16 +24,44 @@ class ChatRoomPreferences(context: Context) {
         prefs.edit().remove(KEY_RAID_ROOM).apply()
     }
 
+    fun getLastReadMessageId(roomId: String): String? =
+        prefs.getString(lastReadKey(roomId), null)
+
+    fun setLastReadMessageId(roomId: String, messageId: String) {
+        if (roomId.isBlank() || messageId.isBlank()) return
+        prefs.edit().putString(lastReadKey(roomId), messageId).apply()
+    }
+
+    fun loadAllLastReadMessageIds(): Map<String, String> {
+        val prefix = KEY_LAST_READ_PREFIX
+        return prefs.all
+            .mapNotNull { (key, value) ->
+                if (key is String && key.startsWith(prefix) && value is String && value.isNotBlank()) {
+                    key.removePrefix(prefix) to value
+                } else {
+                    null
+                }
+            }
+            .toMap()
+    }
+
     fun clear() {
         prefs.edit()
             .remove(KEY_SELECTED_ROOM)
             .remove(KEY_RAID_ROOM)
             .apply()
+        val editor = prefs.edit()
+        prefs.all.keys.filter { it is String && it.startsWith(KEY_LAST_READ_PREFIX) }
+            .forEach { editor.remove(it as String) }
+        editor.apply()
     }
+
+    private fun lastReadKey(roomId: String): String = KEY_LAST_READ_PREFIX + roomId
 
     private companion object {
         const val PREFS_NAME = "squadrelay_chat"
         const val KEY_SELECTED_ROOM = "selected_room_id"
         const val KEY_RAID_ROOM = "raid_room_id"
+        const val KEY_LAST_READ_PREFIX = "last_read_msg_"
     }
 }

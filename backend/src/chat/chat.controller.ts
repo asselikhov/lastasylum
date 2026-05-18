@@ -84,18 +84,26 @@ export class ChatController {
       throw new BadRequestException('User not found');
     }
     const rooms = await this.chatRoomsService.listRoomsVisibleToUser(user);
-    const unreadMap = await this.chatService.countUnreadByRoomIds(
-      req.user.userId,
-      rooms.map((r) => {
+    const roomIds = rooms
+      .map((r) => {
         const id = (r as { _id?: Types.ObjectId })._id;
         return id?.toString() ?? '';
-      }).filter(Boolean),
+      })
+      .filter(Boolean);
+    const unreadMap = await this.chatService.countUnreadByRoomIds(
+      req.user.userId,
+      roomIds,
+    );
+    const lastReadMap = await this.chatService.getLastReadMessageIdsByRoomIds(
+      req.user.userId,
+      roomIds,
     );
     return rooms.map((r) => {
       const id = (r as { _id: Types.ObjectId })._id.toString();
       return {
         ...r,
         unreadCount: unreadMap.get(id) ?? 0,
+        lastReadMessageId: lastReadMap.get(id) ?? null,
       };
     });
   }

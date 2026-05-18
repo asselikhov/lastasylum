@@ -608,6 +608,34 @@ export class ChatService {
     return this.viewMessageForUser(created.toObject<MessageLean>(), userId);
   }
 
+  private async readStatesByRoomIds(
+    userId: string,
+    roomIds: string[],
+  ): Promise<Map<string, string>> {
+    const valid = roomIds
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    if (valid.length === 0) return new Map();
+
+    const readStates = await this.chatReadStateModel
+      .find({ userId, roomId: { $in: valid } })
+      .lean()
+      .exec();
+    return new Map(
+      readStates.map((r) => [
+        (r.roomId as Types.ObjectId).toString(),
+        r.lastReadMessageId,
+      ]),
+    );
+  }
+
+  async getLastReadMessageIdsByRoomIds(
+    userId: string,
+    roomIds: string[],
+  ): Promise<Map<string, string>> {
+    return this.readStatesByRoomIds(userId, roomIds);
+  }
+
   async countUnreadByRoomIds(
     userId: string,
     roomIds: string[],
@@ -618,16 +646,7 @@ export class ChatService {
       .map((id) => new Types.ObjectId(id));
     if (valid.length === 0) return out;
 
-    const readStates = await this.chatReadStateModel
-      .find({ userId, roomId: { $in: valid } })
-      .lean()
-      .exec();
-    const readByRoom = new Map(
-      readStates.map((r) => [
-        (r.roomId as Types.ObjectId).toString(),
-        r.lastReadMessageId,
-      ]),
-    );
+    const readByRoom = await this.readStatesByRoomIds(userId, roomIds);
 
     await Promise.all(
       valid.map(async (roomOid) => {

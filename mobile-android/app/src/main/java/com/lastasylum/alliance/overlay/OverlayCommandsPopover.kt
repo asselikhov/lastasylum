@@ -130,7 +130,7 @@ class OverlayCommandsPopover(
     private fun sectionTileBackground(): GradientDrawable =
         roundedRect(
             fillColor = Color.parseColor("#2A1E2A3C"),
-            strokeColor = Color.parseColor("#3D5A7C9CFF"),
+            strokeColor = Color.parseColor("#3D7C9CFF"),
             cornerDp = 14,
         )
 
