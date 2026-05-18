@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.data.teams
 
 import okhttp3.MultipartBody
+import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
@@ -41,13 +42,13 @@ interface TeamsApi {
     ): OkResponse
 
     @POST("teams/{teamId}/join-requests")
-    suspend fun submitJoinRequest(@Path("teamId") teamId: String): SubmitJoinResponse
+    suspend fun submitJoinRequest(@Path("teamId") teamId: String): Response<SubmitJoinResponse>
 
     @POST("teams/join-requests/{requestId}/accept")
-    suspend fun acceptJoinRequest(@Path("requestId") requestId: String): OkResponse
+    suspend fun acceptJoinRequest(@Path("requestId") requestId: String): Response<OkResponse>
 
     @POST("teams/join-requests/{requestId}/reject")
-    suspend fun rejectJoinRequest(@Path("requestId") requestId: String): OkResponse
+    suspend fun rejectJoinRequest(@Path("requestId") requestId: String): Response<OkResponse>
 
     @POST("teams/{teamId}/members")
     suspend fun addMember(

@@ -22,13 +22,20 @@ class TeamsRepository(
         runCatching { teamsApi.getTeam(teamId) }
 
     suspend fun submitJoinRequest(teamId: String): Result<SubmitJoinResponse> =
-        runCatching { teamsApi.submitJoinRequest(teamId) }
+        runCatching {
+            teamsApi.submitJoinRequest(teamId).requireTeamsSuccess()
+                ?: SubmitJoinResponse()
+        }
 
     suspend fun acceptJoinRequest(requestId: String): Result<Unit> =
-        runCatching { teamsApi.acceptJoinRequest(requestId).let { } }
+        runCatching {
+            teamsApi.acceptJoinRequest(requestId).requireTeamsSuccess()
+        }
 
     suspend fun rejectJoinRequest(requestId: String): Result<Unit> =
-        runCatching { teamsApi.rejectJoinRequest(requestId).let { } }
+        runCatching {
+            teamsApi.rejectJoinRequest(requestId).requireTeamsSuccess()
+        }
 
     suspend fun addMember(teamId: String, username: String): Result<Unit> =
         runCatching {

@@ -307,6 +307,14 @@
     <string name="profile_player_team_join_hint">Тег или название</string>
     <string name="profile_player_team_join_submit">Отправить заявку</string>
     <string name="profile_player_team_join_sent">Заявка отправлена лидеру</string>
+    <string name="profile_player_team_join_already_pending">Заявка уже отправлена — ожидайте ответа лидера</string>
+    <string name="profile_player_team_join_already_in_team">Вы уже в команде</string>
+    <string name="profile_player_team_join_already_member">Вы уже состоите в этой команде</string>
+    <string name="profile_join_user_already_in_team">Игрок уже в другой команде</string>
+    <string name="profile_player_team_join_error">Не удалось отправить заявку. Проверьте сеть и попробуйте снова.</string>
+    <string name="profile_join_accept_ok">Участник принят в команду</string>
+    <string name="profile_join_reject_ok">Заявка отклонена</string>
+    <string name="profile_join_action_error">Не удалось обработать заявку. Попробуйте снова.</string>
     <string name="profile_join_inbox_title">Заявки в команду</string>
     <string name="profile_join_inbox_cd">Заявки на вступление</string>
     <string name="profile_join_accept">Принять</string>

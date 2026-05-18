@@ -120,5 +120,13 @@ private fun translateKnownServerMessage(english: String, resources: Resources): 
         resources.getString(R.string.team_squad_change_r5_member_forbidden)
     english.contains("Only squad roles R4 and R5 can change member ranks", ignoreCase = true) ->
         resources.getString(R.string.team_squad_change_rank_forbidden)
+    english.contains("Join request already pending", ignoreCase = true) ->
+        resources.getString(R.string.profile_player_team_join_already_pending)
+    english.contains("You already belong to a team", ignoreCase = true) ->
+        resources.getString(R.string.profile_player_team_join_already_in_team)
+    english.contains("Already a member", ignoreCase = true) ->
+        resources.getString(R.string.profile_player_team_join_already_member)
+    english.contains("User already joined another team", ignoreCase = true) ->
+        resources.getString(R.string.profile_join_user_already_in_team)
     else -> english
 }

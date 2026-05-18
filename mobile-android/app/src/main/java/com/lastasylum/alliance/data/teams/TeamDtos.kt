@@ -78,7 +78,9 @@ data class UpdateSquadMemberRoleBody(
 
 @JsonClass(generateAdapter = true)
 data class SubmitJoinResponse(
-    val id: String,
+    /** Может отсутствовать в теле при 2xx — успех определяем по HTTP, не по полю. */
+    val id: String? = null,
+    val alreadyPending: Boolean? = null,
 )
 
 @JsonClass(generateAdapter = true)

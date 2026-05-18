@@ -1,8 +1,10 @@
 package com.lastasylum.alliance.overlay
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
 import java.io.File
@@ -13,6 +15,8 @@ import java.util.UUID
  * временные grant'ы на content:// часто снимаются, и загрузка из Service/VM падает.
  */
 object OverlayPickedImages {
+    private const val TAG = "OverlayPickedImages"
+
     fun copyToCache(context: Context, uris: List<Uri>): List<Uri> {
         if (uris.isEmpty()) return emptyList()
         val dir = File(context.cacheDir, "overlay_chat_picks").apply { mkdirs() }
@@ -23,6 +27,12 @@ object OverlayPickedImages {
         val ext = guessExtension(context, source)
         val outFile = File(dir, "pick_${System.currentTimeMillis()}_${UUID.randomUUID()}.$ext")
         return runCatching {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    source,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+            }
             val input = context.contentResolver.openInputStream(source)
                 ?: return@runCatching null
             input.use { inp ->
@@ -37,6 +47,8 @@ object OverlayPickedImages {
                 "${context.packageName}.fileprovider",
                 outFile,
             )
+        }.onFailure { e ->
+            Log.w(TAG, "copyOne failed for $source", e)
         }.getOrNull()
     }
 

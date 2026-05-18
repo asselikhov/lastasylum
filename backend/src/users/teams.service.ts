@@ -596,14 +596,29 @@ export class TeamsService {
       status: TeamJoinRequestStatus.PENDING,
     });
     if (dup) {
-      throw new ConflictException('Join request already pending');
+      return { id: dup._id.toString(), alreadyPending: true };
     }
-    const doc = await this.joinRequestModel.create({
-      teamId: team._id,
-      requesterUserId: rid,
-      status: TeamJoinRequestStatus.PENDING,
-    });
-    return { id: doc._id.toString() };
+    try {
+      const doc = await this.joinRequestModel.create({
+        teamId: team._id,
+        requesterUserId: rid,
+        status: TeamJoinRequestStatus.PENDING,
+      });
+      return { id: doc._id.toString(), alreadyPending: false };
+    } catch (e: unknown) {
+      const code = (e as { code?: number })?.code;
+      if (code === 11000) {
+        const raced = await this.joinRequestModel.findOne({
+          teamId: team._id,
+          requesterUserId: rid,
+          status: TeamJoinRequestStatus.PENDING,
+        });
+        if (raced) {
+          return { id: raced._id.toString(), alreadyPending: true };
+        }
+      }
+      throw e;
+    }
   }
 
   async listPendingJoinRequestsForLeader(

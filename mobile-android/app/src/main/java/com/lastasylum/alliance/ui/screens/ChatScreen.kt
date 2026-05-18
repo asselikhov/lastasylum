@@ -1882,7 +1882,6 @@ private fun ChatComposer(
                                         ).show()
                                         return@IconButton
                                     }
-                                    OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
                                     launcher.launch(
                                         PickVisualMediaRequest(
                                             ActivityResultContracts.PickVisualMedia.ImageOnly,

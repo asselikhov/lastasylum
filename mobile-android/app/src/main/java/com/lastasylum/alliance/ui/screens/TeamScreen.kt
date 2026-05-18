@@ -146,6 +146,7 @@ fun TeamScreen(
 
     var inboxRequests by remember { mutableStateOf<List<TeamJoinRequestDto>>(emptyList()) }
     var inboxBusy by remember { mutableStateOf(false) }
+    var inboxFeedback by remember { mutableStateOf<String?>(null) }
     var membersBusy by remember { mutableStateOf(false) }
     var addNameDraft by remember { mutableStateOf("") }
     var showAddMemberDialog by remember { mutableStateOf(false) }
@@ -417,6 +418,7 @@ fun TeamScreen(
                                             IconButton(
                                                 onClick = {
                                                     OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
+                                                    inboxFeedback = null
                                                     showJoinInbox = true
                                                     scope.launch {
                                                         inboxBusy = true
@@ -662,15 +664,25 @@ fun TeamScreen(
                                             scope.launch {
                                                 joinActionBusy = true
                                                 teamsRepository.submitJoinRequest(t.id)
-                                                    .onSuccess {
-                                                        joinFeedback = context.getString(
-                                                            R.string.profile_player_team_join_sent,
-                                                        )
+                                                    .onSuccess { response ->
+                                                        joinFeedback = when {
+                                                            response.alreadyPending == true ->
+                                                                context.getString(
+                                                                    R.string.profile_player_team_join_already_pending,
+                                                                )
+                                                            else ->
+                                                                context.getString(
+                                                                    R.string.profile_player_team_join_sent,
+                                                                )
+                                                        }
                                                     }
-                                                    .onFailure {
-                                                        joinFeedback = context.getString(
-                                                            R.string.profile_player_team_save_error,
-                                                        )
+                                                    .onFailure { e ->
+                                                        joinFeedback = e.toUserMessageRu(res)
+                                                            .ifBlank {
+                                                                context.getString(
+                                                                    R.string.profile_player_team_join_error,
+                                                                )
+                                                            }
                                                     }
                                                 joinActionBusy = false
                                             }
@@ -699,11 +711,24 @@ fun TeamScreen(
             onDismissRequest = { if (!inboxBusy) showJoinInbox = false },
             title = { Text(stringResource(R.string.profile_join_inbox_title)) },
             text = {
-                Box(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 360.dp),
                 ) {
+                    inboxFeedback?.let { msg ->
+                        Text(
+                            text = msg,
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(bottom = 8.dp),
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false),
+                    ) {
                     if (inboxBusy && inboxRequests.isEmpty()) {
                         CircularProgressIndicator(Modifier.align(Alignment.Center))
                     } else {
@@ -724,11 +749,23 @@ fun TeamScreen(
                                         onClick = {
                                             scope.launch {
                                                 inboxBusy = true
+                                                inboxFeedback = null
                                                 teamsRepository.acceptJoinRequest(request.id)
                                                     .onSuccess {
+                                                        inboxFeedback = context.getString(
+                                                            R.string.profile_join_accept_ok,
+                                                        )
                                                         teamsRepository.listPendingJoinRequests()
                                                             .onSuccess { inboxRequests = it }
                                                         reloadProfileAndTeam()
+                                                    }
+                                                    .onFailure { e ->
+                                                        inboxFeedback = e.toUserMessageRu(res)
+                                                            .ifBlank {
+                                                                context.getString(
+                                                                    R.string.profile_join_action_error,
+                                                                )
+                                                            }
                                                     }
                                                 inboxBusy = false
                                             }
@@ -740,10 +777,22 @@ fun TeamScreen(
                                         onClick = {
                                             scope.launch {
                                                 inboxBusy = true
+                                                inboxFeedback = null
                                                 teamsRepository.rejectJoinRequest(request.id)
                                                     .onSuccess {
+                                                        inboxFeedback = context.getString(
+                                                            R.string.profile_join_reject_ok,
+                                                        )
                                                         teamsRepository.listPendingJoinRequests()
                                                             .onSuccess { inboxRequests = it }
+                                                    }
+                                                    .onFailure { e ->
+                                                        inboxFeedback = e.toUserMessageRu(res)
+                                                            .ifBlank {
+                                                                context.getString(
+                                                                    R.string.profile_join_action_error,
+                                                                )
+                                                            }
                                                     }
                                                 inboxBusy = false
                                             }
@@ -754,6 +803,7 @@ fun TeamScreen(
                                 }
                             }
                         }
+                    }
                     }
                 }
             },

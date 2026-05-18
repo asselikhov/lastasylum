@@ -46,6 +46,7 @@ class OverlaySystemDialogActivity : ComponentActivity() {
         pendingRequestCode = intent?.getIntExtra(EXTRA_REQUEST_CODE, -1) ?: -1
         pendingKind = intent?.getStringExtra(EXTRA_KIND)
         if (savedInstanceState?.getBoolean(STATE_LAUNCHED) == true) {
+            deliverCanceled()
             return
         }
         launchPendingKind()
@@ -78,22 +79,16 @@ class OverlaySystemDialogActivity : ComponentActivity() {
 
     override fun onDestroy() {
         if (isFinishing && !deliveredResult) {
-            notifyOverlaySystemUiFinished()
+            deliverCanceled()
         }
         super.onDestroy()
-    }
-
-    private fun notifyOverlaySystemUiFinished() {
-        sendBroadcast(
-            Intent(ACTION_OVERLAY_SYSTEM_UI_FINISHED)
-                .setPackage(packageName),
-        )
     }
 
     private fun deliverPickImages(uris: List<Uri>) {
         deliveredResult = true
         val requestCode = pendingRequestCode
         val copied = OverlayPickedImages.copyToCache(this, uris)
+        val copyFailed = uris.isNotEmpty() && copied.isEmpty()
         sendBroadcast(
             Intent(ACTION_OVERLAY_PICK_IMAGES_RESULT)
                 .setPackage(packageName)
@@ -101,6 +96,7 @@ class OverlaySystemDialogActivity : ComponentActivity() {
                     bundleOf(
                         EXTRA_REQUEST_CODE to requestCode,
                         EXTRA_URIS to ArrayList(copied),
+                        EXTRA_COPY_FAILED to copyFailed,
                     ),
                 ),
         )
@@ -111,11 +107,13 @@ class OverlaySystemDialogActivity : ComponentActivity() {
         deliveredResult = true
         val requestCode = pendingRequestCode
         val copied = uri?.let { OverlayPickedImages.copyToCache(this, listOf(it)).firstOrNull() }
+        val copyFailed = uri != null && copied == null
         sendBroadcast(
             Intent(ACTION_OVERLAY_GET_CONTENT_RESULT)
                 .setPackage(packageName)
                 .putExtra(EXTRA_REQUEST_CODE, requestCode)
-                .putExtra(EXTRA_URI, copied),
+                .putExtra(EXTRA_URI, copied)
+                .putExtra(EXTRA_COPY_FAILED, copyFailed),
         )
         finish()
     }
@@ -132,6 +130,18 @@ class OverlaySystemDialogActivity : ComponentActivity() {
         finish()
     }
 
+    private fun deliverCanceled() {
+        if (deliveredResult) return
+        deliveredResult = true
+        sendBroadcast(
+            Intent(ACTION_OVERLAY_ACTIVITY_CANCELED)
+                .setPackage(packageName)
+                .putExtra(EXTRA_REQUEST_CODE, pendingRequestCode)
+                .putExtra(EXTRA_KIND, pendingKind),
+        )
+        finish()
+    }
+
     companion object {
         private const val STATE_LAUNCHED = "launched_picker"
 
@@ -144,12 +154,13 @@ class OverlaySystemDialogActivity : ComponentActivity() {
         const val ACTION_OVERLAY_PICK_IMAGES_RESULT = "com.lastasylum.alliance.overlay.PICK_IMAGES_RESULT"
         const val ACTION_OVERLAY_GET_CONTENT_RESULT = "com.lastasylum.alliance.overlay.GET_CONTENT_RESULT"
         const val ACTION_OVERLAY_MIC_PERMISSION_RESULT = "com.lastasylum.alliance.overlay.MIC_PERMISSION_RESULT"
-        const val ACTION_OVERLAY_SYSTEM_UI_FINISHED =
-            "com.lastasylum.alliance.overlay.SYSTEM_UI_FINISHED"
+        const val ACTION_OVERLAY_ACTIVITY_CANCELED =
+            "com.lastasylum.alliance.overlay.ACTIVITY_CANCELED"
 
         const val EXTRA_URIS = "uris"
         const val EXTRA_URI = "uri"
         const val EXTRA_CONTENT_MIME = "content_mime"
         const val EXTRA_GRANTED = "granted"
+        const val EXTRA_COPY_FAILED = "copy_failed"
     }
 }

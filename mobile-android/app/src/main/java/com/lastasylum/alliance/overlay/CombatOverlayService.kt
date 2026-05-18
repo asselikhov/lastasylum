@@ -284,8 +284,6 @@ class CombatOverlayService : Service() {
         val params: WindowManager.LayoutParams,
         val prevFlags: Int,
         val prevVisibility: Int,
-        /** Окно снято с [WindowManager], чтобы системный пикер (обычная Activity) был поверх. */
-        val detachedForPicker: Boolean = false,
     )
 
     /** Снимок окон overlay на время системного пикера (TYPE_APPLICATION_OVERLAY выше Activity — иначе галерея «под» чатом). */
@@ -321,9 +319,9 @@ class CombatOverlayService : Service() {
                 runCatching { mgr.updateViewLayout(view, params) }
             }
         }
-        // Панель и ленту прячем. Полноэкранный чат снимаем с WM: TYPE_APPLICATION_OVERLAY всегда выше
-        // обычной Activity — Photo Picker иначе остаётся под чатом и не кликается.
-        detachOverlayChatPanelForPicker(mgr)
+        // Панель и ленту прячем. Чат только GONE+NOT_TOUCHABLE: removeView() рвёт Compose и теряет
+        // rememberLauncherForActivityResult до ответа пикера.
+        hideOverlayChatPanelForPicker(mgr)
         snap(overlayMainWindowParams, overlayView, hideFromScreen = true)
         snap(chatStripParams, chatStripHost, hideFromScreen = true)
         overlayTicker.applyTouchPassthrough(true)
@@ -332,7 +330,7 @@ class CombatOverlayService : Service() {
         quickCommandsPopover.hide()
     }
 
-    private fun detachOverlayChatPanelForPicker(mgr: WindowManager) {
+    private fun hideOverlayChatPanelForPicker(mgr: WindowManager) {
         val root = overlayChatTeamRoot ?: return
         val params = overlayChatTeamParams ?: return
         if (!root.isAttachedToWindow) return
@@ -342,13 +340,19 @@ class CombatOverlayService : Service() {
                 params = params,
                 prevFlags = params.flags,
                 prevVisibility = root.visibility,
-                detachedForPicker = true,
             ),
         )
-        runCatching { mgr.removeView(root) }
-            .onFailure { e ->
-                Log.w(TAG, "detachOverlayChatPanelForPicker: removeView failed", e)
-            }
+        if (root.visibility != View.GONE) {
+            root.visibility = View.GONE
+        }
+        val with = params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        if (params.flags != with) {
+            params.flags = with
+            runCatching { mgr.updateViewLayout(root, params) }
+                .onFailure { e ->
+                    Log.w(TAG, "hideOverlayChatPanelForPicker: updateViewLayout failed", e)
+                }
+        }
     }
 
     private fun resumeOverlayWindowsAfterSystemActivity() {
@@ -356,19 +360,10 @@ class CombatOverlayService : Service() {
         val hadSuspendedWindows = overlayTouchPassthroughSnaps.isNotEmpty()
         if (hadSuspendedWindows && mgr != null) {
             for (snap in overlayTouchPassthroughSnaps) {
-                if (snap.detachedForPicker) {
-                    if (!snap.view.isAttachedToWindow) {
-                        runCatching { mgr.addView(snap.view, snap.params) }
-                            .onFailure { e ->
-                                Log.e(TAG, "resumeOverlayWindows: re-attach chat panel failed", e)
-                            }
-                    }
-                } else {
-                    snap.params.flags = snap.prevFlags
-                    snap.view.visibility = snap.prevVisibility
-                    if (snap.view.isAttachedToWindow) {
-                        runCatching { mgr.updateViewLayout(snap.view, snap.params) }
-                    }
+                snap.params.flags = snap.prevFlags
+                snap.view.visibility = snap.prevVisibility
+                if (snap.view.isAttachedToWindow) {
+                    runCatching { mgr.updateViewLayout(snap.view, snap.params) }
                 }
             }
             overlayTouchPassthroughSnaps.clear()
@@ -377,9 +372,34 @@ class CombatOverlayService : Service() {
         if (OverlayChatInteractionHold.isOverlaySystemPickerSessionActive()) {
             OverlayChatInteractionHold.endOverlaySystemPickerSession()
         }
+        OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
         rebalanceOverlayFullscreenZOrder()
         repairDetachedOverlayChatTeamPanelIfNeeded()
         repairDetachedOverlayShellIfNeeded()
+    }
+
+    private fun extractPickerUris(intent: Intent): List<Uri> =
+        if (Build.VERSION.SDK_INT >= 33) {
+            intent.getParcelableArrayListExtra(
+                OverlaySystemDialogActivity.EXTRA_URIS,
+                Uri::class.java,
+            ).orEmpty()
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableArrayListExtra<Uri>(OverlaySystemDialogActivity.EXTRA_URIS).orEmpty()
+        }
+
+    private fun deliverOverlayActivityResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: Intent,
+    ) {
+        val owner = overlayChatTeamComposeOwner
+        if (owner == null) {
+            Log.w(TAG, "deliverOverlayActivityResult: compose owner gone (requestCode=$requestCode)")
+            return
+        }
+        owner.activityResultRegistry.dispatchResult(requestCode, resultCode, data)
     }
 
     private val overlaySystemResultReceiver = object : BroadcastReceiver() {
@@ -389,47 +409,71 @@ class CombatOverlayService : Service() {
             if (requestCode < 0) return
             mainHandler.post {
                 resumeOverlayWindowsAfterSystemActivity()
-                if (i.action == OverlaySystemDialogActivity.ACTION_OVERLAY_SYSTEM_UI_FINISHED) {
-                    return@post
-                }
-                val owner = overlayChatTeamComposeOwner ?: return@post
                 when (i.action) {
-                    OverlaySystemDialogActivity.ACTION_OVERLAY_PICK_IMAGES_RESULT -> {
-                        val uris = if (android.os.Build.VERSION.SDK_INT >= 33) {
-                            i.getParcelableArrayListExtra(
-                                OverlaySystemDialogActivity.EXTRA_URIS,
-                                Uri::class.java,
-                            ).orEmpty()
-                        } else {
-                            @Suppress("DEPRECATION")
-                            i.getParcelableArrayListExtra<Uri>(OverlaySystemDialogActivity.EXTRA_URIS).orEmpty()
-                        }
-                        val data = Intent().apply {
-                            if (uris.isNotEmpty()) {
-                                val clip = ClipData.newRawUri("images", uris.first())
-                                uris.drop(1).forEach { clip.addItem(ClipData.Item(it)) }
-                                clipData = clip
-                            }
-                        }
-                        owner.activityResultRegistry.dispatchResult(
-                            requestCode,
-                            android.app.Activity.RESULT_OK,
-                            data,
+                    OverlaySystemDialogActivity.ACTION_OVERLAY_ACTIVITY_CANCELED -> {
+                        deliverOverlayActivityResult(
+                            requestCode = requestCode,
+                            resultCode = android.app.Activity.RESULT_CANCELED,
+                            data = Intent(),
                         )
                     }
+                    OverlaySystemDialogActivity.ACTION_OVERLAY_PICK_IMAGES_RESULT -> {
+                        if (i.getBooleanExtra(OverlaySystemDialogActivity.EXTRA_COPY_FAILED, false)) {
+                            Toast.makeText(
+                                this@CombatOverlayService,
+                                getString(R.string.chat_attachment_read_failed),
+                                Toast.LENGTH_LONG,
+                            ).show()
+                            deliverOverlayActivityResult(
+                                requestCode = requestCode,
+                                resultCode = android.app.Activity.RESULT_CANCELED,
+                                data = Intent(),
+                            )
+                            return@post
+                        }
+                        val uris = extractPickerUris(i)
+                        val data = OverlayImagePickDelivery.intentForPickedImages(uris)
+                        mainHandler.post {
+                            val owner = overlayChatTeamComposeOwner
+                            if (owner != null) {
+                                deliverOverlayActivityResult(
+                                    requestCode = requestCode,
+                                    resultCode = android.app.Activity.RESULT_OK,
+                                    data = data,
+                                )
+                            } else if (uris.isNotEmpty()) {
+                                overlayChatViewModel?.onImagesPicked(uris)
+                            }
+                        }
+                    }
                     OverlaySystemDialogActivity.ACTION_OVERLAY_GET_CONTENT_RESULT -> {
-                        val uri = if (android.os.Build.VERSION.SDK_INT >= 33) {
+                        if (i.getBooleanExtra(OverlaySystemDialogActivity.EXTRA_COPY_FAILED, false)) {
+                            Toast.makeText(
+                                this@CombatOverlayService,
+                                getString(R.string.chat_attachment_read_failed),
+                                Toast.LENGTH_LONG,
+                            ).show()
+                            deliverOverlayActivityResult(
+                                requestCode = requestCode,
+                                resultCode = android.app.Activity.RESULT_CANCELED,
+                                data = Intent(),
+                            )
+                            return@post
+                        }
+                        val uri = if (Build.VERSION.SDK_INT >= 33) {
                             i.getParcelableExtra(OverlaySystemDialogActivity.EXTRA_URI, Uri::class.java)
                         } else {
                             @Suppress("DEPRECATION")
                             i.getParcelableExtra(OverlaySystemDialogActivity.EXTRA_URI)
                         }
-                        val data = if (uri != null) Intent().setData(uri) else Intent()
-                        owner.activityResultRegistry.dispatchResult(
-                            requestCode,
-                            android.app.Activity.RESULT_OK,
-                            data,
-                        )
+                        val data = OverlayImagePickDelivery.intentForGetContent(uri)
+                        mainHandler.post {
+                            deliverOverlayActivityResult(
+                                requestCode = requestCode,
+                                resultCode = android.app.Activity.RESULT_OK,
+                                data = data,
+                            )
+                        }
                     }
                     OverlaySystemDialogActivity.ACTION_OVERLAY_MIC_PERMISSION_RESULT -> {
                         val granted = i.getBooleanExtra(OverlaySystemDialogActivity.EXTRA_GRANTED, false)
@@ -439,7 +483,11 @@ class CombatOverlayService : Service() {
                                 intArrayOf(if (granted) 0 else -1),
                             )
                         }
-                        owner.activityResultRegistry.dispatchResult(requestCode, android.app.Activity.RESULT_OK, data)
+                        deliverOverlayActivityResult(
+                            requestCode = requestCode,
+                            resultCode = android.app.Activity.RESULT_OK,
+                            data = data,
+                        )
                     }
                 }
             }
@@ -650,9 +698,6 @@ class CombatOverlayService : Service() {
      */
     private fun repairDetachedOverlayChatTeamPanelIfNeeded() {
         if (OverlayChatInteractionHold.isOverlaySystemPickerSessionActive()) {
-            return
-        }
-        if (overlayTouchPassthroughSnaps.any { it.detachedForPicker }) {
             return
         }
         if (!overlayChatTeamPanelVisible && !OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible) {
@@ -2116,7 +2161,7 @@ class CombatOverlayService : Service() {
                     addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_PICK_IMAGES_RESULT)
                     addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_GET_CONTENT_RESULT)
                     addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_MIC_PERMISSION_RESULT)
-                    addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_SYSTEM_UI_FINISHED)
+                    addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_ACTIVITY_CANCELED)
                 },
                 ContextCompat.RECEIVER_NOT_EXPORTED,
             )
