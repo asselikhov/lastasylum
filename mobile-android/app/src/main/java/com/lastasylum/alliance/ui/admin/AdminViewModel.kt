@@ -455,5 +455,6 @@ fun AdminTeamMemberDto.toTeamMemberDto(team: PlayerTeamAdminDto?): TeamMemberDto
         membershipStatus = membershipStatus,
         presenceStatus = presenceStatus,
         lastPresenceAt = lastPresenceAt,
+        lastAppActiveAt = lastAppActiveAt,
         telegramUsername = telegramUsername,
     )

@@ -21,7 +21,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Article
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.PersonAdd
@@ -75,6 +77,9 @@ import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.overlay.OverlayModalScope
 import com.lastasylum.alliance.ui.components.GlassSurface
+import com.lastasylum.alliance.ui.components.TeamSectionTabAccents
+import com.lastasylum.alliance.ui.components.TeamSectionTabBar
+import com.lastasylum.alliance.ui.components.TeamSectionTabSpec
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import androidx.compose.foundation.background
@@ -432,7 +437,7 @@ fun TeamScreen(
                                         .fillMaxWidth()
                                         .padding(
                                             horizontal = SquadRelayDimens.contentPaddingHorizontal,
-                                            vertical = 6.dp,
+                                            vertical = 8.dp,
                                         ),
                                 )
                                 when (TeamMainSection.entries[mainSectionOrdinal]) {
@@ -1001,17 +1006,31 @@ private fun TeamSectionPills(
     modifier: Modifier = Modifier,
 ) {
     val tabs = TeamMainSection.entries.map { section ->
-        val titleRes = when (section) {
-            TeamMainSection.News -> R.string.team_tab_news
-            TeamMainSection.Forum -> R.string.team_tab_forum
-            TeamMainSection.Members -> R.string.team_tab_members
+        when (section) {
+            TeamMainSection.News -> TeamSectionTabSpec(
+                id = section.name,
+                label = stringResource(R.string.team_tab_news),
+                icon = Icons.Outlined.Article,
+                accentStart = TeamSectionTabAccents.newsStart,
+                accentEnd = TeamSectionTabAccents.newsEnd,
+            )
+            TeamMainSection.Forum -> TeamSectionTabSpec(
+                id = section.name,
+                label = stringResource(R.string.team_tab_forum),
+                icon = Icons.Outlined.Forum,
+                accentStart = TeamSectionTabAccents.forumStart,
+                accentEnd = TeamSectionTabAccents.forumEnd,
+            )
+            TeamMainSection.Members -> TeamSectionTabSpec(
+                id = section.name,
+                label = stringResource(R.string.team_tab_members),
+                icon = Icons.Outlined.Groups,
+                accentStart = TeamSectionTabAccents.membersStart,
+                accentEnd = TeamSectionTabAccents.membersEnd,
+            )
         }
-        com.lastasylum.alliance.ui.components.SquadSegmentTab(
-            id = section.name,
-            label = stringResource(titleRes),
-        )
     }
-    com.lastasylum.alliance.ui.components.SquadSegmentTabBar(
+    TeamSectionTabBar(
         tabs = tabs,
         selectedId = selectedSection.name,
         onSelect = { id ->

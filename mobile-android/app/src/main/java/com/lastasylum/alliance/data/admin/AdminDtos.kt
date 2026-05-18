@@ -64,6 +64,7 @@ data class AdminTeamMemberDto(
     val telegramUsername: String? = null,
     val presenceStatus: String? = null,
     val lastPresenceAt: String? = null,
+    val lastAppActiveAt: String? = null,
 )
 
 @JsonClass(generateAdapter = true)

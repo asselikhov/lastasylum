@@ -413,15 +413,10 @@ class OverlayAllianceOnlinePopover(
             }.getOrDefault(false)
         }
 
-        private fun overlayPresenceActive(status: String?): Boolean {
-            val s = status?.trim()?.lowercase() ?: return false
-            return s == "ingame" || s == "online"
-        }
-
         fun filterOverlayOnlineMembers(members: List<TeamMemberDto>): List<TeamMemberDto> =
             members.filter { m ->
                 m.membershipStatus == "active" &&
-                    overlayPresenceActive(m.presenceStatus) &&
+                    m.presenceStatus?.trim()?.lowercase() == "ingame" &&
                     parsePresenceFresh(m.lastPresenceAt, STALE_MS)
             }.sortedBy { it.username.lowercase() }
     }

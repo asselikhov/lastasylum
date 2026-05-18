@@ -72,35 +72,12 @@ import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import com.lastasylum.alliance.ui.util.toUserMessageRu
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
+import com.lastasylum.alliance.ui.util.formatPresenceTimestampRu
+import com.lastasylum.alliance.ui.util.isOverlayIngameNow
 import java.util.Locale
 import kotlinx.coroutines.launch
 
 private val squadRoleOrder = listOf("R5", "R4", "R3", "R2", "R1")
-
-/** Same freshness window as overlay «в игре» list (~3× heartbeat). */
-private const val INGAME_PRESENCE_STALE_MS = 135_000L
-
-private fun memberInGameNow(status: String?, lastPresenceAt: String?): Boolean {
-    val s = status?.trim()?.lowercase() ?: return false
-    if (s != "ingame") return false
-    val iso = lastPresenceAt?.trim().orEmpty()
-    if (iso.isEmpty()) return false
-    return runCatching {
-        val instant = Instant.parse(iso)
-        java.time.Duration.between(instant, Instant.now()).toMillis() <= INGAME_PRESENCE_STALE_MS
-    }.getOrDefault(false)
-}
-
-private fun formatLastInGameTimestampRu(iso: String?): String {
-    if (iso.isNullOrBlank()) return ""
-    return runCatching {
-        val z = java.time.ZonedDateTime.ofInstant(Instant.parse(iso.trim()), ZoneId.systemDefault())
-        z.format(DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale("ru")))
-    }.getOrDefault("")
-}
 
 fun squadRoleCode(member: PlayerTeamMemberDto): String {
     val raw = member.teamRole.trim().uppercase().takeIf { it.isNotEmpty() } ?: "R1"
@@ -352,12 +329,12 @@ private fun SquadMemberCard(
     val unknownPresence = stringResource(R.string.team_member_last_in_game_unknown)
     val lastInGameTemplate = stringResource(R.string.team_member_last_in_game_template)
     val lastInGameLine = remember(member.lastPresenceAt, unknownPresence, lastInGameTemplate) {
-        val raw = formatLastInGameTimestampRu(member.lastPresenceAt)
+        val raw = formatPresenceTimestampRu(member.lastPresenceAt)
         val slot = raw.ifBlank { unknownPresence }
         String.format(Locale.getDefault(), lastInGameTemplate, slot)
     }
     val inGameNow = remember(member.presenceStatus, member.lastPresenceAt) {
-        memberInGameNow(member.presenceStatus, member.lastPresenceAt)
+        isOverlayIngameNow(member.presenceStatus, member.lastPresenceAt)
     }
     val inGameCd = stringResource(R.string.team_member_in_game_cd)
     val notInGameCd = stringResource(R.string.team_member_not_in_game_cd)

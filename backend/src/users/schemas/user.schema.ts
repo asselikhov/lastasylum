@@ -71,8 +71,16 @@ export class User {
   @Prop({ type: [String], default: [] })
   pushFcmTokens: string[];
 
+  /**
+   * Последний пинг «в игре» с активной оверлей-панелью (status ingame).
+   * Не обновляется при online/away из основного приложения.
+   */
   @Prop({ type: Date, default: null })
   lastPresenceAt: Date | null;
+
+  /** Последняя активность в приложении SquadRelay (вход, online, away). */
+  @Prop({ type: Date, default: null })
+  lastAppActiveAt: Date | null;
 
   /** ingame | online | away */
   @Prop({ type: String, default: null })

@@ -221,6 +221,9 @@
     <string name="admin_status_removed">исключён из команды</string>
     <string name="admin_field_role">Роль: %1$s</string>
     <string name="admin_field_status">Статус: %1$s</string>
+    <string name="admin_field_last_app_active">Последний вход в приложение: %1$s</string>
+    <string name="admin_field_last_overlay_ingame">В игре с оверлеем: %1$s</string>
+    <string name="admin_presence_time_unknown">нет данных</string>
     <string name="admin_btn_approve">Принять в команду</string>
     <string name="admin_btn_remove_team">Убрать из команды</string>
     <string name="admin_remove_team_confirm_title">Убрать из команды?</string>
@@ -354,7 +357,7 @@
     <string name="team_squad_section_r3">Основной состав</string>
     <string name="team_squad_section_r2">Активные</string>
     <string name="team_squad_section_r1">Новички</string>
-    <string name="team_member_last_in_game_template">Последний заход: %1$s</string>
+    <string name="team_member_last_in_game_template">В игре с оверлеем: %1$s</string>
     <string name="team_member_last_in_game_unknown">нет данных</string>
     <string name="team_member_in_game_cd">Сейчас в игре</string>
     <string name="team_member_not_in_game_cd">Не в игре</string>

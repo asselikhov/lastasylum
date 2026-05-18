@@ -100,7 +100,20 @@ describe('UsersService', () => {
   });
 
   describe('updatePresence', () => {
-    it('trims and caps status length', async () => {
+    it('ingame updates overlay timestamp only', async () => {
+      await usersService.updatePresence('u1', ' ingame ');
+      expect(updateOne).toHaveBeenCalledWith(
+        { _id: 'u1' },
+        {
+          $set: {
+            presenceStatus: 'ingame',
+            lastPresenceAt: expect.any(Date),
+          },
+        },
+      );
+    });
+
+    it('non-ingame updates app activity without touching overlay timestamp', async () => {
       const long = ` ${'p'.repeat(40)} `;
       await usersService.updatePresence('u1', long);
       expect(updateOne).toHaveBeenCalledWith(
@@ -108,7 +121,7 @@ describe('UsersService', () => {
         {
           $set: {
             presenceStatus: 'p'.repeat(32),
-            lastPresenceAt: expect.any(Date),
+            lastAppActiveAt: expect.any(Date),
           },
         },
       );

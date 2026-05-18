@@ -214,10 +214,11 @@ class CombatOverlayService : Service() {
         )
     }
     private var overlayVoiceControls: OverlayVoiceControls? = null
-    /** Фиксированный слот голосового хаба (44dp) — раскрытие не раздувает столбец FAB. */
     private var overlayVoiceAnchor: FrameLayout? = null
     /** Высота окна панели до relayout (компенсация y при BOTTOM|gravity). */
     private var overlayPanelLastHeightPx: Int = 0
+    /** Экранная Y (raw) верхнего края кнопки свернуть/развернуть — якорь при toggle. */
+    private var overlayCollapseAnchorScreenY: Int = -1
     private var voiceSession: VoiceChatSession? = null
     private var pendingVoiceMicEnable = false
     private var voicePermissionReceiverRegistered = false
@@ -1288,6 +1289,8 @@ class CombatOverlayService : Service() {
 
     private fun syncOverlayVoiceExpandLayout() {
         overlayVoiceControls?.setExpandTowardStart(overlayPanelAnchoredEnd)
+        overlayMessageFabColumn?.gravity =
+            if (overlayPanelAnchoredEnd) Gravity.END else Gravity.START
     }
 
     private fun showOverlayControl() {
@@ -1402,6 +1405,22 @@ class CombatOverlayService : Service() {
                     }
                 }
             }
+            controls.onExpansionChanged = voiceExpansion@{
+                val mgr = windowManager
+                val wr = overlayView
+                val p = overlayMainWindowParams
+                if (mgr == null || wr == null || p == null) return@voiceExpansion
+                val widthBefore = wr.width.coerceAtLeast(0)
+                wr.post {
+                    if (!wr.isAttachedToWindow) return@post
+                    syncOverlayPanelEdgeLayout()
+                    val wAfter = wr.width
+                    if (overlayPanelAnchoredEnd && widthBefore > 0 && wAfter != widthBefore) {
+                        p.x += widthBefore - wAfter
+                        runCatching { mgr.updateViewLayout(wr, p) }
+                    }
+                }
+            }
         }
         overlayVoiceControls = voiceControls
 
@@ -1485,7 +1504,7 @@ class CombatOverlayService : Service() {
                 addView(
                     voiceControls.root,
                     FrameLayout.LayoutParams(
-                        fabColW,
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
                         FrameLayout.LayoutParams.WRAP_CONTENT,
                     ),
                 )
@@ -1493,7 +1512,10 @@ class CombatOverlayService : Service() {
             overlayVoiceAnchor = voiceAnchor
             addView(
                 voiceAnchor,
-                LinearLayout.LayoutParams(fabColW, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply {
                     topMargin = gap
                 },
             )
@@ -1506,7 +1528,10 @@ class CombatOverlayService : Service() {
             clipToPadding = false
             addView(
                 messageFabColumn,
-                LinearLayout.LayoutParams(fabColW, LinearLayout.LayoutParams.WRAP_CONTENT),
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
             )
         }
 
@@ -1517,9 +1542,10 @@ class CombatOverlayService : Service() {
             clipToPadding = false
             addView(
                 messageRow,
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                    bottomMargin = dp(8)
-                },
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
             )
         }
 
@@ -1562,8 +1588,17 @@ class CombatOverlayService : Service() {
             OverlayPanelCollapseHost.applyLockVisual(lockIcon, locked)
         }
 
+        fun captureCollapseAnchorScreenY(): Int {
+            if (!btnCollapse.isAttachedToWindow) return -1
+            val loc = IntArray(2)
+            btnCollapse.getLocationOnScreen(loc)
+            return loc[1]
+        }
+
         fun applyControlsVisibility() {
             Log.d(OVERLAY_DIAG_TAG, "applyControls collapsed=$panelCollapsed")
+            val anchorYBefore = captureCollapseAnchorScreenY()
+            val widthBefore = windowRoot.width.coerceAtLeast(0)
             // GONE (not INVISIBLE): скрытые FAB не участвуют в layout, окно WM сжимается до кнопки
             // свернуть/развернуть — иначе на части OEM касания в «пустом» прямоугольнике окна
             // не доходят до игры, даже с FLAG_NOT_TOUCH_MODAL и passthrough-корнем.
@@ -1581,14 +1616,10 @@ class CombatOverlayService : Service() {
                 chatTeamHost.visibility = View.VISIBLE
                 voiceControls.root.visibility = View.VISIBLE
             }
-            (messageRow.layoutParams as? LinearLayout.LayoutParams)?.bottomMargin =
-                if (panelCollapsed) 0 else dp(8)
             btnCollapse.setImageResource(if (panelCollapsed) R.drawable.ic_overlay_ui_expand else R.drawable.ic_overlay_ui_collapse)
             btnCollapse.contentDescription = getString(
                 if (panelCollapsed) R.string.overlay_cd_toggle_show_ui else R.string.overlay_cd_toggle_hide_ui,
             )
-            val heightBefore = if (windowRoot.isAttachedToWindow) windowRoot.height else overlayPanelLastHeightPx
-            overlayPanelLastHeightPx = heightBefore
             windowRoot.requestLayout()
             windowRoot.post {
                 if (!windowRoot.isAttachedToWindow) return@post
@@ -1599,17 +1630,24 @@ class CombatOverlayService : Service() {
                     )
                 }
                 val p = overlayMainWindowParams ?: return@post
-                val heightAfter = windowRoot.height
-                if (heightBefore > 0 && heightAfter > 0 && heightAfter != heightBefore) {
-                    p.y += heightAfter - heightBefore
-                }
-                overlayPanelLastHeightPx = heightAfter
-                runCatching { manager.updateViewLayout(windowRoot, p) }
                 if (panelCollapsed) {
                     runCatching { syncOverlayPanelEdgeLayout() }
                 } else {
                     syncOverlayVoiceExpandLayout()
                 }
+                val wAfter = windowRoot.width.coerceAtLeast(0)
+                if (overlayPanelAnchoredEnd && widthBefore > 0 && wAfter != widthBefore) {
+                    p.x += widthBefore - wAfter
+                }
+                val anchorYAfter = captureCollapseAnchorScreenY()
+                if (anchorYBefore >= 0 && anchorYAfter >= 0 && anchorYAfter != anchorYBefore) {
+                    p.y += anchorYAfter - anchorYBefore
+                }
+                if (anchorYAfter >= 0) {
+                    overlayCollapseAnchorScreenY = anchorYAfter
+                }
+                overlayPanelLastHeightPx = windowRoot.height
+                runCatching { manager.updateViewLayout(windowRoot, p) }
             }
         }
 
@@ -1708,6 +1746,8 @@ class CombatOverlayService : Service() {
                             Log.w(TAG, "syncOverlayPanelEdgeLayout after drag failed", e)
                         }
                         overlayTicker.syncTickerPosition()
+                        val ay = captureCollapseAnchorScreenY()
+                        if (ay >= 0) overlayCollapseAnchorScreenY = ay
                         AppContainer.from(this@CombatOverlayService).userSettingsPreferences.setOverlayPanelPosPx(
                             x = panelParams.x,
                             y = panelParams.y,

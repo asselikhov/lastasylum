@@ -67,6 +67,7 @@ import com.lastasylum.alliance.data.users.TeamMemberDto
 import com.lastasylum.alliance.ui.admin.AdminRoute
 import com.lastasylum.alliance.ui.admin.AdminUiState
 import com.lastasylum.alliance.ui.admin.toTeamMemberDto
+import com.lastasylum.alliance.ui.util.formatPresenceTimestampRu
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 
@@ -882,6 +883,15 @@ private fun AdminUserActionsSheet(
         "removed" -> stringResource(R.string.admin_status_removed)
         else -> stringResource(R.string.admin_status_active)
     }
+    val unknownTime = stringResource(R.string.admin_presence_time_unknown)
+    val lastAppLine = stringResource(
+        R.string.admin_field_last_app_active,
+        formatPresenceTimestampRu(member.lastAppActiveAt).ifBlank { unknownTime },
+    )
+    val lastOverlayLine = stringResource(
+        R.string.admin_field_last_overlay_ingame,
+        formatPresenceTimestampRu(member.lastPresenceAt).ifBlank { unknownTime },
+    )
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -892,6 +902,16 @@ private fun AdminUserActionsSheet(
         Text(member.email, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(stringResource(R.string.admin_field_status, statusLabel), style = MaterialTheme.typography.bodySmall)
         Text(stringResource(R.string.admin_field_role, member.role), style = MaterialTheme.typography.bodySmall)
+        Text(
+            lastAppLine,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            lastOverlayLine,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         member.teamTag?.let {
             Text("[$it] ${member.teamDisplayName.orEmpty()}", style = MaterialTheme.typography.bodySmall)
         }

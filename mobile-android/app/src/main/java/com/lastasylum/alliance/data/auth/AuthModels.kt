@@ -34,6 +34,7 @@ data class AuthUser(
     val teamTag: String? = null,
     val presenceStatus: String? = null,
     val lastPresenceAt: String? = null,
+    val lastAppActiveAt: String? = null,
     val telegramUsername: String? = null,
     val playerTeamId: String? = null,
     val playerTeamTag: String? = null,

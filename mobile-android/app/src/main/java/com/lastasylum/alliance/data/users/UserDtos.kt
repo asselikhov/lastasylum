@@ -16,6 +16,7 @@ data class TeamMemberDto(
     val membershipStatus: String,
     val presenceStatus: String? = null,
     val lastPresenceAt: String? = null,
+    val lastAppActiveAt: String? = null,
     val telegramUsername: String? = null,
 )
 
@@ -33,6 +34,7 @@ data class MyProfileDto(
     val membershipStatus: String,
     val presenceStatus: String? = null,
     val lastPresenceAt: String? = null,
+    val lastAppActiveAt: String? = null,
     val telegramUsername: String? = null,
     val playerTeamId: String? = null,
     val playerTeamTag: String? = null,

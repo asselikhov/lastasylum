@@ -41,8 +41,10 @@ export type TeamMemberRow = {
   telegramUsername: string | null;
   /** ingame | online | away — для клиента «в игре / нет». */
   presenceStatus: string | null;
-  /** ISO time последнего пинга присутствия (в т.ч. оверлей в игре). */
+  /** ISO: последний пинг оверлея в игре (ingame). */
   lastPresenceAt: string | null;
+  /** ISO: последняя активность в приложении SquadRelay. */
+  lastAppActiveAt: string | null;
 };
 
 export type PlayerTeamAdminRow = {
@@ -464,7 +466,9 @@ export class TeamsService {
     );
     const users = await this.userModel
       .find({ _id: { $in: team.squadMembers.map((m) => m.userId) } })
-      .select('username role telegramUsername presenceStatus lastPresenceAt')
+      .select(
+        'username role telegramUsername presenceStatus lastPresenceAt lastAppActiveAt',
+      )
       .lean<
         Array<{
           _id: Types.ObjectId;
@@ -473,6 +477,7 @@ export class TeamsService {
           telegramUsername?: string | null;
           presenceStatus?: string | null;
           lastPresenceAt?: Date | string | null;
+          lastAppActiveAt?: Date | string | null;
         }>
       >()
       .exec();
@@ -491,6 +496,7 @@ export class TeamsService {
           telegramUsername: u.telegramUsername ?? null,
           presenceStatus: u.presenceStatus ?? null,
           lastPresenceAt: toIso(u.lastPresenceAt),
+          lastAppActiveAt: toIso(u.lastAppActiveAt),
         },
       ]),
     );
@@ -509,6 +515,7 @@ export class TeamsService {
         telegramUsername: row?.telegramUsername ?? null,
         presenceStatus: row?.presenceStatus ?? null,
         lastPresenceAt: row?.lastPresenceAt ?? null,
+        lastAppActiveAt: row?.lastAppActiveAt ?? null,
       };
     });
     members.sort((a, b) => {
@@ -923,7 +930,7 @@ export class TeamsService {
     const users = await this.userModel
       .find({ _id: { $in: team.squadMembers.map((m) => m.userId) } })
       .select(
-        'username email role telegramUsername presenceStatus lastPresenceAt membershipStatus allianceName',
+        'username email role telegramUsername presenceStatus lastPresenceAt lastAppActiveAt membershipStatus allianceName',
       )
       .lean<
         Array<{
@@ -934,6 +941,7 @@ export class TeamsService {
           telegramUsername?: string | null;
           presenceStatus?: string | null;
           lastPresenceAt?: Date | string | null;
+          lastAppActiveAt?: Date | string | null;
           membershipStatus?: string;
           allianceName?: string;
         }>
@@ -959,6 +967,7 @@ export class TeamsService {
         telegramUsername: u.telegramUsername ?? null,
         presenceStatus: u.presenceStatus ?? null,
         lastPresenceAt: toIso(u.lastPresenceAt),
+        lastAppActiveAt: toIso(u.lastAppActiveAt),
         membershipStatus: u.membershipStatus ?? 'active',
         allianceName: u.allianceName?.trim() || '—',
       };

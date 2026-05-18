@@ -25,6 +25,7 @@ export type SafeUser = {
   membershipStatus: TeamMembershipStatus;
   presenceStatus: string | null;
   lastPresenceAt: string | null;
+  lastAppActiveAt: string | null;
   telegramUsername: string | null;
   playerTeamId: string | null;
   playerTeamTag: string | null;
@@ -289,6 +290,9 @@ export class UsersService {
       lastPresenceAt: user.lastPresenceAt
         ? user.lastPresenceAt.toISOString()
         : null,
+      lastAppActiveAt: user.lastAppActiveAt
+        ? user.lastAppActiveAt.toISOString()
+        : null,
       telegramUsername: user.telegramUsername ?? null,
       ...teamFields,
       enabledStickerPacks,
@@ -383,14 +387,36 @@ export class UsersService {
       .exec();
   }
 
+  async touchAppActivity(userId: string): Promise<void> {
+    await this.userModel
+      .updateOne({ _id: userId }, { $set: { lastAppActiveAt: new Date() } })
+      .exec();
+  }
+
   async updatePresence(userId: string, status: string): Promise<void> {
+    const normalized = status.trim().toLowerCase().slice(0, 32);
+    const now = new Date();
+    if (normalized === 'ingame') {
+      await this.userModel
+        .updateOne(
+          { _id: userId },
+          {
+            $set: {
+              presenceStatus: 'ingame',
+              lastPresenceAt: now,
+            },
+          },
+        )
+        .exec();
+      return;
+    }
     await this.userModel
       .updateOne(
         { _id: userId },
         {
           $set: {
-            presenceStatus: status.trim().slice(0, 32),
-            lastPresenceAt: new Date(),
+            presenceStatus: normalized,
+            lastAppActiveAt: now,
           },
         },
       )

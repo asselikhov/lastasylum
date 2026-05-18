@@ -11,8 +11,8 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.lastasylum.alliance.R
 
 /**
- * Голосовой хаб в фиксированном слоте 44dp: «Звук» и «Микрофон» выезжают влево/вправо
- * ([expandTowardStart] = true → влево, когда панель у правого края), столбец FAB не расширяется.
+ * Голосовой хаб: «Звук» и «Микрофон» в одном горизонтальном ряду с хабом.
+ * [expandTowardStart] = true — порядок sound, mic, hub (раскрытие влево от хаба у правого края).
  */
 class OverlayVoiceControls(
     private val context: Context,
@@ -30,10 +30,9 @@ class OverlayVoiceControls(
     private val micSlot: LinearLayout
     private val soundLabel: TextView
     private val micLabel: TextView
-    private val slotsHost: FrameLayout
+    private val slotsRow: LinearLayout
 
     private var expanded = false
-    /** true — раскрытие влево (панель у правого края экрана). */
     var expandTowardStart: Boolean = false
         private set
 
@@ -108,7 +107,9 @@ class OverlayVoiceControls(
             )
         }
 
-        slotsHost = FrameLayout(context).apply {
+        slotsRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             clipChildren = false
             clipToPadding = false
         }
@@ -117,12 +118,16 @@ class OverlayVoiceControls(
             clipChildren = false
             clipToPadding = false
             addView(
-                slotsHost,
-                FrameLayout.LayoutParams(btnSizePx, FrameLayout.LayoutParams.WRAP_CONTENT),
+                slotsRow,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.START or Gravity.CENTER_VERTICAL,
+                ),
             )
         }
 
-        layoutHubAndSlots()
+        rebuildSlotOrder()
         btnHub.setOnClickListener { toggleExpanded() }
         btnSound.setOnClickListener { onSoundToggle?.invoke() }
         btnMic.setOnClickListener { onMicToggle?.invoke() }
@@ -131,41 +136,28 @@ class OverlayVoiceControls(
     fun setExpandTowardStart(towardStart: Boolean) {
         if (expandTowardStart == towardStart) return
         expandTowardStart = towardStart
-        layoutHubAndSlots()
+        rebuildSlotOrder()
     }
 
-    private fun layoutHubAndSlots() {
-        slotsHost.removeAllViews()
-        val hubGravity = if (expandTowardStart) {
-            Gravity.END or Gravity.CENTER_VERTICAL
-        } else {
-            Gravity.START or Gravity.CENTER_VERTICAL
+    private fun rebuildSlotOrder() {
+        slotsRow.removeAllViews()
+        val hubLp = LinearLayout.LayoutParams(btnSizePx, btnSizePx)
+        fun slotLp(withStartGap: Boolean) = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply {
+            if (withStartGap) marginStart = gapPx
         }
-        slotsHost.addView(
-            btnHub,
-            FrameLayout.LayoutParams(btnSizePx, btnSizePx, hubGravity),
-        )
-        val slotLp = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            hubGravity,
-        )
-        slotsHost.addView(soundSlot, slotLp)
-        slotsHost.addView(micSlot, slotLp)
-        slotsHost.post { applySlotTranslations() }
-    }
 
-    private fun applySlotTranslations() {
-        val step = (btnSizePx + gapPx).toFloat()
         if (expandTowardStart) {
-            micSlot.translationX = -step
-            soundSlot.translationX = -2f * step
+            slotsRow.addView(soundSlot, slotLp(withStartGap = false))
+            slotsRow.addView(micSlot, slotLp(withStartGap = true))
+            slotsRow.addView(btnHub, hubLp)
         } else {
-            soundSlot.translationX = step
-            micSlot.translationX = 2f * step
+            slotsRow.addView(btnHub, hubLp)
+            slotsRow.addView(soundSlot, slotLp(withStartGap = true))
+            slotsRow.addView(micSlot, slotLp(withStartGap = true))
         }
-        soundSlot.translationY = 0f
-        micSlot.translationY = 0f
     }
 
     private fun makeToggleLabel(text: String): TextView =
@@ -186,9 +178,6 @@ class OverlayVoiceControls(
         btnHub.contentDescription = context.getString(
             if (value) R.string.overlay_voice_hub_collapse_cd else R.string.overlay_voice_hub_cd,
         )
-        if (value) {
-            slotsHost.post { applySlotTranslations() }
-        }
         onExpansionChanged?.invoke()
     }
 

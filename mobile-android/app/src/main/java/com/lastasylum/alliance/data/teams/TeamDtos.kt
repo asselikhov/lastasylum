@@ -25,8 +25,10 @@ data class PlayerTeamMemberDto(
     val telegramUsername: String?,
     /** ingame | online | away */
     val presenceStatus: String? = null,
-    /** ISO-8601 last presence ping (overlay in-game, etc.). */
+    /** ISO-8601: последний пинг оверлея в игре (ingame). */
     val lastPresenceAt: String? = null,
+    /** ISO-8601: последняя активность в приложении SquadRelay. */
+    val lastAppActiveAt: String? = null,
 )
 
 @JsonClass(generateAdapter = true)

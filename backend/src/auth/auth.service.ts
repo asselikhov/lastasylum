@@ -249,6 +249,7 @@ export class AuthService {
 
     const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
     await this.usersService.updateRefreshTokenHash(userId, refreshTokenHash);
+    await this.usersService.touchAppActivity(userId);
 
     const full = await this.usersService.findById(userId);
     if (!full) {
