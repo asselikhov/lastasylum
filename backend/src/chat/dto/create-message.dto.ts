@@ -1,6 +1,7 @@
 import { Transform } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
   IsMongoId,
   IsOptional,
   IsString,
@@ -33,4 +34,9 @@ export class CreateMessageDto {
   @IsArray()
   @IsMongoId({ each: true })
   attachments?: string[];
+
+  /** Overlay «Раскопки»: отдельный push союзникам вне игры (см. [PushNotificationsService.notifyExcavationAlert]). */
+  @IsOptional()
+  @IsBoolean()
+  excavationAlert?: boolean;
 }

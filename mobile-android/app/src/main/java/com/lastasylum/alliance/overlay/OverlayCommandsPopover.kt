@@ -19,6 +19,7 @@ import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.HorizontalScrollView
 import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
@@ -36,7 +37,8 @@ class OverlayCommandsPopover(
     private val mainHandler: Handler,
     private val scope: CoroutineScope,
     private val dp: (Int) -> Int,
-    private val sendCommand: suspend (String, Int, Int) -> Result<ChatMessage>,
+    /** [excavation] → сообщение раскопок в «Рейд» + push союзникам вне игры. */
+    private val sendCoords: suspend (label: String, x: Int, y: Int, excavation: Boolean) -> Result<ChatMessage>,
 ) {
     private var menuScrim: FrameLayout? = null
     private var coordScrim: FrameLayout? = null
@@ -64,25 +66,15 @@ class OverlayCommandsPopover(
         runCatching { wm?.removeView(host) }
     }
 
-    fun toggle(
-        windowManager: WindowManager,
-        panelParams: WindowManager.LayoutParams,
-        panelRoot: View,
-        anchoredEnd: Boolean,
-    ) {
+    fun toggle(windowManager: WindowManager) {
         if (isShowing()) {
             hide()
             return
         }
-        showMenu(windowManager, panelParams, panelRoot, anchoredEnd)
+        showMenu(windowManager)
     }
 
-    private fun showMenu(
-        windowManager: WindowManager,
-        panelParams: WindowManager.LayoutParams,
-        panelRoot: View,
-        anchoredEnd: Boolean,
-    ) {
+    private fun showMenu(windowManager: WindowManager) {
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
@@ -91,22 +83,7 @@ class OverlayCommandsPopover(
         }
 
         val screenW = context.resources.displayMetrics.widthPixels
-        val screenH = context.resources.displayMetrics.heightPixels
-        val panelW = panelRoot.width.takeIf { it > 0 } ?: dp(120)
-        val panelH = panelRoot.height.takeIf { it > 0 } ?: dp(180)
-
-        val popoverW = minOf(dp(404), screenW - dp(20))
-        val popoverH = minOf(dp(400), screenH - dp(24))
-
-        var x = if (anchoredEnd) {
-            panelParams.x - popoverW - dp(8)
-        } else {
-            panelParams.x + panelW + dp(8)
-        }
-        x = x.coerceIn(dp(8), (screenW - popoverW - dp(8)).coerceAtLeast(dp(8)))
-
-        val yBottom = (panelParams.y + panelH / 2 - popoverH / 2)
-            .coerceIn(0, (screenH - popoverH).coerceAtLeast(0))
+        val popoverW = minOf(dp(440), screenW - dp(16))
 
         fun menuItemBackground(): RippleDrawable {
             val base = GradientDrawable().apply {
@@ -228,7 +205,7 @@ class OverlayCommandsPopover(
                         hideCoordOnly()
                         removeShell(menuScrim)
                         menuScrim = null
-                        showCoordinateDialog(wm, label)
+                        showCoordinateDialog(wm, label, excavation = false)
                     }
                 }
                 addView(titleTv)
@@ -239,6 +216,46 @@ class OverlayCommandsPopover(
                         LinearLayout.LayoutParams.WRAP_CONTENT,
                     ),
                 )
+                addView(
+                    actionBtn,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ),
+                )
+            }
+
+        fun columnCoordsOnly(titleRes: Int, excavation: Boolean): LinearLayout =
+            LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                val titleTv = TextView(context).apply {
+                    text = context.getString(titleRes)
+                    setTextColor(Color.parseColor("#FFB8C6DD"))
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+                    typeface = Typeface.DEFAULT_BOLD
+                    letterSpacing = 0.02f
+                    setPadding(0, 0, 0, dp(6))
+                }
+                val actionBtn = TextView(context).apply {
+                    text = context.getString(R.string.overlay_cmd_column_open_coords)
+                    setTextColor(Color.parseColor("#FFEEF3FB"))
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                    letterSpacing = 0.015f
+                    minimumHeight = dp(44)
+                    setPadding(dp(10), dp(10), dp(10), dp(10))
+                    gravity = Gravity.CENTER
+                    background = menuItemBackground()
+                    isClickable = true
+                    setOnClickListener {
+                        val wm = attachedWindowManager ?: return@setOnClickListener
+                        val label = context.getString(titleRes)
+                        hideCoordOnly()
+                        removeShell(menuScrim)
+                        menuScrim = null
+                        showCoordinateDialog(wm, label, excavation)
+                    }
+                }
+                addView(titleTv)
                 addView(
                     actionBtn,
                     LinearLayout.LayoutParams(
@@ -262,17 +279,33 @@ class OverlayCommandsPopover(
                 CommandOption(R.string.overlay_cmd_spinner_reinf_to_player, R.string.overlay_cmd_reinf_player),
             ),
         )
-        val columnGap = dp(12)
+        val columnGap = dp(10)
+        val colMinW = dp(92)
         val columns = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(dp(14), dp(6), dp(14), dp(16))
             columnDefs.forEachIndexed { index, (titleRes, opts) ->
                 val col = columnWithHeader(titleRes, opts)
-                val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                val lp = LinearLayout.LayoutParams(colMinW, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                     if (index < columnDefs.lastIndex) marginEnd = columnGap
                 }
                 addView(col, lp)
             }
+            addView(
+                columnCoordsOnly(R.string.overlay_cmd_column_excavation, excavation = true),
+                LinearLayout.LayoutParams(colMinW, LinearLayout.LayoutParams.WRAP_CONTENT),
+            )
+        }
+        val columnsScroll = HorizontalScrollView(context).apply {
+            isHorizontalScrollBarEnabled = false
+            isFillViewport = false
+            addView(
+                columns,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
         }
 
         val cardBg = GradientDrawable(
@@ -291,7 +324,13 @@ class OverlayCommandsPopover(
             background = cardBg
             addView(headerRow)
             addView(headerDivider)
-            addView(columns)
+            addView(
+                columnsScroll,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
             setOnClickListener { }
         }
 
@@ -301,12 +340,12 @@ class OverlayCommandsPopover(
             setOnClickListener { hide() }
         }
 
-        val cardLp = FrameLayout.LayoutParams(popoverW, popoverH).apply {
-            gravity = Gravity.BOTTOM or Gravity.START
-            leftMargin = x
-            bottomMargin = yBottom
-        }
-        scrim.addView(card, cardLp)
+        scrim.addView(
+            card,
+            FrameLayout.LayoutParams(popoverW, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                gravity = Gravity.CENTER
+            },
+        )
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -327,7 +366,11 @@ class OverlayCommandsPopover(
         attachedWindowManager = windowManager
     }
 
-    private fun showCoordinateDialog(windowManager: WindowManager, commandLabel: String) {
+    private fun showCoordinateDialog(
+        windowManager: WindowManager,
+        commandLabel: String,
+        excavation: Boolean,
+    ) {
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
@@ -518,7 +561,7 @@ class OverlayCommandsPopover(
             sendBtn.isEnabled = false
             cancelBtn.isEnabled = false
             scope.launch {
-                val result = sendCommand(commandLabel, xv, yv)
+                val result = sendCoords(commandLabel, xv, yv, excavation)
                 mainHandler.post {
                     sendBtn.isEnabled = true
                     cancelBtn.isEnabled = true

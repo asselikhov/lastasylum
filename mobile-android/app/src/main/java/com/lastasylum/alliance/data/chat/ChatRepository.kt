@@ -58,6 +58,7 @@ class ChatRepository(
         roomId: String,
         replyToMessageId: String? = null,
         attachments: List<String>? = null,
+        excavationAlert: Boolean = false,
     ): Result<ChatMessage> {
         return runCatching {
             chatApi.sendMessage(
@@ -66,10 +67,14 @@ class ChatRepository(
                     roomId = roomId,
                     replyToMessageId = replyToMessageId,
                     attachments = attachments,
+                    excavationAlert = if (excavationAlert) true else null,
                 ),
             )
         }
     }
+
+    suspend fun sendExcavationAlertWithRetries(text: String, roomId: String): Result<ChatMessage> =
+        sendMessageWithRetries(text, roomId, excavationAlert = true)
 
     /** Несколько попыток с задержкой — для UI и оверлея при нестабильной сети. */
     suspend fun sendMessageWithRetries(
@@ -77,10 +82,11 @@ class ChatRepository(
         roomId: String,
         replyToMessageId: String? = null,
         attachments: List<String>? = null,
+        excavationAlert: Boolean = false,
     ): Result<ChatMessage> {
         var last: Throwable? = null
         repeat(3) { attempt ->
-            val r = sendMessage(text, roomId, replyToMessageId, attachments)
+            val r = sendMessage(text, roomId, replyToMessageId, attachments, excavationAlert)
             if (r.isSuccess) {
                 // For the overlay strip we want the message to appear immediately after HTTP success,
                 // even if the socket broadcast is delayed or the room subscription is rebuilding.

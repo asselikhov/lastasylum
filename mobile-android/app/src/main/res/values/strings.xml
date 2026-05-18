@@ -151,6 +151,7 @@
     <string name="settings_screen_title">Настройки</string>
     <string name="settings_screen_subtitle">Оверлей, доступы и параметры игры</string>
     <string name="settings_section_overlay">Оверлей в игре</string>
+    <string name="settings_section_notifications">Уведомления</string>
     <string name="settings_section_game_filter">Фильтр игры</string>
     <string name="overlay_title">Оверлей</string>
     <string name="overlay_activity_filter_label">Activity фильтр (опционально)</string>
@@ -482,9 +483,16 @@
     <string name="overlay_online_empty">Сейчас никого нет со свежим пингом (статусы «в игре» или «онлайн»).</string>
     <string name="overlay_online_error">Не удалось загрузить список.</string>
     <string name="overlay_online_close_cd">Закрыть список</string>
-    <string name="overlay_cd_commands">Команды альянса</string>
-    <string name="overlay_commands_title">Команды</string>
-    <string name="overlay_commands_subtitle">Выберите действие</string>
+    <string name="overlay_cd_commands">Быстрые команды</string>
+    <string name="overlay_commands_title">Быстрые команды</string>
+    <string name="overlay_commands_subtitle">Координаты в канал «Рейд»</string>
+    <string name="overlay_excavation_message">Раскопки альянса X:%1$d Y:%2$d</string>
+    <string name="overlay_cmd_column_excavation">Раскопки</string>
+    <string name="settings_excavation_push_title">Уведомления о раскопках</string>
+    <string name="settings_excavation_push_subtitle">Push, когда союзник отметил координаты раскопок, а вы не в игре с оверлеем</string>
+    <string name="excavation_push_channel_name">Раскопки альянса</string>
+    <string name="excavation_push_channel_desc">Срочные координаты раскопок от союзников</string>
+    <string name="excavation_push_default_title">⛏ Раскопки</string>
     <string name="overlay_coord_x_label">X:</string>
     <string name="overlay_coord_y_label">Y:</string>
     <string name="overlay_coord_send">Отправить</string>

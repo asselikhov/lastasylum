@@ -14,6 +14,13 @@ class UsersRepository(
             usersApi.updateMyUsername(UpdateUsernameBody(username = username.trim()))
         }
 
+    suspend fun updateExcavationPushEnabled(enabled: Boolean): Result<MyProfileDto> =
+        runCatching {
+            usersApi.updateNotificationPreferences(
+                UpdateNotificationPreferencesBody(excavationPushEnabled = enabled),
+            )
+        }
+
     suspend fun registerPushToken(token: String): Result<Unit> =
         runCatching { usersApi.registerPushToken(PushTokenBody(token)) }
 

@@ -192,11 +192,17 @@ class CombatOverlayService : Service() {
             mainHandler = mainHandler,
             scope = serviceScope,
             dp = { dp(it) },
-            sendCommand = { label, x, y ->
+            sendCoords = { label, x, y, excavation ->
                 val roomId = AppContainer.from(this@CombatOverlayService).chatRoomPreferences.getRaidRoomId()
                     ?: return@OverlayCommandsPopover Result.failure(IllegalStateException("no_raid"))
-                val text = "$label X:${x} Y:${y}"
-                AppContainer.from(this@CombatOverlayService).chatRepository.sendMessageWithRetries(text, roomId)
+                val repo = AppContainer.from(this@CombatOverlayService).chatRepository
+                if (excavation) {
+                    val text = getString(R.string.overlay_excavation_message, x, y)
+                    repo.sendExcavationAlertWithRetries(text, roomId)
+                } else {
+                    val text = "$label X:${x} Y:${y}"
+                    repo.sendMessageWithRetries(text, roomId)
+                }
             },
         )
     }
@@ -1643,7 +1649,7 @@ class CombatOverlayService : Service() {
                 { OverlayChatInteractionHold.suppressGameForegroundGate = false },
                 2500L,
             )
-            overlayCommandsPopover.toggle(mgr, p, wr, overlayPanelAnchoredEnd)
+            overlayCommandsPopover.toggle(mgr)
         }
 
         lockIcon.setOnClickListener {

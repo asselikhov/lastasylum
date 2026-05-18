@@ -18,6 +18,11 @@ interface UsersApi {
     @PATCH("users/me/username")
     suspend fun updateMyUsername(@Body body: UpdateUsernameBody): MyProfileDto
 
+    @PATCH("users/me/notification-preferences")
+    suspend fun updateNotificationPreferences(
+        @Body body: UpdateNotificationPreferencesBody,
+    ): MyProfileDto
+
     @POST("users/me/push-token")
     suspend fun registerPushToken(@Body body: PushTokenBody): Map<String, Boolean?>
 

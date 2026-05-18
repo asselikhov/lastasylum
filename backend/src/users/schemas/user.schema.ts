@@ -89,6 +89,10 @@ export class User {
   /** Telegram @username without leading @, lowercase (optional). */
   @Prop({ type: String, default: null, trim: true, lowercase: true })
   telegramUsername: string | null;
+
+  /** Push when allies post excavation coords from overlay (off-game allies). */
+  @Prop({ type: Boolean, default: true })
+  excavationPushEnabled: boolean;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

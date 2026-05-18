@@ -11,6 +11,11 @@ import kotlinx.coroutines.launch
 class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    override fun onCreate() {
+        super.onCreate()
+        ExcavationPushNotifications.ensureChannel(this)
+    }
+
     override fun onNewToken(token: String) {
         scope.launch {
             runCatching {
@@ -20,7 +25,23 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
-        // Notifications with notification payload are shown by the system when app in background.
+        val dataType = message.data["type"]
+        if (dataType == "excavation_alert") {
+            val title = message.notification?.title
+                ?: message.data["title"]
+                ?: getString(com.lastasylum.alliance.R.string.excavation_push_default_title)
+            val body = message.notification?.body
+                ?: message.data["body"]
+                ?: message.data["senderName"]
+                ?: ""
+            ExcavationPushNotifications.show(
+                context = applicationContext,
+                title = title,
+                body = body,
+                roomId = message.data["roomId"],
+            )
+            return
+        }
         super.onMessageReceived(message)
     }
 }

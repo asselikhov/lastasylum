@@ -66,6 +66,7 @@ data class SendMessageRequest(
     val allianceId: String? = AllianceDefaults.DEFAULT_ALLIANCE_ID,
     val replyToMessageId: String? = null,
     val attachments: List<String>? = null,
+    val excavationAlert: Boolean? = null,
 )
 
 data class EditMessageRequest(

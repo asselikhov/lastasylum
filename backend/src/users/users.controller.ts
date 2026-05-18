@@ -21,6 +21,7 @@ import { UpdateMembershipDto } from './dto/update-membership.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { UpdateUsernameDto } from './dto/update-username.dto';
 import { UpdateTelegramDto } from './dto/update-telegram.dto';
+import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 import { MuteUserDto } from './dto/mute-user.dto';
 import {
   RegisterPushTokenDto,
@@ -76,6 +77,23 @@ export class UsersController {
   ) {
     await this.usersService.updatePresence(req.user.userId, dto.status);
     return { success: true };
+  }
+
+  @Patch('me/notification-preferences')
+  @Roles(AllianceRole.R2)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async updateMyNotificationPreferences(
+    @Req() req: { user: RequestUser },
+    @Body() dto: UpdateNotificationPreferencesDto,
+  ) {
+    const updated = await this.usersService.updateNotificationPreferences(
+      req.user.userId,
+      dto.excavationPushEnabled,
+    );
+    if (!updated) {
+      throw new NotFoundException('User not found');
+    }
+    return await this.usersService.toSafeUser(updated);
   }
 
   @Patch('me/telegram')

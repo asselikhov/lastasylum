@@ -128,6 +128,22 @@ describe('UsersService', () => {
     });
   });
 
+  describe('collectPushTokensForExcavationAlert', () => {
+    it('excludes users in fresh ingame overlay and opted out', async () => {
+      const exclude = new Types.ObjectId();
+      execCollect.mockResolvedValue([{ pushFcmTokens: ['t1'] }]);
+      const out = await usersService.collectPushTokensForExcavationAlert(
+        'pt:507f1f77bcf86cd799439011',
+        exclude.toHexString(),
+      );
+      expect(out).toEqual(['t1']);
+      const call = findForAlliance.mock.calls[0][0] as Record<string, unknown>;
+      expect(call.playerTeamId).toBeDefined();
+      expect(call.excavationPushEnabled).toEqual({ $ne: false });
+      expect(call.$or).toBeDefined();
+    });
+  });
+
   describe('collectPushTokensForAlliance', () => {
     it('returns empty when excludeUserId is not a valid ObjectId', async () => {
       const out = await usersService.collectPushTokensForAlliance(

@@ -43,6 +43,12 @@ data class MyProfileDto(
     val isPlayerTeamLeader: Boolean = false,
     val pendingPlayerTeamJoinRequests: Int = 0,
     val enabledStickerPacks: List<String> = emptyList(),
+    val excavationPushEnabled: Boolean = true,
+)
+
+@JsonClass(generateAdapter = true)
+data class UpdateNotificationPreferencesBody(
+    val excavationPushEnabled: Boolean,
 )
 
 @JsonClass(generateAdapter = true)

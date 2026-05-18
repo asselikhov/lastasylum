@@ -35,6 +35,7 @@ export type SafeUser = {
   pendingPlayerTeamJoinRequests: number;
   /** Alliance sticker packs this account may send (wire keys, e.g. zlobyaka). */
   enabledStickerPacks: string[];
+  excavationPushEnabled: boolean;
 };
 
 @Injectable()
@@ -296,7 +297,21 @@ export class UsersService {
       telegramUsername: user.telegramUsername ?? null,
       ...teamFields,
       enabledStickerPacks,
+      excavationPushEnabled: user.excavationPushEnabled !== false,
     };
+  }
+
+  async updateNotificationPreferences(
+    userId: string,
+    excavationPushEnabled: boolean,
+  ): Promise<UserDocument | null> {
+    return this.userModel
+      .findByIdAndUpdate(
+        userId,
+        { $set: { excavationPushEnabled } },
+        { new: true },
+      )
+      .exec();
   }
 
   private normalizeTelegramUsername(
@@ -421,6 +436,49 @@ export class UsersService {
         },
       )
       .exec();
+  }
+
+  /** Same freshness window as overlay «online in game» list (~90s). */
+  private static readonly OVERLAY_INGAME_STALE_MS = 90_000;
+
+  async collectPushTokensForExcavationAlert(
+    allianceId: string,
+    excludeUserId: string,
+  ): Promise<string[]> {
+    if (!Types.ObjectId.isValid(excludeUserId)) return [];
+    const staleBefore = new Date(
+      Date.now() - UsersService.OVERLAY_INGAME_STALE_MS,
+    );
+    const filter: Record<string, unknown> = {
+      membershipStatus: TeamMembershipStatus.ACTIVE,
+      _id: { $ne: new Types.ObjectId(excludeUserId) },
+      pushFcmTokens: { $exists: true, $ne: [] },
+      excavationPushEnabled: { $ne: false },
+      $or: [
+        { presenceStatus: { $ne: 'ingame' } },
+        { presenceStatus: null },
+        { lastPresenceAt: null },
+        { lastPresenceAt: { $lt: staleBefore } },
+      ],
+    };
+    if (allianceId.startsWith('pt:')) {
+      const teamId = allianceId.slice(3);
+      if (!Types.ObjectId.isValid(teamId)) return [];
+      filter.playerTeamId = new Types.ObjectId(teamId);
+    } else {
+      filter.allianceName = allianceId;
+    }
+    const users = await this.userModel
+      .find(filter)
+      .select('pushFcmTokens')
+      .lean()
+      .exec();
+    const out: string[] = [];
+    for (const u of users) {
+      const arr = (u as { pushFcmTokens?: string[] }).pushFcmTokens;
+      if (Array.isArray(arr)) out.push(...arr);
+    }
+    return out;
   }
 
   async collectPushTokensForAlliance(

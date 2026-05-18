@@ -115,6 +115,14 @@ class UserSettingsPreferences(context: Context) {
         prefs.edit().putBoolean(KEY_OVERLAY_VOICE_MIC, value).apply()
     }
 
+    /** Push о координатах раскопок (сервер + локальный кэш). */
+    fun isExcavationPushEnabled(): Boolean =
+        prefs.getBoolean(KEY_EXCAVATION_PUSH, true)
+
+    fun setExcavationPushEnabled(value: Boolean) {
+        prefs.edit().putBoolean(KEY_EXCAVATION_PUSH, value).apply()
+    }
+
     /** applicationId игры (например com.lastasylum.plague). Несколько — через запятую. */
     fun getOverlayTargetGamePackage(): String {
         var raw = prefs.getString(KEY_OVERLAY_TARGET_PACKAGE, DEFAULT_TARGET_GAME_PACKAGES_CSV)
@@ -214,6 +222,7 @@ class UserSettingsPreferences(context: Context) {
         private const val KEY_OVERLAY_PANEL_Y_TOP = "overlay_panel_y_top_gravity"
         private const val KEY_OVERLAY_VOICE_SOUND = "overlay_voice_sound"
         private const val KEY_OVERLAY_VOICE_MIC = "overlay_voice_mic"
+        private const val KEY_EXCAVATION_PUSH = "excavation_push_enabled"
         private const val KEY_OVERLAY_TARGET_LEGACY_MIGRATED = "overlay_target_legacy_migrated_v1"
         private const val KEY_OVERLAY_TARGET_PLAY_MIGRATED = "overlay_target_play_migrated_v2"
 

@@ -25,6 +25,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +40,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
+import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.GameForegroundGate
 import com.lastasylum.alliance.overlay.OverlayPermissions
@@ -47,12 +49,15 @@ import com.lastasylum.alliance.ui.components.SettingsToggleRow
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun OverlayControlScreen() {
     val context = LocalContext.current
     val appContext = context.applicationContext
-    val prefs = remember(appContext) { UserSettingsPreferences(appContext) }
+    val appContainer = remember(appContext) { AppContainer.from(appContext) }
+    val prefs = remember(appContext) { appContainer.userSettingsPreferences }
+    val scope = rememberCoroutineScope()
     val squadRelayAppLabel = remember(context) {
         context.applicationInfo.loadLabel(context.packageManager).toString()
     }
@@ -61,6 +66,14 @@ fun OverlayControlScreen() {
     var targetPkg by remember { mutableStateOf(prefs.getOverlayTargetGamePackage()) }
     var targetActivities by remember { mutableStateOf(prefs.getOverlayTargetGameActivityTokens().joinToString(",")) }
     var overlayEnabled by remember { mutableStateOf(prefs.isOverlayPanelEnabled()) }
+    var excavationPushEnabled by remember { mutableStateOf(prefs.isExcavationPushEnabled()) }
+
+    LaunchedEffect(Unit) {
+        appContainer.usersRepository.getMyProfile().getOrNull()?.let { profile ->
+            prefs.setExcavationPushEnabled(profile.excavationPushEnabled)
+            excavationPushEnabled = profile.excavationPushEnabled
+        }
+    }
 
     val userId = remember {
         (android.os.Process.myUid() / 100000)
@@ -240,6 +253,30 @@ fun OverlayControlScreen() {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+            }
+
+            item {
+                SettingsPanelCard {
+                    SettingsSection(title = stringResource(R.string.settings_section_notifications)) {
+                        SettingsToggleRow(
+                            title = stringResource(R.string.settings_excavation_push_title),
+                            subtitle = stringResource(R.string.settings_excavation_push_subtitle),
+                            checked = excavationPushEnabled,
+                            onCheckedChange = { on ->
+                                excavationPushEnabled = on
+                                prefs.setExcavationPushEnabled(on)
+                                scope.launch {
+                                    appContainer.usersRepository
+                                        .updateExcavationPushEnabled(on)
+                                        .onFailure {
+                                            excavationPushEnabled = !on
+                                            prefs.setExcavationPushEnabled(!on)
+                                        }
+                                }
+                            },
+                        )
+                    }
                 }
             }
 

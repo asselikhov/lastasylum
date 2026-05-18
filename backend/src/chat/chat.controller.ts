@@ -199,7 +199,32 @@ export class ChatController {
     });
     this.chatGateway.broadcastNewMessage(dto.roomId, message);
     const authorUser = await this.usersService.findById(req.user.userId);
-    if (authorUser && message.allianceId !== GLOBAL_CHAT_ALLIANCE_ID) {
+    const messageId =
+      typeof (message as { _id?: unknown })._id === 'string'
+        ? (message as { _id: string })._id
+        : typeof (message as { _id?: unknown })._id === 'object' &&
+            (message as { _id?: { toString?: () => string } })._id != null
+          ? (message as { _id: { toString: () => string } })._id.toString()
+          : '';
+    if (
+      authorUser &&
+      message.allianceId !== GLOBAL_CHAT_ALLIANCE_ID &&
+      dto.excavationAlert === true
+    ) {
+      const excavationBody = dto.text?.trim() ?? '';
+      void this.pushNotifications
+        .notifyExcavationAlert({
+          allianceId: message.allianceId,
+          excludeUserId: req.user.userId,
+          senderName: req.user.username,
+          body: excavationBody,
+          data: {
+            roomId: dto.roomId,
+            messageId,
+          },
+        })
+        .catch(() => undefined);
+    } else if (authorUser && message.allianceId !== GLOBAL_CHAT_ALLIANCE_ID) {
       const preview = dto.text?.trim()
         ? formatChatPushBody(dto.text)
         : resolvedAttachments.length > 0
@@ -208,13 +233,6 @@ export class ChatController {
               'Файл'
             : 'Фото'
           : '';
-      const messageId =
-        typeof (message as { _id?: unknown })._id === 'string'
-          ? (message as { _id: string })._id
-          : typeof (message as { _id?: unknown })._id === 'object' &&
-              (message as { _id?: { toString?: () => string } })._id != null
-            ? (message as { _id: { toString: () => string } })._id.toString()
-            : '';
       void this.pushNotifications
         .notifyAllianceChatMessage({
           allianceId: message.allianceId,

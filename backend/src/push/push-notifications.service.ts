@@ -31,6 +31,64 @@ export class PushNotificationsService implements OnModuleInit {
     }
   }
 
+  async notifyExcavationAlert(input: {
+    allianceId: string;
+    excludeUserId: string;
+    senderName: string;
+    body: string;
+    data: Record<string, string>;
+  }): Promise<void> {
+    if (!this.ready) return;
+    const tokens = await this.usersService.collectPushTokensForExcavationAlert(
+      input.allianceId,
+      input.excludeUserId,
+    );
+    if (tokens.length === 0) return;
+    const unique = [...new Set(tokens)].slice(0, 500);
+    const title = '⛏ Раскопки';
+    const body =
+      input.body.trim().length > 0
+        ? input.body.trim()
+        : 'Союзники отметили координаты раскопок';
+    try {
+      const res = await admin.messaging().sendEachForMulticast({
+        tokens: unique,
+        notification: { title, body },
+        data: {
+          ...input.data,
+          type: 'excavation_alert',
+          senderName: input.senderName,
+        },
+        android: {
+          priority: 'high',
+          notification: {
+            channelId: 'excavation_alerts',
+            priority: 'max',
+            defaultSound: true,
+            defaultVibrateTimings: true,
+            visibility: 'public',
+          },
+        },
+        apns: {
+          headers: { 'apns-priority': '10' },
+          payload: {
+            aps: {
+              alert: { title, body },
+              sound: 'default',
+            },
+          },
+        },
+      });
+      if (res.failureCount > 0) {
+        this.logger.debug(
+          `FCM excavation partial failure: ${res.failureCount}/${unique.length}`,
+        );
+      }
+    } catch (e) {
+      this.logger.warn(`FCM excavation send failed: ${(e as Error).message}`);
+    }
+  }
+
   async notifyAllianceChatMessage(input: {
     allianceId: string;
     excludeUserId: string;

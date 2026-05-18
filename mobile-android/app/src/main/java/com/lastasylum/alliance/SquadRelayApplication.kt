@@ -7,6 +7,7 @@ import com.google.firebase.FirebaseOptions
 import com.google.firebase.analytics.FirebaseAnalytics
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.push.ExcavationPushNotifications
 import com.lastasylum.alliance.push.FcmTokenManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -20,6 +21,7 @@ class SquadRelayApplication : Application() {
         super.onCreate()
         // Раньше ProfileInstaller: FirebaseInitProvider отключён в манифесте без google-services.json.
         initFirebaseIfConfigured()
+        ExcavationPushNotifications.ensureChannel(this)
         if (FirebaseApp.getApps(this).isNotEmpty()) {
             runCatching {
                 FirebaseCrashlytics.getInstance().isCrashlyticsCollectionEnabled = !BuildConfig.DEBUG
@@ -31,6 +33,13 @@ class SquadRelayApplication : Application() {
             val access = runCatching { container.tokenStore.getAccessToken() }.getOrNull()
             if (!access.isNullOrBlank()) {
                 runCatching { FcmTokenManager.registerWithBackend(this@SquadRelayApplication) }
+                runCatching {
+                    container.usersRepository.getMyProfile().getOrNull()?.let { profile ->
+                        container.userSettingsPreferences.setExcavationPushEnabled(
+                            profile.excavationPushEnabled,
+                        )
+                    }
+                }
             }
         }
     }
