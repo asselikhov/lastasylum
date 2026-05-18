@@ -98,6 +98,11 @@ class ChatViewModel(
         viewModelScope.launch { bootstrap() }
     }
 
+    /** Оверлей-чат: всегда открывать комнату альянса (sortOrder 1), не последнюю из приложения. */
+    fun refreshChatForOverlay() {
+        viewModelScope.launch { bootstrap(preferAllianceHubRoom = true) }
+    }
+
     /** Refresh profile gate when returning from profile or opening chat. */
     fun refreshTeamProfileGate() {
         viewModelScope.launch {
@@ -164,7 +169,14 @@ class ChatViewModel(
         } ?: false
     }
 
-    private suspend fun bootstrap() {
+    private fun allianceHubRoomId(rooms: List<ChatRoomDto>): String? =
+        rooms.firstOrNull { room ->
+            room.sortOrder == 1 &&
+                !room.allianceId.isNullOrBlank() &&
+                room.allianceId != ChatAllianceIds.GLOBAL
+        }?.id
+
+    private suspend fun bootstrap(preferAllianceHubRoom: Boolean = false) {
         _state.value = _state.value.copy(isRoomsLoading = true, error = null)
         val roomsRaw = repository.listRooms().getOrElse { e ->
             _draftMessage.value = ""
@@ -197,10 +209,16 @@ class ChatViewModel(
             return
         }
         syncRaidRoomPreference(rooms)
+        val hubId = allianceHubRoomId(rooms)
         val stored = chatRoomPreferences.getSelectedRoomId()
-        val selected = rooms.find { it.id == stored }?.id
-            ?: rooms.minByOrNull { it.sortOrder }?.id
-            ?: rooms.first().id
+        val selected = when {
+            preferAllianceHubRoom && hubId != null -> hubId
+            else ->
+                rooms.find { it.id == stored }?.id
+                    ?: hubId
+                    ?: rooms.minByOrNull { it.sortOrder }?.id
+                    ?: rooms.first().id
+        }
         chatRoomPreferences.setSelectedRoomId(selected)
         openRoom(selected, rooms)
     }

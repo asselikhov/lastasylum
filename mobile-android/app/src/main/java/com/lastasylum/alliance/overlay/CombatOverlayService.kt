@@ -218,7 +218,6 @@ class CombatOverlayService : Service() {
     /** Высота окна панели до relayout (компенсация y при BOTTOM|gravity). */
     private var overlayPanelLastHeightPx: Int = 0
     /** Экранная Y (raw) верхнего края кнопки свернуть/развернуть — якорь при toggle. */
-    private var overlayCollapseAnchorScreenY: Int = -1
     private var voiceSession: VoiceChatSession? = null
     private var pendingVoiceMicEnable = false
     private var voicePermissionReceiverRegistered = false
@@ -1330,21 +1329,26 @@ class CombatOverlayService : Service() {
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
-            gravity = Gravity.BOTTOM or Gravity.START
+            gravity = Gravity.TOP or Gravity.START
             val prefs = AppContainer.from(this@CombatOverlayService).userSettingsPreferences
             val preset = OverlayLayoutDp.forPreset(prefs.getOverlayLayoutPreset())
-            // Default position from preset, then override by saved drag position (px) if present.
+            // x/y — от левого и верхнего края; при раскрытии панель растёт вниз, кнопка collapse не смещается.
             val screenW = resources.displayMetrics.widthPixels
             val screenH = resources.displayMetrics.heightPixels
             // Until view is measured, clamp using conservative minimum size so the panel can't spawn off-screen.
             val minW = dp(120)
-            val minH = dp(180)
+            val minH = dp(52)
             val rawX = prefs.getOverlayPanelPosXPx() ?: dp(preset.toggleX)
-            val rawY = prefs.getOverlayPanelPosYPx() ?: dp(preset.toggleY)
+            val savedY = prefs.getOverlayPanelPosYPx()
             x = rawX.coerceIn(0, (screenW - minW).coerceAtLeast(0))
-            y = rawY.coerceIn(0, (screenH - minH).coerceAtLeast(0))
-            if (rawX != x || rawY != y) {
-                Log.w(TAG, "overlay pos clamped from ($rawX,$rawY) to ($x,$y)")
+            y = prefs.resolveOverlayPanelTopYPx(
+                screenHeightPx = screenH,
+                savedYPx = savedY,
+                defaultTopYPx = dp(preset.toggleY),
+                fallbackPanelHeightPx = minH,
+            )
+            if (rawX != x || savedY != y) {
+                Log.w(TAG, "overlay pos clamped from ($rawX,$savedY) to ($x,$y)")
                 runCatching { prefs.setOverlayPanelPosPx(x = x, y = y) }
             }
         }
@@ -1483,14 +1487,8 @@ class CombatOverlayService : Service() {
             clipToPadding = false
             val gap = dp(6)
             addView(
-                collapseHost,
-                LinearLayout.LayoutParams(fabColW, dp(44)),
-            )
-            addView(
                 btnMessage,
-                LinearLayout.LayoutParams(fabColW, dp(44)).apply {
-                    topMargin = gap
-                },
+                LinearLayout.LayoutParams(fabColW, dp(44)),
             )
             addView(
                 chatTeamHost,
@@ -1521,37 +1519,29 @@ class CombatOverlayService : Service() {
             )
         }
 
-        val messageRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.TOP
+        val buttonStack = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.START or Gravity.TOP
             clipChildren = false
             clipToPadding = false
+            addView(
+                collapseHost,
+                LinearLayout.LayoutParams(fabColW, dp(44)),
+            )
             addView(
                 messageFabColumn,
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
-                ),
-            )
-        }
-
-        val buttonStack = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.START
-            clipChildren = false
-            clipToPadding = false
-            addView(
-                messageRow,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ),
+                ).apply {
+                    topMargin = dp(6)
+                },
             )
         }
 
         val outerRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.BOTTOM
+            gravity = Gravity.TOP or Gravity.START
             clipChildren = false
             clipToPadding = false
             addView(buttonStack, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
@@ -1578,7 +1568,7 @@ class CombatOverlayService : Service() {
 
         overlayOuterRow = outerRow
         overlayControlsStack = buttonStack
-        overlayMessageRow = messageRow
+        overlayMessageRow = messageFabColumn
         overlayMessageFabColumn = messageFabColumn
         overlayBtnMessageFab = btnMessage
 
@@ -1588,30 +1578,18 @@ class CombatOverlayService : Service() {
             OverlayPanelCollapseHost.applyLockVisual(lockIcon, locked)
         }
 
-        fun captureCollapseAnchorScreenY(): Int {
-            if (!btnCollapse.isAttachedToWindow) return -1
-            val loc = IntArray(2)
-            btnCollapse.getLocationOnScreen(loc)
-            return loc[1]
-        }
-
         fun applyControlsVisibility() {
             Log.d(OVERLAY_DIAG_TAG, "applyControls collapsed=$panelCollapsed")
-            val anchorYBefore = captureCollapseAnchorScreenY()
             val widthBefore = windowRoot.width.coerceAtLeast(0)
-            // GONE (not INVISIBLE): скрытые FAB не участвуют в layout, окно WM сжимается до кнопки
-            // свернуть/развернуть — иначе на части OEM касания в «пустом» прямоугольнике окна
-            // не доходят до игры, даже с FLAG_NOT_TOUCH_MODAL и passthrough-корнем.
+            // GONE (not INVISIBLE): скрытые FAB не участвуют в layout, окно WM сжимается.
+            // Кнопка collapse вне messageFabColumn — при сворачивании ряд FAB скрыт целиком, якорь не двигается.
             if (panelCollapsed) {
                 overlayAllianceOnlinePopover.hide()
                 overlayCommandsPopover.hide()
-                messageRow.visibility = View.VISIBLE
-                btnMessage.visibility = View.GONE
-                chatTeamHost.visibility = View.GONE
-                voiceControls.root.visibility = View.GONE
+                messageFabColumn.visibility = View.GONE
                 voiceControls.collapse()
             } else {
-                messageRow.visibility = View.VISIBLE
+                messageFabColumn.visibility = View.VISIBLE
                 btnMessage.visibility = View.VISIBLE
                 chatTeamHost.visibility = View.VISIBLE
                 voiceControls.root.visibility = View.VISIBLE
@@ -1630,24 +1608,13 @@ class CombatOverlayService : Service() {
                     )
                 }
                 val p = overlayMainWindowParams ?: return@post
-                if (panelCollapsed) {
-                    runCatching { syncOverlayPanelEdgeLayout() }
-                } else {
-                    syncOverlayVoiceExpandLayout()
-                }
+                syncOverlayPanelEdgeLayout()
                 val wAfter = windowRoot.width.coerceAtLeast(0)
                 if (overlayPanelAnchoredEnd && widthBefore > 0 && wAfter != widthBefore) {
                     p.x += widthBefore - wAfter
-                }
-                val anchorYAfter = captureCollapseAnchorScreenY()
-                if (anchorYBefore >= 0 && anchorYAfter >= 0 && anchorYAfter != anchorYBefore) {
-                    p.y += anchorYAfter - anchorYBefore
-                }
-                if (anchorYAfter >= 0) {
-                    overlayCollapseAnchorScreenY = anchorYAfter
+                    runCatching { manager.updateViewLayout(windowRoot, p) }
                 }
                 overlayPanelLastHeightPx = windowRoot.height
-                runCatching { manager.updateViewLayout(windowRoot, p) }
             }
         }
 
@@ -1724,7 +1691,7 @@ class CombatOverlayService : Service() {
                         val maxX = (dragScreenW - dragClampW).coerceAtLeast(0)
                         val maxY = (dragScreenH - dragClampH).coerceAtLeast(0)
                         val nextX = (initialX + deltaX).coerceIn(0, maxX)
-                        val nextY = (initialY - deltaY).coerceIn(0, maxY) // gravity=BOTTOM
+                        val nextY = (initialY + deltaY).coerceIn(0, maxY) // gravity=TOP
                         if (panelParams.x != nextX || panelParams.y != nextY) {
                             panelParams.x = nextX
                             panelParams.y = nextY
@@ -1746,8 +1713,6 @@ class CombatOverlayService : Service() {
                             Log.w(TAG, "syncOverlayPanelEdgeLayout after drag failed", e)
                         }
                         overlayTicker.syncTickerPosition()
-                        val ay = captureCollapseAnchorScreenY()
-                        if (ay >= 0) overlayCollapseAnchorScreenY = ay
                         AppContainer.from(this@CombatOverlayService).userSettingsPreferences.setOverlayPanelPosPx(
                             x = panelParams.x,
                             y = panelParams.y,
@@ -1928,6 +1893,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun showOverlayChatTeamPanel(initialTabIndex: Int = 0) {
+        overlayChatViewModel?.refreshChatForOverlay()
         if (overlayChatTeamPanelVisible) return
         val initialTab = initialTabIndex.coerceIn(0, 1)
         overlayAllianceOnlinePopover.hide()
@@ -1977,7 +1943,7 @@ class CombatOverlayService : Service() {
                         currentUserRole = userRole,
                     ).also {
                         overlayChatViewModel = it
-                        it.refreshChat()
+                        it.refreshChatForOverlay()
                     }
                 }
                 val chatState by vm.state.collectAsState()

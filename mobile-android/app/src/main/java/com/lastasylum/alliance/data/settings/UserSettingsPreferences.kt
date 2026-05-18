@@ -50,14 +50,40 @@ class UserSettingsPreferences(context: Context) {
     }
 
     /**
-     * Позиция главной панели оверлея (px): x — от левого края (gravity=BOTTOM|START),
-     * y — от нижнего края. Нужна, чтобы панель не "прыгала" после rebuild / сворачивания игры.
+     * Позиция главной панели оверлея (px): x — от левого края, y — от верхнего (gravity=TOP|START).
      */
     fun getOverlayPanelPosXPx(): Int? =
         prefs.getInt(KEY_OVERLAY_PANEL_POS_X_PX, Int.MIN_VALUE).takeIf { it != Int.MIN_VALUE }
 
     fun getOverlayPanelPosYPx(): Int? =
         prefs.getInt(KEY_OVERLAY_PANEL_POS_Y_PX, Int.MIN_VALUE).takeIf { it != Int.MIN_VALUE }
+
+    /**
+     * Конвертирует legacy-y (от нижнего края) в y от верха один раз после обновления.
+     */
+    fun resolveOverlayPanelTopYPx(
+        screenHeightPx: Int,
+        savedYPx: Int?,
+        defaultTopYPx: Int,
+        fallbackPanelHeightPx: Int,
+    ): Int {
+        val maxY = (screenHeightPx - fallbackPanelHeightPx).coerceAtLeast(0)
+        if (savedYPx == null) {
+            if (!prefs.getBoolean(KEY_OVERLAY_PANEL_Y_TOP, false)) {
+                prefs.edit().putBoolean(KEY_OVERLAY_PANEL_Y_TOP, true).apply()
+            }
+            return defaultTopYPx.coerceIn(0, maxY)
+        }
+        if (prefs.getBoolean(KEY_OVERLAY_PANEL_Y_TOP, false)) {
+            return savedYPx.coerceIn(0, maxY)
+        }
+        val topY = (screenHeightPx - savedYPx - fallbackPanelHeightPx).coerceIn(0, maxY)
+        prefs.edit()
+            .putInt(KEY_OVERLAY_PANEL_POS_Y_PX, topY)
+            .putBoolean(KEY_OVERLAY_PANEL_Y_TOP, true)
+            .apply()
+        return topY
+    }
 
     fun setOverlayPanelPosPx(x: Int, y: Int) {
         prefs.edit()
@@ -185,6 +211,7 @@ class UserSettingsPreferences(context: Context) {
         private const val KEY_OVERLAY_TARGET_ACTIVITY_TOKENS = "overlay_target_game_activity_tokens"
         private const val KEY_OVERLAY_PANEL_POS_X_PX = "overlay_panel_pos_x_px"
         private const val KEY_OVERLAY_PANEL_POS_Y_PX = "overlay_panel_pos_y_px"
+        private const val KEY_OVERLAY_PANEL_Y_TOP = "overlay_panel_y_top_gravity"
         private const val KEY_OVERLAY_VOICE_SOUND = "overlay_voice_sound"
         private const val KEY_OVERLAY_VOICE_MIC = "overlay_voice_mic"
         private const val KEY_OVERLAY_TARGET_LEGACY_MIGRATED = "overlay_target_legacy_migrated_v1"
