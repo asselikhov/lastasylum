@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
-import { AllianceRole } from '../../common/enums/alliance-role.enum';
+import { PlayerTeamMemberRole } from '../../common/enums/player-team-member-role.enum';
 import { ChatRoom } from './chat-room.schema';
 
 export type MessageDocument = HydratedDocument<Message>;
@@ -21,7 +21,7 @@ export type MessageForwardedFrom = {
   messageId: Types.ObjectId;
   senderId: string;
   senderUsername: string;
-  senderRole: AllianceRole;
+  senderRole: PlayerTeamMemberRole;
   senderTeamTag: string | null;
 };
 
@@ -44,8 +44,12 @@ export class Message {
   @Prop({ required: true })
   senderUsername: string;
 
-  @Prop({ type: String, required: true, enum: AllianceRole })
-  senderRole: AllianceRole;
+  @Prop({
+    type: String,
+    required: true,
+    enum: Object.values(PlayerTeamMemberRole),
+  })
+  senderRole: PlayerTeamMemberRole;
 
   /** Snapshot of sender team tag at send time (optional for legacy messages). */
   @Prop({ type: String, default: null, trim: true })

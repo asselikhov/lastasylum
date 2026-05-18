@@ -88,6 +88,12 @@ import { StickerAccessService } from './sticker-access.service';
     TeamForumService,
     StickerAccessService,
   ],
-  exports: [UsersService, MongooseModule, TeamForumService, StickerAccessService],
+  exports: [
+    UsersService,
+    TeamsService,
+    MongooseModule,
+    TeamForumService,
+    StickerAccessService,
+  ],
 })
 export class UsersModule {}

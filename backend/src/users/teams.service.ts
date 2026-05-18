@@ -304,6 +304,81 @@ export class TeamsService {
     return m?.role ?? null;
   }
 
+  /** Squad rank for chat/UI (not alliance app role on User.role). */
+  async resolveSquadRolesByUserIds(
+    userIds: string[],
+  ): Promise<Map<string, PlayerTeamMemberRole>> {
+    const out = new Map<string, PlayerTeamMemberRole>();
+    const unique = [...new Set(userIds.filter(Boolean))];
+    if (unique.length === 0) {
+      return out;
+    }
+
+    const validOids = unique
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    const users =
+      validOids.length === 0
+        ? []
+        : await this.userModel
+            .find({ _id: { $in: validOids } })
+            .select('_id playerTeamId')
+            .lean<
+              Array<{
+                _id: Types.ObjectId;
+                playerTeamId?: Types.ObjectId | null;
+              }>
+            >()
+            .exec();
+
+    const teamIdStrs = [
+      ...new Set(
+        users
+          .map((u) => u.playerTeamId?.toString())
+          .filter((v): v is string => Boolean(v)),
+      ),
+    ];
+    const teams =
+      teamIdStrs.length === 0
+        ? []
+        : await this.teamModel
+            .find({
+              _id: {
+                $in: teamIdStrs.map((id) => new Types.ObjectId(id)),
+              },
+            })
+            .exec();
+    const teamById = new Map(teams.map((t) => [t._id.toString(), t]));
+
+    for (const id of unique) {
+      if (!Types.ObjectId.isValid(id)) {
+        out.set(id, PlayerTeamMemberRole.R1);
+        continue;
+      }
+      const user = users.find((u) => u._id.toString() === id);
+      const teamId = user?.playerTeamId?.toString();
+      if (!user || !teamId) {
+        out.set(id, PlayerTeamMemberRole.R1);
+        continue;
+      }
+      const team = teamById.get(teamId);
+      if (!team) {
+        out.set(id, PlayerTeamMemberRole.R1);
+        continue;
+      }
+      await this.migrateLegacyIfNeeded(team);
+      const leaderStr = team.leaderUserId.toString();
+      out.set(
+        id,
+        this.getSquadRoleForUser(team, id) ??
+          (id === leaderStr
+            ? PlayerTeamMemberRole.R5
+            : PlayerTeamMemberRole.R1),
+      );
+    }
+    return out;
+  }
+
   async createTeam(
     userId: string,
     displayName: string,

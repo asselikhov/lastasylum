@@ -1,16 +1,20 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/global-chat-alliance-id';
 import { resolveChatAllianceScope } from './chat-alliance-scope';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
+import { PlayerTeamMemberRole } from '../common/enums/player-team-member-role.enum';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
 import { UserDocument } from '../users/schemas/user.schema';
+import { TeamsService } from '../users/teams.service';
 import { UsersService } from '../users/users.service';
 import { StickerAccessService } from '../users/sticker-access.service';
 import { ChatRoomsService } from './chat-rooms.service';
@@ -33,7 +37,7 @@ type MessageLean = {
   roomId: Types.ObjectId | string;
   senderId: string;
   senderUsername: string;
-  senderRole: AllianceRole;
+  senderRole: PlayerTeamMemberRole;
   senderTeamTag?: string | null;
   text: string;
   editedAt?: Date | null;
@@ -42,7 +46,7 @@ type MessageLean = {
         messageId: Types.ObjectId;
         senderId: string;
         senderUsername: string;
-        senderRole: AllianceRole;
+        senderRole: PlayerTeamMemberRole;
         senderTeamTag?: string | null;
       }
     | null;
@@ -64,7 +68,7 @@ export type ChatMessageReplyPreview = {
   _id: string;
   senderId: string;
   senderUsername: string;
-  senderRole: AllianceRole;
+  senderRole: PlayerTeamMemberRole;
   senderTeamTag: string | null;
   text: string;
   createdAt: string | null;
@@ -77,7 +81,7 @@ export type ChatMessageView = {
   roomId: string;
   senderId: string;
   senderUsername: string;
-  senderRole: AllianceRole;
+  senderRole: PlayerTeamMemberRole;
   /** Three-letter team tag: stored on message or resolved from sender profile. */
   senderTeamTag: string | null;
   /** Telegram @handle without @, from sender profile at read time (or at send). */
@@ -89,7 +93,7 @@ export type ChatMessageView = {
         messageId: string;
         senderId: string;
         senderUsername: string;
-        senderRole: AllianceRole;
+        senderRole: PlayerTeamMemberRole;
         senderTeamTag: string | null;
       }
     | null;
@@ -110,9 +114,43 @@ export class ChatService {
     @InjectModel(ChatRoomReadState.name)
     private readonly chatReadStateModel: Model<ChatRoomReadState>,
     private readonly usersService: UsersService,
+    @Inject(forwardRef(() => TeamsService))
+    private readonly teamsService: TeamsService,
     private readonly chatRoomsService: ChatRoomsService,
     private readonly stickerAccess: StickerAccessService,
   ) {}
+
+  private withSquadDisplayRoles(
+    message: MessageLean,
+    squadRoleMap: Map<string, PlayerTeamMemberRole>,
+  ): MessageLean {
+    const senderRole =
+      squadRoleMap.get(message.senderId) ?? PlayerTeamMemberRole.R1;
+    const forwardedFrom = message.forwardedFrom
+      ? {
+          ...message.forwardedFrom,
+          senderRole:
+            squadRoleMap.get(message.forwardedFrom.senderId) ??
+            message.forwardedFrom.senderRole,
+        }
+      : null;
+    return { ...message, senderRole, forwardedFrom };
+  }
+
+  private async viewMessagesForUser(
+    messages: MessageLean[],
+    viewerUserId: string,
+  ): Promise<ChatMessageView[]> {
+    return this.enrichMessages(messages, viewerUserId);
+  }
+
+  private async viewMessageForUser(
+    message: MessageLean,
+    viewerUserId: string,
+  ): Promise<ChatMessageView> {
+    const [view] = await this.viewMessagesForUser([message], viewerUserId);
+    return view;
+  }
 
   async assertUserMayUseChat(userId: string): Promise<void> {
     const u = await this.usersService.findById(userId);
@@ -282,17 +320,32 @@ export class ChatService {
         if (target) replySenderIds.push(target.senderId);
       }
     }
+    const forwardSenderIds = messages
+      .map((m) => m.forwardedFrom?.senderId)
+      .filter((v): v is string => Boolean(v));
     const senderIds = [
-      ...new Set([...messages.map((m) => m.senderId), ...replySenderIds]),
+      ...new Set([
+        ...messages.map((m) => m.senderId),
+        ...replySenderIds,
+        ...forwardSenderIds,
+      ]),
     ];
+    const squadRoleMap =
+      await this.teamsService.resolveSquadRolesByUserIds(senderIds);
     const senderTelegramMap =
       await this.usersService.findTelegramUsernamesByIds(senderIds);
     const senderTeamTagMap =
       await this.usersService.findTeamTagsByIds(senderIds);
+    const replyMapWithRoles = new Map(
+      [...replyMap.entries()].map(([id, doc]) => [
+        id,
+        this.withSquadDisplayRoles(doc, squadRoleMap),
+      ]),
+    );
     return messages.map((message) =>
       this.serializeMessage(
-        message,
-        replyMap,
+        this.withSquadDisplayRoles(message, squadRoleMap),
+        replyMapWithRoles,
         senderTelegramMap,
         senderTeamTagMap,
         viewerUserId,
@@ -391,6 +444,12 @@ export class ChatService {
       trimmedText,
     );
 
+    const squadRoleMap = await this.teamsService.resolveSquadRolesByUserIds([
+      input.author.userId,
+    ]);
+    const senderSquadRole =
+      squadRoleMap.get(input.author.userId) ?? PlayerTeamMemberRole.R1;
+
     const created = await this.messageModel.create({
       allianceId,
       roomId: roomObjectId,
@@ -398,25 +457,14 @@ export class ChatService {
       attachments: input.attachments ?? [],
       senderId: input.author.userId,
       senderUsername: input.author.username,
-      senderRole: input.author.role,
+      senderRole: senderSquadRole,
       senderTeamTag: authorUser.teamTag ?? null,
       replyToMessageId: replyTarget?._id ?? null,
       deletedAt: null,
       deletedByUserId: null,
     });
-    const senderTelegramMap = new Map<string, string | null>([
-      [input.author.userId, authorUser.telegramUsername ?? null],
-    ]);
-    const senderTeamTagMap = new Map<string, string | null>([
-      [input.author.userId, authorUser.teamTag ?? null],
-    ]);
-    return this.serializeMessage(
+    return this.viewMessageForUser(
       created.toObject<MessageLean>(),
-      replyTarget
-        ? new Map([[this.asIdString(replyTarget._id)!, replyTarget]])
-        : undefined,
-      senderTelegramMap,
-      senderTeamTagMap,
       input.author.userId,
     );
   }
@@ -478,8 +526,7 @@ export class ChatService {
     message.text = trimmed;
     message.editedAt = new Date();
     await message.save();
-    const lean = message.toObject<MessageLean>();
-    return this.serializeMessage(lean, undefined, undefined, undefined, userId);
+    return this.viewMessageForUser(message.toObject<MessageLean>(), userId);
   }
 
   async toggleReaction(
@@ -506,13 +553,7 @@ export class ChatService {
     }
     message.reactions = list.filter((x) => x.userIds.length > 0) as any;
     await message.save();
-    return this.serializeMessage(
-      message.toObject<MessageLean>(),
-      undefined,
-      undefined,
-      undefined,
-      userId,
-    );
+    return this.viewMessageForUser(message.toObject<MessageLean>(), userId);
   }
 
   async forwardMessage(
@@ -543,6 +584,14 @@ export class ChatService {
     const fwdText = (source.text ?? '').trim();
     this.assertZlobyakaStickerPayload(fwdText);
     await this.stickerAccess.assertUserMaySendStickerMessage(actor, fwdText);
+    const squadRoleMap = await this.teamsService.resolveSquadRolesByUserIds([
+      userId,
+      source.senderId,
+    ]);
+    const actorSquadRole =
+      squadRoleMap.get(userId) ?? PlayerTeamMemberRole.R1;
+    const sourceSquadRole =
+      squadRoleMap.get(source.senderId) ?? PlayerTeamMemberRole.R1;
     const created = await this.messageModel.create({
       allianceId,
       roomId: roomObjectId,
@@ -550,7 +599,7 @@ export class ChatService {
       attachments: source.attachments ?? [],
       senderId: userId,
       senderUsername: actor.username,
-      senderRole: actor.role,
+      senderRole: actorSquadRole,
       senderTeamTag: actor.teamTag ?? null,
       replyToMessageId: null,
       deletedAt: null,
@@ -559,25 +608,13 @@ export class ChatService {
         messageId: new Types.ObjectId(sourceMessageId),
         senderId: source.senderId,
         senderUsername: source.senderUsername,
-        senderRole: source.senderRole,
+        senderRole: sourceSquadRole,
         senderTeamTag: source.senderTeamTag ?? null,
       },
       editedAt: null,
       reactions: [],
     });
-    const senderTelegramMap = new Map<string, string | null>([
-      [userId, actor.telegramUsername ?? null],
-    ]);
-    const senderTeamTagMap = new Map<string, string | null>([
-      [userId, actor.teamTag ?? null],
-    ]);
-    return this.serializeMessage(
-      created.toObject<MessageLean>(),
-      undefined,
-      senderTelegramMap,
-      senderTeamTagMap,
-      userId,
-    );
+    return this.viewMessageForUser(created.toObject<MessageLean>(), userId);
   }
 
   async markRoomRead(input: {
