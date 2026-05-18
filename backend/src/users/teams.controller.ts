@@ -170,6 +170,37 @@ export class TeamsController {
     });
   }
 
+  @Post(':teamId/forum/attachments/file')
+  @Roles(AllianceRole.R5)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 120 * 1024 * 1024 },
+    }),
+  )
+  async uploadForumFile(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('file is required');
+    }
+    await this.teams.getTeamIfMemberOrThrow(teamId, req.user.userId);
+    const name =
+      typeof file.originalname === 'string' && file.originalname.trim()
+        ? file.originalname.trim()
+        : 'update.apk';
+    return this.teamNewsAttachments.uploadForumFile({
+      teamId: new Types.ObjectId(teamId),
+      uploaderUserId: req.user.userId,
+      buffer: file.buffer,
+      mimeType: file.mimetype,
+      size: file.size,
+      filename: name,
+    });
+  }
+
   @Get(':teamId/news')
   @Roles(AllianceRole.R2)
   listNews(
@@ -327,6 +358,7 @@ export class TeamsController {
       dto.replyToMessageId?.trim() || null,
       (dto.imageFileIds ?? []).map((x) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean),
       dto.imageFileId?.trim() || null,
+      dto.fileFileId?.trim() || null,
     );
     this.teamForumGateway.broadcastNewMessage(teamId, topicId, message);
     return message;

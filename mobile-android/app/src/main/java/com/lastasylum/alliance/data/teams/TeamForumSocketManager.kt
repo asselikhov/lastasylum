@@ -346,6 +346,8 @@ private fun JSONObject.toForumMessageDto(): TeamForumMessageDto? {
         deletedByUserId = optionalStringField("deletedByUserId"),
         imageRelativeUrl = optionalStringField("imageRelativeUrl"),
         imageRelativeUrls = urls,
+        fileRelativeUrl = optionalStringField("fileRelativeUrl"),
+        fileFilename = optionalStringField("fileFilename"),
         forwardedFrom = forwardedFromObj?.let { fwd ->
             val mid = fwd.optString("messageId").takeIf { it.isNotBlank() } ?: return@let null
             com.lastasylum.alliance.data.teams.TeamForumForwardedFromDto(

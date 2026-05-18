@@ -191,6 +191,7 @@ data class UploadedTeamNewsImageDto(
     val url: String,
     val mimeType: String,
     val size: Int,
+    val filename: String? = null,
 )
 
 @JsonClass(generateAdapter = true)
@@ -232,6 +233,8 @@ data class TeamForumMessageDto(
     val deletedByUserId: String? = null,
     val imageRelativeUrl: String? = null,
     val imageRelativeUrls: List<String> = emptyList(),
+    val fileRelativeUrl: String? = null,
+    val fileFilename: String? = null,
     val forwardedFrom: TeamForumForwardedFromDto? = null,
     val createdAt: String,
     val updatedAt: String,
@@ -261,6 +264,7 @@ data class CreateTeamForumMessageBody(
     val replyToMessageId: String? = null,
     val imageFileIds: List<String>? = null,
     val imageFileId: String? = null,
+    val fileFileId: String? = null,
 )
 
 @JsonClass(generateAdapter = true)

@@ -63,6 +63,13 @@ export class TeamForumMessage {
   @Prop({ type: Number, default: null })
   imageSize: number | null;
 
+  /** Optional APK/file (R5 forum upload via team news attachments storage). */
+  @Prop({ type: Types.ObjectId, default: null })
+  fileFileId: Types.ObjectId | null;
+
+  @Prop({ type: String, default: null })
+  fileFilename: string | null;
+
   @Prop({ type: Date, default: null })
   editedAt: Date | null;
 

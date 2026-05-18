@@ -1,4 +1,4 @@
-﻿package com.lastasylum.alliance.ui.screens.teamforum
+package com.lastasylum.alliance.ui.screens.teamforum
 
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -600,7 +600,11 @@ private fun TeamForumTopicChatRoute(
     var pendingImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var pendingImageUrl by remember { mutableStateOf<String?>(null) }
     var pendingImageFileIds by remember { mutableStateOf<List<String>>(emptyList()) }
+    var pendingApkFileId by remember { mutableStateOf<String?>(null) }
+    var pendingApkLabel by remember { mutableStateOf<String?>(null) }
     var uploadingImage by remember { mutableStateOf(false) }
+    var uploadingFile by remember { mutableStateOf(false) }
+    var downloadingForumFileUrl by remember { mutableStateOf<String?>(null) }
     var sending by remember { mutableStateOf(false) }
     var typingHint by remember { mutableStateOf<String?>(null) }
     val sortedMessages by remember {
@@ -625,6 +629,8 @@ private fun TeamForumTopicChatRoute(
         pendingImageUris = emptyList()
         pendingImageUrl = null
         pendingImageFileIds = emptyList()
+        pendingApkFileId = null
+        pendingApkLabel = null
     }
 
     fun applyEdited(msg: TeamForumMessageDto) {
@@ -668,12 +674,36 @@ private fun TeamForumTopicChatRoute(
             val result = uploadForumImagesFromUris(context, res, teamsRepository, teamId, uris)
             uploadingImage = false
             result.onSuccess { (ids, preview) ->
+                pendingApkFileId = null
+                pendingApkLabel = null
                 pendingImageFileIds = ids
                 pendingImageUrl = preview
             }
             result.onFailure { e ->
                 pendingImageFileIds = emptyList()
                 pendingImageUrl = null
+                error = e.toUserMessageRu(res)
+            }
+        }
+    }
+
+    fun uploadPickedApk(uri: Uri, displayName: String) {
+        scope.launch {
+            uploadingFile = true
+            error = null
+            pendingApkLabel = displayName.trim().ifBlank { "update.apk" }
+            pendingImageUris = emptyList()
+            pendingImageUrl = null
+            pendingImageFileIds = emptyList()
+            val result = uploadForumApkFromUri(context, res, teamsRepository, teamId, uri, displayName)
+            uploadingFile = false
+            result.onSuccess { (fileId, label) ->
+                pendingApkFileId = fileId
+                pendingApkLabel = label
+            }
+            result.onFailure { e ->
+                pendingApkFileId = null
+                pendingApkLabel = null
                 error = e.toUserMessageRu(res)
             }
         }
@@ -864,6 +894,24 @@ private fun TeamForumTopicChatRoute(
                                     activeActionMessageId = msg.id
                                 }
                             },
+                            downloadingForumFileUrl = downloadingForumFileUrl,
+                            onDownloadForumFile = { forumMsg ->
+                                val url = forumMsg.fileRelativeUrl?.trim().orEmpty()
+                                if (url.isNotBlank() && downloadingForumFileUrl == null) {
+                                    downloadingForumFileUrl = url
+                                    scope.launch {
+                                        downloadAndInstallForumApk(
+                                            context,
+                                            url,
+                                            forumMsg.fileFilename,
+                                        ).onFailure { e ->
+                                            error = e.message
+                                                ?: res.getString(R.string.chat_apk_download_failed)
+                                        }
+                                        downloadingForumFileUrl = null
+                                    }
+                                }
+                            },
                         )
                     }
                 }
@@ -878,20 +926,24 @@ private fun TeamForumTopicChatRoute(
             onClearPendingImage = { clearPendingAttachment() },
             pendingImageRemotePreviewUrl = pendingImageUrl,
             postedImageFileIds = pendingImageFileIds,
+            pendingApkLabel = pendingApkLabel,
+            postedApkFileId = pendingApkFileId,
+            isForumAdmin = canModerateMessages,
             isSending = sending,
             isUploadingImage = uploadingImage,
+            isUploadingFile = uploadingFile,
             sendEnabled = true,
             canUseZlobyakaStickers = enabledStickerPackKeys.contains(ZlobyakaStickerPack.PACK_KEY),
             onSend = {
                 scope.launch {
                     val trimmed = draft.trim()
-                    if (trimmed.isEmpty() && pendingImageFileIds.isEmpty()) {
+                    if (trimmed.isEmpty() && pendingImageFileIds.isEmpty() && pendingApkFileId == null) {
                         return@launch
                     }
-                    if (uploadingImage) return@launch
+                    if (uploadingImage || uploadingFile) return@launch
                     sending = true
                     val textForApi = trimmed.ifBlank {
-                        if (pendingImageFileIds.isNotEmpty()) " " else ""
+                        if (pendingImageFileIds.isNotEmpty() || pendingApkFileId != null) " " else ""
                     }
                     teamsRepository.postForumMessage(
                         teamId,
@@ -900,6 +952,7 @@ private fun TeamForumTopicChatRoute(
                         replyToMessageId = replyToMessage?.id,
                         imageFileId = null,
                         imageFileIds = pendingImageFileIds.takeIf { it.isNotEmpty() },
+                        fileFileId = pendingApkFileId,
                     )
                         .onSuccess {
                             mergeNew(it)
@@ -934,6 +987,8 @@ private fun TeamForumTopicChatRoute(
                 pendingImageUris = merged
                 uploadPickedImages(merged)
             },
+            onPickApk = { uri, name -> uploadPickedApk(uri, name) },
+            onClearPendingApk = { clearPendingAttachment() },
             onTyping = { forumSocket.emitTyping() },
         )
     }
@@ -1133,6 +1188,43 @@ private suspend fun uploadForumImagesFromUris(
         )
     }
     Result.success(fileIds to lastPreview)
+}
+
+private suspend fun uploadForumApkFromUri(
+    context: android.content.Context,
+    res: android.content.res.Resources,
+    teamsRepository: TeamsRepository,
+    teamId: String,
+    uri: Uri,
+    displayName: String,
+): Result<Pair<String, String>> = withContext(Dispatchers.IO) {
+    val cr = context.contentResolver
+    val safeName = displayName.trim().let { n ->
+        if (n.endsWith(".apk", ignoreCase = true)) n else "$n.apk"
+    }
+    val tmp = File.createTempFile("forum_apk_${UUID.randomUUID()}", ".apk", context.cacheDir)
+    try {
+        val input = openUriInputStream(cr, uri)
+            ?: return@withContext Result.failure(
+                IllegalStateException(res.getString(R.string.chat_attachment_read_failed)),
+            )
+        input.use { inp -> tmp.outputStream().use { out -> inp.copyTo(out) } }
+        if (tmp.length() == 0L) {
+            return@withContext Result.failure(
+                IllegalStateException(res.getString(R.string.chat_attachment_prepare_failed)),
+            )
+        }
+        val bytes = tmp.readBytes()
+        val uploaded = teamsRepository.uploadForumFile(
+            teamId = teamId,
+            bytes = bytes,
+            fileName = safeName,
+            mimeType = "application/vnd.android.package-archive",
+        ).getOrElse { return@withContext Result.failure(it) }
+        Result.success(uploaded.fileId to safeName)
+    } finally {
+        runCatching { tmp.delete() }
+    }
 }
 
 private fun openUriInputStream(cr: ContentResolver, uri: Uri): InputStream? {

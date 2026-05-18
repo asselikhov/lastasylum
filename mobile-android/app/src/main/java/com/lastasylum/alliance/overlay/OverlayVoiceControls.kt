@@ -241,7 +241,7 @@ class OverlayVoiceControls(
         )
     }
 
-    private fun toggleExpanded() {
+    fun toggleExpanded() {
         setExpanded(!expanded)
     }
 

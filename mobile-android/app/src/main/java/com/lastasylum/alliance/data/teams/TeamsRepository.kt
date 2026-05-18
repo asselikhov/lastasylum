@@ -129,6 +129,18 @@ class TeamsRepository(
             teamsApi.uploadForumAttachment(teamId, part)
         }
 
+    suspend fun uploadForumFile(
+        teamId: String,
+        bytes: ByteArray,
+        fileName: String,
+        mimeType: String,
+    ): Result<UploadedTeamNewsImageDto> =
+        runCatching {
+            val body = bytes.toRequestBody(mimeType.toMediaTypeOrNull())
+            val part = MultipartBody.Part.createFormData("file", fileName, body)
+            teamsApi.uploadForumFileAttachment(teamId, part)
+        }
+
     suspend fun listForumTopics(teamId: String): Result<List<TeamForumTopicDto>> =
         runCatching { teamsApi.listForumTopics(teamId) }
 
@@ -170,12 +182,14 @@ class TeamsRepository(
         replyToMessageId: String? = null,
         imageFileId: String? = null,
         imageFileIds: List<String>? = null,
+        fileFileId: String? = null,
     ): Result<TeamForumMessageDto> =
         runCatching {
             val t = text.trim()
             val img = imageFileId?.trim()?.takeIf { it.isNotEmpty() }
             val replyId = replyToMessageId?.trim()?.takeIf { it.isNotEmpty() }
             val imgs = imageFileIds?.map { it.trim() }?.filter { it.isNotEmpty() }?.distinct()
+            val fileId = fileFileId?.trim()?.takeIf { it.isNotEmpty() }
             teamsApi.postForumMessage(
                 teamId,
                 topicId,
@@ -184,6 +198,7 @@ class TeamsRepository(
                     replyToMessageId = replyId,
                     imageFileIds = imgs?.takeIf { it.isNotEmpty() },
                     imageFileId = img,
+                    fileFileId = fileId,
                 ),
             )
         }

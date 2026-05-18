@@ -316,14 +316,12 @@ fun AppNavigation(
                 val chatState by chatViewModel.state.collectAsStateWithLifecycle()
                 val draftMessage by chatViewModel.draftMessage.collectAsStateWithLifecycle()
                 val pickedImageUris by chatViewModel.pickedImageUris.collectAsStateWithLifecycle()
-                val pickedApkFile by chatViewModel.pickedApkFile.collectAsStateWithLifecycle()
                 val typingPeers by chatViewModel.typingPeers.collectAsStateWithLifecycle()
                 ChatScreen(
                     state = chatState,
                     typingPeers = typingPeers,
                     draftMessage = draftMessage,
                     pickedImageUris = pickedImageUris,
-                    pickedApkFile = pickedApkFile,
                     onSelectRoom = chatViewModel::selectRoom,
                     onClearError = chatViewModel::clearError,
                     onLoadOlder = chatViewModel::loadOlderMessages,
@@ -331,8 +329,6 @@ fun AppNavigation(
                     onSendDraft = chatViewModel::sendDraftMessage,
                     onSendStickerPayload = { body -> chatViewModel.sendMessage(body) },
                     onPickImages = chatViewModel::onImagesPicked,
-                    onPickApk = chatViewModel::onApkPicked,
-                    onClearPickedApk = chatViewModel::clearPickedApk,
                     onRemovePickedImage = chatViewModel::removePickedImage,
                     onClearPickedImages = chatViewModel::clearPickedImages,
                     onReplyToMessage = chatViewModel::beginReplyToMessage,

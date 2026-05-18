@@ -62,6 +62,20 @@ squadrelay.firebase.apiKey=...
 - После merge в `main` с изменениями backend — redeploy сервиса.
 - `ALLOWED_ORIGINS` — реальные origin приложения.
 
+### SMTP (сброс пароля)
+
+Пока на Render не задан `SMTP_HOST`, письма **не отправляются** (только лог на сервере).
+
+1. Зарегистрируйте отправителя у провайдера (удобно [Brevo](https://www.brevo.com)).
+2. Запустите мастер (запишет `backend/.env` и покажет блок для Render):
+
+   ```powershell
+   .\backend\scripts\setup-smtp.ps1
+   ```
+
+3. Скопируйте те же `SMTP_*` в **Render → lastasylum-backend → Environment** → Save → redeploy.
+4. Проверка: `cd backend && node scripts/test-smtp.mjs your@email.com`
+
 ## Служебные скрипты БД
 
 Только для своей базы, с бэкапом. См. [`backend/scripts/README.md`](../backend/scripts/README.md).

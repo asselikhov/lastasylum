@@ -62,12 +62,6 @@ class ChatViewModel(
     private val _pickedImageUris = MutableStateFlow<List<Uri>>(emptyList())
     val pickedImageUris: StateFlow<List<Uri>> = _pickedImageUris.asStateFlow()
 
-    data class PickedApkFile(val uri: Uri, val displayName: String)
-
-    /** Single APK picked by R5 admin for upload to a room topic. */
-    private val _pickedApkFile = MutableStateFlow<PickedApkFile?>(null)
-    val pickedApkFile: StateFlow<PickedApkFile?> = _pickedApkFile.asStateFlow()
-
     /** Isolated from [state] so typing socket churn does not recompose the message list. */
     private val _typingPeers = MutableStateFlow<Map<String, String>>(emptyMap())
     val typingPeers: StateFlow<Map<String, String>> = _typingPeers.asStateFlow()
@@ -359,30 +353,15 @@ class ChatViewModel(
 
     fun sendDraftMessage() {
         val text = _draftMessage.value.trim()
-        if (text.isBlank() && _pickedImageUris.value.isEmpty() && _pickedApkFile.value == null) return
+        if (text.isBlank() && _pickedImageUris.value.isEmpty()) return
         val roomId = _state.value.selectedRoomId ?: return
         val replyToMessageId = _state.value.replyToMessage?._id
         val uris = _pickedImageUris.value
-        val apk = _pickedApkFile.value
 
         viewModelScope.launch {
             _state.value = _state.value.copy(isSending = true, error = null, sendFailure = null)
-            val uploadedIds = ArrayList<String>(uris.size + if (apk != null) 1 else 0)
+            val uploadedIds = ArrayList<String>(uris.size)
             try {
-                apk?.let { picked ->
-                    val uploadedId = uploadOneApk(roomId, picked).getOrElse { t ->
-                        _state.value = _state.value.copy(
-                            isSending = false,
-                            sendFailure = ChatSendFailure(
-                                messageText = text,
-                                replyToMessageId = replyToMessageId,
-                                errorMessage = t.toUserMessageRu(res),
-                            ),
-                        )
-                        return@launch
-                    }
-                    uploadedIds.add(uploadedId)
-                }
                 for (uri in uris) {
                     val uploadedId = uploadOneImage(roomId, uri).getOrElse { t ->
                         _state.value = _state.value.copy(
@@ -428,47 +407,6 @@ class ChatViewModel(
             }
         }
     }
-
-    fun onApkPicked(uri: Uri, displayName: String) {
-        _pickedImageUris.value = emptyList()
-        val name = displayName.trim().ifBlank { "update.apk" }
-        _pickedApkFile.value = PickedApkFile(uri, name)
-    }
-
-    fun clearPickedApk() {
-        if (_pickedApkFile.value == null) return
-        _pickedApkFile.value = null
-    }
-
-    private suspend fun uploadOneApk(roomId: String, picked: PickedApkFile): Result<String> =
-        withContext(Dispatchers.IO) {
-            val ctx = getApplication<Application>()
-            val cr = ctx.contentResolver
-            val safeName = picked.displayName.let { n ->
-                if (n.endsWith(".apk", ignoreCase = true)) n else "$n.apk"
-            }
-            val tmp = File.createTempFile("chat_apk_${UUID.randomUUID()}", ".apk", ctx.cacheDir)
-            try {
-                val input = openUriInputStream(cr, picked.uri)
-                    ?: return@withContext Result.failure(
-                        IllegalStateException(ctx.getString(R.string.chat_attachment_read_failed)),
-                    )
-                input.use { inp -> tmp.outputStream().use { out -> inp.copyTo(out) } }
-                if (tmp.length() == 0L) {
-                    return@withContext Result.failure(
-                        IllegalStateException(ctx.getString(R.string.chat_attachment_prepare_failed)),
-                    )
-                }
-                repository.uploadAttachmentFile(
-                    roomId = roomId,
-                    file = tmp,
-                    mimeType = "application/vnd.android.package-archive",
-                    uploadFilename = safeName,
-                ).map { it.fileId }
-            } finally {
-                runCatching { tmp.delete() }
-            }
-        }
 
     private suspend fun uploadOneImage(roomId: String, uri: Uri): Result<String> =
         withContext(Dispatchers.IO) {
@@ -541,7 +479,6 @@ class ChatViewModel(
 
     fun onImagesPicked(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        _pickedApkFile.value = null
         val current = _pickedImageUris.value
         val merged = (current + uris).distinct()
         _pickedImageUris.value = merged.take(12)
@@ -854,7 +791,6 @@ class ChatViewModel(
         if (clearComposer) {
             _draftMessage.value = ""
             _pickedImageUris.value = emptyList()
-            _pickedApkFile.value = null
             nextState = nextState.copy(
                 replyToMessage = null,
                 scrollToLatestNonce = nextState.scrollToLatestNonce + 1L,

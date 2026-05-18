@@ -216,6 +216,8 @@ class CombatOverlayService : Service() {
     private var overlayVoiceControls: OverlayVoiceControls? = null
     /** Фиксированный слот голосового хаба (44dp) — раскрытие не раздувает столбец FAB. */
     private var overlayVoiceAnchor: FrameLayout? = null
+    /** Высота окна панели до relayout (компенсация y при BOTTOM|gravity). */
+    private var overlayPanelLastHeightPx: Int = 0
     private var voiceSession: VoiceChatSession? = null
     private var pendingVoiceMicEnable = false
     private var voicePermissionReceiverRegistered = false
@@ -1583,9 +1585,8 @@ class CombatOverlayService : Service() {
 
         fun refreshLockIcon() {
             val locked = AppContainer.from(this@CombatOverlayService).userSettingsPreferences.isOverlayDragLocked()
-            lockIcon.setImageResource(if (locked) R.drawable.ic_overlay_lock_locked else R.drawable.ic_overlay_lock_open)
             lockIcon.contentDescription = getString(if (locked) R.string.overlay_cd_unlock_positions else R.string.overlay_cd_lock_positions)
-            OverlayTickerUi.applyOverlayLockChipVisual(fabCtx, lockIcon, locked)
+            OverlayPanelCollapseHost.applyLockVisual(lockIcon, locked)
         }
 
         fun applyControlsVisibility() {
@@ -1599,7 +1600,7 @@ class CombatOverlayService : Service() {
                 messageRow.visibility = View.VISIBLE
                 btnMessage.visibility = View.GONE
                 chatTeamHost.visibility = View.GONE
-                voiceControls.root.visibility = View.GONE
+                voiceControls.root.visibility = View.VISIBLE
                 voiceControls.collapse()
             } else {
                 messageRow.visibility = View.VISIBLE
@@ -1613,6 +1614,8 @@ class CombatOverlayService : Service() {
             btnCollapse.contentDescription = getString(
                 if (panelCollapsed) R.string.overlay_cd_toggle_show_ui else R.string.overlay_cd_toggle_hide_ui,
             )
+            val heightBefore = if (windowRoot.isAttachedToWindow) windowRoot.height else overlayPanelLastHeightPx
+            overlayPanelLastHeightPx = heightBefore
             windowRoot.requestLayout()
             windowRoot.post {
                 if (!windowRoot.isAttachedToWindow) return@post
@@ -1623,14 +1626,30 @@ class CombatOverlayService : Service() {
                     )
                 }
                 val p = overlayMainWindowParams ?: return@post
+                val heightAfter = windowRoot.height
+                if (heightBefore > 0 && heightAfter > 0 && heightAfter != heightBefore) {
+                    p.y += heightAfter - heightBefore
+                }
+                overlayPanelLastHeightPx = heightAfter
                 runCatching { manager.updateViewLayout(windowRoot, p) }
                 if (panelCollapsed) {
                     runCatching { syncOverlayPanelEdgeLayout() }
+                } else {
+                    syncOverlayVoiceExpandLayout()
                 }
             }
         }
 
         refreshLockIcon()
+        voiceControls.btnHub.setOnClickListener {
+            if (panelCollapsed) {
+                panelCollapsed = false
+                applyControlsVisibility()
+                voiceControls.setExpanded(true)
+            } else {
+                voiceControls.toggleExpanded()
+            }
+        }
         panelCollapsed = true
         applyControlsVisibility()
 

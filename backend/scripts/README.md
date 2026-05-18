@@ -25,6 +25,19 @@ node scripts/<script>.mjs
 | [`migrate-chat-rooms.mjs`](migrate-chat-rooms.mjs) | Create default «Общий» room per alliance; backfill `message.roomId` | — |
 | [`normalize-legacy-users.mjs`](normalize-legacy-users.mjs) | Set `membershipStatus: active` for legacy users; optional admin role fix | `SCRIPT_ADMIN_USERNAME` (optional) |
 | [`consolidate-obzhory.mjs`](consolidate-obzhory.mjs) | One-off team/chat consolidation | `SCRIPT_TEAM_TAG`, `SCRIPT_ALLIANCE_SCOPE`, `SCRIPT_MEMBER_USERNAMES` |
+| [`lookup-user.mjs`](lookup-user.mjs) | Find user by username/email fragment | — |
+| [`test-smtp.mjs`](test-smtp.mjs) | Send test email via `SMTP_*` in `.env` | `SMTP_*` |
+| [`setup-smtp.ps1`](setup-smtp.ps1) | Interactive wizard: write `.env` + Render checklist (Windows) | — |
+
+### Password reset email (SMTP)
+
+Production mail is **off** until `SMTP_HOST` is set on the server (Render Environment). Local wizard:
+
+```powershell
+.\backend\scripts\setup-smtp.ps1
+```
+
+Then paste the same variables into **Render → Environment** and redeploy.
 
 ## Safety
 

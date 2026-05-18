@@ -52,8 +52,10 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
+import com.lastasylum.alliance.data.chat.ChatAttachment
 import com.lastasylum.alliance.data.teams.TeamForumMessageDto
 import com.lastasylum.alliance.ui.chat.ChatBubbleAuthorHeader
+import com.lastasylum.alliance.ui.chat.ChatFileAttachmentCard
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarEndPad
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarSize
 import com.lastasylum.alliance.ui.chat.chatBubbleWidth
@@ -91,6 +93,8 @@ internal fun ForumMessageBubble(
     onToggleSelection: () -> Unit,
     onSwipeReply: () -> Unit,
     onOpenActions: () -> Unit,
+    downloadingForumFileUrl: String? = null,
+    onDownloadForumFile: (TeamForumMessageDto) -> Unit = {},
 ) {
     val deleted = !message.deletedAt.isNullOrBlank() &&
         !message.deletedAt.equals("null", ignoreCase = true)
@@ -470,6 +474,55 @@ internal fun ForumMessageBubble(
                             }
 
                             when {
+                                !message.fileRelativeUrl.isNullOrBlank() && !deleted -> {
+                                    val fileUrl = message.fileRelativeUrl.trim()
+                                    val fileAtt = ChatAttachment(
+                                        url = fileUrl,
+                                        kind = "file",
+                                        filename = message.fileFilename,
+                                        mimeType = "application/vnd.android.package-archive",
+                                        size = null,
+                                    )
+                                    Column(
+                                        Modifier.fillMaxWidth(),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        ChatFileAttachmentCard(
+                                            attachment = fileAtt,
+                                            isMine = isMine,
+                                            onDownload = { onDownloadForumFile(message) },
+                                            isDownloading = downloadingForumFileUrl == fileUrl,
+                                        )
+                                        if (message.text.isNotBlank()) {
+                                            Row(
+                                                Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.Bottom,
+                                            ) {
+                                                Text(
+                                                    text = message.text,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = onBubble,
+                                                    modifier = Modifier.weight(1f),
+                                                )
+                                                if (timeLabel.isNotBlank()) {
+                                                    Spacer(Modifier.width(8.dp))
+                                                    Text(
+                                                        text = timeLabel,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = timeMuted,
+                                                        modifier = Modifier.padding(bottom = 1.dp),
+                                                    )
+                                                }
+                                            }
+                                        } else if (timeLabel.isNotBlank()) {
+                                            Text(
+                                                text = timeLabel,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = timeMuted,
+                                            )
+                                        }
+                                    }
+                                }
                                 rawImagePaths.isNotEmpty() -> {
                                     val hasCaption = message.text.isNotBlank()
                                     Column(

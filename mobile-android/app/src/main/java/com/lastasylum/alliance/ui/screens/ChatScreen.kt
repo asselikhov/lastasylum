@@ -172,11 +172,7 @@ import com.lastasylum.alliance.ui.chat.chatDayKey
 import com.lastasylum.alliance.ui.chat.formatChatDaySeparator
 import com.lastasylum.alliance.ui.chat.formatChatTime
 import com.lastasylum.alliance.ui.chat.ChatBubbleAttachmentsWithCaption
-import com.lastasylum.alliance.ui.chat.ChatFileAttachmentCard
 import com.lastasylum.alliance.ui.chat.ChatViewModel
-import com.lastasylum.alliance.ui.chat.downloadAndInstallChatApk
-import com.lastasylum.alliance.ui.chat.isChatApkAttachment
-import com.lastasylum.alliance.ui.chat.queryDisplayName
 import com.lastasylum.alliance.ui.chat.ChatBubbleAuthorHeader
 import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarEndPad
@@ -426,7 +422,6 @@ fun ChatScreen(
     typingPeers: Map<String, String>,
     draftMessage: String,
     pickedImageUris: List<Uri>,
-    pickedApkFile: ChatViewModel.PickedApkFile? = null,
     onSelectRoom: (String) -> Unit,
     onClearError: () -> Unit,
     onLoadOlder: () -> Unit,
@@ -434,8 +429,6 @@ fun ChatScreen(
     onSendDraft: () -> Unit,
     onSendStickerPayload: (String) -> Unit,
     onPickImages: (List<Uri>) -> Unit,
-    onPickApk: (Uri, String) -> Unit = { _, _ -> },
-    onClearPickedApk: () -> Unit = {},
     onRemovePickedImage: (Uri) -> Unit,
     onClearPickedImages: () -> Unit,
     onReplyToMessage: (String) -> Unit,
@@ -517,23 +510,6 @@ fun ChatScreen(
 
     var remoteChatImagePreview by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
     var attachmentPreviewStartIndex by remember { mutableStateOf<Int?>(null) }
-    var downloadingApkAttachmentUrl by remember { mutableStateOf<String?>(null) }
-    val onDownloadChatApk: (ChatAttachment) -> Unit = apk@{ attachment ->
-        if (downloadingApkAttachmentUrl != null) return@apk
-        downloadingApkAttachmentUrl = attachment.url
-        scope.launch {
-            downloadAndInstallChatApk(context, attachment)
-                .onFailure {
-                    android.widget.Toast.makeText(
-                        context,
-                        it.message ?: context.getString(R.string.chat_apk_download_failed),
-                        android.widget.Toast.LENGTH_LONG,
-                    ).show()
-                }
-            downloadingApkAttachmentUrl = null
-        }
-    }
-
     LaunchedEffect(attachmentPreviewStartIndex, pickedImageUris.isEmpty()) {
         if (attachmentPreviewStartIndex != null && pickedImageUris.isEmpty()) {
             attachmentPreviewStartIndex = null
@@ -712,8 +688,6 @@ fun ChatScreen(
                 inSelectionMode = inSelectionMode,
                 selectedMessageIds = state.selectedMessageIds,
                 onToggleMessageSelection = onToggleMessageSelection,
-                downloadingApkAttachmentUrl = downloadingApkAttachmentUrl,
-                onDownloadChatApk = onDownloadChatApk,
             )
         }
 
@@ -769,8 +743,6 @@ fun ChatScreen(
                     ChatComposer(
                         draft = draftMessage,
                         pickedImageUris = pickedImageUris,
-                        pickedApkFile = pickedApkFile,
-                        isChatAdmin = state.currentUserRole == "R5",
                         replyToMessage = state.replyToMessage,
                         isSending = state.isSending,
                         chatVoicePhase = state.chatVoicePhase,
@@ -786,18 +758,11 @@ fun ChatScreen(
                         onChatVoiceHoldStart = onChatVoiceHoldStart,
                         onChatVoiceHoldEnd = onChatVoiceHoldEnd,
                         onDraftChange = onDraftChange,
-                        onPickApk = { uri, name ->
-                            if (!globalComposerLocked && !state.isSending) {
-                                onPickApk(uri, name)
-                            }
-                        },
-                        onClearPickedApk = onClearPickedApk,
                         onSendDraft = {
                             if (!globalComposerLocked &&
                                 (
                                     !draftMessage.isBlank() ||
-                                        pickedImageUris.isNotEmpty() ||
-                                        pickedApkFile != null
+                                        pickedImageUris.isNotEmpty()
                                     ) &&
                                 !state.isSending
                             ) {
@@ -1136,8 +1101,6 @@ private fun ChatMessagesLazyList(
     inSelectionMode: Boolean,
     selectedMessageIds: Set<String>,
     onToggleMessageSelection: (String) -> Unit,
-    downloadingApkAttachmentUrl: String?,
-    onDownloadChatApk: (ChatAttachment) -> Unit,
 ) {
     val overlayUi = LocalOverlayUiMode.current
     val minSystemViewport = (LocalConfiguration.current.screenHeightDp * 0.55f).dp.coerceAtLeast(280.dp)
@@ -1269,8 +1232,6 @@ private fun ChatMessagesLazyList(
                                 isSelected = message._id != null && message._id in selectedMessageIds,
                                 otherReadUptoMessageId = state.otherReadUptoMessageId,
                                 overlayUi = overlayUi,
-                                downloadingApkAttachmentUrl = downloadingApkAttachmentUrl,
-                                onDownloadChatApk = onDownloadChatApk,
                                 onOpenActions = { id -> onOpenMessageActions(id) },
                                 onToggleSelection = onToggleMessageSelection,
                                 onSwipeReply = onReplyToMessage,
@@ -1426,8 +1387,6 @@ private fun ChatRoomsBar(
 private fun ChatComposer(
     draft: String,
     pickedImageUris: List<Uri>,
-    pickedApkFile: ChatViewModel.PickedApkFile?,
-    isChatAdmin: Boolean,
     replyToMessage: ChatMessage?,
     isSending: Boolean,
     chatVoicePhase: ChatVoicePhase,
@@ -1442,8 +1401,6 @@ private fun ChatComposer(
     onSendDraft: () -> Unit,
     onSendStickerPayload: (String) -> Unit,
     onPickImages: (List<Uri>) -> Unit,
-    onPickApk: (Uri, String) -> Unit,
-    onClearPickedApk: () -> Unit,
     onRemovePickedImage: (Uri) -> Unit,
     onClearPickedImages: () -> Unit,
     onClearReply: () -> Unit,
@@ -1451,7 +1408,6 @@ private fun ChatComposer(
 ) {
     var showMediaPanel by remember { mutableStateOf(false) }
     var showAttachmentsSheet by remember { mutableStateOf(false) }
-    var showAttachMenu by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val activityResultOwner = LocalActivityResultRegistryOwner.current
     val canHandleBack = LocalOnBackPressedDispatcherOwner.current != null
@@ -1471,19 +1427,6 @@ private fun ChatComposer(
     } else {
         null
     }
-    val pickApkLauncher = if (activityResultOwner != null && isChatAdmin) {
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.GetContent(),
-            onResult = { uri ->
-                if (!readOnly && uri != null) {
-                    onPickApk(uri, queryDisplayName(context, uri))
-                }
-            },
-        )
-    } else {
-        null
-    }
-
     if (canHandleBack) {
         BackHandler(enabled = showMediaPanel) {
             showMediaPanel = false
@@ -1590,38 +1533,6 @@ private fun ChatComposer(
                 }
             }
         }
-        }
-    }
-
-    pickedApkFile?.let { apk ->
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    text = stringResource(R.string.chat_picked_apk_label, apk.displayName),
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                TextButton(
-                    onClick = onClearPickedApk,
-                    enabled = !readOnly && !isSending,
-                ) {
-                    Text(stringResource(R.string.chat_picked_apk_remove))
-                }
-            }
         }
     }
 
@@ -1914,7 +1825,7 @@ private fun ChatComposer(
                                     Box {
                                         if (draft.isBlank()) {
                                             Text(
-                                                text = if (pickedImageUris.isNotEmpty() || pickedApkFile != null) {
+                                                text = if (pickedImageUris.isNotEmpty()) {
                                                     stringResource(R.string.chat_caption_hint)
                                                 } else {
                                                     stringResource(R.string.chat_message_hint)
@@ -1931,70 +1842,34 @@ private fun ChatComposer(
                                 !readOnly &&
                                 (
                                     draft.isNotBlank() ||
-                                        pickedImageUris.isNotEmpty() ||
-                                        pickedApkFile != null
+                                        pickedImageUris.isNotEmpty()
                                     )
                             val sendButtonEnabled = canSend && !isSending
                             val showSendButton = canSend || isSending
 
-                            Box {
-                                IconButton(
-                                    onClick = {
-                                        if (readOnly) return@IconButton
-                                        if (isChatAdmin) {
-                                            showAttachMenu = true
-                                        } else {
-                                            focusManager.clearFocus()
-                                            keyboard?.hide()
-                                            pickImagesLauncher?.launch(
-                                                PickVisualMediaRequest(
-                                                    ActivityResultContracts.PickVisualMedia.ImageOnly,
-                                                ),
-                                            )
-                                        }
+                            IconButton(
+                                onClick = {
+                                    if (readOnly) return@IconButton
+                                    focusManager.clearFocus()
+                                    keyboard?.hide()
+                                    pickImagesLauncher?.launch(
+                                        PickVisualMediaRequest(
+                                            ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                        ),
+                                    )
+                                },
+                                enabled = !readOnly && !isSending,
+                                modifier = Modifier.size(44.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.AttachFile,
+                                    contentDescription = stringResource(R.string.chat_attach_images_cd),
+                                    tint = if (!readOnly && !isSending) {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
                                     },
-                                    enabled = !readOnly && !isSending,
-                                    modifier = Modifier.size(44.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.AttachFile,
-                                        contentDescription = if (isChatAdmin) {
-                                            stringResource(R.string.chat_attach_apk_cd)
-                                        } else {
-                                            stringResource(R.string.chat_attach_images_cd)
-                                        },
-                                        tint = if (!readOnly && !isSending) {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
-                                        },
-                                    )
-                                }
-                                DropdownMenu(
-                                    expanded = showAttachMenu,
-                                    onDismissRequest = { showAttachMenu = false },
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.chat_attach_menu_photo)) },
-                                        onClick = {
-                                            showAttachMenu = false
-                                            focusManager.clearFocus()
-                                            keyboard?.hide()
-                                            pickImagesLauncher?.launch(
-                                                PickVisualMediaRequest(
-                                                    ActivityResultContracts.PickVisualMedia.ImageOnly,
-                                                ),
-                                            )
-                                        },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.chat_attach_menu_apk)) },
-                                        onClick = {
-                                            showAttachMenu = false
-                                            pickApkLauncher?.launch("application/*")
-                                        },
-                                    )
-                                }
+                                )
                             }
 
                             val voiceMicTint = when {
@@ -2526,8 +2401,6 @@ private fun ChatBubbleInnerColumn(
     deleting: Boolean,
     canDelete: Boolean,
     onImageLongPress: () -> Unit,
-    downloadingApkAttachmentUrl: String? = null,
-    onDownloadChatApk: (ChatAttachment) -> Unit = {},
 ) {
     val openRemoteChatImagePreview = LocalOpenRemoteChatImagePreview.current
     val bubblePadH = if (stickerStem != null) 8.dp else 12.dp
@@ -2646,36 +2519,9 @@ private fun ChatBubbleInnerColumn(
                 )
             }
         } else {
-            val fileAttachments =
-                message.attachments.filter { isChatApkAttachment(it) }
             val imageAttachments =
                 message.attachments.filter { it.kind == "image" && it.url.isNotBlank() }
-            if (fileAttachments.isNotEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    fileAttachments.forEach { fileAtt ->
-                        ChatFileAttachmentCard(
-                            attachment = fileAtt,
-                            isMine = isMine,
-                            onDownload = { onDownloadChatApk(fileAtt) },
-                            isDownloading = downloadingApkAttachmentUrl == fileAtt.url,
-                        )
-                    }
-                    if (message.text.isNotBlank()) {
-                        Text(
-                            text = message.text,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = onBubble,
-                        )
-                    }
-                    if (timeLabel.isNotBlank()) {
-                        Text(
-                            text = timeLabel,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = timeMuted,
-                        )
-                    }
-                }
-            } else if (imageAttachments.isNotEmpty()) {
+            if (imageAttachments.isNotEmpty()) {
                 val fullResolvedUrls =
                     imageAttachments.map { resolvedChatAttachmentImageUrl(it.url) }
                 val scheme = MaterialTheme.colorScheme
@@ -3112,8 +2958,6 @@ private fun ChatBubbleRow(
     isSelected: Boolean,
     overlayUi: Boolean,
     otherReadUptoMessageId: String?,
-    downloadingApkAttachmentUrl: String?,
-    onDownloadChatApk: (ChatAttachment) -> Unit,
     onOpenActions: (String) -> Unit,
     onToggleSelection: (String) -> Unit,
     onSwipeReply: (String) -> Unit,
@@ -3145,11 +2989,7 @@ private fun ChatBubbleRow(
     val resolvedImageUrls = remember(imageAttachments) {
         imageAttachments.map { resolvedChatAttachmentImageUrl(it.url) }
     }
-    val fileAttachments = remember(message.attachments) {
-        message.attachments.filter { isChatApkAttachment(it) }
-    }
     val floatingImages = stickerStem == null &&
-        fileAttachments.isEmpty() &&
         resolvedImageUrls.isNotEmpty() &&
         message.text.isBlank() &&
         message.replyTo == null
@@ -3418,8 +3258,6 @@ private fun ChatBubbleRow(
                         replyQuoteInteraction = replyQuoteInteraction,
                         quotedJumpLabel = quotedJumpLabel,
                         onJumpToQuotedMessage = onJumpToQuotedMessage,
-                        downloadingApkAttachmentUrl = downloadingApkAttachmentUrl,
-                        onDownloadChatApk = onDownloadChatApk,
                         deleting = deleting,
                         canDelete = canDelete,
                         onImageLongPress = imageLongPress,

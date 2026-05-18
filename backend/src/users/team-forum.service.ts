@@ -59,6 +59,8 @@ export type TeamForumMessageRow = {
   deletedByUserId: string | null;
   imageRelativeUrl: string | null;
   imageRelativeUrls: string[];
+  fileRelativeUrl: string | null;
+  fileFilename: string | null;
   forwardedFrom:
     | {
         messageId: string;
@@ -192,6 +194,13 @@ export class TeamForumService {
           : legacyHasImage
             ? [`/teams/${teamIdStr}/news/attachments/${doc.imageFileId!.toString()}`]
             : [],
+      fileRelativeUrl:
+        !doc.deletedAt &&
+        doc.fileFileId != null &&
+        Types.ObjectId.isValid(doc.fileFileId.toString())
+          ? `/teams/${teamIdStr}/news/attachments/${doc.fileFileId.toString()}`
+          : null,
+      fileFilename: doc.deletedAt ? null : doc.fileFilename ?? null,
       forwardedFrom: doc.forwardedFrom
         ? {
             messageId: doc.forwardedFrom.messageId.toString(),
@@ -401,6 +410,7 @@ export class TeamForumService {
     replyToMessageId?: string | null,
     imageFileIds?: string[],
     imageFileId?: string | null,
+    fileFileId?: string | null,
   ): Promise<TeamForumMessageRow> {
     const team = await this.teams.getTeamIfMemberOrThrow(teamId, userId);
     const teamOid = new Types.ObjectId(teamId);
@@ -424,8 +434,15 @@ export class TeamForumService {
     const imgArr = Array.isArray(imageFileIds)
       ? imageFileIds.map((x) => x.trim()).filter(Boolean).slice(0, 12)
       : [];
-    if (!trimmed && !imgRaw && imgArr.length === 0) {
-      throw new BadRequestException('Message text or image is required');
+    const fileRaw =
+      typeof fileFileId === 'string' && fileFileId.trim()
+        ? fileFileId.trim()
+        : null;
+    if (!trimmed && !imgRaw && imgArr.length === 0 && !fileRaw) {
+      throw new BadRequestException('Message text or attachment is required');
+    }
+    if (fileRaw && (imgRaw || imgArr.length > 0)) {
+      throw new BadRequestException('Cannot attach images and file in one message');
     }
     let replyTarget: TeamForumMessageDocument | null = null;
     if (replyIdRaw) {
@@ -481,6 +498,13 @@ export class TeamForumService {
             userId,
           )
         : null;
+    const fileMeta = fileRaw
+      ? await this.teamNewsAttachments.assertForumFileAttachmentForSender(
+          teamOid,
+          fileRaw,
+          userId,
+        )
+      : null;
     const doc = await this.messageModel.create({
       topicId: topOid,
       teamId: teamOid,
@@ -494,6 +518,8 @@ export class TeamForumService {
       imageFileIds: albumMetas.map((m) => m.fileId),
       imageMimeType: legacyMeta?.mimeType ?? null,
       imageSize: legacyMeta?.size ?? null,
+      fileFileId: fileMeta?.fileId ?? null,
+      fileFilename: fileMeta?.filename ?? null,
       editedAt: null,
       deletedAt: null,
       deletedByUserId: null,

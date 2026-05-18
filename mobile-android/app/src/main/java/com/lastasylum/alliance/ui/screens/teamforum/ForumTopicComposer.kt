@@ -42,12 +42,15 @@ import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Mood
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -94,16 +97,24 @@ fun ForumTopicComposer(
     pendingImageRemotePreviewUrl: String?,
     /** Загруженные на сервер fileId (как во вкладке «Чат») — без них отправка только по локальным URI запрещена. */
     postedImageFileIds: List<String>,
+    pendingApkLabel: String? = null,
+    postedApkFileId: String? = null,
+    isForumAdmin: Boolean = false,
     isSending: Boolean,
     isUploadingImage: Boolean,
+    isUploadingFile: Boolean = false,
     sendEnabled: Boolean,
     canUseZlobyakaStickers: Boolean,
     onSend: () -> Unit,
     onSendStickerPayload: (String) -> Unit,
     onImageUrisPicked: (List<Uri>) -> Unit,
+    onPickApk: (Uri, String) -> Unit = { _, _ -> },
+    onClearPendingApk: () -> Unit = {},
     onTyping: () -> Unit,
 ) {
     var showMediaPanel by remember { mutableStateOf(false) }
+    var showAttachMenu by remember { mutableStateOf(false) }
+    val isUploadingAttachment = isUploadingImage || isUploadingFile
     val context = LocalContext.current
     val activityResultOwner = LocalActivityResultRegistryOwner.current
     val canHandleBack = LocalOnBackPressedDispatcherOwner.current != null
@@ -117,6 +128,17 @@ fun ForumTopicComposer(
             contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 12),
             onResult = { uris ->
                 if (uris.isNotEmpty()) onImageUrisPicked(uris)
+            },
+        )
+    } else null
+
+    val pickApkLauncher = if (activityResultOwner != null && isForumAdmin) {
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.GetContent(),
+            onResult = { uri ->
+                if (uri != null) {
+                    onPickApk(uri, com.lastasylum.alliance.ui.chat.queryDisplayName(context, uri))
+                }
             },
         )
     } else null
@@ -143,7 +165,39 @@ fun ForumTopicComposer(
             thickness = 0.5.dp,
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
         )
-        val showPending = pendingImageUris.isNotEmpty() || !pendingImageRemotePreviewUrl.isNullOrBlank()
+        val showPending = pendingImageUris.isNotEmpty() ||
+            !pendingImageRemotePreviewUrl.isNullOrBlank()
+        pendingApkLabel?.let { apkName ->
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal)
+                    .padding(top = 8.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = stringResource(R.string.chat_picked_apk_label, apkName),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 2,
+                    )
+                    TextButton(
+                        onClick = onClearPendingApk,
+                        enabled = !isSending && !isUploadingAttachment,
+                    ) {
+                        Text(stringResource(R.string.chat_picked_apk_remove))
+                    }
+                }
+            }
+        }
         if (showPending) {
             Box(
                 modifier = Modifier
@@ -174,7 +228,7 @@ fun ForumTopicComposer(
                         }
                     }
                 }
-                if (isUploadingImage) {
+                if (isUploadingAttachment) {
                     Box(
                         Modifier
                             .fillMaxSize()
@@ -189,7 +243,7 @@ fun ForumTopicComposer(
                 }
                 IconButton(
                     onClick = onClearPendingImage,
-                    enabled = !isSending && !isUploadingImage,
+                    enabled = !isSending && !isUploadingAttachment,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(4.dp),
@@ -305,7 +359,7 @@ fun ForumTopicComposer(
                                     showMediaPanel = true
                                 }
                             },
-                            enabled = !isSending && !isUploadingImage,
+                            enabled = !isSending && !isUploadingAttachment,
                             modifier = Modifier.size(44.dp),
                         ) {
                             Icon(
@@ -351,7 +405,7 @@ fun ForumTopicComposer(
                                 Box {
                                     if (draft.isBlank()) {
                                         Text(
-                                            text = if (showPending) {
+                                            text = if (showPending || pendingApkLabel != null) {
                                                 stringResource(R.string.chat_caption_hint)
                                             } else {
                                                 stringResource(R.string.chat_message_hint)
@@ -365,31 +419,70 @@ fun ForumTopicComposer(
                             },
                         )
                         val canSend = sendEnabled &&
-                            (draft.isNotBlank() || postedImageFileIds.isNotEmpty())
-                        val sendButtonEnabled = canSend && !isSending && !isUploadingImage
-
-                        IconButton(
-                            onClick = {
-                                focusManager.clearFocus()
-                                keyboard?.hide()
-                                pickImagesLauncher?.launch(
-                                    PickVisualMediaRequest(
-                                        ActivityResultContracts.PickVisualMedia.ImageOnly,
-                                    ),
+                            (
+                                draft.isNotBlank() ||
+                                    postedImageFileIds.isNotEmpty() ||
+                                    !postedApkFileId.isNullOrBlank()
                                 )
-                            },
-                            enabled = !isSending && !isUploadingImage,
-                            modifier = Modifier.size(44.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.AttachFile,
-                                contentDescription = stringResource(R.string.chat_attach_images_cd),
-                                tint = if (!isSending && !isUploadingImage) {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                        val sendButtonEnabled = canSend && !isSending && !isUploadingAttachment
+
+                        Box {
+                            IconButton(
+                                onClick = {
+                                    if (isForumAdmin) {
+                                        showAttachMenu = true
+                                    } else {
+                                        focusManager.clearFocus()
+                                        keyboard?.hide()
+                                        pickImagesLauncher?.launch(
+                                            PickVisualMediaRequest(
+                                                ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                            ),
+                                        )
+                                    }
                                 },
-                            )
+                                enabled = !isSending && !isUploadingAttachment,
+                                modifier = Modifier.size(44.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.AttachFile,
+                                    contentDescription = if (isForumAdmin) {
+                                        stringResource(R.string.chat_attach_apk_cd)
+                                    } else {
+                                        stringResource(R.string.chat_attach_images_cd)
+                                    },
+                                    tint = if (!isSending && !isUploadingAttachment) {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                                    },
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showAttachMenu,
+                                onDismissRequest = { showAttachMenu = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.chat_attach_menu_photo)) },
+                                    onClick = {
+                                        showAttachMenu = false
+                                        focusManager.clearFocus()
+                                        keyboard?.hide()
+                                        pickImagesLauncher?.launch(
+                                            PickVisualMediaRequest(
+                                                ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                            ),
+                                        )
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.chat_attach_menu_apk)) },
+                                    onClick = {
+                                        showAttachMenu = false
+                                        pickApkLauncher?.launch("application/*")
+                                    },
+                                )
+                            }
                         }
 
                         IconButton(
@@ -465,7 +558,7 @@ fun ForumTopicComposer(
                                 .padding(4.dp)
                                 .aspectRatio(1f)
                                 .clickable(
-                                    enabled = !isSending && !isUploadingImage && canUseZlobyakaStickers,
+                                    enabled = !isSending && !isUploadingAttachment && canUseZlobyakaStickers,
                                     onClick = {
                                         onSendStickerPayload(ZlobyakaStickerPack.encode(stem))
                                         showMediaPanel = false
