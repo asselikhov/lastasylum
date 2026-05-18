@@ -471,6 +471,7 @@ class CombatOverlayService : Service() {
     private var lastForegroundHintPkg: String? = null
     /** Не вызывать [NotificationManager.notify] с тем же текстом подряд (лишние всплытия на части OEM). */
     private var lastForegroundNotificationText: String? = null
+    private var lastForegroundMicActive: Boolean = false
 
     private val gameGateRunnable = object : Runnable {
         override fun run() {
@@ -496,9 +497,10 @@ class CombatOverlayService : Service() {
         OverlayForegroundNotifications.ensureChannel(this)
         val notification = OverlayForegroundNotifications.build(
             this,
-            getString(R.string.overlay_notif_combat_active),
+            foregroundNotificationIdleText(),
             AppContainer.from(this).userSettingsPreferences.isQuietMode(),
         )
+        lastForegroundNotificationText = foregroundNotificationIdleText()
         // Тип FGS в манифесте — dataSync (см. AndroidManifest); иначе microphone + API 34 ломают onCreate без RECORD_AUDIO / eligible state.
         ServiceCompat.startForeground(
             this,
@@ -577,7 +579,7 @@ class CombatOverlayService : Service() {
     private fun ensureOverlayIfPermitted() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
             Log.w(TAG, "ensureOverlayIfPermitted: SYSTEM_ALERT_WINDOW not granted for ${packageName}")
-            updateNotification(getString(R.string.overlay_notif_permission_required))
+            logGateStateThrottled("overlayGate: нет разрешения «поверх других приложений»")
             return
         }
         repairDetachedOverlayShellIfNeeded()
@@ -609,14 +611,6 @@ class CombatOverlayService : Service() {
             }
             return
         }
-        if (!prefs.isOverlayGameGateEnabled()) {
-            applyGameGateState(
-                gameGateEnabled = false,
-                hasUsageAccess = true,
-                shouldShow = true,
-            )
-            return
-        }
         if (gateCheckInFlight) return
         gateCheckInFlight = true
         val targets = prefs.getOverlayTargetGamePackages()
@@ -628,7 +622,7 @@ class CombatOverlayService : Service() {
                 val hintedComp = runCatching { GameForegroundGate.lastResumedComponent(this@CombatOverlayService) }.getOrNull()
                 val hintedPkg = hintedComp?.packageName
                 lastForegroundHintPkg = hintedPkg
-                if (prefs.isOverlayGameGateEnabled() && activityTokens.isNotEmpty()) {
+                if (activityTokens.isNotEmpty()) {
                     Log.d(
                         OVERLAY_DIAG_TAG,
                         "activityGate hint pkg=${hintedComp?.packageName ?: "-"} cls=${hintedComp?.className ?: "-"} tokens=${activityTokens.joinToString()}",
@@ -657,7 +651,7 @@ class CombatOverlayService : Service() {
                 }
                 mainHandler.post {
                     val nowMs = System.currentTimeMillis()
-                    if (prefs.isOverlayGameGateEnabled() && nowMs - lastGateDiagLogMs >= 25_000L) {
+                    if (nowMs - lastGateDiagLogMs >= 25_000L) {
                         lastGateDiagLogMs = nowMs
                         val draw = canDrawOverlaysNow()
                         if (!hasUsageAccess || !shouldShow || !draw || overlayView == null) {
@@ -670,7 +664,6 @@ class CombatOverlayService : Service() {
                         }
                     }
                     applyGameGateState(
-                        gameGateEnabled = true,
                         hasUsageAccess = hasUsageAccess,
                         shouldShow = shouldShow,
                     )
@@ -684,19 +677,9 @@ class CombatOverlayService : Service() {
     }
 
     private fun applyGameGateState(
-        gameGateEnabled: Boolean,
         hasUsageAccess: Boolean,
         shouldShow: Boolean,
     ) {
-        if (!gameGateEnabled) {
-            gateNotifyKey = ""
-            if (!canDrawOverlaysNow()) {
-                updateNotification(getString(R.string.overlay_notif_permission_required))
-                return
-            }
-            ensureOverlayIfPermitted()
-            return
-        }
         if (!hasUsageAccess) {
             logGateStateThrottled(
                 "overlayGate: нет доступа к статистике использования — панель скрыта",
@@ -721,14 +704,13 @@ class CombatOverlayService : Service() {
         }
         gateNotifyKey = ""
         if (!canDrawOverlaysNow()) {
-            updateNotification(getString(R.string.overlay_notif_permission_required))
+            logGateStateThrottled("overlayGate: нет разрешения «поверх других приложений»")
             if (overlayView != null && !shouldKeepOverlayWindows()) {
                 removeOverlayControl()
             }
             return
         }
         ensureOverlayIfPermitted()
-        updateNotification(getString(R.string.overlay_notif_combat_active))
     }
 
     private fun canDrawOverlaysNow(): Boolean {
@@ -817,6 +799,7 @@ class CombatOverlayService : Service() {
         gateCheckInFlight = false
         mainHandler.removeCallbacks(gameGateRunnable)
         lastForegroundNotificationText = null
+        lastForegroundMicActive = false
         speechPipeline.destroy()
         stopOverlayVoice()
         overlayTicker.hideTicker()
@@ -846,7 +829,16 @@ class CombatOverlayService : Service() {
         )
     }
 
+    private fun foregroundNotificationIdleText(): String =
+        getString(R.string.overlay_notif_fgs_idle)
+
+    /**
+     * Обновляет FGS-уведомление только для микрофона в эфире.
+     * Статусы гейта/распознавания/«боевой режим» не трогаем — смена текста даёт всплывашку при входе в игру.
+     */
     private fun updateNotification(content: String) {
+        val micActiveText = getString(R.string.overlay_notif_voice_active)
+        if (content != micActiveText) return
         if (content == lastForegroundNotificationText) return
         lastForegroundNotificationText = content
         OverlayForegroundNotifications.notify(
@@ -2132,6 +2124,9 @@ class CombatOverlayService : Service() {
         val hasMic = micActive &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
+        if (!hasMic && !lastForegroundMicActive) {
+            return
+        }
         val types = if (hasMic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
@@ -2141,8 +2136,10 @@ class CombatOverlayService : Service() {
         val text = if (hasMic) {
             getString(R.string.overlay_notif_voice_active)
         } else {
-            lastForegroundNotificationText ?: getString(R.string.overlay_notif_combat_active)
+            foregroundNotificationIdleText()
         }
+        lastForegroundMicActive = hasMic
+        lastForegroundNotificationText = text
         val notification = OverlayForegroundNotifications.build(
             this,
             text,
@@ -2278,7 +2275,23 @@ class CombatOverlayService : Service() {
             context.startService(intent)
         }
 
-        /** После смены настроек «только в игре» / пакета — пересчитать показ оверлея. */
+        /**
+         * Поднимает FGS, если пользователь включил панель, но процесс/сервис был остановлен системой
+         * (свайп из recents, нехватка памяти). Оверлей по-прежнему показывается только в игре.
+         */
+        fun ensureRuntimeIfUserEnabled(context: Context): Boolean {
+            val app = context.applicationContext
+            if (!UserSettingsPreferences(app).isOverlayPanelEnabled()) return false
+            if (isServiceInstanceActive) return true
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+                !Settings.canDrawOverlays(app)
+            ) {
+                return false
+            }
+            return setEnabled(context, true)
+        }
+
+        /** После смены пакета/activity-фильтра — пересчитать показ оверлея. */
         fun requestGateRecheckIfRunning(context: Context) {
             if (!isServiceInstanceActive) return
             val intent = Intent(context, CombatOverlayService::class.java).apply {

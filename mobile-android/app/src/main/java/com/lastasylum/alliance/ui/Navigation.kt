@@ -104,9 +104,12 @@ fun AppNavigation(
     }
 
     LaunchedEffect(overlayTabVisible) {
+        val appContext = activity.applicationContext
         if (!overlayTabVisible) {
             // Must not clear the user's "show panel" preference — only stop the runtime FGS.
-            CombatOverlayService.stopRuntime(activity.applicationContext)
+            CombatOverlayService.stopRuntime(appContext)
+        } else {
+            CombatOverlayService.ensureRuntimeIfUserEnabled(appContext)
         }
     }
 

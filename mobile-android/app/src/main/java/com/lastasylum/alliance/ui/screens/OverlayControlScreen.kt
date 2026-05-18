@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -26,7 +25,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,7 +42,6 @@ import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.GameForegroundGate
 import com.lastasylum.alliance.overlay.OverlayPermissions
-import com.lastasylum.alliance.ui.components.SettingsDivider
 import com.lastasylum.alliance.ui.components.SettingsSection
 import com.lastasylum.alliance.ui.components.SettingsToggleRow
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
@@ -61,12 +58,9 @@ fun OverlayControlScreen() {
     }
 
     val overlayVisible by CombatOverlayService.overlayVisible.collectAsStateWithLifecycle()
-    var gameGateOnly by remember { mutableStateOf(prefs.isOverlayGameGateEnabled()) }
     var targetPkg by remember { mutableStateOf(prefs.getOverlayTargetGamePackage()) }
     var targetActivities by remember { mutableStateOf(prefs.getOverlayTargetGameActivityTokens().joinToString(",")) }
     var overlayEnabled by remember { mutableStateOf(prefs.isOverlayPanelEnabled()) }
-
-    val latestGameGate = rememberUpdatedState(gameGateOnly)
 
     val userId = remember {
         (android.os.Process.myUid() / 100000)
@@ -79,16 +73,22 @@ fun OverlayControlScreen() {
 
     fun overlayOk(): Boolean = OverlayPermissions.canDrawOverlays(context)
 
-    fun usageOk(): Boolean = !latestGameGate.value ||
-        GameForegroundGate.hasUsageStatsAccess(context)
+    fun usageOk(): Boolean = GameForegroundGate.hasUsageStatsAccess(context)
+
+    fun refreshOverlayRuntime() {
+        GameForegroundGate.invalidateUsageAccessCache()
+        if (overlayEnabled) {
+            CombatOverlayService.ensureRuntimeIfUserEnabled(context)
+        }
+        CombatOverlayService.requestGateRecheckIfRunning(context)
+    }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                GameForegroundGate.invalidateUsageAccessCache()
-                CombatOverlayService.requestGateRecheckIfRunning(context)
                 overlayEnabled = prefs.isOverlayPanelEnabled()
+                refreshOverlayRuntime()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -97,6 +97,9 @@ fun OverlayControlScreen() {
 
     LaunchedEffect(Unit) {
         overlayEnabled = prefs.isOverlayPanelEnabled()
+        if (overlayEnabled) {
+            CombatOverlayService.ensureRuntimeIfUserEnabled(context)
+        }
     }
 
     LaunchedEffect(targetPkg) {
@@ -165,7 +168,7 @@ fun OverlayControlScreen() {
                     SettingsSection(title = stringResource(R.string.settings_section_overlay)) {
                         SettingsToggleRow(
                             title = stringResource(R.string.overlay_switch_panel),
-                            subtitle = null,
+                            subtitle = stringResource(R.string.overlay_switch_panel_subtitle),
                             checked = overlayEnabled,
                             onCheckedChange = { on ->
                                 if (on) {
@@ -177,14 +180,14 @@ fun OverlayControlScreen() {
                                             prefs.setOverlayPanelEnabled(false)
                                             OverlayPermissions.openOverlayPermissionSettings(context)
                                         }
-                                        latestGameGate.value && !usageOk() -> {
+                                        !usageOk() -> {
                                             overlayEnabled = false
                                             prefs.setOverlayPanelEnabled(false)
                                             OverlayPermissions.openUsageAccessSettings(context)
                                         }
                                         else -> Unit
                                     }
-                                    if (!CombatOverlayService.setEnabled(context, true)) {
+                                    if (overlayEnabled && !CombatOverlayService.setEnabled(context, true)) {
                                         overlayEnabled = false
                                         prefs.setOverlayPanelEnabled(false)
                                     }
@@ -195,32 +198,18 @@ fun OverlayControlScreen() {
                                 }
                             },
                         )
-                        SettingsDivider()
-                        SettingsToggleRow(
-                            title = stringResource(R.string.overlay_switch_game_only),
-                            subtitle = stringResource(R.string.overlay_usage_hint_gate),
-                            checked = gameGateOnly,
-                            onCheckedChange = { v ->
-                                if (v) {
-                                    GameForegroundGate.invalidateUsageAccessCache()
-                                    if (!GameForegroundGate.hasUsageStatsAccess(context)) {
-                                        OverlayPermissions.openUsageAccessSettings(context)
-                                        return@SettingsToggleRow
-                                    }
-                                }
-                                gameGateOnly = v
-                                prefs.setOverlayGameGateEnabled(v)
-                                CombatOverlayService.requestGateRecheckIfRunning(context)
-                            },
-                        )
                     }
                 }
             }
 
-            if (overlayEnabled && !overlayVisible && latestGameGate.value) {
+            if (overlayEnabled && !overlayVisible) {
                 item {
                     Text(
-                        text = "Панель включена, но сейчас скрыта (ожидание игры).",
+                        text = if (usageOk()) {
+                            stringResource(R.string.overlay_panel_waiting_for_game)
+                        } else {
+                            stringResource(R.string.overlay_usage_hint_gate)
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -241,7 +230,7 @@ fun OverlayControlScreen() {
                 }
             }
 
-            if (gameGateOnly && !usageOk()) {
+            if (overlayEnabled && !usageOk()) {
                 item {
                     SettingsHintCard(
                         message = stringResource(R.string.overlay_usage_hint_gate),
@@ -262,7 +251,7 @@ fun OverlayControlScreen() {
                 }
             }
 
-            if (gameGateOnly) {
+            if (overlayEnabled) {
                 item {
                     SettingsPanelCard {
                         SettingsSection(title = stringResource(R.string.settings_section_game_filter)) {

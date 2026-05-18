@@ -142,11 +142,12 @@
     <string name="overlay_activity_filter_label">Activity фильтр (опционально)</string>
     <string name="overlay_activity_filter_hint">Через запятую: части имени Activity. Панель только на этих экранах (нужен доступ к статистике использования).</string>
     <string name="overlay_switch_panel">Показывать панель</string>
-    <string name="overlay_switch_game_only">Только когда открыта игра</string>
+    <string name="overlay_switch_panel_subtitle">Только поверх игры: панель появляется при запуске игры и скрывается, когда игра свёрнута или закрыта. SquadRelay может работать в фоне.</string>
+    <string name="overlay_panel_waiting_for_game">Панель включена, сервис в фоне — ожидание игры.</string>
     <string name="overlay_package_field_label">Пакеты игры (из «Сведения о приложении»)</string>
     <string name="overlay_overlay_must_be_squadrelay">Чтобы кнопки были поверх игры, включите «Поверх других приложений» для «%1$s» (это приложение SquadRelay). Включение только у игры не даёт панель — её рисует SquadRelay.</string>
     <string name="overlay_open_squadrelay_overlay_settings">Настройки SquadRelay</string>
-    <string name="overlay_usage_hint_gate">Для строгого режима «только в игре» включите «Данные об использовании» для SquadRelay. Если система не отдаёт статистику, панель всё равно будет показана — фильтр по игре в таком случае недоступен.</string>
+    <string name="overlay_usage_hint_gate">Включите «Данные об использовании» для SquadRelay — без них панель не сможет определить, открыта ли игра.</string>
     <string name="overlay_open_usage_settings">Доступ к статистике</string>
     <string name="overlay_mic_optional_hint">Микрофон не обязателен для панели; он нужен для голоса.</string>
     <string name="overlay_start_service_failed">Не удалось запустить панель. Проверьте ограничения фона и уведомления для SquadRelay.</string>
@@ -405,6 +406,8 @@
 
     <!-- Combat overlay service -->
     <string name="overlay_notif_combat_active">Боевой режим активен</string>
+    <!-- Статичный текст FGS: не меняется при входе/выходе из игры (смена текста = всплывашка на OEM). -->
+    <string name="overlay_notif_fgs_idle">SquadRelay</string>
     <string name="overlay_notif_permission_required">Нужно разрешение «поверх других приложений»</string>
     <string name="overlay_notif_speech_unavailable">Распознавание речи на устройстве недоступно</string>
     <string name="overlay_notif_listening">Слушаю…</string>

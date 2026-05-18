@@ -7,10 +7,17 @@ class UserSettingsPreferences(context: Context) {
     private val prefs =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    /** Главный переключатель "Показывать панель" (источник истины для сервиса и UI). */
-    fun isOverlayPanelEnabled(): Boolean = prefs.getBoolean(KEY_OVERLAY_PANEL_ENABLED, true)
+    /**
+     * «Показывать панель»: при включении [CombatOverlayService] работает в фоне и рисует оверлей
+     * только когда в foreground целевая игра ([getOverlayTargetGamePackages]).
+     */
+    fun isOverlayPanelEnabled(): Boolean {
+        migrateOverlayPrefsIfNeeded()
+        return prefs.getBoolean(KEY_OVERLAY_PANEL_ENABLED, true)
+    }
 
     fun setOverlayPanelEnabled(value: Boolean) {
+        migrateOverlayPrefsIfNeeded()
         prefs.edit().putBoolean(KEY_OVERLAY_PANEL_ENABLED, value).apply()
     }
 
@@ -82,19 +89,6 @@ class UserSettingsPreferences(context: Context) {
         prefs.edit().putBoolean(KEY_OVERLAY_VOICE_MIC, value).apply()
     }
 
-    /**
-     * Если включено — боевой оверлей в идеале только при открытой игре ([getOverlayTargetGamePackage]).
-     * На части прошивок без «Данных об использовании» гейт не может это проверить — тогда панель всё равно
-     * показывается (см. CombatOverlayService).
-     * По умолчанию выключено, чтобы после установки панель работала на любом устройстве без системных настроек.
-     */
-    fun isOverlayGameGateEnabled(): Boolean =
-        prefs.getBoolean(KEY_OVERLAY_GAME_GATE, false)
-
-    fun setOverlayGameGateEnabled(value: Boolean) {
-        prefs.edit().putBoolean(KEY_OVERLAY_GAME_GATE, value).apply()
-    }
-
     /** applicationId игры (например com.lastasylum.plague). Несколько — через запятую. */
     fun getOverlayTargetGamePackage(): String {
         var raw = prefs.getString(KEY_OVERLAY_TARGET_PACKAGE, DEFAULT_TARGET_GAME_PACKAGES_CSV)
@@ -157,6 +151,23 @@ class UserSettingsPreferences(context: Context) {
         prefs.edit().putString(KEY_OVERLAY_TARGET_PACKAGE, value.trim()).apply()
     }
 
+    /**
+     * Раньше «Показывать панель» и «Только в игре» были разными ключами.
+     * Панель включена без гейта → оставляем включённой (поведение станет «только в игре»).
+     * Панель выключена, гейт включён → включаем панель (пользователь явно хотел режим в игре).
+     */
+    private fun migrateOverlayPrefsIfNeeded() {
+        if (prefs.getBoolean(KEY_OVERLAY_GAME_GATE_MERGED, false)) return
+        val panel = prefs.getBoolean(KEY_OVERLAY_PANEL_ENABLED, true)
+        val legacyGameGate = prefs.getBoolean(KEY_OVERLAY_GAME_GATE, false)
+        val mergedPanel = panel || legacyGameGate
+        prefs.edit()
+            .putBoolean(KEY_OVERLAY_PANEL_ENABLED, mergedPanel)
+            .putBoolean(KEY_OVERLAY_GAME_GATE_MERGED, true)
+            .remove(KEY_OVERLAY_GAME_GATE)
+            .apply()
+    }
+
     companion object {
         const val PRESET_BALANCED = "balanced"
         const val PRESET_COMMANDER = "commander"
@@ -169,6 +180,7 @@ class UserSettingsPreferences(context: Context) {
         private const val KEY_OVERLAY_LAYOUT_PRESET = "overlay_layout_preset"
         private const val KEY_OVERLAY_PANEL_ENABLED = "overlay_panel_enabled"
         private const val KEY_OVERLAY_GAME_GATE = "overlay_game_gate"
+        private const val KEY_OVERLAY_GAME_GATE_MERGED = "overlay_game_gate_merged_v1"
         private const val KEY_OVERLAY_TARGET_PACKAGE = "overlay_target_game_package"
         private const val KEY_OVERLAY_TARGET_ACTIVITY_TOKENS = "overlay_target_game_activity_tokens"
         private const val KEY_OVERLAY_PANEL_POS_X_PX = "overlay_panel_pos_x_px"
