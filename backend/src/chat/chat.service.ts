@@ -662,14 +662,31 @@ export class ChatService {
     await this.assertUserMayUseChat(input.userId);
     await this.assertRoomForUser(input.userId, input.roomId);
     const roomObjectId = new Types.ObjectId(input.roomId);
-    await this.chatReadStateModel
-      .updateOne(
-        { roomId: roomObjectId, userId: input.userId },
-        { $set: { lastReadMessageId: input.messageId } },
-        { upsert: true },
-      )
+    const messageOid = new Types.ObjectId(input.messageId);
+    const existing = await this.chatReadStateModel
+      .findOne({ roomId: roomObjectId, userId: input.userId })
+      .lean()
       .exec();
-    return { roomId: input.roomId, userId: input.userId, messageId: input.messageId };
+    const prev = existing?.lastReadMessageId?.trim();
+    const advanced =
+      !prev ||
+      !Types.ObjectId.isValid(prev) ||
+      messageOid > new Types.ObjectId(prev);
+    const lastReadMessageId = advanced ? input.messageId : prev!;
+    if (advanced) {
+      await this.chatReadStateModel
+        .updateOne(
+          { roomId: roomObjectId, userId: input.userId },
+          { $set: { lastReadMessageId: input.messageId } },
+          { upsert: true },
+        )
+        .exec();
+    }
+    return {
+      roomId: input.roomId,
+      userId: input.userId,
+      messageId: lastReadMessageId,
+    };
   }
 
   async deleteMessage(

@@ -312,6 +312,14 @@ fun AppNavigation(
             composable(AppTab.CHAT.route) {
                 LaunchedEffect(Unit) {
                     chatViewModel.refreshTeamProfileGateLight()
+                    chatViewModel.syncRoomsFromServer()
+                }
+                DisposableEffect(app.chatRepository) {
+                    val listener = { chatViewModel.onOverlayChatPanelClosed() }
+                    app.chatRepository.addOverlayChatPanelClosedListener(listener)
+                    onDispose {
+                        app.chatRepository.removeOverlayChatPanelClosedListener(listener)
+                    }
                 }
                 val chatState by chatViewModel.state.collectAsStateWithLifecycle()
                 val draftMessage by chatViewModel.draftMessage.collectAsStateWithLifecycle()

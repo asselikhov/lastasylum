@@ -37,6 +37,7 @@ import java.util.Locale
 import java.util.UUID
 
 private const val PAGE_SIZE = 30
+private val OBJECT_ID_HEX = Regex("^[a-fA-F0-9]{24}$")
 
 private data class RoomMessageCache(
     val messages: List<ChatMessage>,
@@ -78,6 +79,8 @@ class ChatViewModel(
 
     private val incomingMessages = Channel<ChatMessage>(capacity = Channel.UNLIMITED)
     private val roomMessageCache = mutableMapOf<String, RoomMessageCache>()
+    /** Latest message id we successfully marked read per room (avoids regress + duplicate bumps). */
+    private val lastMarkedReadByRoom = mutableMapOf<String, String>()
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var chatVoiceRecognizer: ChatVoiceRecognizer? = null
@@ -94,7 +97,11 @@ class ChatViewModel(
                 if (roomId == selected) {
                     applyIncomingMessage(message)
                 } else if (message.senderId != currentUserId) {
-                    bumpRoomUnread(roomId)
+                    val mid = message._id
+                    val lastRead = lastMarkedReadByRoom[roomId]
+                    if (mid.isNullOrBlank() || lastRead.isNullOrBlank() || isObjectIdNewer(mid, lastRead)) {
+                        bumpRoomUnread(roomId)
+                    }
                 }
             }
         }
@@ -115,9 +122,9 @@ class ChatViewModel(
             val hasTeam = loadTeamProfileGate()
             val roomsResult = repository.listRooms()
             _state.value = if (roomsResult.isSuccess) {
-                val nextRooms = sortChatRoomsForDisplay(
-                roomsResult.getOrElse { _state.value.rooms },
-            )
+                val nextRooms = mergeRoomsUnreadFromServer(
+                    sortChatRoomsForDisplay(roomsResult.getOrElse { _state.value.rooms }),
+                )
                 syncRaidRoomPreference(nextRooms)
                 _state.value.copy(
                     hasTeamProfileForGlobalChat = hasTeam,
@@ -126,6 +133,26 @@ class ChatViewModel(
             } else {
                 _state.value.copy(hasTeamProfileForGlobalChat = hasTeam)
             }
+        }
+    }
+
+    /** Sync tab badges from API (e.g. after overlay chat or app resume). */
+    fun syncRoomsFromServer() {
+        viewModelScope.launch {
+            repository.listRooms()
+                .onSuccess { raw ->
+                    val next = mergeRoomsUnreadFromServer(sortChatRoomsForDisplay(raw))
+                    syncRaidRoomPreference(next)
+                    _state.update { it.copy(rooms = next) }
+                }
+        }
+    }
+
+    /** Overlay fullscreen chat closed — reclaim socket + refresh server unread counts. */
+    fun onOverlayChatPanelClosed() {
+        viewModelScope.launch {
+            syncRoomsFromServer()
+            reconnectRealtimeIfNeeded()
         }
     }
 
@@ -238,7 +265,13 @@ class ChatViewModel(
                 hasMoreOlder = _state.value.hasMoreOlder,
             )
         }
+        val previousNewestId = previousRoomId?.let { rid ->
+            roomMessageCache[rid]?.messages?.firstOrNull()?._id
+        }
         viewModelScope.launch {
+            if (previousRoomId != null && !previousNewestId.isNullOrBlank()) {
+                markRoomReadUpTo(previousRoomId, previousNewestId)
+            }
             chatRoomPreferences.setSelectedRoomId(roomId)
             val cached = roomMessageCache[roomId]
             knownMessageIds.clear()
@@ -269,6 +302,43 @@ class ChatViewModel(
     ): List<ChatRoomDto> =
         rooms.map { if (it.id == roomId) it.copy(unreadCount = 0) else it }
 
+    private fun mergeRoomsUnreadFromServer(serverRooms: List<ChatRoomDto>): List<ChatRoomDto> {
+        val selected = _state.value.selectedRoomId
+        val viewingSelected =
+            !selected.isNullOrBlank() && _state.value.messages.isNotEmpty()
+        return serverRooms.map { room ->
+            if (viewingSelected && room.id == selected) room.copy(unreadCount = 0) else room
+        }
+    }
+
+    private fun isObjectIdNewer(candidate: String, baseline: String?): Boolean {
+        if (baseline.isNullOrBlank()) return true
+        if (!OBJECT_ID_HEX.matches(candidate)) return true
+        if (!OBJECT_ID_HEX.matches(baseline)) return true
+        if (candidate.length != baseline.length) return candidate.length > baseline.length
+        return candidate > baseline
+    }
+
+    private suspend fun markRoomReadUpTo(roomId: String, messageId: String) {
+        if (roomId.isBlank() || messageId.isBlank()) return
+        val prev = lastMarkedReadByRoom[roomId]
+        if (prev != null && !isObjectIdNewer(messageId, prev)) return
+        repository.markRoomRead(roomId, messageId)
+            .onSuccess { lastMarkedReadByRoom[roomId] = messageId }
+    }
+
+    private fun reconnectRealtimeIfNeeded() {
+        val rooms = _state.value.rooms
+        if (rooms.isEmpty()) return
+        repository.connectRealtimeRooms(
+            roomIds = rooms.map { it.id },
+            onMessage = ::onIncomingMessage,
+            onDeleteMessage = ::onDeletedMessage,
+            onTyping = ::onTypingFromPeer,
+            onRead = ::onRoomReadEvent,
+        )
+    }
+
     private fun bumpRoomUnread(roomId: String) {
         _state.update { st ->
             st.copy(
@@ -298,11 +368,14 @@ class ChatViewModel(
         _draftMessage.value = ""
         _typingPeers.value = emptyMap()
         val hasTeam = loadTeamProfileGate()
+        _state.update { st ->
+            st.copy(rooms = clearUnreadForRoom(st.rooms.ifEmpty { rooms }, roomId))
+        }
         if (!hadCachedMessages) {
             _state.value = _state.value.copy(
                 isLoading = true,
                 isRoomsLoading = false,
-                rooms = rooms,
+                rooms = clearUnreadForRoom(rooms, roomId),
                 selectedRoomId = roomId,
                 hasTeamProfileForGlobalChat = hasTeam,
                 error = null,
@@ -327,7 +400,7 @@ class ChatViewModel(
         } else {
             _state.value = _state.value.copy(
                 isRoomsLoading = false,
-                rooms = rooms,
+                rooms = clearUnreadForRoom(rooms, roomId),
                 selectedRoomId = roomId,
                 hasTeamProfileForGlobalChat = hasTeam,
             )
@@ -356,7 +429,7 @@ class ChatViewModel(
                     rooms = clearUnreadForRoom(_state.value.rooms, roomId),
                 )
                 capped.firstOrNull()?._id?.let { newestId ->
-                    repository.markRoomRead(roomId, newestId)
+                    markRoomReadUpTo(roomId, newestId)
                 }
             }
             .onFailure { e ->
@@ -798,7 +871,15 @@ class ChatViewModel(
 
     private fun onRoomReadEvent(event: ChatRoomReadEvent) {
         if (event.userId.isBlank() || event.messageId.isBlank()) return
-        if (event.userId == currentUserId) return
+        if (event.userId == currentUserId) {
+            if (event.roomId.isNotBlank()) {
+                lastMarkedReadByRoom[event.roomId] = event.messageId
+                _state.update { st ->
+                    st.copy(rooms = clearUnreadForRoom(st.rooms, event.roomId))
+                }
+            }
+            return
+        }
         _state.update { st ->
             val cur = st.otherReadUptoMessageId
             val next = if (cur == null || cur < event.messageId) event.messageId else cur
@@ -890,9 +971,7 @@ class ChatViewModel(
         val rid = _state.value.selectedRoomId
         if (!rid.isNullOrBlank()) {
             nextState.messages.firstOrNull()?._id?.let { newestId ->
-                viewModelScope.launch {
-                    repository.markRoomRead(rid, newestId)
-                }
+                viewModelScope.launch { markRoomReadUpTo(rid, newestId) }
             }
         }
     }

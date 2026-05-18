@@ -39,6 +39,25 @@ class ChatRepository(
     private var realtimeTypingListener: ((ChatTypingEvent) -> Unit)? = null
     private var realtimeReadListener: ((ChatRoomReadEvent) -> Unit)? = null
     private val overlayMessageListeners = java.util.concurrent.CopyOnWriteArrayList<(ChatMessage) -> Unit>()
+    private val overlayChatPanelClosedListeners =
+        java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
+
+    fun addOverlayChatPanelClosedListener(listener: () -> Unit) {
+        if (!overlayChatPanelClosedListeners.contains(listener)) {
+            overlayChatPanelClosedListeners.add(listener)
+        }
+    }
+
+    fun removeOverlayChatPanelClosedListener(listener: () -> Unit) {
+        overlayChatPanelClosedListeners.remove(listener)
+    }
+
+    /** Full-screen overlay chat closed — main app should resync unread and reclaim socket listeners. */
+    fun notifyOverlayChatPanelClosed() {
+        overlayChatPanelClosedListeners.forEach { listener ->
+            runCatching { listener() }
+        }
+    }
 
     suspend fun listRooms(): Result<List<ChatRoomDto>> =
         runCatching { chatApi.listRooms() }

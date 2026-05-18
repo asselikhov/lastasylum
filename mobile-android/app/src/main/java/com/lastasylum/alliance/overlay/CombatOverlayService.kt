@@ -1809,6 +1809,7 @@ class CombatOverlayService : Service() {
         overlayHistoryStatus = null
         overlayHistoryDedupeIds.clear()
         overlayChatViewModel = null
+        runCatching { AppContainer.from(this).chatRepository.notifyOverlayChatPanelClosed() }
         runCatching { unregisterReceiver(overlaySystemResultReceiver) }
         overlayChatTeamComposeOwner?.destroy()
         overlayChatTeamComposeOwner = null
