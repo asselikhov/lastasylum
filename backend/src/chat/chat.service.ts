@@ -19,7 +19,7 @@ import { TeamsService } from '../users/teams.service';
 import { UsersService } from '../users/users.service';
 import { StickerAccessService } from '../users/sticker-access.service';
 import { ChatRoomsService } from './chat-rooms.service';
-import { Message } from './schemas/message.schema';
+import { Message, MessageAttachment } from './schemas/message.schema';
 import { ChatRoomReadState } from './schemas/chat-room-read-state.schema';
 import {
   parseZlobyakaStickerStem,
@@ -52,12 +52,7 @@ type MessageLean = {
       }
     | null;
   reactions?: { emoji: string; userIds: string[] }[];
-  attachments?: {
-    kind: 'image';
-    fileId: Types.ObjectId;
-    mimeType: string;
-    size: number;
-  }[];
+  attachments?: MessageAttachment[];
   replyToMessageId?: Types.ObjectId | string | null;
   deletedAt?: Date | null;
   deletedByUserId?: string | null;
@@ -99,7 +94,13 @@ export type ChatMessageView = {
       }
     | null;
   reactions: { emoji: string; count: number; reactedByMe: boolean }[];
-  attachments: { kind: 'image'; url: string; mimeType: string; size: number }[];
+  attachments: {
+    kind: 'image' | 'file';
+    url: string;
+    mimeType: string;
+    size: number;
+    filename: string | null;
+  }[];
   createdAt: string | null;
   updatedAt: string | null;
   replyToMessageId: string | null;
@@ -235,10 +236,11 @@ export class ChatService {
     const attachments = message.deletedAt
       ? []
       : (message.attachments ?? []).map((a) => ({
-          kind: 'image' as const,
+          kind: a.kind,
           url: `/chat/attachments/${a.fileId.toString()}`,
           mimeType: a.mimeType,
           size: a.size,
+          filename: a.filename ?? null,
         }));
     const forwardedFrom = message.forwardedFrom
       ? {
@@ -387,12 +389,7 @@ export class ChatService {
     author: MessageAuthor;
     roomId: string;
     replyToMessageId?: string;
-    attachments?: {
-      kind: 'image';
-      fileId: Types.ObjectId;
-      mimeType: string;
-      size: number;
-    }[];
+    attachments?: MessageAttachment[];
   }): Promise<ChatMessageView> {
     const authorUser = await this.usersService.findById(input.author.userId);
     if (

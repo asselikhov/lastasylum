@@ -8,14 +8,20 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { ChatAttachment } from './schemas/chat-attachment.schema';
+import type { MessageAttachment } from './schemas/message.schema';
 import { R2Service } from './r2.service';
 
 export type UploadedChatAttachment = {
   fileId: string;
   url: string;
+  kind: 'image' | 'file';
   mimeType: string;
   size: number;
+  filename: string | null;
 };
+
+const IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+const FILE_MAX_BYTES = 120 * 1024 * 1024;
 
 @Injectable()
 export class ChatAttachmentsService {
@@ -26,6 +32,13 @@ export class ChatAttachmentsService {
     private readonly attachmentModel: Model<ChatAttachment>,
     private readonly r2: R2Service,
   ) {}
+
+  static isApkUpload(mimeType: string, filename?: string): boolean {
+    const mime = mimeType.trim().toLowerCase();
+    if (mime === 'application/vnd.android.package-archive') return true;
+    const name = (filename ?? '').trim().toLowerCase();
+    return name.endsWith('.apk');
+  }
 
   async uploadImage(input: {
     buffer: Buffer;
@@ -40,10 +53,72 @@ export class ChatAttachmentsService {
     if (!mimeType.startsWith('image/')) {
       throw new BadRequestException('Only image uploads are supported');
     }
+    if (size > IMAGE_MAX_BYTES) {
+      throw new BadRequestException('Image exceeds 8 MB limit');
+    }
 
-    const ext = mimeType.split('/')[1]?.trim() || 'bin';
-    const safeExt = ext.replace(/[^a-zA-Z0-9]+/g, '').slice(0, 8) || 'bin';
-    // `key` is required in the schema — cannot create with "" (Mongoose rejects empty string on create).
+    return this.putAttachment({
+      buffer,
+      mimeType,
+      size,
+      allianceId: input.allianceId,
+      roomId: input.roomId,
+      uploaderUserId: input.uploaderUserId,
+      kind: 'image',
+      filename: null,
+      ext: mimeType.split('/')[1]?.trim() || 'bin',
+    });
+  }
+
+  async uploadFile(input: {
+    buffer: Buffer;
+    filename: string;
+    mimeType: string;
+    size: number;
+    allianceId: string;
+    roomId: Types.ObjectId;
+    uploaderUserId: string;
+  }): Promise<UploadedChatAttachment> {
+    const { buffer, mimeType, size, filename } = input;
+    if (!ChatAttachmentsService.isApkUpload(mimeType, filename)) {
+      throw new BadRequestException('Only APK files are supported for file uploads');
+    }
+    if (size > FILE_MAX_BYTES) {
+      throw new BadRequestException('File exceeds 120 MB limit');
+    }
+    if (size <= 0) {
+      throw new BadRequestException('file is empty');
+    }
+
+    const safeName = filename.replace(/[^\w.\-()+ ]+/g, '_').slice(0, 120);
+    const ext = safeName.toLowerCase().endsWith('.apk') ? 'apk' : 'apk';
+
+    return this.putAttachment({
+      buffer,
+      mimeType:
+        mimeType.trim() || 'application/vnd.android.package-archive',
+      size,
+      allianceId: input.allianceId,
+      roomId: input.roomId,
+      uploaderUserId: input.uploaderUserId,
+      kind: 'file',
+      filename: safeName || 'update.apk',
+      ext,
+    });
+  }
+
+  private async putAttachment(input: {
+    buffer: Buffer;
+    mimeType: string;
+    size: number;
+    allianceId: string;
+    roomId: Types.ObjectId;
+    uploaderUserId: string;
+    kind: 'image' | 'file';
+    filename: string | null;
+    ext: string;
+  }): Promise<UploadedChatAttachment> {
+    const safeExt = input.ext.replace(/[^a-zA-Z0-9]+/g, '').slice(0, 8) || 'bin';
     const fileId = new Types.ObjectId();
     const key = `chat/${input.allianceId}/${input.roomId.toString()}/${fileId.toString()}.${safeExt}`;
 
@@ -52,17 +127,18 @@ export class ChatAttachmentsService {
       allianceId: input.allianceId,
       roomId: input.roomId,
       uploaderUserId: input.uploaderUserId,
-      kind: 'image',
+      kind: input.kind,
+      filename: input.filename,
       key,
-      mimeType,
-      size,
+      mimeType: input.mimeType,
+      size: input.size,
     });
 
     try {
       await this.r2.putObject({
         key,
-        body: buffer,
-        contentType: mimeType,
+        body: input.buffer,
+        contentType: input.mimeType,
         cacheControl: 'private, max-age=31536000, immutable',
       });
     } catch (err) {
@@ -77,9 +153,39 @@ export class ChatAttachmentsService {
     return {
       fileId: fileId.toString(),
       url: `/chat/attachments/${fileId.toString()}`,
-      mimeType,
-      size,
+      kind: input.kind,
+      mimeType: input.mimeType,
+      size: input.size,
+      filename: input.filename,
     };
+  }
+
+  async resolveForRoom(input: {
+    allianceId: string;
+    roomObjectId: Types.ObjectId;
+    attachmentIds: string[];
+  }): Promise<MessageAttachment[]> {
+    const out: MessageAttachment[] = [];
+    for (const rawId of input.attachmentIds) {
+      const doc = await this.findAttachment(rawId);
+      if (!doc) {
+        throw new BadRequestException(`Unknown attachment: ${rawId}`);
+      }
+      if (doc.allianceId !== input.allianceId) {
+        throw new BadRequestException('Attachment alliance mismatch');
+      }
+      if (doc.roomId.toString() !== input.roomObjectId.toString()) {
+        throw new BadRequestException('Attachment belongs to another room');
+      }
+      out.push({
+        kind: doc.kind,
+        fileId: new Types.ObjectId(rawId),
+        mimeType: doc.mimeType,
+        size: doc.size,
+        filename: doc.filename ?? null,
+      });
+    }
+    return out;
   }
 
   async findAttachment(fileId: string): Promise<ChatAttachment | null> {
@@ -96,6 +202,8 @@ export class ChatAttachmentsService {
     size: number;
     roomId: Types.ObjectId;
     allianceId: string;
+    kind: 'image' | 'file';
+    filename: string | null;
   }> {
     const doc = await this.findAttachment(fileId);
     if (!doc) throw new NotFoundException('Attachment not found');
@@ -106,6 +214,8 @@ export class ChatAttachmentsService {
       size: doc.size,
       roomId: doc.roomId,
       allianceId: doc.allianceId,
+      kind: doc.kind,
+      filename: doc.filename ?? null,
     };
   }
 }

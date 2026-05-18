@@ -108,6 +108,48 @@ object OverlayTickerUi {
         }
     }
 
+    /** Мини-чип замка на углу кнопки свернуть/развернуть (базовая геометрия и отступы иконки). */
+    @JvmOverloads
+    fun styleOverlayLockChipBase(
+        context: Context,
+        view: ImageView,
+        sideDp: Float = 26f,
+    ) {
+        val side = dp(context, sideDp).toInt()
+        view.scaleType = ImageView.ScaleType.CENTER
+        view.minimumWidth = side
+        view.minimumHeight = side
+        view.setPadding(
+            dp(context, 5f).toInt(),
+            dp(context, 5f).toInt(),
+            dp(context, 5f).toInt(),
+            dp(context, 5f).toInt(),
+        )
+        applyOverlayLockChipVisual(context, view, locked = false, sideDp = sideDp)
+    }
+
+    /** Визуал «заблокировано / можно перетаскивать» для чипа замка. */
+    @JvmOverloads
+    fun applyOverlayLockChipVisual(
+        context: Context,
+        view: ImageView,
+        locked: Boolean,
+        sideDp: Float = 26f,
+    ) {
+        val strokeDp = if (locked) 1.75f else 1.25f
+        val fill = if (locked) "#F02A2418" else "#F01A1F2B"
+        val stroke = if (locked) "#E6FFB74D" else "#889B7CFF"
+        val icon = if (locked) "#FFFFE082" else "#FFD8DCF0"
+        view.imageTintList = ColorStateList.valueOf(Color.parseColor(icon))
+        view.alpha = if (locked) 1f else 0.95f
+        view.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.parseColor(fill))
+            setStroke(dp(context, strokeDp).toInt().coerceAtLeast(1), Color.parseColor(stroke))
+        }
+        view.elevation = dp(context, if (locked) 5f else 3.5f)
+    }
+
     private fun dp(context: Context, value: Float): Float {
         return TypedValue.applyDimension(
             TypedValue.COMPLEX_UNIT_DIP,

@@ -216,7 +216,9 @@ fun TeamScreen(
         modifier = Modifier
             .fillMaxSize()
             // Full-width content like Chat: small side padding is applied per-section/list.
-            .padding(top = SquadRelayDimens.screenTopPadding),
+            .padding(
+                top = if (overlayUi) SquadRelayDimens.itemGap else SquadRelayDimens.screenTopPadding,
+            ),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
 

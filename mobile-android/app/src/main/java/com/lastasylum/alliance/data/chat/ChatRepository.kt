@@ -97,13 +97,19 @@ class ChatRepository(
         return Result.failure(last ?: IllegalStateException("send_failed"))
     }
 
-    suspend fun uploadImageFile(roomId: String, file: File, mimeType: String): Result<UploadChatAttachmentResponse> {
-        return runCatching {
-            val body = file.asRequestBody(mimeType.toMediaTypeOrNull())
-            val part = MultipartBody.Part.createFormData("file", file.name, body)
-            val roomPart = roomId.toRequestBody("text/plain".toMediaTypeOrNull())
-            chatApi.uploadAttachment(part, roomPart)
-        }
+    suspend fun uploadImageFile(roomId: String, file: File, mimeType: String): Result<UploadChatAttachmentResponse> =
+        uploadAttachmentFile(roomId, file, mimeType, file.name)
+
+    suspend fun uploadAttachmentFile(
+        roomId: String,
+        file: File,
+        mimeType: String,
+        uploadFilename: String,
+    ): Result<UploadChatAttachmentResponse> = runCatching {
+        val body = file.asRequestBody(mimeType.toMediaTypeOrNull())
+        val part = MultipartBody.Part.createFormData("file", uploadFilename, body)
+        val roomPart = roomId.toRequestBody("text/plain".toMediaTypeOrNull())
+        chatApi.uploadAttachment(part, roomPart)
     }
 
     suspend fun sendSystemVoiceMessage(text: String): Result<ChatMessage> {

@@ -6,10 +6,11 @@ import { ChatRoom } from './chat-room.schema';
 export type MessageDocument = HydratedDocument<Message>;
 
 export type MessageAttachment = {
-  kind: 'image';
+  kind: 'image' | 'file';
   fileId: Types.ObjectId;
   mimeType: string;
   size: number;
+  filename?: string | null;
 };
 
 export type MessageReaction = {
@@ -62,10 +63,11 @@ export class Message {
   @Prop({
     type: [
       {
-        kind: { type: String, required: true },
+        kind: { type: String, required: true, enum: ['image', 'file'] },
         fileId: { type: Types.ObjectId, required: true },
         mimeType: { type: String, required: true },
         size: { type: Number, required: true },
+        filename: { type: String, default: null },
       },
     ],
     default: [],

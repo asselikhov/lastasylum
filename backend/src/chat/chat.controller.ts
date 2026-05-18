@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Delete,
   Get,
   Header,
@@ -29,7 +30,9 @@ import { PushNotificationsService } from '../push/push-notifications.service';
 import { ChatGateway } from './chat.gateway';
 import { ChatRoomsService } from './chat-rooms.service';
 import { ChatService } from './chat.service';
-import { ChatAttachmentsService } from './chat-attachments.service';
+import {
+  ChatAttachmentsService,
+} from './chat-attachments.service';
 import { CreateChatRoomDto } from './dto/create-chat-room.dto';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { formatChatPushBody } from './zlobyaka-stickers.const';
@@ -172,26 +175,38 @@ export class ChatController {
     const attachmentIds =
       dto.attachments?.slice(0, 8).filter((id) => Types.ObjectId.isValid(id)) ??
       [];
+    const anyChat = this.chatService as unknown as {
+      assertRoomForUser: (
+        userId: string,
+        roomId: string,
+      ) => Promise<{ allianceId: string; roomObjectId: Types.ObjectId }>;
+    };
+    const { allianceId, roomObjectId } = await anyChat.assertRoomForUser(
+      req.user.userId,
+      dto.roomId,
+    );
+    const resolvedAttachments = await this.attachmentsService.resolveForRoom({
+      allianceId,
+      roomObjectId,
+      attachmentIds,
+    });
     const message = await this.chatService.createMessage({
       roomId: dto.roomId,
       text: dto.text ?? '',
       replyToMessageId: dto.replyToMessageId,
       author: req.user,
-      attachments: attachmentIds.map((id) => ({
-        kind: 'image' as const,
-        fileId: new Types.ObjectId(id),
-        // mime/size are taken from GridFS metadata at read time; stored values are best-effort.
-        mimeType: 'image/*',
-        size: 0,
-      })),
+      attachments: resolvedAttachments,
     });
     this.chatGateway.broadcastNewMessage(dto.roomId, message);
     const authorUser = await this.usersService.findById(req.user.userId);
     if (authorUser && message.allianceId !== GLOBAL_CHAT_ALLIANCE_ID) {
       const preview = dto.text?.trim()
         ? formatChatPushBody(dto.text)
-        : attachmentIds.length > 0
-          ? 'Фото'
+        : resolvedAttachments.length > 0
+          ? resolvedAttachments.some((a) => a.kind === 'file')
+            ? resolvedAttachments.find((a) => a.kind === 'file')?.filename?.trim() ||
+              'Файл'
+            : 'Фото'
           : '';
       const messageId =
         typeof (message as { _id?: unknown })._id === 'string'
@@ -222,7 +237,7 @@ export class ChatController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
-      limits: { fileSize: 8 * 1024 * 1024 },
+      limits: { fileSize: 120 * 1024 * 1024 },
     }),
   )
   async uploadAttachment(
@@ -240,7 +255,6 @@ export class ChatController {
     }
     await this.chatService.assertUserMayUseChat(req.user.userId);
 
-    // Use the same access logic as message send: user must be able to join this room.
     const anyChat = this.chatService as unknown as {
       assertRoomForUser: (
         userId: string,
@@ -252,15 +266,39 @@ export class ChatController {
       roomId,
     );
 
-    return this.attachmentsService.uploadImage({
-      buffer: file.buffer,
-      filename: file.originalname,
-      mimeType: file.mimetype,
-      size: file.size,
-      allianceId,
-      roomId: roomObjectId,
-      uploaderUserId: req.user.userId,
-    });
+    const mimeType = (file.mimetype ?? '').trim() || 'application/octet-stream';
+    const originalName = (file.originalname ?? '').trim();
+
+    if (mimeType.startsWith('image/')) {
+      return this.attachmentsService.uploadImage({
+        buffer: file.buffer,
+        filename: originalName,
+        mimeType,
+        size: file.size,
+        allianceId,
+        roomId: roomObjectId,
+        uploaderUserId: req.user.userId,
+      });
+    }
+
+    if (ChatAttachmentsService.isApkUpload(mimeType, originalName)) {
+      if (req.user.role !== AllianceRole.R5) {
+        throw new ForbiddenException('Only alliance admins (R5) may upload APK files');
+      }
+      return this.attachmentsService.uploadFile({
+        buffer: file.buffer,
+        filename: originalName || 'update.apk',
+        mimeType,
+        size: file.size,
+        allianceId,
+        roomId: roomObjectId,
+        uploaderUserId: req.user.userId,
+      });
+    }
+
+    throw new BadRequestException(
+      'Unsupported file type (images or APK for R5 admins only)',
+    );
   }
 
   @Get('attachments/:fileId')
@@ -288,6 +326,15 @@ export class ChatController {
 
     res.setHeader('Content-Type', doc.mimeType ?? 'application/octet-stream');
     const download = await this.attachmentsService.openR2Download(fileId);
+    const downloadName =
+      download.filename?.trim() ||
+      (download.kind === 'file' ? `squadrelay-${fileId}.apk` : `${fileId}`);
+    if (download.kind === 'file') {
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${encodeURIComponent(downloadName)}"`,
+      );
+    }
     download.stream.on('error', () => res.status(404).end());
     download.stream.pipe(res);
   }

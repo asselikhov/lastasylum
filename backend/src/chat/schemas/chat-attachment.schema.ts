@@ -20,8 +20,12 @@ export class ChatAttachment {
   @Prop({ required: true })
   uploaderUserId: string;
 
-  @Prop({ required: true })
-  kind: 'image';
+  @Prop({ required: true, enum: ['image', 'file'] })
+  kind: 'image' | 'file';
+
+  /** Original filename for `file` kind (e.g. squadrelay-1.2.apk). */
+  @Prop({ type: String, default: null, trim: true })
+  filename: string | null;
 
   @Prop({ required: true })
   key: string;

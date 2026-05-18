@@ -78,9 +78,8 @@ fun OverlayControlScreen() {
     fun refreshOverlayRuntime() {
         GameForegroundGate.invalidateUsageAccessCache()
         if (overlayEnabled) {
-            CombatOverlayService.ensureRuntimeIfUserEnabled(context)
+            CombatOverlayService.requestGateRecheckIfRunning(context)
         }
-        CombatOverlayService.requestGateRecheckIfRunning(context)
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -93,13 +92,6 @@ fun OverlayControlScreen() {
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-
-    LaunchedEffect(Unit) {
-        overlayEnabled = prefs.isOverlayPanelEnabled()
-        if (overlayEnabled) {
-            CombatOverlayService.ensureRuntimeIfUserEnabled(context)
-        }
     }
 
     LaunchedEffect(targetPkg) {

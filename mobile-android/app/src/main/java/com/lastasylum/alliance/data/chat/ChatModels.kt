@@ -57,6 +57,7 @@ data class ChatAttachment(
     val url: String,
     val mimeType: String? = null,
     val size: Long? = null,
+    val filename: String? = null,
 )
 
 data class SendMessageRequest(
@@ -86,8 +87,10 @@ data class MarkRoomReadRequest(
 data class UploadChatAttachmentResponse(
     val fileId: String,
     val url: String,
+    val kind: String? = null,
     val mimeType: String,
     val size: Long,
+    val filename: String? = null,
 )
 
 @Immutable

@@ -636,9 +636,7 @@ class CombatOverlayService : Service() {
                     if (shouldKeepOverlayWindows()) {
                         true
                     } else if (targets.isEmpty()) {
-                        // If the user enabled "only in game" but did not configure target packages yet,
-                        // keep the overlay visible instead of hiding it everywhere.
-                        true
+                        false
                     } else {
                         GameForegroundGate.shouldShowOverlay(
                             context = this@CombatOverlayService,
@@ -680,6 +678,13 @@ class CombatOverlayService : Service() {
         hasUsageAccess: Boolean,
         shouldShow: Boolean,
     ) {
+        // Heuristics (TTF / lastUsed) иногда ещё «видят» игру один тик после открытия SquadRelay.
+        if (lastForegroundHintPkg == packageName && !shouldKeepOverlayWindows()) {
+            if (overlayView != null) {
+                removeOverlayControl()
+            }
+            return
+        }
         if (!hasUsageAccess) {
             logGateStateThrottled(
                 "overlayGate: нет доступа к статистике использования — панель скрыта",
@@ -1150,10 +1155,6 @@ class CombatOverlayService : Service() {
         chatStripClipRoot = clipRoot
         chatStripLines = null
         syncChatStripWindowTouchPassthrough()
-        // Seed a visible placeholder immediately if we don't have content yet.
-        if (chatStripPreviewFlow.value.isEmpty()) {
-            setStripPlainMessage(getString(R.string.overlay_strip_no_room))
-        }
     }
 
     private val voiceMicPermissionReceiver = object : BroadcastReceiver() {
@@ -1357,7 +1358,6 @@ class CombatOverlayService : Service() {
             isClickable = true
             isFocusable = true
         }
-        OverlayTickerUi.styleOverlayIconButton(fabCtx, btnCollapse, sideDp = 42f)
         overlayCollapseButton = btnCollapse
         val btnMessage = makeMiniFab(
             iconRes = R.drawable.ic_overlay_history,
@@ -1397,6 +1397,7 @@ class CombatOverlayService : Service() {
             contentDescription = getString(R.string.overlay_cd_lock_positions)
             isClickable = true
             isFocusable = true
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
         }
 
         btnChatTeam.setOnClickListener {
@@ -1434,13 +1435,25 @@ class CombatOverlayService : Service() {
             )
         }
 
-        OverlayTickerUi.styleOverlayIconButton(fabCtx, lockIcon, sideDp = 42f)
+        val collapseHost = OverlayPanelCollapseHost.build(
+            context = this,
+            fabCtx = fabCtx,
+            dp = { dp(it) },
+            collapseButton = btnCollapse,
+            lockButton = lockIcon,
+        )
         val fabColW = dp(44)
         val messageFabColumn = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
+            // START: при раскрытии голоса вправо столбец растёт только вправо, FAB не смещаются.
+            gravity = Gravity.START
+            clipChildren = false
+            clipToPadding = false
             val gap = dp(6)
-            addView(btnCollapse, LinearLayout.LayoutParams(fabColW, dp(44)))
+            addView(
+                collapseHost,
+                LinearLayout.LayoutParams(fabColW, dp(44)),
+            )
             addView(
                 btnMessage,
                 LinearLayout.LayoutParams(fabColW, dp(44)).apply {
@@ -1455,13 +1468,10 @@ class CombatOverlayService : Service() {
             )
             addView(
                 voiceControls.root,
-                LinearLayout.LayoutParams(fabColW, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                    topMargin = gap
-                },
-            )
-            addView(
-                lockIcon,
-                LinearLayout.LayoutParams(fabColW, dp(44)).apply {
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply {
                     topMargin = gap
                 },
             )
@@ -1470,17 +1480,22 @@ class CombatOverlayService : Service() {
         val messageRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.TOP
+            clipChildren = false
+            clipToPadding = false
             addView(
                 messageFabColumn,
-                LinearLayout.LayoutParams(fabColW, LinearLayout.LayoutParams.WRAP_CONTENT),
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
             )
         }
 
         val buttonStack = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            // Keep the collapse button perfectly aligned with the FAB column below
-            // regardless of whether the panel is anchored to the left or right edge.
-            gravity = Gravity.CENTER_HORIZONTAL
+            gravity = Gravity.START
+            clipChildren = false
+            clipToPadding = false
             addView(
                 messageRow,
                 LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
@@ -1492,11 +1507,15 @@ class CombatOverlayService : Service() {
         val outerRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.BOTTOM
+            clipChildren = false
+            clipToPadding = false
             addView(buttonStack, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         }
 
         lateinit var windowRoot: FrameLayout
         windowRoot = OverlayPassthroughMultitouchFrameLayout(this).apply {
+            clipChildren = false
+            clipToPadding = false
             elevation = 22f
             setBackgroundColor(Color.TRANSPARENT)
             @Suppress("DEPRECATION")
@@ -1510,6 +1529,15 @@ class CombatOverlayService : Service() {
             )
         }
 
+        voiceControls.onExpansionChanged = {
+            val wr = windowRoot
+            wr.post {
+                if (!wr.isAttachedToWindow) return@post
+                val p = overlayMainWindowParams ?: return@post
+                runCatching { manager.updateViewLayout(wr, p) }
+            }
+        }
+
         overlayOuterRow = outerRow
         overlayControlsStack = buttonStack
         overlayMessageRow = messageRow
@@ -1520,34 +1548,35 @@ class CombatOverlayService : Service() {
             val locked = AppContainer.from(this@CombatOverlayService).userSettingsPreferences.isOverlayDragLocked()
             lockIcon.setImageResource(if (locked) R.drawable.ic_overlay_lock_locked else R.drawable.ic_overlay_lock_open)
             lockIcon.contentDescription = getString(if (locked) R.string.overlay_cd_unlock_positions else R.string.overlay_cd_lock_positions)
+            OverlayTickerUi.applyOverlayLockChipVisual(fabCtx, lockIcon, locked)
         }
 
         fun applyControlsVisibility() {
             Log.d(OVERLAY_DIAG_TAG, "applyControls collapsed=$panelCollapsed")
-            // Use INVISIBLE (not GONE) to keep the window size stable, so the collapse/expand button
-            // does not shift on screen. Touches still pass through "empty" zones thanks to
-            // [OverlayPassthroughMultitouchFrameLayout] (it ignores non-visible descendants).
+            // GONE (not INVISIBLE): скрытые FAB не участвуют в layout, окно WM сжимается до кнопки
+            // свернуть/развернуть — иначе на части OEM касания в «пустом» прямоугольнике окна
+            // не доходят до игры, даже с FLAG_NOT_TOUCH_MODAL и passthrough-корнем.
             if (panelCollapsed) {
                 overlayAllianceOnlinePopover.hide()
                 overlayCommandsPopover.hide()
-                // Keep the row itself visible because it contains the collapse/expand button now.
                 messageRow.visibility = View.VISIBLE
-                btnMessage.visibility = View.INVISIBLE
-                chatTeamHost.visibility = View.INVISIBLE
-                voiceControls.root.visibility = View.INVISIBLE
+                btnMessage.visibility = View.GONE
+                chatTeamHost.visibility = View.GONE
+                voiceControls.root.visibility = View.GONE
                 voiceControls.collapse()
-                lockIcon.visibility = View.INVISIBLE
             } else {
                 messageRow.visibility = View.VISIBLE
                 btnMessage.visibility = View.VISIBLE
                 chatTeamHost.visibility = View.VISIBLE
                 voiceControls.root.visibility = View.VISIBLE
-                lockIcon.visibility = View.VISIBLE
             }
+            (messageRow.layoutParams as? LinearLayout.LayoutParams)?.bottomMargin =
+                if (panelCollapsed) 0 else dp(8)
             btnCollapse.setImageResource(if (panelCollapsed) R.drawable.ic_overlay_ui_expand else R.drawable.ic_overlay_ui_collapse)
             btnCollapse.contentDescription = getString(
                 if (panelCollapsed) R.string.overlay_cd_toggle_show_ui else R.string.overlay_cd_toggle_hide_ui,
             )
+            windowRoot.requestLayout()
             windowRoot.post {
                 if (!windowRoot.isAttachedToWindow) return@post
                 if (!panelCollapsed && windowRoot.width > 0) {
@@ -1558,6 +1587,9 @@ class CombatOverlayService : Service() {
                 }
                 val p = overlayMainWindowParams ?: return@post
                 runCatching { manager.updateViewLayout(windowRoot, p) }
+                if (panelCollapsed) {
+                    runCatching { syncOverlayPanelEdgeLayout() }
+                }
             }
         }
 
@@ -1586,8 +1618,10 @@ class CombatOverlayService : Service() {
 
         lockIcon.setOnClickListener {
             val prefs = AppContainer.from(this@CombatOverlayService).userSettingsPreferences
-            prefs.setOverlayDragLocked(!prefs.isOverlayDragLocked())
+            val nextLocked = !prefs.isOverlayDragLocked()
+            prefs.setOverlayDragLocked(nextLocked)
             refreshLockIcon()
+            lockIcon.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
         }
 
         val voicePrefs = AppContainer.from(this@CombatOverlayService).userSettingsPreferences
@@ -2034,10 +2068,16 @@ class CombatOverlayService : Service() {
             setViewTreeSavedStateRegistryOwner(owner)
             setViewTreeOnBackPressedDispatcherOwner(owner)
             ViewCompat.setOnApplyWindowInsetsListener(this) { view, windowInsets ->
+                val safeTypes = WindowInsetsCompat.Type.systemBars() or
+                    WindowInsetsCompat.Type.displayCutout()
+                val safe = windowInsets.getInsets(safeTypes)
                 val ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime())
-                view.setPadding(0, 0, 0, ime.bottom + keyboardGapPx)
+                val bottom = maxOf(safe.bottom, ime.bottom) + keyboardGapPx
+                // safe.top — статус-бар + вырез под камеру; иначе ChatRoomsBar уезжает под notch.
+                view.setPadding(safe.left, safe.top, safe.right, bottom)
                 WindowInsetsCompat.Builder(windowInsets)
                     .setInsets(WindowInsetsCompat.Type.ime(), Insets.NONE)
+                    .setInsets(safeTypes, Insets.NONE)
                     .build()
             }
             addView(
@@ -2071,6 +2111,8 @@ class CombatOverlayService : Service() {
             }
             return
         }
+
+        ViewCompat.requestApplyInsets(root)
 
         overlayChatTeamRoot = root
         overlayChatTeamParams = params

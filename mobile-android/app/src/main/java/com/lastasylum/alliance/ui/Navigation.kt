@@ -32,9 +32,12 @@ import androidx.compose.material3.Text
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -104,13 +107,30 @@ fun AppNavigation(
     }
 
     LaunchedEffect(overlayTabVisible) {
-        val appContext = activity.applicationContext
         if (!overlayTabVisible) {
             // Must not clear the user's "show panel" preference — only stop the runtime FGS.
-            CombatOverlayService.stopRuntime(appContext)
-        } else {
-            CombatOverlayService.ensureRuntimeIfUserEnabled(appContext)
+            CombatOverlayService.stopRuntime(activity.applicationContext)
         }
+    }
+
+    // FGS поднимаем только когда пользователь ушёл из SquadRelay (в игру/домой), не при открытии приложения.
+    DisposableEffect(activity, overlayTabVisible) {
+        val appContext = activity.applicationContext
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> {
+                    CombatOverlayService.requestGateRecheckIfRunning(appContext)
+                }
+                Lifecycle.Event.ON_STOP -> {
+                    if (overlayTabVisible) {
+                        CombatOverlayService.ensureRuntimeIfUserEnabled(appContext)
+                    }
+                }
+                else -> Unit
+            }
+        }
+        activity.lifecycle.addObserver(observer)
+        onDispose { activity.lifecycle.removeObserver(observer) }
     }
 
     val overlayVisible by CombatOverlayService.overlayVisible.collectAsStateWithLifecycle()
@@ -296,12 +316,14 @@ fun AppNavigation(
                 val chatState by chatViewModel.state.collectAsStateWithLifecycle()
                 val draftMessage by chatViewModel.draftMessage.collectAsStateWithLifecycle()
                 val pickedImageUris by chatViewModel.pickedImageUris.collectAsStateWithLifecycle()
+                val pickedApkFile by chatViewModel.pickedApkFile.collectAsStateWithLifecycle()
                 val typingPeers by chatViewModel.typingPeers.collectAsStateWithLifecycle()
                 ChatScreen(
                     state = chatState,
                     typingPeers = typingPeers,
                     draftMessage = draftMessage,
                     pickedImageUris = pickedImageUris,
+                    pickedApkFile = pickedApkFile,
                     onSelectRoom = chatViewModel::selectRoom,
                     onClearError = chatViewModel::clearError,
                     onLoadOlder = chatViewModel::loadOlderMessages,
@@ -309,6 +331,8 @@ fun AppNavigation(
                     onSendDraft = chatViewModel::sendDraftMessage,
                     onSendStickerPayload = { body -> chatViewModel.sendMessage(body) },
                     onPickImages = chatViewModel::onImagesPicked,
+                    onPickApk = chatViewModel::onApkPicked,
+                    onClearPickedApk = chatViewModel::clearPickedApk,
                     onRemovePickedImage = chatViewModel::removePickedImage,
                     onClearPickedImages = chatViewModel::clearPickedImages,
                     onReplyToMessage = chatViewModel::beginReplyToMessage,

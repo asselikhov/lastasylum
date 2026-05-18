@@ -24,10 +24,14 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import com.lastasylum.alliance.R
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,7 +49,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingBubble
@@ -458,6 +461,65 @@ fun ChatBubbleAttachmentsWithCaption(
 fun resolvedChatAttachmentImageUrl(raw: String): String =
     if (raw.startsWith("http", ignoreCase = true)) raw.trim()
     else com.lastasylum.alliance.BuildConfig.API_BASE_URL.trimEnd('/') + "/" + raw.trimStart('/')
+
+@Composable
+fun ChatFileAttachmentCard(
+    attachment: com.lastasylum.alliance.data.chat.ChatAttachment,
+    isMine: Boolean,
+    onDownload: () -> Unit,
+    isDownloading: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val title = attachment.filename?.takeIf { it.isNotBlank() }
+        ?: context.getString(R.string.chat_copy_apk_placeholder)
+    val sizeLabel = formatChatFileSize(attachment.size)
+    val cardBg = if (isMine) {
+        lerp(ChatTelegramOutgoingBubble, Color.Black, 0.12f)
+    } else {
+        lerp(ChatTelegramIncomingBubble, Color.Black, 0.08f)
+    }
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = cardBg,
+        tonalElevation = 0.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (sizeLabel.isNotBlank()) {
+                Text(
+                    text = sizeLabel,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Button(
+                onClick = onDownload,
+                enabled = !isDownloading,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (isDownloading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    Text(stringResource(R.string.chat_apk_download))
+                }
+            }
+        }
+    }
+}
 
 fun chatAuthedImageRequest(context: Context, url: String): ImageRequest =
     ImageRequest.Builder(context)

@@ -16,12 +16,14 @@ internal class OverlayPassthroughMultitouchFrameLayout(context: Context) : Frame
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         if (ev.pointerCount > 1) return false
-        if (ev.actionMasked == MotionEvent.ACTION_DOWN &&
-            !hitVisibleLeafDescendant(this, ev.x, ev.y)
-        ) {
-            return false
-        }
+        if (!hitVisibleLeafDescendant(this, ev.x, ev.y)) return false
         return super.dispatchTouchEvent(ev)
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.pointerCount > 1) return false
+        if (!hitVisibleLeafDescendant(this, event.x, event.y)) return false
+        return super.onTouchEvent(event)
     }
 
     private companion object {

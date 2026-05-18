@@ -101,6 +101,12 @@ private fun translateKnownServerMessage(english: String, resources: Resources): 
         resources.getString(R.string.chat_attachment_only_images_server)
     english.contains("CHAT_ATTACHMENT_R2_PUT_FAILED", ignoreCase = true) ->
         resources.getString(R.string.chat_attachment_r2_put_failed)
+    english.contains("Only alliance admins", ignoreCase = true) ||
+        english.contains("may upload APK", ignoreCase = true) ->
+        resources.getString(R.string.chat_attachment_apk_only_server)
+    english.contains("Only APK files", ignoreCase = true) ||
+        english.contains("APK for R5", ignoreCase = true) ->
+        resources.getString(R.string.chat_attachment_apk_invalid)
     english.contains("Poll requires a question", ignoreCase = true) ||
         english.contains("at least two options", ignoreCase = true) ->
         resources.getString(R.string.team_news_poll_invalid)

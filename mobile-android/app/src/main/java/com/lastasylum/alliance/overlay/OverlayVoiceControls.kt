@@ -11,7 +11,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.lastasylum.alliance.R
 
 /**
- * Expandable overlay voice hub: main mic button reveals «Звук» and «Микрофон» toggles.
+ * Голосовой хаб оверлея: кнопка-хаб раскрывает «Звук» и «Микрофон» **вправо**, не сдвигая столбец FAB.
  */
 class OverlayVoiceControls(
     private val context: Context,
@@ -25,17 +25,24 @@ class OverlayVoiceControls(
     val btnMic: FloatingActionButton
     private val soundBadge: TextView
     private val soundHost: FrameLayout
+    private val soundSlot: LinearLayout
+    private val micSlot: LinearLayout
+    private val soundLabel: TextView
+    private val micLabel: TextView
 
     private var expanded = false
     var onSoundToggle: (() -> Unit)? = null
     var onMicToggle: (() -> Unit)? = null
+    /** После раскрытия/сворачивания — обновить размер overlay-окна (рост только вправо). */
+    var onExpansionChanged: (() -> Unit)? = null
 
     init {
+        val btnSize = dp(44)
+        val gap = dp(6)
+
         btnHub = makeMiniFab(R.drawable.ic_overlay_mic, context.getString(R.string.overlay_voice_hub_cd))
         btnSound = makeMiniFab(R.drawable.ic_overlay_volume_on, context.getString(R.string.overlay_voice_sound_cd))
         btnMic = makeMiniFab(R.drawable.ic_overlay_mic, context.getString(R.string.overlay_voice_mic_cd))
-        btnSound.visibility = View.GONE
-        btnMic.visibility = View.GONE
 
         soundBadge = TextView(context).apply {
             visibility = View.GONE
@@ -50,7 +57,7 @@ class OverlayVoiceControls(
             }
         }
         soundHost = FrameLayout(context).apply {
-            addView(btnSound, FrameLayout.LayoutParams(dp(44), dp(44)))
+            addView(btnSound, FrameLayout.LayoutParams(btnSize, btnSize))
             addView(
                 soundBadge,
                 FrameLayout.LayoutParams(
@@ -63,17 +70,54 @@ class OverlayVoiceControls(
             )
         }
 
-        val gap = dp(6)
-        val colW = dp(44)
-        root = LinearLayout(context).apply {
+        soundLabel = makeToggleLabel(context.getString(R.string.overlay_voice_sound_label))
+        micLabel = makeToggleLabel(context.getString(R.string.overlay_voice_mic_label))
+
+        soundSlot = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            addView(btnHub, LinearLayout.LayoutParams(colW, dp(44)))
+            visibility = View.GONE
+            addView(soundHost, LinearLayout.LayoutParams(btnSize, btnSize))
             addView(
-                soundHost,
-                LinearLayout.LayoutParams(colW, dp(44)).apply { topMargin = gap },
+                soundLabel,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(2) },
             )
-            addView(btnMic, LinearLayout.LayoutParams(colW, dp(44)).apply { topMargin = gap })
+        }
+        micSlot = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            visibility = View.GONE
+            addView(btnMic, LinearLayout.LayoutParams(btnSize, btnSize))
+            addView(
+                micLabel,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(2) },
+            )
+        }
+
+        root = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(btnHub, LinearLayout.LayoutParams(btnSize, btnSize))
+            addView(
+                soundSlot,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { marginStart = gap },
+            )
+            addView(
+                micSlot,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { marginStart = gap },
+            )
         }
 
         btnHub.setOnClickListener { toggleExpanded() }
@@ -81,14 +125,26 @@ class OverlayVoiceControls(
         btnMic.setOnClickListener { onMicToggle?.invoke() }
     }
 
+    private fun makeToggleLabel(text: String): TextView =
+        TextView(context).apply {
+            this.text = text
+            setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 9f)
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER_HORIZONTAL
+            includeFontPadding = false
+        }
+
     fun setExpanded(value: Boolean) {
+        if (expanded == value) return
         expanded = value
         val sub = if (value) View.VISIBLE else View.GONE
-        soundHost.visibility = sub
-        btnMic.visibility = sub
+        soundSlot.visibility = sub
+        micSlot.visibility = sub
         btnHub.contentDescription = context.getString(
             if (value) R.string.overlay_voice_hub_collapse_cd else R.string.overlay_voice_hub_cd,
         )
+        root.requestLayout()
+        onExpansionChanged?.invoke()
     }
 
     fun applyState(micOn: Boolean, soundOn: Boolean) {
@@ -104,14 +160,31 @@ class OverlayVoiceControls(
         btnMic.contentDescription = context.getString(
             if (micOn) R.string.overlay_voice_mic_on_cd else R.string.overlay_voice_mic_off_cd,
         )
-        val activeTint = Color.parseColor("#4CAF50")
-        val idleTint = Color.parseColor("#B0BEC5")
-        btnSound.backgroundTintList = android.content.res.ColorStateList.valueOf(
-            if (soundOn) activeTint else idleTint,
+        styleToggleButton(btnSound, soundOn)
+        styleToggleButton(btnMic, micOn)
+        styleToggleLabel(soundLabel, soundOn)
+        styleToggleLabel(micLabel, micOn)
+    }
+
+    private fun styleToggleButton(fab: FloatingActionButton, enabled: Boolean) {
+        val activeBg = Color.parseColor("#2E7D32")
+        val idleBg = Color.parseColor("#455A64")
+        val activeIcon = Color.parseColor("#FFFFFF")
+        val idleIcon = Color.parseColor("#90A4AE")
+        fab.backgroundTintList = android.content.res.ColorStateList.valueOf(
+            if (enabled) activeBg else idleBg,
         )
-        btnMic.backgroundTintList = android.content.res.ColorStateList.valueOf(
-            if (micOn) activeTint else idleTint,
+        fab.imageTintList = android.content.res.ColorStateList.valueOf(
+            if (enabled) activeIcon else idleIcon,
         )
+        fab.alpha = if (enabled) 1f else 0.88f
+    }
+
+    private fun styleToggleLabel(label: TextView, enabled: Boolean) {
+        label.setTextColor(
+            Color.parseColor(if (enabled) "#81C784" else "#78909C"),
+        )
+        label.alpha = if (enabled) 1f else 0.85f
     }
 
     fun setActiveSpeakerCount(count: Int) {
