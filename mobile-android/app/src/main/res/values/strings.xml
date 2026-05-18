@@ -36,7 +36,7 @@
     <string name="cd_logout">Выйти</string>
     <string name="tab_chat">Чат</string>
     <string name="tab_team">Команда</string>
-    <string name="tab_overlay">Игра</string>
+    <string name="tab_overlay">Настройки</string>
     <string name="tab_profile">Профиль</string>
     <string name="tab_admin">Админ</string>
 
@@ -130,7 +130,13 @@
     <string name="onboarding_permissions_later">Позже</string>
 
     <!-- Overlay screen -->
+    <string name="settings_screen_title">Настройки</string>
+    <string name="settings_screen_subtitle">Оверлей, доступы и параметры игры</string>
+    <string name="settings_section_overlay">Оверлей в игре</string>
+    <string name="settings_section_game_filter">Фильтр игры</string>
     <string name="overlay_title">Оверлей</string>
+    <string name="overlay_activity_filter_label">Activity фильтр (опционально)</string>
+    <string name="overlay_activity_filter_hint">Через запятую: части имени Activity. Панель только на этих экранах (нужен доступ к статистике использования).</string>
     <string name="overlay_switch_panel">Показывать панель</string>
     <string name="overlay_switch_game_only">Только когда открыта игра</string>
     <string name="overlay_package_field_label">Пакеты игры (из «Сведения о приложении»)</string>
@@ -318,6 +324,10 @@
     <string name="team_forum_add_image_cd">Прикрепить изображение</string>
     <string name="team_forum_clear_image_cd">Убрать изображение</string>
     <string name="team_members_search_hint">Поиск по нику…</string>
+    <string name="team_members_search_clear_cd">Очистить поиск</string>
+    <string name="team_member_actions_cd">Действия с участником</string>
+    <string name="team_member_actions_title">%1$s</string>
+    <string name="team_member_action_change_role">Изменить роль в команде</string>
     <string name="team_squad_section_r5">Лидер отряда</string>
     <string name="team_squad_section_r4">Старейшины</string>
     <string name="team_squad_section_r3">Основной состав</string>
@@ -368,6 +378,8 @@
     <string name="team_news_editor_mode_poll">Опрос</string>
     <string name="team_news_poll_only_hint">Заголовок и текст не нужны — участники голосуют по вариантам ниже.</string>
     <string name="team_news_poll_voters_empty">Пока никто не выбрал этот вариант</string>
+    <string name="team_news_poll_show_voters">Кто голосовал · %1$d</string>
+    <string name="team_news_poll_voters_sheet_title">Вариант: %1$s</string>
     <string name="team_no_team_title">Вы ещё не состоите в команде</string>
     <string name="team_no_team_body">Создайте свою команду или найдите существующую и отправьте заявку на вступление.</string>
     <string name="team_no_team_create_hint">Станьте лидером отряда и пригласите союзников</string>

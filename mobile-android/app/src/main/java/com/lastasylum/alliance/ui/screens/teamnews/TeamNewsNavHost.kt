@@ -47,6 +47,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -126,6 +128,60 @@ private fun pollVotersForOption(
     optionId: String,
 ): List<TeamNewsPollVoteDto> =
     votes.filter { it.optionId == optionId }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TeamNewsPollVotersReveal(
+    optionText: String,
+    voters: List<TeamNewsPollVoteDto>,
+    modifier: Modifier = Modifier,
+) {
+    var showSheet by remember { mutableStateOf(false) }
+    val count = voters.size
+    if (count == 0) {
+        Text(
+            text = stringResource(R.string.team_news_poll_voters_empty),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = modifier,
+        )
+        return
+    }
+    TextButton(
+        onClick = { showSheet = true },
+        modifier = modifier,
+        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.team_news_poll_show_voters, count),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+    if (showSheet) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showSheet = false },
+            sheetState = sheetState,
+            containerColor = SquadRelaySurfaces.dialogColor(),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.team_news_poll_voters_sheet_title, optionText),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                TeamNewsPollVoterChips(voters = voters)
+                Spacer(Modifier.height(16.dp))
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -389,7 +445,10 @@ private fun TeamNewsPollVoteBlock(
                             )
                         }
                     }
-                    TeamNewsPollVoterChips(voters = optionVoters)
+                    TeamNewsPollVotersReveal(
+                        optionText = opt.text,
+                        voters = optionVoters,
+                    )
                 }
             }
         }

@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -19,24 +21,30 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Circle
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
-import androidx.compose.material.icons.outlined.ManageAccounts
 import androidx.compose.material.icons.outlined.PersonRemove
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
 import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.ripple
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -112,6 +120,7 @@ private fun groupMembersBySquadRole(
 @Composable
 private fun squadRoleSectionTitle(roleCode: String): String = roleCode
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SquadTeamRoster(
     members: List<PlayerTeamMemberDto>,
@@ -139,7 +148,7 @@ fun SquadTeamRoster(
         }
     }
     val grouped = remember(filteredMembers) { groupMembersBySquadRole(filteredMembers) }
-    var collapsedRoles by remember { mutableStateOf(setOf<String>()) }
+    var expandedRoles by remember { mutableStateOf(setOf<String>()) }
 
     Column(
         modifier = modifier
@@ -147,26 +156,12 @@ fun SquadTeamRoster(
             .fillMaxSize()
             .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
     ) {
-        androidx.compose.material3.OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
+        TeamMembersCompactSearchBar(
+            query = searchQuery,
+            onQueryChange = { searchQuery = it },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = SquadRelayDimens.itemGap),
-            singleLine = true,
-            shape = RoundedCornerShape(28.dp),
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Outlined.Search,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.65f),
-                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-            ),
-            placeholder = { Text(stringResource(R.string.team_members_search_hint)) },
+                .padding(bottom = 8.dp),
         )
         LazyColumn(
             modifier = Modifier
@@ -176,7 +171,7 @@ fun SquadTeamRoster(
             verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
         ) {
             grouped.forEach { (roleCode, subMembers) ->
-                val expanded = roleCode !in collapsedRoles
+                val expanded = roleCode in expandedRoles
                 item(key = "hdr-$roleCode") {
                     SquadRoleSectionHeader(
                         roleCode = roleCode,
@@ -184,11 +179,11 @@ fun SquadTeamRoster(
                         memberCount = subMembers.size,
                         expanded = expanded,
                         onToggle = {
-                            collapsedRoles =
-                                if (roleCode in collapsedRoles) {
-                                    collapsedRoles - roleCode
+                            expandedRoles =
+                                if (roleCode in expandedRoles) {
+                                    expandedRoles - roleCode
                                 } else {
-                                    collapsedRoles + roleCode
+                                    expandedRoles + roleCode
                                 }
                         },
                     )
@@ -211,6 +206,73 @@ fun SquadTeamRoster(
                             onRequestEditMemberRole = onRequestEditMemberRole,
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TeamMembersCompactSearchBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val placeholder = stringResource(R.string.team_members_search_hint)
+    val clearCd = stringResource(R.string.team_members_search_clear_cd)
+    Surface(
+        modifier = modifier.height(40.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.42f),
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f),
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Search,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+            )
+            Box(modifier = Modifier.weight(1f)) {
+                if (query.isEmpty()) {
+                    Text(
+                        text = placeholder,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                BasicTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        color = MaterialTheme.colorScheme.onSurface,
+                    ),
+                )
+            }
+            if (query.isNotEmpty()) {
+                IconButton(
+                    onClick = { onQueryChange("") },
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Close,
+                        contentDescription = clearCd,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
@@ -270,6 +332,7 @@ private fun SquadRoleSectionHeader(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SquadMemberCard(
     member: PlayerTeamMemberDto,
@@ -301,7 +364,9 @@ private fun SquadMemberCard(
     val canEditThisMemberRole =
         isSquadLeader && !member.isLeader && member.userId != currentUserId
     val canRemove = isSquadLeader && !member.isLeader && member.userId != currentUserId
+    val canManage = canEditThisMemberRole || canRemove
     var removeConfirmTarget by remember(member.userId) { mutableStateOf(false) }
+    var showActionsSheet by remember(member.userId) { mutableStateOf(false) }
 
     val scheme = MaterialTheme.colorScheme
     Surface(
@@ -375,38 +440,80 @@ private fun SquadMemberCard(
                     )
                 }
             }
-            if (isSquadLeader) {
-                Row(
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically,
+            if (canManage) {
+                IconButton(
+                    onClick = { showActionsSheet = true },
+                    enabled = !busy,
+                    modifier = Modifier.size(40.dp),
                 ) {
-                    if (canEditThisMemberRole) {
-                        IconButton(
-                            onClick = { onRequestEditMemberRole(member) },
-                            enabled = !busy,
-                            modifier = Modifier.size(44.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.ManageAccounts,
-                                contentDescription = stringResource(R.string.team_edit_member_role_cd),
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
+                    Icon(
+                        imageVector = Icons.Outlined.Settings,
+                        contentDescription = stringResource(R.string.team_member_actions_cd),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+
+    if (showActionsSheet) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showActionsSheet = false },
+            sheetState = sheetState,
+            containerColor = SquadRelaySurfaces.dialogColor(),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.team_member_actions_title, member.username),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                if (canEditThisMemberRole) {
+                    Button(
+                        onClick = {
+                            showActionsSheet = false
+                            onRequestEditMemberRole(member)
+                        },
+                        enabled = !busy,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.team_member_action_change_role))
                     }
-                    if (canRemove) {
-                        IconButton(
-                            onClick = { removeConfirmTarget = true },
-                            enabled = !busy,
-                            modifier = Modifier.size(44.dp),
+                }
+                if (canRemove) {
+                    OutlinedButton(
+                        onClick = {
+                            showActionsSheet = false
+                            removeConfirmTarget = true
+                        },
+                        enabled = !busy,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.PersonRemove,
-                                contentDescription = stringResource(R.string.team_remove_member_cd),
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
                                 tint = MaterialTheme.colorScheme.error,
+                            )
+                            Text(
+                                stringResource(R.string.team_remove_member),
+                                color = MaterialTheme.colorScheme.error,
                             )
                         }
                     }
                 }
+                Spacer(Modifier.height(12.dp))
             }
         }
     }

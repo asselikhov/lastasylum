@@ -23,7 +23,7 @@ import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.PersonOutline
-import androidx.compose.material.icons.outlined.RadioButtonChecked
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -225,7 +225,7 @@ fun AppNavigation(
                                         )
 
                                         AppTab.OVERLAY -> Icon(
-                                            imageVector = Icons.Outlined.RadioButtonChecked,
+                                            imageVector = Icons.Outlined.Settings,
                                             contentDescription = label,
                                             tint = tint,
                                             modifier = Modifier.size(22.dp),
