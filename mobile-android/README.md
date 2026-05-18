@@ -14,6 +14,12 @@
 - Retrofit + Moshi, OkHttp, kotlinx-coroutines
 - Foreground service + `TYPE_APPLICATION_OVERLAY`; перетаскивание FAB — [`OverlayWindowDragHelper`](app/src/main/java/com/lastasylum/alliance/overlay/OverlayWindowDragHelper.kt); буфер ленты — [`OverlayChatStripBuffer`](app/src/main/java/com/lastasylum/alliance/overlay/OverlayChatStripBuffer.kt); FGS-уведомление — [`OverlayForegroundNotifications`](app/src/main/java/com/lastasylum/alliance/overlay/OverlayForegroundNotifications.kt); флаги/вырезы окон — [`OverlayWindowLayout`](app/src/main/java/com/lastasylum/alliance/overlay/OverlayWindowLayout.kt)
 
+## Security
+
+- Скопируйте [`local.properties.example`](../local.properties.example) → `local.properties` (в корне репо и/или в `mobile-android/`). **Не коммитьте** `local.properties` — там могут быть Firebase API key и пути SDK.
+- Токены сессии: **EncryptedSharedPreferences** (см. `TokenStore.kt`).
+- Подробнее: [`SECURITY.md`](../SECURITY.md) в корне репозитория.
+
 ## Run
 
 1. Откройте `mobile-android` в Android Studio и синхронизируйте Gradle.

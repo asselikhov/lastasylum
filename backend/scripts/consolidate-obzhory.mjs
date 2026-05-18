@@ -1,40 +1,38 @@
 /**
- * One-off: keep single team ОБЖОРЫ (OBZH), unify chat routing for RustlingGrass, DrOwljae, Kseo.
- * - Sync allianceName to OBZHORY for all team members
- * - Clear playerTeamId from everyone else; delete other teams (if any)
- * - Remove duplicate SquadRelay hub/raid rooms (keep __global__ and OBZHORY team rooms)
- * - Ensure pt:<teamId> raid/hub rooms exist
+ * One-off DB maintenance: keep one player team, sync members, chat room scopes.
+ *
+ * Configure via backend/.env (do not commit real usernames to git):
+ *   SCRIPT_TEAM_TAG=OBZH
+ *   SCRIPT_ALLIANCE_SCOPE=OBZHORY
+ *   SCRIPT_MEMBER_USERNAMES=user1,user2,user3
+ *
+ * Usage: node scripts/consolidate-obzhory.mjs
  */
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
+import { loadBackendEnv } from './load-env.mjs';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const TEAM_TAG = 'OBZH';
-const ALLIANCE_SCOPE = 'OBZHORY';
-const MEMBER_USERNAMES = ['RustlingGrass', 'DrOwljae', 'Kseo'];
 const GLOBAL = '__global__';
 const DEFAULT_ALLIANCE = 'SquadRelay';
 
-function loadEnvFile(filePath) {
-  const text = fs.readFileSync(filePath, 'utf8');
-  const out = {};
-  for (const line of text.split(/\n/)) {
-    const t = line.trim();
-    if (!t || t.startsWith('#')) continue;
-    const i = t.indexOf('=');
-    if (i === -1) continue;
-    out[t.slice(0, i).trim()] = t.slice(i + 1).trim();
-  }
-  return out;
-}
-
-const env = loadEnvFile(path.join(__dirname, '..', '.env'));
+const env = loadBackendEnv();
 const uri = env.MONGODB_URI;
 const dbName = env.MONGODB_DB_NAME || 'last_asylum';
+
+const TEAM_TAG = env.SCRIPT_TEAM_TAG?.trim();
+const ALLIANCE_SCOPE = env.SCRIPT_ALLIANCE_SCOPE?.trim();
+const MEMBER_USERNAMES = (env.SCRIPT_MEMBER_USERNAMES ?? '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 if (!uri) {
-  console.error('Missing MONGODB_URI');
+  console.error('Missing MONGODB_URI in .env');
+  process.exit(1);
+}
+if (!TEAM_TAG || !ALLIANCE_SCOPE || MEMBER_USERNAMES.length === 0) {
+  console.error(
+    'Set SCRIPT_TEAM_TAG, SCRIPT_ALLIANCE_SCOPE, and SCRIPT_MEMBER_USERNAMES in backend/.env',
+  );
   process.exit(1);
 }
 
@@ -47,10 +45,10 @@ const joinCol = db.collection('teamjoinrequests');
 
 const keepTeam =
   (await teamsCol.findOne({ tag: TEAM_TAG })) ||
-  (await teamsCol.findOne({ displayName: /ОБЖОР/i }));
+  (await teamsCol.findOne({ displayName: new RegExp(TEAM_TAG, 'i') }));
 
 if (!keepTeam) {
-  console.error('Team OBZH/ОБЖОРЫ not found');
+  console.error(`Team with tag "${TEAM_TAG}" not found`);
   process.exit(1);
 }
 
@@ -69,12 +67,6 @@ if (memberDocs.length !== MEMBER_USERNAMES.length) {
 }
 
 const leaderId = keepTeam.leaderUserId;
-const memberIds = memberDocs.map((u) => u._id);
-
-// Delete all other player teams
-const deletedTeams = await teamsCol.deleteMany({ _id: { $ne: teamId } });
-
-// Rebuild squad roster: leader R5, others keep existing squad role or R1
 const squadMembers = [];
 for (const u of memberDocs) {
   const existing = (keepTeam.squadMembers || []).find((m) =>
@@ -85,12 +77,14 @@ for (const u of memberDocs) {
   squadMembers.push({ userId: u._id, role });
 }
 
+const deletedTeams = await teamsCol.deleteMany({ _id: { $ne: teamId } });
+
 await teamsCol.updateOne(
   { _id: teamId },
   {
     $set: {
       tag: TEAM_TAG,
-      displayName: keepTeam.displayName || 'ОБЖОРЫ',
+      displayName: keepTeam.displayName || TEAM_TAG,
       leaderUserId: leaderId,
       squadMembers,
     },
@@ -98,7 +92,6 @@ await teamsCol.updateOne(
   },
 );
 
-// Clear team from all other users
 const clearedOthers = await usersCol.updateMany(
   {
     $and: [
@@ -115,14 +108,13 @@ const clearedOthers = await usersCol.updateMany(
   },
 );
 
-// Assign OBZHORY team to the three members
 for (const u of memberDocs) {
   await usersCol.updateOne(
     { _id: u._id },
     {
       $set: {
         playerTeamId: teamId,
-        teamDisplayName: keepTeam.displayName || 'ОБЖОРЫ',
+        teamDisplayName: keepTeam.displayName || TEAM_TAG,
         teamTag: TEAM_TAG,
         allianceName: ALLIANCE_SCOPE,
         membershipStatus: 'active',
@@ -131,10 +123,8 @@ for (const u of memberDocs) {
   );
 }
 
-// Reject/clear pending join requests for deleted teams
 const joinCleanup = await joinCol.deleteMany({ teamId: { $ne: teamId } });
 
-// Archive duplicate SquadRelay hub/raid (not the legacy «Общий»)
 const squadRelayDupes = await roomsCol.updateMany(
   {
     allianceId: DEFAULT_ALLIANCE,
@@ -144,8 +134,9 @@ const squadRelayDupes = await roomsCol.updateMany(
   { $set: { archivedAt: new Date() } },
 );
 
-// Ensure OBZHORY hub + raid
 const now = new Date();
+const hubTitle = keepTeam.displayName || TEAM_TAG;
+
 let hub = await roomsCol.findOne({
   allianceId: ALLIANCE_SCOPE,
   sortOrder: 1,
@@ -154,14 +145,14 @@ let hub = await roomsCol.findOne({
 if (!hub) {
   await roomsCol.insertOne({
     allianceId: ALLIANCE_SCOPE,
-    title: 'ОБЖОРЫ',
+    title: hubTitle,
     sortOrder: 1,
     archivedAt: null,
     createdAt: now,
     updatedAt: now,
   });
-} else if (hub.title !== 'ОБЖОРЫ') {
-  await roomsCol.updateOne({ _id: hub._id }, { $set: { title: 'ОБЖОРЫ' } });
+} else if (hub.title !== hubTitle) {
+  await roomsCol.updateOne({ _id: hub._id }, { $set: { title: hubTitle } });
 }
 
 let raid = await roomsCol.findOne({
@@ -180,19 +171,26 @@ if (!raid) {
   });
 }
 
-// pt: scope rooms for new backend routing
-let ptHub = await roomsCol.findOne({ allianceId: ptScope, sortOrder: 1, archivedAt: null });
+let ptHub = await roomsCol.findOne({
+  allianceId: ptScope,
+  sortOrder: 1,
+  archivedAt: null,
+});
 if (!ptHub) {
   await roomsCol.insertOne({
     allianceId: ptScope,
-    title: 'ОБЖОРЫ',
+    title: hubTitle,
     sortOrder: 1,
     archivedAt: null,
     createdAt: now,
     updatedAt: now,
   });
 }
-let ptRaid = await roomsCol.findOne({ allianceId: ptScope, title: 'Рейд', archivedAt: null });
+let ptRaid = await roomsCol.findOne({
+  allianceId: ptScope,
+  title: 'Рейд',
+  archivedAt: null,
+});
 if (!ptRaid) {
   await roomsCol.insertOne({
     allianceId: ptScope,

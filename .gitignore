@@ -1,9 +1,47 @@
-backend/.env
+# --- Secrets and machine-local config (never commit) ---
+.env
+.env.*
+!.env.example
+!**/.env.example
+local.properties
+**/local.properties
+!local.properties.example
+!**/local.properties.example
+
+google-services.json
+**/google-services.json
+*-firebase-adminsdk*.json
+**/firebase-adminsdk*.json
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+*.pfx
+
+# --- Backend ---
 backend/node_modules/
 backend/dist/
 backend/coverage/
+
+# --- Android ---
 mobile-android/.gradle/
-mobile-android/local.properties
-mobile-android/.idea/
 mobile-android/**/build/
+mobile-android/.idea/
+mobile-android/*.iml
+
+# --- Logs and OS ---
 *.log
+.DS_Store
+Thumbs.db
+
+# --- Personal / scratch (not for the repo) ---
+На чем остановился.txt
+*.local.md
+notes.local.*
+
+# --- IDE ---
+.idea/
+.vscode/
+*.swp
+*~

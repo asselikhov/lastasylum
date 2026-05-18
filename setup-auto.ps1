@@ -53,14 +53,32 @@ function Ensure-AndroidGradleJdk([string]$jdkHome) {
 }
 
 $backendDir = Join-Path $root "backend"
-$androidGradle = Join-Path $root "mobile-android\app\build.gradle.kts"
 $backendEnv = Join-Path $backendDir ".env"
+$localPropsRoot = Join-Path $root "local.properties"
+$localPropsAndroid = Join-Path $root "mobile-android\local.properties"
 
 if (-not (Test-Path $backendDir)) {
     throw "Папка backend не найдена: $backendDir"
 }
-if (-not (Test-Path $androidGradle)) {
-    throw "Файл Android build.gradle.kts не найден: $androidGradle"
+
+function Set-LocalProperty {
+    param(
+        [string]$FilePath,
+        [string]$Key,
+        [string]$Value
+    )
+    $lines = @()
+    if (Test-Path $FilePath) {
+        $lines = @(Get-Content -Path $FilePath -Encoding UTF8)
+    }
+    $escapedKey = [regex]::Escape($Key)
+    $filtered = @($lines | Where-Object { $_ -notmatch "^\s*$escapedKey\s*=" })
+    $filtered += "$Key=$Value"
+    $dir = Split-Path -Parent $FilePath
+    if ($dir -and -not (Test-Path $dir)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    }
+    Set-Content -Path $FilePath -Value ($filtered -join "`n") -Encoding UTF8
 }
 
 Write-Host ""
@@ -92,18 +110,11 @@ JWT_REFRESH_EXPIRES_IN=30d
 "@
 
 Set-Content -Path $backendEnv -Value $envContent -Encoding UTF8
-Write-Host "Создан backend/.env" -ForegroundColor Green
+Write-Host "Создан backend/.env (не коммитьте в git)" -ForegroundColor Green
 
-$gradleText = Get-Content -Path $androidGradle -Raw -Encoding UTF8
-$escapedUrl = $ApiBaseUrl.Replace('\', '\\')
-$replacement = 'buildConfigField("String", "API_BASE_URL", "\"{0}\"")' -f $escapedUrl
-$gradleText = [regex]::Replace(
-    $gradleText,
-    'buildConfigField\("String",\s*"API_BASE_URL",\s*"[^"]*"\)',
-    $replacement
-)
-Set-Content -Path $androidGradle -Value $gradleText -Encoding UTF8
-Write-Host "Обновлен API_BASE_URL в mobile-android/app/build.gradle.kts" -ForegroundColor Green
+Set-LocalProperty -FilePath $localPropsRoot -Key "squadrelay.api.baseUrl" -Value $ApiBaseUrl
+Set-LocalProperty -FilePath $localPropsAndroid -Key "squadrelay.api.baseUrl" -Value $ApiBaseUrl
+Write-Host "Записан squadrelay.api.baseUrl в local.properties (не коммитьте)" -ForegroundColor Green
 
 $jdkHome = Resolve-LocalJdkHome
 if (-not [string]::IsNullOrWhiteSpace($jdkHome)) {
@@ -137,7 +148,7 @@ finally {
 Write-Host ""
 Write-Host "Done." -ForegroundColor Green
 Write-Host "1) Backend configured and validated."
-Write-Host "2) Android API URL updated."
+Write-Host "2) Android API URL set in local.properties (tracked Gradle files unchanged)."
 Write-Host ""
 Write-Host "Next run backend:" -ForegroundColor Cyan
 Write-Host "   cd backend; npm run start:dev"

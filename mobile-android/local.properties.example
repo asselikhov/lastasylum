@@ -1,0 +1,3 @@
+# See ../local.properties.example — same keys apply here.
+# Android Studio usually creates this file with sdk.dir; add SquadRelay keys as needed.
+# Never commit local.properties.

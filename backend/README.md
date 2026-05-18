@@ -15,6 +15,12 @@ NestJS backend for alliance communication features:
 - JWT (Passport)
 - Socket.IO gateway
 
+## Security
+
+- Copy **`.env.example`** → **`.env`** locally only. Never commit `.env` (see repo root [`SECURITY.md`](../SECURITY.md)).
+- Use long random `JWT_SECRET` / `JWT_REFRESH_SECRET` in production; set `ALLOWED_ORIGINS` to real origins.
+- Passwords are stored as bcrypt hashes; API responses do not include `passwordHash` or refresh tokens.
+
 ## Environment variables
 
 Copy `.env.example` to `.env` and fill real values:
@@ -44,6 +50,17 @@ R2_SECRET_ACCESS_KEY=...
 R2_BUCKET=...
 R2_REGION=auto
 ```
+
+## Maintenance scripts (`scripts/`)
+
+Operator-only tools that read **`backend/.env`** (never commit secrets). Example:
+
+```bash
+# Set SCRIPT_TEAM_TAG, SCRIPT_ALLIANCE_SCOPE, SCRIPT_MEMBER_USERNAMES in .env first
+node scripts/consolidate-obzhory.mjs
+```
+
+Other scripts: `migrate-chat-rooms.mjs`, `normalize-legacy-users.mjs`. Run only against databases you own.
 
 ## Run locally
 

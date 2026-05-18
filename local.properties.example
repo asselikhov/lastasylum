@@ -1,0 +1,19 @@
+# Copy to "local.properties" in the repo root and/or mobile-android/.
+# Never commit local.properties — it may contain API keys and SDK paths.
+#
+# Android Studio often creates mobile-android/local.properties with sdk.dir only;
+# you can merge these optional SquadRelay keys into the same file.
+
+# sdk.dir=C\:\\Users\\You\\AppData\\Local\\Android\\Sdk
+
+# Optional: dev API (emulator → host: http://10.0.2.2:3000/)
+# If unset, dev/prod flavors use the public backend URL from build.gradle.kts.
+# squadrelay.api.baseUrl=http://10.0.2.2:3000/
+
+# Optional: Firebase (FCM). Restrict the API key in Google Cloud Console by package name.
+# squadrelay.firebase.projectId=
+# squadrelay.firebase.appId=
+# squadrelay.firebase.apiKey=
+
+# Optional: certificate pinning for API host (sha256 pins, comma-separated)
+# squadrelay.certPins=sha256/AAAAAAAA...,sha256/BBBBBBBB...
