@@ -304,9 +304,13 @@ object GameForegroundGate {
             return false
         }
         // API 28+: события только по пакету игры — на MIUI глобальный queryEvents часто пуст/обрезан.
-        for (t in targets) {
-            if (runCatching { targetForegroundFromPackageOnlyEvents(usm, t, end) }.getOrDefault(false)) {
-                return true
+        // Не применять, если usage уже показывает другое приложение (лаунчер и т.д.) — иначе оверлей
+        // остаётся после сворачивания игры.
+        if (!isConflictingForegroundHint(hinted, targetSet, alliance)) {
+            for (t in targets) {
+                if (runCatching { targetForegroundFromPackageOnlyEvents(usm, t, end) }.getOrDefault(false)) {
+                    return true
+                }
             }
         }
         // На части прошивок «последний» RESUME — не игра, а лаунчер/сервис; lastTimeUsed при долгой сессии
@@ -321,7 +325,9 @@ object GameForegroundGate {
             queryUsageStatsMerged(usm, end, USAGE_STATS_LOOKBACK_MS)
         }.getOrDefault(emptyList())
         // MIUI/HyperOS: события и lastTimeUsed часто «молчат» в Unity; TTF между тиками гейта растёт только в фокусе.
-        if (targetForegroundByGrowingTotalTime(stats, targetSet)) {
+        if (!isConflictingForegroundHint(hinted, targetSet, alliance) &&
+            targetForegroundByGrowingTotalTime(stats, targetSet)
+        ) {
             return true
         }
         if (stats.isEmpty()) return false
@@ -338,6 +344,19 @@ object GameForegroundGate {
      * Слабый fallback по lastTimeUsed имеет смысл только пока нет явного «другого приложения» на переднем плане.
      * (Иначе после minimize игры usage ещё долго «лидерит» пакет игры.)
      */
+    /** Другое приложение явно на переднем плане (не игра, не SquadRelay, не системный декор). */
+    internal fun isConflictingForegroundHint(
+        lastForegroundPackageHint: String?,
+        targetPackages: Set<String>,
+        alliancePackage: String,
+    ): Boolean {
+        val hinted = lastForegroundPackageHint ?: return false
+        if (hinted in targetPackages) return false
+        if (hinted == alliancePackage) return false
+        if (hinted in RESUME_DECOR_PACKAGES) return false
+        return true
+    }
+
     internal fun allowLastUsedNearLeaderFallback(
         lastForegroundPackageHint: String?,
         targetPackages: Set<String>,

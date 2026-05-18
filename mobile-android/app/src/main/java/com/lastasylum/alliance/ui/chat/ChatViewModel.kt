@@ -151,6 +151,18 @@ class ChatViewModel(
         }
     }
 
+    /** Returning to the Chat tab: re-mark visible room and refresh badges without stale server counts. */
+    fun onChatTabResumed() {
+        viewModelScope.launch {
+            val roomId = _state.value.selectedRoomId
+            val newestId = _state.value.messages.firstOrNull()?._id
+            if (!roomId.isNullOrBlank() && !newestId.isNullOrBlank()) {
+                markRoomReadUpTo(roomId, newestId)
+            }
+            syncRoomsFromServer()
+        }
+    }
+
     /** Overlay fullscreen chat closed — reclaim socket + refresh server unread counts. */
     fun onOverlayChatPanelClosed() {
         viewModelScope.launch {
@@ -352,11 +364,22 @@ class ChatViewModel(
         }
     }
 
+    private fun resolvedLastReadMessageId(room: ChatRoomDto): String? {
+        val local = lastMarkedReadByRoom[room.id]?.trim().orEmpty()
+        val server = room.lastReadMessageId?.trim().orEmpty()
+        return when {
+            local.isBlank() -> server.takeIf { it.isNotBlank() }
+            server.isBlank() -> local
+            isObjectIdNewer(local, server) -> local
+            else -> server
+        }
+    }
+
     private fun effectiveUnreadForRoom(room: ChatRoomDto): Int =
         effectiveUnreadCount(
             serverUnread = room.unreadCount,
             lastReadMessageId = room.lastReadMessageId,
-            localLastReadMessageId = lastMarkedReadByRoom[room.id],
+            localLastReadMessageId = resolvedLastReadMessageId(room),
         )
 
     private fun shouldTrackUnreadForMessage(roomId: String, messageId: String): Boolean {
@@ -406,6 +429,10 @@ class ChatViewModel(
         if (roomId.isBlank() || messageId.isBlank()) return
         val prev = lastMarkedReadByRoom[roomId]
         if (!forceSync && prev != null && !isObjectIdNewer(messageId, prev)) return
+        mergeReadCursor(roomId, messageId)
+        _state.update { st ->
+            st.copy(rooms = clearUnreadForRoom(st.rooms, roomId))
+        }
         repository.markRoomRead(roomId, messageId)
             .onSuccess {
                 mergeReadCursor(roomId, messageId)

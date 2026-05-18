@@ -140,7 +140,6 @@ fun SquadTeamRoster(
     TeamVoiceRosterPresenceBinding(
         active = true,
         overlayVisible = overlayVisible,
-        currentUserId = currentUserId,
     )
 
     Column(
@@ -198,6 +197,7 @@ fun SquadTeamRoster(
                             teamsRepository = teamsRepository,
                             onRequestEditMemberRole = onRequestEditMemberRole,
                             voicePeer = voicePeers[member.userId],
+                            overlayVisible = overlayVisible,
                         )
                     }
                 }
@@ -332,30 +332,31 @@ private fun TeamMemberVoiceBadges(
     soundOn: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    if (!micOn && !soundOn) return
-    val micCd = stringResource(R.string.team_member_voice_mic_on_cd)
-    val soundCd = stringResource(R.string.team_member_voice_sound_on_cd)
+    val micCd = stringResource(
+        if (micOn) R.string.team_member_voice_mic_on_cd else R.string.team_member_voice_mic_off_cd,
+    )
+    val soundCd = stringResource(
+        if (soundOn) R.string.team_member_voice_sound_on_cd else R.string.team_member_voice_sound_off_cd,
+    )
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (micOn) {
-            TeamMemberVoiceBadge(
-                iconRes = R.drawable.ic_overlay_mic_on,
-                contentDescription = micCd,
-                accent = Color(0xFF2E7D32),
-                accentGlow = Color(0xFF81C784),
-            )
-        }
-        if (soundOn) {
-            TeamMemberVoiceBadge(
-                iconRes = R.drawable.ic_overlay_volume_on,
-                contentDescription = soundCd,
-                accent = Color(0xFF1565C0),
-                accentGlow = Color(0xFF64B5F6),
-            )
-        }
+        TeamMemberVoiceBadge(
+            iconRes = if (micOn) R.drawable.ic_overlay_mic_on else R.drawable.ic_overlay_mic_off,
+            contentDescription = micCd,
+            accent = Color(0xFF2E7D32),
+            accentGlow = Color(0xFF81C784),
+            active = micOn,
+        )
+        TeamMemberVoiceBadge(
+            iconRes = if (soundOn) R.drawable.ic_overlay_volume_on else R.drawable.ic_overlay_volume_off,
+            contentDescription = soundCd,
+            accent = Color(0xFF1565C0),
+            accentGlow = Color(0xFF64B5F6),
+            active = soundOn,
+        )
     }
 }
 
@@ -365,27 +366,29 @@ private fun TeamMemberVoiceBadge(
     contentDescription: String,
     accent: Color,
     accentGlow: Color,
+    active: Boolean,
 ) {
+    val idleBg = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+    val idleBorder = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
     Box(
         modifier = Modifier
             .size(22.dp)
             .clip(RoundedCornerShape(7.dp))
             .background(
-                Brush.linearGradient(
-                    colors = listOf(
-                        accent.copy(alpha = 0.92f),
-                        accent.copy(alpha = 0.72f),
-                    ),
-                ),
+                if (active) {
+                    Brush.linearGradient(
+                        colors = listOf(
+                            accent.copy(alpha = 0.92f),
+                            accent.copy(alpha = 0.72f),
+                        ),
+                    )
+                } else {
+                    Brush.linearGradient(listOf(idleBg, idleBg))
+                },
             )
             .border(
                 width = 1.dp,
-                brush = Brush.linearGradient(
-                    colors = listOf(
-                        accentGlow.copy(alpha = 0.55f),
-                        accent.copy(alpha = 0.35f),
-                    ),
-                ),
+                color = if (active) accentGlow.copy(alpha = 0.55f) else idleBorder,
                 shape = RoundedCornerShape(7.dp),
             )
             .semantics { this.contentDescription = contentDescription },
@@ -395,7 +398,7 @@ private fun TeamMemberVoiceBadge(
             painter = painterResource(iconRes),
             contentDescription = null,
             modifier = Modifier.size(13.dp),
-            tint = Color.White,
+            tint = if (active) Color.White else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
         )
     }
 }
@@ -414,6 +417,7 @@ private fun SquadMemberCard(
     teamsRepository: TeamsRepository,
     onRequestEditMemberRole: (PlayerTeamMemberDto) -> Unit,
     voicePeer: VoicePeerState?,
+    overlayVisible: Boolean,
 ) {
     val scope = rememberCoroutineScope()
     val res = LocalContext.current.resources
@@ -493,7 +497,7 @@ private fun SquadMemberCard(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
                     )
-                    if (inGameNow) {
+                    if (inGameNow && overlayVisible) {
                         TeamMemberVoiceBadges(
                             micOn = voiceMicOn,
                             soundOn = voiceSoundOn,

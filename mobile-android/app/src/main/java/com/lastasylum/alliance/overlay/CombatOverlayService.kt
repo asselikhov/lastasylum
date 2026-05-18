@@ -283,17 +283,31 @@ class CombatOverlayService : Service() {
         val view: View,
         val params: WindowManager.LayoutParams,
         val prevFlags: Int,
+        val prevVisibility: Int,
     )
 
-    /** Снимок флагов окон overlay на время системного пикера/permission (иначе они выше Activity и блокируют ввод). */
+    /** Снимок окон overlay на время системного пикера (TYPE_APPLICATION_OVERLAY выше Activity — иначе галерея «под» чатом). */
     private val overlayTouchPassthroughSnaps = mutableListOf<OverlayWindowFlagSnap>()
 
     private fun suspendOverlayWindowsForSystemActivity() {
-        if (overlayTouchPassthroughSnaps.isNotEmpty()) return
         val mgr = windowManager ?: return
+        val firstSuspend = overlayTouchPassthroughSnaps.isEmpty()
+        if (firstSuspend) {
+            OverlayChatInteractionHold.acquireGameForegroundSuppress()
+        }
         fun snap(params: WindowManager.LayoutParams?, view: View?) {
             if (params == null || view == null || !view.isAttachedToWindow) return
-            overlayTouchPassthroughSnaps.add(OverlayWindowFlagSnap(view, params, params.flags))
+            overlayTouchPassthroughSnaps.add(
+                OverlayWindowFlagSnap(
+                    view = view,
+                    params = params,
+                    prevFlags = params.flags,
+                    prevVisibility = view.visibility,
+                ),
+            )
+            if (view.visibility != View.GONE) {
+                view.visibility = View.GONE
+            }
             val with = params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
             if (params.flags != with) {
                 params.flags = with
@@ -304,14 +318,18 @@ class CombatOverlayService : Service() {
         snap(overlayChatTeamParams, overlayChatTeamRoot)
         snap(chatStripParams, chatStripHost)
         overlayTicker.applyTouchPassthrough(true)
+        overlayCommandsPopover.hide()
+        overlayAllianceOnlinePopover.hide()
         quickCommandsPopover.hide()
     }
 
     private fun resumeOverlayWindowsAfterSystemActivity() {
         val mgr = windowManager
-        if (overlayTouchPassthroughSnaps.isNotEmpty() && mgr != null) {
+        val hadSuspendedWindows = overlayTouchPassthroughSnaps.isNotEmpty()
+        if (hadSuspendedWindows && mgr != null) {
             for (snap in overlayTouchPassthroughSnaps) {
                 snap.params.flags = snap.prevFlags
+                snap.view.visibility = snap.prevVisibility
                 if (snap.view.isAttachedToWindow) {
                     runCatching { mgr.updateViewLayout(snap.view, snap.params) }
                 }
@@ -319,6 +337,9 @@ class CombatOverlayService : Service() {
             overlayTouchPassthroughSnaps.clear()
         }
         overlayTicker.applyTouchPassthrough(false)
+        if (hadSuspendedWindows) {
+            OverlayChatInteractionHold.releaseGameForegroundSuppress()
+        }
     }
 
     private val overlaySystemResultReceiver = object : BroadcastReceiver() {
@@ -340,8 +361,14 @@ class CombatOverlayService : Service() {
                             @Suppress("DEPRECATION")
                             i.getParcelableArrayListExtra<Uri>(OverlaySystemDialogActivity.EXTRA_URIS).orEmpty()
                         }
-                        // Build intent payload compatible with PickMultipleVisualMedia contract parsing:
-                        // ActivityResultContracts.PickMultipleVisualMedia -> GetMultipleContents.getClipDataUris(intent)
+                        if (uris.isNotEmpty()) {
+                            overlayChatViewModel?.onImagesPicked(uris)
+                            Toast.makeText(
+                                this@CombatOverlayService,
+                                getString(R.string.chat_attachments_added, uris.size),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
                         val data = Intent().apply {
                             if (uris.isNotEmpty()) {
                                 val clip = ClipData.newRawUri("images", uris.first())
@@ -349,7 +376,11 @@ class CombatOverlayService : Service() {
                                 clipData = clip
                             }
                         }
-                        owner.activityResultRegistry.dispatchResult(requestCode, android.app.Activity.RESULT_OK, data)
+                        owner.activityResultRegistry.dispatchResult(
+                            requestCode,
+                            android.app.Activity.RESULT_OK,
+                            data,
+                        )
                     }
                     OverlaySystemDialogActivity.ACTION_OVERLAY_GET_CONTENT_RESULT -> {
                         val uri = if (android.os.Build.VERSION.SDK_INT >= 33) {
@@ -421,7 +452,11 @@ class CombatOverlayService : Service() {
                     return
                 }
                 val i = Intent(this@CombatOverlayService, OverlaySystemDialogActivity::class.java).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP,
+                    )
                     putExtra(OverlaySystemDialogActivity.EXTRA_KIND, kind)
                     putExtra(OverlaySystemDialogActivity.EXTRA_REQUEST_CODE, requestCode)
                     if (kind == OverlaySystemDialogActivity.KIND_GET_CONTENT) {
@@ -589,7 +624,8 @@ class CombatOverlayService : Service() {
     }
 
     private fun shouldKeepOverlayWindows(): Boolean =
-        overlayChatTeamPanelVisible ||
+        overlayTouchPassthroughSnaps.isNotEmpty() ||
+            overlayChatTeamPanelVisible ||
             OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible ||
             overlayCommandsPopover.isShowing() ||
             OverlayChatInteractionHold.isGameForegroundGateSuppressed()
@@ -700,8 +736,21 @@ class CombatOverlayService : Service() {
         hasUsageAccess: Boolean,
         shouldShow: Boolean,
     ) {
+        if (!shouldShow) {
+            // Закрыть «Быстрые команды» и сбросить suppress, иначе панель не снимется с экрана.
+            overlayCommandsPopover.hide()
+            overlayAllianceOnlinePopover.hide()
+            OverlayChatInteractionHold.clearStaleSuppressForGameBackground(
+                chatTeamPanelVisible = overlayChatTeamPanelVisible,
+                commandsPopoverShowing = overlayCommandsPopover.isShowing(),
+            )
+        }
         // Heuristics (TTF / lastUsed) иногда ещё «видят» игру один тик после открытия SquadRelay.
-        if (lastForegroundHintPkg == packageName && !shouldKeepOverlayWindows()) {
+        // Не снимать панель, пока открыт системный пикер (хост — это же SquadRelay).
+        if (lastForegroundHintPkg == packageName &&
+            !shouldKeepOverlayWindows() &&
+            overlayTouchPassthroughSnaps.isEmpty()
+        ) {
             if (overlayView != null) {
                 removeOverlayControl()
             }
@@ -1794,7 +1843,7 @@ class CombatOverlayService : Service() {
         val hadVisible = overlayChatTeamPanelVisible
         overlayChatTeamPanelVisible = false
         OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = false
-        OverlayChatInteractionHold.clearSuppressUnlessFullscreenPanel()
+        OverlayChatInteractionHold.releaseGameForegroundSuppress()
         if (hadVisible) {
             updateStripDismissScreenRects(emptyList())
             if (clearStrip) {
@@ -1910,7 +1959,7 @@ class CombatOverlayService : Service() {
         val initialTab = initialTabIndex.coerceIn(0, 1)
         overlayAllianceOnlinePopover.hide()
         overlayCommandsPopover.hide()
-        OverlayChatInteractionHold.suppressGameForegroundGate = true
+        OverlayChatInteractionHold.acquireGameForegroundSuppress()
         OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = true
         overlayUnreadChatCount = 0
         mainHandler.post { updateOverlayChatBadge() }
@@ -2262,6 +2311,10 @@ class CombatOverlayService : Service() {
             Log.i(TAG, "removeOverlayControl: skipped while overlay chat/team UI is active")
             return
         }
+        OverlayChatInteractionHold.clearStaleSuppressForGameBackground(
+            chatTeamPanelVisible = false,
+            commandsPopoverShowing = false,
+        )
         resumeOverlayWindowsAfterSystemActivity()
         speechPipeline.cancelActiveSession()
         endOverlayChatSubscription()

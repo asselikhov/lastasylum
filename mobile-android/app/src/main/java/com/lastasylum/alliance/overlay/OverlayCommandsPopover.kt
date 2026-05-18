@@ -15,11 +15,10 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
-import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.Spinner
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import com.lastasylum.alliance.R
@@ -28,14 +27,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 /**
- * Меню команд рядом с панелью оверлея + диалог ввода координат и отправки строки в текущую комнату чата.
+ * Меню быстрых команд: вертикальный список карточек с понятным выбором типа и кнопкой координат.
  */
 class OverlayCommandsPopover(
     private val context: Context,
     private val mainHandler: Handler,
     private val scope: CoroutineScope,
     private val dp: (Int) -> Int,
-    /** [excavation] → сообщение раскопок в «Рейд» + push союзникам вне игры. */
     private val sendCoords: suspend (label: String, x: Int, y: Int, excavation: Boolean) -> Result<ChatMessage>,
 ) {
     private var menuScrim: FrameLayout? = null
@@ -117,24 +115,36 @@ class OverlayCommandsPopover(
 
     private fun cardShellBackground(): GradientDrawable =
         GradientDrawable(
-            GradientDrawable.Orientation.TOP_BOTTOM,
+            GradientDrawable.Orientation.TL_BR,
             intArrayOf(
-                Color.parseColor("#F0222838"),
-                Color.parseColor("#E8121824"),
+                Color.parseColor("#F01A2234"),
+                Color.parseColor("#E80E1420"),
             ),
         ).apply {
-            cornerRadius = dp(20).toFloat()
-            setStroke(dp(1).coerceAtLeast(1), Color.parseColor("#557C9CFF"))
+            cornerRadius = dp(22).toFloat()
+            setStroke(dp(1).coerceAtLeast(1), Color.parseColor("#4D5A7CFF"))
         }
 
-    private fun sectionTileBackground(): GradientDrawable =
+    private fun commandCardBackground(accentColor: Int): GradientDrawable =
+        GradientDrawable(
+            GradientDrawable.Orientation.LEFT_RIGHT,
+            intArrayOf(
+                Color.argb(48, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor)),
+                Color.parseColor("#2A1A2438"),
+            ),
+        ).apply {
+            cornerRadius = dp(14).toFloat()
+            setStroke(dp(1).coerceAtLeast(1), Color.parseColor("#33445577"))
+        }
+
+    private fun chipBackground(selected: Boolean): GradientDrawable =
         roundedRect(
-            fillColor = Color.parseColor("#2A1E2A3C"),
-            strokeColor = Color.parseColor("#3D7C9CFF"),
-            cornerDp = 14,
+            fillColor = if (selected) Color.parseColor("#FF3D52D4") else Color.parseColor("#22182030"),
+            strokeColor = if (selected) Color.parseColor("#885A7CFF") else Color.parseColor("#33445566"),
+            cornerDp = 10,
         )
 
-    private fun spinnerFieldBackground(): GradientDrawable =
+    private fun fieldBackground(): GradientDrawable =
         roundedRect(
             fillColor = Color.parseColor("#38101828"),
             strokeColor = Color.parseColor("#4D6B8CFF"),
@@ -151,7 +161,7 @@ class OverlayCommandsPopover(
                 ),
             ).apply {
                 shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(11).toFloat()
+                cornerRadius = dp(12).toFloat()
             },
         )
 
@@ -160,7 +170,7 @@ class OverlayCommandsPopover(
             roundedRect(
                 fillColor = Color.parseColor("#28182030"),
                 strokeColor = Color.parseColor("#446B7C9C"),
-                cornerDp = 11,
+                cornerDp = 12,
             ),
         )
 
@@ -177,130 +187,152 @@ class OverlayCommandsPopover(
             isClickable = true
         }
 
-    private fun sectionTitleView(titleRes: Int): TextView =
-        TextView(context).apply {
-            text = context.getString(titleRes).uppercase()
-            setTextColor(Color.parseColor("#FF8FAEFF"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
-            letterSpacing = 0.1f
-            typeface = Typeface.DEFAULT_BOLD
-            maxLines = 2
-        }
-
-    private fun sectionHintView(textRes: Int): TextView =
-        TextView(context).apply {
-            text = context.getString(textRes)
-            setTextColor(Color.parseColor("#88A0B4C8"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
-            setLineSpacing(0f, 1.15f)
-            maxLines = 3
-            setPadding(0, dp(4), 0, 0)
-        }
-
-    private fun buildSpinner(options: List<CommandOption>): Spinner =
-        Spinner(context).apply {
-            val labels = options.map { context.getString(it.labelDisplayRes) }
-            adapter = ArrayAdapter(
-                context,
-                R.layout.overlay_command_spinner_item,
-                labels,
-            ).also { a ->
-                a.setDropDownViewResource(R.layout.overlay_command_spinner_dropdown)
-            }
-            background = spinnerFieldBackground()
-            setPopupBackgroundDrawable(
-                roundedRect(
-                    fillColor = Color.parseColor("#F0182030"),
-                    strokeColor = Color.parseColor("#668899CC"),
-                    cornerDp = 10,
-                ),
-            )
-            minimumHeight = dp(42)
-            setPadding(dp(8), dp(4), dp(28), dp(4))
-        }
-
-    private fun coordsButton(onClick: () -> Unit): TextView =
-        TextView(context).apply {
-            text = context.getString(R.string.overlay_cmd_column_open_coords)
-            setTextColor(Color.parseColor("#FFF4F7FF"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
-            typeface = Typeface.DEFAULT_BOLD
-            letterSpacing = 0.02f
-            gravity = Gravity.CENTER
-            minimumHeight = dp(40)
-            setPadding(dp(8), dp(9), dp(8), dp(9))
-            background = primaryButtonBackground()
-            isClickable = true
-            setOnClickListener { onClick() }
-        }
-
     private data class CommandOption(val labelDisplayRes: Int, val labelCommandRes: Int)
 
-    private fun commandSectionTile(
-        titleRes: Int,
-        options: List<CommandOption>?,
-        hintRes: Int? = null,
+    private data class CommandCategory(
+        val titleRes: Int,
+        val accentColor: Int,
+        val glyph: String,
+        val options: List<CommandOption>? = null,
+        val hintRes: Int? = null,
+        val excavation: Boolean = false,
+    )
+
+    private fun choiceChip(text: String, selected: Boolean): TextView =
+        TextView(context).apply {
+            this.text = text
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor(if (selected) "#FFF8FAFF" else "#99B0C4D8"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            typeface = if (selected) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+            minimumHeight = dp(36)
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            background = chipBackground(selected)
+            isClickable = true
+        }
+
+    private fun buildCommandCard(
+        category: CommandCategory,
         onOpenCoords: (commandLabel: String, excavation: Boolean) -> Unit,
-    ): LinearLayout =
-        LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            background = sectionTileBackground()
-            setPadding(dp(10), dp(10), dp(10), dp(10))
+    ): LinearLayout {
+        val options = category.options
+        var selectedIndex = 0
+        val chipViews = mutableListOf<TextView>()
 
-            addView(sectionTitleView(titleRes))
-
-            if (hintRes != null) {
-                addView(sectionHintView(hintRes))
-            }
-
-            if (options != null) {
-                val spinner = buildSpinner(options)
-                addView(
-                    spinner,
-                    LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                    ).apply { topMargin = dp(8) },
-                )
-                addView(
-                    coordsButton {
-                        val idx = spinner.selectedItemPosition.coerceIn(0, options.lastIndex)
-                        val label = context.getString(options[idx].labelCommandRes)
-                        onOpenCoords(label, false)
-                    },
-                    LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                    ).apply { topMargin = dp(8) },
-                )
-            } else {
-                addView(
-                    coordsButton {
-                        val label = context.getString(titleRes)
-                        onOpenCoords(label, true)
-                    },
-                    LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                    ).apply { topMargin = dp(10) },
-                )
+        fun refreshChips() {
+            chipViews.forEachIndexed { index, chip ->
+                val sel = index == selectedIndex
+                chip.background = chipBackground(sel)
+                chip.setTextColor(Color.parseColor(if (sel) "#FFF8FAFF" else "#99B0C4D8"))
+                chip.typeface = if (sel) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
             }
         }
 
-    private fun gridRow(cells: List<View>): LinearLayout =
-        LinearLayout(context).apply {
+        val accentStrip = View(context).apply {
+            background = roundedRect(fillColor = category.accentColor, cornerDp = 4)
+        }
+
+        val glyphView = TextView(context).apply {
+            text = category.glyph
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+            gravity = Gravity.CENTER
+            setPadding(0, 0, dp(10), 0)
+        }
+
+        val titleView = TextView(context).apply {
+            text = context.getString(category.titleRes)
+            setTextColor(Color.parseColor("#FFF4F7FF"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            typeface = Typeface.DEFAULT_BOLD
+        }
+
+        val titleRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.TOP
-            val gap = dp(8)
-            cells.forEachIndexed { index, cell ->
-                addView(
-                    cell,
-                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                        if (index < cells.lastIndex) marginEnd = gap
-                    },
-                )
+            gravity = Gravity.CENTER_VERTICAL
+            addView(
+                accentStrip,
+                LinearLayout.LayoutParams(dp(4), dp(22)).apply { marginEnd = dp(8) },
+            )
+            addView(glyphView)
+            addView(titleView)
+        }
+
+        val card = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            background = commandCardBackground(category.accentColor)
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            addView(titleRow)
+        }
+
+        if (category.hintRes != null) {
+            card.addView(
+                TextView(context).apply {
+                    text = context.getString(category.hintRes)
+                    setTextColor(Color.parseColor("#88A0B4C8"))
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                    setPadding(0, dp(6), 0, 0)
+                },
+            )
+        }
+
+        if (options != null) {
+            val chipsRow = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                val gap = dp(6)
+                options.forEachIndexed { index, opt ->
+                    val chip = choiceChip(context.getString(opt.labelDisplayRes), index == 0)
+                    chip.setOnClickListener {
+                        selectedIndex = index
+                        refreshChips()
+                    }
+                    chipViews.add(chip)
+                    addView(
+                        chip,
+                        LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                            if (index < options.lastIndex) marginEnd = gap
+                        },
+                    )
+                }
+            }
+            card.addView(
+                chipsRow,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(10) },
+            )
+        }
+
+        val actionBtn = TextView(context).apply {
+            text = context.getString(R.string.overlay_cmd_column_open_coords)
+            setTextColor(Color.parseColor("#FFF8FAFF"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            minimumHeight = dp(42)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = primaryButtonBackground()
+            isClickable = true
+            setOnClickListener {
+                val label = if (options != null) {
+                    val idx = selectedIndex.coerceIn(0, options.lastIndex)
+                    context.getString(options[idx].labelCommandRes)
+                } else {
+                    context.getString(category.titleRes)
+                }
+                onOpenCoords(label, category.excavation)
             }
         }
+        card.addView(
+            actionBtn,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(10) },
+        )
+
+        return card
+    }
 
     private fun openCoordsFromMenu(commandLabel: String, excavation: Boolean) {
         val wm = attachedWindowManager ?: return
@@ -312,24 +344,47 @@ class OverlayCommandsPopover(
 
     private fun showMenu(windowManager: WindowManager) {
         val screenW = context.resources.displayMetrics.widthPixels
-        val popoverW = minOf(dp(392), screenW - dp(20))
+        val popoverW = minOf(dp(360), screenW - dp(24))
+
+        val raidPill = TextView(context).apply {
+            text = context.getString(R.string.overlay_commands_raid_pill)
+            setTextColor(Color.parseColor("#FF8FAEFF"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+            typeface = Typeface.DEFAULT_BOLD
+            letterSpacing = 0.08f
+            setPadding(dp(8), dp(3), dp(8), dp(3))
+            background = roundedRect(
+                fillColor = Color.parseColor("#332A4A8C"),
+                strokeColor = Color.parseColor("#555A7CFF"),
+                cornerDp = 999,
+            )
+        }
 
         val title = TextView(context).apply {
             text = context.getString(R.string.overlay_commands_title)
             setTextColor(Color.parseColor("#FFF8FAFF"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-            letterSpacing = 0.01f
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
             typeface = Typeface.DEFAULT_BOLD
         }
         val subtitle = TextView(context).apply {
             text = context.getString(R.string.overlay_commands_subtitle)
-            setTextColor(Color.parseColor("#8FA3B8C8"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            setPadding(0, dp(3), 0, 0)
+            setTextColor(Color.parseColor("#9AB0C4D8"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            setPadding(0, dp(4), 0, 0)
         }
         val titleBlock = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            addView(title)
+            addView(raidPill, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ))
+            addView(
+                title,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(8) },
+            )
             addView(subtitle)
         }
 
@@ -338,7 +393,7 @@ class OverlayCommandsPopover(
         val headerRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(18), dp(16), dp(12), dp(12))
+            setPadding(dp(18), dp(18), dp(12), dp(10))
             addView(
                 titleBlock,
                 LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
@@ -347,13 +402,6 @@ class OverlayCommandsPopover(
         }
 
         val headerDivider = View(context).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(1),
-            ).apply {
-                marginStart = dp(16)
-                marginEnd = dp(16)
-            }
             setBackgroundColor(Color.parseColor("#338899CC"))
         }
 
@@ -361,47 +409,68 @@ class OverlayCommandsPopover(
             openCoordsFromMenu(label, excavation)
         }
 
-        val attackTile = commandSectionTile(
-            R.string.overlay_cmd_column_attack,
-            listOf(
-                CommandOption(R.string.overlay_cmd_spinner_by_city, R.string.overlay_cmd_attack_city),
-                CommandOption(R.string.overlay_cmd_spinner_by_player, R.string.overlay_cmd_attack_player),
+        val categories = listOf(
+            CommandCategory(
+                titleRes = R.string.overlay_cmd_column_attack,
+                accentColor = Color.parseColor("#FFE53935"),
+                glyph = "⚔",
+                options = listOf(
+                    CommandOption(R.string.overlay_cmd_spinner_by_city, R.string.overlay_cmd_attack_city),
+                    CommandOption(R.string.overlay_cmd_spinner_by_player, R.string.overlay_cmd_attack_player),
+                ),
             ),
-            onOpenCoords = onOpenCoords,
-        )
-        val stormTile = commandSectionTile(
-            R.string.overlay_cmd_column_storm,
-            listOf(
-                CommandOption(R.string.overlay_cmd_spinner_by_city, R.string.overlay_cmd_storm_city),
-                CommandOption(R.string.overlay_cmd_spinner_by_player, R.string.overlay_cmd_storm_player),
+            CommandCategory(
+                titleRes = R.string.overlay_cmd_column_storm,
+                accentColor = Color.parseColor("#FFFF9800"),
+                glyph = "⚡",
+                options = listOf(
+                    CommandOption(R.string.overlay_cmd_spinner_by_city, R.string.overlay_cmd_storm_city),
+                    CommandOption(R.string.overlay_cmd_spinner_by_player, R.string.overlay_cmd_storm_player),
+                ),
             ),
-            onOpenCoords = onOpenCoords,
-        )
-        val reinfTile = commandSectionTile(
-            R.string.overlay_cmd_column_reinf,
-            listOf(
-                CommandOption(R.string.overlay_cmd_spinner_reinf_to_city, R.string.overlay_cmd_reinf_city),
-                CommandOption(R.string.overlay_cmd_spinner_reinf_to_player, R.string.overlay_cmd_reinf_player),
+            CommandCategory(
+                titleRes = R.string.overlay_cmd_column_reinf,
+                accentColor = Color.parseColor("#FF43A047"),
+                glyph = "🛡",
+                options = listOf(
+                    CommandOption(R.string.overlay_cmd_spinner_reinf_to_city, R.string.overlay_cmd_reinf_city),
+                    CommandOption(R.string.overlay_cmd_spinner_reinf_to_player, R.string.overlay_cmd_reinf_player),
+                ),
             ),
-            onOpenCoords = onOpenCoords,
-        )
-        val excavationTile = commandSectionTile(
-            R.string.overlay_cmd_column_excavation,
-            options = null,
-            hintRes = R.string.overlay_cmd_excavation_hint,
-            onOpenCoords = onOpenCoords,
+            CommandCategory(
+                titleRes = R.string.overlay_cmd_column_excavation,
+                accentColor = Color.parseColor("#FF7E57C2"),
+                glyph = "⛏",
+                hintRes = R.string.overlay_cmd_excavation_hint,
+                excavation = true,
+            ),
         )
 
-        val grid = LinearLayout(context).apply {
+        val listColumn = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(4), dp(14), dp(16))
-            addView(gridRow(listOf(attackTile, stormTile)))
+            val gap = dp(10)
+            categories.forEachIndexed { index, cat ->
+                addView(
+                    buildCommandCard(cat, onOpenCoords),
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply {
+                        if (index > 0) topMargin = gap
+                    },
+                )
+            }
+        }
+
+        val scroll = ScrollView(context).apply {
+            isFillViewport = false
+            overScrollMode = View.OVER_SCROLL_NEVER
             addView(
-                gridRow(listOf(reinfTile, excavationTile)),
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = dp(8) },
+                listColumn,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                ),
             )
         }
 
@@ -409,22 +478,36 @@ class OverlayCommandsPopover(
             orientation = LinearLayout.VERTICAL
             clipToPadding = false
             clipChildren = false
-            elevation = dp(14).toFloat()
+            elevation = dp(16).toFloat()
             background = cardShellBackground()
             addView(headerRow)
-            addView(headerDivider)
             addView(
-                grid,
+                headerDivider,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dp(1),
+                ).apply {
+                    marginStart = dp(16)
+                    marginEnd = dp(16)
+                },
+            )
+            addView(
+                scroll,
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
-                ),
+                ).apply {
+                    topMargin = dp(4)
+                    bottomMargin = dp(14)
+                    marginStart = dp(14)
+                    marginEnd = dp(14)
+                },
             )
             setOnClickListener { }
         }
 
         val scrim = FrameLayout(context).apply {
-            setBackgroundColor(Color.argb(110, 0, 0, 0))
+            setBackgroundColor(Color.argb(130, 4, 8, 16))
             isClickable = true
             setOnClickListener { hide() }
         }
@@ -468,7 +551,7 @@ class OverlayCommandsPopover(
         val title = TextView(context).apply {
             text = commandLabel
             setTextColor(Color.parseColor("#FFF8FAFF"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
             typeface = Typeface.DEFAULT_BOLD
             maxLines = 2
         }
@@ -519,9 +602,9 @@ class OverlayCommandsPopover(
                 setTextColor(Color.parseColor("#FFF4F7FF"))
                 setHintTextColor(Color.parseColor("#558899AA"))
                 inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
-                background = spinnerFieldBackground()
+                background = fieldBackground()
                 setPadding(dp(12), dp(10), dp(12), dp(10))
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
                 gravity = Gravity.CENTER
             }
             val col = LinearLayout(context).apply {

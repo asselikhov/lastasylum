@@ -510,6 +510,7 @@ fun ChatScreen(
 
     var remoteChatImagePreview by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
     var attachmentPreviewStartIndex by remember { mutableStateOf<Int?>(null) }
+    var externalGalleryGateHeld by remember { mutableStateOf(false) }
     LaunchedEffect(attachmentPreviewStartIndex, pickedImageUris.isEmpty()) {
         if (attachmentPreviewStartIndex != null && pickedImageUris.isEmpty()) {
             attachmentPreviewStartIndex = null
@@ -956,10 +957,17 @@ fun ChatScreen(
                             .zIndex(8f),
                         uris = pickedImageUris,
                         startIndex = start,
-                        onDismiss = { attachmentPreviewStartIndex = null },
+                        onDismiss = {
+                            if (externalGalleryGateHeld) {
+                                OverlayChatInteractionHold.releaseGameForegroundSuppress()
+                                externalGalleryGateHeld = false
+                            }
+                            attachmentPreviewStartIndex = null
+                        },
                         onOpenExternal = { uri ->
                             if (overlayUi) {
-                                OverlayChatInteractionHold.suppressGameForegroundGate = true
+                                OverlayChatInteractionHold.acquireGameForegroundSuppress()
+                                externalGalleryGateHeld = true
                             }
                             val i = Intent(Intent.ACTION_VIEW).apply {
                                 setDataAndType(uri, "image/*")
@@ -967,6 +975,10 @@ fun ChatScreen(
                             }
                             runCatching { ctx.startActivity(i) }
                                 .onFailure {
+                                    if (externalGalleryGateHeld) {
+                                        OverlayChatInteractionHold.releaseGameForegroundSuppress()
+                                        externalGalleryGateHeld = false
+                                    }
                                     Toast.makeText(
                                         ctx,
                                         ctx.getString(R.string.chat_open_external_failed),
@@ -1853,7 +1865,16 @@ private fun ChatComposer(
                                     if (readOnly) return@IconButton
                                     focusManager.clearFocus()
                                     keyboard?.hide()
-                                    pickImagesLauncher?.launch(
+                                    val launcher = pickImagesLauncher
+                                    if (launcher == null) {
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(R.string.chat_attachment_read_failed),
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                        return@IconButton
+                                    }
+                                    launcher.launch(
                                         PickVisualMediaRequest(
                                             ActivityResultContracts.PickVisualMedia.ImageOnly,
                                         ),

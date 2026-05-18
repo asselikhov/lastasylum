@@ -73,4 +73,22 @@ object OverlayChatInteractionHold {
             suppressGameForegroundGate = false
         }
     }
+
+    /**
+     * Сбрасывает «залипшие» suppress-флаги, когда игра ушла в фон, а модальных окон оверлея нет.
+     * Иначе [CombatOverlayService.shouldKeepOverlayWindows] может вечно блокировать [removeOverlayControl].
+     */
+    fun clearStaleSuppressForGameBackground(
+        chatTeamPanelVisible: Boolean,
+        commandsPopoverShowing: Boolean,
+    ) {
+        if (chatTeamPanelVisible || isFullscreenChatTeamPanelVisible) return
+        if (commandsPopoverShowing) return
+        if (isOverlayModalSuppressActive()) return
+        synchronized(suppressLock) {
+            overlayModalSuppressDepth = 0
+            suppressGameForegroundGate = false
+            suppressGameForegroundGateForOverlayPanel = false
+        }
+    }
 }

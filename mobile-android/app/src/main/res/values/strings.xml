@@ -54,6 +54,7 @@
     <string name="chat_attachments_label">Вложения (%1$d)</string>
     <string name="chat_attachments_clear">Очистить</string>
     <string name="chat_attachments_sheet_title">Вложения</string>
+    <string name="chat_attachments_added">Добавлено фото: %1$d</string>
     <string name="chat_attachments_open">Открыть</string>
     <string name="chat_attachments_remove">Убрать</string>
     <string name="cd_chat_message_image">Изображение во вложении. Нажмите, чтобы открыть на весь экран.</string>
@@ -364,7 +365,9 @@
     <string name="team_member_in_game_cd">Сейчас в игре</string>
     <string name="team_member_not_in_game_cd">Не в игре</string>
     <string name="team_member_voice_mic_on_cd">Микрофон включён</string>
+    <string name="team_member_voice_mic_off_cd">Микрофон выключен</string>
     <string name="team_member_voice_sound_on_cd">Звук включён</string>
+    <string name="team_member_voice_sound_off_cd">Звук выключен</string>
     <string name="overlay_team_cd">Команда</string>
     <string name="overlay_cd_chat_and_team">Чат и команда</string>
     <string name="overlay_team_open_failed">Не удалось открыть «Команда» в оверлее. Проверьте разрешение «Поверх других приложений».</string>
@@ -487,7 +490,8 @@
     <string name="overlay_online_close_cd">Закрыть список</string>
     <string name="overlay_cd_commands">Быстрые команды</string>
     <string name="overlay_commands_title">Быстрые команды</string>
-    <string name="overlay_commands_subtitle">Координаты в канал «Рейд»</string>
+    <string name="overlay_commands_subtitle">Выберите тип и отправьте координаты в «Рейд»</string>
+    <string name="overlay_commands_raid_pill">КАНАЛ · РЕЙД</string>
     <string name="overlay_excavation_message">Раскопки альянса X:%1$d Y:%2$d</string>
     <string name="overlay_cmd_column_excavation">Раскопки</string>
     <string name="settings_excavation_push_title">Уведомления о раскопках</string>

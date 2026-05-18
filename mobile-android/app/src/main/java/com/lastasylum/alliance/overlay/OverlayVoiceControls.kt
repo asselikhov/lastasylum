@@ -11,8 +11,8 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.lastasylum.alliance.R
 
 /**
- * Голосовой хаб: «Звук» и «Микрофон» раскрываются в сторону от хаба.
- * Хаб закреплён в [root] и не смещается при раскрытии (в отличие от горизонтального ряда с подписями снизу).
+ * Голосовой хаб: «Звук» и «Микрофон» раскрываются столбцом рядом с хабом
+ * (отступы как у вертикального стека FAB оверлея — 6dp).
  */
 class OverlayVoiceControls(
     private val context: Context,
@@ -26,8 +26,7 @@ class OverlayVoiceControls(
     val btnMic: FloatingActionButton
     private val soundBadge: TextView
     private val soundHost: FrameLayout
-    private val soundSlot: LinearLayout
-    private val micSlot: LinearLayout
+    private val expandColumn: LinearLayout
     private val soundLabel: TextView
     private val micLabel: TextView
 
@@ -37,7 +36,7 @@ class OverlayVoiceControls(
 
     private val btnSizePx: Int
     private val gapPx: Int
-    private val slotStridePx: Int
+    private val columnHeightPx: Int
 
     var onSoundToggle: (() -> Unit)? = null
     var onMicToggle: (() -> Unit)? = null
@@ -45,8 +44,8 @@ class OverlayVoiceControls(
 
     init {
         btnSizePx = dp(44)
-        gapPx = dp(10)
-        slotStridePx = btnSizePx + gapPx
+        gapPx = dp(6)
+        columnHeightPx = btnSizePx * 2 + gapPx
 
         btnHub = makeMiniFab(R.drawable.ic_overlay_mic, context.getString(R.string.overlay_voice_hub_cd))
         btnSound = makeMiniFab(R.drawable.ic_overlay_volume_on, context.getString(R.string.overlay_voice_sound_cd))
@@ -78,33 +77,25 @@ class OverlayVoiceControls(
             )
         }
 
-        soundLabel = makeToggleLabel(context.getString(R.string.overlay_voice_sound_label))
-        micLabel = makeToggleLabel(context.getString(R.string.overlay_voice_mic_label))
+        soundLabel = makeToggleLabel(context.getString(R.string.overlay_voice_sound_label)).apply {
+            visibility = View.GONE
+        }
+        micLabel = makeToggleLabel(context.getString(R.string.overlay_voice_mic_label)).apply {
+            visibility = View.GONE
+        }
 
-        soundSlot = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
+        expandColumn = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
             visibility = View.GONE
+            clipChildren = false
+            clipToPadding = false
             addView(soundHost, LinearLayout.LayoutParams(btnSizePx, btnSizePx))
             addView(
-                soundLabel,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { marginStart = dp(4) },
-            )
-        }
-        micSlot = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            visibility = View.GONE
-            addView(btnMic, LinearLayout.LayoutParams(btnSizePx, btnSizePx))
-            addView(
-                micLabel,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { marginStart = dp(4) },
+                btnMic,
+                LinearLayout.LayoutParams(btnSizePx, btnSizePx).apply {
+                    topMargin = gapPx
+                },
             )
         }
 
@@ -113,9 +104,8 @@ class OverlayVoiceControls(
             clipToPadding = false
             minimumWidth = btnSizePx
             minimumHeight = btnSizePx
+            addView(expandColumn, expandColumnLayoutParams())
             addView(btnHub, hubLayoutParams())
-            addView(soundSlot, slotLayoutParams(slotIndexFromHub = 1))
-            addView(micSlot, slotLayoutParams(slotIndexFromHub = 2))
         }
 
         btnHub.setOnClickListener { toggleExpanded() }
@@ -131,44 +121,29 @@ class OverlayVoiceControls(
 
     private fun hubLayoutParams(): FrameLayout.LayoutParams =
         FrameLayout.LayoutParams(btnSizePx, btnSizePx).apply {
-            gravity = if (expandTowardStart) {
-                Gravity.END or Gravity.CENTER_VERTICAL
-            } else {
-                Gravity.START or Gravity.CENTER_VERTICAL
-            }
+            gravity = Gravity.CENTER_VERTICAL or if (expandTowardStart) Gravity.END else Gravity.START
         }
 
-    private fun slotLayoutParams(slotIndexFromHub: Int): FrameLayout.LayoutParams {
-        val offset = slotStridePx * slotIndexFromHub
-        return FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            btnSizePx,
-        ).apply {
+    private fun expandColumnLayoutParams(): FrameLayout.LayoutParams =
+        FrameLayout.LayoutParams(btnSizePx, columnHeightPx).apply {
             gravity = Gravity.CENTER_VERTICAL or if (expandTowardStart) Gravity.END else Gravity.START
             if (expandTowardStart) {
-                marginEnd = btnSizePx + offset
+                marginEnd = btnSizePx + gapPx
             } else {
-                marginStart = btnSizePx + offset
+                marginStart = btnSizePx + gapPx
             }
         }
-    }
 
     private fun relayoutSlots() {
+        root.removeView(expandColumn)
         root.removeView(btnHub)
-        root.removeView(soundSlot)
-        root.removeView(micSlot)
+        root.addView(expandColumn, expandColumnLayoutParams())
         root.addView(btnHub, hubLayoutParams())
-        root.addView(soundSlot, slotLayoutParams(slotIndexFromHub = 1))
-        root.addView(micSlot, slotLayoutParams(slotIndexFromHub = 2))
-        val expandedWidth = if (expanded) {
-            btnSizePx + slotStridePx * 2 + estimateSlotLabelExtraPx()
-        } else {
-            btnSizePx
-        }
+        val expandedWidth = if (expanded) btnSizePx + gapPx + btnSizePx else btnSizePx
+        val expandedHeight = if (expanded) columnHeightPx.coerceAtLeast(btnSizePx) else btnSizePx
         root.minimumWidth = expandedWidth
+        root.minimumHeight = expandedHeight
     }
-
-    private fun estimateSlotLabelExtraPx(): Int = dp(36)
 
     private fun makeToggleLabel(text: String): TextView =
         TextView(context).apply {
@@ -182,9 +157,7 @@ class OverlayVoiceControls(
     fun setExpanded(value: Boolean) {
         if (expanded == value) return
         expanded = value
-        val sub = if (value) View.VISIBLE else View.GONE
-        soundSlot.visibility = sub
-        micSlot.visibility = sub
+        expandColumn.visibility = if (value) View.VISIBLE else View.GONE
         btnHub.contentDescription = context.getString(
             if (value) R.string.overlay_voice_hub_collapse_cd else R.string.overlay_voice_hub_cd,
         )

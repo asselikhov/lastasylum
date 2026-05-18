@@ -10,75 +10,108 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.os.bundleOf
 
 /**
- * Transparent "host" activity to show system dialogs (photo picker / permissions) for overlay UI.
- * Overlay runs from a Service, so ActivityResult-based APIs must be hosted by an Activity.
+ * Прозрачный хост для системного пикера/разрешений из оверлея (Service не может быть Activity Result owner).
  */
 class OverlaySystemDialogActivity : ComponentActivity() {
+    private var pendingRequestCode: Int = -1
+    private var pendingKind: String? = null
+    private var launchedPicker: Boolean = false
+
+    private val pickImagesLauncher = registerForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(maxItems = 12),
+    ) { uris ->
+        deliverPickImages(uris)
+    }
+
+    private val getContentLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent(),
+    ) { uri ->
+        deliverGetContent(uri)
+    }
+
+    private val requestMicLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        deliverMicPermission(granted)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingRequestCode = intent?.getIntExtra(EXTRA_REQUEST_CODE, -1) ?: -1
+        pendingKind = intent?.getStringExtra(EXTRA_KIND)
+        if (savedInstanceState?.getBoolean(STATE_LAUNCHED) == true) {
+            return
+        }
+        launchPendingKind()
+    }
 
-        when (intent?.getStringExtra(EXTRA_KIND)) {
-            KIND_PICK_IMAGES -> pickImages()
-            KIND_GET_CONTENT -> pickContent()
-            KIND_REQUEST_MIC -> requestMic()
+    private fun launchPendingKind() {
+        if (launchedPicker || pendingRequestCode < 0) {
+            finish()
+            return
+        }
+        launchedPicker = true
+        when (pendingKind) {
+            KIND_PICK_IMAGES ->
+                pickImagesLauncher.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                )
+            KIND_GET_CONTENT -> {
+                val mime = intent?.getStringExtra(EXTRA_CONTENT_MIME) ?: "image/*"
+                getContentLauncher.launch(mime)
+            }
+            KIND_REQUEST_MIC -> requestMicLauncher.launch(Manifest.permission.RECORD_AUDIO)
             else -> finish()
         }
     }
 
-    private fun pickImages() {
-        val requestCode = intent?.getIntExtra(EXTRA_REQUEST_CODE, -1) ?: -1
-        val launcher = registerForActivityResult(
-            ActivityResultContracts.PickMultipleVisualMedia(maxItems = 12),
-        ) { uris ->
-            sendBroadcast(
-                Intent(ACTION_OVERLAY_PICK_IMAGES_RESULT)
-                    .setPackage(packageName)
-                    .putExtras(
-                        bundleOf(
-                            EXTRA_REQUEST_CODE to requestCode,
-                            EXTRA_URIS to ArrayList<Uri>(uris),
-                        ),
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(STATE_LAUNCHED, launchedPicker)
+    }
+
+    private fun deliverPickImages(uris: List<Uri>) {
+        val requestCode = pendingRequestCode
+        val copied = OverlayPickedImages.copyToCache(this, uris)
+        sendBroadcast(
+            Intent(ACTION_OVERLAY_PICK_IMAGES_RESULT)
+                .setPackage(packageName)
+                .putExtras(
+                    bundleOf(
+                        EXTRA_REQUEST_CODE to requestCode,
+                        EXTRA_URIS to ArrayList(copied),
                     ),
-            )
-            finish()
-        }
-        launcher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                ),
+        )
+        finish()
     }
 
-    private fun pickContent() {
-        val requestCode = intent?.getIntExtra(EXTRA_REQUEST_CODE, -1) ?: -1
-        val mime = intent?.getStringExtra(EXTRA_CONTENT_MIME) ?: "image/*"
-        val launcher = registerForActivityResult(
-            ActivityResultContracts.GetContent(),
-        ) { uri ->
-            sendBroadcast(
-                Intent(ACTION_OVERLAY_GET_CONTENT_RESULT)
-                    .setPackage(packageName)
-                    .putExtra(EXTRA_REQUEST_CODE, requestCode)
-                    .putExtra(EXTRA_URI, uri),
-            )
-            finish()
-        }
-        launcher.launch(mime)
+    private fun deliverGetContent(uri: Uri?) {
+        val requestCode = pendingRequestCode
+        val copied = uri?.let { OverlayPickedImages.copyToCache(this, listOf(it)).firstOrNull() }
+        sendBroadcast(
+            Intent(ACTION_OVERLAY_GET_CONTENT_RESULT)
+                .setPackage(packageName)
+                .putExtra(EXTRA_REQUEST_CODE, requestCode)
+                .putExtra(EXTRA_URI, copied),
+        )
+        finish()
     }
 
-    private fun requestMic() {
-        val requestCode = intent?.getIntExtra(EXTRA_REQUEST_CODE, -1) ?: -1
-        val launcher = registerForActivityResult(
-            ActivityResultContracts.RequestPermission(),
-        ) { granted ->
-            sendBroadcast(
-                Intent(ACTION_OVERLAY_MIC_PERMISSION_RESULT)
-                    .setPackage(packageName)
-                    .putExtra(EXTRA_REQUEST_CODE, requestCode)
-                    .putExtra(EXTRA_GRANTED, granted),
-            )
-            finish()
-        }
-        launcher.launch(Manifest.permission.RECORD_AUDIO)
+    private fun deliverMicPermission(granted: Boolean) {
+        val requestCode = pendingRequestCode
+        sendBroadcast(
+            Intent(ACTION_OVERLAY_MIC_PERMISSION_RESULT)
+                .setPackage(packageName)
+                .putExtra(EXTRA_REQUEST_CODE, requestCode)
+                .putExtra(EXTRA_GRANTED, granted),
+        )
+        finish()
     }
 
     companion object {
+        private const val STATE_LAUNCHED = "launched_picker"
+
         const val EXTRA_KIND = "kind"
         const val EXTRA_REQUEST_CODE = "request_code"
         const val KIND_PICK_IMAGES = "pick_images"
@@ -95,4 +128,3 @@ class OverlaySystemDialogActivity : ComponentActivity() {
         const val EXTRA_GRANTED = "granted"
     }
 }
-
