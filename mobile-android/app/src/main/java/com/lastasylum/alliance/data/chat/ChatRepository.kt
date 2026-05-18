@@ -149,6 +149,22 @@ class ChatRepository(
         onTyping: (ChatTypingEvent) -> Unit = {},
         onRead: (ChatRoomReadEvent) -> Unit = {},
     ) {
+        connectRealtimeRooms(
+            roomIds = realtimeRoomIdsForPrimary(roomId),
+            onMessage = onMessage,
+            onDeleteMessage = onDeleteMessage,
+            onTyping = onTyping,
+            onRead = onRead,
+        )
+    }
+
+    fun connectRealtimeRooms(
+        roomIds: List<String>,
+        onMessage: (ChatMessage) -> Unit,
+        onDeleteMessage: (ChatMessageDeletedEvent) -> Unit = {},
+        onTyping: (ChatTypingEvent) -> Unit = {},
+        onRead: (ChatRoomReadEvent) -> Unit = {},
+    ) {
         realtimeUiListener?.let { socketManager.removeMessageListener(it) }
         realtimeDeleteListener?.let { socketManager.removeMessageDeletedListener(it) }
         realtimeTypingListener?.let { socketManager.removeTypingListener(it) }
@@ -161,9 +177,11 @@ class ChatRepository(
         socketManager.addMessageDeletedListener(onDeleteMessage)
         socketManager.addTypingListener(onTyping)
         socketManager.addReadListener(onRead)
+        val distinct = roomIds.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (distinct.isEmpty()) return
         socketManager.connect(
             baseUrl = BuildConfig.API_BASE_URL,
-            roomIds = realtimeRoomIdsForPrimary(roomId),
+            roomIds = distinct,
             tokenProvider = { tokenStore.getAccessToken() },
         )
     }

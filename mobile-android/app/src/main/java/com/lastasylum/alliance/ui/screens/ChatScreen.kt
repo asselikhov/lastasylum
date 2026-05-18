@@ -1372,6 +1372,7 @@ private fun ChatRoomsBar(
                 ChatRoomVisualKind.Raid -> raidHot.copy(alpha = 0.9f)
                 else -> accent.copy(alpha = 0.88f)
             },
+            unreadCount = room.unreadCount,
         )
     }
     com.lastasylum.alliance.ui.components.SquadSegmentTabBar(

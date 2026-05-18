@@ -655,17 +655,40 @@ fun ForumTopicFeedCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = accent.start.copy(alpha = 0.16f),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.team_forum_messages_pill, topic.messageCount),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Medium,
-                            color = accent.start.copy(alpha = 0.95f),
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        )
+                    if (topic.messageCount > 0) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = accent.start.copy(alpha = 0.16f),
+                        ) {
+                            Text(
+                                text = stringResource(
+                                    R.string.team_forum_messages_pill,
+                                    topic.messageCount,
+                                ),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Medium,
+                                color = accent.start.copy(alpha = 0.95f),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            )
+                        }
+                    }
+                    if (topic.unreadCount > 0) {
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0xFFFF5252),
+                        ) {
+                            Text(
+                                text = if (topic.unreadCount > 99) {
+                                    "99+"
+                                } else {
+                                    topic.unreadCount.toString()
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                            )
+                        }
                     }
                     Text(
                         text = messageMeta,

@@ -36,6 +36,7 @@ import {
   CreateTeamForumMessageDto,
   CreateTeamForumTopicDto,
   BulkDeleteTeamForumMessagesDto,
+  MarkTeamForumTopicReadDto,
   UpdateTeamForumMessageDto,
   UpdateTeamForumTopicDto,
 } from './dto/team-forum.dto';
@@ -338,6 +339,23 @@ export class TeamsController {
       req.user.userId,
       before,
       Number.isFinite(lim) ? lim : 50,
+    );
+  }
+
+  @Post(':teamId/forum/topics/:topicId/read')
+  @Roles(AllianceRole.R2)
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  markForumTopicRead(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Param('topicId') topicId: string,
+    @Body() dto: MarkTeamForumTopicReadDto,
+  ) {
+    return this.teamForum.markTopicRead(
+      teamId,
+      topicId,
+      req.user.userId,
+      dto.messageId?.trim() ?? '',
     );
   }
 

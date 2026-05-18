@@ -39,6 +39,10 @@ import {
   TeamForumTopic,
   TeamForumTopicSchema,
 } from './schemas/team-forum-topic.schema';
+import {
+  TeamForumTopicReadState,
+  TeamForumTopicReadStateSchema,
+} from './schemas/team-forum-topic-read-state.schema';
 import { TeamForumService } from './team-forum.service';
 import {
   AllianceStickerRoleGrant,
@@ -65,6 +69,10 @@ import { StickerAccessService } from './sticker-access.service';
       { name: TeamNewsAttachment.name, schema: TeamNewsAttachmentSchema },
       { name: TeamForumTopic.name, schema: TeamForumTopicSchema },
       { name: TeamForumMessage.name, schema: TeamForumMessageSchema },
+      {
+        name: TeamForumTopicReadState.name,
+        schema: TeamForumTopicReadStateSchema,
+      },
       { name: AllianceStickerRoleGrant.name, schema: AllianceStickerRoleGrantSchema },
       {
         name: AllianceStickerUserGrant.name,

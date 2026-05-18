@@ -38,6 +38,11 @@ import java.util.UUID
 
 private const val PAGE_SIZE = 30
 
+private data class RoomMessageCache(
+    val messages: List<ChatMessage>,
+    val hasMoreOlder: Boolean,
+)
+
 class ChatViewModel(
     application: Application,
     private val repository: ChatRepository,
@@ -72,6 +77,7 @@ class ChatViewModel(
     private var typingEmitJob: Job? = null
 
     private val incomingMessages = Channel<ChatMessage>(capacity = Channel.UNLIMITED)
+    private val roomMessageCache = mutableMapOf<String, RoomMessageCache>()
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var chatVoiceRecognizer: ChatVoiceRecognizer? = null
@@ -81,15 +87,15 @@ class ChatViewModel(
     init {
         viewModelScope.launch {
             for (message in incomingMessages) {
-                val primary = _state.value.selectedRoomId
-                val raid = chatRoomPreferences.getRaidRoomId()
-                if (primary == null) continue
-                val inSubscribedRoom =
-                    message.roomId.isBlank() ||
-                        message.roomId == primary ||
-                        (!raid.isNullOrBlank() && message.roomId == raid)
-                if (!inSubscribedRoom) continue
-                applyIncomingMessage(message)
+                val roomId = message.roomId
+                if (roomId.isBlank()) continue
+                if (_state.value.rooms.none { it.id == roomId }) continue
+                val selected = _state.value.selectedRoomId
+                if (roomId == selected) {
+                    applyIncomingMessage(message)
+                } else if (message.senderId != currentUserId) {
+                    bumpRoomUnread(roomId)
+                }
             }
         }
     }
@@ -225,14 +231,63 @@ class ChatViewModel(
 
     fun selectRoom(roomId: String) {
         if (roomId == _state.value.selectedRoomId) return
+        val previousRoomId = _state.value.selectedRoomId
+        if (previousRoomId != null && _state.value.messages.isNotEmpty()) {
+            roomMessageCache[previousRoomId] = RoomMessageCache(
+                messages = _state.value.messages,
+                hasMoreOlder = _state.value.hasMoreOlder,
+            )
+        }
         viewModelScope.launch {
             chatRoomPreferences.setSelectedRoomId(roomId)
-            repository.disconnectRealtime()
-            openRoom(roomId, _state.value.rooms)
+            val cached = roomMessageCache[roomId]
+            knownMessageIds.clear()
+            _draftMessage.value = ""
+            _typingPeers.value = emptyMap()
+            synchronized(typingPeerJobsLock) {
+                typingPeerJobs.values.forEach { it.cancel() }
+                typingPeerJobs.clear()
+            }
+            _state.value = _state.value.copy(
+                selectedRoomId = roomId,
+                messages = cached?.messages ?: emptyList(),
+                isLoading = cached == null,
+                hasMoreOlder = cached?.hasMoreOlder ?: true,
+                isLoadingOlder = false,
+                error = null,
+                replyToMessage = null,
+                rooms = clearUnreadForRoom(_state.value.rooms, roomId),
+            )
+            cached?.messages?.mapNotNull { it._id }?.let { knownMessageIds.addAll(it) }
+            openRoom(roomId, _state.value.rooms, hadCachedMessages = cached != null)
         }
     }
 
-    private suspend fun openRoom(roomId: String, rooms: List<ChatRoomDto>) {
+    private fun clearUnreadForRoom(
+        rooms: List<ChatRoomDto>,
+        roomId: String,
+    ): List<ChatRoomDto> =
+        rooms.map { if (it.id == roomId) it.copy(unreadCount = 0) else it }
+
+    private fun bumpRoomUnread(roomId: String) {
+        _state.update { st ->
+            st.copy(
+                rooms = st.rooms.map { room ->
+                    if (room.id == roomId) {
+                        room.copy(unreadCount = room.unreadCount + 1)
+                    } else {
+                        room
+                    }
+                },
+            )
+        }
+    }
+
+    private suspend fun openRoom(
+        roomId: String,
+        rooms: List<ChatRoomDto>,
+        hadCachedMessages: Boolean = false,
+    ) {
         typingEmitJob?.cancel()
         typingEmitJob = null
         synchronized(typingPeerJobsLock) {
@@ -243,58 +298,74 @@ class ChatViewModel(
         _draftMessage.value = ""
         _typingPeers.value = emptyMap()
         val hasTeam = loadTeamProfileGate()
-        _state.value = _state.value.copy(
-            isLoading = true,
-            isRoomsLoading = false,
-            rooms = rooms,
-            selectedRoomId = roomId,
-            hasTeamProfileForGlobalChat = hasTeam,
-            error = null,
-            messages = emptyList(),
-            currentUserId = currentUserId,
-            currentUserRole = currentUserRole,
-            hasMoreOlder = true,
-            isLoadingOlder = false,
-            isSending = false,
-            replyToMessage = null,
-            activeActionMessageId = null,
-            confirmDeleteMessageId = null,
-            selectedMessageIds = emptySet(),
-            confirmBulkDelete = false,
-            isDeletingSelection = false,
-            deletingMessageId = null,
-            newestMessageKey = null,
-            scrollToLatestNonce = 0L,
-            sendFailure = null,
-            otherReadUptoMessageId = null,
+        if (!hadCachedMessages) {
+            _state.value = _state.value.copy(
+                isLoading = true,
+                isRoomsLoading = false,
+                rooms = rooms,
+                selectedRoomId = roomId,
+                hasTeamProfileForGlobalChat = hasTeam,
+                error = null,
+                messages = emptyList(),
+                currentUserId = currentUserId,
+                currentUserRole = currentUserRole,
+                hasMoreOlder = true,
+                isLoadingOlder = false,
+                isSending = false,
+                replyToMessage = null,
+                activeActionMessageId = null,
+                confirmDeleteMessageId = null,
+                selectedMessageIds = emptySet(),
+                confirmBulkDelete = false,
+                isDeletingSelection = false,
+                deletingMessageId = null,
+                newestMessageKey = null,
+                scrollToLatestNonce = 0L,
+                sendFailure = null,
+                otherReadUptoMessageId = null,
+            )
+        } else {
+            _state.value = _state.value.copy(
+                isRoomsLoading = false,
+                rooms = rooms,
+                selectedRoomId = roomId,
+                hasTeamProfileForGlobalChat = hasTeam,
+            )
+        }
+        repository.connectRealtimeRooms(
+            roomIds = rooms.map { it.id },
+            onMessage = ::onIncomingMessage,
+            onDeleteMessage = ::onDeletedMessage,
+            onTyping = ::onTypingFromPeer,
+            onRead = ::onRoomReadEvent,
         )
         repository.loadRecentMessages(roomId, beforeMessageId = null, limit = PAGE_SIZE)
             .onSuccess { loaded ->
                 knownMessageIds.clear()
                 knownMessageIds.addAll(loaded.mapNotNull { it._id })
                 val capped = capNewestFirst(loaded, CHAT_MAX_MESSAGES_IN_MEMORY)
+                roomMessageCache[roomId] = RoomMessageCache(
+                    messages = capped,
+                    hasMoreOlder = loaded.size >= PAGE_SIZE,
+                )
                 _state.value = _state.value.copy(
                     isLoading = false,
                     messages = capped,
                     selectedRoomId = roomId,
                     hasMoreOlder = loaded.size >= PAGE_SIZE,
-                )
-                repository.connectRealtime(
-                    roomId = roomId,
-                    onMessage = ::onIncomingMessage,
-                    onDeleteMessage = ::onDeletedMessage,
-                    onTyping = ::onTypingFromPeer,
-                    onRead = ::onRoomReadEvent,
+                    rooms = clearUnreadForRoom(_state.value.rooms, roomId),
                 )
                 capped.firstOrNull()?._id?.let { newestId ->
                     repository.markRoomRead(roomId, newestId)
                 }
             }
             .onFailure { e ->
-                _state.value = _state.value.copy(
-                    isLoading = false,
-                    error = e.toUserMessageRu(res),
-                )
+                if (!hadCachedMessages) {
+                    _state.value = _state.value.copy(
+                        isLoading = false,
+                        error = e.toUserMessageRu(res),
+                    )
+                }
             }
     }
 

@@ -10,6 +10,7 @@ data class ChatRoomDto(
     val title: String,
     val sortOrder: Int = 0,
     val archivedAt: String? = null,
+    val unreadCount: Int = 0,
 )
 
 @Immutable

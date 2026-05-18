@@ -20,6 +20,9 @@ import {
   TeamForumTopic,
   TeamForumTopicDocument,
 } from './schemas/team-forum-topic.schema';
+import {
+  TeamForumTopicReadState,
+} from './schemas/team-forum-topic-read-state.schema';
 import { TeamNewsAttachmentsService } from './team-news-attachments.service';
 import { TeamsService } from './teams.service';
 import { StickerAccessService } from './sticker-access.service';
@@ -30,6 +33,7 @@ export type TeamForumTopicRow = {
   title: string;
   createdByUserId: string;
   messageCount: number;
+  unreadCount: number;
   lastMessageAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -81,6 +85,8 @@ export class TeamForumService {
     private readonly topicModel: Model<TeamForumTopicDocument>,
     @InjectModel(TeamForumMessage.name)
     private readonly messageModel: Model<TeamForumMessageDocument>,
+    @InjectModel(TeamForumTopicReadState.name)
+    private readonly topicReadStateModel: Model<TeamForumTopicReadState>,
     @InjectModel(User.name) private readonly userModel: Model<User>,
     private readonly teams: TeamsService,
     private readonly teamNewsAttachments: TeamNewsAttachmentsService,
@@ -103,17 +109,82 @@ export class TeamForumService {
     }
   }
 
-  private topicRow(doc: TeamForumTopicDocument): TeamForumTopicRow {
+  private topicRow(
+    doc: TeamForumTopicDocument,
+    extras?: { messageCount?: number; unreadCount?: number },
+  ): TeamForumTopicRow {
     return {
       id: doc._id.toString(),
       teamId: doc.teamId.toString(),
       title: doc.title,
       createdByUserId: doc.createdByUserId,
-      messageCount: doc.messageCount,
+      messageCount: extras?.messageCount ?? doc.messageCount ?? 0,
+      unreadCount: extras?.unreadCount ?? 0,
       lastMessageAt: doc.lastMessageAt ? doc.lastMessageAt.toISOString() : null,
       createdAt: doc.createdAt?.toISOString() ?? new Date().toISOString(),
       updatedAt: doc.updatedAt?.toISOString() ?? new Date().toISOString(),
     };
+  }
+
+  private async countUnreadForumMessages(
+    userId: string,
+    topicIds: Types.ObjectId[],
+  ): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    if (topicIds.length === 0) return out;
+    const readStates = await this.topicReadStateModel
+      .find({ userId, topicId: { $in: topicIds } })
+      .lean()
+      .exec();
+    const readByTopic = new Map(
+      readStates.map((r) => [
+        (r.topicId as Types.ObjectId).toString(),
+        r.lastReadMessageId,
+      ]),
+    );
+    await Promise.all(
+      topicIds.map(async (topicOid) => {
+        const key = topicOid.toString();
+        const lastRead = readByTopic.get(key);
+        const filter: Record<string, unknown> = {
+          topicId: topicOid,
+          deletedAt: null,
+          senderUserId: { $ne: userId },
+        };
+        if (lastRead && Types.ObjectId.isValid(lastRead)) {
+          filter._id = { $gt: new Types.ObjectId(lastRead) };
+        }
+        const n = await this.messageModel.countDocuments(filter).exec();
+        out.set(key, n);
+      }),
+    );
+    return out;
+  }
+
+  async markTopicRead(
+    teamId: string,
+    topicId: string,
+    userId: string,
+    messageId: string,
+  ): Promise<{ topicId: string; messageId: string }> {
+    await this.teams.getTeamIfMemberOrThrow(teamId, userId);
+    if (!Types.ObjectId.isValid(topicId) || !Types.ObjectId.isValid(messageId)) {
+      throw new BadRequestException('Invalid id');
+    }
+    const topOid = new Types.ObjectId(topicId);
+    const teamOid = new Types.ObjectId(teamId);
+    const topic = await this.topicModel.findOne({ _id: topOid, teamId: teamOid });
+    if (!topic) {
+      throw new NotFoundException('Topic not found');
+    }
+    await this.topicReadStateModel
+      .updateOne(
+        { topicId: topOid, userId },
+        { $set: { lastReadMessageId: messageId } },
+        { upsert: true },
+      )
+      .exec();
+    return { topicId, messageId };
   }
 
   private assertZlobyakaStickerPayload(text: string): void {
@@ -222,9 +293,34 @@ export class TeamForumService {
       .find({ teamId: tid })
       .sort({ lastMessageAt: -1, updatedAt: -1 })
       .lean();
-    return rows.map((r) =>
-      this.topicRow(r as unknown as TeamForumTopicDocument),
+    const topicIds = rows.map(
+      (r) => (r as { _id: Types.ObjectId })._id as Types.ObjectId,
     );
+    const countAgg = await this.messageModel.aggregate<{
+      _id: Types.ObjectId;
+      count: number;
+    }>([
+      { $match: { teamId: tid, deletedAt: null } },
+      { $group: { _id: '$topicId', count: { $sum: 1 } } },
+    ]);
+    const countMap = new Map(
+      countAgg.map((c) => [c._id.toString(), c.count]),
+    );
+    const unreadMap = await this.countUnreadForumMessages(userId, topicIds);
+    return rows.map((r) => {
+      const doc = r as unknown as TeamForumTopicDocument;
+      const id = doc._id.toString();
+      const actualCount = countMap.get(id) ?? 0;
+      if ((doc.messageCount ?? 0) !== actualCount) {
+        void this.topicModel
+          .updateOne({ _id: doc._id }, { $set: { messageCount: actualCount } })
+          .exec();
+      }
+      return this.topicRow(doc, {
+        messageCount: actualCount,
+        unreadCount: unreadMap.get(id) ?? 0,
+      });
+    });
   }
 
   async createTopic(

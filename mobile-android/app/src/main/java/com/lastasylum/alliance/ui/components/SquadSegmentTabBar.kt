@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -37,6 +38,7 @@ data class SquadSegmentTab(
     val icon: ImageVector? = null,
     val selectedContainerColor: Color? = null,
     val unselectedIconTint: Color? = null,
+    val unreadCount: Int = 0,
 )
 
 /**
@@ -137,6 +139,25 @@ fun SquadSegmentTabBar(
                                 scheme.onSurface.copy(alpha = 0.92f)
                             },
                         )
+                        if (tab.unreadCount > 0) {
+                            Spacer(Modifier.width(5.dp))
+                            Surface(
+                                shape = CircleShape,
+                                color = if (selected) {
+                                    Color.White.copy(alpha = 0.92f)
+                                } else {
+                                    Color(0xFFFF5252)
+                                },
+                            ) {
+                                Text(
+                                    text = if (tab.unreadCount > 99) "99+" else tab.unreadCount.toString(),
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (selected) Color(0xFF8B3A1A) else Color.White,
+                                )
+                            }
+                        }
                     }
                 }
             }

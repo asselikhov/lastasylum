@@ -75,6 +75,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -184,6 +185,7 @@ fun TeamForumNavHost(
 ) {
     val nav = rememberNavController()
     val topicTitles = remember { mutableStateMapOf<String, String>() }
+    var listRefreshNonce by remember { mutableIntStateOf(0) }
     LaunchedEffect(forumTabReselectSignal) {
         if (forumTabReselectSignal > 0) {
             nav.popBackStack(ForumRoutes.LIST, inclusive = false)
@@ -200,6 +202,7 @@ fun TeamForumNavHost(
                 canManageTopics = canManageTopics,
                 teamsRepository = teamsRepository,
                 topicTitles = topicTitles,
+                refreshNonce = listRefreshNonce,
                 onOpenTopic = { t ->
                     topicTitles[t.id] = t.title
                     nav.navigate(ForumRoutes.topic(t.id))
@@ -231,7 +234,10 @@ fun TeamForumNavHost(
                 forumSocket = forumSocket,
                 tokenStore = tokenStore,
                 enabledStickerPackKeys = enabledStickerPackKeys,
-                onBack = { nav.popBackStack() },
+                onBack = {
+                    nav.popBackStack()
+                    listRefreshNonce++
+                },
             )
         }
     }
@@ -243,6 +249,7 @@ private fun TeamForumListRoute(
     canManageTopics: Boolean,
     teamsRepository: TeamsRepository,
     topicTitles: MutableMap<String, String>,
+    refreshNonce: Int,
     onOpenTopic: (TeamForumTopicDto) -> Unit,
     @Suppress("UNUSED_PARAMETER") onBack: () -> Unit,
 ) {
@@ -277,7 +284,7 @@ private fun TeamForumListRoute(
         }
     }
 
-    LaunchedEffect(teamId) {
+    LaunchedEffect(teamId, refreshNonce) {
         reload()
     }
 
@@ -660,12 +667,14 @@ private fun TeamForumTopicChatRoute(
         draft = ""
         teamsRepository.listForumMessages(teamId, topicId, before = null, limit = 50)
             .onSuccess { page ->
-                messages.addAll(
-                    page.filter { m ->
-                        m.deletedAt.isNullOrBlank() ||
-                            m.deletedAt.equals("null", ignoreCase = true)
-                    },
-                )
+                val visible = page.filter { m ->
+                    m.deletedAt.isNullOrBlank() ||
+                        m.deletedAt.equals("null", ignoreCase = true)
+                }
+                messages.addAll(visible)
+                visible.firstOrNull()?.id?.let { newestId ->
+                    teamsRepository.markForumTopicRead(teamId, topicId, newestId)
+                }
             }
             .onFailure { e -> error = e.toUserMessageRu(res) }
         loading = false

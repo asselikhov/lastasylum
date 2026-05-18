@@ -108,7 +108,22 @@ class ChatSocketManager {
             emitConnectionState(ChatConnectionState.Disconnected)
             return
         }
-        if (socket?.connected() == true && subscribedRoomIds.toSet() == distinct.toSet()) {
+        val existing = socket
+        if (existing?.connected() == true && lastBaseUrl == baseUrl.trimEnd('/')) {
+            val prev = subscribedRoomIds.toSet()
+            val next = distinct.toSet()
+            if (prev == next) {
+                emitConnectionState(ChatConnectionState.Connected)
+                return
+            }
+            for (rid in next - prev) {
+                existing.emit(
+                    "room:join",
+                    JSONObject().put("roomId", rid),
+                )
+            }
+            subscribedRoomIds = distinct
+            emitConnectionState(ChatConnectionState.Connected)
             return
         }
         subscribedRoomIds = distinct

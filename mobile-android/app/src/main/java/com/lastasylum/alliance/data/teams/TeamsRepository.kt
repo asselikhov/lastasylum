@@ -165,6 +165,19 @@ class TeamsRepository(
     suspend fun deleteForumTopic(teamId: String, topicId: String): Result<Unit> =
         runCatching { teamsApi.deleteForumTopic(teamId, topicId).let { } }
 
+    suspend fun markForumTopicRead(
+        teamId: String,
+        topicId: String,
+        messageId: String,
+    ): Result<Unit> =
+        runCatching {
+            teamsApi.markForumTopicRead(
+                teamId,
+                topicId,
+                MarkTeamForumTopicReadBody(messageId = messageId),
+            )
+        }
+
     suspend fun listForumMessages(
         teamId: String,
         topicId: String,

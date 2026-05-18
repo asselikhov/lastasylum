@@ -143,6 +143,13 @@ interface TeamsApi {
         @Path("topicId") topicId: String,
     ): OkResponse
 
+    @POST("teams/{teamId}/forum/topics/{topicId}/read")
+    suspend fun markForumTopicRead(
+        @Path("teamId") teamId: String,
+        @Path("topicId") topicId: String,
+        @Body body: MarkTeamForumTopicReadBody,
+    ): Map<String, String?>
+
     @GET("teams/{teamId}/forum/topics/{topicId}/messages")
     suspend fun listForumMessages(
         @Path("teamId") teamId: String,

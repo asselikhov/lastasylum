@@ -45,6 +45,11 @@ export class UpdateTeamForumMessageDto {
   text: string;
 }
 
+export class MarkTeamForumTopicReadDto {
+  @IsString()
+  messageId: string;
+}
+
 export class BulkDeleteTeamForumMessagesDto {
   @IsOptional()
   @IsString()

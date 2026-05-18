@@ -608,6 +608,46 @@ export class ChatService {
     return this.viewMessageForUser(created.toObject<MessageLean>(), userId);
   }
 
+  async countUnreadByRoomIds(
+    userId: string,
+    roomIds: string[],
+  ): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    const valid = roomIds
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    if (valid.length === 0) return out;
+
+    const readStates = await this.chatReadStateModel
+      .find({ userId, roomId: { $in: valid } })
+      .lean()
+      .exec();
+    const readByRoom = new Map(
+      readStates.map((r) => [
+        (r.roomId as Types.ObjectId).toString(),
+        r.lastReadMessageId,
+      ]),
+    );
+
+    await Promise.all(
+      valid.map(async (roomOid) => {
+        const key = roomOid.toString();
+        const lastRead = readByRoom.get(key);
+        const filter: Record<string, unknown> = {
+          roomId: roomOid,
+          deletedAt: null,
+          senderId: { $ne: userId },
+        };
+        if (lastRead && Types.ObjectId.isValid(lastRead)) {
+          filter._id = { $gt: new Types.ObjectId(lastRead) };
+        }
+        const n = await this.messageModel.countDocuments(filter).exec();
+        out.set(key, n);
+      }),
+    );
+    return out;
+  }
+
   async markRoomRead(input: {
     userId: string;
     roomId: string;

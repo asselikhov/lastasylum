@@ -205,9 +205,15 @@ data class TeamForumTopicDto(
     val title: String,
     val createdByUserId: String,
     val messageCount: Int,
+    val unreadCount: Int = 0,
     val lastMessageAt: String? = null,
     val createdAt: String,
     val updatedAt: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class MarkTeamForumTopicReadBody(
+    val messageId: String,
 )
 
 @JsonClass(generateAdapter = true)
