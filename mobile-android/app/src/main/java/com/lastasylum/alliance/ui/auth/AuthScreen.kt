@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -37,6 +38,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.ui.components.BrandLogo
 import com.lastasylum.alliance.ui.components.PrimaryPanel
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import java.text.SimpleDateFormat
@@ -83,6 +85,7 @@ fun AuthScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .statusBarsPadding()
                 .navigationBarsPadding()
                 .imePadding()
                 .padding(
@@ -98,17 +101,22 @@ fun AuthScreen(
                     .verticalScroll(scroll),
                 verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.sectionGap),
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.headerSubtitleGap)) {
-                Text(
-                    text = stringResource(R.string.auth_brand),
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-                Text(
-                    text = stringResource(R.string.auth_tagline),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.headerSubtitleGap),
+                ) {
+                    BrandLogo(size = 104.dp, cornerRadius = 24.dp)
+                    Text(
+                        text = stringResource(R.string.auth_brand),
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                    Text(
+                        text = stringResource(R.string.auth_tagline),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
 
                 PrimaryPanel {

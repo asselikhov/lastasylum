@@ -11,7 +11,9 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.lastasylum.alliance.R
 
 /**
- * Голосовой хаб оверлея: кнопка-хаб раскрывает «Звук» и «Микрофон» **вправо**, не сдвигая столбец FAB.
+ * Голосовой хаб: «Звук» и «Микрофон» раскрываются в сторону, свободную от края экрана
+ * ([expandTowardStart] = true → влево, когда панель у правого края).
+ * Якорь фиксированной ширины — хаб не смещается при раскрытии.
  */
 class OverlayVoiceControls(
     private val context: Context,
@@ -19,7 +21,7 @@ class OverlayVoiceControls(
     private val dp: (Int) -> Int,
     private val makeMiniFab: (iconRes: Int, cd: String) -> FloatingActionButton,
 ) {
-    val root: LinearLayout
+    val root: FrameLayout
     val btnHub: FloatingActionButton
     val btnSound: FloatingActionButton
     val btnMic: FloatingActionButton
@@ -29,11 +31,15 @@ class OverlayVoiceControls(
     private val micSlot: LinearLayout
     private val soundLabel: TextView
     private val micLabel: TextView
+    private val slotsRow: LinearLayout
 
     private var expanded = false
+    /** true — раскрытие влево (панель у правого края экрана). */
+    var expandTowardStart: Boolean = false
+        private set
+
     var onSoundToggle: (() -> Unit)? = null
     var onMicToggle: (() -> Unit)? = null
-    /** После раскрытия/сворачивания — обновить размер overlay-окна (рост только вправо). */
     var onExpansionChanged: (() -> Unit)? = null
 
     init {
@@ -100,29 +106,64 @@ class OverlayVoiceControls(
             )
         }
 
-        root = LinearLayout(context).apply {
+        slotsRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            addView(btnHub, LinearLayout.LayoutParams(btnSize, btnSize))
+            clipChildren = false
+            clipToPadding = false
+        }
+
+        root = FrameLayout(context).apply {
+            clipChildren = false
+            clipToPadding = false
             addView(
-                soundSlot,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { marginStart = gap },
-            )
-            addView(
-                micSlot,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { marginStart = gap },
+                slotsRow,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.START or Gravity.CENTER_VERTICAL,
+                ),
             )
         }
 
+        rebuildSlotOrder()
         btnHub.setOnClickListener { toggleExpanded() }
         btnSound.setOnClickListener { onSoundToggle?.invoke() }
         btnMic.setOnClickListener { onMicToggle?.invoke() }
+    }
+
+    fun setExpandTowardStart(towardStart: Boolean) {
+        if (expandTowardStart == towardStart) return
+        expandTowardStart = towardStart
+        rebuildSlotOrder()
+        root.requestLayout()
+    }
+
+    private fun rebuildSlotOrder() {
+        slotsRow.removeAllViews()
+        val btnSize = dp(44)
+        val gap = dp(6)
+        val hubLp = LinearLayout.LayoutParams(btnSize, btnSize)
+        fun slotLp(withStartGap: Boolean) = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply {
+            if (withStartGap) marginStart = gap
+        }
+
+        if (expandTowardStart) {
+            slotsRow.addView(soundSlot, slotLp(withStartGap = false))
+            slotsRow.addView(micSlot, slotLp(withStartGap = true))
+            slotsRow.addView(btnHub, hubLp)
+            (slotsRow.layoutParams as? FrameLayout.LayoutParams)?.gravity =
+                Gravity.END or Gravity.CENTER_VERTICAL
+        } else {
+            slotsRow.addView(btnHub, hubLp)
+            slotsRow.addView(soundSlot, slotLp(withStartGap = true))
+            slotsRow.addView(micSlot, slotLp(withStartGap = true))
+            (slotsRow.layoutParams as? FrameLayout.LayoutParams)?.gravity =
+                Gravity.START or Gravity.CENTER_VERTICAL
+        }
     }
 
     private fun makeToggleLabel(text: String): TextView =

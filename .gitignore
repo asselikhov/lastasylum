@@ -25,6 +25,7 @@ backend/dist/
 backend/coverage/
 
 # --- Android ---
+mobile-android/la_logo.png
 mobile-android/.gradle/
 mobile-android/**/build/
 mobile-android/.idea/

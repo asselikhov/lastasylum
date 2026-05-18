@@ -1,16 +1,14 @@
 package com.lastasylum.alliance.overlay
 
 import android.content.Context
-import android.graphics.Rect
 import android.view.Gravity
-import android.view.TouchDelegate
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 
 /**
- * Кнопка «Свернуть/развернуть» с чипом замка в правом верхнем углу (как badge на FAB).
- * Экономит место в столбце панели; замок доступен и в свёрнутом режиме.
+ * Кнопка «Свернуть/развернуть» с компактным чипом замка в правом верхнем углу.
+ * Чип мелкий и приподнят, чтобы не перехватывать тап по основной кнопке.
  */
 internal object OverlayPanelCollapseHost {
 
@@ -22,11 +20,10 @@ internal object OverlayPanelCollapseHost {
         lockButton: ImageView,
     ): FrameLayout {
         OverlayTickerUi.styleOverlayIconButton(fabCtx, collapseButton, sideDp = 42f)
-        OverlayTickerUi.styleOverlayLockChipBase(fabCtx, lockButton)
+        OverlayTickerUi.styleOverlayLockChipBase(fabCtx, lockButton, sideDp = 18f)
 
         val hostSide = dp(44)
-        val lockSide = dp(26)
-        val cornerOverlap = dp(3)
+        val lockSide = dp(18)
 
         return FrameLayout(context).apply {
             clipChildren = false
@@ -40,25 +37,13 @@ internal object OverlayPanelCollapseHost {
             addView(
                 lockButton,
                 FrameLayout.LayoutParams(lockSide, lockSide, Gravity.TOP or Gravity.END).apply {
-                    topMargin = -cornerOverlap
-                    marginEnd = -cornerOverlap
+                    topMargin = -dp(7)
+                    marginEnd = dp(1)
                 },
             )
-            lockButton.translationZ = 6f
+            lockButton.translationZ = 4f
             collapseButton.translationZ = 2f
-
-            post { installLockTouchDelegate(this, lockButton, dp(10)) }
+            // Без TouchDelegate — расширенная зона замка мешала нажатию «свернуть/развернуть».
         }
-    }
-
-    private fun installLockTouchDelegate(host: ViewGroup, lockButton: ImageView, expandPx: Int) {
-        val rect = Rect()
-        lockButton.getHitRect(rect)
-        if (rect.isEmpty) {
-            host.post { installLockTouchDelegate(host, lockButton, expandPx) }
-            return
-        }
-        rect.inset(-expandPx, -expandPx)
-        host.touchDelegate = TouchDelegate(rect, lockButton)
     }
 }

@@ -5,8 +5,9 @@
     <string name="launch_splash_welcome_subtitle">Загрузка интерфейса…</string>
 
     <!-- Auth -->
+    <string name="cd_app_logo">Логотип SquadRelay</string>
     <string name="auth_brand">SquadRelay</string>
-    <string name="auth_tagline">Чат, оверлей, голос.</string>
+    <string name="auth_tagline">Чат, оверлей и голос для союза</string>
     <string name="auth_tab_login">Вход</string>
     <string name="auth_tab_register">Регистрация</string>
     <string name="auth_username">Имя в игре</string>

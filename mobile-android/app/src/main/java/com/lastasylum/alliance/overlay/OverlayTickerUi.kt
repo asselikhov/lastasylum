@@ -119,12 +119,8 @@ object OverlayTickerUi {
         view.scaleType = ImageView.ScaleType.CENTER
         view.minimumWidth = side
         view.minimumHeight = side
-        view.setPadding(
-            dp(context, 5f).toInt(),
-            dp(context, 5f).toInt(),
-            dp(context, 5f).toInt(),
-            dp(context, 5f).toInt(),
-        )
+        val pad = dp(context, if (sideDp <= 20f) 3f else 5f).toInt()
+        view.setPadding(pad, pad, pad, pad)
         applyOverlayLockChipVisual(context, view, locked = false, sideDp = sideDp)
     }
 

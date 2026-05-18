@@ -46,8 +46,10 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -212,6 +214,8 @@ class CombatOverlayService : Service() {
         )
     }
     private var overlayVoiceControls: OverlayVoiceControls? = null
+    /** Фиксированный слот голосового хаба (44dp) — раскрытие не раздувает столбец FAB. */
+    private var overlayVoiceAnchor: FrameLayout? = null
     private var voiceSession: VoiceChatSession? = null
     private var pendingVoiceMicEnable = false
     private var voicePermissionReceiverRegistered = false
@@ -1277,6 +1281,38 @@ class CombatOverlayService : Service() {
         val screenW = resources.displayMetrics.widthPixels
         val wAnchor = maxOf(w, maxOf(overlayPanelStableAnchorWidthPx, dp(160)))
         overlayPanelAnchoredEnd = params.x + wAnchor / 2 >= screenW / 2
+        syncOverlayVoiceExpandLayout()
+    }
+
+    private fun syncOverlayVoiceExpandLayout() {
+        overlayVoiceControls?.setExpandTowardStart(overlayPanelAnchoredEnd)
+        val gravity = if (overlayPanelAnchoredEnd) {
+            Gravity.END or Gravity.CENTER_VERTICAL
+        } else {
+            Gravity.START or Gravity.CENTER_VERTICAL
+        }
+        (overlayVoiceControls?.root?.layoutParams as? FrameLayout.LayoutParams)?.gravity = gravity
+        overlayVoiceAnchor?.requestLayout()
+    }
+
+    /** После раскрытия голоса влево сдвигаем x окна, чтобы хаб остался на месте. */
+    private fun requestOverlayPanelRelayoutWithAnchor() {
+        val wr = overlayView ?: return
+        val p = overlayMainWindowParams ?: return
+        val mgr = windowManager ?: return
+        val widthBefore = wr.width
+        wr.requestLayout()
+        wr.post {
+            if (!wr.isAttachedToWindow) return@post
+            val widthAfter = wr.width
+            if (widthBefore > 0 && widthAfter > 0 && widthAfter != widthBefore &&
+                overlayVoiceControls?.expandTowardStart == true
+            ) {
+                p.x = (p.x - (widthAfter - widthBefore)).coerceAtLeast(0)
+            }
+            runCatching { mgr.updateViewLayout(wr, p) }
+            syncOverlayPanelEdgeLayout()
+        }
     }
 
     private fun showOverlayControl() {
@@ -1466,12 +1502,22 @@ class CombatOverlayService : Service() {
                     topMargin = gap
                 },
             )
+            val voiceAnchor = FrameLayout(this@CombatOverlayService).apply {
+                clipChildren = false
+                clipToPadding = false
+                addView(
+                    voiceControls.root,
+                    FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        Gravity.START or Gravity.CENTER_VERTICAL,
+                    ),
+                )
+            }
+            overlayVoiceAnchor = voiceAnchor
             addView(
-                voiceControls.root,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply {
+                voiceAnchor,
+                LinearLayout.LayoutParams(fabColW, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                     topMargin = gap
                 },
             )
@@ -1484,10 +1530,7 @@ class CombatOverlayService : Service() {
             clipToPadding = false
             addView(
                 messageFabColumn,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ),
+                LinearLayout.LayoutParams(fabColW, LinearLayout.LayoutParams.WRAP_CONTENT),
             )
         }
 
@@ -1529,14 +1572,8 @@ class CombatOverlayService : Service() {
             )
         }
 
-        voiceControls.onExpansionChanged = {
-            val wr = windowRoot
-            wr.post {
-                if (!wr.isAttachedToWindow) return@post
-                val p = overlayMainWindowParams ?: return@post
-                runCatching { manager.updateViewLayout(wr, p) }
-            }
-        }
+        voiceControls.onExpansionChanged = { requestOverlayPanelRelayoutWithAnchor() }
+        syncOverlayVoiceExpandLayout()
 
         overlayOuterRow = outerRow
         overlayControlsStack = buttonStack
@@ -1956,6 +1993,22 @@ class CombatOverlayService : Service() {
                             color = MaterialTheme.colorScheme.surface,
                         ) {
                             Column(Modifier.fillMaxSize()) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 2.dp, end = 4.dp),
+                                    horizontalArrangement = Arrangement.End,
+                                ) {
+                                    IconButton(
+                                        onClick = { hideOverlayChatTeamPanel() },
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Close,
+                                            contentDescription = getString(R.string.overlay_history_close_cd),
+                                            tint = MaterialTheme.colorScheme.onSurface,
+                                        )
+                                    }
+                                }
                                 Box(
                                     Modifier
                                         .fillMaxWidth()
@@ -2006,18 +2059,6 @@ class CombatOverlayService : Service() {
                                                 initialMainSection = TeamMainSection.News,
                                             )
                                         }
-                                    }
-                                    IconButton(
-                                        onClick = { hideOverlayChatTeamPanel() },
-                                        modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .padding(top = 4.dp, end = 4.dp),
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Outlined.Close,
-                                            contentDescription = getString(R.string.overlay_history_close_cd),
-                                            tint = MaterialTheme.colorScheme.onSurface,
-                                        )
                                     }
                                 }
                                 TabRow(selectedTabIndex = selectedTab) {
@@ -2073,8 +2114,8 @@ class CombatOverlayService : Service() {
                 val safe = windowInsets.getInsets(safeTypes)
                 val ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime())
                 val bottom = maxOf(safe.bottom, ime.bottom) + keyboardGapPx
-                // safe.top — статус-бар + вырез под камеру; иначе ChatRoomsBar уезжает под notch.
-                view.setPadding(safe.left, safe.top, safe.right, bottom)
+                // Верхний отступ — в Compose (крестик в строке с камерой; комнаты — statusBarsPadding).
+                view.setPadding(safe.left, 0, safe.right, bottom)
                 WindowInsetsCompat.Builder(windowInsets)
                     .setInsets(WindowInsetsCompat.Type.ime(), Insets.NONE)
                     .setInsets(safeTypes, Insets.NONE)
@@ -2255,6 +2296,7 @@ class CombatOverlayService : Service() {
         overlayMessageFabColumn = null
         overlayBtnMessageFab = null
         overlayCollapseButton = null
+        overlayVoiceAnchor = null
         overlayPanelAnchoredEnd = false
         overlayPanelStableAnchorWidthPx = 0
         windowManager = null

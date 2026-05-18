@@ -29,6 +29,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.ui.components.AtmosphericBackground
+import com.lastasylum.alliance.ui.components.BrandLogo
 import com.lastasylum.alliance.ui.components.GlassSurface
 
 @Composable
@@ -113,9 +114,10 @@ private fun LaunchSplashScaffold(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 26.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 val scheme = MaterialTheme.colorScheme
+                BrandLogo(size = 112.dp, cornerRadius = 26.dp)
                 Text(
                     text = stringResource(R.string.app_name),
                     style = MaterialTheme.typography.headlineMedium,
