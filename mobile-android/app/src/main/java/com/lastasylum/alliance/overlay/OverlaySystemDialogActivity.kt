@@ -78,7 +78,7 @@ class OverlaySystemDialogActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        if (isFinishing && !deliveredResult) {
+        if (isFinishing && !deliveredResult && !isChangingConfigurations) {
             deliverCanceled()
         }
         super.onDestroy()

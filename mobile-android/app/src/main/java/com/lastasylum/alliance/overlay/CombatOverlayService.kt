@@ -291,6 +291,7 @@ class CombatOverlayService : Service() {
         val params: WindowManager.LayoutParams,
         val prevFlags: Int,
         val prevVisibility: Int,
+        val prevAlpha: Float = 1f,
     )
 
     /** Снимок окон overlay на время системного пикера (TYPE_APPLICATION_OVERLAY выше Activity — иначе галерея «под» чатом). */
@@ -315,6 +316,7 @@ class CombatOverlayService : Service() {
                     params = params,
                     prevFlags = params.flags,
                     prevVisibility = view.visibility,
+                    prevAlpha = view.alpha,
                 ),
             )
             if (hideFromScreen && view.visibility != View.GONE) {
@@ -347,8 +349,10 @@ class CombatOverlayService : Service() {
                 params = params,
                 prevFlags = params.flags,
                 prevVisibility = root.visibility,
+                prevAlpha = root.alpha,
             ),
         )
+        // GONE: TYPE_APPLICATION_OVERLAY иначе перекрывает системную Activity пикера.
         if (root.visibility != View.GONE) {
             root.visibility = View.GONE
         }
@@ -369,6 +373,7 @@ class CombatOverlayService : Service() {
             for (snap in overlayTouchPassthroughSnaps) {
                 snap.params.flags = snap.prevFlags
                 snap.view.visibility = snap.prevVisibility
+                snap.view.alpha = snap.prevAlpha
                 if (snap.view.isAttachedToWindow) {
                     runCatching { mgr.updateViewLayout(snap.view, snap.params) }
                 }
@@ -414,20 +419,43 @@ class CombatOverlayService : Service() {
         owner.activityResultRegistry.dispatchResult(requestCode, resultCode, data)
     }
 
+    /**
+     * Единственный надёжный путь для оверлея: [ChatViewModel.onImagesPicked].
+     * [ActivityResultRegistry.dispatchResult] часто не доходит до [rememberLauncherForActivityResult]
+     * после GONE/restore панели (другой requestCode / пустой parseResult).
+     */
+    private fun applyOverlayPickedUris(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        val vm = overlayChatViewModel
+        if (vm != null) {
+            vm.onImagesPicked(uris)
+            pendingOverlayPickedImageUris = null
+            if (BuildConfig.DEBUG) {
+                Log.d(TAG, "applyOverlayPickedUris: applied ${uris.size} via ChatViewModel")
+            }
+        } else {
+            stashPendingOverlayPickedImages(uris)
+            if (BuildConfig.DEBUG) {
+                Log.d(TAG, "applyOverlayPickedUris: stashed ${uris.size} (vm not ready)")
+            }
+        }
+    }
+
     private fun deliverOverlayPickImagesResult(
         requestCode: Int,
         resultCode: Int,
         data: Intent,
         fallbackUris: List<Uri>,
     ) {
-        if (overlayChatTeamComposeOwner != null) {
-            deliverOverlayActivityResult(requestCode, resultCode, data)
-            return
-        }
         if (resultCode == android.app.Activity.RESULT_OK && fallbackUris.isNotEmpty()) {
-            stashPendingOverlayPickedImages(fallbackUris)
-            overlayChatViewModel?.onImagesPicked(fallbackUris)
+            applyOverlayPickedUris(fallbackUris)
         }
+        // Best-effort для Compose launcher (может не сработать после restore панели).
+        overlayChatTeamComposeOwner?.activityResultRegistry?.dispatchResult(
+            requestCode,
+            resultCode,
+            data,
+        )
     }
 
     private fun deliverOverlayGetContentResult(
@@ -436,14 +464,12 @@ class CombatOverlayService : Service() {
         data: Intent,
         fallbackUri: Uri?,
     ) {
-        if (overlayChatTeamComposeOwner != null) {
-            deliverOverlayActivityResult(requestCode, resultCode, data)
-            return
-        }
-        if (resultCode == android.app.Activity.RESULT_OK && fallbackUri != null) {
-            stashPendingOverlayPickedImages(listOf(fallbackUri))
-            overlayChatViewModel?.onImagesPicked(listOf(fallbackUri))
-        }
+        fallbackUri?.let { applyOverlayPickedUris(listOf(it)) }
+        overlayChatTeamComposeOwner?.activityResultRegistry?.dispatchResult(
+            requestCode,
+            resultCode,
+            data,
+        )
     }
 
     private fun stashPendingOverlayPickedImages(uris: List<Uri>) {
@@ -468,12 +494,12 @@ class CombatOverlayService : Service() {
             mainHandler.post {
                 when (i.action) {
                     OverlaySystemDialogActivity.ACTION_OVERLAY_ACTIVITY_CANCELED -> {
-                        resumeOverlayWindowsAfterSystemActivity()
                         deliverOverlayActivityResult(
                             requestCode = requestCode,
                             resultCode = android.app.Activity.RESULT_CANCELED,
                             data = Intent(),
                         )
+                        resumeOverlayWindowsAfterSystemActivity()
                     }
                     OverlaySystemDialogActivity.ACTION_OVERLAY_PICK_IMAGES_RESULT -> {
                         if (i.getBooleanExtra(OverlaySystemDialogActivity.EXTRA_COPY_FAILED, false)) {
@@ -482,12 +508,12 @@ class CombatOverlayService : Service() {
                                 getString(R.string.chat_attachment_read_failed),
                                 Toast.LENGTH_LONG,
                             ).show()
-                            resumeOverlayWindowsAfterSystemActivity()
                             deliverOverlayActivityResult(
                                 requestCode = requestCode,
                                 resultCode = android.app.Activity.RESULT_CANCELED,
                                 data = Intent(),
                             )
+                            resumeOverlayWindowsAfterSystemActivity()
                             return@post
                         }
                         if (i.getBooleanExtra(OverlaySystemDialogActivity.EXTRA_PARTIAL_COPY_FAILED, false)) {
@@ -501,13 +527,20 @@ class CombatOverlayService : Service() {
                         }
                         val uris = extractPickerUris(i)
                         val data = OverlayImagePickDelivery.intentForPickedImages(uris)
-                        resumeOverlayWindowsAfterSystemActivity()
                         deliverOverlayPickImagesResult(
                             requestCode = requestCode,
                             resultCode = android.app.Activity.RESULT_OK,
                             data = data,
                             fallbackUris = uris,
                         )
+                        resumeOverlayWindowsAfterSystemActivity()
+                        if (uris.isNotEmpty()) {
+                            Toast.makeText(
+                                this@CombatOverlayService,
+                                getString(R.string.chat_attachments_added, uris.size),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
                     }
                     OverlaySystemDialogActivity.ACTION_OVERLAY_GET_CONTENT_RESULT -> {
                         if (i.getBooleanExtra(OverlaySystemDialogActivity.EXTRA_COPY_FAILED, false)) {
@@ -516,12 +549,12 @@ class CombatOverlayService : Service() {
                                 getString(R.string.chat_attachment_read_failed),
                                 Toast.LENGTH_LONG,
                             ).show()
-                            resumeOverlayWindowsAfterSystemActivity()
                             deliverOverlayActivityResult(
                                 requestCode = requestCode,
                                 resultCode = android.app.Activity.RESULT_CANCELED,
                                 data = Intent(),
                             )
+                            resumeOverlayWindowsAfterSystemActivity()
                             return@post
                         }
                         val uri = if (Build.VERSION.SDK_INT >= 33) {
@@ -531,13 +564,20 @@ class CombatOverlayService : Service() {
                             i.getParcelableExtra(OverlaySystemDialogActivity.EXTRA_URI)
                         }
                         val data = OverlayImagePickDelivery.intentForGetContent(uri)
-                        resumeOverlayWindowsAfterSystemActivity()
                         deliverOverlayGetContentResult(
                             requestCode = requestCode,
                             resultCode = android.app.Activity.RESULT_OK,
                             data = data,
                             fallbackUri = uri,
                         )
+                        resumeOverlayWindowsAfterSystemActivity()
+                        uri?.let {
+                            Toast.makeText(
+                                this@CombatOverlayService,
+                                getString(R.string.chat_attachments_added, 1),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
                     }
                     OverlaySystemDialogActivity.ACTION_OVERLAY_MIC_PERMISSION_RESULT -> {
                         val granted = i.getBooleanExtra(OverlaySystemDialogActivity.EXTRA_GRANTED, false)
@@ -547,12 +587,12 @@ class CombatOverlayService : Service() {
                                 intArrayOf(if (granted) 0 else -1),
                             )
                         }
-                        resumeOverlayWindowsAfterSystemActivity()
                         deliverOverlayActivityResult(
                             requestCode = requestCode,
                             resultCode = android.app.Activity.RESULT_OK,
                             data = data,
                         )
+                        resumeOverlayWindowsAfterSystemActivity()
                     }
                 }
             }
@@ -592,9 +632,9 @@ class CombatOverlayService : Service() {
                     return
                 }
                 val i = Intent(this@CombatOverlayService, OverlaySystemDialogActivity::class.java).apply {
+                    // Без CLEAR_TOP: иначе при пересоздании хоста onDestroy шлёт CANCELED и сбивает пикер.
                     addFlags(
                         Intent.FLAG_ACTIVITY_NEW_TASK or
-                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
                             Intent.FLAG_ACTIVITY_SINGLE_TOP or
                             Intent.FLAG_ACTIVITY_NO_ANIMATION,
                     )

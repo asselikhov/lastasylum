@@ -20,7 +20,10 @@ object OverlayImagePickDelivery {
         if (uris.isEmpty()) return Intent()
         val clip = ClipData.newRawUri("images", uris.first())
         uris.drop(1).forEach { clip.addItem(ClipData.Item(it)) }
-        return Intent().apply { clipData = clip }
+        return Intent().apply {
+            clipData = clip
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
     }
 
     fun intentForGetContent(uri: Uri?): Intent =
