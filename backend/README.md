@@ -53,14 +53,7 @@ R2_REGION=auto
 
 ## Maintenance scripts (`scripts/`)
 
-Operator-only tools that read **`backend/.env`** (never commit secrets). Example:
-
-```bash
-# Set SCRIPT_TEAM_TAG, SCRIPT_ALLIANCE_SCOPE, SCRIPT_MEMBER_USERNAMES in .env first
-node scripts/consolidate-obzhory.mjs
-```
-
-Other scripts: `migrate-chat-rooms.mjs`, `normalize-legacy-users.mjs`. Run only against databases you own.
+Operator-only tools — see [`scripts/README.md`](scripts/README.md). They read **`backend/.env`** locally (never commit secrets).
 
 ## Run locally
 

@@ -1,0 +1,37 @@
+name: Bug report
+description: Something is broken in the app or API
+title: "[bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please avoid pasting tokens, passwords, or full `.env` contents.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      placeholder: Expected vs actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App / backend version or commit
+      placeholder: e.g. main @ abc1234, Android build 42
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Where?
+      options:
+        - Android app
+        - Backend API
+        - Both
+    validations:
+      required: true

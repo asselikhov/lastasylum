@@ -1,35 +1,21 @@
 /**
- * One-off: set membershipStatus for legacy users; ensure admin Liveliness is R5.
- * Reads MONGODB_URI and MONGODB_DB_NAME from backend/.env (not committed).
+ * One-off: set membershipStatus for legacy users; optionally promote admin to R5.
+ *
+ * Optional in backend/.env:
+ *   SCRIPT_ADMIN_USERNAME=SomeAdmin
+ *
+ * Usage: node scripts/normalize-legacy-users.mjs
  */
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
+import { loadBackendEnv } from './load-env.mjs';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-function loadEnvFile(filePath) {
-  const text = fs.readFileSync(filePath, 'utf8');
-  const out = {};
-  for (const line of text.split(/\n/)) {
-    const t = line.trim();
-    if (!t || t.startsWith('#')) continue;
-    const i = t.indexOf('=');
-    if (i === -1) continue;
-    const key = t.slice(0, i).trim();
-    out[key] = t.slice(i + 1).trim();
-  }
-  return out;
-}
-
-const envPath = path.join(__dirname, '..', '.env');
-const env = loadEnvFile(envPath);
+const env = loadBackendEnv();
 const uri = env.MONGODB_URI;
 const dbName = env.MONGODB_DB_NAME || 'last_asylum';
+const adminUsername = env.SCRIPT_ADMIN_USERNAME?.trim();
 
 if (!uri) {
-  console.error('Missing MONGODB_URI in backend/.env');
+  console.error('Missing MONGODB_URI in .env');
   process.exit(1);
 }
 
@@ -41,20 +27,25 @@ const legacy = await col.updateMany(
   { $set: { membershipStatus: 'active' } },
 );
 
-const admin = await col.updateMany(
-  { username: { $regex: /^liveliness$/i } },
-  { $set: { role: 'R5', membershipStatus: 'active' } },
-);
+const summary = {
+  legacyMembership: {
+    matched: legacy.matchedCount,
+    modified: legacy.modifiedCount,
+  },
+  adminPromotion: null,
+};
 
-console.log(
-  JSON.stringify(
-    {
-      legacyMembership: { matched: legacy.matchedCount, modified: legacy.modifiedCount },
-      livelinessAdmin: { matched: admin.matchedCount, modified: admin.modifiedCount },
-    },
-    null,
-    2,
-  ),
-);
+if (adminUsername) {
+  const admin = await col.updateMany(
+    { username: { $regex: new RegExp(`^${adminUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
+    { $set: { role: 'R5', membershipStatus: 'active' } },
+  );
+  summary.adminPromotion = {
+    username: adminUsername,
+    matched: admin.matchedCount,
+    modified: admin.modifiedCount,
+  };
+}
 
+console.log(JSON.stringify(summary, null, 2));
 await mongoose.disconnect();

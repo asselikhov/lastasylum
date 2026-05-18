@@ -1,36 +1,16 @@
 /**
  * One-off: create default "Общий" chat room per alliance and set Message.roomId.
- * Run after deploying Message schema with roomId (or run against DB before strict deploy).
- * Reads MONGODB_URI and MONGODB_DB_NAME from backend/.env.
+ * Usage: node scripts/migrate-chat-rooms.mjs
  */
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
+import { loadBackendEnv } from './load-env.mjs';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-function loadEnvFile(filePath) {
-  const text = fs.readFileSync(filePath, 'utf8');
-  const out = {};
-  for (const line of text.split(/\n/)) {
-    const t = line.trim();
-    if (!t || t.startsWith('#')) continue;
-    const i = t.indexOf('=');
-    if (i === -1) continue;
-    const key = t.slice(0, i).trim();
-    out[key] = t.slice(i + 1).trim();
-  }
-  return out;
-}
-
-const envPath = path.join(__dirname, '..', '.env');
-const env = loadEnvFile(envPath);
+const env = loadBackendEnv();
 const uri = env.MONGODB_URI;
 const dbName = env.MONGODB_DB_NAME || 'last_asylum';
 
 if (!uri) {
-  console.error('Missing MONGODB_URI in backend/.env');
+  console.error('Missing MONGODB_URI in .env');
   process.exit(1);
 }
 

@@ -154,3 +154,4 @@ Write-Host "Next run backend:" -ForegroundColor Cyan
 Write-Host "   cd backend; npm run start:dev"
 Write-Host ""
 Write-Host "Then open mobile-android in Android Studio and run app."
+Write-Host "Linux/macOS: ./setup.sh" -ForegroundColor DarkGray

@@ -22,6 +22,8 @@ Never commit:
 
 Templates: `backend/.env.example`, `local.properties.example`.
 
+Developer guide: [`docs/development.md`](docs/development.md). Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 ## Production checklist (operators)
 
 - Use long random values for `JWT_SECRET` and `JWT_REFRESH_SECRET` (64+ characters).

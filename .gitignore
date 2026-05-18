@@ -29,6 +29,12 @@ mobile-android/.gradle/
 mobile-android/**/build/
 mobile-android/.idea/
 mobile-android/*.iml
+*.apk
+*.aab
+
+# --- Env variants ---
+.env.local
+.env.*.local
 
 # --- Logs and OS ---
 *.log
