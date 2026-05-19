@@ -1390,19 +1390,17 @@ private fun ChatRoomsBar(
     onSelectRoom: (String) -> Unit,
 ) {
     if (rooms.isEmpty()) return
-    val context = LocalContext.current
-    val res = context.resources
     val roomsKey = remember(rooms) {
-        rooms.joinToString("|") { "${it.id}:${it.unreadCount}:${it.title}:${it.sortOrder}" }
+        rooms.joinToString("|") { "${it.id}:${it.unreadCount}:${it.title}" }
     }
     val tabs = remember(roomsKey) {
         rooms.map { room ->
             val kind = room.chatRoomVisualKind()
-            val (accentStart, accentEnd) = when (kind) {
-                ChatRoomVisualKind.GlobalUnion -> ChatRoomTabAccents.unionStart to ChatRoomTabAccents.unionEnd
-                ChatRoomVisualKind.Raid -> ChatRoomTabAccents.raidStart to ChatRoomTabAccents.raidEnd
-                ChatRoomVisualKind.AllianceHub -> ChatRoomTabAccents.hubStart to ChatRoomTabAccents.hubEnd
-                ChatRoomVisualKind.Other -> ChatRoomTabAccents.otherStart to ChatRoomTabAccents.otherEnd
+            val accent = when (kind) {
+                ChatRoomVisualKind.GlobalUnion -> ChatRoomTabAccents.union
+                ChatRoomVisualKind.Raid -> ChatRoomTabAccents.raid
+                ChatRoomVisualKind.AllianceHub -> ChatRoomTabAccents.hub
+                ChatRoomVisualKind.Other -> ChatRoomTabAccents.other
             }
             val icon = when (kind) {
                 ChatRoomVisualKind.GlobalUnion -> Icons.Outlined.Public
@@ -1410,19 +1408,11 @@ private fun ChatRoomsBar(
                 ChatRoomVisualKind.AllianceHub -> Icons.Outlined.Shield
                 ChatRoomVisualKind.Other -> Icons.Outlined.ChatBubbleOutline
             }
-            val subtitle = when (kind) {
-                ChatRoomVisualKind.GlobalUnion -> res.getString(R.string.chat_room_union_hint)
-                ChatRoomVisualKind.Raid -> res.getString(R.string.chat_room_raid_hint)
-                ChatRoomVisualKind.AllianceHub -> res.getString(R.string.chat_room_team_hint)
-                ChatRoomVisualKind.Other -> res.getString(R.string.chat_context_room)
-            }
             ChatRoomTabSpec(
                 id = room.id,
                 label = room.title,
-                subtitle = subtitle,
                 icon = icon,
-                accentStart = accentStart,
-                accentEnd = accentEnd,
+                accent = accent,
                 unreadCount = room.unreadCount,
             )
         }
@@ -1431,7 +1421,7 @@ private fun ChatRoomsBar(
         tabs = tabs,
         selectedId = selectedRoomId,
         onSelect = onSelectRoom,
-        modifier = Modifier.padding(bottom = 12.dp),
+        modifier = Modifier.padding(bottom = 6.dp),
     )
 }
 

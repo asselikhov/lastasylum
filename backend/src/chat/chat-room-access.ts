@@ -18,7 +18,7 @@ export function resolveTeamChatScope(
 }
 
 /**
- * «Союз» — для всех; комната команды и «Рейд» — только участникам этой player team.
+ * «Мир» — для всех; комната команды и «Рейд» — только участникам этой player team.
  */
 export function userMayAccessChatRoom(
   user: Pick<User, 'allianceName' | 'playerTeamId'>,

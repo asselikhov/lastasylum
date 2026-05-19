@@ -84,11 +84,11 @@ Each **player team** gets three rooms in the Chat tab:
 
 | Room | Scope | `ChatRoom.allianceId` |
 |------|--------|------------------------|
-| **Союз** | All alliances and users without a team | `__global__` |
+| **Мир** | All alliances and users without a team | `__global__` |
 | **Team name** (display name) | Members of that team only | `pt:<teamMongoId>` |
 | **Рейд** | Same team; messages feed the combat overlay strip | `pt:<teamMongoId>` |
 
-Users **without** `playerTeamId` only see **Союз**. Rooms are provisioned when a team is created or joined (`TeamsService` → `ChatRoomsService.ensureAllianceChatRoomsForScope`).
+Users **without** `playerTeamId` only see **Мир**. Rooms are provisioned when a team is created or joined (`TeamsService` → `ChatRoomsService.ensureAllianceChatRoomsForScope`).
 
 ## WebSocket overview
 

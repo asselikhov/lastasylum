@@ -6,7 +6,7 @@ import { resolveTeamChatScope, userMayAccessChatRoom } from './chat-room-access'
 describe('chat-room-access', () => {
   const teamId = new Types.ObjectId();
 
-  it('global «Союз» is visible without a player team', () => {
+  it('global «Мир» is visible without a player team', () => {
     expect(
       userMayAccessChatRoom(
         { allianceName: 'SquadRelay', playerTeamId: null },

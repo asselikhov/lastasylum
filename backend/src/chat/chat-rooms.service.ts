@@ -7,7 +7,10 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/global-chat-alliance-id';
+import {
+  GLOBAL_CHAT_ALLIANCE_ID,
+  GLOBAL_CHAT_ROOM_TITLE,
+} from '../common/constants/global-chat-alliance-id';
 import { UsersService } from '../users/users.service';
 import { PlayerTeam, PlayerTeamDocument } from '../users/schemas/player-team.schema';
 import {
@@ -41,7 +44,7 @@ export class ChatRoomsService {
   }
 
   /**
-   * «Союз» for everyone; team hub (display name) + «Рейд» only when [user.playerTeamId] is set.
+   * «Мир» for everyone; team hub (display name) + «Рейд» only when [user.playerTeamId] is set.
    */
   async listRoomsVisibleToUser(
     user: Pick<User, 'allianceName' | 'playerTeamId'>,
@@ -190,7 +193,7 @@ export class ChatRoomsService {
     return created._id;
   }
 
-  /** Cross-alliance lobby: one «Союз» room for everyone (legacy title «Общая» is renamed). */
+  /** Cross-alliance lobby: one «Мир» room for everyone (legacy titles are renamed). */
   async ensureGlobalGeneralRoom(): Promise<void> {
     const current = await this.roomModel
       .findOne({
@@ -201,14 +204,18 @@ export class ChatRoomsService {
     if (!current) {
       await this.roomModel.create({
         allianceId: GLOBAL_CHAT_ALLIANCE_ID,
-        title: 'Союз',
+        title: GLOBAL_CHAT_ROOM_TITLE,
         sortOrder: 0,
         archivedAt: null,
       });
       return;
     }
-    if (current.title === 'Общая' || current.title !== 'Союз') {
-      current.title = 'Союз';
+    if (
+      current.title === 'Общая' ||
+      current.title === 'Союз' ||
+      current.title !== GLOBAL_CHAT_ROOM_TITLE
+    ) {
+      current.title = GLOBAL_CHAT_ROOM_TITLE;
       await current.save();
     }
   }

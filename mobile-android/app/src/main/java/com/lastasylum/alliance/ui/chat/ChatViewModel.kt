@@ -347,31 +347,31 @@ class ChatViewModel(
         val previousNewestId = previousRoomId?.let { rid ->
             roomMessageCache[rid]?.messages?.firstOrNull()?._id
         }
+        val cached = roomMessageCache[roomId]
+        knownMessageIds.clear()
+        messageIdIndex.clear()
+        _draftMessage.value = ""
+        _typingPeers.value = emptyMap()
+        synchronized(typingPeerJobsLock) {
+            typingPeerJobs.values.forEach { it.cancel() }
+            typingPeerJobs.clear()
+        }
+        _state.value = _state.value.copy(
+            selectedRoomId = roomId,
+            messages = cached?.messages ?: emptyList(),
+            isLoading = cached == null,
+            hasMoreOlder = cached?.hasMoreOlder ?: true,
+            isLoadingOlder = false,
+            error = null,
+            replyToMessage = null,
+            rooms = clearUnreadForRoom(_state.value.rooms, roomId),
+        )
+        cached?.messages?.mapNotNull { it._id }?.let { knownMessageIds.addAll(it) }
         viewModelScope.launch {
+            chatRoomPreferences.setSelectedRoomId(roomId)
             if (previousRoomId != null && !previousNewestId.isNullOrBlank()) {
                 markRoomReadUpTo(previousRoomId, previousNewestId)
             }
-            chatRoomPreferences.setSelectedRoomId(roomId)
-            val cached = roomMessageCache[roomId]
-            knownMessageIds.clear()
-            messageIdIndex.clear()
-            _draftMessage.value = ""
-            _typingPeers.value = emptyMap()
-            synchronized(typingPeerJobsLock) {
-                typingPeerJobs.values.forEach { it.cancel() }
-                typingPeerJobs.clear()
-            }
-            _state.value = _state.value.copy(
-                selectedRoomId = roomId,
-                messages = cached?.messages ?: emptyList(),
-                isLoading = cached == null,
-                hasMoreOlder = cached?.hasMoreOlder ?: true,
-                isLoadingOlder = false,
-                error = null,
-                replyToMessage = null,
-                rooms = clearUnreadForRoom(_state.value.rooms, roomId),
-            )
-            cached?.messages?.mapNotNull { it._id }?.let { knownMessageIds.addAll(it) }
             openRoom(roomId, _state.value.rooms, hadCachedMessages = cached != null)
         }
     }

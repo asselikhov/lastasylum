@@ -1,24 +1,19 @@
 package com.lastasylum.alliance.ui.components
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -32,39 +27,31 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.lastasylum.alliance.R
 import com.lastasylum.alliance.ui.theme.SquadRelayPrimary
 import com.lastasylum.alliance.ui.theme.SquadRelaySecondary
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 
-private val roomIndicatorSpring = spring<Float>(
+private val chipColorSpring = spring<Color>(
     dampingRatio = Spring.DampingRatioNoBouncy,
-    stiffness = Spring.StiffnessMedium,
+    stiffness = Spring.StiffnessHigh,
 )
 
 data class ChatRoomTabSpec(
     val id: String,
     val label: String,
-    val subtitle: String,
     val icon: ImageVector,
-    val accentStart: Color,
-    val accentEnd: Color,
+    val accent: Color,
     val unreadCount: Int = 0,
 )
 
 /**
- * Переключатель комнат чата: стеклянная панель, плавный индикатор, иконка + подпись канала.
+ * Компактная лента комнат чата: только иконка + название, без шапки и без тяжёлого sliding-indicator.
  */
 @Composable
 fun ChatRoomsSwitcher(
@@ -74,223 +61,131 @@ fun ChatRoomsSwitcher(
     modifier: Modifier = Modifier,
 ) {
     if (tabs.isEmpty()) return
-    val scheme = MaterialTheme.colorScheme
-    val selectedIndex = tabs.indexOfFirst { it.id == selectedId }.coerceAtLeast(0)
-    val selectedTab = tabs[selectedIndex]
-    val outerShape = RoundedCornerShape(20.dp)
-    val segmentShape = RoundedCornerShape(14.dp)
-    val inset = 5.dp
-
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+    val trackShape = RoundedCornerShape(11.dp)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(trackShape)
+            .background(SquadRelaySurfaces.subtleColor(alpha = 0.32f))
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.chat_rooms_switcher_title),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = scheme.onSurface.copy(alpha = 0.94f),
-                )
-                Text(
-                    text = stringResource(R.string.chat_rooms_switcher_caption),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = scheme.onSurfaceVariant.copy(alpha = 0.78f),
-                )
-            }
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = SquadRelaySurfaces.subtleColor(0.55f),
-                border = SquadRelaySurfaces.panelBorder(alpha = 0.12f),
-            ) {
-                Text(
-                    text = "${selectedIndex + 1}/${tabs.size}",
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Medium,
-                    color = scheme.onSurfaceVariant.copy(alpha = 0.85f),
-                )
-            }
-        }
-
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = outerShape,
-            color = SquadRelaySurfaces.panelColor(alpha = 0.52f),
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp,
-            border = SquadRelaySurfaces.panelBorder(alpha = 0.20f),
-        ) {
-            BoxWithConstraints(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(inset)
-                    .height(58.dp),
-            ) {
-                val tabWidth = maxWidth / tabs.size
-                val density = LocalDensity.current
-                val targetOffsetPx = with(density) { (tabWidth * selectedIndex).toPx() }
-                val indicatorOffsetPx by animateFloatAsState(
-                    targetValue = targetOffsetPx,
-                    animationSpec = roomIndicatorSpring,
-                    label = "chatRoomIndicatorPx",
-                )
-
-                Box(modifier = Modifier.matchParentSize()) {
-                    Box(
-                        modifier = Modifier
-                            .width(tabWidth)
-                            .fillMaxHeight()
-                            .graphicsLayer { translationX = indicatorOffsetPx }
-                            .clip(segmentShape)
-                            .background(
-                                Brush.linearGradient(
-                                    colors = listOf(
-                                        selectedTab.accentStart.copy(alpha = 0.94f),
-                                        selectedTab.accentEnd.copy(alpha = 0.88f),
-                                    ),
-                                ),
-                            ),
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    tabs.forEachIndexed { index, tab ->
-                        val selected = index == selectedIndex
-                        val iconTint = if (selected) {
-                            Color.White.copy(alpha = 0.98f)
-                        } else {
-                            tab.accentStart.copy(alpha = 0.72f)
-                        }
-                        val titleColor = if (selected) {
-                            Color.White.copy(alpha = 0.97f)
-                        } else {
-                            scheme.onSurface.copy(alpha = 0.88f)
-                        }
-                        val subtitleColor = if (selected) {
-                            Color.White.copy(alpha = 0.78f)
-                        } else {
-                            scheme.onSurfaceVariant.copy(alpha = 0.62f)
-                        }
-                        val interaction = remember(tab.id) { MutableInteractionSource() }
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .clip(segmentShape)
-                                .clickable(
-                                    interactionSource = interaction,
-                                    indication = ripple(bounded = true, color = tab.accentStart),
-                                    onClick = { onSelect(tab.id) },
-                                ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 6.dp, vertical = 6.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center,
-                            ) {
-                                Box(contentAlignment = Alignment.TopEnd) {
-                                    Icon(
-                                        imageVector = tab.icon,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(20.dp),
-                                        tint = iconTint,
-                                    )
-                                    if (tab.unreadCount > 0) {
-                                        ChatRoomUnreadDot(
-                                            count = tab.unreadCount,
-                                            selected = selected,
-                                            accent = tab.accentStart,
-                                            modifier = Modifier.offset(x = 6.dp, y = (-4).dp),
-                                        )
-                                    }
-                                }
-                                Spacer(Modifier.height(3.dp))
-                                Text(
-                                    text = tab.label,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    textAlign = TextAlign.Center,
-                                    style = MaterialTheme.typography.labelMedium.copy(
-                                        fontSize = 12.sp,
-                                        letterSpacing = 0.1.sp,
-                                    ),
-                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                                    color = titleColor,
-                                )
-                                Text(
-                                    text = tab.subtitle,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    textAlign = TextAlign.Center,
-                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                                    color = subtitleColor,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
+        tabs.forEach { tab ->
+            ChatRoomChip(
+                tab = tab,
+                selected = tab.id == selectedId,
+                onClick = { onSelect(tab.id) },
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }
 
 @Composable
-private fun ChatRoomUnreadDot(
-    count: Int,
+private fun ChatRoomChip(
+    tab: ChatRoomTabSpec,
     selected: Boolean,
-    accent: Color,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val badgeText = if (count > 99) "99+" else count.toString()
-    Surface(
-        modifier = modifier,
-        shape = CircleShape,
-        color = if (selected) {
-            Color.White.copy(alpha = 0.95f)
+    val scheme = MaterialTheme.colorScheme
+    val chipShape = RoundedCornerShape(9.dp)
+    val containerColor by animateColorAsState(
+        targetValue = if (selected) {
+            tab.accent.copy(alpha = 0.20f)
         } else {
-            Color(0xFFEF4444)
+            Color.Transparent
         },
-        shadowElevation = if (selected) 0.dp else 1.dp,
-    ) {
-        Text(
-            text = badgeText,
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
+        animationSpec = chipColorSpring,
+        label = "chatRoomChipBg",
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (selected) {
+            tab.accent.copy(alpha = 0.72f)
+        } else {
+            scheme.outline.copy(alpha = 0.10f)
+        },
+        animationSpec = chipColorSpring,
+        label = "chatRoomChipBorder",
+    )
+    val iconTint by animateColorAsState(
+        targetValue = if (selected) tab.accent else tab.accent.copy(alpha = 0.62f),
+        animationSpec = chipColorSpring,
+        label = "chatRoomChipIcon",
+    )
+    val labelColor by animateColorAsState(
+        targetValue = if (selected) {
+            scheme.onSurface.copy(alpha = 0.96f)
+        } else {
+            scheme.onSurfaceVariant.copy(alpha = 0.78f)
+        },
+        animationSpec = chipColorSpring,
+        label = "chatRoomChipLabel",
+    )
+    val interaction = remember(tab.id) { MutableInteractionSource() }
+    Surface(
+        modifier = modifier
+            .widthIn(min = 48.dp)
+            .clip(chipShape)
+            .clickable(
+                interactionSource = interaction,
+                indication = ripple(bounded = true, color = tab.accent.copy(alpha = 0.35f)),
+                onClick = onClick,
             ),
-            color = if (selected) accent else Color.White,
-        )
+        shape = chipShape,
+        color = containerColor,
+        border = BorderStroke(if (selected) 1.dp else 0.5.dp, borderColor),
+        shadowElevation = 0.dp,
+        tonalElevation = 0.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = tab.icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(17.dp),
+                    tint = iconTint,
+                )
+                if (tab.unreadCount > 0) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .size(7.dp)
+                            .background(
+                                if (selected) tab.accent else Color(0xFFEF4444),
+                                CircleShape,
+                            ),
+                    )
+                }
+            }
+            Text(
+                text = tab.label,
+                modifier = Modifier.padding(start = 6.dp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontSize = 12.sp,
+                    letterSpacing = 0.02.sp,
+                ),
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                color = labelColor,
+            )
+        }
     }
 }
 
-/** Акценты комнат чата в тоне SquadRelay. */
+/** Акценты комнат чата. */
 object ChatRoomTabAccents {
-    val unionStart = Color(0xFF6366F1)
-    val unionEnd = Color(0xFF818CF8)
-
-    val raidStart = Color(0xFFFF6B35)
-    val raidEnd = Color(0xFFFF9F6B)
-
-    val hubStart = Color(0xFF0D9488)
-    val hubEnd = Color(0xFF2DD4BF)
-
-    val otherStart = SquadRelayPrimary
-    val otherEnd = Color(0xFFC4B5FD)
-
-    val defaultStart = SquadRelaySecondary
-    val defaultEnd = Color(0xFF67E8F9)
+    val union = Color(0xFF818CF8)
+    val raid = Color(0xFFFF7A45)
+    val hub = Color(0xFF2DD4BF)
+    val other = SquadRelayPrimary
+    val fallback = SquadRelaySecondary
 }
