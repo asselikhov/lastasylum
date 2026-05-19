@@ -163,6 +163,7 @@ import com.lastasylum.alliance.overlay.OverlayInteractionSuppressEffect
 import com.lastasylum.alliance.overlay.OverlayModalScope
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.ui.chat.ChatState
+import com.lastasylum.alliance.ui.chat.SquadRelayImageRequests
 import com.lastasylum.alliance.ui.chat.chatAuthedImageRequest
 import com.lastasylum.alliance.ui.chat.ChatVoicePhase
 import com.lastasylum.alliance.ui.chat.chatMessageSemanticsPreview
@@ -1552,10 +1553,7 @@ private fun ChatComposer(
                         ) {
                             Box(Modifier.fillMaxSize()) {
                                 AsyncImage(
-                                    model = ImageRequest.Builder(context)
-                                        .data(uri)
-                                        .crossfade(true)
-                                        .build(),
+                                    model = SquadRelayImageRequests.localUriPreview(context, uri),
                                     contentDescription = null,
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop,
@@ -1663,7 +1661,7 @@ private fun ChatComposer(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 AsyncImage(
-                                    model = ImageRequest.Builder(context).data(uri).crossfade(false).build(),
+                                    model = SquadRelayImageRequests.localUriPreview(context, uri),
                                     contentDescription = null,
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop,
@@ -2187,10 +2185,7 @@ private fun AttachmentPreviewOverlay(
                 .transformable(state = transformState),
         ) {
                 AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(uri)
-                        .crossfade(true)
-                        .build(),
+                    model = SquadRelayImageRequests.localUriPreview(context, uri),
                     contentDescription = null,
                     modifier = Modifier
                         .fillMaxSize()
@@ -2272,10 +2267,7 @@ private fun AttachmentPreviewOverlay(
                                 },
                         ) {
                             AsyncImage(
-                                model = ImageRequest.Builder(context)
-                                    .data(u)
-                                    .crossfade(true)
-                                    .build(),
+                                model = SquadRelayImageRequests.localUriPreview(context, u),
                                 contentDescription = null,
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop,

@@ -136,26 +136,30 @@ class OverlayCommandsPopover(
             cornerDp = 999,
         )
 
-    private fun categoryIconBackground(selected: Boolean, accentColor: Int): GradientDrawable =
-        GradientDrawable().apply {
+    private fun categoryIconBackground(selected: Boolean, accentColor: Int): GradientDrawable {
+        val base = Color.argb(
+            if (selected) 88 else 40,
+            Color.red(accentColor),
+            Color.green(accentColor),
+            Color.blue(accentColor),
+        )
+        val edge = Color.argb(
+            if (selected) 48 else 24,
+            Color.red(accentColor),
+            Color.green(accentColor),
+            Color.blue(accentColor),
+        )
+        return GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(base, edge),
+        ).apply {
             shape = GradientDrawable.OVAL
-            setColor(
-                if (selected) {
-                    Color.argb(
-                        96,
-                        Color.red(accentColor),
-                        Color.green(accentColor),
-                        Color.blue(accentColor),
-                    )
-                } else {
-                    Color.parseColor("#2A2438")
-                },
-            )
             setStroke(
-                dp(2).coerceAtLeast(1),
-                if (selected) accentColor else Color.parseColor("#44506899"),
+                dp(if (selected) 2 else 1).coerceAtLeast(1),
+                if (selected) accentColor else Color.parseColor("#3D4A6088"),
             )
         }
+    }
 
     private fun fieldBackground(): GradientDrawable =
         roundedRect(
@@ -236,8 +240,8 @@ class OverlayCommandsPopover(
         category: CommandCategory,
         selected: Boolean,
     ): LinearLayout {
-        val touchSize = dp(120)
-        val iconSize = dp(56)
+        val touchSize = dp(54)
+        val iconSize = dp(26)
         val iconHost = FrameLayout(context).apply {
             background = rippleOn(categoryIconBackground(selected, category.accentColor))
             layoutParams = LinearLayout.LayoutParams(touchSize, touchSize)
@@ -247,7 +251,7 @@ class OverlayCommandsPopover(
                 AppCompatResources.getDrawable(context, category.iconRes)?.mutate()?.also { d ->
                     DrawableCompat.setTint(
                         d,
-                        if (selected) category.accentColor else Color.parseColor("#B8C4D8"),
+                        if (selected) Color.WHITE else Color.parseColor("#C8D4E4"),
                     )
                 },
             )
@@ -259,12 +263,12 @@ class OverlayCommandsPopover(
         )
         val caption = labelText(
             context.getString(category.shortLabelRes),
-            10.5f,
-            if (selected) Color.parseColor("#FFF0F4FF") else Color.parseColor("#88A0B4C8"),
+            9f,
+            if (selected) Color.parseColor("#FFF4F7FF") else Color.parseColor("#7A90A6B8"),
             bold = selected,
         ).apply {
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(0, dp(4), 0, 0)
+            setPadding(0, dp(3), 0, 0)
         }
         return LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -274,8 +278,9 @@ class OverlayCommandsPopover(
             addView(iconHost)
             addView(caption)
             layoutParams = LinearLayout.LayoutParams(
+                0,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f,
             )
         }
     }
@@ -303,7 +308,7 @@ class OverlayCommandsPopover(
 
     private fun showMenu(windowManager: WindowManager) {
         val screenW = context.resources.displayMetrics.widthPixels
-        val popoverW = minOf(dp(360), screenW - dp(16))
+        val popoverW = minOf(dp(328), screenW - dp(16))
 
         val categories = listOf(
             CommandCategory(
@@ -389,8 +394,8 @@ class OverlayCommandsPopover(
         val tabViews = mutableListOf<LinearLayout>()
         val tabsRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(10), dp(8), dp(10), dp(2))
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(4))
         }
 
         val accentDot = View(context)
@@ -454,7 +459,7 @@ class OverlayCommandsPopover(
                     AppCompatResources.getDrawable(context, cat.iconRes)?.mutate()?.also { d ->
                         DrawableCompat.setTint(
                             d,
-                            if (sel) cat.accentColor else Color.parseColor("#B8C4D8"),
+                            if (sel) Color.WHITE else Color.parseColor("#C8D4E4"),
                         )
                     },
                 )
@@ -528,10 +533,11 @@ class OverlayCommandsPopover(
             tabsRow.addView(
                 tab,
                 LinearLayout.LayoutParams(
+                    0,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1f,
                 ).apply {
-                    if (index > 0) marginStart = dp(6)
+                    if (index > 0) marginStart = dp(4)
                 },
             )
         }

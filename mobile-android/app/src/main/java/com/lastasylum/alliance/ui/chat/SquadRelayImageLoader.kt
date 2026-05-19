@@ -21,7 +21,8 @@ object SquadRelayImageLoader {
             .build()
         return ImageLoader.Builder(appContext)
             .okHttpClient(client)
-            .allowHardware(true)
+            // TYPE_APPLICATION_OVERLAY не рисует hardware bitmap — иначе фото в оверлей-чате пустые.
+            .allowHardware(false)
             .memoryCache {
                 MemoryCache.Builder(appContext)
                     .maxSizePercent(0.12)

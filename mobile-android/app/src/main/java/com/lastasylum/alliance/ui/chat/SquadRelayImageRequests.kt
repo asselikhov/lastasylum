@@ -26,6 +26,14 @@ object SquadRelayImageRequests {
     fun overlayStripThumb(context: Context, url: String): ImageRequest =
         sizedAuthed(context, url, STRIP_THUMB_PX, STRIP_THUMB_PX, crossfade = false)
 
+    /** Превью content:// / FileProvider в композере (оверлей и приложение). */
+    fun localUriPreview(context: Context, uri: android.net.Uri): ImageRequest =
+        ImageRequest.Builder(context)
+            .data(uri)
+            .allowHardware(false)
+            .crossfade(false)
+            .build()
+
     private fun sizedAuthed(
         context: Context,
         url: String,
@@ -35,6 +43,7 @@ object SquadRelayImageRequests {
     ): ImageRequest {
         val builder = ImageRequest.Builder(context)
             .data(url)
+            .allowHardware(false)
             .size(Size(widthPx, heightPx))
             .apply {
                 if (!crossfade) crossfade(false)

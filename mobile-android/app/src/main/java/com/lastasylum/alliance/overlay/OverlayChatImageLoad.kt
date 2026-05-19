@@ -16,6 +16,7 @@ fun overlayAuthedImageRequest(
 ): ImageRequest =
     ImageRequest.Builder(context)
         .data(url)
+        .allowHardware(false)
         .apply {
             val token = AppContainer.from(context).tokenStore.getAccessToken()
             if (!token.isNullOrBlank()) {
