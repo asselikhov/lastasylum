@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -26,8 +25,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-internal val OverlayGameHudBarColor = Color(0xCC10141E)
-internal val OverlayGameHudChipBgColor = Color(0x661A1F2B)
+private val HudIconSize = 13.dp
+private val HudChipPaddingH = 5.dp
+private val HudChipPaddingV = 4.dp
+private val HudRowSpacing = 4.dp
 
 @Composable
 internal fun OverlayGameHudBar(
@@ -36,14 +37,9 @@ internal fun OverlayGameHudBar(
     content: @Composable () -> Unit,
 ) {
     Column(
-        modifier = modifier
-            .background(
-                color = OverlayGameHudBarColor,
-                shape = RoundedCornerShape(12.dp),
-            )
-            .padding(horizontal = 6.dp, vertical = 4.dp),
+        modifier = modifier,
         horizontalAlignment = horizontalAlignment,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(HudRowSpacing),
     ) {
         content()
     }
@@ -63,12 +59,8 @@ internal fun OverlayGameHudChip(
     val badge = badgeCount.coerceAtLeast(0)
     Box(
         modifier = modifier
-            .background(
-                color = OverlayGameHudChipBgColor,
-                shape = RoundedCornerShape(8.dp),
-            )
             .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .padding(horizontal = HudChipPaddingH, vertical = HudChipPaddingV)
             .semantics { this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center,
     ) {
@@ -78,7 +70,7 @@ internal fun OverlayGameHudChip(
                     imageVector = icon,
                     contentDescription = null,
                     tint = tint,
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(HudIconSize),
                 )
             }
             painter != null -> {
@@ -86,7 +78,7 @@ internal fun OverlayGameHudChip(
                     painter = painter,
                     contentDescription = null,
                     tint = tint,
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(HudIconSize),
                 )
             }
         }
@@ -95,15 +87,15 @@ internal fun OverlayGameHudChip(
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .offset(x = 10.dp, y = (-6).dp)
+                    .offset(x = 8.dp, y = (-5).dp)
                     .background(Color(0xFFE53935), CircleShape)
-                    .padding(horizontal = 4.dp, vertical = 1.dp),
+                    .padding(horizontal = 3.dp, vertical = 1.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = badgeText,
                     color = Color.White,
-                    fontSize = 9.sp,
+                    fontSize = 8.sp,
                     style = MaterialTheme.typography.labelSmall,
                     maxLines = 1,
                 )
@@ -119,7 +111,7 @@ internal fun OverlayGameHudChipRow(
 ) {
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(HudRowSpacing),
         verticalAlignment = Alignment.CenterVertically,
         content = content,
     )
