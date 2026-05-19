@@ -71,10 +71,40 @@ class OverlayAllianceOnlinePopover(
         show(windowManager, panelParams, panelRoot, anchoredEnd)
     }
 
+    /** Centered card on the game screen (in-game status HUD). */
+    fun toggleCentered(windowManager: WindowManager) {
+        if (isShowing()) {
+            hide()
+            return
+        }
+        showCentered(windowManager)
+    }
+
+    fun showCentered(windowManager: WindowManager) {
+        if (isShowing()) return
+        attachPopover(windowManager, centered = true, panelParams = null, panelRoot = null, anchoredEnd = false)
+    }
+
     private fun show(
         windowManager: WindowManager,
         panelParams: WindowManager.LayoutParams,
         panelRoot: View,
+        anchoredEnd: Boolean,
+    ) {
+        attachPopover(
+            windowManager = windowManager,
+            centered = false,
+            panelParams = panelParams,
+            panelRoot = panelRoot,
+            anchoredEnd = anchoredEnd,
+        )
+    }
+
+    private fun attachPopover(
+        windowManager: WindowManager,
+        centered: Boolean,
+        panelParams: WindowManager.LayoutParams?,
+        panelRoot: View?,
         anchoredEnd: Boolean,
     ) {
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -86,22 +116,33 @@ class OverlayAllianceOnlinePopover(
 
         val screenW = context.resources.displayMetrics.widthPixels
         val screenH = context.resources.displayMetrics.heightPixels
-        val panelW = panelRoot.width.takeIf { it > 0 } ?: dp(120)
-        val panelH = panelRoot.height.takeIf { it > 0 } ?: dp(180)
 
         val popoverW = minOf(dp(280), screenW - dp(16))
         val popoverH = minOf(dp(320), screenH - dp(24))
 
-        var x = if (anchoredEnd) {
-            panelParams.x - popoverW - dp(8)
+        val cardLp = if (centered) {
+            FrameLayout.LayoutParams(popoverW, popoverH).apply {
+                gravity = Gravity.CENTER
+            }
         } else {
-            panelParams.x + panelW + dp(8)
+            val panel = panelParams ?: return
+            val root = panelRoot ?: return
+            val panelW = root.width.takeIf { it > 0 } ?: dp(120)
+            val panelH = root.height.takeIf { it > 0 } ?: dp(180)
+            var x = if (anchoredEnd) {
+                panel.x - popoverW - dp(8)
+            } else {
+                panel.x + panelW + dp(8)
+            }
+            x = x.coerceIn(dp(8), (screenW - popoverW - dp(8)).coerceAtLeast(dp(8)))
+            val yBottom = (panel.y + panelH / 2 - popoverH / 2)
+                .coerceIn(0, (screenH - popoverH).coerceAtLeast(0))
+            FrameLayout.LayoutParams(popoverW, popoverH).apply {
+                gravity = Gravity.BOTTOM or Gravity.START
+                leftMargin = x
+                bottomMargin = yBottom
+            }
         }
-        x = x.coerceIn(dp(8), (screenW - popoverW - dp(8)).coerceAtLeast(dp(8)))
-
-        // Align vertical centers of overlay panel and card (stable next to floating controls).
-        val yBottom = (panelParams.y + panelH / 2 - popoverH / 2)
-            .coerceIn(0, (screenH - popoverH).coerceAtLeast(0))
 
         val title = TextView(context).apply {
             text = context.getString(R.string.overlay_online_title)
@@ -209,11 +250,6 @@ class OverlayAllianceOnlinePopover(
             setOnClickListener { hide() }
         }
 
-        val cardLp = FrameLayout.LayoutParams(popoverW, popoverH).apply {
-            gravity = Gravity.BOTTOM or Gravity.START
-            leftMargin = x
-            bottomMargin = yBottom
-        }
         scrim.addView(card, cardLp)
 
         val params = WindowManager.LayoutParams(

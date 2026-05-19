@@ -39,10 +39,20 @@ internal object OverlayGameStatusHudRefresh {
                 ?: 0
         }
 
+        val forumUnread = if (teamId.isEmpty()) {
+            0
+        } else {
+            teamsRepository.listForumTopics(teamId)
+                .getOrNull()
+                ?.sumOf { topic -> topic.unreadCount.coerceAtLeast(0) }
+                ?: 0
+        }
+
         return OverlayGameStatusHudState(
             ingameOverlayCount = ingameCount,
             allianceChatUnread = allianceUnread,
             teamNewsUnread = newsUnread,
+            forumUnread = forumUnread,
         )
     }
 

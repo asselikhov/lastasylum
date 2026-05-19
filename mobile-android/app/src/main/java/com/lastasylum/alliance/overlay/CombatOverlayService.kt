@@ -265,6 +265,7 @@ class CombatOverlayService : Service() {
     private var overlayChatTeamParams: WindowManager.LayoutParams? = null
     @Volatile
     private var overlayChatTeamPanelVisible = false
+    private var currentOverlayHudPane: OverlayHudPane? = null
     private var overlayChatTeamComposeOwner: OverlayChatComposeOwner? = null
     private var overlayHistoryScroll: ScrollView? = null
     private var overlayHistoryLines: LinearLayout? = null
@@ -297,6 +298,12 @@ class CombatOverlayService : Service() {
         refreshOverlayStatusHudData()
         scheduleOverlayStatusHudRefresh()
     }
+
+    private val overlayVoiceQuickHubFlow = MutableStateFlow(OverlayGameVoiceQuickHubState())
+    private var overlayVoiceQuickHubHost: FrameLayout? = null
+    private var overlayVoiceQuickHubParams: WindowManager.LayoutParams? = null
+    private var overlayVoiceQuickHubCompose: ComposeView? = null
+    private var overlayVoiceQuickHubComposeOwner: OverlayChatComposeOwner? = null
 
     private data class OverlayWindowFlagSnap(
         val view: View,
@@ -1051,6 +1058,74 @@ class CombatOverlayService : Service() {
         }
         ensureOverlayStatusHudWindow()
         overlayStatusHudHost?.visibility = View.VISIBLE
+        syncOverlayVoiceQuickHubVisibility()
+    }
+
+    private fun syncOverlayVoiceQuickHubVisibility() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { syncOverlayVoiceQuickHubVisibility() }
+            return
+        }
+        val inGame = lastAppliedGateShouldShow == true
+        val prefs = AppContainer.from(this).userSettingsPreferences
+        val allowed = prefs.isOverlayPanelEnabled() && canDrawOverlaysNow()
+        val show = inGame && allowed
+        if (!show) {
+            overlayVoiceQuickHubHost?.visibility = View.GONE
+            if (!inGame) {
+                removeOverlayVoiceQuickHubWindow()
+            }
+            return
+        }
+        ensureOverlayVoiceQuickHubWindow()
+        overlayVoiceQuickHubHost?.visibility = View.VISIBLE
+        refreshOverlayVoiceQuickHubState()
+    }
+
+    private fun refreshOverlayVoiceQuickHubState() {
+        val session = voiceSession
+        val micOn = session?.micOn ?: AppContainer.from(this).userSettingsPreferences.isOverlayVoiceMicEnabled()
+        val soundOn = session?.soundOn ?: AppContainer.from(this).userSettingsPreferences.isOverlayVoiceSoundEnabled()
+        overlayVoiceQuickHubFlow.value = overlayVoiceQuickHubFlow.value.copy(
+            micOn = micOn,
+            soundOn = soundOn,
+        )
+    }
+
+    private fun toggleOverlayVoiceQuickHubExpanded() {
+        overlayVoiceQuickHubFlow.value = overlayVoiceQuickHubFlow.value.copy(
+            expanded = !overlayVoiceQuickHubFlow.value.expanded,
+        )
+    }
+
+    private fun collapseOverlayVoiceQuickHub() {
+        if (!overlayVoiceQuickHubFlow.value.expanded) return
+        overlayVoiceQuickHubFlow.value = overlayVoiceQuickHubFlow.value.copy(expanded = false)
+    }
+
+    private fun toggleOverlayVoiceMicFromHud() {
+        ensureOverlayVoiceStarted()
+        val session = ensureVoiceSession()
+        if (!session.micOn && !session.hasRecordAudioPermission()) {
+            pendingVoiceMicEnable = true
+            requestOverlayVoiceMicPermission()
+        } else {
+            session.toggleMic()
+        }
+    }
+
+    private fun toggleOverlayVoiceSoundFromHud() {
+        ensureOverlayVoiceStarted()
+        ensureVoiceSession().toggleSound()
+    }
+
+    private fun showOverlayHudPane(pane: OverlayHudPane) {
+        overlayAllianceOnlinePopover.hide()
+        if (overlayChatTeamPanelVisible && currentOverlayHudPane == pane) return
+        if (overlayChatTeamPanelVisible) {
+            hideOverlayChatTeamPanelNow(clearStrip = false)
+        }
+        showOverlayChatTeamPanel(hudPane = pane)
     }
 
     private fun ensureOverlayStatusHudWindow() {
@@ -1072,7 +1147,7 @@ class CombatOverlayService : Service() {
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             type,
-            OverlayWindowLayout.popupWindowFlags() or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            OverlayWindowLayout.popupWindowFlags(),
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
@@ -1085,7 +1160,16 @@ class CombatOverlayService : Service() {
             setContent {
                 val state by overlayStatusHudFlow.collectAsStateWithLifecycle(owner)
                 SquadRelayTheme {
-                    OverlayGameStatusHud(state = state)
+                    OverlayGameStatusHud(
+                        state = state,
+                        onForumClick = { showOverlayHudPane(OverlayHudPane.Forum) },
+                        onOnlineClick = {
+                            val mgr = windowManager ?: systemWindowManager() ?: return@OverlayGameStatusHud
+                            overlayAllianceOnlinePopover.toggleCentered(mgr)
+                        },
+                        onMailClick = { showOverlayHudPane(OverlayHudPane.Chat) },
+                        onNewsClick = { showOverlayHudPane(OverlayHudPane.News) },
+                    )
                 }
             }
         }
@@ -1126,6 +1210,86 @@ class CombatOverlayService : Service() {
         overlayStatusHudCompose = null
         overlayStatusHudComposeOwner?.destroy()
         overlayStatusHudComposeOwner = null
+    }
+
+    private fun ensureOverlayVoiceQuickHubWindow() {
+        if (lastAppliedGateShouldShow != true) return
+        if (!AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()) return
+        val manager = windowManager ?: systemWindowManager() ?: return
+        if (overlayVoiceQuickHubHost != null) return
+
+        val owner = overlayVoiceQuickHubComposeOwner
+            ?: OverlayChatComposeOwner().also { overlayVoiceQuickHubComposeOwner = it }
+        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else {
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
+        }
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            type,
+            OverlayWindowLayout.popupWindowFlags(),
+            android.graphics.PixelFormat.TRANSLUCENT,
+        ).apply {
+            OverlayWindowLayout.applyPopupLayoutCompat(this)
+            gravity = Gravity.TOP or Gravity.END
+            x = dp(8)
+            y = dp(8)
+        }
+
+        val compose = ComposeView(this).apply {
+            setContent {
+                val state by overlayVoiceQuickHubFlow.collectAsStateWithLifecycle(owner)
+                SquadRelayTheme {
+                    OverlayGameVoiceQuickHub(
+                        state = state,
+                        onHubClick = { toggleOverlayVoiceQuickHubExpanded() },
+                        onMicClick = { toggleOverlayVoiceMicFromHud() },
+                        onSoundClick = { toggleOverlayVoiceSoundFromHud() },
+                    )
+                }
+            }
+        }
+        overlayVoiceQuickHubCompose = compose
+
+        val host = FrameLayout(this).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            setViewTreeLifecycleOwner(owner)
+            setViewTreeViewModelStoreOwner(owner)
+            setViewTreeSavedStateRegistryOwner(owner)
+            setViewTreeOnBackPressedDispatcherOwner(owner)
+            addView(
+                compose,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+        }
+
+        val attach = runCatching { manager.addView(host, params) }
+        if (attach.isFailure) {
+            Log.w(TAG, "ensureOverlayVoiceQuickHubWindow addView failed", attach.exceptionOrNull())
+            return
+        }
+        overlayVoiceQuickHubHost = host
+        overlayVoiceQuickHubParams = params
+    }
+
+    private fun removeOverlayVoiceQuickHubWindow() {
+        val mgr = windowManager ?: systemWindowManager()
+        val host = overlayVoiceQuickHubHost
+        if (host != null && mgr != null) {
+            runCatching { mgr.removeView(host) }
+        }
+        overlayVoiceQuickHubHost = null
+        overlayVoiceQuickHubParams = null
+        overlayVoiceQuickHubCompose = null
+        overlayVoiceQuickHubComposeOwner?.destroy()
+        overlayVoiceQuickHubComposeOwner = null
+        overlayVoiceQuickHubFlow.value = OverlayGameVoiceQuickHubState()
     }
 
     private fun scheduleOverlayVoiceConnect() {
@@ -1192,6 +1356,7 @@ class CombatOverlayService : Service() {
         }
         ensureOverlayIfPermitted()
         syncOverlayStatusHudVisibility()
+        syncOverlayVoiceQuickHubVisibility()
         refreshOverlayStatusHudData()
         scheduleOverlayStatusHudRefresh()
     }
@@ -1228,6 +1393,7 @@ class CombatOverlayService : Service() {
             removeOverlayControl(force = true)
         }
         removeOverlayStatusHudWindow()
+        removeOverlayVoiceQuickHubWindow()
         mainHandler.removeCallbacks(statusHudRefreshRunnable)
         statusHudRefreshPosted = false
     }
@@ -1327,6 +1493,7 @@ class CombatOverlayService : Service() {
         runCatching { hideOverlayChatTeamPanel() }
         removeOverlayControl(force = true)
         removeOverlayStatusHudWindow()
+        removeOverlayVoiceQuickHubWindow()
         mainHandler.removeCallbacks(statusHudRefreshRunnable)
         statusHudRefreshPosted = false
         serviceScope.cancel()
@@ -2360,6 +2527,7 @@ class CombatOverlayService : Service() {
         val root = overlayChatTeamRoot
         val hadVisible = overlayChatTeamPanelVisible
         overlayChatTeamPanelVisible = false
+        currentOverlayHudPane = null
         OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = false
         OverlayChatInteractionHold.releaseGameForegroundSuppress()
         if (hadVisible) {
@@ -2481,10 +2649,14 @@ class CombatOverlayService : Service() {
 
     private fun rebalanceOverlayChatStripZOrder() = requestChatStripZOrderLift()
 
-    private fun showOverlayChatTeamPanel(initialTabIndex: Int = 0) {
+    private fun showOverlayChatTeamPanel(
+        initialTabIndex: Int = 0,
+        hudPane: OverlayHudPane? = null,
+    ) {
         overlayChatViewModel?.refreshChatForOverlay()
         if (overlayChatTeamPanelVisible) return
         val initialTab = initialTabIndex.coerceIn(0, 1)
+        currentOverlayHudPane = hudPane
         overlayAllianceOnlinePopover.hide()
         overlayCommandsPopover.hide()
         OverlayChatInteractionHold.acquireGameForegroundSuppress()
@@ -2590,47 +2762,40 @@ class CombatOverlayService : Service() {
                                         .fillMaxWidth()
                                         .weight(1f),
                                 ) {
-                                    when (selectedTab) {
-                                        0 -> {
-                                            ChatScreen(
-                                                state = chatState,
-                                                typingPeers = typingPeers,
-                                                draftMessage = draftMessage,
-                                                pickedImageUris = pickedImageUris,
-                                                chatVoicePhase = chatVoicePhase,
-                                                otherReadUptoMessageId = otherReadUptoMessageId,
-                                                compactOverlayMode = false,
-                                                onSelectRoom = vm::selectRoom,
-                                                onClearError = vm::clearError,
-                                                onLoadOlder = vm::loadOlderMessages,
-                                                onDraftChange = vm::setDraftMessage,
-                                                onSendDraft = vm::sendDraftMessage,
-                                                onSendStickerPayload = { body -> vm.sendMessage(body) },
-                                                onPickImages = vm::onImagesPicked,
-                                                onRemovePickedImage = vm::removePickedImage,
-                                                onClearPickedImages = vm::clearPickedImages,
-                                                onReplyToMessage = vm::beginReplyToMessage,
-                                                onClearReply = vm::clearReplyToMessage,
-                                                onOpenMessageActions = vm::openMessageActions,
-                                                onDismissMessageActions = vm::dismissMessageActions,
-                                                onRequestDeleteMessage = vm::requestDeleteMessage,
-                                                onDismissDeleteMessage = vm::dismissDeleteMessage,
-                                                onConfirmDeleteMessage = vm::confirmDeleteMessage,
-                                                onBeginMessageSelection = vm::beginMessageSelection,
-                                                onToggleMessageSelection = vm::toggleMessageSelection,
-                                                onClearMessageSelection = vm::clearMessageSelection,
-                                                onRequestBulkDelete = vm::requestBulkDelete,
-                                                onDismissBulkDeleteConfirm = vm::dismissBulkDeleteConfirm,
-                                                onConfirmDeleteSelectedMessages = vm::confirmDeleteSelectedMessages,
-                                                onRetrySendFailure = vm::retrySendFailure,
-                                                onDismissSendFailure = vm::dismissSendFailure,
-                                                onChatVoiceHoldStart = vm::startChatVoiceInput,
-                                                onChatVoiceHoldEnd = vm::stopChatVoiceInput,
-                                                onEditMessage = vm::editMessage,
-                                                onForwardMessage = vm::forwardMessage,
-                                                onToggleReaction = vm::toggleReaction,
+                                    when (hudPane) {
+                                        OverlayHudPane.Chat -> OverlayHudChatPane(
+                                            chatState = chatState,
+                                            typingPeers = typingPeers,
+                                            draftMessage = draftMessage,
+                                            pickedImageUris = pickedImageUris,
+                                            chatVoicePhase = chatVoicePhase,
+                                            otherReadUptoMessageId = otherReadUptoMessageId,
+                                            vm = vm,
+                                        )
+                                        OverlayHudPane.News -> {
+                                            TeamScreen(
+                                                currentUserId = userId,
+                                                teamsRepository = container.teamsRepository,
+                                                initialMainSection = TeamMainSection.News,
                                             )
                                         }
+                                        OverlayHudPane.Forum -> {
+                                            TeamScreen(
+                                                currentUserId = userId,
+                                                teamsRepository = container.teamsRepository,
+                                                initialMainSection = TeamMainSection.Forum,
+                                            )
+                                        }
+                                        null -> when (selectedTab) {
+                                        0 -> OverlayHudChatPane(
+                                            chatState = chatState,
+                                            typingPeers = typingPeers,
+                                            draftMessage = draftMessage,
+                                            pickedImageUris = pickedImageUris,
+                                            chatVoicePhase = chatVoicePhase,
+                                            otherReadUptoMessageId = otherReadUptoMessageId,
+                                            vm = vm,
+                                        )
                                         1 -> {
                                             TeamScreen(
                                                 currentUserId = userId,
@@ -2639,7 +2804,9 @@ class CombatOverlayService : Service() {
                                             )
                                         }
                                     }
+                                    }
                                 }
+                                if (hudPane == null) {
                                 TabRow(selectedTabIndex = selectedTab) {
                                     Tab(
                                         selected = selectedTab == 0,
@@ -2651,6 +2818,7 @@ class CombatOverlayService : Service() {
                                         onClick = { selectedTab = 1 },
                                         text = { Text(stringResource(R.string.tab_team)) },
                                     )
+                                }
                                 }
                             }
                         }
@@ -2752,6 +2920,10 @@ class CombatOverlayService : Service() {
         return container.newVoiceChatSession(
             onStateChanged = { micOn, soundOn ->
                 overlayVoiceControls?.applyState(micOn, soundOn)
+                overlayVoiceQuickHubFlow.value = overlayVoiceQuickHubFlow.value.copy(
+                    micOn = micOn,
+                    soundOn = soundOn,
+                )
             },
             onMicForegroundChanged = { micActive ->
                 updateVoiceForegroundService(micActive)
@@ -2860,6 +3032,8 @@ class CombatOverlayService : Service() {
         quickCommandsPopover.hide()
         overlayAllianceOnlinePopover.hide()
         overlayCommandsPopover.hide()
+        removeOverlayStatusHudWindow()
+        removeOverlayVoiceQuickHubWindow()
         val wm = windowManager ?: systemWindowManager()
         removeChatStripWindow(wm)
         val view = overlayView
