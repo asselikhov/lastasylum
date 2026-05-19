@@ -606,11 +606,8 @@ class CombatOverlayService : Service() {
                         val mime = (input as? String)?.takeIf { it.isNotBlank() } ?: "image/*"
                         putExtra(OverlaySystemDialogActivity.EXTRA_CONTENT_MIME, mime)
                     }
-                    val keepChromeVisible = kind == OverlaySystemDialogActivity.KIND_PICK_IMAGES
-                    putExtra(OverlaySystemDialogActivity.EXTRA_KEEP_OVERLAY_VISIBLE, keepChromeVisible)
                 }
-                val keepChromeVisible = kind == OverlaySystemDialogActivity.KIND_PICK_IMAGES
-                suspendOverlayWindowsForSystemActivity(keepOverlayChromeVisible = keepChromeVisible)
+                suspendOverlayWindowsForSystemActivity(keepOverlayChromeVisible = false)
                 mainHandler.post {
                     try {
                         startActivity(i)

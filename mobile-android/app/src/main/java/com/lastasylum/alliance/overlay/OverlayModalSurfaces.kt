@@ -27,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.ui.res.stringResource
 import com.lastasylum.alliance.R
@@ -104,6 +105,53 @@ fun OverlayAwareBottomSheet(
         )
     } else {
         ModalBottomSheet(onDismissRequest = onDismissRequest, modifier = modifier, content = content)
+    }
+}
+
+/**
+ * Почти полноэкранный sheet поверх оверлея (z-index выше чата) — для выбора фото.
+ */
+@Composable
+fun OverlayInWindowGalleryPicker(
+    onDismissRequest: () -> Unit,
+    sheetMaxHeight: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    OverlayInteractionSuppressEffect()
+    BackHandler(onBack = onDismissRequest)
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .zIndex(40f),
+    ) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(Color.Black.copy(alpha = 0.52f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onDismissRequest,
+                ),
+        )
+        Surface(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .heightIn(max = sheetMaxHeight),
+            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 8.dp,
+            shadowElevation = 16.dp,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                content = content,
+            )
+        }
     }
 }
 

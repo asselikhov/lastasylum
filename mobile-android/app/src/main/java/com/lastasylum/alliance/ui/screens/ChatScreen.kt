@@ -158,6 +158,7 @@ import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
 import com.lastasylum.alliance.overlay.OverlayAwareBottomSheet
+import com.lastasylum.alliance.overlay.OverlayChatImagePickerSheet
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.data.chat.chatImageAttachments
 import com.lastasylum.alliance.data.chat.hasVisibleText
@@ -1455,6 +1456,7 @@ private fun ChatComposer(
 ) {
     var showMediaPanel by remember { mutableStateOf(false) }
     var showAttachmentsSheet by remember { mutableStateOf(false) }
+    var showOverlayImagePicker by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val overlayUi = LocalOverlayUiMode.current
     val activityResultOwner = LocalActivityResultRegistryOwner.current
@@ -1495,6 +1497,33 @@ private fun ChatComposer(
         BackHandler(enabled = showAttachmentsSheet) {
             showAttachmentsSheet = false
         }
+    }
+
+    if (canHandleBack) {
+        BackHandler(enabled = showOverlayImagePicker) {
+            showOverlayImagePicker = false
+            OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
+        }
+    }
+
+    if (overlayUi && showOverlayImagePicker) {
+        OverlayChatImagePickerSheet(
+            maxSelection = 12,
+            onDismiss = {
+                showOverlayImagePicker = false
+                OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
+            },
+            onConfirm = { uris ->
+                if (!readOnly && uris.isNotEmpty()) {
+                    onPickImages(uris)
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.chat_attachments_added, uris.size),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            },
+        )
     }
 
     if (showAttachmentsSheet) {
@@ -1907,6 +1936,11 @@ private fun ChatComposer(
                                     if (readOnly) return@IconButton
                                     focusManager.clearFocus()
                                     keyboard?.hide()
+                                    if (overlayUi) {
+                                        OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
+                                        showOverlayImagePicker = true
+                                        return@IconButton
+                                    }
                                     val launcher = pickImagesLauncher
                                     if (launcher == null) {
                                         Toast.makeText(
@@ -1915,9 +1949,6 @@ private fun ChatComposer(
                                             Toast.LENGTH_SHORT,
                                         ).show()
                                         return@IconButton
-                                    }
-                                    if (overlayUi) {
-                                        OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
                                     }
                                     launcher.launch(
                                         PickVisualMediaRequest(
