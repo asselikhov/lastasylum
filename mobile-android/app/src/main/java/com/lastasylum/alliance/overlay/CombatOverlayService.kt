@@ -698,6 +698,17 @@ class CombatOverlayService : Service() {
     /** FGS notification visible while in-game overlay is active (hidden when idle outside game). */
     private var overlayForegroundPromoted: Boolean = false
 
+    private var screenOnReceiverRegistered: Boolean = false
+
+    private val screenOnReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != Intent.ACTION_SCREEN_ON) return
+            GameForegroundGate.invalidateForegroundHintCache()
+            GameForegroundGate.invalidateUsageAccessCache()
+            mainHandler.post { tickGameGate() }
+        }
+    }
+
     @Volatile
     private var overlaySessionActive: Boolean = false
 
@@ -776,6 +787,11 @@ class CombatOverlayService : Service() {
         _serviceRunning.value = true
         _overlayVisible.value = false
         OverlayRuntimeScheduler.syncSchedule(this)
+        GameForegroundGate.invalidateForegroundHintCache()
+        GameForegroundGate.invalidateUsageAccessCache()
+        val targets = AppContainer.from(this).userSettingsPreferences.getOverlayTargetGamePackages()
+        GameForegroundGate.primeTotalTimeForegroundWatch(this, targets)
+        registerScreenOnReceiver()
         mainHandler.post { tickGameGate() }
     }
 
@@ -1016,21 +1032,49 @@ class CombatOverlayService : Service() {
         val activityTokens = prefs.getOverlayTargetGameActivityTokens()
         serviceScope.launch {
             try {
-                val hasUsageAccess = GameForegroundGate.hasUsageStatsAccess(this@CombatOverlayService)
+                val hasUsageAccess = GameForegroundGate.hasUsageStatsAccessForOverlay(
+                    this@CombatOverlayService,
+                )
                 var hintedPkg: String? = lastForegroundHintPkg
                 val targetSet = targets.toSet()
-                val inGameProbe = if (!hasUsageAccess || targets.isEmpty()) {
-                    false
+                val stableInGameUi = lastAppliedGateShouldShow == true &&
+                    stableGatePollTicks >= GATE_STABLE_TICKS_FOR_SLOW_POLL
+                val quickProbe = if (!hasUsageAccess || targets.isEmpty()) {
+                    null
                 } else {
-                    val probe = GameForegroundGate.quickTargetForegroundProbe(
+                    GameForegroundGate.quickTargetForegroundProbe(
                         context = this@CombatOverlayService,
                         targetGamePackages = targets,
                         allowedActivitySubstrings = activityTokens,
                         preferredForegroundPackage = lastForegroundHintPkg,
                     )
-                    when (probe) {
+                }
+                val forceResumeRefresh = hasUsageAccess && targets.isNotEmpty() && when {
+                    quickProbe == GameForegroundGate.QuickForegroundProbe.NEED_FULL_HEURISTICS -> true
+                    quickProbe == null -> false
+                    !stableInGameUi -> true
+                    stableGatePollTicks % 5 == 0 -> true
+                    else -> false
+                }
+                val resumeComp = if (hasUsageAccess && targets.isNotEmpty()) {
+                    runCatching {
+                        GameForegroundGate.lastResumedComponent(
+                            this@CombatOverlayService,
+                            forceRefresh = forceResumeRefresh,
+                        )
+                    }.getOrNull()
+                } else {
+                    null
+                }
+                val freshResumePkg = resumeComp?.packageName
+                hintedPkg = freshResumePkg ?: hintedPkg
+                val inGameProbe = if (!hasUsageAccess || targets.isEmpty()) {
+                    false
+                } else {
+                    when (quickProbe ?: GameForegroundGate.QuickForegroundProbe.NEED_FULL_HEURISTICS) {
                         GameForegroundGate.QuickForegroundProbe.IN_TARGET -> {
-                            lastForegroundHintPkg = targets.firstOrNull()
+                            lastForegroundHintPkg = freshResumePkg?.takeIf { it in targetSet }
+                                ?: targets.firstOrNull()
                             true
                         }
                         GameForegroundGate.QuickForegroundProbe.NOT_IN_TARGET -> {
@@ -1038,16 +1082,12 @@ class CombatOverlayService : Service() {
                             false
                         }
                         GameForegroundGate.QuickForegroundProbe.NEED_FULL_HEURISTICS -> {
-                            val hintedComp = runCatching {
-                                GameForegroundGate.lastResumedComponent(this@CombatOverlayService)
-                            }.getOrNull()
-                            hintedPkg = hintedComp?.packageName
-                            lastForegroundHintPkg = hintedPkg
+                            lastForegroundHintPkg = freshResumePkg
                             if (activityTokens.isNotEmpty()) {
                                 Log.d(
                                     OVERLAY_DIAG_TAG,
-                                    "activityGate hint pkg=${hintedComp?.packageName ?: "-"} " +
-                                        "cls=${hintedComp?.className ?: "-"} tokens=${activityTokens.joinToString()}",
+                                    "activityGate hint pkg=${resumeComp?.packageName ?: "-"} " +
+                                        "cls=${resumeComp?.className ?: "-"} tokens=${activityTokens.joinToString()}",
                                 )
                             }
                             GameForegroundGate.shouldShowOverlayCached(
@@ -1058,15 +1098,6 @@ class CombatOverlayService : Service() {
                         }
                     }
                 }
-                val freshResumePkg = if (hasUsageAccess && targets.isNotEmpty()) {
-                    GameForegroundGate.lastResumedComponent(
-                        context = this@CombatOverlayService,
-                        forceRefresh = true,
-                    )?.packageName
-                } else {
-                    null
-                }
-                hintedPkg = freshResumePkg ?: hintedPkg
                 val conflictingForeground = freshResumePkg != null &&
                     GameForegroundGate.isConflictingForegroundHint(
                         freshResumePkg,
@@ -1188,7 +1219,8 @@ class CombatOverlayService : Service() {
         hudRefreshJob = serviceScope.launch(Dispatchers.IO) {
             try {
                 val container = AppContainer.from(this@CombatOverlayService)
-                val rooms = runCatching { container.chatRepository.listRooms().getOrNull() }.getOrNull()
+                val rooms = com.lastasylum.alliance.data.chat.ChatSessionCache.getFreshRooms()
+                    ?: runCatching { container.chatRepository.listRooms().getOrNull() }.getOrNull()
                 rooms?.let { list ->
                     cachedAllianceHubRoomId = OverlayGameStatusHudRefresh.allianceHubRoom(list)?.id
                     com.lastasylum.alliance.data.chat.ChatSessionCache.update(list)
@@ -1255,7 +1287,8 @@ class CombatOverlayService : Service() {
         if (!isInGameOverlayUiActive()) return
         serviceScope.launch(Dispatchers.IO) {
             val container = AppContainer.from(this@CombatOverlayService)
-            val rooms = runCatching { container.chatRepository.listRooms().getOrNull() }.getOrNull()
+            val rooms = com.lastasylum.alliance.data.chat.ChatSessionCache.getFreshRooms()
+                ?: runCatching { container.chatRepository.listRooms().getOrNull() }.getOrNull()
                 ?: return@launch
             cachedAllianceHubRoomId = OverlayGameStatusHudRefresh.allianceHubRoom(rooms)?.id
             com.lastasylum.alliance.data.chat.ChatSessionCache.update(rooms)
@@ -1677,9 +1710,12 @@ class CombatOverlayService : Service() {
         if (shouldShow && !wasInGame) {
             stableGatePollTicks = HUD_STABLE_TICKS_BEFORE_ATTACH
             attachOverlayHudWindowsIfNeeded()
-            refreshOverlayStatusHudData(force = true)
-            scheduleOverlayStatusHudRefresh()
-            rebalanceOverlayHudZOrder(force = true)
+            mainHandler.post {
+                if (!isInGameOverlayUiActive()) return@post
+                refreshOverlayStatusHudData(force = true)
+                scheduleOverlayStatusHudRefresh()
+                rebalanceOverlayHudZOrder(force = true)
+            }
         }
         syncOverlayHudsIfReady()
         if (shouldShow && wasInGame) {
@@ -1732,7 +1768,7 @@ class CombatOverlayService : Service() {
         mainHandler.removeCallbacks(stripZOrderLiftRunnable)
         stripZOrderLiftPosted = false
         chatStripZOrderLifted = false
-        demoteOverlayForegroundWhileIdle()
+        refreshOverlayForegroundWhileIdle()
     }
 
     private fun canDrawOverlaysNow(): Boolean {
@@ -1839,6 +1875,7 @@ class CombatOverlayService : Service() {
         mainHandler.removeCallbacks(overlayCloseHudRefreshRunnable)
         statusHudRefreshPosted = false
         serviceScope.cancel()
+        unregisterScreenOnReceiver()
         if (AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled() &&
             AppContainer.from(this).authRepository.hasSession()
         ) {
@@ -1878,11 +1915,37 @@ class CombatOverlayService : Service() {
      * Вне игры оверлей скрыт — убираем «боевой режим» из шторки; FGS остаётся для опроса game gate.
      * Push о раскопках приходит отдельным каналом FCM.
      */
-    private fun demoteOverlayForegroundWhileIdle() {
-        if (!overlayForegroundPromoted) return
+    private fun refreshOverlayForegroundWhileIdle() {
         if (voiceSession?.micOn == true) return
-        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_DETACH)
-        overlayForegroundPromoted = false
+        promoteOverlayForeground(
+            OverlayForegroundNotifications.build(
+                this,
+                foregroundNotificationIdleText(),
+                AppContainer.from(this).userSettingsPreferences.isQuietMode(),
+            ),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+        )
+    }
+
+    private fun registerScreenOnReceiver() {
+        if (screenOnReceiverRegistered) return
+        val filter = IntentFilter(Intent.ACTION_SCREEN_ON)
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(screenOnReceiver, filter, RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(screenOnReceiver, filter)
+            }
+            screenOnReceiverRegistered = true
+        }.onFailure { e ->
+            Log.w(TAG, "registerScreenOnReceiver failed", e)
+        }
+    }
+
+    private fun unregisterScreenOnReceiver() {
+        if (!screenOnReceiverRegistered) return
+        runCatching { unregisterReceiver(screenOnReceiver) }
+        screenOnReceiverRegistered = false
     }
 
     /**
@@ -2055,18 +2118,7 @@ class CombatOverlayService : Service() {
                 maybeBumpAllianceHubUnread(msg, hubId)
             }
         } else if (msg.roomId.isNotBlank()) {
-            serviceScope.launch(Dispatchers.IO) {
-                val rooms = AppContainer.from(this@CombatOverlayService).chatRepository.listRooms().getOrNull()
-                    ?: return@launch
-                val resolvedHubId = OverlayGameStatusHudRefresh.allianceHubRoom(rooms)?.id ?: return@launch
-                cachedAllianceHubRoomId = resolvedHubId
-                if (msg.roomId == resolvedHubId) {
-                    val selfId = jwtSubFromAccessToken()
-                    if (!selfId.isNullOrBlank() && msg.senderId != selfId) {
-                        mainHandler.post { maybeBumpAllianceHubUnread(msg, resolvedHubId) }
-                    }
-                }
-            }
+            scheduleDebouncedHubHudRefresh()
         }
     }
 
@@ -2931,7 +2983,7 @@ class CombatOverlayService : Service() {
         /** Недавно были в игре / открыт чат — чаще, чем в простое. */
         private const val GAME_GATE_POLL_WARM_MS = 1_800L
         /** FGS включён, оверлей скрыт: редкий опрос usage stats. */
-        private const val GAME_GATE_POLL_IDLE_MS = 3_500L
+        private const val GAME_GATE_POLL_IDLE_MS = 2_000L
         private const val STATUS_HUD_REFRESH_MS = 60_000L
         /** Голос: отложенный connect, если mic/sound были включены в прошлой сессии. */
         private const val OVERLAY_VOICE_CONNECT_DELAY_MS = 4_000L
@@ -3033,12 +3085,17 @@ class CombatOverlayService : Service() {
 
         /** После смены пакета/activity-фильтра — пересчитать показ оверлея. */
         fun requestGateRecheckIfRunning(context: Context) {
-            if (!isServiceInstanceActive) return
+            val app = context.applicationContext
+            if (!isServiceInstanceActive) {
+                ensureRuntimeIfUserEnabled(app, showErrorToast = false)
+                return
+            }
             GameForegroundGate.invalidateForegroundHintCache()
-            val intent = Intent(context, CombatOverlayService::class.java).apply {
+            GameForegroundGate.invalidateUsageAccessCache()
+            val intent = Intent(app, CombatOverlayService::class.java).apply {
                 action = ACTION_TICK_GAME_GATE
             }
-            context.startService(intent)
+            runCatching { app.startService(intent) }
         }
 
         /**

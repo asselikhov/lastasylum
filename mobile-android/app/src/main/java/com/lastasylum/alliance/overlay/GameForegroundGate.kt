@@ -34,6 +34,12 @@ object GameForegroundGate {
     private var usageAccessCacheValue: Boolean = false
 
     @Volatile
+    private var overlayUsageAccessCacheAtMs: Long = 0L
+
+    @Volatile
+    private var overlayUsageAccessCacheValue: Boolean = false
+
+    @Volatile
     private var mergedStatsCachedAtMs: Long = 0L
 
     @Volatile
@@ -71,6 +77,22 @@ object GameForegroundGate {
     /** Сброс кэша после возврата из «Доступ к данным об использовании» и т.п. */
     fun invalidateUsageAccessCache() {
         usageAccessCacheAtMs = 0L
+        overlayUsageAccessCacheAtMs = 0L
+    }
+
+    /**
+     * Доступ к usage-stats для [CombatOverlayService] в фоне (игра на экране, SquadRelay закрыт).
+     * [MODE_FOREGROUND] даёт статистику только пока открыт UI SquadRelay — для оверлея недостаточно.
+     */
+    fun hasUsageStatsAccessForOverlay(context: Context): Boolean {
+        val now = System.currentTimeMillis()
+        if (now - overlayUsageAccessCacheAtMs < OVERLAY_USAGE_ACCESS_CACHE_MS) {
+            return overlayUsageAccessCacheValue
+        }
+        val v = computeHasUsageStatsAccessForOverlay(context)
+        overlayUsageAccessCacheAtMs = now
+        overlayUsageAccessCacheValue = v
+        return v
     }
 
     /** Сброс кэша [lastResumedPackage], чтобы гейт не держал игру «на экране» 1.5s после смены приложения. */
@@ -97,7 +119,7 @@ object GameForegroundGate {
     ): QuickForegroundProbe {
         val targets = targetGamePackages.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         if (targets.isEmpty()) return QuickForegroundProbe.NOT_IN_TARGET
-        if (!hasUsageStatsAccess(context)) return QuickForegroundProbe.NOT_IN_TARGET
+        if (!hasUsageStatsAccessForOverlay(context)) return QuickForegroundProbe.NOT_IN_TARGET
         val targetSet = targets.toSet()
         val allowed = allowedActivitySubstrings.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         val preferred = preferredForegroundPackage?.trim().orEmpty()
@@ -201,13 +223,66 @@ object GameForegroundGate {
         }
     }
 
-    /** MODE_FOREGROUND (API 29+): доступ пока приложение на переднем плане — для FGS оверлея это ок. */
-    private fun isUsageStatsOpAllowed(mode: Int): Boolean {
-        if (mode == AppOpsManager.MODE_ALLOWED) return true
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && mode == AppOpsManager.MODE_FOREGROUND) {
-            return true
+    /** Полный доступ (не MODE_FOREGROUND — тот только пока UI SquadRelay на экране). */
+    private fun isUsageStatsOpAllowed(mode: Int): Boolean =
+        mode == AppOpsManager.MODE_ALLOWED
+
+    private fun computeHasUsageStatsAccessForOverlay(context: Context): Boolean {
+        val mode = readUsageStatsOpMode(context) ?: return usageStatsProbeReturnsAny(context)
+        if (mode == AppOpsManager.MODE_ALLOWED) {
+            return usageStatsProbeReturnsAny(context)
         }
-        return false
+        // MODE_FOREGROUND / default: только если запросы реально отдают события прямо сейчас.
+        return usageStatsProbeReturnsAny(context)
+    }
+
+    private fun readUsageStatsOpMode(context: Context): Int? {
+        return try {
+            val appOps = context.getSystemService(AppOpsManager::class.java) ?: return null
+            val uid = Process.myUid()
+            val pkg = context.packageName
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                appOps.unsafeCheckOpNoThrow(
+                    AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    uid,
+                    pkg,
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                appOps.checkOpNoThrow(
+                    AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    uid,
+                    pkg,
+                )
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    /**
+     * Снимок TTF до первого тика гейта — иначе [targetForegroundByGrowingTotalTime] не срабатывает
+     * на холодном старте сервиса (нужен рост между двумя выборками).
+     */
+    fun primeTotalTimeForegroundWatch(
+        context: Context,
+        targetGamePackages: Collection<String>,
+    ) {
+        val targets = targetGamePackages.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        if (targets.isEmpty() || !hasUsageStatsAccessForOverlay(context)) return
+        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return
+        val end = System.currentTimeMillis()
+        val stats = runCatching {
+            queryUsageStatsMerged(usm, end, USAGE_STATS_LOOKBACK_MS)
+        }.getOrDefault(emptyList())
+        synchronized(ttfLock) {
+            ttfWatchTargetsKey = targets.sorted().joinToString(",")
+            for (t in targets) {
+                stats.find { it.packageName == t }?.let { stat ->
+                    observedTotalTimeForeground[t] = stat.totalTimeInForeground
+                }
+            }
+        }
     }
 
     /** Есть ли фактический доступ: непустая статистика или поток событий. */
@@ -263,7 +338,7 @@ object GameForegroundGate {
         windowMs: Long = RESUME_EVENTS_WINDOW_MS,
         forceRefresh: Boolean = false,
     ): ForegroundComponent? {
-        if (!hasUsageStatsAccess(context)) return null
+        if (!hasUsageStatsAccessForOverlay(context)) return null
         if (forceRefresh) {
             cachedForeground = null
         }
@@ -419,7 +494,7 @@ object GameForegroundGate {
     ): Boolean {
         val targets = targetGamePackages.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         if (targets.isEmpty()) return false
-        if (!hasUsageStatsAccess(context)) return false
+        if (!hasUsageStatsAccessForOverlay(context)) return false
         val allowed = allowedActivitySubstrings.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         val hasActivityFilter = allowed.isNotEmpty()
         val alliance = context.packageName
@@ -646,8 +721,11 @@ object GameForegroundGate {
         return last == target
     }
 
-    private const val FOREGROUND_CACHE_MS = 2_500L
-    private const val FULL_HEURISTIC_CACHE_MS = 8_000L
+    /** Кэш RESUME: дольше в стабильной сессии — меньше queryEvents на IO потоке оверлея. */
+    private const val FOREGROUND_CACHE_MS = 4_000L
+    private const val FULL_HEURISTIC_CACHE_MS = 3_500L
+
+    private const val OVERLAY_USAGE_ACCESS_CACHE_MS = 5_000L
 
     /** Кэш merged queryUsageStats внутри одного тика / короткой серии тиков гейта. */
     private const val MERGED_STATS_CACHE_MS = 2_500L

@@ -91,7 +91,7 @@ fun OverlayControlScreen() {
 
     fun overlayOk(): Boolean = OverlayPermissions.canDrawOverlays(context)
 
-    fun usageOk(): Boolean = GameForegroundGate.hasUsageStatsAccess(context)
+    fun usageOk(): Boolean = GameForegroundGate.hasUsageStatsAccessForOverlay(context)
 
     fun refreshOverlayRuntime() {
         GameForegroundGate.invalidateUsageAccessCache()
@@ -272,6 +272,17 @@ fun OverlayControlScreen() {
                         message = stringResource(R.string.overlay_usage_hint_gate),
                         actionLabel = stringResource(R.string.overlay_open_usage_settings),
                         onAction = { OverlayPermissions.openUsageAccessSettings(context) },
+                        isError = false,
+                    )
+                }
+            }
+
+            if (overlayEnabled && !OverlayPermissions.isBatteryOptimizationIgnored(context)) {
+                item {
+                    SettingsHintCard(
+                        message = stringResource(R.string.overlay_battery_hint),
+                        actionLabel = stringResource(R.string.overlay_open_battery_settings),
+                        onAction = { OverlayPermissions.openBatteryUnrestrictedSettings(context) },
                         isError = false,
                     )
                 }

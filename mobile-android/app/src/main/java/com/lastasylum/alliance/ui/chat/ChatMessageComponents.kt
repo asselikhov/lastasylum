@@ -88,10 +88,7 @@ fun ChatSenderAvatar(
             )
             if (!telegramUrl.isNullOrBlank()) {
                 AsyncImage(
-                    model = ImageRequest.Builder(ctx)
-                        .data(telegramUrl)
-                        .crossfade(220)
-                        .build(),
+                    model = SquadRelayImageRequests.chatAvatar(ctx, telegramUrl),
                     contentDescription = null,
                     modifier = Modifier
                         .fillMaxSize()
@@ -274,7 +271,7 @@ fun TelegramLikeAttachmentsGrid(
         ) {
             val ctx = LocalContext.current
             AsyncImage(
-                model = chatAuthedImageRequest(ctx, u),
+                model = SquadRelayImageRequests.chatThumbnail(ctx, u),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
@@ -520,16 +517,4 @@ fun ChatFileAttachmentCard(
         }
     }
 }
-
-fun chatAuthedImageRequest(context: Context, url: String): ImageRequest =
-    ImageRequest.Builder(context)
-        .data(url)
-        .apply {
-            val token = AppContainer.from(context).tokenStore.getAccessToken()
-            if (!token.isNullOrBlank()) {
-                addHeader("Authorization", "Bearer $token")
-            }
-        }
-        .crossfade(true)
-        .build()
 

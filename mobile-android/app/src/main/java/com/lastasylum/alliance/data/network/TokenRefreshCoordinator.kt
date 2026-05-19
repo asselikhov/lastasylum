@@ -4,6 +4,8 @@ import com.lastasylum.alliance.data.auth.AuthApi
 import com.lastasylum.alliance.data.auth.RefreshRequest
 import com.lastasylum.alliance.data.auth.TokenStore
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -41,5 +43,13 @@ object TokenRefreshCoordinator {
             } finally {
                 inFlight = null
             }
+        }
+
+    /**
+     * Для [okhttp3.Authenticator]: не блокировать поток OkHttp синхронным HTTP — только [Dispatchers.IO].
+     */
+    fun refreshTokensBlocking(tokenStore: TokenStore, authApi: AuthApi): Boolean =
+        runBlocking(Dispatchers.IO) {
+            refreshTokens(tokenStore, authApi)
         }
 }

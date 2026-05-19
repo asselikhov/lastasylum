@@ -163,6 +163,7 @@ import com.lastasylum.alliance.overlay.OverlayInteractionSuppressEffect
 import com.lastasylum.alliance.overlay.OverlayModalScope
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.ui.chat.ChatState
+import com.lastasylum.alliance.ui.chat.chatAuthedImageRequest
 import com.lastasylum.alliance.ui.chat.ChatVoicePhase
 import com.lastasylum.alliance.ui.chat.chatMessageSemanticsPreview
 import com.lastasylum.alliance.ui.chat.replyPreviewText
@@ -213,18 +214,6 @@ import kotlinx.coroutines.launch
 private fun resolvedChatAttachmentImageUrl(raw: String): String =
     if (raw.startsWith("http", ignoreCase = true)) raw.trim()
     else BuildConfig.API_BASE_URL.trimEnd('/') + "/" + raw.trimStart('/')
-
-private fun chatAuthedImageRequest(context: Context, url: String): ImageRequest =
-    ImageRequest.Builder(context)
-        .data(url)
-        .apply {
-            val token = AppContainer.from(context).tokenStore.getAccessToken()
-            if (!token.isNullOrBlank()) {
-                addHeader("Authorization", "Bearer $token")
-            }
-        }
-        .crossfade(true)
-        .build()
 
 private fun openPickedImageInExternalViewer(context: Context, uri: Uri): Boolean {
     val viewIntent = Intent(Intent.ACTION_VIEW).apply {
@@ -528,11 +517,19 @@ fun ChatScreen(
     val showGlobalTeamNotice = selectedRoom?.allianceId == ChatAllianceIds.GLOBAL &&
         !state.hasTeamProfileForGlobalChat
     val globalComposerLocked = showGlobalTeamNotice
-    val activeActionMessage = remember(state.activeActionMessageId, state.messages) {
-        state.messages.find { it._id == state.activeActionMessageId }
+    val messageById = remember(state.messages) {
+        buildMap {
+            for (m in state.messages) {
+                val id = m._id?.trim().orEmpty()
+                if (id.isNotEmpty()) put(id, m)
+            }
+        }
     }
-    val confirmDeleteMessage = remember(state.confirmDeleteMessageId, state.messages) {
-        state.messages.find { it._id == state.confirmDeleteMessageId }
+    val activeActionMessage = remember(state.activeActionMessageId, messageById) {
+        state.activeActionMessageId?.let { messageById[it] }
+    }
+    val confirmDeleteMessage = remember(state.confirmDeleteMessageId, messageById) {
+        state.confirmDeleteMessageId?.let { messageById[it] }
     }
     val inSelectionMode = state.selectedMessageIds.isNotEmpty()
 
@@ -1146,13 +1143,17 @@ private fun ChatMessagesLazyList(
     val overlayUi = LocalOverlayUiMode.current
     val minSystemViewport = (LocalConfiguration.current.screenHeightDp * 0.55f).dp.coerceAtLeast(280.dp)
     val timelineVersion = remember(state.messages) {
-        Triple(
-            state.messages.size,
-            state.messages.firstOrNull()?._id,
-            state.messages.lastOrNull()?._id,
-        )
+        var hash = state.messages.size
+        state.messages.firstOrNull()?._id?.let { hash = hash * 31 + it.hashCode() }
+        state.messages.lastOrNull()?._id?.let { hash = hash * 31 + it.hashCode() }
+        state.messages.take(8).forEach { m ->
+            hash = hash * 31 + (m._id?.hashCode() ?: 0)
+            hash = hash * 31 + (m.reactions?.size ?: 0)
+            hash = hash * 31 + m.text.length
+        }
+        hash
     }
-    val timeline = remember(timelineVersion) { buildChatTimeline(state.messages) }
+    val timeline = remember(timelineVersion, state.messages) { buildChatTimeline(state.messages) }
     LazyColumn(
         state = listState,
         modifier = modifier,

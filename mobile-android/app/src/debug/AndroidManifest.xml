@@ -5,5 +5,9 @@
 
     <application
         android:usesCleartextTraffic="true"
-        tools:ignore="UnusedAttribute" />
+        tools:ignore="UnusedAttribute">
+        <profileable
+            android:shell="true"
+            tools:targetApi="29" />
+    </application>
 </manifest>

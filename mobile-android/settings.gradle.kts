@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "SquadRelay"
 include(":app")
+include(":benchmark")

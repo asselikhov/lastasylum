@@ -21,15 +21,16 @@ object SquadRelayImageLoader {
             .build()
         return ImageLoader.Builder(appContext)
             .okHttpClient(client)
+            .allowHardware(true)
             .memoryCache {
                 MemoryCache.Builder(appContext)
-                    .maxSizePercent(0.15)
+                    .maxSizePercent(0.12)
                     .build()
             }
             .diskCache {
                 DiskCache.Builder()
                     .directory(appContext.cacheDir.resolve("coil_chat_images"))
-                    .maxSizePercent(0.02)
+                    .maxSizePercent(0.03)
                     .build()
             }
             .crossfade(false)

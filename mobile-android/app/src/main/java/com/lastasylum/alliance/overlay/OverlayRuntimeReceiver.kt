@@ -44,8 +44,9 @@ class OverlayRuntimeReceiver : BroadcastReceiver() {
         if (!UserSettingsPreferences(app).isOverlayPanelEnabled()) return
         if (!AppContainer.from(app).authRepository.hasSession()) return
         val targets = UserSettingsPreferences(app).getOverlayTargetGamePackages()
+        val usageForOverlay = GameForegroundGate.hasUsageStatsAccessForOverlay(app)
         val inGame = targets.isNotEmpty() &&
-            GameForegroundGate.hasUsageStatsAccess(app) &&
+            usageForOverlay &&
             GameForegroundGate.shouldShowOverlayCached(
                 app,
                 targets,
@@ -56,7 +57,8 @@ class OverlayRuntimeReceiver : BroadcastReceiver() {
         Log.i(
             TAG,
             "watchdog serviceActive=${CombatOverlayService.isServiceInstanceActive} " +
-                "ensureStarted=$started inGame=$inGame targets=${targets.joinToString()}",
+                "ensureStarted=$started usageOverlay=$usageForOverlay inGame=$inGame " +
+                "targets=${targets.joinToString()}",
         )
     }
 

@@ -139,11 +139,16 @@
 
     <!-- Onboarding -->
     <string name="onboarding_permissions_title">Разрешения для боя</string>
-    <string name="onboarding_permissions_body">Для работы оверлея и голоса нужны системные разрешения.</string>
-    <string name="onboarding_permissions_bullet_mic">Микрофон — если какая‑то функция приложения запросит запись звука.</string>
-    <string name="onboarding_permissions_bullet_overlay">Показ поверх других приложений для боевой панели.</string>
-    <string name="onboarding_permissions_bullet_notif">Уведомления для статуса боевого режима на Android 13+.</string>
-    <string name="onboarding_permissions_overlay">К настройкам оверлея</string>
+    <string name="onboarding_permissions_body">Чтобы оверлей в игре работал без открытия SquadRelay, выдайте доступы ниже. На Xiaomi/Samsung/Honor также отключите ограничения батареи и включите автозапуск.</string>
+    <string name="onboarding_permissions_bullet_mic">Микрофон — для голоса в рейде и оверлее.</string>
+    <string name="onboarding_permissions_bullet_overlay">«Поверх других приложений» для SquadRelay — рисует кнопки HUD.</string>
+    <string name="onboarding_permissions_bullet_usage">«Данные об использовании» (полный доступ) — чтобы видеть, что игра на экране.</string>
+    <string name="onboarding_permissions_bullet_battery">Без ограничений батареи — иначе фоновый сервис оверлея убивается.</string>
+    <string name="onboarding_permissions_bullet_notif">Уведомления для фонового сервиса оверлея (Android 13+).</string>
+    <string name="onboarding_permissions_oem_hint">В карточке приложения: Батарея → без ограничений; Автозапуск → включить (если есть пункт).</string>
+    <string name="onboarding_permissions_overlay">Поверх окон</string>
+    <string name="onboarding_permissions_usage">Статистика использования</string>
+    <string name="onboarding_permissions_battery">Батарея</string>
     <string name="onboarding_permissions_later">Позже</string>
 
     <!-- Overlay screen -->
@@ -165,7 +170,9 @@
     <string name="overlay_package_field_label">Пакеты игры (из «Сведения о приложении»)</string>
     <string name="overlay_overlay_must_be_squadrelay">Чтобы кнопки были поверх игры, включите «Поверх других приложений» для «%1$s» (это приложение SquadRelay). Включение только у игры не даёт панель — её рисует SquadRelay.</string>
     <string name="overlay_open_squadrelay_overlay_settings">Настройки SquadRelay</string>
-    <string name="overlay_usage_hint_gate">Включите «Данные об использовании» для SquadRelay — без них панель не сможет определить, открыта ли игра.</string>
+    <string name="overlay_usage_hint_gate">Включите «Данные об использовании» для SquadRelay (полный доступ, не «только при использовании») — иначе кнопки в игре появятся только пока открыт SquadRelay.</string>
+    <string name="overlay_battery_hint">Отключите экономию батареи для SquadRelay и включите автозапуск (MIUI/Samsung) — иначе оверлей в фоне останавливается.</string>
+    <string name="overlay_open_battery_settings">Батарея и автозапуск</string>
     <string name="overlay_open_usage_settings">Доступ к статистике</string>
     <string name="overlay_mic_optional_hint">Микрофон не обязателен для панели; он нужен для голоса.</string>
     <string name="overlay_start_service_failed">Не удалось запустить панель. Проверьте ограничения фона и уведомления для SquadRelay.</string>

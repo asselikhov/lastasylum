@@ -18,9 +18,9 @@ object OverlayRuntimeScheduler {
     const val ACTION_WATCHDOG = "com.lastasylum.alliance.overlay.WATCHDOG"
     private const val TAG = "OverlayRuntimeScheduler"
     private const val REQUEST_CODE = 41_021
-    private const val INTERVAL_SERVICE_UP_MS = 3 * 60 * 1000L
-    private const val INTERVAL_SERVICE_DOWN_MS = 60 * 1000L
-    private const val RETRY_AFTER_KILL_MS = 8_000L
+    private const val INTERVAL_SERVICE_UP_MS = 90 * 1000L
+    private const val INTERVAL_SERVICE_DOWN_MS = 15 * 1000L
+    private const val RETRY_AFTER_KILL_MS = 5_000L
 
     fun syncSchedule(context: Context) {
         val app = context.applicationContext

@@ -2,9 +2,8 @@ package com.lastasylum.alliance.data.network
 
 import com.lastasylum.alliance.data.auth.AuthApi
 import com.lastasylum.alliance.data.auth.TokenStore
-import kotlinx.coroutines.runBlocking
 import okhttp3.Authenticator
-import com.lastasylum.alliance.data.network.TokenRefreshCoordinator.refreshTokens
+import com.lastasylum.alliance.data.network.TokenRefreshCoordinator.refreshTokensBlocking
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.Route
@@ -37,9 +36,7 @@ class TokenAuthenticator(
                     .build()
             }
 
-            val refreshed = runBlocking {
-                refreshTokens(tokenStore, authApi)
-            }
+            val refreshed = refreshTokensBlocking(tokenStore, authApi)
             if (!refreshed) return null
             runCatching { onAccessTokenRefreshed() }
             val accessToken = tokenStore.getAccessToken() ?: return null
