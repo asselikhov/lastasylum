@@ -101,13 +101,11 @@ object GameForegroundGate {
         val targetSet = targets.toSet()
         val allowed = allowedActivitySubstrings.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         val preferred = preferredForegroundPackage?.trim().orEmpty()
+        // preferred — только для ускоренного «не в игре»; IN_TARGET по устаревшему пакету оставляет HUD после minimize.
         if (preferred.isNotEmpty()) {
             if (preferred == alliancePackage) return QuickForegroundProbe.NOT_IN_TARGET
             if (isConflictingForegroundHint(preferred, targetSet, alliancePackage)) {
                 return QuickForegroundProbe.NOT_IN_TARGET
-            }
-            if (targetSet.contains(preferred) && allowed.isEmpty()) {
-                return QuickForegroundProbe.IN_TARGET
             }
         }
         val hintedComp = lastResumedComponent(context) ?: return QuickForegroundProbe.NEED_FULL_HEURISTICS
@@ -260,8 +258,15 @@ object GameForegroundGate {
      * Foreground package + (when available) the resumed activity class name from [UsageEvents].
      * If there were no resume events, falls back to last-used package (className will be null).
      */
-    fun lastResumedComponent(context: Context, windowMs: Long = RESUME_EVENTS_WINDOW_MS): ForegroundComponent? {
+    fun lastResumedComponent(
+        context: Context,
+        windowMs: Long = RESUME_EVENTS_WINDOW_MS,
+        forceRefresh: Boolean = false,
+    ): ForegroundComponent? {
         if (!hasUsageStatsAccess(context)) return null
+        if (forceRefresh) {
+            cachedForeground = null
+        }
         val now = System.currentTimeMillis()
         val effectiveWindow = max(windowMs, RESUME_EVENTS_WINDOW_MS)
         cachedForeground?.takeIf {
@@ -425,6 +430,9 @@ object GameForegroundGate {
         // Otherwise, after minimizing the game and opening SquadRelay, heuristics (TTF/lastUsed)
         // may still think the game "wins" and bring the overlay back on top of the app.
         if (hinted == alliance) return false
+        if (hinted != null && isConflictingForegroundHint(hinted, targetSet, alliance)) {
+            return false
+        }
         // If the OS tells us the user most recently resumed some other app (launcher/settings/etc),
         // do NOT immediately return false: on some ROMs (MIUI/HyperOS), resume events may temporarily
         // point to launcher/system while the game is still on screen. Instead, fall through to the

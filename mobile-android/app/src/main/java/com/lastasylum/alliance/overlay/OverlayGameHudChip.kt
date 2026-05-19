@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.defaultMinSize
@@ -44,11 +45,13 @@ internal fun OverlayGameHudBar(
     horizontalAlignment: Alignment.Horizontal = Alignment.Start,
     content: @Composable () -> Unit,
 ) {
+    val edgePadding = if (horizontalAlignment == Alignment.End) {
+        PaddingValues(top = HudBadgeOverflowPaddingTop, start = HudBadgeOverflowPaddingEnd)
+    } else {
+        PaddingValues(top = HudBadgeOverflowPaddingTop, end = HudBadgeOverflowPaddingEnd)
+    }
     Column(
-        modifier = modifier.padding(
-            top = HudBadgeOverflowPaddingTop,
-            end = HudBadgeOverflowPaddingEnd,
-        ),
+        modifier = modifier.padding(edgePadding),
         horizontalAlignment = horizontalAlignment,
         verticalArrangement = Arrangement.spacedBy(HudRowSpacing),
     ) {

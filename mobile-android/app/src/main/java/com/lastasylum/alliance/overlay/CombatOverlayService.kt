@@ -792,10 +792,14 @@ class CombatOverlayService : Service() {
      * Сглаживание ложных «не в игре» между тиками usage-stats: показ сразу, скрытие после
      * [GATE_HIDE_UI_HYSTERESIS_TICKS] подряд false.
      */
-    private fun resolveStableOverlayUiVisible(probeShow: Boolean): Boolean {
+    private fun resolveStableOverlayUiVisible(probeShow: Boolean, forceHideNow: Boolean = false): Boolean {
         if (probeShow) {
             gateUiHideStreak = 0
             return true
+        }
+        if (forceHideNow) {
+            gateUiHideStreak = GATE_HIDE_UI_HYSTERESIS_TICKS
+            return false
         }
         gateUiHideStreak++
         return if (gateUiHideStreak >= GATE_HIDE_UI_HYSTERESIS_TICKS) {
@@ -803,6 +807,19 @@ class CombatOverlayService : Service() {
         } else {
             lastAppliedGateShouldShow == true
         }
+    }
+
+    private fun syncOverlayHudWindowLayout() {
+        val mgr = windowManager ?: systemWindowManager() ?: return
+        fun update(host: FrameLayout?, params: WindowManager.LayoutParams?, gravity: Int) {
+            if (host == null || params == null || !host.isAttachedToWindow) return
+            params.gravity = gravity
+            params.x = dp(OVERLAY_HUD_WINDOW_X_DP)
+            params.y = dp(OVERLAY_HUD_WINDOW_Y_DP)
+            runCatching { mgr.updateViewLayout(host, params) }
+        }
+        update(overlayStatusHudHost, overlayStatusHudParams, Gravity.TOP or Gravity.START)
+        update(overlayTopRightHudHost, overlayTopRightHudParams, Gravity.TOP or Gravity.END)
     }
 
     private fun isOverlayHudOnlyMode(): Boolean =
@@ -999,7 +1016,8 @@ class CombatOverlayService : Service() {
             try {
                 val hasUsageAccess = GameForegroundGate.hasUsageStatsAccess(this@CombatOverlayService)
                 var hintedPkg: String? = lastForegroundHintPkg
-                val inGame = if (!hasUsageAccess || targets.isEmpty()) {
+                val targetSet = targets.toSet()
+                val inGameProbe = if (!hasUsageAccess || targets.isEmpty()) {
                     false
                 } else {
                     val probe = GameForegroundGate.quickTargetForegroundProbe(
@@ -1038,6 +1056,35 @@ class CombatOverlayService : Service() {
                         }
                     }
                 }
+                val freshResumePkg = if (hasUsageAccess && targets.isNotEmpty()) {
+                    GameForegroundGate.lastResumedComponent(
+                        context = this@CombatOverlayService,
+                        forceRefresh = true,
+                    )?.packageName
+                } else {
+                    null
+                }
+                hintedPkg = freshResumePkg ?: hintedPkg
+                val conflictingForeground = freshResumePkg != null &&
+                    GameForegroundGate.isConflictingForegroundHint(
+                        freshResumePkg,
+                        targetSet,
+                        packageName,
+                    )
+                val inGame = if (conflictingForeground) {
+                    lastForegroundHintPkg = null
+                    GameForegroundGate.invalidateForegroundHintCache()
+                    false
+                } else if (!inGameProbe) {
+                    lastForegroundHintPkg = null
+                    GameForegroundGate.invalidateForegroundHintCache()
+                    false
+                } else {
+                    if (freshResumePkg != null) {
+                        lastForegroundHintPkg = freshResumePkg
+                    }
+                    true
+                }
                 val nowMs = System.currentTimeMillis()
                 if (inGame) {
                     lastOverlayInGameAtMs = nowMs
@@ -1050,7 +1097,10 @@ class CombatOverlayService : Service() {
                         OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible -> true
                     else -> false
                 }
-                val stableShowInGameOverlayUi = resolveStableOverlayUiVisible(shouldShowInGameOverlayUi)
+                val stableShowInGameOverlayUi = resolveStableOverlayUiVisible(
+                    probeShow = shouldShowInGameOverlayUi,
+                    forceHideNow = conflictingForeground,
+                )
                 mainHandler.post {
                     val diagNowMs = System.currentTimeMillis()
                     if (diagNowMs - lastGateDiagLogMs >= 25_000L) {
@@ -1299,6 +1349,7 @@ class CombatOverlayService : Service() {
         }
         ensureOverlayStatusHudWindow()
         overlayStatusHudHost?.visibility = View.VISIBLE
+        syncOverlayHudWindowLayout()
         syncOverlayTopRightHudVisibility()
     }
 
@@ -1322,6 +1373,7 @@ class CombatOverlayService : Service() {
         val host = overlayTopRightHudHost
         val wasHidden = host?.visibility != View.VISIBLE
         host?.visibility = View.VISIBLE
+        syncOverlayHudWindowLayout()
         if (wasHidden) {
             refreshOverlayTopRightHudState()
         }
@@ -1405,7 +1457,7 @@ class CombatOverlayService : Service() {
         ).apply {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
             gravity = Gravity.TOP or Gravity.START
-            x = dp(10)
+            x = dp(OVERLAY_HUD_WINDOW_X_DP)
             y = dp(OVERLAY_HUD_WINDOW_Y_DP)
         }
 
@@ -1486,7 +1538,7 @@ class CombatOverlayService : Service() {
         ).apply {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
             gravity = Gravity.TOP or Gravity.END
-            x = dp(10)
+            x = dp(OVERLAY_HUD_WINDOW_X_DP)
             y = dp(OVERLAY_HUD_WINDOW_Y_DP)
         }
 
@@ -1635,6 +1687,8 @@ class CombatOverlayService : Service() {
             deferredDismissWhenPickerEnds = false
         }
         gateUiHideStreak = 0
+        lastForegroundHintPkg = null
+        GameForegroundGate.invalidateForegroundHintCache()
         cancelOverlayHudRefreshWork()
         updateStripDismissScreenRects(emptyList())
         stripPassthroughSyncPosted = false
@@ -2870,6 +2924,8 @@ class CombatOverlayService : Service() {
         private const val OVERLAY_CLOSE_HUD_REFRESH_DELAY_MS = 80L
         private const val STRIP_ZORDER_MIN_INTERVAL_MS = 30_000L
         private const val STRIP_ZORDER_LIFT_DELAY_MS = 450L
+        /** Горизонтальный отступ HUD от края экрана (симметрично слева и справа). */
+        private const val OVERLAY_HUD_WINDOW_X_DP = 10
         /** Вертикальный отступ HUD-окон от верхнего края (меньше — выше на экране). */
         private const val OVERLAY_HUD_WINDOW_Y_DP = 2
         /** Минимум между remove/add HUD — иначе кнопки мигают на каждом тике гейта. */
