@@ -286,6 +286,18 @@ class CombatOverlayService : Service() {
     private var overlayUnreadChatCount: Int = 0
     private var overlayChatBadgeText: TextView? = null
 
+    private val overlayStatusHudFlow = MutableStateFlow(OverlayGameStatusHudState())
+    private var overlayStatusHudHost: FrameLayout? = null
+    private var overlayStatusHudParams: WindowManager.LayoutParams? = null
+    private var overlayStatusHudCompose: ComposeView? = null
+    private var overlayStatusHudComposeOwner: OverlayChatComposeOwner? = null
+    private var statusHudRefreshPosted = false
+    private val statusHudRefreshRunnable = Runnable {
+        statusHudRefreshPosted = false
+        refreshOverlayStatusHudData()
+        scheduleOverlayStatusHudRefresh()
+    }
+
     private data class OverlayWindowFlagSnap(
         val view: View,
         val params: WindowManager.LayoutParams,
@@ -1005,6 +1017,117 @@ class CombatOverlayService : Service() {
         return GAME_GATE_POLL_IDLE_MS
     }
 
+    private fun scheduleOverlayStatusHudRefresh() {
+        if (statusHudRefreshPosted) return
+        statusHudRefreshPosted = true
+        mainHandler.postDelayed(statusHudRefreshRunnable, STATUS_HUD_REFRESH_MS)
+    }
+
+    private fun refreshOverlayStatusHudData() {
+        serviceScope.launch(Dispatchers.IO) {
+            val state = runCatching {
+                OverlayGameStatusHudRefresh.load(this@CombatOverlayService)
+            }.getOrElse { OverlayGameStatusHudState() }
+            overlayStatusHudFlow.value = state
+            mainHandler.post { ensureOverlayStatusHudWindow() }
+        }
+    }
+
+    private fun syncOverlayStatusHudVisibility() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { syncOverlayStatusHudVisibility() }
+            return
+        }
+        val inGame = lastAppliedGateShouldShow == true
+        val prefs = AppContainer.from(this).userSettingsPreferences
+        val allowed = prefs.isOverlayPanelEnabled() && canDrawOverlaysNow()
+        val show = inGame && allowed && !overlayChatTeamPanelVisible
+        if (!show) {
+            overlayStatusHudHost?.visibility = View.GONE
+            if (!inGame) {
+                removeOverlayStatusHudWindow()
+            }
+            return
+        }
+        ensureOverlayStatusHudWindow()
+        overlayStatusHudHost?.visibility = View.VISIBLE
+    }
+
+    private fun ensureOverlayStatusHudWindow() {
+        if (lastAppliedGateShouldShow != true) return
+        if (!AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()) return
+        if (overlayChatTeamPanelVisible) return
+        val manager = windowManager ?: systemWindowManager() ?: return
+        if (overlayStatusHudHost != null) return
+
+        val owner = overlayStatusHudComposeOwner
+            ?: OverlayChatComposeOwner().also { overlayStatusHudComposeOwner = it }
+        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else {
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
+        }
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            type,
+            OverlayWindowLayout.popupWindowFlags() or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            android.graphics.PixelFormat.TRANSLUCENT,
+        ).apply {
+            OverlayWindowLayout.applyPopupLayoutCompat(this)
+            gravity = Gravity.TOP or Gravity.START
+            x = dp(8)
+            y = dp(8)
+        }
+
+        val compose = ComposeView(this).apply {
+            setContent {
+                val state by overlayStatusHudFlow.collectAsStateWithLifecycle(owner)
+                SquadRelayTheme {
+                    OverlayGameStatusHud(state = state)
+                }
+            }
+        }
+        overlayStatusHudCompose = compose
+
+        val host = FrameLayout(this).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            setViewTreeLifecycleOwner(owner)
+            setViewTreeViewModelStoreOwner(owner)
+            setViewTreeSavedStateRegistryOwner(owner)
+            setViewTreeOnBackPressedDispatcherOwner(owner)
+            addView(
+                compose,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+        }
+
+        val attach = runCatching { manager.addView(host, params) }
+        if (attach.isFailure) {
+            Log.w(TAG, "ensureOverlayStatusHudWindow addView failed", attach.exceptionOrNull())
+            return
+        }
+        overlayStatusHudHost = host
+        overlayStatusHudParams = params
+    }
+
+    private fun removeOverlayStatusHudWindow() {
+        val mgr = windowManager ?: systemWindowManager()
+        val host = overlayStatusHudHost
+        if (host != null && mgr != null) {
+            runCatching { mgr.removeView(host) }
+        }
+        overlayStatusHudHost = null
+        overlayStatusHudParams = null
+        overlayStatusHudCompose = null
+        overlayStatusHudComposeOwner?.destroy()
+        overlayStatusHudComposeOwner = null
+    }
+
     private fun scheduleOverlayVoiceConnect() {
         cancelOverlayVoiceConnectScheduled()
         val prefs = AppContainer.from(this).userSettingsPreferences
@@ -1068,6 +1191,9 @@ class CombatOverlayService : Service() {
             return
         }
         ensureOverlayIfPermitted()
+        syncOverlayStatusHudVisibility()
+        refreshOverlayStatusHudData()
+        scheduleOverlayStatusHudRefresh()
     }
 
     /**
@@ -1101,6 +1227,9 @@ class CombatOverlayService : Service() {
         if (overlayView != null) {
             removeOverlayControl(force = true)
         }
+        removeOverlayStatusHudWindow()
+        mainHandler.removeCallbacks(statusHudRefreshRunnable)
+        statusHudRefreshPosted = false
     }
 
     private fun canDrawOverlaysNow(): Boolean {
@@ -1197,6 +1326,9 @@ class CombatOverlayService : Service() {
         overlayTicker.hideTicker()
         runCatching { hideOverlayChatTeamPanel() }
         removeOverlayControl(force = true)
+        removeOverlayStatusHudWindow()
+        mainHandler.removeCallbacks(statusHudRefreshRunnable)
+        statusHudRefreshPosted = false
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -1383,6 +1515,16 @@ class CombatOverlayService : Service() {
         stripBuffer.mergeReceiveTimeline(msg, jwtSubFromAccessToken())
         if (refreshStrip) {
             refreshOverlayChatStrip()
+        }
+        if (msg.roomId.isNotBlank()) {
+            serviceScope.launch(Dispatchers.IO) {
+                val rooms = AppContainer.from(this@CombatOverlayService).chatRepository.listRooms().getOrNull()
+                    ?: return@launch
+                val hubId = OverlayGameStatusHudRefresh.allianceHubRoom(rooms)?.id ?: return@launch
+                if (msg.roomId == hubId) {
+                    refreshOverlayStatusHudData()
+                }
+            }
         }
         val selfId = jwtSubFromAccessToken()
         if (!overlayChatTeamPanelVisible && !selfId.isNullOrBlank() && msg.senderId != selfId) {
@@ -1631,6 +1773,7 @@ class CombatOverlayService : Service() {
             AppContainer.from(this).chatRepository.addOverlayMessageListener(listener)
             scheduleStripTick()
             presenceHeartbeat.start()
+            refreshOverlayStatusHudData()
         }
         serviceScope.launch {
             val container = AppContainer.from(this@CombatOverlayService)
@@ -2248,6 +2391,8 @@ class CombatOverlayService : Service() {
         overlayChatTeamComposeOwner?.destroy()
         overlayChatTeamComposeOwner = null
         refreshOverlayChatStrip()
+        syncOverlayStatusHudVisibility()
+        refreshOverlayStatusHudData()
     }
 
     private fun hideOverlayIme(view: View) {
@@ -2348,6 +2493,7 @@ class CombatOverlayService : Service() {
         mainHandler.post { updateOverlayChatBadge() }
         val manager = windowManager ?: return
         chatStripHost?.visibility = View.GONE
+        overlayStatusHudHost?.visibility = View.GONE
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
@@ -2453,7 +2599,7 @@ class CombatOverlayService : Service() {
                                                 pickedImageUris = pickedImageUris,
                                                 chatVoicePhase = chatVoicePhase,
                                                 otherReadUptoMessageId = otherReadUptoMessageId,
-                                                compactOverlayMode = true,
+                                                compactOverlayMode = false,
                                                 onSelectRoom = vm::selectRoom,
                                                 onClearError = vm::clearError,
                                                 onLoadOlder = vm::loadOlderMessages,
@@ -2753,6 +2899,7 @@ class CombatOverlayService : Service() {
         private const val GAME_GATE_POLL_WARM_MS = 1_800L
         /** FGS включён, оверлей скрыт: редкий опрос usage stats. */
         private const val GAME_GATE_POLL_IDLE_MS = 3_500L
+        private const val STATUS_HUD_REFRESH_MS = 60_000L
         /** Голос: отложенный connect, если mic/sound были включены в прошлой сессии. */
         private const val OVERLAY_VOICE_CONNECT_DELAY_MS = 4_000L
         /** Краткий grace при ложном «не в игре» во время чата/пикера; не применяется при явном лаунчере/другом приложении. */

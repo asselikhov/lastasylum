@@ -505,6 +505,9 @@
     <string name="overlay_online_empty">Сейчас никого нет в игре с активным оверлеем.</string>
     <string name="overlay_online_error">Не удалось загрузить список.</string>
     <string name="overlay_online_close_cd">Закрыть список</string>
+    <string name="overlay_hud_online_cd">В игре с оверлеем: %1$d</string>
+    <string name="overlay_hud_alliance_chat_cd">Непрочитанные в чате альянса: %1$d</string>
+    <string name="overlay_hud_news_cd">Новые новости команды: %1$d</string>
     <string name="overlay_cd_commands">Быстрые команды</string>
     <string name="overlay_commands_title">Быстрые команды</string>
     <string name="overlay_commands_subtitle">Выберите тип и отправьте координаты в «Рейд»</string>

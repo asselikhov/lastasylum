@@ -123,6 +123,20 @@ class UserSettingsPreferences(context: Context) {
         prefs.edit().putBoolean(KEY_EXCAVATION_PUSH, value).apply()
     }
 
+    /** ISO-8601: newest team news the user has seen (overlay HUD + news badge). */
+    fun getLastSeenTeamNewsCreatedAt(): String? =
+        prefs.getString(KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT, null)?.takeIf { it.isNotBlank() }
+
+    fun setLastSeenTeamNewsCreatedAt(iso: String?) {
+        val edit = prefs.edit()
+        if (iso.isNullOrBlank()) {
+            edit.remove(KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT)
+        } else {
+            edit.putString(KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT, iso.trim())
+        }
+        edit.apply()
+    }
+
     /** applicationId игры (например com.lastasylum.plague). Несколько — через запятую. */
     fun getOverlayTargetGamePackage(): String {
         var raw = prefs.getString(KEY_OVERLAY_TARGET_PACKAGE, DEFAULT_TARGET_GAME_PACKAGES_CSV)
@@ -223,6 +237,7 @@ class UserSettingsPreferences(context: Context) {
         private const val KEY_OVERLAY_VOICE_SOUND = "overlay_voice_sound"
         private const val KEY_OVERLAY_VOICE_MIC = "overlay_voice_mic"
         private const val KEY_EXCAVATION_PUSH = "excavation_push_enabled"
+        private const val KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT = "last_seen_team_news_created_at"
         private const val KEY_OVERLAY_TARGET_LEGACY_MIGRATED = "overlay_target_legacy_migrated_v1"
         private const val KEY_OVERLAY_TARGET_PLAY_MIGRATED = "overlay_target_play_migrated_v2"
 

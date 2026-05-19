@@ -103,6 +103,8 @@ import com.lastasylum.alliance.data.teams.TeamNewsPollOptionDto
 import com.lastasylum.alliance.data.teams.TeamNewsPollVoteDto
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.teams.UpdateTeamNewsBody
+import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.overlay.OverlayGameStatusHudRefresh
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import com.lastasylum.alliance.ui.components.team.TeamNewsFeedCard
@@ -470,6 +472,12 @@ private fun TeamNewsListRoute(
             .onSuccess { page ->
                 newsItems = if (append) newsItems + page.items else page.items
                 newsNextCursor = page.nextCursor
+                if (!append && page.items.isNotEmpty()) {
+                    OverlayGameStatusHudRefresh.markTeamNewsSeenFromItems(
+                        page.items,
+                        AppContainer.from(context).userSettingsPreferences,
+                    )
+                }
                 loading = false
                 loadingMore = false
             }
