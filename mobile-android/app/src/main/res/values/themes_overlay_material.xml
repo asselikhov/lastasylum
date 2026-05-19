@@ -10,10 +10,10 @@
         <item name="colorSurfaceContainerHigh">#2A2538</item>
     </style>
 
-    <!-- Хост для системного пикера из оверлея: полноэкранный прозрачный, не floating (иначе галерея под overlay-окнами). -->
+    <!-- Хост для системного пикера из оверлея: непрозрачный фон, пока чат-панель скрыта (без «просвечивания» игры). -->
     <style name="Theme.LastAsylum.OverlayDialog" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="android:windowBackground">@android:color/transparent</item>
-        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">#FF10141E</item>
+        <item name="android:windowIsTranslucent">false</item>
         <item name="android:windowIsFloating">false</item>
         <item name="android:backgroundDimEnabled">false</item>
         <item name="android:windowContentOverlay">@null</item>

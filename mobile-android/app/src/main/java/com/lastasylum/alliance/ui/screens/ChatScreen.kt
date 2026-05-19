@@ -158,7 +158,6 @@ import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
 import com.lastasylum.alliance.overlay.OverlayAwareBottomSheet
-import com.lastasylum.alliance.overlay.OverlayChatImagePickerOverlay
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.overlay.OverlayInteractionSuppressEffect
 import com.lastasylum.alliance.overlay.OverlayModalScope
@@ -536,7 +535,6 @@ fun ChatScreen(
 
     var remoteChatImagePreview by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
     var attachmentPreviewStartIndex by remember { mutableStateOf<Int?>(null) }
-    var showOverlayImagePicker by remember { mutableStateOf(false) }
     var externalGalleryGateHeld by remember { mutableStateOf(false) }
     LaunchedEffect(attachmentPreviewStartIndex, pickedImageUris.isEmpty()) {
         if (attachmentPreviewStartIndex != null && pickedImageUris.isEmpty()) {
@@ -818,42 +816,11 @@ fun ChatScreen(
                         onClearPickedImages = onClearPickedImages,
                         onClearReply = onClearReply,
                         onOpenAttachmentPreview = { idx -> attachmentPreviewStartIndex = idx },
-                        onRequestOverlayImagePicker = if (overlayUi) {
-                            { showOverlayImagePicker = true }
-                        } else {
-                            null
-                        },
                     )
                 }
             }
         }
             }
-
-            if (showOverlayImagePicker && overlayUi) {
-                OverlayChatImagePickerOverlay(
-                    maxSelection = 12,
-                    alreadyPicked = pickedImageUris.size,
-                    onDismiss = { showOverlayImagePicker = false },
-                    onConfirm = { uris ->
-                        if (!globalComposerLocked && !state.isSending && uris.isNotEmpty()) {
-                            onPickImages(uris)
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.chat_attachments_added, uris.size),
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                        }
-                        showOverlayImagePicker = false
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-
-    if (canHandleBack) {
-        BackHandler(enabled = showOverlayImagePicker) {
-            showOverlayImagePicker = false
-        }
-    }
 
     if (!inSelectionMode) {
         activeActionMessage?.let { message ->
@@ -1482,7 +1449,6 @@ private fun ChatComposer(
     onClearPickedImages: () -> Unit,
     onClearReply: () -> Unit,
     onOpenAttachmentPreview: (Int) -> Unit = {},
-    onRequestOverlayImagePicker: (() -> Unit)? = null,
 ) {
     var showMediaPanel by remember { mutableStateOf(false) }
     var showAttachmentsSheet by remember { mutableStateOf(false) }
@@ -1498,6 +1464,9 @@ private fun ChatComposer(
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 12),
             onResult = { uris ->
+                if (overlayUi) {
+                    OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
+                }
                 if (!readOnly && uris.isNotEmpty()) {
                     onPickImages(uris)
                     if (overlayUi) {
@@ -1938,18 +1907,6 @@ private fun ChatComposer(
                                     if (readOnly) return@IconButton
                                     focusManager.clearFocus()
                                     keyboard?.hide()
-                                    if (overlayUi) {
-                                        if (onRequestOverlayImagePicker != null) {
-                                            onRequestOverlayImagePicker.invoke()
-                                        } else {
-                                            Toast.makeText(
-                                                context,
-                                                context.getString(R.string.chat_attachment_read_failed),
-                                                Toast.LENGTH_SHORT,
-                                            ).show()
-                                        }
-                                        return@IconButton
-                                    }
                                     val launcher = pickImagesLauncher
                                     if (launcher == null) {
                                         Toast.makeText(
@@ -1958,6 +1915,9 @@ private fun ChatComposer(
                                             Toast.LENGTH_SHORT,
                                         ).show()
                                         return@IconButton
+                                    }
+                                    if (overlayUi) {
+                                        OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
                                     }
                                     launcher.launch(
                                         PickVisualMediaRequest(

@@ -563,11 +563,6 @@
     <string name="overlay_cmd_column_open_coords">Координаты</string>
     <string name="overlay_cmd_excavation_hint">Push союзникам вне игры</string>
     <string name="overlay_coord_dialog_subtitle">Введите координаты цели</string>
-    <string name="overlay_chat_picker_title">Выбор фото</string>
-    <string name="overlay_chat_picker_subtitle">Выбрано %1$d из %2$d</string>
-    <string name="overlay_chat_picker_done">Готово</string>
-    <string name="overlay_chat_picker_empty">Нет доступных изображений в галерее</string>
-    <string name="overlay_chat_picker_permission_denied">Разрешите доступ к фото в настройках приложения</string>
 
     <!-- API / network (ViewModel) -->
     <string name="err_invalid_credentials">Неверная почта или пароль.</string>

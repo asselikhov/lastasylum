@@ -573,19 +573,6 @@ class CombatOverlayService : Service() {
                 options: ActivityOptionsCompat?,
             ) {
                 val kind = OverlayActivityResultKind.kindFor(contract)
-                if (kind == OverlaySystemDialogActivity.KIND_PICK_IMAGES &&
-                    (
-                        overlayChatTeamPanelVisible ||
-                            OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible
-                        )
-                ) {
-                    activityResultRegistry.dispatchResult(
-                        requestCode,
-                        android.app.Activity.RESULT_CANCELED,
-                        Intent(),
-                    )
-                    return
-                }
                 if (kind == null) {
                     Toast.makeText(
                         this@CombatOverlayService,
