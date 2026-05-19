@@ -27,6 +27,13 @@ fun OverlayGameStatusHud(
     OverlayGameHudBar(modifier = modifier) {
         OverlayGameHudChipRow {
             OverlayGameHudChip(
+                icon = Icons.AutoMirrored.Outlined.Article,
+                tint = Color(0xFF90CAF9),
+                badgeCount = state.teamNewsUnread,
+                contentDescription = stringResource(R.string.overlay_hud_news_cd, state.teamNewsUnread),
+                onClick = onNewsClick,
+            )
+            OverlayGameHudChip(
                 icon = Icons.Outlined.Forum,
                 tint = Color(0xFFCE93D8),
                 badgeCount = state.forumUnread,
@@ -42,13 +49,6 @@ fun OverlayGameStatusHud(
                     state.allianceChatUnread,
                 ),
                 onClick = onMailClick,
-            )
-            OverlayGameHudChip(
-                icon = Icons.AutoMirrored.Outlined.Article,
-                tint = Color(0xFF90CAF9),
-                badgeCount = state.teamNewsUnread,
-                contentDescription = stringResource(R.string.overlay_hud_news_cd, state.teamNewsUnread),
-                onClick = onNewsClick,
             )
         }
     }
