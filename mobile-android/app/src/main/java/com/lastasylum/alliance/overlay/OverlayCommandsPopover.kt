@@ -49,6 +49,7 @@ class OverlayCommandsPopover(
         menuScrim = null
         attachedWindowManager = null
         releaseGameGateSuppress()
+        OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
     }
 
     private fun hideCoordOnly() {
@@ -56,6 +57,7 @@ class OverlayCommandsPopover(
         coordScrim = null
         if (!isShowing()) {
             releaseGameGateSuppress()
+            OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
         }
     }
 

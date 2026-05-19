@@ -104,6 +104,7 @@ import com.lastasylum.alliance.BuildConfig
 import androidx.compose.ui.platform.LocalSavedStateRegistryOwner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -341,6 +342,11 @@ class CombatOverlayService : Service() {
             deferredHideOverlayChatTeamPanel = false
             hideOverlayChatTeamPanelNow(clearStrip)
         }
+        if (deferredDismissWhenPickerEnds && !isInGameOverlayUiActive()) {
+            deferredDismissWhenPickerEnds = false
+            dismissOverlayUiBecauseNotInGame(logWaitingForGame = false)
+        }
+        rebalanceOverlayHudZOrder()
     }
 
     private fun extractPickerUris(intent: Intent): List<Uri> =
@@ -635,7 +641,10 @@ class CombatOverlayService : Service() {
     }
 
     private val stripTickRunnable = Runnable {
-        if (!isOverlayShellActive() || overlayChatTeamPanelVisible) {
+        if (!isInGameOverlayUiActive() ||
+            !isOverlayShellActive() ||
+            overlayChatTeamPanelVisible
+        ) {
             return@Runnable
         }
         val before = stripBuffer.visibleForPreview().size
@@ -707,7 +716,12 @@ class CombatOverlayService : Service() {
     @Volatile
     private var hudRefreshPending: Boolean = false
 
+    private var hudRefreshJob: Job? = null
+
     private var lastHudRefreshCompletedAtMs: Long = 0L
+
+    @Volatile
+    private var deferredDismissWhenPickerEnds: Boolean = false
 
     private val overlayCloseHudRefreshRunnable = Runnable {
         refreshOverlayStatusHudData()
@@ -760,10 +774,15 @@ class CombatOverlayService : Service() {
     }
 
     private fun isOverlayShellActive(): Boolean {
-        if (overlaySessionActive) return true
-        val host = chatStripHost ?: return false
-        return host.isAttachedToWindow
+        if (chatStripHost?.isAttachedToWindow == true) return true
+        if (overlayStatusHudHost?.isAttachedToWindow == true) return true
+        if (overlayTopRightHudHost?.isAttachedToWindow == true) return true
+        if (overlayChatTeamRoot?.isAttachedToWindow == true) return true
+        return overlaySessionActive &&
+            (chatStripHost != null || overlayStatusHudHost != null || overlayTopRightHudHost != null)
     }
+
+    private fun isInGameOverlayUiActive(): Boolean = lastAppliedGateShouldShow == true
 
     private fun isOverlayHudOnlyMode(): Boolean =
         AppContainer.from(this).userSettingsPreferences.isOverlayHudOnlyMode()
@@ -775,13 +794,18 @@ class CombatOverlayService : Service() {
      * Система (OEM / нехватка памяти) может снять ленту с экрана, оставив ссылки на View.
      */
     private fun repairDetachedOverlayShellIfNeeded() {
+        if (!isInGameOverlayUiActive()) {
+            repairOrRemoveDetachedHudWindows()
+            return
+        }
         val mgr = windowManager ?: systemWindowManager()
         if (mgr == null) {
-            if (lastAppliedGateShouldShow == true && canDrawOverlaysNow()) {
+            if (isInGameOverlayUiActive() && canDrawOverlaysNow()) {
                 runCatching { showOverlayShell() }
             }
             return
         }
+        repairOrRemoveDetachedHudWindows()
         if (!isOverlayHudOnlyMode()) {
             repairDetachedChatStripIfNeeded(mgr)
         }
@@ -791,7 +815,10 @@ class CombatOverlayService : Service() {
         if (params != null) {
             Log.w(TAG, "repairDetachedOverlayShellIfNeeded: re-attaching chat strip")
             runCatching { mgr.addView(host, params) }
-                .onSuccess { return }
+                .onSuccess {
+                    rebalanceOverlayHudZOrder()
+                    return
+                }
                 .onFailure { e ->
                     Log.w(TAG, "repairDetachedOverlayShellIfNeeded: re-attach failed", e)
                 }
@@ -802,8 +829,70 @@ class CombatOverlayService : Service() {
         if (chatStripHost != null) {
             _overlayVisible.value = true
             beginOverlayChatSubscription()
+            rebalanceOverlayHudZOrder()
         }
         repairDetachedOverlayChatTeamPanelIfNeeded()
+    }
+
+    private fun repairOrRemoveDetachedHudWindows() {
+        val mgr = windowManager ?: systemWindowManager() ?: return
+        if (!isInGameOverlayUiActive()) {
+            removeOverlayStatusHudWindow()
+            removeOverlayTopRightHudWindow()
+            return
+        }
+        fun reattach(host: FrameLayout?, params: WindowManager.LayoutParams?, label: String) {
+            if (host == null || params == null) return
+            if (host.isAttachedToWindow) return
+            Log.w(TAG, "repairOrRemoveDetachedHudWindows: re-attaching $label")
+            runCatching { mgr.addView(host, params) }
+                .onFailure { e -> Log.w(TAG, "repairOrRemoveDetachedHudWindows: $label failed", e) }
+        }
+        reattach(overlayStatusHudHost, overlayStatusHudParams, "statusHud")
+        reattach(overlayTopRightHudHost, overlayTopRightHudParams, "topRightHud")
+        rebalanceOverlayHudZOrder()
+    }
+
+    private fun removeOverlayWindowTracked(
+        host: View?,
+        params: WindowManager.LayoutParams?,
+        windowLabel: String,
+        onCleared: () -> Unit,
+    ) {
+        if (host == null) {
+            onCleared()
+            return
+        }
+        val managers = listOfNotNull(windowManager, systemWindowManager()).distinct()
+        for (wm in managers) {
+            if (!host.isAttachedToWindow) break
+            runCatching { wm.removeView(host) }
+        }
+        if (host.isAttachedToWindow) {
+            Log.w(TAG, "removeOverlayWindowTracked: $windowLabel still attached")
+            if (BuildConfig.DEBUG) {
+                Log.d(OVERLAY_DIAG_TAG, "orphanWindow label=$windowLabel")
+            }
+            host.visibility = View.GONE
+        }
+        onCleared()
+    }
+
+    /** Поднять HUD-окна поверх ленты (после [requestChatStripZOrderLift]). */
+    private fun rebalanceOverlayHudZOrder() {
+        if (!isInGameOverlayUiActive()) return
+        val mgr = windowManager ?: systemWindowManager() ?: return
+        fun lift(host: FrameLayout?, params: WindowManager.LayoutParams?) {
+            if (host == null || params == null || !host.isAttachedToWindow) return
+            runCatching {
+                mgr.removeView(host)
+                mgr.addView(host, params)
+            }.onFailure { e ->
+                Log.w(TAG, "rebalanceOverlayHudZOrder failed", e)
+            }
+        }
+        lift(overlayStatusHudHost, overlayStatusHudParams)
+        lift(overlayTopRightHudHost, overlayTopRightHudParams)
     }
 
     /**
@@ -903,6 +992,7 @@ class CombatOverlayService : Service() {
                         }
                         GameForegroundGate.QuickForegroundProbe.NOT_IN_TARGET -> {
                             lastForegroundHintPkg = null
+                            GameForegroundGate.invalidateForegroundHintCache()
                             false
                         }
                         GameForegroundGate.QuickForegroundProbe.NEED_FULL_HEURISTICS -> {
@@ -930,16 +1020,12 @@ class CombatOverlayService : Service() {
                 if (inGame) {
                     lastOverlayInGameAtMs = nowMs
                 }
-                val shouldShow = when {
+                // UI (HUD/лента) только в игре или пока открыт оверлей-чат/системный пикер — без grace после сворачивания.
+                val shouldShowInGameOverlayUi = when {
                     inGame -> true
                     OverlayChatInteractionHold.isOverlaySystemPickerSessionActive() -> true
-                    shouldKeepOverlayWindows() &&
-                        nowMs - lastOverlayInGameAtMs < OVERLAY_INGAME_GRACE_MS &&
-                        !GameForegroundGate.isConflictingForegroundHint(
-                            hintedPkg,
-                            targetSet,
-                            packageName,
-                        ) -> true
+                    overlayChatTeamPanelVisible ||
+                        OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible -> true
                     else -> false
                 }
                 mainHandler.post {
@@ -947,18 +1033,28 @@ class CombatOverlayService : Service() {
                     if (diagNowMs - lastGateDiagLogMs >= 25_000L) {
                         lastGateDiagLogMs = diagNowMs
                         val draw = canDrawOverlaysNow()
-                        if (!hasUsageAccess || !shouldShow || !draw || !isOverlayShellActive()) {
+                        if (!hasUsageAccess || !shouldShowInGameOverlayUi || !draw || !isOverlayShellActive()) {
                             Log.i(
                                 TAG,
-                                "overlayGate usage=$hasUsageAccess show=$shouldShow " +
+                                "overlayGate usage=$hasUsageAccess inGame=$inGame showUi=$shouldShowInGameOverlayUi " +
                                     "hint=${hintedPkg ?: "-"} drawOverlays=$draw overlayAttached=${isOverlayShellActive()} " +
                                     "targets=${targets.joinToString()}",
                             )
                         }
                     }
+                    OverlayPerfDiag.logGateState(
+                        inGame = inGame,
+                        showUi = shouldShowInGameOverlayUi,
+                        stripNotTouchable = chatStripParams?.flags?.let {
+                            it and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE != 0
+                        } ?: true,
+                        dismissRectCount = (chatStripHost as? OverlayStripPassthroughFrameLayout)
+                            ?.dismissRectsInCompose?.size ?: 0,
+                        zOrderLifted = chatStripZOrderLifted,
+                    )
                     applyGameGateState(
                         hasUsageAccess = hasUsageAccess,
-                        shouldShow = shouldShow,
+                        shouldShow = shouldShowInGameOverlayUi,
                     )
                     gateCheckInFlight = false
                     scheduleGameGateTick(nextGameGateDelayMs())
@@ -978,9 +1074,9 @@ class CombatOverlayService : Service() {
     }
 
     private fun nextGameGateDelayMs(): Long {
+        if (!isInGameOverlayUiActive()) return GAME_GATE_POLL_IDLE_MS
         if (isOverlayShellActive() &&
-            stableGatePollTicks >= GATE_STABLE_TICKS_FOR_SLOW_POLL &&
-            lastAppliedGateShouldShow == true
+            stableGatePollTicks >= GATE_STABLE_TICKS_FOR_SLOW_POLL
         ) {
             return GAME_GATE_POLL_STABLE_MS
         }
@@ -988,19 +1084,18 @@ class CombatOverlayService : Service() {
         if (overlayChatTeamPanelVisible || OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible) {
             return GAME_GATE_POLL_ACTIVE_MS
         }
-        if (shouldKeepOverlayWindows()) return GAME_GATE_POLL_WARM_MS
-        val now = System.currentTimeMillis()
-        if (now - lastOverlayInGameAtMs < OVERLAY_INGAME_GRACE_MS) return GAME_GATE_POLL_WARM_MS
         return GAME_GATE_POLL_IDLE_MS
     }
 
     private fun scheduleOverlayStatusHudRefresh() {
+        if (!isInGameOverlayUiActive()) return
         if (statusHudRefreshPosted) return
         statusHudRefreshPosted = true
         mainHandler.postDelayed(statusHudRefreshRunnable, STATUS_HUD_REFRESH_MS)
     }
 
     private fun refreshOverlayStatusHudData(force: Boolean = false) {
+        if (!isInGameOverlayUiActive()) return
         val now = System.currentTimeMillis()
         if (!force && now - lastHudRefreshCompletedAtMs < HUD_REFRESH_MIN_INTERVAL_MS) {
             hudRefreshPending = true
@@ -1011,9 +1106,10 @@ class CombatOverlayService : Service() {
             return
         }
         hudRefreshInFlight = true
+        hudRefreshJob?.cancel()
         OverlayPerfDiag.logHudRefreshScheduled()
         val startedAt = android.os.SystemClock.elapsedRealtime()
-        serviceScope.launch(Dispatchers.IO) {
+        hudRefreshJob = serviceScope.launch(Dispatchers.IO) {
             try {
                 val container = AppContainer.from(this@CombatOverlayService)
                 val rooms = runCatching { container.chatRepository.listRooms().getOrNull() }.getOrNull()
@@ -1039,6 +1135,7 @@ class CombatOverlayService : Service() {
                 }
                 overlayStatusHudFlow.value = state
                 mainHandler.post {
+                    if (!isInGameOverlayUiActive()) return@post
                     val durationMs = android.os.SystemClock.elapsedRealtime() - startedAt
                     OverlayPerfDiag.logHudRefreshDone(
                         durationMs = durationMs,
@@ -1051,21 +1148,37 @@ class CombatOverlayService : Service() {
                         teamJoinRequestCount = joinRequestCount,
                     )
                     refreshOverlayTopRightHudState()
+                    rebalanceOverlayHudZOrder()
                     logOverlayRuntimeSnapshot()
                 }
             } finally {
                 hudRefreshInFlight = false
                 lastHudRefreshCompletedAtMs = System.currentTimeMillis()
-                if (hudRefreshPending) {
+                if (hudRefreshPending && isInGameOverlayUiActive()) {
                     hudRefreshPending = false
                     refreshOverlayStatusHudData()
+                } else {
+                    hudRefreshPending = false
                 }
             }
         }
     }
 
+    private fun cancelOverlayHudRefreshWork() {
+        hudRefreshJob?.cancel()
+        hudRefreshJob = null
+        hudRefreshInFlight = false
+        hudRefreshPending = false
+        mainHandler.removeCallbacks(statusHudRefreshRunnable)
+        statusHudRefreshPosted = false
+        mainHandler.removeCallbacks(hubHudRefreshRunnable)
+        hubHudRefreshPosted = false
+        mainHandler.removeCallbacks(overlayCloseHudRefreshRunnable)
+    }
+
     /** Hub chat badge only — one [listRooms], no news/forum/join-requests fan-out. */
     private fun refreshOverlayHubUnreadOnly() {
+        if (!isInGameOverlayUiActive()) return
         serviceScope.launch(Dispatchers.IO) {
             val container = AppContainer.from(this@CombatOverlayService)
             val rooms = runCatching { container.chatRepository.listRooms().getOrNull() }.getOrNull()
@@ -1143,6 +1256,7 @@ class CombatOverlayService : Service() {
         if (stableGatePollTicks < HUD_STABLE_TICKS_BEFORE_ATTACH) return
         syncOverlayStatusHudVisibility()
         syncOverlayTopRightHudVisibility()
+        rebalanceOverlayHudZOrder()
     }
 
     private fun syncOverlayStatusHudVisibility() {
@@ -1150,7 +1264,7 @@ class CombatOverlayService : Service() {
             mainHandler.post { syncOverlayStatusHudVisibility() }
             return
         }
-        val inGame = lastAppliedGateShouldShow == true
+        val inGame = isInGameOverlayUiActive()
         val prefs = AppContainer.from(this).userSettingsPreferences
         val allowed = prefs.isOverlayPanelEnabled() && canDrawOverlaysNow()
         val show = inGame && allowed && !overlayChatTeamPanelVisible
@@ -1171,10 +1285,10 @@ class CombatOverlayService : Service() {
             mainHandler.post { syncOverlayTopRightHudVisibility() }
             return
         }
-        val inGame = lastAppliedGateShouldShow == true
+        val inGame = isInGameOverlayUiActive()
         val prefs = AppContainer.from(this).userSettingsPreferences
         val allowed = prefs.isOverlayPanelEnabled() && canDrawOverlaysNow()
-        val show = inGame && allowed
+        val show = inGame && allowed && !overlayChatTeamPanelVisible
         if (!show) {
             overlayTopRightHudHost?.visibility = View.GONE
             if (!inGame) {
@@ -1211,7 +1325,6 @@ class CombatOverlayService : Service() {
 
     private fun openOverlayQuickCommandsFromHud() {
         val mgr = windowManager ?: systemWindowManager() ?: return
-        OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
         overlayCommandsPopover.toggle(mgr)
         mainHandler.post { repairDetachedOverlayShellIfNeeded() }
     }
@@ -1241,7 +1354,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun ensureOverlayStatusHudWindow() {
-        if (lastAppliedGateShouldShow != true) return
+        if (!isInGameOverlayUiActive()) return
         if (!AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()) return
         if (overlayChatTeamPanelVisible) return
         val manager = windowManager ?: systemWindowManager() ?: return
@@ -1310,21 +1423,22 @@ class CombatOverlayService : Service() {
     }
 
     private fun removeOverlayStatusHudWindow() {
-        val mgr = windowManager ?: systemWindowManager()
         val host = overlayStatusHudHost
-        if (host != null && mgr != null) {
-            runCatching { mgr.removeView(host) }
+        val params = overlayStatusHudParams
+        val composeOwner = overlayStatusHudComposeOwner
+        removeOverlayWindowTracked(host, params, "statusHud") {
+            overlayStatusHudHost = null
+            overlayStatusHudParams = null
+            overlayStatusHudCompose = null
+            composeOwner?.destroy()
+            overlayStatusHudComposeOwner = null
         }
-        overlayStatusHudHost = null
-        overlayStatusHudParams = null
-        overlayStatusHudCompose = null
-        overlayStatusHudComposeOwner?.destroy()
-        overlayStatusHudComposeOwner = null
     }
 
     private fun ensureOverlayTopRightHudWindow() {
-        if (lastAppliedGateShouldShow != true) return
+        if (!isInGameOverlayUiActive()) return
         if (!AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()) return
+        if (overlayChatTeamPanelVisible) return
         val manager = windowManager ?: systemWindowManager() ?: return
         if (overlayTopRightHudHost != null) return
 
@@ -1396,17 +1510,17 @@ class CombatOverlayService : Service() {
     }
 
     private fun removeOverlayTopRightHudWindow() {
-        val mgr = windowManager ?: systemWindowManager()
         val host = overlayTopRightHudHost
-        if (host != null && mgr != null) {
-            runCatching { mgr.removeView(host) }
+        val params = overlayTopRightHudParams
+        val composeOwner = overlayTopRightHudComposeOwner
+        removeOverlayWindowTracked(host, params, "topRightHud") {
+            overlayTopRightHudHost = null
+            overlayTopRightHudParams = null
+            overlayTopRightHudCompose = null
+            composeOwner?.destroy()
+            overlayTopRightHudComposeOwner = null
+            overlayTopRightHudFlow.value = OverlayGameTopRightHudState()
         }
-        overlayTopRightHudHost = null
-        overlayTopRightHudParams = null
-        overlayTopRightHudCompose = null
-        overlayTopRightHudComposeOwner?.destroy()
-        overlayTopRightHudComposeOwner = null
-        overlayTopRightHudFlow.value = OverlayGameTopRightHudState()
     }
 
     private fun scheduleOverlayVoiceConnect() {
@@ -1478,6 +1592,7 @@ class CombatOverlayService : Service() {
         if (shouldShow && !wasInGame) {
             refreshOverlayStatusHudData(force = true)
             scheduleOverlayStatusHudRefresh()
+            rebalanceOverlayHudZOrder()
         } else if (shouldShow) {
             scheduleOverlayStatusHudRefresh()
         }
@@ -1489,9 +1604,17 @@ class CombatOverlayService : Service() {
      */
     private fun dismissOverlayUiBecauseNotInGame(logWaitingForGame: Boolean) {
         if (OverlayChatInteractionHold.isOverlaySystemPickerSessionActive()) {
-            return
+            deferredDismissWhenPickerEnds = true
+        } else {
+            deferredDismissWhenPickerEnds = false
         }
+        cancelOverlayHudRefreshWork()
+        updateStripDismissScreenRects(emptyList())
+        stripPassthroughSyncPosted = false
+        mainHandler.removeCallbacks(stripPassthroughSyncRunnable)
+        syncChatStripWindowTouchPassthrough()
         overlayCommandsPopover.hide()
+        OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
         OverlayChatInteractionHold.clearStaleSuppressForGameBackground(
             chatTeamPanelVisible = false,
             commandsPopoverShowing = false,
@@ -1514,8 +1637,9 @@ class CombatOverlayService : Service() {
         }
         removeOverlayStatusHudWindow()
         removeOverlayTopRightHudWindow()
-        mainHandler.removeCallbacks(statusHudRefreshRunnable)
-        statusHudRefreshPosted = false
+        mainHandler.removeCallbacks(stripZOrderLiftRunnable)
+        stripZOrderLiftPosted = false
+        chatStripZOrderLifted = false
         demoteOverlayForegroundWhileIdle()
     }
 
@@ -1748,7 +1872,9 @@ class CombatOverlayService : Service() {
         val params = chatStripParams ?: return
         val mgr = windowManager ?: systemWindowManager() ?: return
         if (!host.isAttachedToWindow) return
-        val hasDismissZones = host.dismissRectsInCompose.isNotEmpty()
+        val stripEmpty = stripBuffer.visibleForPreview().isEmpty() &&
+            chatStripPreviewFlow.value.isEmpty()
+        val hasDismissZones = !stripEmpty && host.dismissRectsInCompose.isNotEmpty()
         val mask = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         val newFlags = if (hasDismissZones) {
             params.flags and mask.inv()
@@ -1880,6 +2006,7 @@ class CombatOverlayService : Service() {
     private fun removeChatStripWindow(forManager: WindowManager? = null) {
         val mgr = forManager ?: windowManager ?: systemWindowManager() ?: return
         val host = chatStripHost ?: return
+        updateStripDismissScreenRects(emptyList())
         runCatching { mgr.removeView(host) }
         chatStripHost = null
         chatStripParams = null
@@ -1887,6 +2014,7 @@ class CombatOverlayService : Service() {
         chatStripCompose = null
         chatStripZOrderLifted = false
         lastStripDismissRects = emptyList()
+        (host as? OverlayStripPassthroughFrameLayout)?.dismissRectsInCompose = emptyList()
         overlayStripComposeOwner?.destroy()
         overlayStripComposeOwner = null
     }
@@ -2109,6 +2237,7 @@ class CombatOverlayService : Service() {
             }
         }
         cancelStripTick()
+        updateStripDismissScreenRects(emptyList())
         if (overlayChatTeamPanelVisible || OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible) {
             hideOverlayChatTeamPanel()
         }
@@ -2186,6 +2315,7 @@ class CombatOverlayService : Service() {
         if (hadVisible) {
             chatStripZOrderLifted = false
             updateStripDismissScreenRects(emptyList())
+            syncChatStripWindowTouchPassthrough()
             if (clearStrip) {
                 stripBuffer.clear()
                 lastStripRenderSignature = null
@@ -2207,6 +2337,7 @@ class CombatOverlayService : Service() {
         overlayChatTeamComposeOwner = null
         applyOverlayStripVisibility(rebalanceZOrder = false)
         syncOverlayStatusHudVisibility()
+        rebalanceOverlayHudZOrder()
         refreshOverlayChatStripNow()
         mainHandler.removeCallbacks(overlayCloseHudRefreshRunnable)
         mainHandler.postDelayed(overlayCloseHudRefreshRunnable, OVERLAY_CLOSE_HUD_REFRESH_DELAY_MS)
@@ -2262,6 +2393,7 @@ class CombatOverlayService : Service() {
             chatStripZOrderLifted = false
             Log.w(TAG, "requestChatStripZOrderLift failed", e)
         }
+        rebalanceOverlayHudZOrder()
     }
 
     private fun rebalanceOverlayChatStripZOrder() = requestChatStripZOrderLift()
@@ -2677,8 +2809,10 @@ class CombatOverlayService : Service() {
         _overlayVisible.value = false
         overlaySessionActive = false
         cachedAllianceHubRoomId = null
-        mainHandler.removeCallbacks(hubHudRefreshRunnable)
-        hubHudRefreshPosted = false
+        mainHandler.removeCallbacks(stripZOrderLiftRunnable)
+        stripZOrderLiftPosted = false
+        chatStripZOrderLifted = false
+        cancelOverlayHudRefreshWork()
         chatStripClipRoot = null
         windowManager = null
     }

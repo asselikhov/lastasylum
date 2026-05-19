@@ -53,4 +53,20 @@ internal object OverlayPerfDiag {
                 "hudOnly=$hudOnly lightStrip=$lightStrip",
         )
     }
+
+    fun logGateState(
+        inGame: Boolean,
+        showUi: Boolean,
+        stripNotTouchable: Boolean,
+        dismissRectCount: Int,
+        zOrderLifted: Boolean,
+    ) {
+        if (!BuildConfig.DEBUG) return
+        Log.d(
+            TAG,
+            "gate inGame=$inGame showUi=$showUi stripNotTouchable=$stripNotTouchable " +
+                "dismissRects=$dismissRectCount zOrderLifted=$zOrderLifted " +
+                "suppressDepth=${OverlayChatInteractionHold.overlayModalSuppressDepthForDiag()}",
+        )
+    }
 }

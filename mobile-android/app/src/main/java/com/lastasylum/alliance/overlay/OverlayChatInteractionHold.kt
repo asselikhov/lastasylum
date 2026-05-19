@@ -92,6 +92,10 @@ object OverlayChatInteractionHold {
             isOverlayModalSuppressActive() ||
             isOverlaySystemPickerSessionActive()
 
+    /** Debug-only snapshot for [OverlayPerfDiag]. */
+    fun overlayModalSuppressDepthForDiag(): Int =
+        synchronized(suppressLock) { overlayModalSuppressDepth }
+
     /** Блокировать BackHandler полноэкранной панели, пока открыта модалка в оверлее. */
     fun blocksFullscreenPanelBack(): Boolean = isOverlayModalSuppressActive()
 

@@ -458,7 +458,8 @@ object GameForegroundGate {
         }
         // На части прошивок «последний» RESUME — не игра, а лаунчер/сервис; lastTimeUsed при долгой сессии
         // в Unity не обновляется. Сравниваем макс. время RESUME цели с прочими (кроме декора и SquadRelay).
-        if (runCatching {
+        if (!isConflictingForegroundHint(hinted, targetSet, alliance) &&
+            runCatching {
                 targetWinsResumeTimeline(usm, end, RESUME_VS_RESUME_WINDOW_MS, targetSet, alliance)
             }.getOrDefault(false)
         ) {
