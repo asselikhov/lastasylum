@@ -2,6 +2,9 @@ package com.lastasylum.alliance
 
 import android.app.Application
 import androidx.profileinstaller.ProfileInstaller
+import coil.ImageLoader
+import coil.ImageLoaderFactory
+import com.lastasylum.alliance.ui.chat.SquadRelayImageLoader
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.analytics.FirebaseAnalytics
@@ -14,7 +17,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-class SquadRelayApplication : Application() {
+class SquadRelayApplication : Application(), ImageLoaderFactory {
+    override fun newImageLoader(): ImageLoader = SquadRelayImageLoader.create(this)
+
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onCreate() {

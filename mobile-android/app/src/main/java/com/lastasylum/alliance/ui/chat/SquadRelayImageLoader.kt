@@ -4,44 +4,31 @@ import android.content.Context
 import coil.ImageLoader
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
-import com.lastasylum.alliance.data.auth.TokenStore
+import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.data.network.AuthInterceptor
 import okhttp3.OkHttpClient
 
 /**
- * Shared Coil loader with Bearer auth — avoids per-[AsyncImage] token reads.
+ * Coil [ImageLoader] with Bearer auth via [AuthInterceptor] on a shared OkHttp client.
+ * Registered as the app singleton through [com.lastasylum.alliance.SquadRelayApplication].
  */
 object SquadRelayImageLoader {
-    @Volatile
-    private var instance: ImageLoader? = null
-
-    fun get(context: Context, tokenStore: TokenStore): ImageLoader {
-        return instance ?: synchronized(this) {
-            instance ?: build(context.applicationContext, tokenStore).also { instance = it }
-        }
-    }
-
-    fun invalidate() {
-        synchronized(this) {
-            instance?.shutdown()
-            instance = null
-        }
-    }
-
-    private fun build(context: Context, tokenStore: TokenStore): ImageLoader {
+    fun create(context: Context): ImageLoader {
+        val appContext = context.applicationContext
+        val tokenStore = AppContainer.from(appContext).tokenStore
         val client = OkHttpClient.Builder()
             .addInterceptor(AuthInterceptor(tokenStore))
             .build()
-        return ImageLoader.Builder(context)
+        return ImageLoader.Builder(appContext)
             .okHttpClient(client)
             .memoryCache {
-                MemoryCache.Builder(context)
+                MemoryCache.Builder(appContext)
                     .maxSizePercent(0.15)
                     .build()
             }
             .diskCache {
                 DiskCache.Builder()
-                    .directory(context.cacheDir.resolve("coil_chat_images"))
+                    .directory(appContext.cacheDir.resolve("coil_chat_images"))
                     .maxSizePercent(0.02)
                     .build()
             }

@@ -151,7 +151,6 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatRoomDto
-import com.lastasylum.alliance.ui.chat.SquadRelayImageLoader
 import com.lastasylum.alliance.data.chat.ChatAttachment
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
@@ -198,7 +197,6 @@ import com.lastasylum.alliance.ui.util.chatMessageTextForComposer
 import com.lastasylum.alliance.ui.util.copyChatMessageToClipboard
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import coil.compose.AsyncImage
-import coil.compose.LocalImageLoader
 import coil.request.ImageRequest
 import android.content.Context
 import android.content.Intent
@@ -480,9 +478,6 @@ fun ChatScreen(
     compactOverlayMode: Boolean = false,
 ) {
     val context = LocalContext.current
-    val squadRelayImageLoader = remember(context) {
-        SquadRelayImageLoader.get(context, AppContainer.from(context).tokenStore)
-    }
     val overlayUi = LocalOverlayUiMode.current
     val activityResultOwner = LocalActivityResultRegistryOwner.current
     val canHandleBack = LocalOnBackPressedDispatcherOwner.current != null
@@ -625,7 +620,6 @@ fun ChatScreen(
         LocalOpenRemoteChatImagePreview provides { urls, idx ->
             remoteChatImagePreview = urls to idx
         },
-        LocalImageLoader provides squadRelayImageLoader,
     ) {
         Box(Modifier.fillMaxSize()) {
             Column(
