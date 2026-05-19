@@ -1217,11 +1217,10 @@ class CombatOverlayService : Service() {
                         forumUnread = state.forumUnread,
                         newsUnread = state.teamNewsUnread,
                     )
-                    ensureOverlayStatusHudWindow()
                     overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
                         teamJoinRequestCount = joinRequestCount,
                     )
-                    refreshOverlayTopRightHudState()
+                    attachOverlayHudWindowsIfNeeded()
                     logOverlayRuntimeSnapshot()
                 }
             } finally {
@@ -1327,8 +1326,25 @@ class CombatOverlayService : Service() {
 
     private fun syncOverlayHudsIfReady() {
         if (stableGatePollTicks < HUD_STABLE_TICKS_BEFORE_ATTACH) return
-        syncOverlayStatusHudVisibility()
-        syncOverlayTopRightHudVisibility()
+        attachOverlayHudWindowsIfNeeded()
+    }
+
+    /** Левый и правый HUD в одном кадре — иначе правый ждёт IO/гейт и появляется позже. */
+    private fun attachOverlayHudWindowsIfNeeded() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { attachOverlayHudWindowsIfNeeded() }
+            return
+        }
+        if (!isInGameOverlayUiActive()) return
+        val prefs = AppContainer.from(this).userSettingsPreferences
+        if (!prefs.isOverlayPanelEnabled() || !canDrawOverlaysNow()) return
+        if (overlayChatTeamPanelVisible) return
+        ensureOverlayStatusHudWindow()
+        ensureOverlayTopRightHudWindow()
+        overlayStatusHudHost?.visibility = View.VISIBLE
+        overlayTopRightHudHost?.visibility = View.VISIBLE
+        syncOverlayHudWindowLayout()
+        refreshOverlayTopRightHudState()
     }
 
     private fun syncOverlayStatusHudVisibility() {
@@ -1347,10 +1363,7 @@ class CombatOverlayService : Service() {
             }
             return
         }
-        ensureOverlayStatusHudWindow()
-        overlayStatusHudHost?.visibility = View.VISIBLE
-        syncOverlayHudWindowLayout()
-        syncOverlayTopRightHudVisibility()
+        attachOverlayHudWindowsIfNeeded()
     }
 
     private fun syncOverlayTopRightHudVisibility() {
@@ -1369,14 +1382,7 @@ class CombatOverlayService : Service() {
             }
             return
         }
-        ensureOverlayTopRightHudWindow()
-        val host = overlayTopRightHudHost
-        val wasHidden = host?.visibility != View.VISIBLE
-        host?.visibility = View.VISIBLE
-        syncOverlayHudWindowLayout()
-        if (wasHidden) {
-            refreshOverlayTopRightHudState()
-        }
+        attachOverlayHudWindowsIfNeeded()
     }
 
     private fun refreshOverlayTopRightHudState() {
@@ -1666,12 +1672,15 @@ class CombatOverlayService : Service() {
         }
         promoteOverlayForeground()
         ensureOverlayIfPermitted()
-        syncOverlayHudsIfReady()
         if (shouldShow && !wasInGame) {
+            stableGatePollTicks = HUD_STABLE_TICKS_BEFORE_ATTACH
+            attachOverlayHudWindowsIfNeeded()
             refreshOverlayStatusHudData(force = true)
             scheduleOverlayStatusHudRefresh()
             rebalanceOverlayHudZOrder(force = true)
-        } else if (shouldShow) {
+        }
+        syncOverlayHudsIfReady()
+        if (shouldShow && wasInGame) {
             scheduleOverlayStatusHudRefresh()
         }
     }
@@ -2917,7 +2926,8 @@ class CombatOverlayService : Service() {
         /** Краткий grace при ложном «не в игре» во время чата/пикера; не применяется при явном лаунчере/другом приложении. */
         private const val OVERLAY_INGAME_GRACE_MS = 2_500L
         private const val OVERLAY_HISTORY_LOAD = 40
-        private const val HUD_STABLE_TICKS_BEFORE_ATTACH = 3
+        /** 1 тик гейта (~1.2 с) после «в игре» — достаточно, если HUD уже показан при входе. */
+        private const val HUD_STABLE_TICKS_BEFORE_ATTACH = 1
         private const val GATE_STABLE_TICKS_FOR_SLOW_POLL = 5
         private const val HUD_REFRESH_MIN_INTERVAL_MS = 2_000L
         private const val HUB_HUD_REFRESH_DEBOUNCE_MS = 4_000L
