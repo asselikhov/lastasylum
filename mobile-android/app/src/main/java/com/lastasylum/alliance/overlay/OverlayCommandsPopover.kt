@@ -17,10 +17,12 @@ import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.content.res.AppCompatResources
+import androidx.core.graphics.drawable.DrawableCompat
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
 import kotlinx.coroutines.CoroutineScope
@@ -127,19 +129,33 @@ class OverlayCommandsPopover(
             setStroke(dp(1).coerceAtLeast(1), Color.parseColor("#3D4A62AA"))
         }
 
-    private fun chipBackground(selected: Boolean): GradientDrawable =
+    private fun optionChipBackground(selected: Boolean): GradientDrawable =
         roundedRect(
-            fillColor = if (selected) Color.parseColor("#FF3548C8") else Color.parseColor("#1A222C3A"),
-            strokeColor = if (selected) Color.parseColor("#664A6AD4") else Color.parseColor("#2A384858"),
-            cornerDp = 8,
+            fillColor = if (selected) Color.parseColor("#FF2A4558") else Color.parseColor("#FF1A2836"),
+            strokeColor = if (selected) Color.parseColor("#775A9AB8") else Color.parseColor("#354A5E72"),
+            cornerDp = 999,
         )
 
-    private fun tabBackground(selected: Boolean): GradientDrawable =
-        roundedRect(
-            fillColor = if (selected) Color.parseColor("#FF2A3560") else Color.TRANSPARENT,
-            strokeColor = if (selected) Color.parseColor("#554A6AD4") else Color.TRANSPARENT,
-            cornerDp = 8,
-        )
+    private fun categoryIconBackground(selected: Boolean, accentColor: Int): GradientDrawable =
+        GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(
+                if (selected) {
+                    Color.argb(
+                        72,
+                        Color.red(accentColor),
+                        Color.green(accentColor),
+                        Color.blue(accentColor),
+                    )
+                } else {
+                    Color.parseColor("#221C2838")
+                },
+            )
+            setStroke(
+                dp(1).coerceAtLeast(1),
+                if (selected) accentColor else Color.parseColor("#3A485C88"),
+            )
+        }
 
     private fun fieldBackground(): GradientDrawable =
         roundedRect(
@@ -148,7 +164,16 @@ class OverlayCommandsPopover(
             cornerDp = 8,
         )
 
-    private fun textButtonRipple(): RippleDrawable =
+    private fun coordsButtonBackground(): RippleDrawable =
+        rippleOn(
+            roundedRect(
+                fillColor = Color.parseColor("#1E2A3C48"),
+                strokeColor = Color.parseColor("#CC5A7CFF"),
+                cornerDp = 10,
+            ),
+        )
+
+    private fun primarySendButtonBackground(): RippleDrawable =
         rippleOn(
             roundedRect(
                 fillColor = Color.parseColor("#FF3A4EC8"),
@@ -170,6 +195,7 @@ class OverlayCommandsPopover(
     private data class CommandCategory(
         val titleRes: Int,
         val shortLabelRes: Int,
+        val iconRes: Int,
         val accentColor: Int,
         val options: List<CommandOption>? = null,
         val hintRes: Int? = null,
@@ -198,14 +224,40 @@ class OverlayCommandsPopover(
         TextView(context).apply {
             this.text = text
             gravity = Gravity.CENTER
-            setTextColor(Color.parseColor(if (selected) "#FFF4F7FF" else "#99A8B8CC"))
+            setTextColor(Color.parseColor(if (selected) "#FFE8F4FF" else "#9AB0C4D8"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             typeface = if (selected) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
-            minHeight = dp(30)
-            setPadding(dp(8), dp(6), dp(8), dp(6))
-            background = chipBackground(selected)
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+            background = optionChipBackground(selected)
             isClickable = true
         }
+
+    private fun categoryIconTab(
+        category: CommandCategory,
+        selected: Boolean,
+    ): FrameLayout {
+        val size = dp(42)
+        val iconSize = dp(22)
+        val host = FrameLayout(context).apply {
+            background = rippleOn(categoryIconBackground(selected, category.accentColor))
+            isClickable = true
+            contentDescription = context.getString(category.shortLabelRes)
+        }
+        val icon = ImageView(context).apply {
+            setImageDrawable(
+                AppCompatResources.getDrawable(context, category.iconRes)?.mutate()?.also { d ->
+                    DrawableCompat.setTint(d, if (selected) category.accentColor else Color.parseColor("#AAB8C8D8"))
+                },
+            )
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+        }
+        host.addView(
+            icon,
+            FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER),
+        )
+        host.layoutParams = LinearLayout.LayoutParams(size, size)
+        return host
+    }
 
     private fun iconCloseButton(): TextView =
         TextView(context).apply {
@@ -236,6 +288,7 @@ class OverlayCommandsPopover(
             CommandCategory(
                 titleRes = R.string.overlay_cmd_column_attack,
                 shortLabelRes = R.string.overlay_cmd_tab_attack,
+                iconRes = R.drawable.ic_overlay_cmd_attack,
                 accentColor = Color.parseColor("#FFE53935"),
                 options = listOf(
                     CommandOption(R.string.overlay_cmd_spinner_by_city, R.string.overlay_cmd_attack_city),
@@ -245,6 +298,7 @@ class OverlayCommandsPopover(
             CommandCategory(
                 titleRes = R.string.overlay_cmd_column_storm,
                 shortLabelRes = R.string.overlay_cmd_tab_storm,
+                iconRes = R.drawable.ic_overlay_cmd_storm,
                 accentColor = Color.parseColor("#FFFF9800"),
                 options = listOf(
                     CommandOption(R.string.overlay_cmd_spinner_by_city, R.string.overlay_cmd_storm_city),
@@ -254,6 +308,7 @@ class OverlayCommandsPopover(
             CommandCategory(
                 titleRes = R.string.overlay_cmd_column_reinf,
                 shortLabelRes = R.string.overlay_cmd_tab_reinf,
+                iconRes = R.drawable.ic_overlay_cmd_reinf,
                 accentColor = Color.parseColor("#FF43A047"),
                 options = listOf(
                     CommandOption(R.string.overlay_cmd_spinner_reinf_to_city, R.string.overlay_cmd_reinf_city),
@@ -263,6 +318,7 @@ class OverlayCommandsPopover(
             CommandCategory(
                 titleRes = R.string.overlay_cmd_column_excavation,
                 shortLabelRes = R.string.overlay_cmd_tab_excavation,
+                iconRes = R.drawable.ic_overlay_cmd_excavation,
                 accentColor = Color.parseColor("#FF7E57C2"),
                 hintRes = R.string.overlay_cmd_excavation_hint,
                 excavation = true,
@@ -309,14 +365,11 @@ class OverlayCommandsPopover(
             addView(close)
         }
 
-        val tabViews = mutableListOf<TextView>()
-        val tabsScroll = HorizontalScrollView(context).apply {
-            isHorizontalScrollBarEnabled = false
-            overScrollMode = View.OVER_SCROLL_NEVER
-        }
+        val tabViews = mutableListOf<FrameLayout>()
         val tabsRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(12), 0, dp(12), dp(4))
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(14), dp(6), dp(14), dp(4))
         }
 
         val accentDot = View(context)
@@ -324,19 +377,39 @@ class OverlayCommandsPopover(
         val categoryHint = labelText("", 10.5f, Color.parseColor("#7A90A4B8"))
         val optionsRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.START
         }
         val optionChips = mutableListOf<TextView>()
 
-        val coordsAction = TextView(context).apply {
-            text = context.getString(R.string.overlay_cmd_column_open_coords)
-            setTextColor(Color.parseColor("#FFF8FAFF"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            typeface = Typeface.DEFAULT_BOLD
+        val coordsIcon = ImageView(context).apply {
+            setImageDrawable(
+                AppCompatResources.getDrawable(context, R.drawable.ic_overlay_cmd_coords)?.mutate()?.also { d ->
+                    DrawableCompat.setTint(d, Color.parseColor("#FF8FAEFF"))
+                },
+            )
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+        }
+        val coordsLabel = labelText(
+            context.getString(R.string.overlay_cmd_column_open_coords),
+            12.5f,
+            Color.parseColor("#FFE8F0FF"),
+            bold = true,
+        )
+        val coordsAction = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            minHeight = dp(34)
-            setPadding(dp(12), dp(7), dp(12), dp(7))
-            background = textButtonRipple()
+            minimumHeight = dp(36)
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+            background = coordsButtonBackground()
             isClickable = true
+            addView(coordsIcon, LinearLayout.LayoutParams(dp(18), dp(18)))
+            addView(
+                coordsLabel,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { marginStart = dp(8) },
+            )
         }
 
         val bodyColumn = LinearLayout(context).apply {
@@ -352,17 +425,24 @@ class OverlayCommandsPopover(
         fun refreshTabs() {
             tabViews.forEachIndexed { index, tab ->
                 val sel = index == selectedCategoryIndex
-                tab.background = tabBackground(sel)
-                tab.setTextColor(Color.parseColor(if (sel) "#FFF4F7FF" else "#88A0B4C8"))
-                tab.typeface = if (sel) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                val cat = categories[index]
+                tab.background = rippleOn(categoryIconBackground(sel, cat.accentColor))
+                val icon = tab.getChildAt(0) as? ImageView
+                icon?.drawable?.mutate()?.let { d ->
+                    DrawableCompat.setTint(
+                        d,
+                        if (sel) cat.accentColor else Color.parseColor("#AAB8C8D8"),
+                    )
+                    icon.setImageDrawable(d)
+                }
             }
         }
 
         fun refreshOptions() {
             optionChips.forEachIndexed { index, chip ->
                 val sel = index == selectedOptionIndex
-                chip.background = chipBackground(sel)
-                chip.setTextColor(Color.parseColor(if (sel) "#FFF4F7FF" else "#99A8B8CC"))
+                chip.background = optionChipBackground(sel)
+                chip.setTextColor(Color.parseColor(if (sel) "#FFE8F4FF" else "#9AB0C4D8"))
                 chip.typeface = if (sel) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
             }
         }
@@ -377,7 +457,7 @@ class OverlayCommandsPopover(
             }
             optionsRow.visibility = View.VISIBLE
             selectedOptionIndex = 0
-            val gap = dp(6)
+            val gap = dp(8)
             opts.forEachIndexed { index, opt ->
                 val chip = choiceChip(context.getString(opt.labelDisplayRes), index == 0)
                 chip.setOnClickListener {
@@ -387,7 +467,10 @@ class OverlayCommandsPopover(
                 optionChips.add(chip)
                 optionsRow.addView(
                     chip,
-                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply {
                         if (index < opts.lastIndex) marginEnd = gap
                     },
                 )
@@ -410,14 +493,7 @@ class OverlayCommandsPopover(
         }
 
         categories.forEachIndexed { index, cat ->
-            val tab = labelText(
-                context.getString(cat.shortLabelRes),
-                11f,
-                Color.parseColor("#88A0B4C8"),
-                paddingH = dp(10),
-                paddingV = dp(6),
-            ).apply {
-                isClickable = true
+            val tab = categoryIconTab(cat, index == 0).apply {
                 setOnClickListener { applyCategory(index) }
             }
             tabViews.add(tab)
@@ -427,11 +503,10 @@ class OverlayCommandsPopover(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                 ).apply {
-                    if (index > 0) marginStart = dp(6)
+                    if (index > 0) marginStart = dp(10)
                 },
             )
         }
-        tabsScroll.addView(tabsRow)
 
         titleRow.addView(
             accentDot,
@@ -495,7 +570,7 @@ class OverlayCommandsPopover(
                     marginEnd = dp(12)
                 },
             )
-            addView(tabsScroll)
+            addView(tabsRow)
             addView(bodyColumn)
             setOnClickListener { }
         }
@@ -610,7 +685,7 @@ class OverlayCommandsPopover(
             gravity = Gravity.CENTER
             minHeight = dp(34)
             setPadding(dp(12), dp(7), dp(12), dp(7))
-            background = textButtonRipple()
+            background = primarySendButtonBackground()
             isClickable = true
         }
 
