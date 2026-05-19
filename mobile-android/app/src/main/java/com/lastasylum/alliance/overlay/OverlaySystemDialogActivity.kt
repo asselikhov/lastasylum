@@ -41,6 +41,12 @@ class OverlaySystemDialogActivity : ComponentActivity() {
         deliverMicPermission(granted)
     }
 
+    private val requestGalleryReadLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        deliverGalleryReadPermission(granted)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pendingRequestCode = intent?.getIntExtra(EXTRA_REQUEST_CODE, -1) ?: -1
@@ -122,6 +128,18 @@ class OverlaySystemDialogActivity : ComponentActivity() {
         finish()
     }
 
+    private fun deliverGalleryReadPermission(granted: Boolean) {
+        deliveredResult = true
+        val requestCode = pendingRequestCode
+        sendBroadcast(
+            Intent(ACTION_OVERLAY_GALLERY_PERMISSION_RESULT)
+                .setPackage(packageName)
+                .putExtra(EXTRA_REQUEST_CODE, requestCode)
+                .putExtra(EXTRA_GRANTED, granted),
+        )
+        finish()
+    }
+
     private fun deliverMicPermission(granted: Boolean) {
         deliveredResult = true
         val requestCode = pendingRequestCode
@@ -146,6 +164,13 @@ class OverlaySystemDialogActivity : ComponentActivity() {
         finish()
     }
 
+    private fun galleryReadPermission(): String =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_IMAGES
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+
     companion object {
         private const val STATE_LAUNCHED = "launched_picker"
 
@@ -154,8 +179,13 @@ class OverlaySystemDialogActivity : ComponentActivity() {
         const val KIND_PICK_IMAGES = "pick_images"
         const val KIND_GET_CONTENT = "get_content"
         const val KIND_REQUEST_MIC = "request_mic"
+        const val KIND_REQUEST_GALLERY_READ = "request_gallery_read"
+        const val EXTRA_PERMISSION = "permission"
+        const val EXTRA_KEEP_OVERLAY_VISIBLE = "keep_overlay_visible"
 
         const val ACTION_OVERLAY_PICK_IMAGES_RESULT = "com.lastasylum.alliance.overlay.PICK_IMAGES_RESULT"
+        const val ACTION_OVERLAY_GALLERY_PERMISSION_RESULT =
+            "com.lastasylum.alliance.overlay.GALLERY_PERMISSION_RESULT"
         const val ACTION_OVERLAY_GET_CONTENT_RESULT = "com.lastasylum.alliance.overlay.GET_CONTENT_RESULT"
         const val ACTION_OVERLAY_MIC_PERMISSION_RESULT = "com.lastasylum.alliance.overlay.MIC_PERMISSION_RESULT"
         const val ACTION_OVERLAY_ACTIVITY_CANCELED =

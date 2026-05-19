@@ -28,7 +28,7 @@ object SquadRelayImageRequests {
 
     /** Превью content:// / FileProvider в композере (оверлей и приложение). */
     fun localUriPreview(context: Context, uri: android.net.Uri): ImageRequest =
-        ImageRequest.Builder(context)
+        ImageRequest.Builder(context.applicationContext)
             .data(uri)
             .allowHardware(false)
             .crossfade(false)
@@ -41,13 +41,14 @@ object SquadRelayImageRequests {
         heightPx: Int,
         crossfade: Boolean,
     ): ImageRequest {
-        val builder = ImageRequest.Builder(context)
+        val appContext = context.applicationContext
+        val builder = ImageRequest.Builder(appContext)
             .data(url)
             .allowHardware(false)
             .size(Size(widthPx, heightPx))
             .apply {
                 if (!crossfade) crossfade(false)
-                val token = AppContainer.from(context).tokenStore.getAccessToken()
+                val token = AppContainer.from(appContext).tokenStore.getAccessToken()
                 if (!token.isNullOrBlank()) {
                     addHeader("Authorization", "Bearer $token")
                 }

@@ -248,7 +248,7 @@ class CombatOverlayService : Service() {
     /** Снимок окон overlay на время системного пикера (TYPE_APPLICATION_OVERLAY выше Activity — иначе галерея «под» чатом). */
     private val overlayTouchPassthroughSnaps = mutableListOf<OverlayWindowFlagSnap>()
 
-    private fun suspendOverlayWindowsForSystemActivity() {
+    private fun suspendOverlayWindowsForSystemActivity(keepChatPanelVisible: Boolean = false) {
         OverlayChatInteractionHold.beginOverlaySystemPickerSession()
         val mgr = windowManager
         if (mgr == null) {
@@ -280,8 +280,12 @@ class CombatOverlayService : Service() {
             }
         }
         // Панель и ленту прячем. Чат только GONE+NOT_TOUCHABLE: removeView() рвёт Compose и теряет
-        // rememberLauncherForActivityResult до ответа пикера.
-        hideOverlayChatPanelForPicker(mgr)
+        // rememberLauncherForActivityResult до ответа пикера. Для доступа к галерее чат остаётся видимым.
+        if (keepChatPanelVisible) {
+            snap(overlayChatTeamParams, overlayChatTeamRoot, hideFromScreen = false)
+        } else {
+            hideOverlayChatPanelForPicker(mgr)
+        }
         snap(chatStripParams, chatStripHost, hideFromScreen = true)
         overlayTicker.applyTouchPassthrough(true)
         overlayCommandsPopover.hide()
@@ -572,7 +576,7 @@ class CombatOverlayService : Service() {
                 input: I,
                 options: ActivityOptionsCompat?,
             ) {
-                val kind = OverlayActivityResultKind.kindFor(contract)
+                val kind = OverlayActivityResultKind.kindFor(contract, input)
                 if (kind == null) {
                     Toast.makeText(
                         this@CombatOverlayService,
@@ -599,8 +603,16 @@ class CombatOverlayService : Service() {
                         val mime = (input as? String)?.takeIf { it.isNotBlank() } ?: "image/*"
                         putExtra(OverlaySystemDialogActivity.EXTRA_CONTENT_MIME, mime)
                     }
+                    if (kind == OverlaySystemDialogActivity.KIND_REQUEST_GALLERY_READ) {
+                        val permission = (input as? String)?.takeIf { it.isNotBlank() }
+                            ?: OverlayDeviceGallery.requiredReadPermission()
+                        putExtra(OverlaySystemDialogActivity.EXTRA_PERMISSION, permission)
+                    }
+                    val keepChatVisible = kind == OverlaySystemDialogActivity.KIND_REQUEST_GALLERY_READ
+                    putExtra(OverlaySystemDialogActivity.EXTRA_KEEP_OVERLAY_VISIBLE, keepChatVisible)
                 }
-                suspendOverlayWindowsForSystemActivity()
+                val keepChatVisible = kind == OverlaySystemDialogActivity.KIND_REQUEST_GALLERY_READ
+                suspendOverlayWindowsForSystemActivity(keepChatPanelVisible = keepChatVisible)
                 mainHandler.post {
                     try {
                         startActivity(i)

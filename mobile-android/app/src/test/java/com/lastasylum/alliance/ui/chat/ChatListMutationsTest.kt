@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.ui.chat
 
+import com.lastasylum.alliance.data.chat.ChatAttachment
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatMessageReplyPreview
 import org.junit.Assert.assertEquals
@@ -34,6 +35,20 @@ class ChatListMutationsTest {
         assertEquals(listOf("2", "1"), r.messages.map { it._id })
         assertEquals("2", r.newestMessageKey)
         assertTrue(known.contains("2"))
+    }
+
+    @Test
+    fun upsertMessage_preservesAttachmentsWhenIncomingEmpty() {
+        val known = linkedSetOf("1")
+        val withImage = msg("1", "a").copy(
+            attachments = listOf(
+                ChatAttachment(kind = "image", url = "/chat/attachments/abc"),
+            ),
+        )
+        val incoming = msg("1", "a")
+        val r = upsertMessage(listOf(withImage), incoming, known)
+        assertEquals(1, r.messages.size)
+        assertEquals("/chat/attachments/abc", r.messages[0].attachments.single().url)
     }
 
     @Test

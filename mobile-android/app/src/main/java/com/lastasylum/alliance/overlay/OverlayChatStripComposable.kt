@@ -396,8 +396,9 @@ private fun OverlayChatStripMessage(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 AsyncImage(
-                                    model = ImageRequest.Builder(ctx)
+                                    model = ImageRequest.Builder(ctx.applicationContext)
                                         .data(ZlobyakaStickerPack.assetUriForStem(stickerStem))
+                                        .allowHardware(false)
                                         .crossfade(true)
                                         .size(256)
                                         .build(),

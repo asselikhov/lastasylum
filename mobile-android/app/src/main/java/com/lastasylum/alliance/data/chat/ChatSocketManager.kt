@@ -262,6 +262,7 @@ class ChatSocketManager {
                         deletedAt = payload.optString("deletedAt").takeIf { it.isNotBlank() },
                         deletedByUserId = payload.optString("deletedByUserId")
                             .takeIf { it.isNotBlank() },
+                        attachments = payload.toAttachments(),
                     )
                     messageListeners.forEach { l ->
                         runCatching { l(message) }
@@ -378,6 +379,26 @@ private fun JSONObject.toForwardedFrom(): ChatForwardedFrom? {
     )
 }
 
+private fun JSONObject.toAttachments(): List<ChatAttachment> {
+    val arr = optJSONArray("attachments") ?: return emptyList()
+    val out = ArrayList<ChatAttachment>(arr.length())
+    for (i in 0 until arr.length()) {
+        val o = arr.optJSONObject(i) ?: continue
+        val kind = o.optString("kind").takeIf { it.isNotBlank() } ?: continue
+        val url = o.optString("url").takeIf { it.isNotBlank() } ?: continue
+        out.add(
+            ChatAttachment(
+                kind = kind,
+                url = url,
+                mimeType = o.optString("mimeType").takeIf { it.isNotBlank() },
+                size = o.optLong("size").takeIf { it > 0L },
+                filename = o.optString("filename").takeIf { it.isNotBlank() },
+            ),
+        )
+    }
+    return out
+}
+
 private fun org.json.JSONArray.toReactions(): List<ChatReaction> {
     val out = ArrayList<ChatReaction>(length())
     for (i in 0 until length()) {
@@ -415,5 +436,6 @@ private fun JSONObject.toChatMessage(): ChatMessage {
         replyTo = optJSONObject("replyTo")?.toChatReplyPreview(),
         deletedAt = optString("deletedAt").takeIf { it.isNotBlank() },
         deletedByUserId = optString("deletedByUserId").takeIf { it.isNotBlank() },
+        attachments = toAttachments(),
     )
 }

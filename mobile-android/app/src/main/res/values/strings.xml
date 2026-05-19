@@ -50,6 +50,12 @@
     <string name="chat_open_media_panel_cd">Стикеры</string>
     <string name="chat_show_keyboard_cd">Показать клавиатуру</string>
     <string name="chat_attach_images_cd">Прикрепить изображение</string>
+    <string name="overlay_chat_gallery_title">Выберите фото</string>
+    <string name="overlay_chat_gallery_cancel">Отмена</string>
+    <string name="overlay_chat_gallery_empty">Нет доступных изображений в галерее</string>
+    <string name="overlay_chat_gallery_permission_hint">Разрешите доступ к фото, чтобы выбрать снимки прямо в оверлее.</string>
+    <string name="overlay_chat_gallery_grant_access">Разрешить доступ</string>
+    <string name="overlay_chat_gallery_add_count">Добавить (%1$d)</string>
     <string name="chat_voice_mic_cd">Удерживать: голос в текст и отправка</string>
     <string name="chat_attachments_label">Вложения (%1$d)</string>
     <string name="chat_attachments_clear">Очистить</string>

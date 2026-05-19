@@ -31,6 +31,16 @@ internal fun rebuildMessageIdIndex(
     }
 }
 
+/** Socket/API updates without attachments must not wipe images already shown from REST. */
+internal fun mergePreservingAttachments(
+    incoming: ChatMessage,
+    existing: ChatMessage,
+): ChatMessage {
+    if (incoming.attachments.isNotEmpty()) return incoming
+    if (existing.attachments.isEmpty()) return incoming
+    return incoming.copy(attachments = existing.attachments)
+}
+
 internal fun upsertMessage(
     current: List<ChatMessage>,
     incoming: ChatMessage,
@@ -42,7 +52,7 @@ internal fun upsertMessage(
         val existingIndex = idIndex?.get(id) ?: current.indexOfFirst { it._id == id }
         if (existingIndex >= 0) {
             val updated = current.toMutableList()
-            updated[existingIndex] = incoming
+            updated[existingIndex] = mergePreservingAttachments(incoming, current[existingIndex])
             idIndex?.put(id, existingIndex)
             return MessageUpsertResult(
                 messages = updated,
