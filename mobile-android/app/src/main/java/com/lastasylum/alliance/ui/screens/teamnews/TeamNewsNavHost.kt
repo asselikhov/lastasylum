@@ -459,20 +459,29 @@ private fun TeamNewsListRoute(
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(true) }
     var newsItems by remember { mutableStateOf<List<TeamNewsListItemDto>>(emptyList()) }
+    var newsNextCursor by remember { mutableStateOf<String?>(null) }
+    var loadingMore by remember { mutableStateOf(false) }
     var loadError by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(teamId) {
-        loading = true
-        loadError = null
-        teamsRepository.listTeamNews(teamId, null, limit = 40)
+    suspend fun loadNewsPage(cursor: String?, append: Boolean) {
+        if (append) loadingMore = true else loading = true
+        if (!append) loadError = null
+        teamsRepository.listTeamNews(teamId, cursor, limit = 40)
             .onSuccess { page ->
-                newsItems = page.items
+                newsItems = if (append) newsItems + page.items else page.items
+                newsNextCursor = page.nextCursor
                 loading = false
+                loadingMore = false
             }
             .onFailure { e ->
-                loadError = e.toUserMessageRu(res)
+                if (!append) loadError = e.toUserMessageRu(res)
                 loading = false
+                loadingMore = false
             }
+    }
+
+    LaunchedEffect(teamId) {
+        loadNewsPage(cursor = null, append = false)
     }
 
     Scaffold(
@@ -521,19 +530,7 @@ private fun TeamNewsListRoute(
                         }
                         OutlinedButton(
                             onClick = {
-                                scope.launch {
-                                    loading = true
-                                    loadError = null
-                                    teamsRepository.listTeamNews(teamId, null, limit = 40)
-                                        .onSuccess { page ->
-                                            newsItems = page.items
-                                            loading = false
-                                        }
-                                        .onFailure { e ->
-                                            loadError = e.toUserMessageRu(res)
-                                            loading = false
-                                        }
-                                }
+                                scope.launch { loadNewsPage(cursor = null, append = false) }
                             },
                         ) {
                             Text(stringResource(R.string.team_news_retry))
@@ -573,6 +570,27 @@ private fun TeamNewsListRoute(
                                     },
                                     showEdit = item.authorUserId == currentUserId || myTeamRole == "R5",
                                 )
+                            }
+                            if (!newsNextCursor.isNullOrBlank()) {
+                                item {
+                                    OutlinedButton(
+                                        onClick = {
+                                            scope.launch {
+                                                loadNewsPage(newsNextCursor, append = true)
+                                            }
+                                        },
+                                        enabled = !loadingMore,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Text(
+                                            if (loadingMore) {
+                                                stringResource(R.string.team_news_loading_more)
+                                            } else {
+                                                stringResource(R.string.team_news_load_more)
+                                            },
+                                        )
+                                    }
+                                }
                             }
                         }
                 }

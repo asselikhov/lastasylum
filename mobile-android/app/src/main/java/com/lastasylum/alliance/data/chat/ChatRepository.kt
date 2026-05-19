@@ -34,6 +34,9 @@ class ChatRepository(
         }
     }
 
+    private val primaryRealtimeRoomIds = LinkedHashSet<String>()
+    private val overlayRealtimeRoomIds = LinkedHashSet<String>()
+
     private var realtimeUiListener: ((ChatMessage) -> Unit)? = null
     private var realtimeDeleteListener: ((ChatMessageDeletedEvent) -> Unit)? = null
     private var realtimeTypingListener: ((ChatTypingEvent) -> Unit)? = null
@@ -41,6 +44,19 @@ class ChatRepository(
     private val overlayMessageListeners = java.util.concurrent.CopyOnWriteArrayList<(ChatMessage) -> Unit>()
     private val overlayChatPanelClosedListeners =
         java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
+
+    private fun mergedRealtimeRoomIds(): List<String> =
+        (primaryRealtimeRoomIds + overlayRealtimeRoomIds).distinct()
+
+    private fun ensureRealtimeSocketConnected() {
+        val distinct = mergedRealtimeRoomIds()
+        if (distinct.isEmpty()) return
+        socketManager.connect(
+            baseUrl = BuildConfig.API_BASE_URL,
+            roomIds = distinct,
+            tokenProvider = { tokenStore.getAccessToken() },
+        )
+    }
 
     fun addOverlayChatPanelClosedListener(listener: () -> Unit) {
         if (!overlayChatPanelClosedListeners.contains(listener)) {
@@ -196,13 +212,9 @@ class ChatRepository(
         socketManager.addMessageDeletedListener(onDeleteMessage)
         socketManager.addTypingListener(onTyping)
         socketManager.addReadListener(onRead)
-        val distinct = roomIds.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
-        if (distinct.isEmpty()) return
-        socketManager.connect(
-            baseUrl = BuildConfig.API_BASE_URL,
-            roomIds = distinct,
-            tokenProvider = { tokenStore.getAccessToken() },
-        )
+        primaryRealtimeRoomIds.clear()
+        primaryRealtimeRoomIds.addAll(roomIds.map { it.trim() }.filter { it.isNotEmpty() })
+        ensureRealtimeSocketConnected()
     }
 
     fun emitTypingPing(roomId: String) {
@@ -223,7 +235,12 @@ class ChatRepository(
         realtimeDeleteListener = null
         realtimeTypingListener = null
         realtimeReadListener = null
-        socketManager.disconnect()
+        primaryRealtimeRoomIds.clear()
+        if (overlayRealtimeRoomIds.isEmpty()) {
+            socketManager.disconnect()
+        } else {
+            ensureRealtimeSocketConnected()
+        }
     }
 
     fun addOverlayMessageListener(listener: (ChatMessage) -> Unit) {
@@ -231,23 +248,29 @@ class ChatRepository(
             overlayMessageListeners.add(listener)
         }
         socketManager.addMessageListener(listener)
-        val roomIds = realtimeRoomIdsForOverlayBootstrap()
-        if (roomIds.isEmpty()) return
-        socketManager.connect(
-            baseUrl = BuildConfig.API_BASE_URL,
-            roomIds = roomIds,
-            tokenProvider = { tokenStore.getAccessToken() },
-        )
+        overlayRealtimeRoomIds.clear()
+        overlayRealtimeRoomIds.addAll(realtimeRoomIdsForOverlayBootstrap())
+        ensureRealtimeSocketConnected()
     }
 
     fun removeOverlayMessageListener(listener: (ChatMessage) -> Unit) {
         overlayMessageListeners.remove(listener)
         socketManager.removeMessageListener(listener)
+        if (overlayMessageListeners.isEmpty()) {
+            overlayRealtimeRoomIds.clear()
+            if (primaryRealtimeRoomIds.isEmpty()) {
+                socketManager.disconnect()
+            } else {
+                ensureRealtimeSocketConnected()
+            }
+        }
     }
 
     fun resetRealtimeForLogout() {
         realtimeUiListener?.let { socketManager.removeMessageListener(it) }
         realtimeUiListener = null
+        primaryRealtimeRoomIds.clear()
+        overlayRealtimeRoomIds.clear()
         socketManager.disconnectSocketAndClearListeners()
     }
 }

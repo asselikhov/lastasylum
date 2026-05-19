@@ -9,6 +9,12 @@ import androidx.security.crypto.MasterKey
 class TokenStore(context: Context) {
     private val prefs: SharedPreferences = createPrefs(context.applicationContext)
 
+    @Volatile
+    private var memoryAccessToken: String? = null
+
+    @Volatile
+    private var memoryRefreshToken: String? = null
+
     private fun createPrefs(appContext: Context): SharedPreferences {
         return runCatching {
             EncryptedSharedPreferences.create(
@@ -27,6 +33,8 @@ class TokenStore(context: Context) {
     }
 
     fun saveTokens(accessToken: String, refreshToken: String) {
+        memoryAccessToken = accessToken
+        memoryRefreshToken = refreshToken
         prefs.edit()
             .putString(KEY_ACCESS, accessToken)
             .putString(KEY_REFRESH, refreshToken)
@@ -34,12 +42,20 @@ class TokenStore(context: Context) {
     }
 
     fun clearTokens() {
+        memoryAccessToken = null
+        memoryRefreshToken = null
         prefs.edit().clear().apply()
     }
 
-    fun getAccessToken(): String? = prefs.getString(KEY_ACCESS, null)
+    fun getAccessToken(): String? {
+        memoryAccessToken?.let { return it }
+        return prefs.getString(KEY_ACCESS, null)?.also { memoryAccessToken = it }
+    }
 
-    fun getRefreshToken(): String? = prefs.getString(KEY_REFRESH, null)
+    fun getRefreshToken(): String? {
+        memoryRefreshToken?.let { return it }
+        return prefs.getString(KEY_REFRESH, null)?.also { memoryRefreshToken = it }
+    }
 
     private companion object {
         private const val TAG = "TokenStore"

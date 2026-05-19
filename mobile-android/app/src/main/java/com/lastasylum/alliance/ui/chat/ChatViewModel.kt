@@ -15,6 +15,7 @@ import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatMessageDeletedEvent
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatRepository
+import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.data.chat.ChatRoomReadEvent
 import com.lastasylum.alliance.data.chat.ChatTypingEvent
 import com.lastasylum.alliance.data.chat.ChatRoomDto
@@ -39,6 +40,7 @@ import java.util.Locale
 import java.util.UUID
 
 private const val PAGE_SIZE = 30
+private const val INCOMING_SOCKET_DEBOUNCE_MS = 75L
 
 private data class RoomMessageCache(
     val messages: List<ChatMessage>,
@@ -82,6 +84,8 @@ class ChatViewModel(
     val otherReadUptoMessageId: StateFlow<String?> = _otherReadUptoMessageId.asStateFlow()
 
     private val knownMessageIds = LinkedHashSet<String>()
+  /** messageId → index in [ChatState.messages] (newest-first); cleared on room switch. */
+    private val messageIdIndex = HashMap<String, Int>()
     private val typingPeerJobs = mutableMapOf<String, Job>()
     private val typingPeerJobsLock = Any()
     private var typingEmitJob: Job? = null
@@ -99,19 +103,52 @@ class ChatViewModel(
 
     init {
         hydrateReadCursorsFromPreferences()
-        viewModelScope.launch {
-            for (message in incomingMessages) {
-                val roomId = message.roomId
-                if (roomId.isBlank()) continue
-                if (_state.value.rooms.none { it.id == roomId }) continue
-                val selected = _state.value.selectedRoomId
-                if (roomId == selected) {
-                    applyIncomingMessage(message)
-                } else if (message.senderId != currentUserId) {
-                    val mid = message._id ?: continue
-                    if (!shouldTrackUnreadForMessage(roomId, mid)) continue
-                    scheduleUnreadSyncFromServer()
+        viewModelScope.launch(Dispatchers.Default) {
+            val pending = ArrayList<ChatMessage>(16)
+            var flushJob: Job? = null
+            suspend fun flushPending() {
+                if (pending.isEmpty()) return
+                val batch = pending.toList()
+                pending.clear()
+                withContext(Dispatchers.Main) {
+                    dispatchIncomingBatch(batch)
                 }
+            }
+            for (message in incomingMessages) {
+                pending.add(message)
+                flushJob?.cancel()
+                flushJob = launch {
+                    delay(INCOMING_SOCKET_DEBOUNCE_MS)
+                    flushPending()
+                }
+            }
+        }
+    }
+
+    private fun dispatchIncomingBatch(batch: List<ChatMessage>) {
+        for (message in batch) {
+            val roomId = message.roomId
+            if (roomId.isBlank()) continue
+            if (_state.value.rooms.none { it.id == roomId }) continue
+            val selected = _state.value.selectedRoomId
+            if (roomId == selected) {
+                applyIncomingMessage(message)
+            } else if (message.senderId != currentUserId) {
+                val mid = message._id ?: continue
+                if (!shouldTrackUnreadForMessage(roomId, mid)) continue
+                scheduleUnreadSyncFromServer()
+            }
+        }
+    }
+
+    private fun realtimeSubscriptionRoomIds(rooms: List<ChatRoomDto>): List<String> {
+        val raid = chatRoomPreferences.getRaidRoomId()
+        val selected = _state.value.selectedRoomId
+        return buildList {
+            if (!raid.isNullOrBlank()) add(raid)
+            if (!selected.isNullOrBlank() && selected !in this) add(selected)
+            if (rooms.isNotEmpty() && isEmpty()) {
+                rooms.firstOrNull { it.id == selected }?.id?.let { add(it) }
             }
         }
     }
@@ -234,7 +271,8 @@ class ChatViewModel(
 
     private suspend fun bootstrap(preferAllianceHubRoom: Boolean = false) {
         _state.value = _state.value.copy(isRoomsLoading = true, error = null)
-        val roomsRaw = repository.listRooms().getOrElse { e ->
+        val cachedRooms = if (preferAllianceHubRoom) ChatSessionCache.getFreshRooms() else null
+        val roomsRaw = cachedRooms ?: repository.listRooms().getOrElse { e ->
             _draftMessage.value = ""
             _typingPeers.value = emptyMap()
             _state.value = ChatState(
@@ -246,6 +284,9 @@ class ChatViewModel(
                 enabledStickerPackKeys = emptySet(),
             )
             return
+        }
+        if (cachedRooms == null) {
+            ChatSessionCache.update(roomsRaw)
         }
         val rooms = applyRoomsFromServer(roomsRaw)
         if (rooms.isEmpty()) {
@@ -299,6 +340,7 @@ class ChatViewModel(
             chatRoomPreferences.setSelectedRoomId(roomId)
             val cached = roomMessageCache[roomId]
             knownMessageIds.clear()
+            messageIdIndex.clear()
             _draftMessage.value = ""
             _typingPeers.value = emptyMap()
             synchronized(typingPeerJobsLock) {
@@ -351,6 +393,7 @@ class ChatViewModel(
     }
 
     private fun applyRoomsFromServer(serverRooms: List<ChatRoomDto>): List<ChatRoomDto> {
+        ChatSessionCache.update(serverRooms)
         val sorted = sortChatRoomsForDisplay(serverRooms)
         hydrateReadCursorsFromRooms(sorted)
         return mergeRoomsUnreadFromServer(sorted)
@@ -452,9 +495,10 @@ class ChatViewModel(
 
     private fun reconnectRealtimeIfNeeded() {
         val rooms = _state.value.rooms
-        if (rooms.isEmpty()) return
+        val roomIds = realtimeSubscriptionRoomIds(rooms)
+        if (roomIds.isEmpty()) return
         repository.connectRealtimeRooms(
-            roomIds = rooms.map { it.id },
+            roomIds = roomIds,
             onMessage = ::onIncomingMessage,
             onDeleteMessage = ::onDeletedMessage,
             onTyping = ::onTypingFromPeer,
@@ -474,6 +518,7 @@ class ChatViewModel(
             typingPeerJobs.clear()
         }
         knownMessageIds.clear()
+        messageIdIndex.clear()
         _draftMessage.value = ""
         _typingPeers.value = emptyMap()
         val hasTeam = loadTeamProfileGate()
@@ -516,7 +561,7 @@ class ChatViewModel(
             )
         }
         repository.connectRealtimeRooms(
-            roomIds = rooms.map { it.id },
+            roomIds = realtimeSubscriptionRoomIds(rooms),
             onMessage = ::onIncomingMessage,
             onDeleteMessage = ::onDeletedMessage,
             onTyping = ::onTypingFromPeer,
@@ -525,8 +570,10 @@ class ChatViewModel(
         repository.loadRecentMessages(roomId, beforeMessageId = null, limit = PAGE_SIZE)
             .onSuccess { loaded ->
                 knownMessageIds.clear()
+                messageIdIndex.clear()
                 knownMessageIds.addAll(loaded.mapNotNull { it._id })
                 val capped = capNewestFirst(loaded, CHAT_MAX_MESSAGES_IN_MEMORY)
+                rebuildMessageIdIndex(capped, messageIdIndex)
                 roomMessageCache[roomId] = RoomMessageCache(
                     messages = capped,
                     hasMoreOlder = loaded.size >= PAGE_SIZE,
@@ -1058,7 +1105,12 @@ class ChatViewModel(
         message: ChatMessage,
         clearComposer: Boolean = false,
     ) {
-        val update = upsertMessage(_state.value.messages, message, knownMessageIds)
+        val update = upsertMessage(
+            _state.value.messages,
+            message,
+            knownMessageIds,
+            messageIdIndex,
+        )
         val cappedMessages = capNewestFirst(update.messages, CHAT_MAX_MESSAGES_IN_MEMORY)
         var nextState = _state.value.copy(
             messages = cappedMessages,

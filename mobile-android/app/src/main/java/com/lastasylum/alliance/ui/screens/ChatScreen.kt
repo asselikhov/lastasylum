@@ -151,6 +151,7 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatRoomDto
+import com.lastasylum.alliance.ui.chat.SquadRelayImageLoader
 import com.lastasylum.alliance.data.chat.ChatAttachment
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
@@ -197,6 +198,7 @@ import com.lastasylum.alliance.ui.util.chatMessageTextForComposer
 import com.lastasylum.alliance.ui.util.copyChatMessageToClipboard
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import coil.compose.AsyncImage
+import coil.compose.LocalImageLoader
 import coil.request.ImageRequest
 import android.content.Context
 import android.content.Intent
@@ -474,8 +476,13 @@ fun ChatScreen(
     onEditMessage: (String, String) -> Unit,
     onForwardMessage: (String) -> Unit,
     onToggleReaction: (String, String) -> Unit,
+    /** Overlay panel: hide room bar, rely on cached session + narrow socket subscriptions. */
+    compactOverlayMode: Boolean = false,
 ) {
     val context = LocalContext.current
+    val squadRelayImageLoader = remember(context) {
+        SquadRelayImageLoader.get(context, AppContainer.from(context).tokenStore)
+    }
     val overlayUi = LocalOverlayUiMode.current
     val activityResultOwner = LocalActivityResultRegistryOwner.current
     val canHandleBack = LocalOnBackPressedDispatcherOwner.current != null
@@ -618,6 +625,7 @@ fun ChatScreen(
         LocalOpenRemoteChatImagePreview provides { urls, idx ->
             remoteChatImagePreview = urls to idx
         },
+        LocalImageLoader provides squadRelayImageLoader,
     ) {
         Box(Modifier.fillMaxSize()) {
             Column(
@@ -639,11 +647,13 @@ fun ChatScreen(
                         .fillMaxWidth()
                         .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
                 ) {
-            ChatRoomsBar(
-                rooms = state.rooms,
-                selectedRoomId = selectedRoomId,
-                onSelectRoom = onSelectRoom,
-            )
+            if (!compactOverlayMode) {
+                ChatRoomsBar(
+                    rooms = state.rooms,
+                    selectedRoomId = selectedRoomId,
+                    onSelectRoom = onSelectRoom,
+                )
+            }
 
             val onlyUnionRoom = state.rooms.size == 1 &&
                 state.rooms.first().allianceId == ChatAllianceIds.GLOBAL
@@ -1138,7 +1148,14 @@ private fun ChatMessagesLazyList(
 ) {
     val overlayUi = LocalOverlayUiMode.current
     val minSystemViewport = (LocalConfiguration.current.screenHeightDp * 0.55f).dp.coerceAtLeast(280.dp)
-    val timeline = remember(state.messages) { buildChatTimeline(state.messages) }
+    val timelineVersion = remember(state.messages) {
+        Triple(
+            state.messages.size,
+            state.messages.firstOrNull()?._id,
+            state.messages.lastOrNull()?._id,
+        )
+    }
+    val timeline = remember(timelineVersion) { buildChatTimeline(state.messages) }
     LazyColumn(
         state = listState,
         modifier = modifier,

@@ -116,6 +116,12 @@ class ChatSocketManager {
                 emitConnectionState(ChatConnectionState.Connected)
                 return
             }
+            for (rid in prev - next) {
+                existing.emit(
+                    "room:leave",
+                    JSONObject().put("roomId", rid),
+                )
+            }
             for (rid in next - prev) {
                 existing.emit(
                     "room:join",

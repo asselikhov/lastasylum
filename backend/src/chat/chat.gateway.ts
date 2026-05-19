@@ -52,6 +52,9 @@ export class ChatGateway {
   /** userId -> timestamps of message:send (sliding window). */
   private readonly wsMessageSendTimestamps = new Map<string, number[]>();
 
+  /** socketId:roomId -> last typing broadcast (ms). */
+  private readonly wsTypingLastEmit = new Map<string, number>();
+
   constructor(
     private readonly chatService: ChatService,
     private readonly chatRoomsService: ChatRoomsService,
@@ -181,6 +184,18 @@ export class ChatGateway {
       TeamMembershipStatus.ACTIVE
     ) {
       throw new WsException('Chat is not available for this account');
+    }
+    const throttleKey = `${client.id}:${roomId}`;
+    const now = Date.now();
+    const last = this.wsTypingLastEmit.get(throttleKey) ?? 0;
+    if (now - last < 1_500) {
+      return { event: 'typing:throttled' };
+    }
+    this.wsTypingLastEmit.set(throttleKey, now);
+    if (this.wsTypingLastEmit.size > 500) {
+      for (const [key, ts] of this.wsTypingLastEmit) {
+        if (now - ts > 60_000) this.wsTypingLastEmit.delete(key);
+      }
     }
     this.server?.to(`chat:${roomId}`).except(client.id).emit('user:typing', {
       roomId,

@@ -2,10 +2,14 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import * as admin from 'firebase-admin';
 import { UsersService } from '../users/users.service';
 
+const CHAT_PUSH_DEBOUNCE_MS = 45_000;
+
 @Injectable()
 export class PushNotificationsService implements OnModuleInit {
   private readonly logger = new Logger(PushNotificationsService.name);
   private ready = false;
+  /** roomId → last alliance chat push sent (debounce burst traffic). */
+  private readonly chatPushDebounceByRoom = new Map<string, number>();
 
   constructor(private readonly usersService: UsersService) {}
 
@@ -85,6 +89,7 @@ export class PushNotificationsService implements OnModuleInit {
           },
         },
       });
+      await this.pruneInvalidTokens(unique, res);
       if (res.failureCount > 0) {
         this.logger.warn(
           `FCM excavation partial failure: ${res.failureCount}/${unique.length}`,
@@ -107,6 +112,15 @@ export class PushNotificationsService implements OnModuleInit {
     data: Record<string, string>;
   }): Promise<void> {
     if (!this.ready) return;
+    const roomId = input.data.roomId?.trim() ?? '';
+    if (roomId) {
+      const now = Date.now();
+      const last = this.chatPushDebounceByRoom.get(roomId) ?? 0;
+      if (now - last < CHAT_PUSH_DEBOUNCE_MS) {
+        return;
+      }
+      this.chatPushDebounceByRoom.set(roomId, now);
+    }
     const tokens = await this.usersService.collectPushTokensForAlliance(
       input.allianceId,
       input.excludeUserId,
@@ -120,6 +134,7 @@ export class PushNotificationsService implements OnModuleInit {
         data: input.data,
         android: { priority: 'high' },
       });
+      await this.pruneInvalidTokens(unique, res);
       if (res.failureCount > 0) {
         this.logger.debug(
           `FCM partial failure: ${res.failureCount}/${unique.length}`,
@@ -127,6 +142,26 @@ export class PushNotificationsService implements OnModuleInit {
       }
     } catch (e) {
       this.logger.warn(`FCM send failed: ${(e as Error).message}`);
+    }
+  }
+
+  private async pruneInvalidTokens(
+    tokens: string[],
+    res: admin.messaging.BatchResponse,
+  ): Promise<void> {
+    const invalid: string[] = [];
+    res.responses.forEach((r, i) => {
+      if (r.success) return;
+      const code = r.error?.code ?? '';
+      if (
+        code === 'messaging/invalid-registration-token' ||
+        code === 'messaging/registration-token-not-registered'
+      ) {
+        invalid.push(tokens[i]);
+      }
+    });
+    if (invalid.length > 0) {
+      await this.usersService.removeInvalidPushTokens(invalid);
     }
   }
 }

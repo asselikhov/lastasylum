@@ -23,5 +23,5 @@ fun overlayAuthedImageRequest(
             }
         }
         .apply(configure)
-        .crossfade(true)
+        .crossfade(false)
         .build()

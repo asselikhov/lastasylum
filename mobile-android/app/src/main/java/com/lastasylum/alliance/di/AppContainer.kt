@@ -9,6 +9,7 @@ import com.lastasylum.alliance.data.chat.ChatRoomPreferences
 import com.lastasylum.alliance.data.chat.ChatRoomsRepository
 import com.lastasylum.alliance.data.chat.ChatSocketManager
 import com.lastasylum.alliance.data.network.NetworkModule
+import com.lastasylum.alliance.data.network.RealtimeCoordinator
 import com.lastasylum.alliance.data.settings.OnboardingPreferences
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.teams.TeamForumSocketManager
@@ -30,9 +31,22 @@ class AppContainer private constructor(context: Context) {
     private val chatSocketManager = ChatSocketManager()
     private val voiceSocketManager = VoiceSocketManager()
     private val teamForumSocketManager = TeamForumSocketManager()
+    private val realtimeCoordinator = RealtimeCoordinator()
 
     @Volatile
     private var chatRepositoryInstance: ChatRepository? = null
+
+    init {
+        realtimeCoordinator.registerReconnect {
+            chatRepositoryInstance?.onAccessTokenRefreshed()
+        }
+        realtimeCoordinator.registerReconnect {
+            overlayVoiceSession?.onAccessTokenRefreshed()
+        }
+        realtimeCoordinator.registerReconnect {
+            teamForumSocketManager.reconnectWithFreshToken()
+        }
+    }
 
     /** Set by [com.lastasylum.alliance.overlay.CombatOverlayService] while overlay voice is active. */
     @Volatile
@@ -40,9 +54,7 @@ class AppContainer private constructor(context: Context) {
 
     private val authorizedClients by lazy {
         NetworkModule.createAuthorizedClients(tokenStore) {
-            chatRepositoryInstance?.onAccessTokenRefreshed()
-            overlayVoiceSession?.onAccessTokenRefreshed()
-            teamForumSocketManager.reconnectWithFreshToken()
+            realtimeCoordinator.onAccessTokenRefreshed()
         }
     }
 

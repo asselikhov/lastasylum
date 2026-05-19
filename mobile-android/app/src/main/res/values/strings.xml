@@ -335,6 +335,8 @@
     <string name="team_news_other_heading">Другие новости</string>
     <string name="team_tab_forum">Форум</string>
     <string name="team_tab_members">Участники</string>
+    <string name="team_forum_load_older">Загрузить ранние сообщения</string>
+    <string name="team_forum_loading_older">Загрузка…</string>
     <string name="team_forum_empty">Пока нет тем. Создайте первую (доступно заместителю и лидеру отряда).</string>
     <string name="team_forum_topic_meta">Сообщений: %1$d · %2$s</string>
     <string name="team_forum_messages_pill">%1$d сообщ.</string>
@@ -411,6 +413,8 @@
     <string name="team_news_saving">Сохранение…</string>
     <string name="team_news_cd_back">Назад</string>
     <string name="team_news_retry">Повторить</string>
+    <string name="team_news_load_more">Загрузить ещё</string>
+    <string name="team_news_loading_more">Загрузка…</string>
     <string name="team_news_fill_required">Заполните заголовок и текст</string>
     <string name="team_news_poll_invalid">Для опроса нужен вопрос и минимум два варианта</string>
     <string name="team_news_publish_forbidden">Публиковать новости и опросы могут только R4 и R5</string>

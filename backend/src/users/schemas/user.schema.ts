@@ -96,3 +96,13 @@ export class User {
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
+UserSchema.index({
+  membershipStatus: 1,
+  allianceName: 1,
+  pushFcmTokens: 1,
+});
+UserSchema.index({
+  membershipStatus: 1,
+  playerTeamId: 1,
+  pushFcmTokens: 1,
+});

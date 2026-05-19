@@ -21,25 +21,44 @@ internal fun capNewestFirst(messages: List<ChatMessage>, max: Int): List<ChatMes
     return messages.take(max)
 }
 
+internal fun rebuildMessageIdIndex(
+    messages: List<ChatMessage>,
+    index: MutableMap<String, Int>,
+) {
+    index.clear()
+    messages.forEachIndexed { i, msg ->
+        msg._id?.let { index[it] = i }
+    }
+}
+
 internal fun upsertMessage(
     current: List<ChatMessage>,
     incoming: ChatMessage,
     knownMessageIds: MutableSet<String>,
+    idIndex: MutableMap<String, Int>? = null,
 ): MessageUpsertResult {
     val id = incoming._id
     if (id != null) {
-        val existingIndex = current.indexOfFirst { it._id == id }
+        val existingIndex = idIndex?.get(id) ?: current.indexOfFirst { it._id == id }
         if (existingIndex >= 0) {
             val updated = current.toMutableList()
             updated[existingIndex] = incoming
+            idIndex?.put(id, existingIndex)
             return MessageUpsertResult(
                 messages = updated,
                 newestMessageKey = null,
             )
         }
         knownMessageIds.add(id)
+        val next = listOf(incoming) + current
+        idIndex?.let { map ->
+            map[id] = 0
+            map.entries.forEach { (key, pos) ->
+                if (key != id) map[key] = pos + 1
+            }
+        }
         return MessageUpsertResult(
-            messages = listOf(incoming) + current,
+            messages = next,
             newestMessageKey = id,
         )
     }

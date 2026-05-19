@@ -484,6 +484,17 @@ export class UsersService {
     return out;
   }
 
+  async removeInvalidPushTokens(tokens: string[]): Promise<void> {
+    const unique = [...new Set(tokens.filter((t) => t.trim().length > 0))];
+    if (unique.length === 0) return;
+    await this.userModel
+      .updateMany(
+        { pushFcmTokens: { $in: unique } },
+        { $pull: { pushFcmTokens: { $in: unique } } },
+      )
+      .exec();
+  }
+
   async collectPushTokensForAlliance(
     allianceId: string,
     excludeUserId: string,

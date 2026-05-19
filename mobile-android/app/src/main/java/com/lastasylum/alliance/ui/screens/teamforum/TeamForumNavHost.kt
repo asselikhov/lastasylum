@@ -62,6 +62,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -587,6 +588,8 @@ private fun TeamForumTopicChatRoute(
     val listState = rememberLazyListState()
     val messages = remember { mutableStateListOf<TeamForumMessageDto>() }
     var loading by remember { mutableStateOf(true) }
+    var hasMoreOlder by remember { mutableStateOf(false) }
+    var loadingOlder by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var draft by remember { mutableStateOf("") }
     var pendingImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
@@ -722,22 +725,38 @@ private fun TeamForumTopicChatRoute(
         }
     }
 
+    fun loadForumMessages(before: String?, appendOlder: Boolean) {
+        scope.launch {
+            if (appendOlder) loadingOlder = true else loading = true
+            if (!appendOlder) error = null
+            teamsRepository.listForumMessages(teamId, topicId, before = before, limit = 50)
+                .onSuccess { page ->
+                    val visible = page.filter { m ->
+                        m.deletedAt.isNullOrBlank() ||
+                            m.deletedAt.equals("null", ignoreCase = true)
+                    }
+                    if (appendOlder) {
+                        val existing = messages.map { it.id }.toSet()
+                        val older = visible.filter { it.id !in existing }
+                        messages.addAll(0, older)
+                    } else {
+                        messages.clear()
+                        messages.addAll(visible)
+                    }
+                    hasMoreOlder = page.size >= 50
+                }
+                .onFailure { e ->
+                    if (!appendOlder) error = e.toUserMessageRu(res)
+                }
+            loading = false
+            loadingOlder = false
+        }
+    }
+
     LaunchedEffect(teamId, topicId) {
-        loading = true
-        error = null
-        messages.clear()
         clearPendingAttachment()
         draft = ""
-        teamsRepository.listForumMessages(teamId, topicId, before = null, limit = 50)
-            .onSuccess { page ->
-                val visible = page.filter { m ->
-                    m.deletedAt.isNullOrBlank() ||
-                        m.deletedAt.equals("null", ignoreCase = true)
-                }
-                messages.addAll(visible)
-            }
-            .onFailure { e -> error = e.toUserMessageRu(res) }
-        loading = false
+        loadForumMessages(before = null, appendOlder = false)
     }
 
     LaunchedEffect(teamId, topicId) {
@@ -840,6 +859,30 @@ private fun TeamForumTopicChatRoute(
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(0.dp),
                 ) {
+                    if (hasMoreOlder) {
+                        item(key = "forum_load_older") {
+                            OutlinedButton(
+                                onClick = {
+                                    val oldestId = sortedMessages.firstOrNull()?.id
+                                    if (oldestId != null) {
+                                        loadForumMessages(before = oldestId, appendOlder = true)
+                                    }
+                                },
+                                enabled = !loadingOlder,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 8.dp),
+                            ) {
+                                Text(
+                                    if (loadingOlder) {
+                                        stringResource(R.string.team_forum_loading_older)
+                                    } else {
+                                        stringResource(R.string.team_forum_load_older)
+                                    },
+                                )
+                            }
+                        }
+                    }
                     itemsIndexed(
                         sortedMessages,
                         key = { _, m -> m.id },

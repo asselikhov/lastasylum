@@ -646,24 +646,82 @@ export class ChatService {
       .map((id) => new Types.ObjectId(id));
     if (valid.length === 0) return out;
 
-    const readByRoom = await this.readStatesByRoomIds(userId, roomIds);
+    for (const oid of valid) {
+      out.set(oid.toString(), 0);
+    }
 
-    await Promise.all(
-      valid.map(async (roomOid) => {
-        const key = roomOid.toString();
-        const lastRead = readByRoom.get(key);
-        const filter: Record<string, unknown> = {
-          roomId: roomOid,
-          deletedAt: null,
-          senderId: { $ne: userId },
-        };
-        if (lastRead && Types.ObjectId.isValid(lastRead)) {
-          filter._id = { $gt: new Types.ObjectId(lastRead) };
-        }
-        const n = await this.messageModel.countDocuments(filter).exec();
-        out.set(key, n);
-      }),
-    );
+    const rows = await this.messageModel
+      .aggregate<{ _id: Types.ObjectId; count: number }>([
+        {
+          $match: {
+            roomId: { $in: valid },
+            deletedAt: null,
+            senderId: { $ne: userId },
+          },
+        },
+        {
+          $lookup: {
+            from: this.chatReadStateModel.collection.name,
+            let: { rid: '$roomId' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$roomId', '$$rid'] },
+                      { $eq: ['$userId', userId] },
+                    ],
+                  },
+                },
+              },
+              { $project: { lastReadMessageId: 1, _id: 0 } },
+              { $limit: 1 },
+            ],
+            as: 'readState',
+          },
+        },
+        {
+          $addFields: {
+            lastReadOid: {
+              $let: {
+                vars: {
+                  raw: {
+                    $arrayElemAt: ['$readState.lastReadMessageId', 0],
+                  },
+                },
+                in: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $ne: ['$$raw', null] },
+                        { $ne: ['$$raw', ''] },
+                      ],
+                    },
+                    { $toObjectId: '$$raw' },
+                    null,
+                  ],
+                },
+              },
+            },
+          },
+        },
+        {
+          $match: {
+            $expr: {
+              $or: [
+                { $eq: ['$lastReadOid', null] },
+                { $gt: ['$_id', '$lastReadOid'] },
+              ],
+            },
+          },
+        },
+        { $group: { _id: '$roomId', count: { $sum: 1 } } },
+      ])
+      .exec();
+
+    for (const row of rows) {
+      out.set(row._id.toString(), row.count);
+    }
     return out;
   }
 

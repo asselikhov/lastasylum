@@ -697,6 +697,21 @@ class CombatOverlayService : Service() {
     }
 
     private var stripUiCoalescePosted = false
+    private val pendingStripSocketMessages = ArrayDeque<ChatMessage>()
+    private var stripSocketDrainPosted = false
+    private val stripSocketDrainRunnable = Runnable {
+        stripSocketDrainPosted = false
+        while (pendingStripSocketMessages.isNotEmpty()) {
+            processOverlayChatMessage(pendingStripSocketMessages.removeFirst(), refreshStrip = false)
+        }
+        refreshOverlayChatStrip()
+    }
+    private var chatStripZOrderLifted = false
+    private var stripPassthroughSyncPosted = false
+    private val stripPassthroughSyncRunnable = Runnable {
+        stripPassthroughSyncPosted = false
+        syncChatStripWindowTouchPassthrough()
+    }
     private val stripUiCoalesceRunnable = Runnable {
         stripUiCoalescePosted = false
         refreshOverlayChatStripNow()
@@ -705,7 +720,6 @@ class CombatOverlayService : Service() {
     /** Throttle для Log при «панель скрыта» — не дёргаем FGS-текст при каждом тике гейта. */
     private var gateNotifyKey: String = ""
     private var lastStripRenderSignature: String? = null
-    private var chatStripZOrderLifted = false
     private var lastAppliedGateShouldShow: Boolean? = null
     private var stableGatePollTicks = 0
     private var lastPanelDragWmUpdateMs = 0L
@@ -883,18 +897,8 @@ class CombatOverlayService : Service() {
         serviceScope.launch {
             try {
                 val hasUsageAccess = GameForegroundGate.hasUsageStatsAccess(this@CombatOverlayService)
-                val hintedComp = runCatching {
-                    GameForegroundGate.lastResumedComponent(this@CombatOverlayService)
-                }.getOrNull()
-                val hintedPkg = hintedComp?.packageName
-                lastForegroundHintPkg = hintedPkg
-                if (activityTokens.isNotEmpty()) {
-                    Log.d(
-                        OVERLAY_DIAG_TAG,
-                        "activityGate hint pkg=${hintedComp?.packageName ?: "-"} cls=${hintedComp?.className ?: "-"} tokens=${activityTokens.joinToString()}",
-                    )
-                }
                 val targetSet = targets.toSet()
+                var hintedPkg: String? = lastForegroundHintPkg
                 val inGame = if (!hasUsageAccess || targets.isEmpty()) {
                     false
                 } else {
@@ -904,14 +908,33 @@ class CombatOverlayService : Service() {
                         allowedActivitySubstrings = activityTokens,
                     )
                     when (probe) {
-                        GameForegroundGate.QuickForegroundProbe.IN_TARGET -> true
-                        GameForegroundGate.QuickForegroundProbe.NOT_IN_TARGET -> false
-                        GameForegroundGate.QuickForegroundProbe.NEED_FULL_HEURISTICS ->
+                        GameForegroundGate.QuickForegroundProbe.IN_TARGET -> {
+                            lastForegroundHintPkg = targets.firstOrNull()
+                            true
+                        }
+                        GameForegroundGate.QuickForegroundProbe.NOT_IN_TARGET -> {
+                            lastForegroundHintPkg = null
+                            false
+                        }
+                        GameForegroundGate.QuickForegroundProbe.NEED_FULL_HEURISTICS -> {
+                            val hintedComp = runCatching {
+                                GameForegroundGate.lastResumedComponent(this@CombatOverlayService)
+                            }.getOrNull()
+                            hintedPkg = hintedComp?.packageName
+                            lastForegroundHintPkg = hintedPkg
+                            if (activityTokens.isNotEmpty()) {
+                                Log.d(
+                                    OVERLAY_DIAG_TAG,
+                                    "activityGate hint pkg=${hintedComp?.packageName ?: "-"} " +
+                                        "cls=${hintedComp?.className ?: "-"} tokens=${activityTokens.joinToString()}",
+                                )
+                            }
                             GameForegroundGate.shouldShowOverlayCached(
                                 context = this@CombatOverlayService,
                                 targetGamePackages = targets,
                                 allowedActivitySubstrings = activityTokens,
                             )
+                        }
                     }
                 }
                 val nowMs = System.currentTimeMillis()
@@ -967,7 +990,7 @@ class CombatOverlayService : Service() {
 
     private fun nextGameGateDelayMs(): Long {
         if (overlayView != null &&
-            stableGatePollTicks >= 4 &&
+            stableGatePollTicks >= 10 &&
             lastAppliedGateShouldShow == true
         ) {
             return GAME_GATE_POLL_STABLE_MS
@@ -1251,7 +1274,7 @@ class CombatOverlayService : Service() {
         if (stripDismissRectsEqual(lastStripDismissRects, nonEmpty)) return
         lastStripDismissRects = nonEmpty
         (chatStripHost as? OverlayStripPassthroughFrameLayout)?.dismissRectsInCompose = nonEmpty
-        syncChatStripWindowTouchPassthrough()
+        scheduleSyncChatStripWindowTouchPassthrough()
     }
 
     private fun stripDismissRectsEqual(a: List<Rect>, b: List<Rect>): Boolean {
@@ -1273,9 +1296,16 @@ class CombatOverlayService : Service() {
      * касания по «пустому» месту после закрытия карточек остаются в оверлее и блокируют игру,
      * даже если корень ленты не забирает жест в [OverlayStripPassthroughFrameLayout].
      */
+    private fun scheduleSyncChatStripWindowTouchPassthrough() {
+        if (!stripPassthroughSyncPosted) {
+            stripPassthroughSyncPosted = true
+            mainHandler.postDelayed(stripPassthroughSyncRunnable, 48L)
+        }
+    }
+
     private fun syncChatStripWindowTouchPassthrough() {
         if (Looper.myLooper() != Looper.getMainLooper()) {
-            mainHandler.post { syncChatStripWindowTouchPassthrough() }
+            mainHandler.post { scheduleSyncChatStripWindowTouchPassthrough() }
             return
         }
         val host = chatStripHost as? OverlayStripPassthroughFrameLayout ?: return
@@ -1340,7 +1370,7 @@ class CombatOverlayService : Service() {
         processOverlayChatMessage(sent)
     }
 
-    private fun processOverlayChatMessage(msg: ChatMessage) {
+    private fun processOverlayChatMessage(msg: ChatMessage, refreshStrip: Boolean = true) {
         val raidId = AppContainer.from(this).chatRoomPreferences.getRaidRoomId()
         if (raidId == null || (msg.roomId.isNotBlank() && msg.roomId != raidId)) {
             return
@@ -1351,7 +1381,9 @@ class CombatOverlayService : Service() {
         )
         stripBuffer.upsert(msg)
         stripBuffer.mergeReceiveTimeline(msg, jwtSubFromAccessToken())
-        refreshOverlayChatStrip()
+        if (refreshStrip) {
+            refreshOverlayChatStrip()
+        }
         val selfId = jwtSubFromAccessToken()
         if (!overlayChatTeamPanelVisible && !selfId.isNullOrBlank() && msg.senderId != selfId) {
             overlayUnreadChatCount = (overlayUnreadChatCount + 1).coerceAtMost(99)
@@ -1576,18 +1608,22 @@ class CombatOverlayService : Service() {
         if (overlayMessageListener != null) return
         registerVoiceMicPermissionReceiver()
         cancelStripTick()
-        val listener: (ChatMessage) -> Unit = { msg ->
+        val listener: (ChatMessage) -> Unit = listener@{ msg ->
+            val raidId = AppContainer.from(this).chatRoomPreferences.getRaidRoomId()
+                ?: return@listener
+            if (msg.roomId.isNotBlank() && msg.roomId != raidId) {
+                Log.d(
+                    OVERLAY_DIAG_TAG,
+                    "overlayListener skipRoom msgRoom=${msg.roomId} raid=$raidId id=${msg._id}",
+                )
+                return@listener
+            }
             mainHandler.post {
-                val raidId = AppContainer.from(this).chatRoomPreferences.getRaidRoomId()
-                if (raidId == null) return@post
-                if (msg.roomId.isNotBlank() && msg.roomId != raidId) {
-                    Log.d(
-                        OVERLAY_DIAG_TAG,
-                        "overlayListener skipRoom msgRoom=${msg.roomId} raid=$raidId id=${msg._id}",
-                    )
-                    return@post
+                pendingStripSocketMessages.addLast(msg)
+                if (!stripSocketDrainPosted) {
+                    stripSocketDrainPosted = true
+                    mainHandler.postDelayed(stripSocketDrainRunnable, 48L)
                 }
-                processOverlayChatMessage(msg)
             }
         }
         overlayMessageListener = listener
@@ -1595,7 +1631,6 @@ class CombatOverlayService : Service() {
             AppContainer.from(this).chatRepository.addOverlayMessageListener(listener)
             scheduleStripTick()
             presenceHeartbeat.start()
-            scheduleOverlayVoiceConnect()
         }
         serviceScope.launch {
             val container = AppContainer.from(this@CombatOverlayService)
@@ -2418,6 +2453,7 @@ class CombatOverlayService : Service() {
                                                 pickedImageUris = pickedImageUris,
                                                 chatVoicePhase = chatVoicePhase,
                                                 otherReadUptoMessageId = otherReadUptoMessageId,
+                                                compactOverlayMode = true,
                                                 onSelectRoom = vm::selectRoom,
                                                 onClearError = vm::clearError,
                                                 onLoadOlder = vm::loadOlderMessages,
@@ -2709,7 +2745,7 @@ class CombatOverlayService : Service() {
         /** Реже обновляем ленту, пока панель свёрнута (только кнопка разворота). */
         private const val STRIP_TICK_COLLAPSED_MS = 5_000L
         /** Панель на экране — отзывчивый гейт. */
-        private const val GAME_GATE_POLL_ACTIVE_MS = 900L
+        private const val GAME_GATE_POLL_ACTIVE_MS = 1_200L
         /** Стабильно «в игре» — реже тяжёлых проверок usage stats. */
         private const val GAME_GATE_POLL_STABLE_MS = 2_500L
         private const val PANEL_DRAG_WM_MIN_INTERVAL_MS = 16L

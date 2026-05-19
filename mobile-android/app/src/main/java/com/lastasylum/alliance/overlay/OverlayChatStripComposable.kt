@@ -162,12 +162,15 @@ fun OverlayChatStrip(
         if (keep.isNotEmpty()) {
             OverlayStripBatchHeader(firstMessage = keep.first())
         }
+        val stripBurstMode = keep.size > 2
         keep.forEach { msg ->
             val key = keyOf(msg)
             val isMine = !latestSelfId.isNullOrBlank() && msg.senderId == latestSelfId
             val isLeaving = leaving[key] == true
-            val fancyEnter = accentEnterKey != null && key == accentEnterKey
-            val enterTransition = if (fancyEnter) {
+            val fancyEnter = !stripBurstMode && accentEnterKey != null && key == accentEnterKey
+            val enterTransition = if (stripBurstMode) {
+                fadeIn(animationSpec = tween(40))
+            } else if (fancyEnter) {
                 fadeIn(animationSpec = tween(110)) +
                     scaleIn(initialScale = 0.96f, animationSpec = tween(170))
             } else {
