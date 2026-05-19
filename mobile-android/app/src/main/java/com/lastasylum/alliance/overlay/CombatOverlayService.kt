@@ -1406,7 +1406,7 @@ class CombatOverlayService : Service() {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
             gravity = Gravity.TOP or Gravity.START
             x = dp(10)
-            y = dp(6)
+            y = dp(OVERLAY_HUD_WINDOW_Y_DP)
         }
 
         val compose = ComposeView(this).apply {
@@ -1487,7 +1487,7 @@ class CombatOverlayService : Service() {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
             gravity = Gravity.TOP or Gravity.END
             x = dp(10)
-            y = dp(6)
+            y = dp(OVERLAY_HUD_WINDOW_Y_DP)
         }
 
         val compose = ComposeView(this).apply {
@@ -2870,6 +2870,8 @@ class CombatOverlayService : Service() {
         private const val OVERLAY_CLOSE_HUD_REFRESH_DELAY_MS = 80L
         private const val STRIP_ZORDER_MIN_INTERVAL_MS = 30_000L
         private const val STRIP_ZORDER_LIFT_DELAY_MS = 450L
+        /** Вертикальный отступ HUD-окон от верхнего края (меньше — выше на экране). */
+        private const val OVERLAY_HUD_WINDOW_Y_DP = 2
         /** Минимум между remove/add HUD — иначе кнопки мигают на каждом тике гейта. */
         private const val HUD_ZORDER_REBALANCE_MIN_MS = 60_000L
         private const val GATE_HIDE_UI_HYSTERESIS_TICKS = 2
