@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -25,10 +26,12 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val HudIconSize = 13.dp
-private val HudChipPaddingH = 5.dp
-private val HudChipPaddingV = 4.dp
+private val HudIconSize = 14.dp
+private val HudChipPaddingH = 6.dp
+private val HudChipPaddingV = 5.dp
 private val HudRowSpacing = 4.dp
+private val HudChipBackground = Color(0xB310141E)
+private val HudChipCorner = 6.dp
 
 @Composable
 internal fun OverlayGameHudBar(
@@ -59,6 +62,7 @@ internal fun OverlayGameHudChip(
     val badge = badgeCount.coerceAtLeast(0)
     Box(
         modifier = modifier
+            .background(HudChipBackground, RoundedCornerShape(HudChipCorner))
             .clickable(onClick = onClick)
             .padding(horizontal = HudChipPaddingH, vertical = HudChipPaddingV)
             .semantics { this.contentDescription = contentDescription },
