@@ -35,7 +35,6 @@ import {
 } from './chat-attachments.service';
 import { CreateChatRoomDto } from './dto/create-chat-room.dto';
 import { CreateMessageDto } from './dto/create-message.dto';
-import { formatChatPushBody } from './zlobyaka-stickers.const';
 import { UpdateChatRoomDto } from './dto/update-chat-room.dto';
 import { UploadChatAttachmentDto } from './dto/upload-chat-attachment.dto';
 import type { Response } from 'express';
@@ -246,29 +245,9 @@ export class ChatController {
           },
         })
         .catch(() => undefined);
-    } else if (authorUser && message.allianceId !== GLOBAL_CHAT_ALLIANCE_ID) {
-      const preview = dto.text?.trim()
-        ? formatChatPushBody(dto.text)
-        : resolvedAttachments.length > 0
-          ? resolvedAttachments.some((a) => a.kind === 'file')
-            ? resolvedAttachments.find((a) => a.kind === 'file')?.filename?.trim() ||
-              'Файл'
-            : 'Фото'
-          : '';
-      void this.pushNotifications
-        .notifyAllianceChatMessage({
-          allianceId: message.allianceId,
-          excludeUserId: req.user.userId,
-          title: `${req.user.username}`,
-          body: preview,
-          data: {
-            type: 'chat_message',
-            roomId: dto.roomId,
-            messageId,
-          },
-        })
-        .catch(() => undefined);
     }
+    // Обычные сообщения альянса не шлём push: в игре — оверлей/сокет; вне игры — только
+    // excavation_alert (notifyExcavationAlert) со звуком, чтобы не отвлекать от жизни вне рейда.
     return message;
   }
 

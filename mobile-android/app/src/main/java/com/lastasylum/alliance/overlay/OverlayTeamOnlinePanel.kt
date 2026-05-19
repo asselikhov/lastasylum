@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.overlay
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,11 +14,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,9 +30,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -39,16 +46,56 @@ import com.lastasylum.alliance.data.teams.TeamDetailDto
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.users.MyProfileDto
 import com.lastasylum.alliance.data.users.UsersRepository
+import com.lastasylum.alliance.data.voice.TeamVoicePresenceStore
+import com.lastasylum.alliance.ui.components.OverlayMemberVoiceBadges
 import com.lastasylum.alliance.ui.screens.TeamLeaderDialogsHost
 import com.lastasylum.alliance.ui.screens.TeamLeaderToolbar
 import com.lastasylum.alliance.ui.screens.rememberTeamLeaderOverlayState
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
-import com.lastasylum.alliance.ui.util.isOverlayIngameNow
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+private data class OnlineListItem(
+    val sectionTitle: String?,
+    val member: PlayerTeamMemberDto,
+    val key: String,
+)
+
+private fun allianceRoleRank(role: String): Int = when (role.trim().uppercase()) {
+    "R5" -> 5
+    "R4" -> 4
+    "R3" -> 3
+    "R2" -> 2
+    "R1" -> 1
+    else -> 0
+}
+
+private fun buildOnlineListItems(members: List<PlayerTeamMemberDto>): List<OnlineListItem> {
+    val sorted = members.sortedWith(
+        compareByDescending<PlayerTeamMemberDto> { allianceRoleRank(it.allianceRole) }
+            .thenBy { it.username.lowercase() },
+    )
+    val out = mutableListOf<OnlineListItem>()
+    var lastRole: String? = null
+    for (member in sorted) {
+        val role = member.allianceRole.trim().uppercase().ifBlank { "R2" }
+        val sectionTitle = if (role != lastRole) role else null
+        if (sectionTitle != null) {
+            lastRole = role
+        }
+        out.add(
+            OnlineListItem(
+                sectionTitle = sectionTitle,
+                member = member,
+                key = "${member.userId}:$role:${sectionTitle != null}",
+            ),
+        )
+    }
+    return out
+}
 
 @Composable
 fun OverlayTeamOnlinePanel(
@@ -61,6 +108,7 @@ fun OverlayTeamOnlinePanel(
     val res = context.resources
     val scope = rememberCoroutineScope()
     val leaderUi = rememberTeamLeaderOverlayState()
+    val voicePeers by TeamVoicePresenceStore.peers.collectAsState()
 
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -107,6 +155,7 @@ fun OverlayTeamOnlinePanel(
     val p = profile
     val isLeader = p?.isPlayerTeamLeader == true
     val pending = p?.pendingPlayerTeamJoinRequests ?: 0
+    val listItems = remember(onlineMembers) { buildOnlineListItems(onlineMembers) }
 
     TeamLeaderDialogsHost(
         teamId = t?.id,
@@ -214,13 +263,27 @@ fun OverlayTeamOnlinePanel(
                         contentPadding = PaddingValues(
                             start = SquadRelayDimens.contentPaddingHorizontal,
                             end = SquadRelayDimens.contentPaddingHorizontal,
-                            top = 4.dp,
+                            top = 8.dp,
                             bottom = 16.dp,
                         ),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        items(onlineMembers, key = { it.userId }) { member ->
-                            OverlayTeamOnlineMemberRow(member)
+                        items(listItems, key = { it.key }) { item ->
+                            if (item.sectionTitle != null) {
+                                Text(
+                                    text = item.sectionTitle,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
+                                )
+                            }
+                            val peer = voicePeers[item.member.userId]
+                            OverlayTeamOnlineMemberCard(
+                                member = item.member,
+                                micOn = peer?.micOn == true,
+                                soundOn = peer?.soundOn == true,
+                            )
                         }
                     }
                 }
@@ -230,54 +293,94 @@ fun OverlayTeamOnlinePanel(
 }
 
 @Composable
-private fun OverlayTeamOnlineMemberRow(member: PlayerTeamMemberDto) {
+private fun OverlayTeamOnlineMemberCard(
+    member: PlayerTeamMemberDto,
+    micOn: Boolean,
+    soundOn: Boolean,
+) {
     val avatarUrl = telegramAvatarUrl(member.telegramUsername)
     val letter = member.username.trim().take(1).uppercase().ifBlank { "?" }
-    val inGame = isOverlayIngameNow(member.presenceStatus, member.lastPresenceAt)
+    val allianceRole = member.allianceRole.trim().uppercase().ifBlank { "R2" }
+    val roleCd = stringResource(R.string.overlay_member_alliance_role_cd, allianceRole)
+    val scheme = MaterialTheme.colorScheme
+    val ingameRing = Color(0xFF81C784)
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = scheme.surface.copy(alpha = 0.58f),
+        tonalElevation = 0.dp,
+        shadowElevation = 4.dp,
+        border = BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = 0.22f)),
     ) {
-        Box(
+        Row(
             modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center,
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (avatarUrl != null) {
-                AsyncImage(
-                    model = avatarUrl,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
-            } else {
-                Text(
-                    text = letter,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        Text(
-            text = member.username,
-            style = MaterialTheme.typography.bodyLarge,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        if (inGame) {
             Box(
                 modifier = Modifier
-                    .size(8.dp)
+                    .size(48.dp)
                     .clip(CircleShape)
-                    .background(androidx.compose.ui.graphics.Color(0xFF81C784)),
+                    .background(ingameRing.copy(alpha = 0.35f))
+                    .padding(2.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(CircleShape)
+                        .background(scheme.primaryContainer),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (avatarUrl != null) {
+                        AsyncImage(
+                            model = avatarUrl,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    } else {
+                        Text(
+                            text = letter,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = scheme.onPrimaryContainer,
+                        )
+                    }
+                }
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = member.username,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Medium,
+                    color = scheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = scheme.primary.copy(alpha = 0.14f),
+                    modifier = Modifier.semantics { contentDescription = roleCd },
+                ) {
+                    Text(
+                        text = allianceRole,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = scheme.primary,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                    )
+                }
+            }
+            OverlayMemberVoiceBadges(
+                micOn = micOn,
+                soundOn = soundOn,
             )
         }
     }

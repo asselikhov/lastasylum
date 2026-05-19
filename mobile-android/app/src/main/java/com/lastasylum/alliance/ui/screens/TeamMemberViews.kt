@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.PersonRemove
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import com.lastasylum.alliance.ui.components.OverlayMemberVoiceBadges
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
 import com.lastasylum.alliance.overlay.OverlayAwareBottomSheet
@@ -355,83 +356,6 @@ private fun SquadRoleSectionHeader(
 }
 
 @Composable
-private fun TeamMemberVoiceBadges(
-    micOn: Boolean,
-    soundOn: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val micCd = stringResource(
-        if (micOn) R.string.team_member_voice_mic_on_cd else R.string.team_member_voice_mic_off_cd,
-    )
-    val soundCd = stringResource(
-        if (soundOn) R.string.team_member_voice_sound_on_cd else R.string.team_member_voice_sound_off_cd,
-    )
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        TeamMemberVoiceBadge(
-            iconRes = if (micOn) R.drawable.ic_overlay_mic_on else R.drawable.ic_overlay_mic_off,
-            contentDescription = micCd,
-            accent = Color(0xFF2E7D32),
-            accentGlow = Color(0xFF81C784),
-            active = micOn,
-        )
-        TeamMemberVoiceBadge(
-            iconRes = if (soundOn) R.drawable.ic_overlay_volume_on else R.drawable.ic_overlay_volume_off,
-            contentDescription = soundCd,
-            accent = Color(0xFF1565C0),
-            accentGlow = Color(0xFF64B5F6),
-            active = soundOn,
-        )
-    }
-}
-
-@Composable
-private fun TeamMemberVoiceBadge(
-    iconRes: Int,
-    contentDescription: String,
-    accent: Color,
-    accentGlow: Color,
-    active: Boolean,
-) {
-    val idleBg = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-    val idleBorder = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
-    Box(
-        modifier = Modifier
-            .size(22.dp)
-            .clip(RoundedCornerShape(7.dp))
-            .background(
-                if (active) {
-                    Brush.linearGradient(
-                        colors = listOf(
-                            accent.copy(alpha = 0.92f),
-                            accent.copy(alpha = 0.72f),
-                        ),
-                    )
-                } else {
-                    Brush.linearGradient(listOf(idleBg, idleBg))
-                },
-            )
-            .border(
-                width = 1.dp,
-                color = if (active) accentGlow.copy(alpha = 0.55f) else idleBorder,
-                shape = RoundedCornerShape(7.dp),
-            )
-            .semantics { this.contentDescription = contentDescription },
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = null,
-            modifier = Modifier.size(13.dp),
-            tint = if (active) Color.White else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-        )
-    }
-}
-
-@Composable
 private fun SquadMemberCard(
     member: PlayerTeamMemberDto,
     isSquadLeader: Boolean,
@@ -531,7 +455,7 @@ private fun SquadMemberCard(
                         modifier = Modifier.weight(1f, fill = false),
                     )
                     if (inGameNow && (overlayUi || overlayVisible)) {
-                        TeamMemberVoiceBadges(
+                        OverlayMemberVoiceBadges(
                             micOn = voiceMicOn,
                             soundOn = voiceSoundOn,
                         )

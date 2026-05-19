@@ -74,6 +74,7 @@ import androidx.compose.ui.unit.dp
 import com.google.android.material.color.MaterialColors
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.data.auth.JwtAccessTokenClaims
 import com.lastasylum.alliance.data.voice.VoiceChatSession
@@ -311,7 +312,7 @@ class CombatOverlayService : Service() {
         }
     }
 
-    private fun resumeOverlayWindowsAfterSystemActivity() {
+    private fun resumeOverlayWindowsAfterSystemActivity(skipFullscreenRebalance: Boolean = false) {
         val mgr = windowManager
         val hadSuspendedWindows = overlayTouchPassthroughSnaps.isNotEmpty()
         if (hadSuspendedWindows && mgr != null) {
@@ -330,7 +331,9 @@ class CombatOverlayService : Service() {
             OverlayChatInteractionHold.endOverlaySystemPickerSession()
         }
         OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
-        rebalanceOverlayFullscreenZOrder()
+        if (!skipFullscreenRebalance) {
+            rebalanceOverlayFullscreenZOrder()
+        }
         repairDetachedOverlayChatTeamPanelIfNeeded()
         repairDetachedOverlayShellIfNeeded()
         if (deferredHideOverlayChatTeamPanel) {
@@ -632,7 +635,14 @@ class CombatOverlayService : Service() {
     }
 
     private val stripTickRunnable = Runnable {
+        if (!isOverlayShellActive() || overlayChatTeamPanelVisible) {
+            return@Runnable
+        }
         val before = stripBuffer.visibleForPreview().size
+        if (before == 0) {
+            scheduleStripTick()
+            return@Runnable
+        }
         stripBuffer.prune()
         if (before != stripBuffer.visibleForPreview().size) {
             lastStripRenderSignature = null
@@ -676,6 +686,8 @@ class CombatOverlayService : Service() {
     /** Не вызывать [NotificationManager.notify] с тем же текстом подряд (лишние всплытия на части OEM). */
     private var lastForegroundNotificationText: String? = null
     private var lastForegroundMicActive: Boolean = false
+    /** FGS notification visible while in-game overlay is active (hidden when idle outside game). */
+    private var overlayForegroundPromoted: Boolean = false
 
     @Volatile
     private var overlaySessionActive: Boolean = false
@@ -686,10 +698,29 @@ class CombatOverlayService : Service() {
 
     private val hubHudRefreshRunnable = Runnable {
         hubHudRefreshPosted = false
+        refreshOverlayHubUnreadOnly()
+    }
+
+    @Volatile
+    private var hudRefreshInFlight: Boolean = false
+
+    @Volatile
+    private var hudRefreshPending: Boolean = false
+
+    private var lastHudRefreshCompletedAtMs: Long = 0L
+
+    private val overlayCloseHudRefreshRunnable = Runnable {
         refreshOverlayStatusHudData()
     }
 
     private var lastStripZOrderLiftMs: Long = 0L
+
+    private var stripZOrderLiftPosted: Boolean = false
+
+    private val stripZOrderLiftRunnable = Runnable {
+        stripZOrderLiftPosted = false
+        requestChatStripZOrderLift()
+    }
 
     private val gameGateRunnable = Runnable {
         runCatching { tickGameGate() }
@@ -720,13 +751,7 @@ class CombatOverlayService : Service() {
             AppContainer.from(this).userSettingsPreferences.isQuietMode(),
         )
         lastForegroundNotificationText = foregroundNotificationIdleText()
-        // Тип FGS в манифесте — dataSync (см. AndroidManifest); иначе microphone + API 34 ломают onCreate без RECORD_AUDIO / eligible state.
-        ServiceCompat.startForeground(
-            this,
-            OverlayForegroundNotifications.NOTIFICATION_ID,
-            notification,
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
-        )
+        promoteOverlayForeground(notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         Log.i(TAG, "onCreate: startForeground OK")
         isServiceInstanceActive = true
         _serviceRunning.value = true
@@ -869,6 +894,7 @@ class CombatOverlayService : Service() {
                         context = this@CombatOverlayService,
                         targetGamePackages = targets,
                         allowedActivitySubstrings = activityTokens,
+                        preferredForegroundPackage = lastForegroundHintPkg,
                     )
                     when (probe) {
                         GameForegroundGate.QuickForegroundProbe.IN_TARGET -> {
@@ -953,7 +979,7 @@ class CombatOverlayService : Service() {
 
     private fun nextGameGateDelayMs(): Long {
         if (isOverlayShellActive() &&
-            stableGatePollTicks >= 10 &&
+            stableGatePollTicks >= GATE_STABLE_TICKS_FOR_SLOW_POLL &&
             lastAppliedGateShouldShow == true
         ) {
             return GAME_GATE_POLL_STABLE_MS
@@ -974,38 +1000,95 @@ class CombatOverlayService : Service() {
         mainHandler.postDelayed(statusHudRefreshRunnable, STATUS_HUD_REFRESH_MS)
     }
 
-    private fun refreshOverlayStatusHudData() {
+    private fun refreshOverlayStatusHudData(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastHudRefreshCompletedAtMs < HUD_REFRESH_MIN_INTERVAL_MS) {
+            hudRefreshPending = true
+            return
+        }
+        if (hudRefreshInFlight) {
+            hudRefreshPending = true
+            return
+        }
+        hudRefreshInFlight = true
         OverlayPerfDiag.logHudRefreshScheduled()
         val startedAt = android.os.SystemClock.elapsedRealtime()
         serviceScope.launch(Dispatchers.IO) {
-            val rooms = runCatching {
-                AppContainer.from(this@CombatOverlayService).chatRepository.listRooms().getOrNull()
-            }.getOrNull()
-            rooms?.let { list ->
-                cachedAllianceHubRoomId = OverlayGameStatusHudRefresh.allianceHubRoom(list)?.id
+            try {
+                val container = AppContainer.from(this@CombatOverlayService)
+                val rooms = runCatching { container.chatRepository.listRooms().getOrNull() }.getOrNull()
+                rooms?.let { list ->
+                    cachedAllianceHubRoomId = OverlayGameStatusHudRefresh.allianceHubRoom(list)?.id
+                    com.lastasylum.alliance.data.chat.ChatSessionCache.update(list)
+                }
+                val refreshNewsForum = force ||
+                    now - lastHudRefreshCompletedAtMs >= STATUS_HUD_REFRESH_MS
+                val state = runCatching {
+                    OverlayGameStatusHudRefresh.load(
+                        context = this@CombatOverlayService,
+                        preloadedRooms = rooms,
+                        refreshNewsForum = refreshNewsForum,
+                    )
+                }.getOrElse { OverlayGameStatusHudState() }
+                val joinRequestCount = if (force || refreshNewsForum) {
+                    runCatching {
+                        OverlayGameStatusHudRefresh.loadTeamJoinRequestCount(this@CombatOverlayService)
+                    }.getOrDefault(0)
+                } else {
+                    overlayTopRightHudFlow.value.teamJoinRequestCount
+                }
+                overlayStatusHudFlow.value = state
+                mainHandler.post {
+                    val durationMs = android.os.SystemClock.elapsedRealtime() - startedAt
+                    OverlayPerfDiag.logHudRefreshDone(
+                        durationMs = durationMs,
+                        allianceUnread = state.allianceChatUnread,
+                        forumUnread = state.forumUnread,
+                        newsUnread = state.teamNewsUnread,
+                    )
+                    ensureOverlayStatusHudWindow()
+                    overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
+                        teamJoinRequestCount = joinRequestCount,
+                    )
+                    refreshOverlayTopRightHudState()
+                    logOverlayRuntimeSnapshot()
+                }
+            } finally {
+                hudRefreshInFlight = false
+                lastHudRefreshCompletedAtMs = System.currentTimeMillis()
+                if (hudRefreshPending) {
+                    hudRefreshPending = false
+                    refreshOverlayStatusHudData()
+                }
             }
-            val state = runCatching {
-                OverlayGameStatusHudRefresh.load(this@CombatOverlayService)
-            }.getOrElse { OverlayGameStatusHudState() }
-            val joinRequestCount = runCatching {
-                OverlayGameStatusHudRefresh.loadTeamJoinRequestCount(this@CombatOverlayService)
-            }.getOrDefault(0)
-            overlayStatusHudFlow.value = state
+        }
+    }
+
+    /** Hub chat badge only — one [listRooms], no news/forum/join-requests fan-out. */
+    private fun refreshOverlayHubUnreadOnly() {
+        serviceScope.launch(Dispatchers.IO) {
+            val container = AppContainer.from(this@CombatOverlayService)
+            val rooms = runCatching { container.chatRepository.listRooms().getOrNull() }.getOrNull()
+                ?: return@launch
+            cachedAllianceHubRoomId = OverlayGameStatusHudRefresh.allianceHubRoom(rooms)?.id
+            com.lastasylum.alliance.data.chat.ChatSessionCache.update(rooms)
+            val localRead = container.chatRoomPreferences.loadAllLastReadMessageIds()
+            val unread = OverlayGameStatusHudRefresh.allianceHubUnread(rooms, localRead)
             mainHandler.post {
-                val durationMs = android.os.SystemClock.elapsedRealtime() - startedAt
-                OverlayPerfDiag.logHudRefreshDone(
-                    durationMs = durationMs,
-                    allianceUnread = state.allianceChatUnread,
-                    forumUnread = state.forumUnread,
-                    newsUnread = state.teamNewsUnread,
+                overlayStatusHudFlow.value = overlayStatusHudFlow.value.copy(
+                    allianceChatUnread = unread,
                 )
-                ensureOverlayStatusHudWindow()
-                overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
-                    teamJoinRequestCount = joinRequestCount,
-                )
-                refreshOverlayTopRightHudState()
-                logOverlayRuntimeSnapshot()
             }
+        }
+    }
+
+    private fun resolveCachedAllianceHubRoomId() {
+        if (!cachedAllianceHubRoomId.isNullOrBlank()) return
+        serviceScope.launch(Dispatchers.IO) {
+            val rooms = com.lastasylum.alliance.data.chat.ChatSessionCache.getFreshRooms()
+                ?: AppContainer.from(this@CombatOverlayService).chatRepository.listRooms().getOrNull()
+                ?: return@launch
+            cachedAllianceHubRoomId = OverlayGameStatusHudRefresh.allianceHubRoom(rooms)?.id
         }
     }
 
@@ -1020,6 +1103,22 @@ class CombatOverlayService : Service() {
         overlayStatusHudFlow.value = current.copy(
             allianceChatUnread = (current.allianceChatUnread + 1).coerceAtMost(99),
         )
+    }
+
+    private fun shouldBumpHubUnreadForMessage(msg: ChatMessage, hubId: String): Boolean {
+        val msgId = msg._id?.trim().orEmpty()
+        if (msgId.isBlank()) return true
+        val localRead = AppContainer.from(this).chatRoomPreferences.getLastReadMessageId(hubId)
+            ?.trim()
+            .orEmpty()
+        if (localRead.isBlank()) return true
+        return isObjectIdNewer(msgId, localRead)
+    }
+
+    private fun maybeBumpAllianceHubUnread(msg: ChatMessage, hubId: String) {
+        if (!shouldBumpHubUnreadForMessage(msg, hubId)) return
+        bumpAllianceHubUnreadLocally()
+        scheduleDebouncedHubHudRefresh()
     }
 
     private fun logOverlayRuntimeSnapshot() {
@@ -1373,13 +1472,11 @@ class CombatOverlayService : Service() {
             }
             return
         }
+        promoteOverlayForeground()
         ensureOverlayIfPermitted()
         syncOverlayHudsIfReady()
         if (shouldShow && !wasInGame) {
-            refreshOverlayStatusHudData()
-            scheduleOverlayStatusHudRefresh()
-        } else if (shouldShow && stableGatePollTicks == HUD_STABLE_TICKS_BEFORE_ATTACH) {
-            refreshOverlayStatusHudData()
+            refreshOverlayStatusHudData(force = true)
             scheduleOverlayStatusHudRefresh()
         } else if (shouldShow) {
             scheduleOverlayStatusHudRefresh()
@@ -1419,6 +1516,7 @@ class CombatOverlayService : Service() {
         removeOverlayTopRightHudWindow()
         mainHandler.removeCallbacks(statusHudRefreshRunnable)
         statusHudRefreshPosted = false
+        demoteOverlayForegroundWhileIdle()
     }
 
     private fun canDrawOverlaysNow(): Boolean {
@@ -1517,6 +1615,7 @@ class CombatOverlayService : Service() {
         removeOverlayStatusHudWindow()
         removeOverlayTopRightHudWindow()
         mainHandler.removeCallbacks(statusHudRefreshRunnable)
+        mainHandler.removeCallbacks(overlayCloseHudRefreshRunnable)
         statusHudRefreshPosted = false
         serviceScope.cancel()
         super.onDestroy()
@@ -1530,6 +1629,35 @@ class CombatOverlayService : Service() {
 
     private fun foregroundNotificationIdleText(): String =
         getString(R.string.overlay_notif_fgs_idle)
+
+    private fun promoteOverlayForeground(
+        notification: android.app.Notification? = null,
+        serviceTypes: Int = ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+    ) {
+        val notif = notification ?: OverlayForegroundNotifications.build(
+            this,
+            foregroundNotificationIdleText(),
+            AppContainer.from(this).userSettingsPreferences.isQuietMode(),
+        )
+        ServiceCompat.startForeground(
+            this,
+            OverlayForegroundNotifications.NOTIFICATION_ID,
+            notif,
+            serviceTypes,
+        )
+        overlayForegroundPromoted = true
+    }
+
+    /**
+     * Вне игры оверлей скрыт — убираем «боевой режим» из шторки; FGS остаётся для опроса game gate.
+     * Push о раскопках приходит отдельным каналом FCM.
+     */
+    private fun demoteOverlayForegroundWhileIdle() {
+        if (!overlayForegroundPromoted) return
+        if (voiceSession?.micOn == true) return
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_DETACH)
+        overlayForegroundPromoted = false
+    }
 
     /**
      * Обновляет FGS-уведомление только для микрофона в эфире.
@@ -1577,7 +1705,9 @@ class CombatOverlayService : Service() {
             return
         }
         val nonEmpty = rects.filterNot { it.isEmpty }
-        if (stripDismissRectsEqual(lastStripDismissRects, nonEmpty)) return
+        val hadDismiss = lastStripDismissRects.isNotEmpty()
+        val hasDismiss = nonEmpty.isNotEmpty()
+        if (stripDismissRectsEqual(lastStripDismissRects, nonEmpty) && hadDismiss == hasDismiss) return
         lastStripDismissRects = nonEmpty
         (chatStripHost as? OverlayStripPassthroughFrameLayout)?.dismissRectsInCompose = nonEmpty
         scheduleSyncChatStripWindowTouchPassthrough()
@@ -1694,8 +1824,7 @@ class CombatOverlayService : Service() {
         if (hubId != null && msg.roomId == hubId) {
             val selfId = jwtSubFromAccessToken()
             if (!selfId.isNullOrBlank() && msg.senderId != selfId) {
-                bumpAllianceHubUnreadLocally()
-                scheduleDebouncedHubHudRefresh()
+                maybeBumpAllianceHubUnread(msg, hubId)
             }
         } else if (msg.roomId.isNotBlank()) {
             serviceScope.launch(Dispatchers.IO) {
@@ -1706,10 +1835,7 @@ class CombatOverlayService : Service() {
                 if (msg.roomId == resolvedHubId) {
                     val selfId = jwtSubFromAccessToken()
                     if (!selfId.isNullOrBlank() && msg.senderId != selfId) {
-                        mainHandler.post {
-                            bumpAllianceHubUnreadLocally()
-                            scheduleDebouncedHubHudRefresh()
-                        }
+                        mainHandler.post { maybeBumpAllianceHubUnread(msg, resolvedHubId) }
                     }
                 }
             }
@@ -1864,7 +1990,7 @@ class CombatOverlayService : Service() {
         chatStripParams = params
         chatStripClipRoot = clipRoot
         syncChatStripWindowTouchPassthrough()
-        requestChatStripZOrderLift()
+        scheduleStripZOrderLift()
     }
 
     private val voiceMicPermissionReceiver = object : BroadcastReceiver() {
@@ -1920,10 +2046,19 @@ class CombatOverlayService : Service() {
                 scheduleStripTick()
             }
             presenceHeartbeat.start()
-            refreshOverlayStatusHudData()
+            resolveCachedAllianceHubRoomId()
         }
         serviceScope.launch {
             val container = AppContainer.from(this@CombatOverlayService)
+            val cachedRooms = com.lastasylum.alliance.data.chat.ChatSessionCache.getFreshRooms()
+            if (cachedRooms != null) {
+                cachedAllianceHubRoomId = OverlayGameStatusHudRefresh.allianceHubRoom(cachedRooms)?.id
+            } else {
+                container.chatRepository.listRooms().getOrNull()?.let { list ->
+                    com.lastasylum.alliance.data.chat.ChatSessionCache.update(list)
+                    cachedAllianceHubRoomId = OverlayGameStatusHudRefresh.allianceHubRoom(list)?.id
+                }
+            }
             val raidId = container.chatRoomPreferences.getRaidRoomId()
             if (raidId == null) {
                 mainHandler.post {
@@ -1931,23 +2066,37 @@ class CombatOverlayService : Service() {
                 }
                 return@launch
             }
+            val cachedHistory = com.lastasylum.alliance.data.chat.ChatSessionCache
+                .getFreshMessages(raidId)
+            if (!cachedHistory.isNullOrEmpty()) {
+                mainHandler.post {
+                    stripBuffer.seedFromHistory(cachedHistory.take(OVERLAY_HISTORY_LOAD))
+                    lastStripRenderSignature = null
+                    refreshOverlayChatStripNow()
+                }
+            }
             container.chatRepository.loadRecentMessages(raidId, null, OVERLAY_HISTORY_LOAD)
                 .onSuccess { loaded ->
+                    com.lastasylum.alliance.data.chat.ChatSessionCache.updateMessages(raidId, loaded)
                     mainHandler.post {
                         stripBuffer.seedFromHistory(loaded)
                         lastStripRenderSignature = null
-                        refreshOverlayChatStrip()
+                        refreshOverlayChatStripNow()
                     }
                 }
                 .onFailure {
-                    mainHandler.post {
-                        setStripPlainMessage(getString(R.string.overlay_strip_history_failed))
+                    if (cachedHistory.isNullOrEmpty()) {
+                        mainHandler.post {
+                            setStripPlainMessage(getString(R.string.overlay_strip_history_failed))
+                        }
                     }
                 }
         }
     }
 
     private fun endOverlayChatSubscription() {
+        mainHandler.removeCallbacks(stripZOrderLiftRunnable)
+        stripZOrderLiftPosted = false
         cancelOverlayVoiceConnectScheduled()
         stopOverlayVoice()
         unregisterVoiceMicPermissionReceiver()
@@ -1995,13 +2144,13 @@ class CombatOverlayService : Service() {
             }
             _overlayVisible.value = true
             applyOverlayStripVisibility()
-            requestChatStripZOrderLift()
+            scheduleStripZOrderLift()
         }
         rebalanceOverlayFullscreenZOrder()
         mainHandler.post { beginOverlayChatSubscription() }
     }
 
-    private fun applyOverlayStripVisibility() {
+    private fun applyOverlayStripVisibility(rebalanceZOrder: Boolean = false) {
         (windowManager ?: systemWindowManager())?.let { wm ->
             runCatching { ensureChatStripWindow(wm) }
         }
@@ -2009,7 +2158,9 @@ class CombatOverlayService : Service() {
             chatStripHost?.visibility =
                 if (overlayChatTeamPanelVisible) View.GONE else View.VISIBLE
         }
-        rebalanceOverlayFullscreenZOrder()
+        if (rebalanceZOrder) {
+            rebalanceOverlayFullscreenZOrder()
+        }
     }
     private fun hideOverlayChatTeamPanel(clearStrip: Boolean = true) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
@@ -2025,13 +2176,13 @@ class CombatOverlayService : Service() {
     }
 
     private fun hideOverlayChatTeamPanelNow(clearStrip: Boolean = true) {
-        resumeOverlayWindowsAfterSystemActivity()
         val root = overlayChatTeamRoot
         val hadVisible = overlayChatTeamPanelVisible
         overlayChatTeamPanelVisible = false
         currentOverlayHudPane = null
         OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = false
         OverlayChatInteractionHold.releaseGameForegroundSuppress()
+        resumeOverlayWindowsAfterSystemActivity(skipFullscreenRebalance = true)
         if (hadVisible) {
             chatStripZOrderLifted = false
             updateStripDismissScreenRects(emptyList())
@@ -2054,9 +2205,11 @@ class CombatOverlayService : Service() {
         runCatching { unregisterReceiver(overlaySystemResultReceiver) }
         overlayChatTeamComposeOwner?.destroy()
         overlayChatTeamComposeOwner = null
-        refreshOverlayChatStrip()
+        applyOverlayStripVisibility(rebalanceZOrder = false)
         syncOverlayStatusHudVisibility()
-        refreshOverlayStatusHudData()
+        refreshOverlayChatStripNow()
+        mainHandler.removeCallbacks(overlayCloseHudRefreshRunnable)
+        mainHandler.postDelayed(overlayCloseHudRefreshRunnable, OVERLAY_CLOSE_HUD_REFRESH_DELAY_MS)
     }
 
     private fun hideOverlayIme(view: View) {
@@ -2081,6 +2234,14 @@ class CombatOverlayService : Service() {
                 Log.w(TAG, "rebalanceOverlayFullscreenZOrder(chatTeam) failed", e)
             }
         }
+    }
+
+    private fun scheduleStripZOrderLift() {
+        if (chatStripZOrderLifted) return
+        if (stripZOrderLiftPosted) return
+        stripZOrderLiftPosted = true
+        mainHandler.removeCallbacks(stripZOrderLiftRunnable)
+        mainHandler.postDelayed(stripZOrderLiftRunnable, STRIP_ZORDER_LIFT_DELAY_MS)
     }
 
     /** Поднять ленту поверх остальных окон оверлея (дорого: remove/add; не на каждое сообщение). */
@@ -2266,7 +2427,10 @@ class CombatOverlayService : Service() {
                                             OverlayTeamOnlinePanel(
                                                 teamsRepository = container.teamsRepository,
                                                 usersRepository = container.usersRepository,
-                                                onHudRefresh = { refreshOverlayStatusHudData() },
+                                                onHudRefresh = {
+                                                    OverlayGameStatusHudRefresh.invalidateNewsForumCache()
+                                                    refreshOverlayStatusHudData(force = true)
+                                                },
                                             )
                                         }
                                         null -> when (selectedTab) {
@@ -2460,12 +2624,7 @@ class CombatOverlayService : Service() {
             text,
             AppContainer.from(this).userSettingsPreferences.isQuietMode(),
         )
-        ServiceCompat.startForeground(
-            this,
-            OverlayForegroundNotifications.NOTIFICATION_ID,
-            notification,
-            types,
-        )
+        promoteOverlayForeground(notification, types)
     }
 
     private fun requestOverlayVoiceMicPermission() {
@@ -2542,8 +2701,12 @@ class CombatOverlayService : Service() {
         private const val OVERLAY_INGAME_GRACE_MS = 2_500L
         private const val OVERLAY_HISTORY_LOAD = 40
         private const val HUD_STABLE_TICKS_BEFORE_ATTACH = 3
+        private const val GATE_STABLE_TICKS_FOR_SLOW_POLL = 5
+        private const val HUD_REFRESH_MIN_INTERVAL_MS = 2_000L
         private const val HUB_HUD_REFRESH_DEBOUNCE_MS = 4_000L
+        private const val OVERLAY_CLOSE_HUD_REFRESH_DELAY_MS = 80L
         private const val STRIP_ZORDER_MIN_INTERVAL_MS = 30_000L
+        private const val STRIP_ZORDER_LIFT_DELAY_MS = 450L
         /** Matches backend / user schema: ingame | online | away */
         private const val OVERLAY_PRESENCE_INGAME = "ingame"
         private const val OVERLAY_PRESENCE_AWAY = "away"

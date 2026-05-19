@@ -138,8 +138,8 @@ fun OverlayChatStrip(
             keep.removeAll { keyOf(it) !in currentKeys }
             removed.forEach { m -> leaving.remove(keyOf(m)) }
         }
-        val order = latestMessages.map { keyOf(it) }
-        keep.sortBy { order.indexOf(keyOf(it)).let { idx -> if (idx < 0) Int.MAX_VALUE else idx } }
+        val orderIndex = latestMessages.mapIndexed { index, msg -> keyOf(msg) to index }.toMap()
+        keep.sortBy { orderIndex[keyOf(it)] ?: Int.MAX_VALUE }
 
         val keysAfter = latestMessages.map { keyOf(it) }.toSet()
         val newKeys = keysAfter - keysBefore
@@ -163,26 +163,31 @@ fun OverlayChatStrip(
         if (keep.isNotEmpty()) {
             OverlayStripBatchHeader(firstMessage = keep.first())
         }
-        val stripBurstMode = keep.size > 2
+        val stripBurstMode = lightStrip || keep.size > 2
         keep.forEach { msg ->
             val key = keyOf(msg)
             val isMine = !latestSelfId.isNullOrBlank() && msg.senderId == latestSelfId
             val isLeaving = leaving[key] == true
-            val fancyEnter = !stripBurstMode && accentEnterKey != null && key == accentEnterKey
-            val enterTransition = if (stripBurstMode) {
-                fadeIn(animationSpec = tween(40))
+            val fancyEnter = !lightStrip && !stripBurstMode && accentEnterKey != null && key == accentEnterKey
+            val enterTransition = if (lightStrip || stripBurstMode) {
+                fadeIn(animationSpec = tween(28))
             } else if (fancyEnter) {
                 fadeIn(animationSpec = tween(110)) +
                     scaleIn(initialScale = 0.96f, animationSpec = tween(170))
             } else {
                 fadeIn(animationSpec = tween(55))
             }
+            val exitTransition = if (lightStrip) {
+                fadeOut(animationSpec = tween(80))
+            } else {
+                fadeOut(animationSpec = tween(150)) +
+                    slideOutVertically(animationSpec = tween(170)) { it / 4 } +
+                    scaleOut(targetScale = 0.98f, animationSpec = tween(170))
+            }
             AnimatedVisibility(
                 visible = !isLeaving,
                 enter = enterTransition,
-                exit = fadeOut(animationSpec = tween(150)) +
-                    slideOutVertically(animationSpec = tween(170)) { it / 4 } +
-                    scaleOut(targetScale = 0.98f, animationSpec = tween(170)),
+                exit = exitTransition,
             ) {
                 OverlayChatStripMessage(
                     msg = msg,
@@ -277,9 +282,11 @@ private fun OverlayChatStripMessage(
         }
     }
     val imageUrls = remember(images) { images.map { resolvedChatAttachmentImageUrl(it.url) } }
-    val stickerStem = remember(msg.text) { ZlobyakaStickerPack.parseStem(msg.text) }
-    val hasSticker = stickerStem != null
-    val hasText = !hasSticker && msg.text.isNotBlank()
+    val stickerStem = remember(msg.text, lightStrip) {
+        if (lightStrip) null else ZlobyakaStickerPack.parseStem(msg.text)
+    }
+    val hasSticker = !lightStrip && stickerStem != null
+    val hasText = msg.text.isNotBlank() && (!hasSticker || lightStrip)
     val displayName = remember(msg.senderTeamTag, msg.senderUsername) {
         chatSenderDisplayWithTag(msg.senderTeamTag, msg.senderUsername).trim().ifBlank { "—" }
     }
@@ -307,7 +314,7 @@ private fun OverlayChatStripMessage(
         color = Color.Transparent,
         border = BorderStroke(1.dp, border),
         tonalElevation = 0.dp,
-        shadowElevation = 3.dp,
+        shadowElevation = if (lightStrip) 0.dp else 3.dp,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Box(
@@ -318,17 +325,29 @@ private fun OverlayChatStripMessage(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 10.dp, end = 28.dp, top = 8.dp, bottom = 8.dp),
+                    .padding(
+                        start = 10.dp,
+                        end = 28.dp,
+                        top = if (lightStrip) 6.dp else 8.dp,
+                        bottom = if (lightStrip) 6.dp else 8.dp,
+                    ),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    ChatSenderAvatar(
-                        telegramUrl = avatarUrl,
-                        size = if (compactStickers) 28.dp else 30.dp,
-                        fallbackName = msg.senderUsername,
-                    )
+                    if (lightStrip) {
+                        OverlayLightStripAvatar(
+                            fallbackName = msg.senderUsername,
+                            size = if (compactStickers) 28.dp else 30.dp,
+                        )
+                    } else {
+                        ChatSenderAvatar(
+                            telegramUrl = avatarUrl,
+                            size = if (compactStickers) 28.dp else 30.dp,
+                            fallbackName = msg.senderUsername,
+                        )
+                    }
                     if (time.isNotBlank()) {
                         Text(
                             text = time,
@@ -354,7 +373,7 @@ private fun OverlayChatStripMessage(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f),
                         )
-                        if (role.isNotBlank()) {
+                        if (role.isNotBlank() && !lightStrip) {
                             RoleBadge(role = role)
                         }
                     }
@@ -446,5 +465,27 @@ private fun OverlayChatStripMessage(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun OverlayLightStripAvatar(
+    fallbackName: String,
+    size: androidx.compose.ui.unit.Dp,
+) {
+    val letter = fallbackName.trim().take(1).uppercase().ifBlank { "?" }
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = letter,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

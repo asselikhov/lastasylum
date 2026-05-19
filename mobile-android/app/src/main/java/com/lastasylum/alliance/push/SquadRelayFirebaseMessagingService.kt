@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.push
 
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import kotlinx.coroutines.CoroutineScope
@@ -27,6 +28,14 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         val dataType = message.data["type"]
         if (dataType == "excavation_alert") {
+            val app = applicationContext
+            val prefs = AppContainer.from(app).userSettingsPreferences
+            if (!prefs.isExcavationPushEnabled()) {
+                return
+            }
+            if (CombatOverlayService.overlayVisible.value) {
+                return
+            }
             val title = message.notification?.title
                 ?: message.data["title"]
                 ?: getString(com.lastasylum.alliance.R.string.excavation_push_default_title)

@@ -15,38 +15,76 @@ import com.lastasylum.alliance.ui.util.isOverlayIngameNow
 import java.time.Instant
 
 internal object OverlayGameStatusHudRefresh {
-    suspend fun load(context: android.content.Context): OverlayGameStatusHudState {
+    private const val NEWS_FORUM_CACHE_TTL_MS = 180_000L
+
+    @Volatile
+    private var cachedBadgeTeamId: String? = null
+
+    @Volatile
+    private var cachedNewsUnread: Int = 0
+
+    @Volatile
+    private var cachedForumUnread: Int = 0
+
+    @Volatile
+    private var cachedBadgeAtMs: Long = 0L
+
+    fun invalidateNewsForumCache() {
+        cachedBadgeAtMs = 0L
+    }
+
+    /**
+     * @param preloadedRooms when non-null, skips [ChatRepository.listRooms] inside load.
+     * @param refreshNewsForum when false, reuses news/forum counts for [NEWS_FORUM_CACHE_TTL_MS].
+     */
+    suspend fun load(
+        context: android.content.Context,
+        preloadedRooms: List<ChatRoomDto>? = null,
+        refreshNewsForum: Boolean = true,
+    ): OverlayGameStatusHudState {
         val container = AppContainer.from(context)
         val usersRepository = container.usersRepository
         val chatRepository = container.chatRepository
         val teamsRepository = container.teamsRepository
         val prefs = container.userSettingsPreferences
 
-        val allianceUnread = chatRepository.listRooms()
-            .getOrNull()
-            ?.let(::allianceHubUnread)
-            ?: 0
+        val rooms = preloadedRooms
+            ?: chatRepository.listRooms().getOrNull()
+            ?: emptyList()
+        val localChatRead = container.chatRoomPreferences.loadAllLastReadMessageIds()
+        val allianceUnread = allianceHubUnread(rooms, localChatRead)
 
         val teamId = usersRepository.getMyProfile().getOrNull()?.playerTeamId?.trim().orEmpty()
-        val newsUnread = if (teamId.isEmpty()) {
-            0
+        val now = System.currentTimeMillis()
+        val cacheFresh = !refreshNewsForum &&
+            teamId.isNotEmpty() &&
+            teamId == cachedBadgeTeamId &&
+            now - cachedBadgeAtMs < NEWS_FORUM_CACHE_TTL_MS
+
+        val newsUnread: Int
+        val forumUnread: Int
+        if (cacheFresh) {
+            newsUnread = cachedNewsUnread
+            forumUnread = cachedForumUnread
+        } else if (teamId.isEmpty()) {
+            newsUnread = 0
+            forumUnread = 0
         } else {
-            teamsRepository.listTeamNews(teamId, cursor = null, limit = 40)
+            newsUnread = teamsRepository.listTeamNews(teamId, cursor = null, limit = 40)
                 .getOrNull()
                 ?.items
                 ?.let { countUnreadNews(it, prefs) }
                 ?: 0
-        }
-
-        val forumUnread = if (teamId.isEmpty()) {
-            0
-        } else {
             val forumPrefs = TeamForumPreferences(context)
             val localRead = forumPrefs.loadAllLastReadMessageIds(teamId)
-            teamsRepository.listForumTopics(teamId)
+            forumUnread = teamsRepository.listForumTopics(teamId)
                 .getOrNull()
                 ?.sumOf { topic -> effectiveForumTopicUnread(topic, localRead[topic.id]) }
                 ?: 0
+            cachedBadgeTeamId = teamId
+            cachedNewsUnread = newsUnread
+            cachedForumUnread = forumUnread
+            cachedBadgeAtMs = now
         }
 
         return OverlayGameStatusHudState(
@@ -84,8 +122,17 @@ internal object OverlayGameStatusHudRefresh {
                 room.allianceId != ChatAllianceIds.GLOBAL
         }
 
-    fun allianceHubUnread(rooms: List<ChatRoomDto>): Int =
-        allianceHubRoom(rooms)?.unreadCount?.coerceAtLeast(0) ?: 0
+    fun allianceHubUnread(
+        rooms: List<ChatRoomDto>,
+        localReadByRoom: Map<String, String> = emptyMap(),
+    ): Int {
+        val hub = allianceHubRoom(rooms) ?: return 0
+        return effectiveUnreadCount(
+            serverUnread = hub.unreadCount,
+            lastReadMessageId = hub.lastReadMessageId,
+            localLastReadMessageId = localReadByRoom[hub.id],
+        ).coerceAtLeast(0)
+    }
 
     fun filterIngameOverlayMembers(members: List<TeamMemberDto>): List<TeamMemberDto> =
         members.filter { m ->
@@ -123,6 +170,7 @@ internal object OverlayGameStatusHudRefresh {
         }?.createdAt
         if (!newest.isNullOrBlank()) {
             prefs.setLastSeenTeamNewsCreatedAt(newest)
+            invalidateNewsForumCache()
         }
     }
 }

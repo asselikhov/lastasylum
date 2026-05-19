@@ -242,7 +242,7 @@ fun OverlayControlScreen() {
                 item {
                     Text(
                         text = if (usageOk()) {
-                            stringResource(R.string.overlay_panel_waiting_for_game)
+                            stringResource(R.string.overlay_switch_panel_offgame_hint)
                         } else {
                             stringResource(R.string.overlay_usage_hint_gate)
                         },

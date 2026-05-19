@@ -508,6 +508,7 @@
     <string name="overlay_online_refresh_cd">Обновить список</string>
     <string name="overlay_online_loading">Загрузка…</string>
     <string name="overlay_online_empty">Сейчас никто из команды не в игре с оверлеем.</string>
+    <string name="overlay_member_alliance_role_cd">Ранг в альянсе: %1$s</string>
     <string name="overlay_online_error">Не удалось загрузить список.</string>
     <string name="overlay_online_close_cd">Закрыть список</string>
     <string name="overlay_hud_online_cd">Участники в игре: %1$d</string>
@@ -526,7 +527,8 @@
     <string name="overlay_excavation_message">Раскопки альянса X:%1$d Y:%2$d</string>
     <string name="overlay_cmd_column_excavation">Раскопки</string>
     <string name="settings_excavation_push_title">Уведомления о раскопках</string>
-    <string name="settings_excavation_push_subtitle">Push, когда союзник отметил координаты раскопок, а вы не в игре с оверлеем</string>
+    <string name="settings_excavation_push_subtitle">Звуковой push с координатами, когда вы не в игре. Обычный чат альянса вне игры push не присылает.</string>
+    <string name="overlay_switch_panel_offgame_hint">Вне игры оверлей скрыт; остаются только уведомления о раскопках (если включены в настройках).</string>
     <string name="settings_push_not_registered_hint">Сервер не видит этот телефон для push. Разрешите уведомления и нажмите «Повторить» (нужен свежий APK с Firebase).</string>
     <string name="settings_push_register_retry">Повторить регистрацию push</string>
     <string name="excavation_push_channel_name">Раскопки альянса</string>

@@ -318,7 +318,21 @@ class ChatViewModel(
         }
         chatRoomPreferences.setSelectedRoomId(selected)
         viewModelScope.launch { reconcileStaleServerUnread(rooms) }
-        openRoom(selected, rooms)
+        val cachedOverlayMessages = if (preferAllianceHubRoom) {
+            ChatSessionCache.getFreshMessages(selected)
+        } else {
+            null
+        }
+        if (!cachedOverlayMessages.isNullOrEmpty()) {
+            val capped = capNewestFirst(cachedOverlayMessages, PAGE_SIZE)
+            roomMessageCache[selected] = RoomMessageCache(
+                messages = capped,
+                hasMoreOlder = cachedOverlayMessages.size >= PAGE_SIZE,
+            )
+            openRoom(selected, rooms, hadCachedMessages = true)
+        } else {
+            openRoom(selected, rooms)
+        }
     }
 
     fun selectRoom(roomId: String) {
@@ -569,6 +583,7 @@ class ChatViewModel(
         )
         repository.loadRecentMessages(roomId, beforeMessageId = null, limit = PAGE_SIZE)
             .onSuccess { loaded ->
+                ChatSessionCache.updateMessages(roomId, loaded)
                 knownMessageIds.clear()
                 messageIdIndex.clear()
                 knownMessageIds.addAll(loaded.mapNotNull { it._id })

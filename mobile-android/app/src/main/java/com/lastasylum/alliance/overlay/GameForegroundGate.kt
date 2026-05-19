@@ -92,12 +92,24 @@ object GameForegroundGate {
         targetGamePackages: Collection<String>,
         allowedActivitySubstrings: Collection<String> = emptyList(),
         alliancePackage: String = context.packageName,
+        /** Last known foreground package from [CombatOverlayService] — skips UsageEvents when decisive. */
+        preferredForegroundPackage: String? = null,
     ): QuickForegroundProbe {
         val targets = targetGamePackages.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         if (targets.isEmpty()) return QuickForegroundProbe.NOT_IN_TARGET
         if (!hasUsageStatsAccess(context)) return QuickForegroundProbe.NOT_IN_TARGET
         val targetSet = targets.toSet()
         val allowed = allowedActivitySubstrings.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        val preferred = preferredForegroundPackage?.trim().orEmpty()
+        if (preferred.isNotEmpty()) {
+            if (preferred == alliancePackage) return QuickForegroundProbe.NOT_IN_TARGET
+            if (isConflictingForegroundHint(preferred, targetSet, alliancePackage)) {
+                return QuickForegroundProbe.NOT_IN_TARGET
+            }
+            if (targetSet.contains(preferred) && allowed.isEmpty()) {
+                return QuickForegroundProbe.IN_TARGET
+            }
+        }
         val hintedComp = lastResumedComponent(context) ?: return QuickForegroundProbe.NEED_FULL_HEURISTICS
         val hinted = hintedComp.packageName
         if (hinted == alliancePackage) return QuickForegroundProbe.NOT_IN_TARGET
@@ -131,6 +143,30 @@ object GameForegroundGate {
             val appOps = context.getSystemService(AppOpsManager::class.java) ?: return false
             val uid = Process.myUid()
             val pkg = context.packageName
+            val prefs = context.applicationContext.getSharedPreferences(
+                USAGE_ACCESS_PREFS,
+                Context.MODE_PRIVATE,
+            )
+            if (prefs.getBoolean(KEY_USAGE_ACCESS_GRANTED, false)) {
+                val quickAllowed = isUsageStatsOpAllowed(
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        appOps.unsafeCheckOpNoThrow(
+                            AppOpsManager.OPSTR_GET_USAGE_STATS,
+                            uid,
+                            pkg,
+                        )
+                    } else {
+                        @Suppress("DEPRECATION")
+                        appOps.checkOpNoThrow(
+                            AppOpsManager.OPSTR_GET_USAGE_STATS,
+                            uid,
+                            pkg,
+                        )
+                    },
+                )
+                if (quickAllowed) return true
+                prefs.edit().remove(KEY_USAGE_ACCESS_GRANTED).apply()
+            }
             val modeUnsafe = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 appOps.unsafeCheckOpNoThrow(
                     AppOpsManager.OPSTR_GET_USAGE_STATS,
@@ -153,11 +189,15 @@ object GameForegroundGate {
                     pkg,
                 )
             }.getOrElse { modeUnsafe }
-            if (isUsageStatsOpAllowed(modeUnsafe) || isUsageStatsOpAllowed(modeCheck)) {
+            val granted = if (isUsageStatsOpAllowed(modeUnsafe) || isUsageStatsOpAllowed(modeCheck)) {
                 true
             } else {
                 usageStatsProbeReturnsAny(context)
             }
+            if (granted) {
+                prefs.edit().putBoolean(KEY_USAGE_ACCESS_GRANTED, true).apply()
+            }
+            granted
         } catch (_: Throwable) {
             false
         }
@@ -598,12 +638,15 @@ object GameForegroundGate {
     }
 
     private const val FOREGROUND_CACHE_MS = 2_500L
-    private const val FULL_HEURISTIC_CACHE_MS = 6_000L
+    private const val FULL_HEURISTIC_CACHE_MS = 8_000L
 
     /** Кэш merged queryUsageStats внутри одного тика / короткой серии тиков гейта. */
     private const val MERGED_STATS_CACHE_MS = 2_500L
 
     private const val USAGE_ACCESS_CACHE_MS = 15_000L
+
+    private const val USAGE_ACCESS_PREFS = "game_foreground_gate"
+    private const val KEY_USAGE_ACCESS_GRANTED = "usage_access_granted_v1"
 
     /**
      * Окно поиска RESUME-событий: при длинной сессии в игре новых событий может не быть долго;
@@ -634,10 +677,10 @@ object GameForegroundGate {
      * Окно для сравнения «последний RESUME игры» vs «последний RESUME другого приложения».
      * Должно перекрывать типичную сессию без смены активности.
      */
-    private const val RESUME_VS_RESUME_WINDOW_MS = 10 * 60 * 1000L
+    private const val RESUME_VS_RESUME_WINDOW_MS = 5 * 60 * 1000L
 
     /** Окно [UsageStatsManager.queryEventsForPackage] — только события выбранного пакета. */
-    private const val PACKAGE_ONLY_EVENTS_WINDOW_MS = 30 * 60 * 1000L
+    private const val PACKAGE_ONLY_EVENTS_WINDOW_MS = 8 * 60 * 1000L
 
     /**
      * Состояние «на экране» по хронологии событий одного пакета ([UsageStatsManager.queryEventsForPackage]).
