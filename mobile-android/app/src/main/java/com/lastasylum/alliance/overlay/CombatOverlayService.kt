@@ -965,14 +965,14 @@ class CombatOverlayService : Service() {
             val state = runCatching {
                 OverlayGameStatusHudRefresh.load(this@CombatOverlayService)
             }.getOrElse { OverlayGameStatusHudState() }
-            val ingameCount = runCatching {
-                OverlayGameStatusHudRefresh.loadIngameOverlayCount(this@CombatOverlayService)
+            val joinRequestCount = runCatching {
+                OverlayGameStatusHudRefresh.loadTeamJoinRequestCount(this@CombatOverlayService)
             }.getOrDefault(0)
             overlayStatusHudFlow.value = state
             mainHandler.post {
                 ensureOverlayStatusHudWindow()
                 overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
-                    ingameOverlayCount = ingameCount,
+                    teamJoinRequestCount = joinRequestCount,
                 )
                 refreshOverlayTopRightHudState()
             }
@@ -2130,17 +2130,15 @@ class CombatOverlayService : Service() {
                                             vm = vm,
                                         )
                                         OverlayHudPane.News -> {
-                                            TeamScreen(
+                                            OverlayTeamNewsPanel(
                                                 currentUserId = userId,
                                                 teamsRepository = container.teamsRepository,
-                                                initialMainSection = TeamMainSection.News,
                                             )
                                         }
                                         OverlayHudPane.Forum -> {
-                                            TeamScreen(
+                                            OverlayTeamForumPanel(
                                                 currentUserId = userId,
                                                 teamsRepository = container.teamsRepository,
-                                                initialMainSection = TeamMainSection.Forum,
                                             )
                                         }
                                         null -> when (selectedTab) {

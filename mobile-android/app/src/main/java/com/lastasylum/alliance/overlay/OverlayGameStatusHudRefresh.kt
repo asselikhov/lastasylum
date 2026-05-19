@@ -2,7 +2,10 @@ package com.lastasylum.alliance.overlay
 
 import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatRoomDto
+import com.lastasylum.alliance.data.effectiveUnreadCount
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
+import com.lastasylum.alliance.data.teams.TeamForumPreferences
+import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamNewsListItemDto
 import com.lastasylum.alliance.data.users.TeamMemberDto
 import com.lastasylum.alliance.data.users.UsersRepository
@@ -37,9 +40,11 @@ internal object OverlayGameStatusHudRefresh {
         val forumUnread = if (teamId.isEmpty()) {
             0
         } else {
+            val forumPrefs = TeamForumPreferences(context)
+            val localRead = forumPrefs.loadAllLastReadMessageIds(teamId)
             teamsRepository.listForumTopics(teamId)
                 .getOrNull()
-                ?.sumOf { topic -> topic.unreadCount.coerceAtLeast(0) }
+                ?.sumOf { topic -> effectiveForumTopicUnread(topic, localRead[topic.id]) }
                 ?: 0
         }
 
@@ -50,13 +55,26 @@ internal object OverlayGameStatusHudRefresh {
         )
     }
 
-    suspend fun loadIngameOverlayCount(context: android.content.Context): Int {
-        val usersRepository = AppContainer.from(context).usersRepository
-        return usersRepository.listMembers(allianceCode = null, q = null, skip = 0, limit = 300)
+    suspend fun loadTeamJoinRequestCount(context: android.content.Context): Int {
+        val container = AppContainer.from(context)
+        val profile = container.usersRepository.getMyProfile().getOrNull() ?: return 0
+        if (!profile.isPlayerTeamLeader) return 0
+        val fromProfile = profile.pendingPlayerTeamJoinRequests.coerceAtLeast(0)
+        if (fromProfile > 0) return fromProfile
+        return container.teamsRepository.listPendingJoinRequests()
             .getOrNull()
-            ?.let { filterIngameOverlayMembers(it).size }
+            ?.size
             ?: 0
     }
+
+    fun effectiveForumTopicUnread(
+        topic: TeamForumTopicDto,
+        localLastReadMessageId: String?,
+    ): Int = effectiveUnreadCount(
+        serverUnread = topic.unreadCount,
+        lastReadMessageId = topic.lastReadMessageId,
+        localLastReadMessageId = localLastReadMessageId,
+    ).coerceAtLeast(0)
 
     fun allianceHubRoom(rooms: List<ChatRoomDto>): ChatRoomDto? =
         rooms.firstOrNull { room ->

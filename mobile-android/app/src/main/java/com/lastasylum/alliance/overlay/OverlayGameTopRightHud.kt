@@ -15,7 +15,7 @@ import androidx.compose.ui.res.stringResource
 import com.lastasylum.alliance.R
 
 data class OverlayGameTopRightHudState(
-    val ingameOverlayCount: Int = 0,
+    val teamJoinRequestCount: Int = 0,
     val micOn: Boolean = false,
     val soundOn: Boolean = false,
     val voiceExpanded: Boolean = false,
@@ -39,10 +39,10 @@ fun OverlayGameTopRightHud(
             OverlayGameHudChip(
                 icon = Icons.Outlined.Groups,
                 tint = Color(0xFF81C784),
-                badgeCount = state.ingameOverlayCount,
+                badgeCount = state.teamJoinRequestCount,
                 contentDescription = stringResource(
-                    R.string.overlay_hud_online_cd,
-                    state.ingameOverlayCount,
+                    R.string.overlay_hud_join_requests_cd,
+                    state.teamJoinRequestCount,
                 ),
                 onClick = onOnlineClick,
             )
