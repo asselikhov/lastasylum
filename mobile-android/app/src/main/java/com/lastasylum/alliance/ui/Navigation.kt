@@ -109,28 +109,27 @@ fun AppNavigation(
         chatViewModel.refreshChat()
     }
 
-    LaunchedEffect(overlayTabVisible) {
-        if (!overlayTabVisible) {
-            // Must not clear the user's "show panel" preference — only stop the runtime FGS.
-            CombatOverlayService.stopRuntime(activity.applicationContext)
-        }
+    LaunchedEffect(userId) {
+        if (userId.isBlank()) return@LaunchedEffect
+        CombatOverlayService.ensureRuntimeIfUserEnabled(activity.applicationContext)
     }
 
-    // FGS поднимаем только когда пользователь ушёл из SquadRelay (в игру/домой), не при открытии приложения.
-    DisposableEffect(activity, overlayTabVisible, userId) {
+    // FGS держим в фоне, пока включена панель; HUD рисуется только когда гейт видит игру на экране.
+    DisposableEffect(activity, userId) {
         val appContext = activity.applicationContext
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> {
                     CombatOverlayService.requestGateRecheckIfRunning(appContext)
                     if (userId.isNotBlank()) {
+                        CombatOverlayService.ensureRuntimeIfUserEnabled(appContext)
                         activity.lifecycleScope.launch(Dispatchers.IO) {
                             runCatching { FcmTokenManager.registerWithBackend(appContext) }
                         }
                     }
                 }
                 Lifecycle.Event.ON_STOP -> {
-                    if (overlayTabVisible) {
+                    if (userId.isNotBlank()) {
                         CombatOverlayService.ensureRuntimeIfUserEnabled(appContext)
                     }
                 }

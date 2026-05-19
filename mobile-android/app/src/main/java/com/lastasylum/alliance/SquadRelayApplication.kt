@@ -10,6 +10,7 @@ import com.google.firebase.FirebaseOptions
 import com.google.firebase.analytics.FirebaseAnalytics
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.push.ExcavationPushNotifications
 import com.lastasylum.alliance.push.FcmTokenManager
 import kotlinx.coroutines.CoroutineScope
@@ -44,6 +45,9 @@ class SquadRelayApplication : Application(), ImageLoaderFactory {
                             profile.excavationPushEnabled,
                         )
                     }
+                }
+                runCatching {
+                    CombatOverlayService.ensureRuntimeIfUserEnabled(this@SquadRelayApplication)
                 }
             }
         }

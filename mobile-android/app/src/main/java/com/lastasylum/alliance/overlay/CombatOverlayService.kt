@@ -2990,13 +2990,17 @@ class CombatOverlayService : Service() {
         }
 
         /**
-         * Поднимает FGS, если пользователь включил панель, но процесс/сервис был остановлен системой
-         * (свайп из recents, нехватка памяти). Оверлей по-прежнему показывается только в игре.
+         * Поднимает FGS, если пользователь включил панель и есть сессия.
+         * Сервис живёт в фоне (в т.ч. после свайпа SquadRelay из recents) и рисует HUD только в игре.
          */
         fun ensureRuntimeIfUserEnabled(context: Context): Boolean {
             val app = context.applicationContext
+            if (!AppContainer.from(app).authRepository.hasSession()) return false
             if (!UserSettingsPreferences(app).isOverlayPanelEnabled()) return false
-            if (isServiceInstanceActive) return true
+            if (isServiceInstanceActive) {
+                requestGateRecheckIfRunning(app)
+                return true
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
                 !Settings.canDrawOverlays(app)
             ) {
