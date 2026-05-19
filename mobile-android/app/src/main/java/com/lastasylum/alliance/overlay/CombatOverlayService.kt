@@ -346,7 +346,6 @@ class CombatOverlayService : Service() {
             deferredDismissWhenPickerEnds = false
             dismissOverlayUiBecauseNotInGame(logWaitingForGame = false)
         }
-        rebalanceOverlayHudZOrder()
     }
 
     private fun extractPickerUris(intent: Intent): List<Uri> =
@@ -729,6 +728,11 @@ class CombatOverlayService : Service() {
 
     private var lastStripZOrderLiftMs: Long = 0L
 
+    private var lastHudZOrderRebalanceMs: Long = 0L
+
+    /** Подряд тиков гейта «не показывать UI» — скрываем HUD только после N, чтобы не мигать. */
+    private var gateUiHideStreak: Int = 0
+
     private var stripZOrderLiftPosted: Boolean = false
 
     private val stripZOrderLiftRunnable = Runnable {
@@ -784,6 +788,23 @@ class CombatOverlayService : Service() {
 
     private fun isInGameOverlayUiActive(): Boolean = lastAppliedGateShouldShow == true
 
+    /**
+     * Сглаживание ложных «не в игре» между тиками usage-stats: показ сразу, скрытие после
+     * [GATE_HIDE_UI_HYSTERESIS_TICKS] подряд false.
+     */
+    private fun resolveStableOverlayUiVisible(probeShow: Boolean): Boolean {
+        if (probeShow) {
+            gateUiHideStreak = 0
+            return true
+        }
+        gateUiHideStreak++
+        return if (gateUiHideStreak >= GATE_HIDE_UI_HYSTERESIS_TICKS) {
+            false
+        } else {
+            lastAppliedGateShouldShow == true
+        }
+    }
+
     private fun isOverlayHudOnlyMode(): Boolean =
         AppContainer.from(this).userSettingsPreferences.isOverlayHudOnlyMode()
 
@@ -816,7 +837,7 @@ class CombatOverlayService : Service() {
             Log.w(TAG, "repairDetachedOverlayShellIfNeeded: re-attaching chat strip")
             runCatching { mgr.addView(host, params) }
                 .onSuccess {
-                    rebalanceOverlayHudZOrder()
+                    rebalanceOverlayHudZOrder(force = chatStripZOrderLifted)
                     return
                 }
                 .onFailure { e ->
@@ -829,7 +850,6 @@ class CombatOverlayService : Service() {
         if (chatStripHost != null) {
             _overlayVisible.value = true
             beginOverlayChatSubscription()
-            rebalanceOverlayHudZOrder()
         }
         repairDetachedOverlayChatTeamPanelIfNeeded()
     }
@@ -850,7 +870,6 @@ class CombatOverlayService : Service() {
         }
         reattach(overlayStatusHudHost, overlayStatusHudParams, "statusHud")
         reattach(overlayTopRightHudHost, overlayTopRightHudParams, "topRightHud")
-        rebalanceOverlayHudZOrder()
     }
 
     private fun removeOverlayWindowTracked(
@@ -877,9 +896,14 @@ class CombatOverlayService : Service() {
         onCleared()
     }
 
-    /** Поднять HUD-окна поверх ленты (после [requestChatStripZOrderLift]). */
-    private fun rebalanceOverlayHudZOrder() {
+    /**
+     * Поднять HUD-окна поверх ленты (remove/add). Дорого и даёт видимое мерцание — не чаще
+     * [HUD_ZORDER_REBALANCE_MIN_MS], кроме [force] (подъём ленты, возврат в игру).
+     */
+    private fun rebalanceOverlayHudZOrder(force: Boolean = false) {
         if (!isInGameOverlayUiActive()) return
+        val now = System.currentTimeMillis()
+        if (!force && now - lastHudZOrderRebalanceMs < HUD_ZORDER_REBALANCE_MIN_MS) return
         val mgr = windowManager ?: systemWindowManager() ?: return
         fun lift(host: FrameLayout?, params: WindowManager.LayoutParams?) {
             if (host == null || params == null || !host.isAttachedToWindow) return
@@ -892,6 +916,7 @@ class CombatOverlayService : Service() {
         }
         lift(overlayStatusHudHost, overlayStatusHudParams)
         lift(overlayTopRightHudHost, overlayTopRightHudParams)
+        lastHudZOrderRebalanceMs = now
     }
 
     /**
@@ -990,7 +1015,6 @@ class CombatOverlayService : Service() {
                         }
                         GameForegroundGate.QuickForegroundProbe.NOT_IN_TARGET -> {
                             lastForegroundHintPkg = null
-                            GameForegroundGate.invalidateForegroundHintCache()
                             false
                         }
                         GameForegroundGate.QuickForegroundProbe.NEED_FULL_HEURISTICS -> {
@@ -1026,33 +1050,35 @@ class CombatOverlayService : Service() {
                         OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible -> true
                     else -> false
                 }
+                val stableShowInGameOverlayUi = resolveStableOverlayUiVisible(shouldShowInGameOverlayUi)
                 mainHandler.post {
                     val diagNowMs = System.currentTimeMillis()
                     if (diagNowMs - lastGateDiagLogMs >= 25_000L) {
                         lastGateDiagLogMs = diagNowMs
                         val draw = canDrawOverlaysNow()
-                        if (!hasUsageAccess || !shouldShowInGameOverlayUi || !draw || !isOverlayShellActive()) {
+                        if (!hasUsageAccess || !stableShowInGameOverlayUi || !draw || !isOverlayShellActive()) {
                             Log.i(
                                 TAG,
-                                "overlayGate usage=$hasUsageAccess inGame=$inGame showUi=$shouldShowInGameOverlayUi " +
+                                "overlayGate usage=$hasUsageAccess inGame=$inGame showUi=$stableShowInGameOverlayUi " +
+                                    "probeUi=$shouldShowInGameOverlayUi hideStreak=$gateUiHideStreak " +
                                     "hint=${hintedPkg ?: "-"} drawOverlays=$draw overlayAttached=${isOverlayShellActive()} " +
                                     "targets=${targets.joinToString()}",
                             )
                         }
+                        OverlayPerfDiag.logGateState(
+                            inGame = inGame,
+                            showUi = stableShowInGameOverlayUi,
+                            stripNotTouchable = chatStripParams?.flags?.let {
+                                it and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE != 0
+                            } ?: true,
+                            dismissRectCount = (chatStripHost as? OverlayStripPassthroughFrameLayout)
+                                ?.dismissRectsInCompose?.size ?: 0,
+                            zOrderLifted = chatStripZOrderLifted,
+                        )
                     }
-                    OverlayPerfDiag.logGateState(
-                        inGame = inGame,
-                        showUi = shouldShowInGameOverlayUi,
-                        stripNotTouchable = chatStripParams?.flags?.let {
-                            it and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE != 0
-                        } ?: true,
-                        dismissRectCount = (chatStripHost as? OverlayStripPassthroughFrameLayout)
-                            ?.dismissRectsInCompose?.size ?: 0,
-                        zOrderLifted = chatStripZOrderLifted,
-                    )
                     applyGameGateState(
                         hasUsageAccess = hasUsageAccess,
-                        shouldShow = shouldShowInGameOverlayUi,
+                        shouldShow = stableShowInGameOverlayUi,
                     )
                     gateCheckInFlight = false
                     scheduleGameGateTick(nextGameGateDelayMs())
@@ -1146,7 +1172,6 @@ class CombatOverlayService : Service() {
                         teamJoinRequestCount = joinRequestCount,
                     )
                     refreshOverlayTopRightHudState()
-                    rebalanceOverlayHudZOrder()
                     logOverlayRuntimeSnapshot()
                 }
             } finally {
@@ -1254,7 +1279,6 @@ class CombatOverlayService : Service() {
         if (stableGatePollTicks < HUD_STABLE_TICKS_BEFORE_ATTACH) return
         syncOverlayStatusHudVisibility()
         syncOverlayTopRightHudVisibility()
-        rebalanceOverlayHudZOrder()
     }
 
     private fun syncOverlayStatusHudVisibility() {
@@ -1295,8 +1319,12 @@ class CombatOverlayService : Service() {
             return
         }
         ensureOverlayTopRightHudWindow()
-        overlayTopRightHudHost?.visibility = View.VISIBLE
-        refreshOverlayTopRightHudState()
+        val host = overlayTopRightHudHost
+        val wasHidden = host?.visibility != View.VISIBLE
+        host?.visibility = View.VISIBLE
+        if (wasHidden) {
+            refreshOverlayTopRightHudState()
+        }
     }
 
     private fun refreshOverlayTopRightHudState() {
@@ -1304,7 +1332,9 @@ class CombatOverlayService : Service() {
         val prefs = AppContainer.from(this).userSettingsPreferences
         val micOn = session?.micOn ?: prefs.isOverlayVoiceMicEnabled()
         val soundOn = session?.soundOn ?: prefs.isOverlayVoiceSoundEnabled()
-        overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
+        val current = overlayTopRightHudFlow.value
+        if (current.micOn == micOn && current.soundOn == soundOn) return
+        overlayTopRightHudFlow.value = current.copy(
             micOn = micOn,
             soundOn = soundOn,
         )
@@ -1588,7 +1618,7 @@ class CombatOverlayService : Service() {
         if (shouldShow && !wasInGame) {
             refreshOverlayStatusHudData(force = true)
             scheduleOverlayStatusHudRefresh()
-            rebalanceOverlayHudZOrder()
+            rebalanceOverlayHudZOrder(force = true)
         } else if (shouldShow) {
             scheduleOverlayStatusHudRefresh()
         }
@@ -1604,6 +1634,7 @@ class CombatOverlayService : Service() {
         } else {
             deferredDismissWhenPickerEnds = false
         }
+        gateUiHideStreak = 0
         cancelOverlayHudRefreshWork()
         updateStripDismissScreenRects(emptyList())
         stripPassthroughSyncPosted = false
@@ -2333,7 +2364,9 @@ class CombatOverlayService : Service() {
         overlayChatTeamComposeOwner = null
         applyOverlayStripVisibility(rebalanceZOrder = false)
         syncOverlayStatusHudVisibility()
-        rebalanceOverlayHudZOrder()
+        if (chatStripZOrderLifted) {
+            rebalanceOverlayHudZOrder(force = true)
+        }
         refreshOverlayChatStripNow()
         mainHandler.removeCallbacks(overlayCloseHudRefreshRunnable)
         mainHandler.postDelayed(overlayCloseHudRefreshRunnable, OVERLAY_CLOSE_HUD_REFRESH_DELAY_MS)
@@ -2389,7 +2422,7 @@ class CombatOverlayService : Service() {
             chatStripZOrderLifted = false
             Log.w(TAG, "requestChatStripZOrderLift failed", e)
         }
-        rebalanceOverlayHudZOrder()
+        rebalanceOverlayHudZOrder(force = true)
     }
 
     private fun rebalanceOverlayChatStripZOrder() = requestChatStripZOrderLift()
@@ -2837,6 +2870,9 @@ class CombatOverlayService : Service() {
         private const val OVERLAY_CLOSE_HUD_REFRESH_DELAY_MS = 80L
         private const val STRIP_ZORDER_MIN_INTERVAL_MS = 30_000L
         private const val STRIP_ZORDER_LIFT_DELAY_MS = 450L
+        /** Минимум между remove/add HUD — иначе кнопки мигают на каждом тике гейта. */
+        private const val HUD_ZORDER_REBALANCE_MIN_MS = 60_000L
+        private const val GATE_HIDE_UI_HYSTERESIS_TICKS = 2
         /** Matches backend / user schema: ingame | online | away */
         private const val OVERLAY_PRESENCE_INGAME = "ingame"
         private const val OVERLAY_PRESENCE_AWAY = "away"
