@@ -1148,7 +1148,7 @@ private fun ChatMessagesLazyList(
         state.messages.lastOrNull()?._id?.let { hash = hash * 31 + it.hashCode() }
         state.messages.take(8).forEach { m ->
             hash = hash * 31 + (m._id?.hashCode() ?: 0)
-            hash = hash * 31 + (m.reactions?.size ?: 0)
+            hash = hash * 31 + m.reactions.size
             hash = hash * 31 + m.text.length
         }
         hash

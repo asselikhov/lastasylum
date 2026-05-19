@@ -333,6 +333,7 @@ class CombatOverlayService : Service() {
             OverlayChatInteractionHold.endOverlaySystemPickerSession()
         }
         OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
+        restoreOverlayChatTeamPanelOpaqueAppearance()
         if (!skipFullscreenRebalance) {
             rebalanceOverlayFullscreenZOrder()
         }
@@ -453,7 +454,7 @@ class CombatOverlayService : Service() {
                             resultCode = android.app.Activity.RESULT_CANCELED,
                             data = Intent(),
                         )
-                        resumeOverlayWindowsAfterSystemActivity()
+                        resumeOverlayWindowsAfterSystemActivity(skipFullscreenRebalance = true)
                     }
                     OverlaySystemDialogActivity.ACTION_OVERLAY_PICK_IMAGES_RESULT -> {
                         if (i.getBooleanExtra(OverlaySystemDialogActivity.EXTRA_COPY_FAILED, false)) {
@@ -467,7 +468,7 @@ class CombatOverlayService : Service() {
                                 resultCode = android.app.Activity.RESULT_CANCELED,
                                 data = Intent(),
                             )
-                            resumeOverlayWindowsAfterSystemActivity()
+                            resumeOverlayWindowsAfterSystemActivity(skipFullscreenRebalance = true)
                             return@post
                         }
                         if (i.getBooleanExtra(OverlaySystemDialogActivity.EXTRA_PARTIAL_COPY_FAILED, false)) {
@@ -487,7 +488,7 @@ class CombatOverlayService : Service() {
                             data = data,
                             fallbackUris = uris,
                         )
-                        resumeOverlayWindowsAfterSystemActivity()
+                        resumeOverlayWindowsAfterSystemActivity(skipFullscreenRebalance = true)
                         if (uris.isNotEmpty()) {
                             Toast.makeText(
                                 this@CombatOverlayService,
@@ -508,7 +509,7 @@ class CombatOverlayService : Service() {
                                 resultCode = android.app.Activity.RESULT_CANCELED,
                                 data = Intent(),
                             )
-                            resumeOverlayWindowsAfterSystemActivity()
+                            resumeOverlayWindowsAfterSystemActivity(skipFullscreenRebalance = true)
                             return@post
                         }
                         val uri = if (Build.VERSION.SDK_INT >= 33) {
@@ -524,7 +525,7 @@ class CombatOverlayService : Service() {
                             data = data,
                             fallbackUri = uri,
                         )
-                        resumeOverlayWindowsAfterSystemActivity()
+                        resumeOverlayWindowsAfterSystemActivity(skipFullscreenRebalance = true)
                         uri?.let {
                             Toast.makeText(
                                 this@CombatOverlayService,
@@ -546,7 +547,7 @@ class CombatOverlayService : Service() {
                             resultCode = android.app.Activity.RESULT_OK,
                             data = data,
                         )
-                        resumeOverlayWindowsAfterSystemActivity()
+                        resumeOverlayWindowsAfterSystemActivity(skipFullscreenRebalance = true)
                     }
                 }
             }
@@ -605,7 +606,7 @@ class CombatOverlayService : Service() {
                         startActivity(i)
                     } catch (e: Exception) {
                         Log.e(TAG, "Overlay system dialog start failed", e)
-                        resumeOverlayWindowsAfterSystemActivity()
+                        resumeOverlayWindowsAfterSystemActivity(skipFullscreenRebalance = true)
                         Toast.makeText(
                             this@CombatOverlayService,
                             e.toUserMessageRu(resources),
@@ -819,11 +820,46 @@ class CombatOverlayService : Service() {
             gateUiHideStreak = GATE_HIDE_UI_HYSTERESIS_TICKS
             return false
         }
+        val inInGameGrace = lastOverlayInGameAtMs > 0L &&
+            System.currentTimeMillis() - lastOverlayInGameAtMs < OVERLAY_INGAME_GRACE_MS
+        if (inInGameGrace && lastAppliedGateShouldShow == true) {
+            gateUiHideStreak = 0
+            return true
+        }
         gateUiHideStreak++
         return if (gateUiHideStreak >= GATE_HIDE_UI_HYSTERESIS_TICKS) {
             false
         } else {
             lastAppliedGateShouldShow == true
+        }
+    }
+
+    private fun overlayChatTeamSurfaceColor(): Int {
+        val overlayUiContext = OverlayTickerUi.themedFabContext(this)
+        return MaterialColors.getColor(
+            overlayUiContext,
+            com.google.android.material.R.attr.colorSurface,
+            Color.parseColor("#10141E"),
+        )
+    }
+
+    /** После пикера/снимка окон — непрозрачный фон панели чата (без remove/add). */
+    private fun restoreOverlayChatTeamPanelOpaqueAppearance() {
+        val root = overlayChatTeamRoot ?: return
+        val mgr = windowManager ?: systemWindowManager() ?: return
+        root.setBackgroundColor(overlayChatTeamSurfaceColor())
+        root.alpha = 1f
+        if (root.visibility != View.VISIBLE) {
+            root.visibility = View.VISIBLE
+        }
+        val params = overlayChatTeamParams ?: return
+        var needsLayout = false
+        if (params.format != PixelFormat.OPAQUE) {
+            params.format = PixelFormat.OPAQUE
+            needsLayout = true
+        }
+        if (needsLayout && root.isAttachedToWindow) {
+            runCatching { mgr.updateViewLayout(root, params) }
         }
     }
 
@@ -1714,7 +1750,6 @@ class CombatOverlayService : Service() {
                 if (!isInGameOverlayUiActive()) return@post
                 refreshOverlayStatusHudData(force = true)
                 scheduleOverlayStatusHudRefresh()
-                rebalanceOverlayHudZOrder(force = true)
             }
         }
         syncOverlayHudsIfReady()
@@ -2776,12 +2811,7 @@ class CombatOverlayService : Service() {
             OverlayWindowLayout.applyOverlayFullscreenChatSoftInputMode(this)
         }
 
-        val overlayUiContext = OverlayTickerUi.themedFabContext(this)
-        val surfaceArgb = MaterialColors.getColor(
-            overlayUiContext,
-            com.google.android.material.R.attr.colorSurface,
-            Color.parseColor("#10141E"),
-        )
+        val surfaceArgb = overlayChatTeamSurfaceColor()
         val keyboardGapPx = (4f * resources.displayMetrics.density).toInt()
         val root = FrameLayout(this).apply {
             setBackgroundColor(surfaceArgb)

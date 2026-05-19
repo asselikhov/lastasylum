@@ -526,8 +526,12 @@
     <string name="overlay_hud_news_open_cd">Новости команды</string>
     <string name="overlay_cd_commands">Быстрые команды</string>
     <string name="overlay_commands_title">Быстрые команды</string>
-    <string name="overlay_commands_subtitle">Выберите тип и отправьте координаты в «Рейд»</string>
-    <string name="overlay_commands_raid_pill">КАНАЛ · РЕЙД</string>
+    <string name="overlay_commands_subtitle">Тип → координаты в канал «Рейд»</string>
+    <string name="overlay_commands_raid_pill">РЕЙД</string>
+    <string name="overlay_cmd_tab_attack">Атака</string>
+    <string name="overlay_cmd_tab_storm">Штурм</string>
+    <string name="overlay_cmd_tab_reinf">Подкр.</string>
+    <string name="overlay_cmd_tab_excavation">Раскопки</string>
     <string name="overlay_excavation_message">Раскопки альянса X:%1$d Y:%2$d</string>
     <string name="overlay_cmd_column_excavation">Раскопки</string>
     <string name="settings_excavation_push_title">Уведомления о раскопках</string>

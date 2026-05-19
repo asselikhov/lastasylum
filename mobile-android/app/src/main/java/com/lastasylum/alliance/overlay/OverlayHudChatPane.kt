@@ -24,7 +24,7 @@ internal fun OverlayHudChatPane(
         pickedImageUris = pickedImageUris,
         chatVoicePhase = chatVoicePhase,
         otherReadUptoMessageId = otherReadUptoMessageId,
-        compactOverlayMode = true,
+        compactOverlayMode = false,
         onSelectRoom = vm::selectRoom,
         onClearError = vm::clearError,
         onLoadOlder = vm::loadOlderMessages,
