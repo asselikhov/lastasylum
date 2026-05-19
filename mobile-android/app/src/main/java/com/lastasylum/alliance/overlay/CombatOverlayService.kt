@@ -855,7 +855,6 @@ class CombatOverlayService : Service() {
 
     private fun removeOverlayWindowTracked(
         host: View?,
-        params: WindowManager.LayoutParams?,
         windowLabel: String,
         onCleared: () -> Unit,
     ) {
@@ -974,7 +973,6 @@ class CombatOverlayService : Service() {
         serviceScope.launch {
             try {
                 val hasUsageAccess = GameForegroundGate.hasUsageStatsAccess(this@CombatOverlayService)
-                val targetSet = targets.toSet()
                 var hintedPkg: String? = lastForegroundHintPkg
                 val inGame = if (!hasUsageAccess || targets.isEmpty()) {
                     false
@@ -1424,9 +1422,8 @@ class CombatOverlayService : Service() {
 
     private fun removeOverlayStatusHudWindow() {
         val host = overlayStatusHudHost
-        val params = overlayStatusHudParams
         val composeOwner = overlayStatusHudComposeOwner
-        removeOverlayWindowTracked(host, params, "statusHud") {
+        removeOverlayWindowTracked(host, "statusHud") {
             overlayStatusHudHost = null
             overlayStatusHudParams = null
             overlayStatusHudCompose = null
@@ -1511,9 +1508,8 @@ class CombatOverlayService : Service() {
 
     private fun removeOverlayTopRightHudWindow() {
         val host = overlayTopRightHudHost
-        val params = overlayTopRightHudParams
         val composeOwner = overlayTopRightHudComposeOwner
-        removeOverlayWindowTracked(host, params, "topRightHud") {
+        removeOverlayWindowTracked(host, "topRightHud") {
             overlayTopRightHudHost = null
             overlayTopRightHudParams = null
             overlayTopRightHudCompose = null

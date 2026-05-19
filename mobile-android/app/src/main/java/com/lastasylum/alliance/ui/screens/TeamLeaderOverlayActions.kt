@@ -169,7 +169,6 @@ fun TeamLeaderToolbar(
 fun TeamLeaderDialogsHost(
     teamId: String?,
     teamsRepository: TeamsRepository,
-    overlayUi: Boolean,
     showAddMember: Boolean,
     onShowAddMemberChange: (Boolean) -> Unit,
     showEditTeam: Boolean,

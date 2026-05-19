@@ -160,7 +160,6 @@ fun OverlayTeamOnlinePanel(
     TeamLeaderDialogsHost(
         teamId = t?.id,
         teamsRepository = teamsRepository,
-        overlayUi = true,
         showAddMember = leaderUi.showAddMember,
         onShowAddMemberChange = { leaderUi.showAddMember = it },
         showEditTeam = leaderUi.showEditTeam,
