@@ -18,11 +18,6 @@ internal object OverlayGameStatusHudRefresh {
         val teamsRepository = container.teamsRepository
         val prefs = container.userSettingsPreferences
 
-        val ingameCount = usersRepository.listMembers(allianceCode = null, q = null, skip = 0, limit = 300)
-            .getOrNull()
-            ?.let { filterIngameOverlayMembers(it).size }
-            ?: 0
-
         val allianceUnread = chatRepository.listRooms()
             .getOrNull()
             ?.let(::allianceHubUnread)
@@ -49,11 +44,18 @@ internal object OverlayGameStatusHudRefresh {
         }
 
         return OverlayGameStatusHudState(
-            ingameOverlayCount = ingameCount,
             allianceChatUnread = allianceUnread,
             teamNewsUnread = newsUnread,
             forumUnread = forumUnread,
         )
+    }
+
+    suspend fun loadIngameOverlayCount(context: android.content.Context): Int {
+        val usersRepository = AppContainer.from(context).usersRepository
+        return usersRepository.listMembers(allianceCode = null, q = null, skip = 0, limit = 300)
+            .getOrNull()
+            ?.let { filterIngameOverlayMembers(it).size }
+            ?: 0
     }
 
     fun allianceHubRoom(rooms: List<ChatRoomDto>): ChatRoomDto? =

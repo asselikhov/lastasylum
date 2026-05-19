@@ -299,11 +299,11 @@ class CombatOverlayService : Service() {
         scheduleOverlayStatusHudRefresh()
     }
 
-    private val overlayVoiceQuickHubFlow = MutableStateFlow(OverlayGameVoiceQuickHubState())
-    private var overlayVoiceQuickHubHost: FrameLayout? = null
-    private var overlayVoiceQuickHubParams: WindowManager.LayoutParams? = null
-    private var overlayVoiceQuickHubCompose: ComposeView? = null
-    private var overlayVoiceQuickHubComposeOwner: OverlayChatComposeOwner? = null
+    private val overlayTopRightHudFlow = MutableStateFlow(OverlayGameTopRightHudState())
+    private var overlayTopRightHudHost: FrameLayout? = null
+    private var overlayTopRightHudParams: WindowManager.LayoutParams? = null
+    private var overlayTopRightHudCompose: ComposeView? = null
+    private var overlayTopRightHudComposeOwner: OverlayChatComposeOwner? = null
 
     private data class OverlayWindowFlagSnap(
         val view: View,
@@ -1035,8 +1035,17 @@ class CombatOverlayService : Service() {
             val state = runCatching {
                 OverlayGameStatusHudRefresh.load(this@CombatOverlayService)
             }.getOrElse { OverlayGameStatusHudState() }
+            val ingameCount = runCatching {
+                OverlayGameStatusHudRefresh.loadIngameOverlayCount(this@CombatOverlayService)
+            }.getOrDefault(0)
             overlayStatusHudFlow.value = state
-            mainHandler.post { ensureOverlayStatusHudWindow() }
+            mainHandler.post {
+                ensureOverlayStatusHudWindow()
+                overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
+                    ingameOverlayCount = ingameCount,
+                )
+                refreshOverlayTopRightHudState()
+            }
         }
     }
 
@@ -1058,12 +1067,12 @@ class CombatOverlayService : Service() {
         }
         ensureOverlayStatusHudWindow()
         overlayStatusHudHost?.visibility = View.VISIBLE
-        syncOverlayVoiceQuickHubVisibility()
+        syncOverlayTopRightHudVisibility()
     }
 
-    private fun syncOverlayVoiceQuickHubVisibility() {
+    private fun syncOverlayTopRightHudVisibility() {
         if (Looper.myLooper() != Looper.getMainLooper()) {
-            mainHandler.post { syncOverlayVoiceQuickHubVisibility() }
+            mainHandler.post { syncOverlayTopRightHudVisibility() }
             return
         }
         val inGame = lastAppliedGateShouldShow == true
@@ -1071,36 +1080,45 @@ class CombatOverlayService : Service() {
         val allowed = prefs.isOverlayPanelEnabled() && canDrawOverlaysNow()
         val show = inGame && allowed
         if (!show) {
-            overlayVoiceQuickHubHost?.visibility = View.GONE
+            overlayTopRightHudHost?.visibility = View.GONE
             if (!inGame) {
-                removeOverlayVoiceQuickHubWindow()
+                removeOverlayTopRightHudWindow()
             }
             return
         }
-        ensureOverlayVoiceQuickHubWindow()
-        overlayVoiceQuickHubHost?.visibility = View.VISIBLE
-        refreshOverlayVoiceQuickHubState()
+        ensureOverlayTopRightHudWindow()
+        overlayTopRightHudHost?.visibility = View.VISIBLE
+        refreshOverlayTopRightHudState()
     }
 
-    private fun refreshOverlayVoiceQuickHubState() {
+    private fun refreshOverlayTopRightHudState() {
         val session = voiceSession
-        val micOn = session?.micOn ?: AppContainer.from(this).userSettingsPreferences.isOverlayVoiceMicEnabled()
-        val soundOn = session?.soundOn ?: AppContainer.from(this).userSettingsPreferences.isOverlayVoiceSoundEnabled()
-        overlayVoiceQuickHubFlow.value = overlayVoiceQuickHubFlow.value.copy(
+        val prefs = AppContainer.from(this).userSettingsPreferences
+        val micOn = session?.micOn ?: prefs.isOverlayVoiceMicEnabled()
+        val soundOn = session?.soundOn ?: prefs.isOverlayVoiceSoundEnabled()
+        overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
             micOn = micOn,
             soundOn = soundOn,
         )
     }
 
-    private fun toggleOverlayVoiceQuickHubExpanded() {
-        overlayVoiceQuickHubFlow.value = overlayVoiceQuickHubFlow.value.copy(
-            expanded = !overlayVoiceQuickHubFlow.value.expanded,
+    private fun toggleOverlayTopRightVoiceExpanded() {
+        overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
+            voiceExpanded = !overlayTopRightHudFlow.value.voiceExpanded,
         )
     }
 
-    private fun collapseOverlayVoiceQuickHub() {
-        if (!overlayVoiceQuickHubFlow.value.expanded) return
-        overlayVoiceQuickHubFlow.value = overlayVoiceQuickHubFlow.value.copy(expanded = false)
+    private fun collapseOverlayTopRightVoice() {
+        if (!overlayTopRightHudFlow.value.voiceExpanded) return
+        overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(voiceExpanded = false)
+    }
+
+    private fun openOverlayQuickCommandsFromHud() {
+        overlayAllianceOnlinePopover.hide()
+        val mgr = windowManager ?: systemWindowManager() ?: return
+        OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
+        overlayCommandsPopover.toggle(mgr)
+        mainHandler.post { repairDetachedOverlayShellIfNeeded() }
     }
 
     private fun toggleOverlayVoiceMicFromHud() {
@@ -1163,10 +1181,6 @@ class CombatOverlayService : Service() {
                     OverlayGameStatusHud(
                         state = state,
                         onForumClick = { showOverlayHudPane(OverlayHudPane.Forum) },
-                        onOnlineClick = {
-                            val mgr = windowManager ?: systemWindowManager() ?: return@OverlayGameStatusHud
-                            overlayAllianceOnlinePopover.toggleCentered(mgr)
-                        },
                         onMailClick = { showOverlayHudPane(OverlayHudPane.Chat) },
                         onNewsClick = { showOverlayHudPane(OverlayHudPane.News) },
                     )
@@ -1212,14 +1226,14 @@ class CombatOverlayService : Service() {
         overlayStatusHudComposeOwner = null
     }
 
-    private fun ensureOverlayVoiceQuickHubWindow() {
+    private fun ensureOverlayTopRightHudWindow() {
         if (lastAppliedGateShouldShow != true) return
         if (!AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()) return
         val manager = windowManager ?: systemWindowManager() ?: return
-        if (overlayVoiceQuickHubHost != null) return
+        if (overlayTopRightHudHost != null) return
 
-        val owner = overlayVoiceQuickHubComposeOwner
-            ?: OverlayChatComposeOwner().also { overlayVoiceQuickHubComposeOwner = it }
+        val owner = overlayTopRightHudComposeOwner
+            ?: OverlayChatComposeOwner().also { overlayTopRightHudComposeOwner = it }
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
@@ -1241,18 +1255,25 @@ class CombatOverlayService : Service() {
 
         val compose = ComposeView(this).apply {
             setContent {
-                val state by overlayVoiceQuickHubFlow.collectAsStateWithLifecycle(owner)
+                val state by overlayTopRightHudFlow.collectAsStateWithLifecycle(owner)
                 SquadRelayTheme {
-                    OverlayGameVoiceQuickHub(
+                    OverlayGameTopRightHud(
                         state = state,
-                        onHubClick = { toggleOverlayVoiceQuickHubExpanded() },
+                        onOnlineClick = {
+                            overlayCommandsPopover.hide()
+                            val mgr = windowManager ?: systemWindowManager()
+                                ?: return@OverlayGameTopRightHud
+                            overlayAllianceOnlinePopover.toggleCentered(mgr)
+                        },
+                        onQuickCommandsClick = { openOverlayQuickCommandsFromHud() },
+                        onVoiceHubClick = { toggleOverlayTopRightVoiceExpanded() },
                         onMicClick = { toggleOverlayVoiceMicFromHud() },
                         onSoundClick = { toggleOverlayVoiceSoundFromHud() },
                     )
                 }
             }
         }
-        overlayVoiceQuickHubCompose = compose
+        overlayTopRightHudCompose = compose
 
         val host = FrameLayout(this).apply {
             setBackgroundColor(Color.TRANSPARENT)
@@ -1271,25 +1292,25 @@ class CombatOverlayService : Service() {
 
         val attach = runCatching { manager.addView(host, params) }
         if (attach.isFailure) {
-            Log.w(TAG, "ensureOverlayVoiceQuickHubWindow addView failed", attach.exceptionOrNull())
+            Log.w(TAG, "ensureOverlayTopRightHudWindow addView failed", attach.exceptionOrNull())
             return
         }
-        overlayVoiceQuickHubHost = host
-        overlayVoiceQuickHubParams = params
+        overlayTopRightHudHost = host
+        overlayTopRightHudParams = params
     }
 
-    private fun removeOverlayVoiceQuickHubWindow() {
+    private fun removeOverlayTopRightHudWindow() {
         val mgr = windowManager ?: systemWindowManager()
-        val host = overlayVoiceQuickHubHost
+        val host = overlayTopRightHudHost
         if (host != null && mgr != null) {
             runCatching { mgr.removeView(host) }
         }
-        overlayVoiceQuickHubHost = null
-        overlayVoiceQuickHubParams = null
-        overlayVoiceQuickHubCompose = null
-        overlayVoiceQuickHubComposeOwner?.destroy()
-        overlayVoiceQuickHubComposeOwner = null
-        overlayVoiceQuickHubFlow.value = OverlayGameVoiceQuickHubState()
+        overlayTopRightHudHost = null
+        overlayTopRightHudParams = null
+        overlayTopRightHudCompose = null
+        overlayTopRightHudComposeOwner?.destroy()
+        overlayTopRightHudComposeOwner = null
+        overlayTopRightHudFlow.value = OverlayGameTopRightHudState()
     }
 
     private fun scheduleOverlayVoiceConnect() {
@@ -1356,7 +1377,7 @@ class CombatOverlayService : Service() {
         }
         ensureOverlayIfPermitted()
         syncOverlayStatusHudVisibility()
-        syncOverlayVoiceQuickHubVisibility()
+        syncOverlayTopRightHudVisibility()
         refreshOverlayStatusHudData()
         scheduleOverlayStatusHudRefresh()
     }
@@ -1393,7 +1414,7 @@ class CombatOverlayService : Service() {
             removeOverlayControl(force = true)
         }
         removeOverlayStatusHudWindow()
-        removeOverlayVoiceQuickHubWindow()
+        removeOverlayTopRightHudWindow()
         mainHandler.removeCallbacks(statusHudRefreshRunnable)
         statusHudRefreshPosted = false
     }
@@ -1493,7 +1514,7 @@ class CombatOverlayService : Service() {
         runCatching { hideOverlayChatTeamPanel() }
         removeOverlayControl(force = true)
         removeOverlayStatusHudWindow()
-        removeOverlayVoiceQuickHubWindow()
+        removeOverlayTopRightHudWindow()
         mainHandler.removeCallbacks(statusHudRefreshRunnable)
         statusHudRefreshPosted = false
         serviceScope.cancel()
@@ -2920,7 +2941,7 @@ class CombatOverlayService : Service() {
         return container.newVoiceChatSession(
             onStateChanged = { micOn, soundOn ->
                 overlayVoiceControls?.applyState(micOn, soundOn)
-                overlayVoiceQuickHubFlow.value = overlayVoiceQuickHubFlow.value.copy(
+                overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
                     micOn = micOn,
                     soundOn = soundOn,
                 )
@@ -3033,7 +3054,7 @@ class CombatOverlayService : Service() {
         overlayAllianceOnlinePopover.hide()
         overlayCommandsPopover.hide()
         removeOverlayStatusHudWindow()
-        removeOverlayVoiceQuickHubWindow()
+        removeOverlayTopRightHudWindow()
         val wm = windowManager ?: systemWindowManager()
         removeChatStripWindow(wm)
         val view = overlayView

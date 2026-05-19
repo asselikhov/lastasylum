@@ -14,7 +14,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.Forum
-import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -31,7 +30,6 @@ import androidx.compose.ui.unit.sp
 import com.lastasylum.alliance.R
 
 data class OverlayGameStatusHudState(
-    val ingameOverlayCount: Int = 0,
     val allianceChatUnread: Int = 0,
     val teamNewsUnread: Int = 0,
     val forumUnread: Int = 0,
@@ -40,7 +38,6 @@ data class OverlayGameStatusHudState(
 @Composable
 fun OverlayGameStatusHud(
     state: OverlayGameStatusHudState,
-    onOnlineClick: () -> Unit,
     onMailClick: () -> Unit,
     onNewsClick: () -> Unit,
     onForumClick: () -> Unit,
@@ -62,11 +59,6 @@ fun OverlayGameStatusHud(
             onClick = onForumClick,
         )
         OverlayGameStatusHudChip(
-            kind = HudChipKind.Online,
-            count = state.ingameOverlayCount,
-            onClick = onOnlineClick,
-        )
-        OverlayGameStatusHudChip(
             kind = HudChipKind.Mail,
             count = state.allianceChatUnread,
             onClick = onMailClick,
@@ -81,7 +73,6 @@ fun OverlayGameStatusHud(
 
 private enum class HudChipKind {
     Forum,
-    Online,
     Mail,
     News,
 }
@@ -94,19 +85,16 @@ private fun OverlayGameStatusHudChip(
 ) {
     val label = when (kind) {
         HudChipKind.Forum -> stringResource(R.string.overlay_hud_forum_cd, count)
-        HudChipKind.Online -> stringResource(R.string.overlay_hud_online_cd, count)
         HudChipKind.Mail -> stringResource(R.string.overlay_hud_alliance_chat_cd, count)
         HudChipKind.News -> stringResource(R.string.overlay_hud_news_cd, count)
     }
     val icon: ImageVector = when (kind) {
         HudChipKind.Forum -> Icons.Outlined.Forum
-        HudChipKind.Online -> Icons.Outlined.Groups
         HudChipKind.Mail -> Icons.Outlined.Email
         HudChipKind.News -> Icons.AutoMirrored.Outlined.Article
     }
     val tint = when (kind) {
         HudChipKind.Forum -> Color(0xFFCE93D8)
-        HudChipKind.Online -> Color(0xFF81C784)
         HudChipKind.Mail -> Color(0xFF4DB6AC)
         HudChipKind.News -> Color(0xFF90CAF9)
     }
