@@ -1100,7 +1100,7 @@ class CombatOverlayService : Service() {
         ).apply {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
             gravity = Gravity.TOP or Gravity.START
-            x = dp(6)
+            x = dp(10)
             y = dp(6)
         }
 
@@ -1179,7 +1179,7 @@ class CombatOverlayService : Service() {
         ).apply {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
             gravity = Gravity.TOP or Gravity.END
-            x = dp(6)
+            x = dp(10)
             y = dp(6)
         }
 
