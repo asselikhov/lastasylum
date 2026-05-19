@@ -23,6 +23,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.CombatOverlayService
+import com.lastasylum.alliance.overlay.OverlayRuntimeScheduler
 import com.lastasylum.alliance.ui.auth.AuthScreen
 import com.lastasylum.alliance.ui.auth.AuthViewModel
 import com.lastasylum.alliance.ui.auth.AuthViewModelFactory
@@ -77,6 +78,7 @@ fun SquadRelayApp() {
             runCatching {
                 AppContainer.from(application).chatRepository.resetRealtimeForLogout()
                 CombatOverlayService.stopRuntime(application)
+                OverlayRuntimeScheduler.cancel(application)
             }
         }
     }

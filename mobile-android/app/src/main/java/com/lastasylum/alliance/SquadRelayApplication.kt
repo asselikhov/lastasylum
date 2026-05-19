@@ -11,6 +11,7 @@ import com.google.firebase.analytics.FirebaseAnalytics
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.CombatOverlayService
+import com.lastasylum.alliance.overlay.OverlayRuntimeScheduler
 import com.lastasylum.alliance.push.ExcavationPushNotifications
 import com.lastasylum.alliance.push.FcmTokenManager
 import kotlinx.coroutines.CoroutineScope
@@ -47,8 +48,12 @@ class SquadRelayApplication : Application(), ImageLoaderFactory {
                     }
                 }
                 runCatching {
-                    CombatOverlayService.ensureRuntimeIfUserEnabled(this@SquadRelayApplication)
+                    CombatOverlayService.ensureRuntimeIfUserEnabled(
+                        this@SquadRelayApplication,
+                        showErrorToast = false,
+                    )
                 }
+                runCatching { OverlayRuntimeScheduler.syncSchedule(this@SquadRelayApplication) }
             }
         }
     }

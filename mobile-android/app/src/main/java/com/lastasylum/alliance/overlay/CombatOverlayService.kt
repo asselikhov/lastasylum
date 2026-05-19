@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.overlay
 
+import android.app.ForegroundServiceStartNotAllowedException
 import android.app.Service
 import android.content.Context
 import android.content.IntentFilter
@@ -774,6 +775,7 @@ class CombatOverlayService : Service() {
         isServiceInstanceActive = true
         _serviceRunning.value = true
         _overlayVisible.value = false
+        OverlayRuntimeScheduler.syncSchedule(this)
         mainHandler.post { tickGameGate() }
     }
 
@@ -1752,6 +1754,11 @@ class CombatOverlayService : Service() {
         isServiceInstanceActive = false
         _serviceRunning.value = false
         _overlayVisible.value = false
+        if (AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled() &&
+            AppContainer.from(this).authRepository.hasSession()
+        ) {
+            OverlayRuntimeScheduler.scheduleImmediateRetry(applicationContext)
+        }
         stopSelfResult(startId)
         return START_NOT_STICKY
     }
@@ -1832,6 +1839,11 @@ class CombatOverlayService : Service() {
         mainHandler.removeCallbacks(overlayCloseHudRefreshRunnable)
         statusHudRefreshPosted = false
         serviceScope.cancel()
+        if (AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled() &&
+            AppContainer.from(this).authRepository.hasSession()
+        ) {
+            OverlayRuntimeScheduler.scheduleImmediateRetry(applicationContext)
+        }
         super.onDestroy()
     }
 
@@ -2993,12 +3005,16 @@ class CombatOverlayService : Service() {
          * Поднимает FGS, если пользователь включил панель и есть сессия.
          * Сервис живёт в фоне (в т.ч. после свайпа SquadRelay из recents) и рисует HUD только в игре.
          */
-        fun ensureRuntimeIfUserEnabled(context: Context): Boolean {
+        fun ensureRuntimeIfUserEnabled(
+            context: Context,
+            showErrorToast: Boolean = true,
+        ): Boolean {
             val app = context.applicationContext
             if (!AppContainer.from(app).authRepository.hasSession()) return false
             if (!UserSettingsPreferences(app).isOverlayPanelEnabled()) return false
             if (isServiceInstanceActive) {
                 requestGateRecheckIfRunning(app)
+                OverlayRuntimeScheduler.syncSchedule(app)
                 return true
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
@@ -3006,7 +3022,13 @@ class CombatOverlayService : Service() {
             ) {
                 return false
             }
-            return setEnabled(context, true)
+            val started = setEnabled(context, true, showErrorToast = showErrorToast)
+            if (started) {
+                OverlayRuntimeScheduler.syncSchedule(app)
+            } else {
+                OverlayRuntimeScheduler.scheduleImmediateRetry(app)
+            }
+            return started
         }
 
         /** После смены пакета/activity-фильтра — пересчитать показ оверлея. */
@@ -3023,10 +3045,17 @@ class CombatOverlayService : Service() {
          * Запуск боевого сервиса и оверлея. Микрофон не обязателен: панель может работать без голоса;
          * запись голоса запросит разрешение при использовании.
          */
-        fun setEnabled(context: Context, enabled: Boolean): Boolean {
+        fun setEnabled(
+            context: Context,
+            enabled: Boolean,
+            showErrorToast: Boolean = true,
+        ): Boolean {
             val app = context.applicationContext
             // Persist desired state first (single source of truth).
             runCatching { UserSettingsPreferences(app).setOverlayPanelEnabled(enabled) }
+            if (!enabled) {
+                OverlayRuntimeScheduler.cancel(app)
+            }
             // If we are disabling and the service is not running, do not start it just to stop it.
             if (!enabled && !isServiceInstanceActive) {
                 // Also try a hard stop in case the process is alive but state is stale.
@@ -3048,14 +3077,31 @@ class CombatOverlayService : Service() {
                 } else {
                     app.startService(intent)
                 }
+                if (enabled) {
+                    OverlayRuntimeScheduler.syncSchedule(app)
+                }
                 true
             } catch (t: Throwable) {
-                Log.e(TAG, "setEnabled failed", t)
-                Toast.makeText(
-                    app,
-                    app.getString(R.string.overlay_start_service_failed),
-                    Toast.LENGTH_LONG,
-                ).show()
+                val blockedFromBackground = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    t is ForegroundServiceStartNotAllowedException
+                Log.e(
+                    TAG,
+                    "setEnabled failed enabled=$enabled blockedFromBackground=$blockedFromBackground",
+                    t,
+                )
+                if (enabled) {
+                    OverlayRuntimeScheduler.scheduleImmediateRetry(
+                        app,
+                        delayMs = if (blockedFromBackground) 20_000L else 8_000L,
+                    )
+                }
+                if (showErrorToast) {
+                    Toast.makeText(
+                        app,
+                        app.getString(R.string.overlay_start_service_failed),
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
                 false
             }
         }
