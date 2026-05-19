@@ -1101,7 +1101,7 @@ class CombatOverlayService : Service() {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
             gravity = Gravity.TOP or Gravity.START
             x = dp(6)
-            y = dp(3)
+            y = dp(6)
         }
 
         val compose = ComposeView(this).apply {
@@ -1180,7 +1180,7 @@ class CombatOverlayService : Service() {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
             gravity = Gravity.TOP or Gravity.END
             x = dp(6)
-            y = dp(3)
+            y = dp(6)
         }
 
         val compose = ComposeView(this).apply {

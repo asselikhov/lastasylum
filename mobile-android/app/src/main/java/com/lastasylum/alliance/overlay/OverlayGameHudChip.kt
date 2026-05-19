@@ -26,7 +26,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val HudIconSize = 14.dp
+private val HudIconSize = 16.dp
 private val HudChipPaddingH = 6.dp
 private val HudChipPaddingV = 5.dp
 private val HudRowSpacing = 4.dp
