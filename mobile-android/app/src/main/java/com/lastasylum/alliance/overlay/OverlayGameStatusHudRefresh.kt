@@ -4,6 +4,7 @@ import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.effectiveUnreadCount
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
+import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
 import com.lastasylum.alliance.data.teams.TeamForumPreferences
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamNewsListItemDto
@@ -91,6 +92,11 @@ internal object OverlayGameStatusHudRefresh {
             m.membershipStatus == "active" &&
                 isOverlayIngameNow(m.presenceStatus, m.lastPresenceAt)
         }
+
+    fun filterTeamIngameOverlayMembers(members: List<PlayerTeamMemberDto>): List<PlayerTeamMemberDto> =
+        members.filter { m ->
+            isOverlayIngameNow(m.presenceStatus, m.lastPresenceAt)
+        }.sortedBy { it.username.lowercase() }
 
     fun countUnreadNews(
         items: List<TeamNewsListItemDto>,

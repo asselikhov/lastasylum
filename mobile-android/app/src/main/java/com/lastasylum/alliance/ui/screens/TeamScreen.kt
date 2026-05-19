@@ -335,112 +335,41 @@ fun TeamScreen(
                             shadowElevation = 0.dp,
                         ) {
                             Column(Modifier.fillMaxSize()) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(
-                                            horizontal = SquadRelayDimens.contentPaddingHorizontal,
-                                            vertical = 8.dp,
-                                        ),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Column(Modifier.weight(1f)) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        ) {
-                                            Text(
-                                                text = "[${team.tag.uppercase()}]",
-                                                style = MaterialTheme.typography.titleLarge,
-                                                fontWeight = FontWeight.SemiBold,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                color = MaterialTheme.colorScheme.primary,
-                                            )
-                                            Text(
-                                                text = team.displayName,
-                                                style = MaterialTheme.typography.titleLarge,
-                                                fontWeight = FontWeight.SemiBold,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                color = MaterialTheme.colorScheme.onSurface,
-                                                modifier = Modifier.weight(1f, fill = false),
-                                            )
-                                        }
-                                        Text(
-                                            text = stringResource(
-                                                R.string.team_roster_count,
-                                                team.members.size,
-                                            ),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                    if (isLeader) {
-                                        IconButton(
-                                            onClick = {
-                                                OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
-                                                addNameDraft = ""
-                                                showAddMemberDialog = true
-                                            },
-                                            enabled = !membersBusy,
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Outlined.PersonAdd,
-                                                contentDescription = stringResource(R.string.team_cd_add_member),
-                                                tint = MaterialTheme.colorScheme.primary,
-                                            )
-                                        }
-                                        IconButton(
-                                            onClick = {
-                                                OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
-                                                editTeamNameDraft = team.displayName.trim()
-                                                editTeamTagDraft = team.tag.trim()
-                                                showEditTeamNameDialog = true
-                                            },
-                                            enabled = !membersBusy && !editNameBusy,
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Outlined.Edit,
-                                                contentDescription = stringResource(R.string.team_cd_edit_team_name),
-                                                tint = MaterialTheme.colorScheme.primary,
-                                            )
-                                        }
-                                    }
-                                    if (isLeader && pending > 0) {
-                                        BadgedBox(
-                                            badge = {
-                                                Badge {
-                                                    Text(if (pending > 9) "9+" else "$pending")
+                                TeamLeaderToolbar(
+                                    team = team,
+                                    subtitle = stringResource(
+                                        R.string.team_roster_count,
+                                        team.members.size,
+                                    ),
+                                    isLeader = isLeader,
+                                    pendingJoinRequests = pending,
+                                    membersBusy = membersBusy,
+                                    editNameBusy = editNameBusy,
+                                    overlayUi = overlayUi,
+                                    onAddMember = {
+                                        addNameDraft = ""
+                                        showAddMemberDialog = true
+                                    },
+                                    onEditTeam = {
+                                        editTeamNameDraft = team.displayName.trim()
+                                        editTeamTagDraft = team.tag.trim()
+                                        showEditTeamNameDialog = true
+                                    },
+                                    onOpenInbox = {
+                                        inboxFeedback = null
+                                        showJoinInbox = true
+                                        scope.launch {
+                                            inboxBusy = true
+                                            teamsRepository.listPendingJoinRequests()
+                                                .onSuccess { inboxRequests = it }
+                                                .onFailure { e ->
+                                                    inboxRequests = emptyList()
+                                                    error = e.toUserMessageRu(res)
                                                 }
-                                            },
-                                        ) {
-                                            IconButton(
-                                                onClick = {
-                                                    OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
-                                                    inboxFeedback = null
-                                                    showJoinInbox = true
-                                                    scope.launch {
-                                                        inboxBusy = true
-                                                        teamsRepository.listPendingJoinRequests()
-                                                            .onSuccess { inboxRequests = it }
-                                                            .onFailure { e ->
-                                                                inboxRequests = emptyList()
-                                                                error = e.toUserMessageRu(res)
-                                                            }
-                                                        inboxBusy = false
-                                                    }
-                                                },
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Outlined.Inbox,
-                                                    contentDescription = stringResource(R.string.profile_join_inbox_cd),
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                )
-                                            }
+                                            inboxBusy = false
                                         }
-                                    }
-                                }
+                                    },
+                                )
                                 val activeSection = TeamMainSection.entries[mainSectionOrdinal]
                                 TeamSectionPills(
                                     selectedSection = activeSection,

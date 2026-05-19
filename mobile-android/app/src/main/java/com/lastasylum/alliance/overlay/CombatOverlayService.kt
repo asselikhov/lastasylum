@@ -154,14 +154,6 @@ class CombatOverlayService : Service() {
             },
         )
     }
-    private val overlayAllianceOnlinePopover by lazy {
-        OverlayAllianceOnlinePopover(
-            context = this,
-            mainHandler = mainHandler,
-            scope = serviceScope,
-            dp = { dp(it) },
-        )
-    }
     private val overlayCommandsPopover by lazy {
         OverlayCommandsPopover(
             context = this,
@@ -186,7 +178,7 @@ class CombatOverlayService : Service() {
         OverlayPresenceHeartbeat(
             mainHandler = mainHandler,
             scope = serviceScope,
-            intervalMs = 45_000L,
+            intervalMs = 60_000L,
             ping = {
                 AppContainer.from(this@CombatOverlayService).usersRepository.updatePresence(
                     OVERLAY_PRESENCE_INGAME,
@@ -290,7 +282,6 @@ class CombatOverlayService : Service() {
         snap(chatStripParams, chatStripHost, hideFromScreen = true)
         overlayTicker.applyTouchPassthrough(true)
         overlayCommandsPopover.hide()
-        overlayAllianceOnlinePopover.hide()
     }
 
     private fun hideOverlayChatPanelForPicker(mgr: WindowManager) {
@@ -686,6 +677,20 @@ class CombatOverlayService : Service() {
     private var lastForegroundNotificationText: String? = null
     private var lastForegroundMicActive: Boolean = false
 
+    @Volatile
+    private var overlaySessionActive: Boolean = false
+
+    private var cachedAllianceHubRoomId: String? = null
+
+    private var hubHudRefreshPosted: Boolean = false
+
+    private val hubHudRefreshRunnable = Runnable {
+        hubHudRefreshPosted = false
+        refreshOverlayStatusHudData()
+    }
+
+    private var lastStripZOrderLiftMs: Long = 0L
+
     private val gameGateRunnable = Runnable {
         runCatching { tickGameGate() }
     }
@@ -730,9 +735,16 @@ class CombatOverlayService : Service() {
     }
 
     private fun isOverlayShellActive(): Boolean {
+        if (overlaySessionActive) return true
         val host = chatStripHost ?: return false
         return host.isAttachedToWindow
     }
+
+    private fun isOverlayHudOnlyMode(): Boolean =
+        AppContainer.from(this).userSettingsPreferences.isOverlayHudOnlyMode()
+
+    private fun isOverlayLightStripMode(): Boolean =
+        AppContainer.from(this).userSettingsPreferences.isOverlayLightStrip()
 
     /**
      * Система (OEM / нехватка памяти) может снять ленту с экрана, оставив ссылки на View.
@@ -745,7 +757,9 @@ class CombatOverlayService : Service() {
             }
             return
         }
-        repairDetachedChatStripIfNeeded(mgr)
+        if (!isOverlayHudOnlyMode()) {
+            repairDetachedChatStripIfNeeded(mgr)
+        }
         val host = chatStripHost ?: return
         if (host.isAttachedToWindow) return
         val params = chatStripParams
@@ -961,7 +975,15 @@ class CombatOverlayService : Service() {
     }
 
     private fun refreshOverlayStatusHudData() {
+        OverlayPerfDiag.logHudRefreshScheduled()
+        val startedAt = android.os.SystemClock.elapsedRealtime()
         serviceScope.launch(Dispatchers.IO) {
+            val rooms = runCatching {
+                AppContainer.from(this@CombatOverlayService).chatRepository.listRooms().getOrNull()
+            }.getOrNull()
+            rooms?.let { list ->
+                cachedAllianceHubRoomId = OverlayGameStatusHudRefresh.allianceHubRoom(list)?.id
+            }
             val state = runCatching {
                 OverlayGameStatusHudRefresh.load(this@CombatOverlayService)
             }.getOrElse { OverlayGameStatusHudState() }
@@ -970,13 +992,58 @@ class CombatOverlayService : Service() {
             }.getOrDefault(0)
             overlayStatusHudFlow.value = state
             mainHandler.post {
+                val durationMs = android.os.SystemClock.elapsedRealtime() - startedAt
+                OverlayPerfDiag.logHudRefreshDone(
+                    durationMs = durationMs,
+                    allianceUnread = state.allianceChatUnread,
+                    forumUnread = state.forumUnread,
+                    newsUnread = state.teamNewsUnread,
+                )
                 ensureOverlayStatusHudWindow()
                 overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
                     teamJoinRequestCount = joinRequestCount,
                 )
                 refreshOverlayTopRightHudState()
+                logOverlayRuntimeSnapshot()
             }
         }
+    }
+
+    private fun scheduleDebouncedHubHudRefresh() {
+        hubHudRefreshPosted = true
+        mainHandler.removeCallbacks(hubHudRefreshRunnable)
+        mainHandler.postDelayed(hubHudRefreshRunnable, HUB_HUD_REFRESH_DEBOUNCE_MS)
+    }
+
+    private fun bumpAllianceHubUnreadLocally() {
+        val current = overlayStatusHudFlow.value
+        overlayStatusHudFlow.value = current.copy(
+            allianceChatUnread = (current.allianceChatUnread + 1).coerceAtMost(99),
+        )
+    }
+
+    private fun logOverlayRuntimeSnapshot() {
+        val session = voiceSession
+        val prefs = AppContainer.from(this).userSettingsPreferences
+        var windows = 0
+        if (chatStripHost?.isAttachedToWindow == true) windows++
+        if (overlayStatusHudHost?.isAttachedToWindow == true) windows++
+        if (overlayTopRightHudHost?.isAttachedToWindow == true) windows++
+        if (overlayChatTeamPanelVisible) windows++
+        OverlayPerfDiag.logRuntimeSnapshot(
+            context = this,
+            micOn = session?.micOn ?: prefs.isOverlayVoiceMicEnabled(),
+            soundOn = session?.soundOn ?: prefs.isOverlayVoiceSoundEnabled(),
+            overlayWindows = windows,
+            hudOnly = isOverlayHudOnlyMode(),
+            lightStrip = isOverlayLightStripMode(),
+        )
+    }
+
+    private fun syncOverlayHudsIfReady() {
+        if (stableGatePollTicks < HUD_STABLE_TICKS_BEFORE_ATTACH) return
+        syncOverlayStatusHudVisibility()
+        syncOverlayTopRightHudVisibility()
     }
 
     private fun syncOverlayStatusHudVisibility() {
@@ -1044,7 +1111,6 @@ class CombatOverlayService : Service() {
     }
 
     private fun openOverlayQuickCommandsFromHud() {
-        overlayAllianceOnlinePopover.hide()
         val mgr = windowManager ?: systemWindowManager() ?: return
         OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
         overlayCommandsPopover.toggle(mgr)
@@ -1068,7 +1134,6 @@ class CombatOverlayService : Service() {
     }
 
     private fun showOverlayHudPane(pane: OverlayHudPane) {
-        overlayAllianceOnlinePopover.hide()
         if (overlayChatTeamPanelVisible && currentOverlayHudPane == pane) return
         if (overlayChatTeamPanelVisible) {
             hideOverlayChatTeamPanelNow(clearStrip = false)
@@ -1121,6 +1186,8 @@ class CombatOverlayService : Service() {
 
         val host = FrameLayout(this).apply {
             setBackgroundColor(Color.TRANSPARENT)
+            clipChildren = false
+            clipToPadding = false
             setViewTreeLifecycleOwner(owner)
             setViewTreeViewModelStoreOwner(owner)
             setViewTreeSavedStateRegistryOwner(owner)
@@ -1191,9 +1258,7 @@ class CombatOverlayService : Service() {
                         state = state,
                         onOnlineClick = {
                             overlayCommandsPopover.hide()
-                            val mgr = windowManager ?: systemWindowManager()
-                                ?: return@OverlayGameTopRightHud
-                            overlayAllianceOnlinePopover.toggleCentered(mgr)
+                            showOverlayHudPane(OverlayHudPane.Participants)
                         },
                         onQuickCommandsClick = { openOverlayQuickCommandsFromHud() },
                         onVoiceHubClick = { toggleOverlayTopRightVoiceExpanded() },
@@ -1207,6 +1272,8 @@ class CombatOverlayService : Service() {
 
         val host = FrameLayout(this).apply {
             setBackgroundColor(Color.TRANSPARENT)
+            clipChildren = false
+            clipToPadding = false
             setViewTreeLifecycleOwner(owner)
             setViewTreeViewModelStoreOwner(owner)
             setViewTreeSavedStateRegistryOwner(owner)
@@ -1246,7 +1313,7 @@ class CombatOverlayService : Service() {
     private fun scheduleOverlayVoiceConnect() {
         cancelOverlayVoiceConnectScheduled()
         val prefs = AppContainer.from(this).userSettingsPreferences
-        if (!prefs.isOverlayVoiceMicEnabled() && !prefs.isOverlayVoiceSoundEnabled()) {
+        if (!prefs.isOverlayVoiceMicEnabled()) {
             return
         }
         mainHandler.postDelayed(overlayVoiceConnectRunnable, OVERLAY_VOICE_CONNECT_DELAY_MS)
@@ -1265,6 +1332,7 @@ class CombatOverlayService : Service() {
         hasUsageAccess: Boolean,
         shouldShow: Boolean,
     ) {
+        val wasInGame = lastAppliedGateShouldShow == true
         stableGatePollTicks = if (shouldShow == lastAppliedGateShouldShow) {
             stableGatePollTicks + 1
         } else {
@@ -1306,10 +1374,16 @@ class CombatOverlayService : Service() {
             return
         }
         ensureOverlayIfPermitted()
-        syncOverlayStatusHudVisibility()
-        syncOverlayTopRightHudVisibility()
-        refreshOverlayStatusHudData()
-        scheduleOverlayStatusHudRefresh()
+        syncOverlayHudsIfReady()
+        if (shouldShow && !wasInGame) {
+            refreshOverlayStatusHudData()
+            scheduleOverlayStatusHudRefresh()
+        } else if (shouldShow && stableGatePollTicks == HUD_STABLE_TICKS_BEFORE_ATTACH) {
+            refreshOverlayStatusHudData()
+            scheduleOverlayStatusHudRefresh()
+        } else if (shouldShow) {
+            scheduleOverlayStatusHudRefresh()
+        }
     }
 
     /**
@@ -1321,7 +1395,6 @@ class CombatOverlayService : Service() {
             return
         }
         overlayCommandsPopover.hide()
-        overlayAllianceOnlinePopover.hide()
         OverlayChatInteractionHold.clearStaleSuppressForGameBackground(
             chatTeamPanelVisible = false,
             commandsPopoverShowing = false,
@@ -1617,13 +1690,27 @@ class CombatOverlayService : Service() {
         if (refreshStrip) {
             refreshOverlayChatStrip()
         }
-        if (msg.roomId.isNotBlank()) {
+        val hubId = cachedAllianceHubRoomId
+        if (hubId != null && msg.roomId == hubId) {
+            val selfId = jwtSubFromAccessToken()
+            if (!selfId.isNullOrBlank() && msg.senderId != selfId) {
+                bumpAllianceHubUnreadLocally()
+                scheduleDebouncedHubHudRefresh()
+            }
+        } else if (msg.roomId.isNotBlank()) {
             serviceScope.launch(Dispatchers.IO) {
                 val rooms = AppContainer.from(this@CombatOverlayService).chatRepository.listRooms().getOrNull()
                     ?: return@launch
-                val hubId = OverlayGameStatusHudRefresh.allianceHubRoom(rooms)?.id ?: return@launch
-                if (msg.roomId == hubId) {
-                    refreshOverlayStatusHudData()
+                val resolvedHubId = OverlayGameStatusHudRefresh.allianceHubRoom(rooms)?.id ?: return@launch
+                cachedAllianceHubRoomId = resolvedHubId
+                if (msg.roomId == resolvedHubId) {
+                    val selfId = jwtSubFromAccessToken()
+                    if (!selfId.isNullOrBlank() && msg.senderId != selfId) {
+                        mainHandler.post {
+                            bumpAllianceHubUnreadLocally()
+                            scheduleDebouncedHubHudRefresh()
+                        }
+                    }
                 }
             }
         }
@@ -1724,6 +1811,7 @@ class CombatOverlayService : Service() {
                     OverlayChatStrip(
                         messages = preview,
                         selfUserId = selfId,
+                        lightStrip = isOverlayLightStripMode(),
                         onDismissMessage = { m -> dismissStripMessage(m) },
                         onDismissRegionsChanged = { updateStripDismissScreenRects(it) },
                         modifier = Modifier
@@ -1828,7 +1916,9 @@ class CombatOverlayService : Service() {
         overlayMessageListener = listener
         mainHandler.post {
             AppContainer.from(this).chatRepository.addOverlayMessageListener(listener)
-            scheduleStripTick()
+            if (!isOverlayHudOnlyMode()) {
+                scheduleStripTick()
+            }
             presenceHeartbeat.start()
             refreshOverlayStatusHudData()
         }
@@ -1891,16 +1981,22 @@ class CombatOverlayService : Service() {
 
         val manager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         windowManager = manager
-        ensureChatStripWindow(manager)
-        if (chatStripHost == null) {
-            Log.e(TAG, "showOverlayShell: failed to attach chat strip")
-            windowManager = null
-            _overlayVisible.value = false
-            return
+        overlaySessionActive = true
+        if (isOverlayHudOnlyMode()) {
+            _overlayVisible.value = true
+        } else {
+            ensureChatStripWindow(manager)
+            if (chatStripHost == null) {
+                Log.e(TAG, "showOverlayShell: failed to attach chat strip")
+                overlaySessionActive = false
+                windowManager = null
+                _overlayVisible.value = false
+                return
+            }
+            _overlayVisible.value = true
+            applyOverlayStripVisibility()
+            requestChatStripZOrderLift()
         }
-        _overlayVisible.value = true
-        applyOverlayStripVisibility()
-        rebalanceOverlayChatStripZOrder()
         rebalanceOverlayFullscreenZOrder()
         mainHandler.post { beginOverlayChatSubscription() }
     }
@@ -1909,9 +2005,10 @@ class CombatOverlayService : Service() {
         (windowManager ?: systemWindowManager())?.let { wm ->
             runCatching { ensureChatStripWindow(wm) }
         }
-        chatStripHost?.visibility =
-            if (overlayChatTeamPanelVisible) View.GONE else View.VISIBLE
-        rebalanceOverlayChatStripZOrder()
+        if (!isOverlayHudOnlyMode()) {
+            chatStripHost?.visibility =
+                if (overlayChatTeamPanelVisible) View.GONE else View.VISIBLE
+        }
         rebalanceOverlayFullscreenZOrder()
     }
     private fun hideOverlayChatTeamPanel(clearStrip: Boolean = true) {
@@ -1989,10 +2086,13 @@ class CombatOverlayService : Service() {
     /** Поднять ленту поверх остальных окон оверлея (дорого: remove/add; не на каждое сообщение). */
     private fun requestChatStripZOrderLift() {
         if (chatStripZOrderLifted) return
+        val now = System.currentTimeMillis()
+        if (now - lastStripZOrderLiftMs < STRIP_ZORDER_MIN_INTERVAL_MS) return
         val host = chatStripHost ?: return
         val mgr = windowManager ?: systemWindowManager() ?: return
         val p = chatStripParams ?: return
         if (!host.isAttachedToWindow) return
+        lastStripZOrderLiftMs = now
         chatStripZOrderLifted = true
         runCatching {
             mgr.removeView(host)
@@ -2013,7 +2113,6 @@ class CombatOverlayService : Service() {
         if (overlayChatTeamPanelVisible) return
         val initialTab = initialTabIndex.coerceIn(0, 1)
         currentOverlayHudPane = hudPane
-        overlayAllianceOnlinePopover.hide()
         overlayCommandsPopover.hide()
         OverlayChatInteractionHold.acquireGameForegroundSuppress()
         OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = true
@@ -2098,20 +2197,42 @@ class CombatOverlayService : Service() {
                             color = MaterialTheme.colorScheme.surface,
                         ) {
                             Column(Modifier.fillMaxSize()) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 2.dp, end = 4.dp),
-                                    horizontalArrangement = Arrangement.End,
-                                ) {
-                                    IconButton(
-                                        onClick = { hideOverlayChatTeamPanel() },
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Outlined.Close,
-                                            contentDescription = getString(R.string.overlay_history_close_cd),
-                                            tint = MaterialTheme.colorScheme.onSurface,
+                                when (hudPane) {
+                                    OverlayHudPane.News -> {
+                                        OverlayHudPanelHeader(
+                                            title = stringResource(R.string.team_tab_news),
+                                            onClose = { hideOverlayChatTeamPanel() },
                                         )
+                                    }
+                                    OverlayHudPane.Forum -> {
+                                        OverlayHudPanelHeader(
+                                            title = stringResource(R.string.team_tab_forum),
+                                            onClose = { hideOverlayChatTeamPanel() },
+                                        )
+                                    }
+                                    OverlayHudPane.Participants -> {
+                                        OverlayHudPanelHeader(
+                                            title = stringResource(R.string.overlay_online_title),
+                                            onClose = { hideOverlayChatTeamPanel() },
+                                        )
+                                    }
+                                    else -> {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(top = 2.dp, end = 4.dp),
+                                            horizontalArrangement = Arrangement.End,
+                                        ) {
+                                            IconButton(
+                                                onClick = { hideOverlayChatTeamPanel() },
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.Close,
+                                                    contentDescription = getString(R.string.overlay_history_close_cd),
+                                                    tint = MaterialTheme.colorScheme.onSurface,
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                                 Box(
@@ -2139,6 +2260,13 @@ class CombatOverlayService : Service() {
                                             OverlayTeamForumPanel(
                                                 currentUserId = userId,
                                                 teamsRepository = container.teamsRepository,
+                                            )
+                                        }
+                                        OverlayHudPane.Participants -> {
+                                            OverlayTeamOnlinePanel(
+                                                teamsRepository = container.teamsRepository,
+                                                usersRepository = container.usersRepository,
+                                                onHudRefresh = { refreshOverlayStatusHudData() },
                                             )
                                         }
                                         null -> when (selectedTab) {
@@ -2382,13 +2510,16 @@ class CombatOverlayService : Service() {
         speechPipeline.cancelActiveSession()
         endOverlayChatSubscription()
         overlayTicker.hideTicker()
-        overlayAllianceOnlinePopover.hide()
         overlayCommandsPopover.hide()
         removeOverlayStatusHudWindow()
         removeOverlayTopRightHudWindow()
         val wm = windowManager ?: systemWindowManager()
         removeChatStripWindow(wm)
         _overlayVisible.value = false
+        overlaySessionActive = false
+        cachedAllianceHubRoomId = null
+        mainHandler.removeCallbacks(hubHudRefreshRunnable)
+        hubHudRefreshPosted = false
         chatStripClipRoot = null
         windowManager = null
     }
@@ -2409,7 +2540,10 @@ class CombatOverlayService : Service() {
         private const val OVERLAY_VOICE_CONNECT_DELAY_MS = 4_000L
         /** Краткий grace при ложном «не в игре» во время чата/пикера; не применяется при явном лаунчере/другом приложении. */
         private const val OVERLAY_INGAME_GRACE_MS = 2_500L
-        private const val OVERLAY_HISTORY_LOAD = 150
+        private const val OVERLAY_HISTORY_LOAD = 40
+        private const val HUD_STABLE_TICKS_BEFORE_ATTACH = 3
+        private const val HUB_HUD_REFRESH_DEBOUNCE_MS = 4_000L
+        private const val STRIP_ZORDER_MIN_INTERVAL_MS = 30_000L
         /** Matches backend / user schema: ingame | online | away */
         private const val OVERLAY_PRESENCE_INGAME = "ingame"
         private const val OVERLAY_PRESENCE_AWAY = "away"

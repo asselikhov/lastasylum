@@ -598,7 +598,7 @@ object GameForegroundGate {
     }
 
     private const val FOREGROUND_CACHE_MS = 2_500L
-    private const val FULL_HEURISTIC_CACHE_MS = 2_500L
+    private const val FULL_HEURISTIC_CACHE_MS = 6_000L
 
     /** Кэш merged queryUsageStats внутри одного тика / короткой серии тиков гейта. */
     private const val MERGED_STATS_CACHE_MS = 2_500L

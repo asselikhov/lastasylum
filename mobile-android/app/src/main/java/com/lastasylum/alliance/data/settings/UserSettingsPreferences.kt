@@ -34,6 +34,22 @@ class UserSettingsPreferences(context: Context) {
         prefs.edit().putBoolean(KEY_COMPACT_OVERLAY, value).apply()
     }
 
+    /**
+     * HUD chips only in-game — no chat strip window (lower CPU/RAM on weak devices).
+     */
+    fun isOverlayHudOnlyMode(): Boolean = prefs.getBoolean(KEY_OVERLAY_HUD_ONLY, false)
+
+    fun setOverlayHudOnlyMode(value: Boolean) {
+        prefs.edit().putBoolean(KEY_OVERLAY_HUD_ONLY, value).apply()
+    }
+
+    /** Lighter chat strip: no image previews in raid overlay bubbles. */
+    fun isOverlayLightStrip(): Boolean = prefs.getBoolean(KEY_OVERLAY_LIGHT_STRIP, false)
+
+    fun setOverlayLightStrip(value: Boolean) {
+        prefs.edit().putBoolean(KEY_OVERLAY_LIGHT_STRIP, value).apply()
+    }
+
     /** Если true — пузырёк PTT и круглые кнопки нельзя перетаскивать (случайные сдвиги). */
     fun isOverlayDragLocked(): Boolean = prefs.getBoolean(KEY_OVERLAY_DRAG_LOCK, false)
 
@@ -224,6 +240,8 @@ class UserSettingsPreferences(context: Context) {
         private const val PREFS_NAME = "squadrelay_user_settings"
         private const val KEY_QUIET = "quiet_notifications"
         private const val KEY_COMPACT_OVERLAY = "compact_overlay"
+        private const val KEY_OVERLAY_HUD_ONLY = "overlay_hud_only_v1"
+        private const val KEY_OVERLAY_LIGHT_STRIP = "overlay_light_strip_v1"
         private const val KEY_OVERLAY_DRAG_LOCK = "overlay_drag_lock"
         private const val KEY_OVERLAY_LAYOUT_PRESET = "overlay_layout_preset"
         private const val KEY_OVERLAY_PANEL_ENABLED = "overlay_panel_enabled"

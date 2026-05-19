@@ -458,6 +458,7 @@ private fun TeamNewsListRoute(
 ) {
     val context = LocalContext.current
     val res = context.resources
+    val overlayUi = LocalOverlayUiMode.current
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(true) }
     var newsItems by remember { mutableStateOf<List<TeamNewsListItemDto>>(emptyList()) }
@@ -554,12 +555,13 @@ private fun TeamNewsListRoute(
                     )
                 }
                 else -> {
+                        val listTopPad = if (overlayUi) 4.dp else 12.dp
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(
                                 start = SquadRelayDimens.contentPaddingHorizontal,
                                 end = SquadRelayDimens.contentPaddingHorizontal,
-                                top = 12.dp,
+                                top = listTopPad,
                                 bottom = 88.dp,
                             ),
                             verticalArrangement = Arrangement.spacedBy(14.dp),

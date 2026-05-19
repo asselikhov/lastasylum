@@ -86,6 +86,7 @@ import kotlinx.coroutines.delay
 fun OverlayChatStrip(
     messages: List<ChatMessage>,
     selfUserId: String?,
+    lightStrip: Boolean = false,
     onDismissMessage: (ChatMessage) -> Unit = {},
     onDismissRegionsChanged: (List<Rect>) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -143,7 +144,7 @@ fun OverlayChatStrip(
         val keysAfter = latestMessages.map { keyOf(it) }.toSet()
         val newKeys = keysAfter - keysBefore
         // Только одно новое сообщение — «премиум» анимация входа; при пакетной подгрузке истории не дёргаем всю колонку.
-        if (newKeys.size == 1) {
+        if (!lightStrip && newKeys.size == 1) {
             accentEnterKey = newKeys.first()
             delay(260)
             accentEnterKey = null
@@ -188,6 +189,7 @@ fun OverlayChatStrip(
                     messageKey = key,
                     isMine = isMine,
                     compactStickers = compactStickers,
+                    lightStrip = lightStrip,
                     onDismiss = { onDismissMessage(msg) },
                     onReportDismissBounds = { mk, rect ->
                         // During AnimatedVisibility exit the row is still composed; positioning callbacks
@@ -258,6 +260,7 @@ private fun OverlayChatStripMessage(
     messageKey: String,
     isMine: Boolean,
     compactStickers: Boolean,
+    lightStrip: Boolean,
     onDismiss: () -> Unit,
     onReportDismissBounds: (String, Rect) -> Unit,
     onClearDismissRegion: (String) -> Unit,
@@ -266,8 +269,12 @@ private fun OverlayChatStripMessage(
     val onBubble = if (isMine) ChatTelegramOutgoingOnBubble else ChatTelegramIncomingOnBubble
     val timeMuted = if (isMine) ChatTelegramTimeMuted else ChatTelegramTimeMutedIncoming
     val time = remember(msg.createdAt) { formatChatTime(msg.createdAt) }
-    val images = remember(msg.attachments) {
-        msg.attachments.filter { it.kind == "image" && it.url.isNotBlank() }
+    val images = remember(msg.attachments, lightStrip) {
+        if (lightStrip) {
+            emptyList()
+        } else {
+            msg.attachments.filter { it.kind == "image" && it.url.isNotBlank() }
+        }
     }
     val imageUrls = remember(images) { images.map { resolvedChatAttachmentImageUrl(it.url) } }
     val stickerStem = remember(msg.text) { ZlobyakaStickerPack.parseStem(msg.text) }

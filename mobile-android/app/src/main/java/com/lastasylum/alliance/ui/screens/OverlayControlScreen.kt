@@ -67,6 +67,8 @@ fun OverlayControlScreen() {
     var targetPkg by remember { mutableStateOf(prefs.getOverlayTargetGamePackage()) }
     var targetActivities by remember { mutableStateOf(prefs.getOverlayTargetGameActivityTokens().joinToString(",")) }
     var overlayEnabled by remember { mutableStateOf(prefs.isOverlayPanelEnabled()) }
+    var overlayHudOnly by remember { mutableStateOf(prefs.isOverlayHudOnlyMode()) }
+    var overlayLightStrip by remember { mutableStateOf(prefs.isOverlayLightStrip()) }
     var excavationPushEnabled by remember { mutableStateOf(prefs.isExcavationPushEnabled()) }
     var pushRegisteredOnServer by remember { mutableStateOf<Boolean?>(null) }
 
@@ -103,6 +105,8 @@ fun OverlayControlScreen() {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 overlayEnabled = prefs.isOverlayPanelEnabled()
+                overlayHudOnly = prefs.isOverlayHudOnlyMode()
+                overlayLightStrip = prefs.isOverlayLightStrip()
                 refreshOverlayRuntime()
             }
         }
@@ -206,6 +210,30 @@ fun OverlayControlScreen() {
                                 }
                             },
                         )
+                        if (overlayEnabled) {
+                            SettingsToggleRow(
+                                title = stringResource(R.string.overlay_hud_only_title),
+                                subtitle = stringResource(R.string.overlay_hud_only_subtitle),
+                                checked = overlayHudOnly,
+                                onCheckedChange = { on ->
+                                    overlayHudOnly = on
+                                    prefs.setOverlayHudOnlyMode(on)
+                                    CombatOverlayService.requestRebuildOverlayIfRunning(context)
+                                    refreshOverlayRuntime()
+                                },
+                            )
+                            SettingsToggleRow(
+                                title = stringResource(R.string.overlay_light_strip_title),
+                                subtitle = stringResource(R.string.overlay_light_strip_subtitle),
+                                checked = overlayLightStrip,
+                                enabled = !overlayHudOnly,
+                                onCheckedChange = { on ->
+                                    overlayLightStrip = on
+                                    prefs.setOverlayLightStrip(on)
+                                    CombatOverlayService.requestRebuildOverlayIfRunning(context)
+                                },
+                            )
+                        }
                     }
                 }
             }

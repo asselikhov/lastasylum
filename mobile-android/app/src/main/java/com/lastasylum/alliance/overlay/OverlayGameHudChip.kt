@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -32,6 +33,8 @@ private val HudChipPaddingV = 5.dp
 private val HudRowSpacing = 4.dp
 private val HudChipBackground = Color(0xB310141E)
 private val HudChipCorner = 6.dp
+private val HudBadgeOverflowPaddingTop = 6.dp
+private val HudBadgeOverflowPaddingEnd = 6.dp
 
 @Composable
 internal fun OverlayGameHudBar(
@@ -40,7 +43,10 @@ internal fun OverlayGameHudBar(
     content: @Composable () -> Unit,
 ) {
     Column(
-        modifier = modifier,
+        modifier = modifier.padding(
+            top = HudBadgeOverflowPaddingTop,
+            end = HudBadgeOverflowPaddingEnd,
+        ),
         horizontalAlignment = horizontalAlignment,
         verticalArrangement = Arrangement.spacedBy(HudRowSpacing),
     ) {
@@ -61,29 +67,34 @@ internal fun OverlayGameHudChip(
     require(icon != null || painter != null) { "icon or painter required" }
     val badge = badgeCount.coerceAtLeast(0)
     Box(
-        modifier = modifier
-            .background(HudChipBackground, RoundedCornerShape(HudChipCorner))
-            .clickable(onClick = onClick)
-            .padding(horizontal = HudChipPaddingH, vertical = HudChipPaddingV)
-            .semantics { this.contentDescription = contentDescription },
+        modifier = modifier.wrapContentSize(unbounded = true),
         contentAlignment = Alignment.Center,
     ) {
-        when {
-            icon != null -> {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = tint,
-                    modifier = Modifier.size(HudIconSize),
-                )
-            }
-            painter != null -> {
-                Icon(
-                    painter = painter,
-                    contentDescription = null,
-                    tint = tint,
-                    modifier = Modifier.size(HudIconSize),
-                )
+        Box(
+            modifier = Modifier
+                .background(HudChipBackground, RoundedCornerShape(HudChipCorner))
+                .clickable(onClick = onClick)
+                .padding(horizontal = HudChipPaddingH, vertical = HudChipPaddingV)
+                .semantics { this.contentDescription = contentDescription },
+            contentAlignment = Alignment.Center,
+        ) {
+            when {
+                icon != null -> {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = tint,
+                        modifier = Modifier.size(HudIconSize),
+                    )
+                }
+                painter != null -> {
+                    Icon(
+                        painter = painter,
+                        contentDescription = null,
+                        tint = tint,
+                        modifier = Modifier.size(HudIconSize),
+                    )
+                }
             }
         }
         if (badge > 0) {

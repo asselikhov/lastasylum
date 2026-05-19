@@ -160,6 +160,10 @@
     <string name="overlay_activity_filter_hint">Через запятую: части имени Activity. Панель только на этих экранах (нужен доступ к статистике использования).</string>
     <string name="overlay_switch_panel">Показывать панель</string>
     <string name="overlay_switch_panel_subtitle">Только поверх игры: панель появляется при запуске игры и скрывается, когда игра свёрнута или закрыта. SquadRelay может работать в фоне.</string>
+    <string name="overlay_hud_only_title">Только кнопки HUD</string>
+    <string name="overlay_hud_only_subtitle">Без ленты чата поверх игры — меньше нагрузка на слабых телефонах.</string>
+    <string name="overlay_light_strip_title">Лёгкая лента чата</string>
+    <string name="overlay_light_strip_subtitle">Без превью картинок в сообщениях оверлея.</string>
     <string name="overlay_panel_waiting_for_game">Панель включена, сервис в фоне — ожидание игры.</string>
     <string name="overlay_package_field_label">Пакеты игры (из «Сведения о приложении»)</string>
     <string name="overlay_overlay_must_be_squadrelay">Чтобы кнопки были поверх игры, включите «Поверх других приложений» для «%1$s» (это приложение SquadRelay). Включение только у игры не даёт панель — её рисует SquadRelay.</string>
@@ -497,12 +501,13 @@
     <string name="overlay_history_sending">Отправка…</string>
     <string name="overlay_history_send_failed">Не удалось отправить: %1$s</string>
     <string name="overlay_history_empty_send">Введите текст сообщения</string>
-    <string name="overlay_online_cd">Участники альянса в игре с оверлеем</string>
+    <string name="overlay_online_cd">Участники команды в игре с оверлеем</string>
+    <string name="overlay_team_online_count">Онлайн: %1$d</string>
     <string name="overlay_online_title">Участники онлайн</string>
     <string name="overlay_online_subtitle">Активны в игре с оверлеем</string>
     <string name="overlay_online_refresh_cd">Обновить список</string>
     <string name="overlay_online_loading">Загрузка…</string>
-    <string name="overlay_online_empty">Сейчас никого нет в игре с активным оверлеем.</string>
+    <string name="overlay_online_empty">Сейчас никто из команды не в игре с оверлеем.</string>
     <string name="overlay_online_error">Не удалось загрузить список.</string>
     <string name="overlay_online_close_cd">Закрыть список</string>
     <string name="overlay_hud_online_cd">Участники в игре: %1$d</string>

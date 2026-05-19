@@ -48,6 +48,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
@@ -367,11 +368,12 @@ private fun TeamForumListRoute(
                     )
                 }
                 else -> {
+                    val listTopPad = if (overlayUi) 0.dp else 8.dp
                     LazyColumn(
                         contentPadding = PaddingValues(
                             start = SquadRelayDimens.contentPaddingHorizontal,
                             end = SquadRelayDimens.contentPaddingHorizontal,
-                            top = 8.dp,
+                            top = listTopPad,
                             bottom = 88.dp,
                         ),
                         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -815,6 +817,29 @@ private fun TeamForumTopicChatRoute(
             .fillMaxSize()
             .padding(bottom = SquadRelayDimens.chatComposerNavGap),
     ) {
+        if (overlayUi) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = stringResource(R.string.team_news_cd_back),
+                    )
+                }
+                Text(
+                    text = topicTitle.ifBlank { "…" },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
         error?.let { err ->
             Text(
                 err,
