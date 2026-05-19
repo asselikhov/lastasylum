@@ -98,6 +98,8 @@
     <string name="cd_chat_search">Поиск по сообщениям</string>
     <string name="cd_chat_room_menu">Меню комнаты</string>
     <string name="chat_global_team_notice">Чтобы писать в комнате «Союз» (все альянсы), укажите в профиле полное название команды и тег из трёх букв.</string>
+    <string name="chat_rooms_switcher_title">Каналы связи</string>
+    <string name="chat_rooms_switcher_caption">Переключите пространство для диалога</string>
     <string name="chat_room_union_hint">Все альянсы и игроки без команды</string>
     <string name="chat_room_team_hint">Только ваша команда</string>
     <string name="chat_room_raid_hint">Рейд · лента в оверлее</string>

@@ -172,6 +172,9 @@ import com.lastasylum.alliance.ui.chat.chatDayKey
 import com.lastasylum.alliance.ui.chat.formatChatDaySeparator
 import com.lastasylum.alliance.ui.chat.formatChatTime
 import com.lastasylum.alliance.ui.chat.ChatBubbleAttachmentsWithCaption
+import com.lastasylum.alliance.ui.components.ChatRoomTabAccents
+import com.lastasylum.alliance.ui.components.ChatRoomTabSpec
+import com.lastasylum.alliance.ui.components.ChatRoomsSwitcher
 import com.lastasylum.alliance.ui.chat.ChatViewModel
 import com.lastasylum.alliance.ui.chat.ChatBubbleAuthorHeader
 import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
@@ -1387,49 +1390,48 @@ private fun ChatRoomsBar(
     onSelectRoom: (String) -> Unit,
 ) {
     if (rooms.isEmpty()) return
-    val scheme = MaterialTheme.colorScheme
-    val raidHot = Color(0xFFFF6B35)
-    val raidDeep = Color(0xFF8B3A1A)
+    val context = LocalContext.current
+    val res = context.resources
     val roomsKey = remember(rooms) {
         rooms.joinToString("|") { "${it.id}:${it.unreadCount}:${it.title}:${it.sortOrder}" }
     }
-    val tabs = remember(roomsKey, selectedRoomId) {
+    val tabs = remember(roomsKey) {
         rooms.map { room ->
-        val kind = room.chatRoomVisualKind()
-        val accent = when (kind) {
-            ChatRoomVisualKind.GlobalUnion -> Color(0xFF5C6BC0)
-            ChatRoomVisualKind.Raid -> raidHot
-            ChatRoomVisualKind.AllianceHub -> Color(0xFF00897B)
-            ChatRoomVisualKind.Other -> scheme.primary
-        }
-        val icon = when (kind) {
-            ChatRoomVisualKind.GlobalUnion -> Icons.Outlined.Public
-            ChatRoomVisualKind.Raid -> Icons.Outlined.Bolt
-            ChatRoomVisualKind.AllianceHub -> Icons.Outlined.Shield
-            ChatRoomVisualKind.Other -> Icons.Outlined.ChatBubbleOutline
-        }
-        val selectedBg = when (kind) {
-            ChatRoomVisualKind.Raid -> raidDeep
-            else -> accent.copy(alpha = 0.90f)
-        }
-        com.lastasylum.alliance.ui.components.SquadSegmentTab(
-            id = room.id,
-            label = room.title,
-            icon = icon,
-            selectedContainerColor = selectedBg,
-            unselectedIconTint = when (kind) {
-                ChatRoomVisualKind.Raid -> raidHot.copy(alpha = 0.9f)
-                else -> accent.copy(alpha = 0.88f)
-            },
-            unreadCount = room.unreadCount,
-        )
+            val kind = room.chatRoomVisualKind()
+            val (accentStart, accentEnd) = when (kind) {
+                ChatRoomVisualKind.GlobalUnion -> ChatRoomTabAccents.unionStart to ChatRoomTabAccents.unionEnd
+                ChatRoomVisualKind.Raid -> ChatRoomTabAccents.raidStart to ChatRoomTabAccents.raidEnd
+                ChatRoomVisualKind.AllianceHub -> ChatRoomTabAccents.hubStart to ChatRoomTabAccents.hubEnd
+                ChatRoomVisualKind.Other -> ChatRoomTabAccents.otherStart to ChatRoomTabAccents.otherEnd
+            }
+            val icon = when (kind) {
+                ChatRoomVisualKind.GlobalUnion -> Icons.Outlined.Public
+                ChatRoomVisualKind.Raid -> Icons.Outlined.Bolt
+                ChatRoomVisualKind.AllianceHub -> Icons.Outlined.Shield
+                ChatRoomVisualKind.Other -> Icons.Outlined.ChatBubbleOutline
+            }
+            val subtitle = when (kind) {
+                ChatRoomVisualKind.GlobalUnion -> res.getString(R.string.chat_room_union_hint)
+                ChatRoomVisualKind.Raid -> res.getString(R.string.chat_room_raid_hint)
+                ChatRoomVisualKind.AllianceHub -> res.getString(R.string.chat_room_team_hint)
+                ChatRoomVisualKind.Other -> res.getString(R.string.chat_context_room)
+            }
+            ChatRoomTabSpec(
+                id = room.id,
+                label = room.title,
+                subtitle = subtitle,
+                icon = icon,
+                accentStart = accentStart,
+                accentEnd = accentEnd,
+                unreadCount = room.unreadCount,
+            )
         }
     }
-    com.lastasylum.alliance.ui.components.SquadSegmentTabBar(
+    ChatRoomsSwitcher(
         tabs = tabs,
         selectedId = selectedRoomId,
         onSelect = onSelectRoom,
-        modifier = Modifier.padding(bottom = 10.dp),
+        modifier = Modifier.padding(bottom = 12.dp),
     )
 }
 
