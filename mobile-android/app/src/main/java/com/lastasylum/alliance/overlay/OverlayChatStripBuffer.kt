@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.overlay
 
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.mergePreservingAttachments
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
@@ -30,7 +31,7 @@ class OverlayChatStripBuffer(
         if (id != null) {
             val i = messages.indexOfFirst { it._id == id }
             if (i >= 0) {
-                messages[i] = msg
+                messages[i] = msg.mergePreservingAttachments(messages[i])
             } else {
                 messages.add(msg)
             }

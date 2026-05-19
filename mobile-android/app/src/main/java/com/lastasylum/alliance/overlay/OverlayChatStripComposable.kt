@@ -61,6 +61,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.chatImageAttachments
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
 import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
@@ -278,7 +279,7 @@ private fun OverlayChatStripMessage(
         if (lightStrip) {
             emptyList()
         } else {
-            msg.attachments.filter { it.kind == "image" && it.url.isNotBlank() }
+            msg.chatImageAttachments()
         }
     }
     val imageUrls = remember(images) { images.map { resolvedChatAttachmentImageUrl(it.url) } }

@@ -158,8 +158,9 @@ import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
 import com.lastasylum.alliance.overlay.OverlayAwareBottomSheet
-import com.lastasylum.alliance.overlay.OverlayChatImagePickerSheet
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
+import com.lastasylum.alliance.data.chat.chatImageAttachments
+import com.lastasylum.alliance.data.chat.hasVisibleText
 import com.lastasylum.alliance.overlay.OverlayInteractionSuppressEffect
 import com.lastasylum.alliance.overlay.OverlayModalScope
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
@@ -1454,7 +1455,6 @@ private fun ChatComposer(
 ) {
     var showMediaPanel by remember { mutableStateOf(false) }
     var showAttachmentsSheet by remember { mutableStateOf(false) }
-    var showOverlayGalleryPicker by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val overlayUi = LocalOverlayUiMode.current
     val activityResultOwner = LocalActivityResultRegistryOwner.current
@@ -1495,33 +1495,6 @@ private fun ChatComposer(
         BackHandler(enabled = showAttachmentsSheet) {
             showAttachmentsSheet = false
         }
-    }
-
-    if (canHandleBack) {
-        BackHandler(enabled = showOverlayGalleryPicker) {
-            showOverlayGalleryPicker = false
-            OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
-        }
-    }
-
-    if (overlayUi && showOverlayGalleryPicker) {
-        OverlayChatImagePickerSheet(
-            maxSelection = 12,
-            onDismiss = {
-                showOverlayGalleryPicker = false
-                OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
-            },
-            onConfirm = { uris ->
-                if (!readOnly && uris.isNotEmpty()) {
-                    onPickImages(uris)
-                    Toast.makeText(
-                        context,
-                        context.getString(R.string.chat_attachments_added, uris.size),
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                }
-            },
-        )
     }
 
     if (showAttachmentsSheet) {
@@ -1934,11 +1907,6 @@ private fun ChatComposer(
                                     if (readOnly) return@IconButton
                                     focusManager.clearFocus()
                                     keyboard?.hide()
-                                    if (overlayUi) {
-                                        OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
-                                        showOverlayGalleryPicker = true
-                                        return@IconButton
-                                    }
                                     val launcher = pickImagesLauncher
                                     if (launcher == null) {
                                         Toast.makeText(
@@ -1947,6 +1915,9 @@ private fun ChatComposer(
                                             Toast.LENGTH_SHORT,
                                         ).show()
                                         return@IconButton
+                                    }
+                                    if (overlayUi) {
+                                        OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
                                     }
                                     launcher.launch(
                                         PickVisualMediaRequest(
@@ -2609,8 +2580,7 @@ private fun ChatBubbleInnerColumn(
                 )
             }
         } else {
-            val imageAttachments =
-                message.attachments.filter { it.kind == "image" && it.url.isNotBlank() }
+            val imageAttachments = message.chatImageAttachments()
             if (imageAttachments.isNotEmpty()) {
                 val fullResolvedUrls =
                     imageAttachments.map { resolvedChatAttachmentImageUrl(it.url) }
@@ -2620,7 +2590,7 @@ private fun ChatBubbleInnerColumn(
                 } else {
                     lerp(scheme.surface, Color.Black, 0.28f).copy(alpha = 0.82f)
                 }
-                val hasCaption = message.text.isNotBlank()
+                val hasCaption = message.hasVisibleText()
                 val gridFrame = BorderStroke(
                     1.dp,
                     if (isMine) Color.White.copy(alpha = 0.12f) else scheme.outline.copy(alpha = 0.2f),
@@ -3074,14 +3044,14 @@ private fun ChatBubbleRow(
     val telegramUrl = telegramAvatarUrl(message.senderTelegramUsername)
     val floatingSticker = stickerStem != null && message.replyTo == null
     val imageAttachments = remember(message.attachments) {
-        message.attachments.filter { it.kind == "image" && it.url.isNotBlank() }
+        message.chatImageAttachments()
     }
     val resolvedImageUrls = remember(imageAttachments) {
         imageAttachments.map { resolvedChatAttachmentImageUrl(it.url) }
     }
     val floatingImages = stickerStem == null &&
         resolvedImageUrls.isNotEmpty() &&
-        message.text.isBlank() &&
+        !message.hasVisibleText() &&
         message.replyTo == null
     val senderAccent = roleAccentColor(message.senderRole)
     val scheme = MaterialTheme.colorScheme

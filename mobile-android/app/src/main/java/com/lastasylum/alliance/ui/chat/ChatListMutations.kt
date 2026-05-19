@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.ui.chat
 
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.mergePreservingAttachments
 
 /** Newest-first in-memory cap to keep scroll/diff bounded for very long threads. */
 internal const val CHAT_MAX_MESSAGES_IN_MEMORY = 800
@@ -31,16 +32,6 @@ internal fun rebuildMessageIdIndex(
     }
 }
 
-/** Socket/API updates without attachments must not wipe images already shown from REST. */
-internal fun mergePreservingAttachments(
-    incoming: ChatMessage,
-    existing: ChatMessage,
-): ChatMessage {
-    if (incoming.attachments.isNotEmpty()) return incoming
-    if (existing.attachments.isEmpty()) return incoming
-    return incoming.copy(attachments = existing.attachments)
-}
-
 internal fun upsertMessage(
     current: List<ChatMessage>,
     incoming: ChatMessage,
@@ -52,7 +43,7 @@ internal fun upsertMessage(
         val existingIndex = idIndex?.get(id) ?: current.indexOfFirst { it._id == id }
         if (existingIndex >= 0) {
             val updated = current.toMutableList()
-            updated[existingIndex] = mergePreservingAttachments(incoming, current[existingIndex])
+            updated[existingIndex] = incoming.mergePreservingAttachments(current[existingIndex])
             idIndex?.put(id, existingIndex)
             return MessageUpsertResult(
                 messages = updated,

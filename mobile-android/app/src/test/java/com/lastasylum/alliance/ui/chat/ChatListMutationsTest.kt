@@ -2,6 +2,7 @@ package com.lastasylum.alliance.ui.chat
 
 import com.lastasylum.alliance.data.chat.ChatAttachment
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.mergePreservingAttachments
 import com.lastasylum.alliance.data.chat.ChatMessageReplyPreview
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

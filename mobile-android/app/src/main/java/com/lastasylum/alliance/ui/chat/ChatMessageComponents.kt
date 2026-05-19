@@ -50,6 +50,8 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.chatImageAttachments
+import com.lastasylum.alliance.data.chat.hasVisibleText
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingBubble
 import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingBubble
@@ -405,7 +407,7 @@ fun ChatBubbleAttachmentsWithCaption(
     modifier: Modifier = Modifier,
 ) {
     val messageImageTapLabel = LocalContext.current.getString(R.string.cd_chat_message_image)
-    val imageAttachments = message.attachments.filter { it.kind == "image" && it.url.isNotBlank() }
+    val imageAttachments = message.chatImageAttachments()
     if (imageAttachments.isEmpty()) return
     val fullResolvedUrls = imageAttachments.map { resolvedChatAttachmentImageUrl(it.url) }
     val captionBarBg = if (isMine) {
@@ -413,7 +415,7 @@ fun ChatBubbleAttachmentsWithCaption(
     } else {
         lerp(ChatTelegramIncomingBubble, Color.Black, 0.24f)
     }
-    val hasCaption = message.text.isNotBlank()
+    val hasCaption = message.hasVisibleText()
     Column(modifier = modifier) {
         Box(modifier = Modifier.fillMaxWidth()) {
             TelegramLikeAttachmentsGrid(

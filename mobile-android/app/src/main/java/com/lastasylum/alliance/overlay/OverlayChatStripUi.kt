@@ -25,6 +25,8 @@ import coil.request.ImageRequest
 import coil.request.SuccessResult
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatAttachment
+import com.lastasylum.alliance.data.chat.chatImageAttachments
+import com.lastasylum.alliance.data.chat.isChatImage
 import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import kotlin.math.abs
@@ -146,7 +148,7 @@ object OverlayChatStripUi {
     }
 
     private fun firstImageAttachment(attachments: List<ChatAttachment>): ChatAttachment? =
-        attachments.firstOrNull { it.kind == "image" && it.url.isNotBlank() }
+        attachments.firstOrNull { it.isChatImage() }
 
     private fun addMessageCard(
         context: Context,
@@ -316,7 +318,7 @@ object OverlayChatStripUi {
             }
             firstImage != null -> {
                 val imageUrls =
-                    attachments.filter { it.kind == "image" && it.url.isNotBlank() }
+                    attachments.chatImageAttachments()
                 val url = resolvedChatAttachmentImageUrl(firstImage.url)
                 val extra = (imageUrls.size - 1).coerceAtLeast(0)
                 val captionBarBg = ColorUtils.blendARGB(

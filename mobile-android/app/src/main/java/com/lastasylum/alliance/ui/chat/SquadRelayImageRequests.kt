@@ -3,8 +3,6 @@ package com.lastasylum.alliance.ui.chat
 import android.content.Context
 import coil.request.ImageRequest
 import coil.size.Size
-import com.lastasylum.alliance.di.AppContainer
-
 /**
  * Единые [ImageRequest] с лимитом decode size — меньше RAM/лагов в чате и оверлее.
  */
@@ -48,10 +46,6 @@ object SquadRelayImageRequests {
             .size(Size(widthPx, heightPx))
             .apply {
                 if (!crossfade) crossfade(false)
-                val token = AppContainer.from(appContext).tokenStore.getAccessToken()
-                if (!token.isNullOrBlank()) {
-                    addHeader("Authorization", "Bearer $token")
-                }
             }
         if (crossfade) {
             builder.crossfade(180)

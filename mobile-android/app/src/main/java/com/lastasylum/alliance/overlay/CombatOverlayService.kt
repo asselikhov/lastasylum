@@ -78,6 +78,7 @@ import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.data.auth.JwtAccessTokenClaims
+import com.lastasylum.alliance.data.chat.chatImageAttachments
 import com.lastasylum.alliance.data.voice.VoiceChatSession
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.di.AppContainer
@@ -248,7 +249,7 @@ class CombatOverlayService : Service() {
     /** Снимок окон overlay на время системного пикера (TYPE_APPLICATION_OVERLAY выше Activity — иначе галерея «под» чатом). */
     private val overlayTouchPassthroughSnaps = mutableListOf<OverlayWindowFlagSnap>()
 
-    private fun suspendOverlayWindowsForSystemActivity(keepChatPanelVisible: Boolean = false) {
+    private fun suspendOverlayWindowsForSystemActivity(keepOverlayChromeVisible: Boolean = false) {
         OverlayChatInteractionHold.beginOverlaySystemPickerSession()
         val mgr = windowManager
         if (mgr == null) {
@@ -279,14 +280,16 @@ class CombatOverlayService : Service() {
                 runCatching { mgr.updateViewLayout(view, params) }
             }
         }
-        // Панель и ленту прячем. Чат только GONE+NOT_TOUCHABLE: removeView() рвёт Compose и теряет
-        // rememberLauncherForActivityResult до ответа пикера. Для доступа к галерее чат остаётся видимым.
-        if (keepChatPanelVisible) {
+        // Системный Photo Picker (как в приложении): чат, лента и комнаты остаются на экране;
+        // только NOT_TOUCHABLE, чтобы касания ушли в Activity пикера поверх оверлея.
+        if (keepOverlayChromeVisible) {
             snap(overlayChatTeamParams, overlayChatTeamRoot, hideFromScreen = false)
+            snap(chatStripParams, chatStripHost, hideFromScreen = false)
         } else {
+            // Микрофон и прочее: панель GONE, иначе TYPE_APPLICATION_OVERLAY перекрывает системный UI.
             hideOverlayChatPanelForPicker(mgr)
+            snap(chatStripParams, chatStripHost, hideFromScreen = true)
         }
-        snap(chatStripParams, chatStripHost, hideFromScreen = true)
         overlayTicker.applyTouchPassthrough(true)
         overlayCommandsPopover.hide()
     }
@@ -603,16 +606,11 @@ class CombatOverlayService : Service() {
                         val mime = (input as? String)?.takeIf { it.isNotBlank() } ?: "image/*"
                         putExtra(OverlaySystemDialogActivity.EXTRA_CONTENT_MIME, mime)
                     }
-                    if (kind == OverlaySystemDialogActivity.KIND_REQUEST_GALLERY_READ) {
-                        val permission = (input as? String)?.takeIf { it.isNotBlank() }
-                            ?: OverlayDeviceGallery.requiredReadPermission()
-                        putExtra(OverlaySystemDialogActivity.EXTRA_PERMISSION, permission)
-                    }
-                    val keepChatVisible = kind == OverlaySystemDialogActivity.KIND_REQUEST_GALLERY_READ
-                    putExtra(OverlaySystemDialogActivity.EXTRA_KEEP_OVERLAY_VISIBLE, keepChatVisible)
+                    val keepChromeVisible = kind == OverlaySystemDialogActivity.KIND_PICK_IMAGES
+                    putExtra(OverlaySystemDialogActivity.EXTRA_KEEP_OVERLAY_VISIBLE, keepChromeVisible)
                 }
-                val keepChatVisible = kind == OverlaySystemDialogActivity.KIND_REQUEST_GALLERY_READ
-                suspendOverlayWindowsForSystemActivity(keepChatPanelVisible = keepChatVisible)
+                val keepChromeVisible = kind == OverlaySystemDialogActivity.KIND_PICK_IMAGES
+                suspendOverlayWindowsForSystemActivity(keepOverlayChromeVisible = keepChromeVisible)
                 mainHandler.post {
                     try {
                         startActivity(i)
@@ -2117,7 +2115,7 @@ class CombatOverlayService : Service() {
         val preview = stripBuffer.visibleForPreview()
         val signature = preview.joinToString(separator = "|") { msg ->
             val key = msg._id?.takeIf { it.isNotBlank() } ?: msg.stableKey()
-            val imageCount = msg.attachments.count { it.kind == "image" && it.url.isNotBlank() }
+            val imageCount = msg.chatImageAttachments().size
             "$key:${msg.text.length}:${msg.senderRole}:${msg.senderId}:$imageCount"
         }
         if (signature == lastStripRenderSignature) return

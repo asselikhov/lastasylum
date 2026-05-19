@@ -711,7 +711,7 @@ class ChatViewModel(
                     uploadedIds.add(uploadedId)
                 }
                 repository.sendMessageWithRetries(
-                    text = text.ifBlank { " " },
+                    text = text.trim(),
                     roomId = roomId,
                     replyToMessageId = replyToMessageId,
                     attachments = uploadedIds.takeIf { it.isNotEmpty() },

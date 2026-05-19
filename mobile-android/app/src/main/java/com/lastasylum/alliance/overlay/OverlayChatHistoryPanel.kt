@@ -26,6 +26,7 @@ import coil.request.ImageRequest
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.ui.chat.ChatStickerFormat
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.chatImageAttachments
 import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import java.time.Instant
@@ -368,7 +369,7 @@ object OverlayChatHistoryPanel {
                 )
             }
         } else {
-            val imageUrls = msg.attachments.filter { it.kind == "image" && it.url.isNotBlank() }
+            val imageUrls = msg.chatImageAttachments()
             if (imageUrls.isNotEmpty()) {
                 val firstUrl = resolvedChatAttachmentImageUrl(imageUrls.first().url)
                 val extra = (imageUrls.size - 1).coerceAtLeast(0)
