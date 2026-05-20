@@ -12,11 +12,23 @@ describe('UsersService', () => {
   const updateOneExec = jest.fn().mockResolvedValue({ modifiedCount: 1 });
   const updateOne = jest.fn().mockReturnValue({ exec: updateOneExec });
   const execFindById = jest.fn();
-  const findById = jest.fn().mockReturnValue({ exec: execFindById });
+  const execFindByIdLean = jest.fn();
+  const findById = jest.fn().mockImplementation(() => ({
+    exec: execFindById,
+    select: jest.fn().mockReturnValue({
+      lean: jest.fn().mockReturnValue({ exec: execFindByIdLean }),
+    }),
+  }));
   const execCollect = jest.fn();
+  const execFindIngame = jest.fn();
   const findForAlliance = jest.fn().mockReturnValue({
     select: jest.fn().mockReturnValue({
       lean: jest.fn().mockReturnValue({ exec: execCollect }),
+    }),
+  });
+  const findIngameList = jest.fn().mockReturnValue({
+    select: jest.fn().mockReturnValue({
+      lean: jest.fn().mockReturnValue({ exec: execFindIngame }),
     }),
   });
 
@@ -35,7 +47,12 @@ describe('UsersService', () => {
           useValue: {
             findById,
             updateOne,
-            find: findForAlliance,
+            find: jest.fn((filter: Record<string, unknown>) => {
+              if (filter?.presenceStatus === 'ingame') {
+                return findIngameList(filter);
+              }
+              return findForAlliance(filter);
+            }),
           },
         },
       ],
@@ -125,6 +142,37 @@ describe('UsersService', () => {
           },
         },
       );
+    });
+  });
+
+  describe('listOverlayIngameTeammateIds', () => {
+    it('returns teammate ids with fresh ingame overlay', async () => {
+      const teamId = new Types.ObjectId();
+      const mate = new Types.ObjectId();
+      execFindByIdLean.mockResolvedValue({
+        playerTeamId: teamId,
+        membershipStatus: TeamMembershipStatus.ACTIVE,
+      });
+      execFindIngame.mockResolvedValue([{ _id: mate }]);
+      const out = await usersService.listOverlayIngameTeammateIds(
+        '507f1f77bcf86cd799439011',
+      );
+      expect(out).toEqual([mate.toString()]);
+      const call = findIngameList.mock.calls[0][0] as Record<string, unknown>;
+      expect(call.presenceStatus).toBe('ingame');
+      expect(call.playerTeamId).toEqual(teamId);
+    });
+
+    it('returns empty when sender has no team', async () => {
+      execFindByIdLean.mockResolvedValue({
+        playerTeamId: null,
+        membershipStatus: TeamMembershipStatus.ACTIVE,
+      });
+      const out = await usersService.listOverlayIngameTeammateIds(
+        '507f1f77bcf86cd799439011',
+      );
+      expect(out).toEqual([]);
+      expect(findIngameList).not.toHaveBeenCalled();
     });
   });
 

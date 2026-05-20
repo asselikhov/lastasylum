@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import mongoose, { Model, Types } from 'mongoose';
 import { PlayerTeamMemberRole } from '../common/enums/player-team-member-role.enum';
 import {
   parseZlobyakaStickerStem,
@@ -227,6 +227,16 @@ export class TeamForumService {
     if (!ZLOBYAKA_STICKER_STEMS.has(stem)) {
       throw new BadRequestException('Unknown sticker');
     }
+  }
+
+  private rethrowMongooseValidation(err: unknown): never {
+    if (err instanceof mongoose.Error.ValidationError) {
+      const msg = Object.values(err.errors)
+        .map((e) => e.message)
+        .join('; ');
+      throw new BadRequestException(msg || 'Invalid forum message data');
+    }
+    throw err;
   }
 
   private asIdString(v: unknown): string | null {
@@ -596,15 +606,15 @@ export class TeamForumService {
     }
     const username =
       typeof senderDoc.username === 'string' ? senderDoc.username : userId;
-    const senderRole =
-      this.teams.getSquadRoleForUser(team, userId) ??
-      PlayerTeamMemberRole.R1;
+    const senderRole = this.teams.resolveSquadRoleForMember(team, userId);
     const senderTeamTag = senderDoc.teamTag ?? null;
-    this.assertZlobyakaStickerPayload(trimmed);
-    await this.stickerAccess.assertUserMaySendStickerMessage(
-      senderDoc as UserDocument,
-      trimmed,
-    );
+    if (trimmed) {
+      this.assertZlobyakaStickerPayload(trimmed);
+      await this.stickerAccess.assertUserMaySendStickerMessage(
+        senderDoc as UserDocument,
+        trimmed,
+      );
+    }
     const albumMetas: Array<{
       fileId: Types.ObjectId;
       mimeType: string;
@@ -637,26 +647,31 @@ export class TeamForumService {
           userId,
         )
       : null;
-    const doc = await this.messageModel.create({
-      topicId: topOid,
-      teamId: teamOid,
-      senderUserId: userId,
-      senderUsername: username,
-      senderRole,
-      senderTeamTag,
-      text: trimmed,
-      replyToMessageId: replyTarget?._id ?? null,
-      imageFileId: legacyMeta?.fileId ?? null,
-      imageFileIds: albumMetas.map((m) => m.fileId),
-      imageMimeType: legacyMeta?.mimeType ?? null,
-      imageSize: legacyMeta?.size ?? null,
-      fileFileId: fileMeta?.fileId ?? null,
-      fileFilename: fileMeta?.filename ?? null,
-      editedAt: null,
-      deletedAt: null,
-      deletedByUserId: null,
-      forwardedFrom: null,
-    });
+    let doc: TeamForumMessageDocument;
+    try {
+      doc = await this.messageModel.create({
+        topicId: topOid,
+        teamId: teamOid,
+        senderUserId: userId,
+        senderUsername: username,
+        senderRole,
+        senderTeamTag,
+        text: trimmed,
+        replyToMessageId: replyTarget?._id ?? null,
+        imageFileId: legacyMeta?.fileId ?? null,
+        imageFileIds: albumMetas.map((m) => m.fileId),
+        imageMimeType: legacyMeta?.mimeType ?? null,
+        imageSize: legacyMeta?.size ?? null,
+        fileFileId: fileMeta?.fileId ?? null,
+        fileFilename: fileMeta?.filename ?? null,
+        editedAt: null,
+        deletedAt: null,
+        deletedByUserId: null,
+        forwardedFrom: null,
+      });
+    } catch (err) {
+      this.rethrowMongooseValidation(err);
+    }
     topic.lastMessageAt = doc.createdAt ?? new Date();
     topic.messageCount = (topic.messageCount ?? 0) + 1;
     await topic.save();

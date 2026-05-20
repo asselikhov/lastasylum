@@ -23,6 +23,7 @@ import {
   TeamJoinRequestDocument,
   TeamJoinRequestStatus,
 } from './schemas/team-join-request.schema';
+import { squadMemberUserIdEquals } from './squad-member-id.util';
 
 export type PlayerTeamProfileFields = {
   playerTeamId: string | null;
@@ -274,8 +275,9 @@ export class TeamsService {
   }
 
   private assertMember(team: PlayerTeamDocument, userId: string): void {
-    const uid = new Types.ObjectId(userId);
-    const ok = team.squadMembers.some((m) => m.userId.equals(uid));
+    const ok = team.squadMembers.some((m) =>
+      squadMemberUserIdEquals(m.userId, userId),
+    );
     if (!ok) {
       throw new ForbiddenException('Not a member of this team');
     }
@@ -302,8 +304,9 @@ export class TeamsService {
     team: PlayerTeamDocument,
     userId: string,
   ): PlayerTeamMemberRole | null {
-    const uid = new Types.ObjectId(userId);
-    const m = team.squadMembers.find((x) => x.userId.equals(uid));
+    const m = team.squadMembers.find((x) =>
+      squadMemberUserIdEquals(x.userId, userId),
+    );
     return m?.role ?? null;
   }
 
@@ -587,7 +590,7 @@ export class TeamsService {
       throw new ConflictException('You already belong to a team');
     }
     const rid = new Types.ObjectId(requesterUserId);
-    if (team.squadMembers.some((m) => m.userId.equals(rid))) {
+    if (team.squadMembers.some((m) => squadMemberUserIdEquals(m.userId, requesterUserId))) {
       throw new ConflictException('Already a member');
     }
     const dup = await this.joinRequestModel.findOne({
@@ -699,7 +702,7 @@ export class TeamsService {
       throw new ConflictException('User already joined another team');
     }
     const rid = new Types.ObjectId(requesterId);
-    if (team.squadMembers.some((m) => m.userId.equals(rid))) {
+    if (team.squadMembers.some((m) => squadMemberUserIdEquals(m.userId, requesterId))) {
       reqDoc.status = TeamJoinRequestStatus.ACCEPTED;
       await reqDoc.save();
       return { ok: true };
@@ -760,7 +763,7 @@ export class TeamsService {
       throw new ConflictException('User already belongs to a team');
     }
     const tid = new Types.ObjectId(target._id.toString());
-    if (team.squadMembers.some((m) => m.userId.equals(tid))) {
+    if (team.squadMembers.some((m) => squadMemberUserIdEquals(m.userId, target._id.toString()))) {
       throw new ConflictException('Already a member');
     }
     await this.teamModel
@@ -794,7 +797,7 @@ export class TeamsService {
       throw new BadRequestException('Cannot remove the team leader');
     }
     const mid = new Types.ObjectId(memberUserId);
-    if (!team.squadMembers.some((m) => m.userId.equals(mid))) {
+    if (!team.squadMembers.some((m) => squadMemberUserIdEquals(m.userId, memberUserId))) {
       throw new NotFoundException('Member not on this team');
     }
     await this.teamModel
@@ -919,7 +922,7 @@ export class TeamsService {
     }
 
     const tid = new Types.ObjectId(targetUserId);
-    if (!team.squadMembers.some((m) => m.userId.equals(tid))) {
+    if (!team.squadMembers.some((m) => squadMemberUserIdEquals(m.userId, targetUserId))) {
       throw new NotFoundException('Member not on this team');
     }
     const res = await this.teamModel

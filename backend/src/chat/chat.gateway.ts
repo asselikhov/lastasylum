@@ -217,6 +217,24 @@ export class ChatGateway {
     });
   }
 
+  private normalizeOverlayReaction(raw: unknown): string {
+    const r = typeof raw === 'string' ? raw.trim() : '';
+    return ALLOWED_OVERLAY_REACTIONS.has(r) ? r : 'heart';
+  }
+
+  private overlayReactionPayload(
+    sender: GatewayUser,
+    targetUserId: string,
+    reaction: string,
+  ) {
+    return {
+      fromUserId: sender.userId,
+      fromUsername: sender.username,
+      reaction,
+      targetUserId,
+    };
+  }
+
   /**
    * Send a lightweight fullscreen overlay reaction to a teammate (same player team only).
    * Delivered to the recipient's sockets via room `user:<targetUserId>`.
@@ -235,11 +253,7 @@ export class ChatGateway {
     if (!targetUserId || !Types.ObjectId.isValid(targetUserId)) {
       throw new WsException('targetUserId is required');
     }
-    const rawReaction =
-      typeof body?.reaction === 'string' ? body.reaction.trim() : 'heart';
-    const reaction = ALLOWED_OVERLAY_REACTIONS.has(rawReaction)
-      ? rawReaction
-      : 'heart';
+    const reaction = this.normalizeOverlayReaction(body?.reaction);
 
     if (targetUserId === client.data.user.userId) {
       throw new WsException('Invalid recipient');
@@ -273,14 +287,70 @@ export class ChatGateway {
       throw new WsException('Recipient is not in your team');
     }
 
-    this.server?.to(`user:${targetUserId}`).emit('overlay:reaction', {
-      fromUserId: client.data.user.userId,
-      fromUsername: client.data.user.username,
-      reaction,
-      targetUserId,
-    });
+    this.server
+      ?.to(`user:${targetUserId}`)
+      .emit(
+        'overlay:reaction',
+        this.overlayReactionPayload(client.data.user, targetUserId, reaction),
+      );
 
     return { event: 'overlay:reaction:sent', data: { targetUserId, reaction } };
+  }
+
+  /**
+   * Broadcast overlay reaction to all teammates in game with a fresh overlay ping.
+   * Counts as a single send for rate limiting (not per recipient).
+   */
+  @SubscribeMessage('overlay:reaction:broadcast')
+  async broadcastOverlayReaction(
+    @ConnectedSocket() client: AuthSocket,
+    @MessageBody() body: { reaction?: string },
+  ) {
+    if (!client.data.user) {
+      throw new WsException('Unauthorized socket connection');
+    }
+    const reaction = this.normalizeOverlayReaction(body?.reaction);
+
+    this.assertWsOverlayReactionRate(client.data.user.userId);
+
+    await this.chatService.assertUserMayUseChat(client.data.user.userId);
+
+    const sender = await this.usersService.findById(client.data.user.userId);
+    if (!sender) {
+      throw new WsException('User not found');
+    }
+    if (
+      this.usersService.effectiveMembership(sender) !==
+      TeamMembershipStatus.ACTIVE
+    ) {
+      throw new WsException('Reaction is not available for this account');
+    }
+    if (!sender.playerTeamId) {
+      throw new WsException('You are not in a team');
+    }
+
+    const targetUserIds =
+      await this.usersService.listOverlayIngameTeammateIds(
+        client.data.user.userId,
+      );
+
+    for (const targetUserId of targetUserIds) {
+      this.server
+        ?.to(`user:${targetUserId}`)
+        .emit(
+          'overlay:reaction',
+          this.overlayReactionPayload(
+            client.data.user,
+            targetUserId,
+            reaction,
+          ),
+        );
+    }
+
+    return {
+      event: 'overlay:reaction:broadcast:sent',
+      data: { reaction, recipientCount: targetUserIds.length },
+    };
   }
 
   broadcastNewMessage(roomId: string, message: unknown) {

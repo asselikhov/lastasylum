@@ -180,6 +180,9 @@ class CombatOverlayService : Service() {
             emitOverlayReaction = { targetUserId, reactionId ->
                 AppContainer.from(this@CombatOverlayService).chatRepository.emitOverlayReaction(targetUserId, reactionId)
             },
+            emitOverlayReactionBroadcast = { reactionId ->
+                AppContainer.from(this@CombatOverlayService).chatRepository.emitOverlayReactionBroadcast(reactionId)
+            },
         )
     }
     private val presenceHeartbeat by lazy {
@@ -2354,7 +2357,11 @@ class CombatOverlayService : Service() {
             mainHandler.post {
                 if (!overlaySessionActive) return@post
                 val wm = windowManager ?: getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return@post
-                overlayCommandsPopover.showIncomingReactionBurst(wm, event.fromUsername)
+                overlayCommandsPopover.showIncomingReactionBurst(
+                    wm,
+                    event.fromUsername,
+                    event.reaction,
+                )
             }
         }
         overlayReactionListener = reactionListener

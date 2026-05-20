@@ -99,8 +99,13 @@ private fun translateKnownServerMessage(english: String, resources: Resources): 
         resources.getString(R.string.chat_global_team_required)
     english.contains("Only image uploads are supported", ignoreCase = true) ->
         resources.getString(R.string.chat_attachment_only_images_server)
-    english.contains("CHAT_ATTACHMENT_R2_PUT_FAILED", ignoreCase = true) ->
+    english.contains("CHAT_ATTACHMENT_R2_PUT_FAILED", ignoreCase = true) ||
+        english.contains("TEAM_NEWS_ATTACHMENT_R2_PUT_FAILED", ignoreCase = true) ->
         resources.getString(R.string.chat_attachment_r2_put_failed)
+    english.contains("Image must be uploaded by the message sender", ignoreCase = true) ||
+        english.contains("Image not found for this team", ignoreCase = true) ||
+        english.contains("Invalid image file id", ignoreCase = true) ->
+        resources.getString(R.string.chat_attachment_read_failed)
     english.contains("Only alliance admins", ignoreCase = true) ||
         english.contains("may upload APK", ignoreCase = true) ->
         resources.getString(R.string.chat_attachment_apk_only_server)

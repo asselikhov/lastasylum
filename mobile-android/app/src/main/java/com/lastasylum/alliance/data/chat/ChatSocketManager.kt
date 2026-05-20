@@ -113,6 +113,14 @@ class ChatSocketManager {
         )
     }
 
+    /** One server-side fan-out to all teammates in game with overlay (single rate-limit slot). */
+    fun emitOverlayReactionBroadcast(reaction: String = "heart") {
+        socket?.emit(
+            "overlay:reaction:broadcast",
+            JSONObject().put("reaction", reaction),
+        )
+    }
+
     fun connect(
         baseUrl: String,
         roomIds: List<String>,

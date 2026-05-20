@@ -9,6 +9,8 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { R2Service } from '../chat/r2.service';
+import { attachmentUploaderIdEquals } from './squad-member-id.util';
+import { resolveTeamNewsImageMime } from './team-news-image-mime.util';
 import {
   TeamNewsAttachment,
   TeamNewsAttachmentDocument,
@@ -48,10 +50,8 @@ export class TeamNewsAttachmentsService {
     mimeType: string;
     size: number;
   }): Promise<UploadedTeamNewsImage> {
-    const { buffer, mimeType, size } = input;
-    if (!mimeType.startsWith('image/')) {
-      throw new BadRequestException('Only image uploads are supported');
-    }
+    const { buffer, size } = input;
+    const mimeType = resolveTeamNewsImageMime(buffer, input.mimeType);
 
     const ext = mimeType.split('/')[1]?.trim() || 'bin';
     const safeExt = ext.replace(/[^a-zA-Z0-9]+/g, '').slice(0, 8) || 'bin';
@@ -187,7 +187,7 @@ export class TeamNewsAttachmentsService {
       throw new BadRequestException('One or more images not found for this team');
     }
     for (const d of docs) {
-      if (d.uploaderUserId !== uploaderUserId) {
+      if (!attachmentUploaderIdEquals(d.uploaderUserId, uploaderUserId)) {
         throw new ForbiddenException(
           'Images must be uploaded by the author of the news post',
         );
@@ -217,7 +217,7 @@ export class TeamNewsAttachmentsService {
     if (!doc) {
       throw new BadRequestException('Image not found for this team');
     }
-    if (doc.uploaderUserId !== uploaderUserId) {
+    if (!attachmentUploaderIdEquals(doc.uploaderUserId, uploaderUserId)) {
       throw new ForbiddenException(
         'Image must be uploaded by the message sender',
       );
@@ -256,7 +256,7 @@ export class TeamNewsAttachmentsService {
     if (!doc) {
       throw new BadRequestException('File not found for this team');
     }
-    if (doc.uploaderUserId !== uploaderUserId) {
+    if (!attachmentUploaderIdEquals(doc.uploaderUserId, uploaderUserId)) {
       throw new ForbiddenException(
         'File must be uploaded by the message sender',
       );

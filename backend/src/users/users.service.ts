@@ -441,8 +441,51 @@ export class UsersService {
       .exec();
   }
 
-  /** Same freshness window as overlay «online in game» list (~90s). */
+  /** Push alerts: treat overlay as inactive after ~90s without ingame ping. */
   private static readonly OVERLAY_INGAME_STALE_MS = 90_000;
+
+  /**
+   * «Участники онлайн» / broadcast reactions — matches Android
+   * [OVERLAY_INGAME_PRESENCE_STALE_MS] (3× heartbeat).
+   */
+  static readonly OVERLAY_INGAME_LIST_STALE_MS = 135_000;
+
+  /**
+   * Teammates currently in game with a fresh overlay heartbeat (excluding sender).
+   */
+  async listOverlayIngameTeammateIds(excludeUserId: string): Promise<string[]> {
+    if (!Types.ObjectId.isValid(excludeUserId)) {
+      return [];
+    }
+    const sender = await this.userModel
+      .findById(excludeUserId)
+      .select('playerTeamId membershipStatus')
+      .lean<{ playerTeamId?: Types.ObjectId | null; membershipStatus?: string }>()
+      .exec();
+    if (
+      !sender?.playerTeamId ||
+      this.effectiveMembership(sender as UserDocument) !==
+        TeamMembershipStatus.ACTIVE
+    ) {
+      return [];
+    }
+    const staleBefore = new Date(
+      Date.now() - UsersService.OVERLAY_INGAME_LIST_STALE_MS,
+    );
+    const excludeOid = new Types.ObjectId(excludeUserId);
+    const rows = await this.userModel
+      .find({
+        playerTeamId: sender.playerTeamId,
+        _id: { $ne: excludeOid },
+        membershipStatus: TeamMembershipStatus.ACTIVE,
+        presenceStatus: 'ingame',
+        lastPresenceAt: { $gte: staleBefore },
+      })
+      .select('_id')
+      .lean<Array<{ _id: Types.ObjectId }>>()
+      .exec();
+    return rows.map((r) => r._id.toString());
+  }
 
   async collectPushTokensForExcavationAlert(
     allianceId: string,

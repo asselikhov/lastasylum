@@ -28,8 +28,11 @@ import android.widget.TextView
 import android.widget.HorizontalScrollView
 import android.widget.Toast
 import androidx.annotation.DrawableRes
+import androidx.annotation.RawRes
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.graphics.drawable.DrawableCompat
+import com.airbnb.lottie.LottieAnimationView
+import com.airbnb.lottie.LottieDrawable
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
@@ -39,11 +42,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** Время показа входящей реакции на экране (мс). */
+private const val OVERLAY_REACTION_BURST_VISIBLE_MS = 5_000L
+
 private data class OverlayQuickReaction(
     val id: String,
     @DrawableRes val iconRes: Int,
     val labelRes: Int,
     val tintHex: String,
+    @RawRes val lottieRawRes: Int? = null,
 )
 
 /** Расширяемый каталог: новые реакции — новая строка в списке. */
@@ -53,6 +60,7 @@ private fun overlayQuickReactionCatalog(): List<OverlayQuickReaction> = listOf(
         iconRes = R.drawable.ic_overlay_cmd_reaction,
         labelRes = R.string.overlay_reaction_heart_cd,
         tintHex = "#FFFF5252",
+        lottieRawRes = R.raw.overlay_reaction_heart,
     ),
     OverlayQuickReaction(
         id = "thumbs",
@@ -84,11 +92,13 @@ class OverlayCommandsPopover(
     private val dp: (Int) -> Int,
     private val sendCoords: suspend (label: String, x: Int, y: Int, excavation: Boolean) -> Result<ChatMessage>,
     private val emitOverlayReaction: (targetUserId: String, reactionId: String) -> Unit = { _, _ -> },
+    private val emitOverlayReactionBroadcast: (reactionId: String) -> Unit = {},
 ) {
     private var menuScrim: FrameLayout? = null
     private var coordScrim: FrameLayout? = null
     private var reactionPickScrim: FrameLayout? = null
     private var reactionBurstScrim: FrameLayout? = null
+    private var reactionBurstLottie: LottieAnimationView? = null
     private var heartPreviewAnimator: Animator? = null
     private var attachedWindowManager: WindowManager? = null
     private var gameGateSuppressHeld = false
@@ -121,6 +131,8 @@ class OverlayCommandsPopover(
     }
 
     private fun hideReactionBurstOnly() {
+        reactionBurstLottie?.cancelAnimation()
+        reactionBurstLottie = null
         removeShell(reactionBurstScrim)
         reactionBurstScrim = null
         if (!isShowing()) {
@@ -190,9 +202,13 @@ class OverlayCommandsPopover(
         showMenu(windowManager)
     }
 
-    /** Показать вспышку сердца от сокомандника (пришла по сокету). */
-    fun showIncomingReactionBurst(windowManager: WindowManager, fromUsername: String) {
-        showReactionBurst(windowManager, fromUsername)
+    /** Показать вспышку реакции от сокомандника (пришла по сокету). */
+    fun showIncomingReactionBurst(
+        windowManager: WindowManager,
+        fromUsername: String,
+        reactionId: String = "heart",
+    ) {
+        showReactionBurst(windowManager, fromUsername, reactionId)
     }
 
     private fun overlayWindowType(): Int =
@@ -1090,6 +1106,48 @@ class OverlayCommandsPopover(
         }
     }
 
+    private fun reactionSendAllRow(memberCount: Int, onPick: () -> Unit): LinearLayout {
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = rippleOn(
+                roundedRect(
+                    fillColor = Color.parseColor("#2A1E2838"),
+                    strokeColor = Color.parseColor("#55FFB74D"),
+                    cornerDp = 12,
+                ),
+            )
+            isClickable = true
+            setOnClickListener { onPick() }
+        }
+        val name = labelText(
+            context.getString(R.string.overlay_reactions_send_all),
+            13.5f,
+            Color.parseColor("#FFFFE082"),
+            bold = true,
+        )
+        val subtitle = labelText(
+            context.getString(R.string.overlay_reactions_send_all_subtitle, memberCount),
+            10f,
+            Color.parseColor("#9AB0C4D8"),
+        )
+        val textCol = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(name)
+            addView(subtitle)
+        }
+        row.addView(
+            textCol,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+        )
+        row.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply { bottomMargin = dp(10) }
+        return row
+    }
+
     private fun memberPickRow(
         member: PlayerTeamMemberDto,
         onPick: () -> Unit,
@@ -1285,6 +1343,20 @@ class OverlayCommandsPopover(
                                 ),
                             )
                         } else {
+                            listColumn.addView(
+                                reactionSendAllRow(members.size) {
+                                    hideReactionPickOnly()
+                                    emitOverlayReactionBroadcast(reactionId)
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(
+                                            R.string.overlay_reaction_sent_all,
+                                            members.size,
+                                        ),
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                },
+                            )
                             members.forEach { m ->
                                 listColumn.addView(
                                     memberPickRow(m) {
@@ -1313,24 +1385,46 @@ class OverlayCommandsPopover(
             setStroke(dp(1).coerceAtLeast(1), Color.parseColor("#4D5C7499"))
         }
 
-    private fun showReactionBurst(windowManager: WindowManager, subtitleUsername: String) {
+    private fun overlayQuickReactionById(reactionId: String): OverlayQuickReaction =
+        overlayQuickReactionCatalog().find { it.id == reactionId }
+            ?: overlayQuickReactionCatalog().first()
+
+    private fun createReactionBurstAnimView(reaction: OverlayQuickReaction): View {
+        val lottieRes = reaction.lottieRawRes
+        if (lottieRes != null) {
+            return LottieAnimationView(context).apply {
+                setAnimation(lottieRes)
+                repeatCount = LottieDrawable.INFINITE
+                playAnimation()
+            }.also { reactionBurstLottie = it }
+        }
+        return ImageView(context).apply {
+            setImageDrawable(
+                AppCompatResources.getDrawable(context, reaction.iconRes)?.mutate()?.also { d ->
+                    DrawableCompat.setTint(d, Color.parseColor(reaction.tintHex))
+                },
+            )
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }
+    }
+
+    private fun showReactionBurst(
+        windowManager: WindowManager,
+        subtitleUsername: String,
+        reactionId: String = "heart",
+    ) {
         hideReactionBurstOnly()
         acquireGameGateSuppress()
         attachedWindowManager = windowManager
 
         val displayName = subtitleUsername.trim().ifBlank { "—" }
+        val reaction = overlayQuickReactionById(reactionId)
 
         val root = FrameLayout(context).apply {
             setBackgroundColor(Color.argb(38, 6, 12, 22))
         }
-        val heart = ImageView(context).apply {
-            setImageDrawable(
-                AppCompatResources.getDrawable(context, R.drawable.ic_overlay_cmd_reaction)?.mutate()?.also { d ->
-                    DrawableCompat.setTint(d, Color.parseColor("#FFFF5252"))
-                },
-            )
-            scaleType = ImageView.ScaleType.FIT_CENTER
-        }
+        val burstAnimSize = if (reaction.lottieRawRes != null) dp(160) else dp(120)
+        val heart = createReactionBurstAnimView(reaction)
         val accentBar = View(context).apply {
             background = GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
@@ -1384,7 +1478,7 @@ class OverlayCommandsPopover(
         val stack = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            addView(heart, LinearLayout.LayoutParams(dp(120), dp(120)))
+            addView(heart, LinearLayout.LayoutParams(burstAnimSize, burstAnimSize))
             addView(
                 textCard,
                 LinearLayout.LayoutParams(
@@ -1487,7 +1581,7 @@ class OverlayCommandsPopover(
                 }
                 done.start()
             },
-            2800L,
+            OVERLAY_REACTION_BURST_VISIBLE_MS,
         )
     }
 

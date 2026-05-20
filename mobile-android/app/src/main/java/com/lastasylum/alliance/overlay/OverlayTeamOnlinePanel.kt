@@ -59,7 +59,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private data class OnlineListItem(
-    val sectionTitle: String?,
     val member: PlayerTeamMemberDto,
     val key: String,
 )
@@ -73,29 +72,15 @@ private fun allianceRoleRank(role: String): Int = when (role.trim().uppercase())
     else -> 0
 }
 
-private fun buildOnlineListItems(members: List<PlayerTeamMemberDto>): List<OnlineListItem> {
-    val sorted = members.sortedWith(
-        compareByDescending<PlayerTeamMemberDto> { allianceRoleRank(it.allianceRole) }
-            .thenBy { it.username.lowercase() },
-    )
-    val out = mutableListOf<OnlineListItem>()
-    var lastRole: String? = null
-    for (member in sorted) {
-        val role = member.allianceRole.trim().uppercase().ifBlank { "R2" }
-        val sectionTitle = if (role != lastRole) role else null
-        if (sectionTitle != null) {
-            lastRole = role
-        }
-        out.add(
-            OnlineListItem(
-                sectionTitle = sectionTitle,
-                member = member,
-                key = "${member.userId}:$role:${sectionTitle != null}",
-            ),
+private fun buildOnlineListItems(members: List<PlayerTeamMemberDto>): List<OnlineListItem> =
+    members
+        .sortedWith(
+            compareByDescending<PlayerTeamMemberDto> { allianceRoleRank(it.allianceRole) }
+                .thenBy { it.username.lowercase() },
         )
-    }
-    return out
-}
+        .map { member ->
+            OnlineListItem(member = member, key = member.userId)
+        }
 
 @Composable
 fun OverlayTeamOnlinePanel(
@@ -268,15 +253,6 @@ fun OverlayTeamOnlinePanel(
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         items(listItems, key = { it.key }) { item ->
-                            if (item.sectionTitle != null) {
-                                Text(
-                                    text = item.sectionTitle,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
-                                )
-                            }
                             val peer = voicePeers[item.member.userId]
                             OverlayTeamOnlineMemberCard(
                                 member = item.member,

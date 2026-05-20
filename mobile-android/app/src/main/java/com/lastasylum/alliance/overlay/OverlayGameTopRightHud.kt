@@ -1,7 +1,6 @@
 package com.lastasylum.alliance.overlay
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MicOff
@@ -11,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import com.lastasylum.alliance.R
 
@@ -47,8 +47,8 @@ fun OverlayGameTopRightHud(
                 onClick = onOnlineClick,
             )
             OverlayGameHudChip(
-                icon = Icons.AutoMirrored.Outlined.Chat,
-                tint = Color(0xFFB39DDB),
+                painter = painterResource(R.drawable.ic_overlay_quick_commands),
+                tint = Color(0xFFFFB74D),
                 contentDescription = stringResource(R.string.overlay_cd_commands),
                 onClick = onQuickCommandsClick,
             )

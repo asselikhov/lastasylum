@@ -227,6 +227,10 @@ class ChatRepository(
         socketManager.emitOverlayReaction(targetUserId, reaction)
     }
 
+    fun emitOverlayReactionBroadcast(reaction: String = "heart") {
+        socketManager.emitOverlayReactionBroadcast(reaction)
+    }
+
     fun addOverlayReactionListener(listener: (OverlayReactionEvent) -> Unit) {
         if (!overlayReactionListeners.contains(listener)) {
             overlayReactionListeners.add(listener)
