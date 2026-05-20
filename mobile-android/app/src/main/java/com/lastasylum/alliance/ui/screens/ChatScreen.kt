@@ -181,6 +181,7 @@ import com.lastasylum.alliance.ui.chat.ChatBubbleAttachmentsWithCaption
 import com.lastasylum.alliance.ui.chat.MessengerImagesPreviewHost
 import com.lastasylum.alliance.ui.components.ChatRoomTabAccents
 import com.lastasylum.alliance.ui.components.ChatRoomTabSpec
+import com.lastasylum.alliance.ui.components.ChatRoomVisualKind
 import com.lastasylum.alliance.ui.components.ChatRoomsSwitcher
 import com.lastasylum.alliance.ui.chat.ChatViewModel
 import com.lastasylum.alliance.ui.chat.ChatBubbleAuthorHeader
@@ -200,6 +201,7 @@ import com.lastasylum.alliance.ui.theme.roleAccentColor
 import com.lastasylum.alliance.ui.chat.MessageSheetActionRow
 import com.lastasylum.alliance.ui.chat.MessageSheetDividerSpaced
 import com.lastasylum.alliance.ui.chat.MessageSheetPreviewSurface
+import com.lastasylum.alliance.ui.util.chatRoomTabLabelForServer
 import com.lastasylum.alliance.ui.util.chatMessageHasCopyableContent
 import com.lastasylum.alliance.ui.util.appendTextToDraft
 import com.lastasylum.alliance.ui.util.chatMessageHasPasteableText
@@ -1385,14 +1387,6 @@ private fun ChatMessagesLazyList(
     }
 }
 
-private enum class ChatRoomVisualKind {
-    GlobalUnion,
-    Server,
-    Raid,
-    AllianceHub,
-    Other,
-}
-
 private fun com.lastasylum.alliance.data.chat.ChatRoomDto.chatRoomVisualKind(): ChatRoomVisualKind =
     when {
         allianceId == ChatAllianceIds.GLOBAL -> ChatRoomVisualKind.GlobalUnion
@@ -1421,13 +1415,7 @@ private fun ChatRoomsBar(
     val tabs = remember(roomsKey) {
         rooms.map { room ->
             val kind = room.chatRoomVisualKind()
-            val accent = when (kind) {
-                ChatRoomVisualKind.GlobalUnion -> ChatRoomTabAccents.union
-                ChatRoomVisualKind.Server -> ChatRoomTabAccents.hub
-                ChatRoomVisualKind.Raid -> ChatRoomTabAccents.raid
-                ChatRoomVisualKind.AllianceHub -> ChatRoomTabAccents.hub
-                ChatRoomVisualKind.Other -> ChatRoomTabAccents.other
-            }
+            val (accent, accentEnd) = ChatRoomTabAccents.accentFor(kind, room.allianceId)
             val icon = when (kind) {
                 ChatRoomVisualKind.GlobalUnion -> Icons.Outlined.Public
                 ChatRoomVisualKind.Server -> Icons.Outlined.Tag
@@ -1435,12 +1423,19 @@ private fun ChatRoomsBar(
                 ChatRoomVisualKind.AllianceHub -> Icons.Outlined.Shield
                 ChatRoomVisualKind.Other -> Icons.Outlined.ChatBubbleOutline
             }
+            val label = when (kind) {
+                ChatRoomVisualKind.Server ->
+                    chatRoomTabLabelForServer(room.title, room.allianceId)
+                else -> room.title
+            }
             ChatRoomTabSpec(
                 id = room.id,
-                label = room.title,
+                label = label,
                 icon = icon,
                 accent = accent,
+                accentEnd = accentEnd,
                 unreadCount = room.unreadCount,
+                iconGlyph = if (kind == ChatRoomVisualKind.Server) "#" else null,
             )
         }
     }
