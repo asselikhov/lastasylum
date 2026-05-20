@@ -176,6 +176,45 @@ export class ChatService {
     return name.length > 0 && tag.length > 0;
   }
 
+  private assertNotMuted(user: UserDocument): void {
+    const now = new Date();
+    if (user.mutedUntil && user.mutedUntil > now) {
+      throw new ForbiddenException(
+        'You are temporarily muted in alliance chat',
+      );
+    }
+  }
+
+  private assertGlobalChatBrandingIfNeeded(
+    allianceId: string,
+    user: UserDocument,
+  ): void {
+    if (
+      allianceId === GLOBAL_CHAT_ALLIANCE_ID &&
+      !this.hasCompleteTeamBranding(user)
+    ) {
+      throw new ForbiddenException('GLOBAL_CHAT_TEAM_PROFILE_REQUIRED');
+    }
+  }
+
+  private async assertMayAccessMessageRoom(
+    userId: string,
+    message: MessageLean,
+  ): Promise<void> {
+    const actor = await this.usersService.findById(userId);
+    if (!actor) {
+      throw new ForbiddenException('User not found');
+    }
+    if (
+      !userMayAccessChatRoom(actor, {
+        allianceId: message.allianceId,
+        archivedAt: null,
+      })
+    ) {
+      throw new ForbiddenException('Room is not available for your alliance');
+    }
+  }
+
   private async assertRoomForUser(
     userId: string,
     roomId: string,
@@ -436,23 +475,13 @@ export class ChatService {
     ) {
       throw new ForbiddenException('Chat is not available for this account');
     }
-    const now = new Date();
-    if (authorUser.mutedUntil && authorUser.mutedUntil > now) {
-      throw new ForbiddenException(
-        'You are temporarily muted in alliance chat',
-      );
-    }
+    this.assertNotMuted(authorUser);
 
     const { allianceId, roomObjectId } = await this.assertRoomForUser(
       input.author.userId,
       input.roomId,
     );
-    if (
-      allianceId === GLOBAL_CHAT_ALLIANCE_ID &&
-      !this.hasCompleteTeamBranding(authorUser)
-    ) {
-      throw new ForbiddenException('GLOBAL_CHAT_TEAM_PROFILE_REQUIRED');
-    }
+    this.assertGlobalChatBrandingIfNeeded(allianceId, authorUser);
     const replyTarget = await this.getReplyTarget(
       allianceId,
       roomObjectId,
@@ -577,8 +606,10 @@ export class ChatService {
     await this.assertUserMayUseChat(userId);
     const actor = await this.usersService.findById(userId);
     if (!actor) throw new ForbiddenException('User not found');
+    this.assertNotMuted(actor);
     const message = await this.messageModel.findById(messageId).exec();
     if (!message) throw new NotFoundException('Message not found');
+    await this.assertMayAccessMessageRoom(userId, message.toObject<MessageLean>());
     const mayEdit =
       message.senderId === userId || actor.role === AllianceRole.R5;
     if (!mayEdit) {
@@ -603,10 +634,14 @@ export class ChatService {
       throw new BadRequestException('Invalid message id');
     }
     await this.assertUserMayUseChat(userId);
+    const actor = await this.usersService.findById(userId);
+    if (!actor) throw new ForbiddenException('User not found');
+    this.assertNotMuted(actor);
     const trimmed = emoji.trim();
     if (!trimmed) throw new BadRequestException('emoji is required');
     const message = await this.messageModel.findById(messageId).exec();
     if (!message) throw new NotFoundException('Message not found');
+    await this.assertMayAccessMessageRoom(userId, message.toObject<MessageLean>());
     const list = (message.reactions ?? []) as { emoji: string; userIds: string[] }[];
     const r = list.find((x) => x.emoji === trimmed);
     if (!r) {
@@ -632,10 +667,12 @@ export class ChatService {
     await this.assertUserMayUseChat(userId);
     const actor = await this.usersService.findById(userId);
     if (!actor) throw new ForbiddenException('User not found');
+    this.assertNotMuted(actor);
     const { allianceId, roomObjectId } = await this.assertRoomForUser(
       userId,
       roomId,
     );
+    this.assertGlobalChatBrandingIfNeeded(allianceId, actor);
     const source = await this.messageModel
       .findOne({
         _id: new Types.ObjectId(sourceMessageId),

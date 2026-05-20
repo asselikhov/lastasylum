@@ -28,6 +28,12 @@ fun Throwable.toUserMessageRu(resources: Resources): String {
             403 -> when {
                 raw.contains("GLOBAL_CHAT_TEAM_PROFILE_REQUIRED", ignoreCase = true) ->
                     resources.getString(R.string.chat_global_team_required)
+                raw.contains("temporarily muted", ignoreCase = true) ->
+                    resources.getString(R.string.err_chat_muted)
+                raw.contains("Chat is not available", ignoreCase = true) ->
+                    resources.getString(R.string.err_chat_unavailable)
+                raw.contains("Room is not available", ignoreCase = true) ->
+                    resources.getString(R.string.err_chat_room_unavailable)
                 raw.contains("Account pending administrator approval", ignoreCase = true) ->
                     resources.getString(R.string.err_pending_approval)
                 else -> resources.getString(R.string.err_forbidden)

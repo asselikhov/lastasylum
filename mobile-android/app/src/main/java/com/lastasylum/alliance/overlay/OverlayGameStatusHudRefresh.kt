@@ -119,6 +119,7 @@ internal object OverlayGameStatusHudRefresh {
         rooms.firstOrNull { room ->
             room.sortOrder == 1 &&
                 !room.allianceId.isNullOrBlank() &&
+                room.allianceId.startsWith("pt:") &&
                 room.allianceId != ChatAllianceIds.GLOBAL &&
                 !ChatAllianceIds.isServerScope(room.allianceId)
         }

@@ -165,6 +165,32 @@ export class TeamsService {
     return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
+  /** Squad roster membership (authoritative), not only denormalized `user.playerTeamId`. */
+  private async findSquadMembershipTeamId(
+    userId: string,
+  ): Promise<Types.ObjectId | null> {
+    if (!Types.ObjectId.isValid(userId)) {
+      return null;
+    }
+    const oid = new Types.ObjectId(userId);
+    const team = await this.teamModel
+      .findOne({ 'squadMembers.userId': oid })
+      .select('_id')
+      .lean<{ _id: Types.ObjectId }>()
+      .exec();
+    return team?._id ?? null;
+  }
+
+  private async assertUserNotInAnySquad(
+    userId: string,
+    exceptTeamId?: Types.ObjectId,
+  ): Promise<void> {
+    const existing = await this.findSquadMembershipTeamId(userId);
+    if (existing && (!exceptTeamId || !existing.equals(exceptTeamId))) {
+      throw new ConflictException('You already belong to a team');
+    }
+  }
+
   private async findTeamByDisplayNameCaseInsensitive(
     displayName: string,
     excludeId?: Types.ObjectId,
@@ -244,7 +270,11 @@ export class TeamsService {
   async getPlayerTeamProfileFields(
     user: UserDocument,
   ): Promise<PlayerTeamProfileFields> {
-    if (!user.playerTeamId) {
+    const squadTeamId = await this.findSquadMembershipTeamId(
+      user._id.toString(),
+    );
+    const teamOid = squadTeamId ?? user.playerTeamId;
+    if (!teamOid) {
       return {
         playerTeamId: null,
         playerTeamTag: null,
@@ -254,7 +284,7 @@ export class TeamsService {
         pendingPlayerTeamJoinRequests: 0,
       };
     }
-    const team = await this.teamModel.findById(user.playerTeamId).exec();
+    const team = await this.teamModel.findById(teamOid).exec();
     if (!team) {
       return {
         playerTeamId: null,
@@ -417,9 +447,7 @@ export class TeamsService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    if (user.playerTeamId) {
-      throw new ConflictException('You already belong to a team');
-    }
+    await this.assertUserNotInAnySquad(userId);
     const tag = this.normalizeTag(rawTag);
     const nameTrim = displayName.trim();
     if (nameTrim.length < 2) {
@@ -631,9 +659,7 @@ export class TeamsService {
     if (!requester) {
       throw new NotFoundException('User not found');
     }
-    if (requester.playerTeamId) {
-      throw new ConflictException('You already belong to a team');
-    }
+    await this.assertUserNotInAnySquad(requesterUserId);
     const rid = new Types.ObjectId(requesterUserId);
     if (team.squadMembers.some((m) => squadMemberUserIdEquals(m.userId, requesterUserId))) {
       throw new ConflictException('Already a member');
@@ -696,6 +722,7 @@ export class TeamsService {
       .lean<
         Array<{
           _id: Types.ObjectId;
+          teamId: Types.ObjectId;
           requesterUserId: Types.ObjectId;
           createdAt?: Date;
         }>
@@ -704,16 +731,21 @@ export class TeamsService {
     const userIds = [...new Set(reqs.map((r) => r.requesterUserId.toString()))];
     const users = await this.userModel
       .find({ _id: { $in: userIds.map((id) => new Types.ObjectId(id)) } })
-      .select('username')
-      .lean<Array<{ _id: Types.ObjectId; username: string }>>()
       .exec();
-    const uname = new Map(users.map((u) => [u._id.toString(), u.username]));
-    return reqs.map((r) => ({
-      id: r._id.toString(),
-      requesterUserId: r.requesterUserId.toString(),
-      requesterUsername: uname.get(r.requesterUserId.toString()) ?? '?',
-      createdAt: (r.createdAt ?? new Date()).toISOString(),
-    }));
+    const byId = new Map(users.map((u) => [u._id.toString(), u]));
+    return reqs.map((r) => {
+      const teamIdStr = r.teamId?.toString() ?? '';
+      const requester = byId.get(r.requesterUserId.toString());
+      const displayName = requester
+        ? this.gameIdentities.resolveMemberDisplayNickname(requester, teamIdStr)
+        : '?';
+      return {
+        id: r._id.toString(),
+        requesterUserId: r.requesterUserId.toString(),
+        requesterUsername: displayName,
+        createdAt: (r.createdAt ?? new Date()).toISOString(),
+      };
+    });
   }
 
   private async assertTeamLeader(
@@ -748,9 +780,12 @@ export class TeamsService {
     if (!requester) {
       throw new NotFoundException('User not found');
     }
-    if (requester.playerTeamId) {
-      throw new ConflictException('User already joined another team');
+    await this.assertUserNotInAnySquad(requesterId, team._id);
+    const serverNumber = this.resolveActiveServerNumber(requester);
+    if (serverNumber == null) {
+      throw new BadRequestException('ACTIVE_GAME_SERVER_REQUIRED');
     }
+    await this.assertTeamHasMemberOnServer(team._id, serverNumber);
     const rid = new Types.ObjectId(requesterId);
     if (team.squadMembers.some((m) => squadMemberUserIdEquals(m.userId, requesterId))) {
       reqDoc.status = TeamJoinRequestStatus.ACCEPTED;
@@ -809,13 +844,16 @@ export class TeamsService {
     if (target._id.equals(team.leaderUserId)) {
       throw new BadRequestException('Leader is already on the team');
     }
-    if (target.playerTeamId) {
-      throw new ConflictException('User already belongs to a team');
-    }
+    await this.assertUserNotInAnySquad(target._id.toString());
     const tid = new Types.ObjectId(target._id.toString());
     if (team.squadMembers.some((m) => squadMemberUserIdEquals(m.userId, target._id.toString()))) {
       throw new ConflictException('Already a member');
     }
+    const serverNumber = this.resolveActiveServerNumber(target);
+    if (serverNumber == null) {
+      throw new BadRequestException('ACTIVE_GAME_SERVER_REQUIRED');
+    }
+    await this.assertTeamHasMemberOnServer(team._id, serverNumber);
     await this.teamModel
       .updateOne(
         { _id: team._id },

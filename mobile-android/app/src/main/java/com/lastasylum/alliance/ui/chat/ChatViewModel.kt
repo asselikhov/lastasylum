@@ -216,28 +216,32 @@ class ChatViewModel(
         }
     }
 
+    private fun isAllianceRaidRoom(room: ChatRoomDto): Boolean =
+        room.sortOrder == 2 &&
+            !room.allianceId.isNullOrBlank() &&
+            room.allianceId.startsWith("pt:")
+
+    private fun isAllianceHubRoom(room: ChatRoomDto): Boolean =
+        room.sortOrder == 1 &&
+            !room.allianceId.isNullOrBlank() &&
+            room.allianceId != ChatAllianceIds.GLOBAL &&
+            !ChatAllianceIds.isServerScope(room.allianceId)
+
     private fun sortChatRoomsForDisplay(rooms: List<ChatRoomDto>): List<ChatRoomDto> =
         rooms.sortedWith(
             compareBy<ChatRoomDto> { room ->
                 when {
                     room.allianceId == ChatAllianceIds.GLOBAL -> 0
                     ChatAllianceIds.isServerScope(room.allianceId) -> 1
-                    room.sortOrder == 1 &&
-                        room.allianceId != ChatAllianceIds.GLOBAL &&
-                        !ChatAllianceIds.isServerScope(room.allianceId) -> 2
-                    room.title == "Рейд" -> 3
+                    isAllianceHubRoom(room) -> 2
+                    isAllianceRaidRoom(room) -> 3
                     else -> 4
                 }
             }.thenBy { it.sortOrder }.thenBy { it.title },
         )
 
     private fun syncRaidRoomPreference(rooms: List<ChatRoomDto>) {
-        val raid = rooms.firstOrNull { room ->
-            room.title == "Рейд" &&
-                room.allianceId != null &&
-                room.allianceId != ChatAllianceIds.GLOBAL &&
-                room.allianceId.startsWith("pt:")
-        }
+        val raid = rooms.firstOrNull { isAllianceRaidRoom(it) }
         if (raid != null) {
             chatRoomPreferences.setRaidRoomId(raid.id)
         } else {
@@ -266,12 +270,28 @@ class ChatViewModel(
     }
 
     private fun allianceHubRoomId(rooms: List<ChatRoomDto>): String? =
-        rooms.firstOrNull { room ->
-            room.sortOrder == 1 &&
-                !room.allianceId.isNullOrBlank() &&
-                room.allianceId != ChatAllianceIds.GLOBAL &&
-                !ChatAllianceIds.isServerScope(room.allianceId)
-        }?.id
+        rooms.firstOrNull { isAllianceHubRoom(it) }?.id
+
+    private fun globalSendBlocked(
+        roomId: String,
+        messageText: String,
+        replyToMessageId: String?,
+    ): Boolean {
+        val room = _state.value.rooms.find { it.id == roomId } ?: return false
+        if (room.allianceId != ChatAllianceIds.GLOBAL ||
+            _state.value.hasTeamProfileForGlobalChat
+        ) {
+            return false
+        }
+        _state.value = _state.value.copy(
+            sendFailure = ChatSendFailure(
+                messageText = messageText,
+                replyToMessageId = replyToMessageId,
+                errorMessage = res.getString(com.lastasylum.alliance.R.string.chat_global_team_required),
+            ),
+        )
+        return true
+    }
 
     private suspend fun bootstrap(preferAllianceHubRoom: Boolean = false) {
         _state.value = _state.value.copy(isRoomsLoading = true, error = null)
@@ -653,19 +673,7 @@ class ChatViewModel(
         if (trimmed.isBlank()) return
         val roomId = _state.value.selectedRoomId ?: return
         val replyToMessageId = replyOverride ?: _state.value.replyToMessage?._id
-        val room = _state.value.rooms.find { it.id == roomId }
-        if (room?.allianceId == ChatAllianceIds.GLOBAL &&
-            !_state.value.hasTeamProfileForGlobalChat
-        ) {
-            _state.value = _state.value.copy(
-                sendFailure = ChatSendFailure(
-                    messageText = trimmed,
-                    replyToMessageId = replyToMessageId,
-                    errorMessage = res.getString(com.lastasylum.alliance.R.string.chat_global_team_required),
-                ),
-            )
-            return
-        }
+        if (globalSendBlocked(roomId, trimmed, replyToMessageId)) return
         viewModelScope.launch {
             _state.value = _state.value.copy(
                 isSending = true,
@@ -695,6 +703,7 @@ class ChatViewModel(
         val roomId = _state.value.selectedRoomId ?: return
         val replyToMessageId = _state.value.replyToMessage?._id
         val uris = _pickedImageUris.value
+        if (globalSendBlocked(roomId, text, replyToMessageId)) return
 
         viewModelScope.launch {
             _state.value = _state.value.copy(isSending = true, error = null, sendFailure = null)

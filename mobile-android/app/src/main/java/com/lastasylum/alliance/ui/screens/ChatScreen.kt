@@ -1384,9 +1384,12 @@ private fun com.lastasylum.alliance.data.chat.ChatRoomDto.chatRoomVisualKind(): 
     when {
         allianceId == ChatAllianceIds.GLOBAL -> ChatRoomVisualKind.GlobalUnion
         ChatAllianceIds.isServerScope(allianceId) -> ChatRoomVisualKind.Server
-        title == "Рейд" -> ChatRoomVisualKind.Raid
+        sortOrder == 2 &&
+            !allianceId.isNullOrBlank() &&
+            allianceId.startsWith("pt:") -> ChatRoomVisualKind.Raid
         sortOrder == 1 &&
-            allianceId != null &&
+            !allianceId.isNullOrBlank() &&
+            allianceId.startsWith("pt:") &&
             allianceId != ChatAllianceIds.GLOBAL &&
             !ChatAllianceIds.isServerScope(allianceId) -> ChatRoomVisualKind.AllianceHub
         else -> ChatRoomVisualKind.Other

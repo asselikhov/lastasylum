@@ -107,9 +107,9 @@
     <string name="chat_title_copied">Название скопировано</string>
     <string name="cd_chat_search">Поиск по сообщениям</string>
     <string name="cd_chat_room_menu">Меню комнаты</string>
-    <string name="chat_global_team_notice">Чтобы писать в «Межсерв» (все серверы), укажите в профиле полное название команды и тег из трёх букв.</string>
+    <string name="chat_global_team_notice">Чтобы писать в «Межсерв» (все серверы), создайте команду или вступите в неё — в профиле появятся название и тег (3–4 буквы).</string>
     <string name="chat_no_team_only_union">Вступите в команду или создайте свою — откроются «Альянс» и «Рейд».</string>
-    <string name="chat_global_team_required">Сначала укажите в профиле название команды и трёхбуквенный тег — без этого сообщения в «Межсерв» недоступны.</string>
+    <string name="chat_global_team_required">Сначала создайте команду или вступите в неё — без названия и тега команды сообщения в «Межсерв» недоступны.</string>
     <string name="cd_chat_message">Сообщение от %1$s, роль %2$s: %3$s</string>
     <string name="err_chat_no_room">Откройте вкладку «Чат», чтобы подтянуть комнату «Рейд», затем снова запишите голос.</string>
     <string name="chat_replying_to">Ответ для %1$s</string>
@@ -673,6 +673,9 @@
     <string name="err_team_tag_taken">Тег команды уже занят.</string>
     <string name="err_team_join_server_mismatch">Эта команда с другого сервера. Выберите команду на вашем активном сервере в профиле.</string>
     <string name="err_active_game_server_required">Укажите активный сервер и игровой ник в профиле.</string>
+    <string name="err_chat_muted">Вам временно запрещено писать в чат.</string>
+    <string name="err_chat_unavailable">Чат недоступен для этого аккаунта.</string>
+    <string name="err_chat_room_unavailable">Эта комната чата вам недоступна.</string>
     <string name="err_form_check">Проверьте данные в форме.</string>
     <string name="err_forbidden">Доступ запрещён.</string>
     <string name="err_rate_limit">Слишком много запросов. Подождите минуту.</string>

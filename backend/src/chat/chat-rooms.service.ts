@@ -9,6 +9,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
   ALLIANCE_HUB_ROOM_TITLE,
+  ALLIANCE_RAID_ROOM_TITLE,
   GLOBAL_CHAT_ALLIANCE_ID,
   GLOBAL_CHAT_ROOM_TITLE,
   formatServerChatRoomTitle,
@@ -83,7 +84,7 @@ export class ChatRoomsService {
       .find({
         allianceId: chatScope,
         archivedAt: null,
-        title: { $nin: ['Общий', 'Общая'] },
+        title: { $in: [ALLIANCE_HUB_ROOM_TITLE, ALLIANCE_RAID_ROOM_TITLE] },
       })
       .sort({ sortOrder: 1, title: 1 })
       .lean()
@@ -97,15 +98,26 @@ export class ChatRoomsService {
     user: Pick<User, 'gameIdentities' | 'activeGameIdentityId'>,
   ) {
     await this.ensureGlobalGeneralRoom();
-    const globalRooms = await this.roomModel
-      .find({ allianceId: GLOBAL_CHAT_ALLIANCE_ID, archivedAt: null })
-      .sort({ sortOrder: 1, title: 1 })
-      .lean()
-      .exec();
+    const globalRoom =
+      (await this.roomModel
+        .findOne({
+          allianceId: GLOBAL_CHAT_ALLIANCE_ID,
+          title: GLOBAL_CHAT_ROOM_TITLE,
+          archivedAt: null,
+        })
+        .lean()
+        .exec()) ??
+      (await this.roomModel
+        .findOne({ allianceId: GLOBAL_CHAT_ALLIANCE_ID, archivedAt: null })
+        .sort({ sortOrder: 1 })
+        .lean()
+        .exec());
+
+    const publicRooms = globalRoom ? [globalRoom] : [];
 
     const serverNumber = resolveUserActiveServerNumber(user);
     if (serverNumber == null) {
-      return globalRooms;
+      return publicRooms;
     }
 
     await this.ensureServerRoom(serverNumber);
@@ -118,9 +130,9 @@ export class ChatRoomsService {
       .exec();
 
     if (!serverRoom) {
-      return globalRooms;
+      return publicRooms;
     }
-    return [...globalRooms, serverRoom];
+    return [...publicRooms, serverRoom];
   }
 
   /** Ensure hub + raid exist for a chat scope (call when someone joins a player team). */
@@ -237,16 +249,18 @@ export class ChatRoomsService {
     return created._id;
   }
 
-  /** Cross-server lobby: one «Межсерв» room (legacy «Мир» titles are renamed). */
+  /** Cross-server lobby: one «Межсерв» room (legacy duplicates archived). */
   async ensureGlobalGeneralRoom(): Promise<void> {
     const legacyGlobalTitles = ['Мир', 'Общая', 'Союз'];
-    const current = await this.roomModel
-      .findOne({
-        allianceId: GLOBAL_CHAT_ALLIANCE_ID,
-        archivedAt: null,
-      })
+    const globals = await this.roomModel
+      .find({ allianceId: GLOBAL_CHAT_ALLIANCE_ID, archivedAt: null })
+      .sort({ sortOrder: 1, createdAt: 1 })
       .exec();
-    if (!current) {
+    let hub =
+      globals.find((r) => r.title === GLOBAL_CHAT_ROOM_TITLE) ??
+      globals.find((r) => legacyGlobalTitles.includes(r.title)) ??
+      globals[0];
+    if (!hub) {
       await this.roomModel.create({
         allianceId: GLOBAL_CHAT_ALLIANCE_ID,
         title: GLOBAL_CHAT_ROOM_TITLE,
@@ -255,12 +269,18 @@ export class ChatRoomsService {
       });
       return;
     }
-    if (
-      legacyGlobalTitles.includes(current.title) ||
-      current.title !== GLOBAL_CHAT_ROOM_TITLE
-    ) {
-      current.title = GLOBAL_CHAT_ROOM_TITLE;
-      await current.save();
+    if (legacyGlobalTitles.includes(hub.title)) {
+      hub.title = GLOBAL_CHAT_ROOM_TITLE;
+    }
+    if (hub.sortOrder !== 0) {
+      hub.sortOrder = 0;
+    }
+    await hub.save();
+    const now = new Date();
+    for (const extra of globals) {
+      if (extra._id.equals(hub._id)) continue;
+      extra.archivedAt = now;
+      await extra.save();
     }
   }
 
@@ -307,24 +327,33 @@ export class ChatRoomsService {
       });
       return;
     }
+    let hubDirty = false;
     if (hub.sortOrder !== 1) {
       hub.sortOrder = 1;
+      hubDirty = true;
     }
     if (hub.title !== displayTitle) {
       hub.title = displayTitle;
+      hubDirty = true;
     }
-    await hub.save();
+    if (hubDirty) {
+      await hub.save();
+    }
   }
 
   /** Alliance «Рейд» room (sortOrder 2), same access as hub. */
   async ensureAllianceRaidRoom(allianceId: string): Promise<void> {
     let raid = await this.roomModel
-      .findOne({ allianceId, title: 'Рейд', archivedAt: null })
+      .findOne({
+        allianceId,
+        title: ALLIANCE_RAID_ROOM_TITLE,
+        archivedAt: null,
+      })
       .exec();
     if (!raid) {
       await this.roomModel.create({
         allianceId,
-        title: 'Рейд',
+        title: ALLIANCE_RAID_ROOM_TITLE,
         sortOrder: 2,
         archivedAt: null,
       });

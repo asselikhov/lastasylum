@@ -244,40 +244,54 @@ export class GameIdentitiesService {
     return n != null && n >= 1 ? n : null;
   }
 
+  private identitiesOnTeam(
+    user: UserDocument,
+    teamId: string,
+  ): (GameIdentity & { _id?: Types.ObjectId })[] {
+    const teamOid = Types.ObjectId.isValid(teamId)
+      ? new Types.ObjectId(teamId)
+      : null;
+    if (!teamOid) return [];
+    return (user.gameIdentities ?? []).filter((g) =>
+      g.playerTeamId?.equals(teamOid),
+    );
+  }
+
   resolveServerNumberForTeam(
     user: UserDocument,
     teamId: string,
   ): number | null {
-    const teamOid = Types.ObjectId.isValid(teamId)
-      ? new Types.ObjectId(teamId)
-      : null;
-    if (teamOid) {
-      const match = (user.gameIdentities ?? []).find((g) =>
-        g.playerTeamId?.equals(teamOid),
-      );
-      if (match?.serverNumber != null && match.serverNumber >= 1) {
-        return match.serverNumber;
+    const onTeam = this.identitiesOnTeam(user, teamId);
+    if (onTeam.length === 0) {
+      return this.resolveSenderServerNumber(user);
+    }
+    const activeServer = this.resolveSenderServerNumber(user);
+    if (activeServer != null) {
+      const onActiveServer = onTeam.find((g) => g.serverNumber === activeServer);
+      if (onActiveServer?.serverNumber != null && onActiveServer.serverNumber >= 1) {
+        return onActiveServer.serverNumber;
       }
     }
-    return this.resolveSenderServerNumber(user);
+    const first = onTeam.find((g) => g.serverNumber >= 1);
+    return first?.serverNumber ?? null;
   }
 
   resolveMemberDisplayNickname(
     user: UserDocument,
     teamId: string,
   ): string {
-    const teamOid = Types.ObjectId.isValid(teamId)
-      ? new Types.ObjectId(teamId)
-      : null;
-    if (teamOid) {
-      const match = (user.gameIdentities ?? []).find((g) =>
-        g.playerTeamId?.equals(teamOid),
-      );
-      if (match?.gameNickname?.trim()) {
-        return match.gameNickname.trim();
-      }
+    const onTeam = this.identitiesOnTeam(user, teamId);
+    if (onTeam.length === 0) {
+      return this.resolveSenderUsername(user);
     }
-    return this.resolveSenderUsername(user);
+    const activeServer = this.resolveSenderServerNumber(user);
+    if (activeServer != null) {
+      const onActiveServer = onTeam.find((g) => g.serverNumber === activeServer);
+      const nick = onActiveServer?.gameNickname?.trim();
+      if (nick) return nick;
+    }
+    const any = onTeam.find((g) => g.gameNickname?.trim());
+    return any?.gameNickname?.trim() ?? this.resolveSenderUsername(user);
   }
 
   async setPlayerTeamOnActive(
@@ -291,6 +305,7 @@ export class GameIdentitiesService {
     const migrated = await this.ensureMigrated(user);
     const active = this.getActiveIdentity(migrated);
     if (!active?._id) return migrated;
+    const activeIdStr = active._id.toString();
     const identities = (migrated.gameIdentities ?? []).map((g) => {
       const base = {
         _id: g._id,
@@ -298,10 +313,16 @@ export class GameIdentitiesService {
         gameNickname: g.gameNickname,
         playerTeamId: g.playerTeamId ?? null,
       };
-      if (this.identityId(g) !== active._id.toString()) {
-        return base;
+      if (teamId == null) {
+        if (this.identityId(g) !== activeIdStr) {
+          return base;
+        }
+        return { ...base, playerTeamId: null };
       }
-      return { ...base, playerTeamId: teamId };
+      if (this.identityId(g) === activeIdStr) {
+        return { ...base, playerTeamId: teamId };
+      }
+      return { ...base, playerTeamId: null };
     });
     const updated = await this.userModel
       .findByIdAndUpdate(
@@ -317,7 +338,8 @@ export class GameIdentitiesService {
         { returnDocument: 'after' },
       )
       .exec();
-    return updated;
+    if (!updated) return null;
+    return this.syncUserFromActiveIdentity(updated);
   }
 
   async clearPlayerTeamOnActive(userId: string): Promise<UserDocument | null> {

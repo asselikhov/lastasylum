@@ -215,12 +215,17 @@ fun TeamScreen(
         }
     }
 
-    LaunchedEffect(joinSearch) {
+    LaunchedEffect(joinSearch, profile?.activeServerNumber) {
         delay(350)
         ensureActive()
         val q = joinSearch.trim()
         if (q.length < 1) {
             joinResults = emptyList()
+            return@LaunchedEffect
+        }
+        if (profile?.activeServerNumber == null || profile.activeServerNumber < 1) {
+            joinResults = emptyList()
+            joinFeedback = res.getString(R.string.err_active_game_server_required)
             return@LaunchedEffect
         }
         joinSearchBusy = true

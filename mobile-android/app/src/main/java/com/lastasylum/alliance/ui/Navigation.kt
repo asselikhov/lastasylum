@@ -316,7 +316,7 @@ fun AppNavigation(
         ) {
             composable(AppTab.CHAT.route) {
                 LaunchedEffect(Unit) {
-                    chatViewModel.refreshTeamProfileGateLight()
+                    chatViewModel.refreshTeamProfileGate()
                     chatViewModel.onChatTabResumed()
                 }
                 DisposableEffect(app.chatRepository) {

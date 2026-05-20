@@ -11,6 +11,8 @@ export const SERVER_CHAT_ALLIANCE_PREFIX = 'srv:';
 /** Player-team hub room title (sortOrder 1 under `pt:<teamId>`). */
 export const ALLIANCE_HUB_ROOM_TITLE = 'Альянс';
 
+export const ALLIANCE_RAID_ROOM_TITLE = 'Рейд';
+
 export function serverChatAllianceId(serverNumber: number): string {
   return `${SERVER_CHAT_ALLIANCE_PREFIX}${serverNumber}`;
 }
