@@ -39,6 +39,16 @@ class OverlayActivityResultKindTest {
     }
 
     @Test
+    fun kindFor_requestMultiplePermissions_mapsToGalleryRead() {
+        assertEquals(
+            OverlaySystemDialogActivity.KIND_REQUEST_GALLERY_READ,
+            OverlayActivityResultKind.kindFor(
+                ActivityResultContracts.RequestMultiplePermissions(),
+            ),
+        )
+    }
+
+    @Test
     fun kindFor_galleryReadPermission_mapsToGalleryRead() {
         assertEquals(
             OverlaySystemDialogActivity.KIND_REQUEST_GALLERY_READ,

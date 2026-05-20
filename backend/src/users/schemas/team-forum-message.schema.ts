@@ -42,7 +42,8 @@ export class TeamForumMessage {
   @Prop({ type: String, default: null, trim: true })
   senderTeamTag: string | null;
 
-  @Prop({ type: String, required: true, trim: true, default: '' })
+  /** May be empty for attachment-only posts; API validates text vs attachments. */
+  @Prop({ type: String, trim: true, default: '' })
   text: string;
 
   /** Optional reply target within the same team+topic (deleted targets are not allowed). */

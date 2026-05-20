@@ -7,6 +7,8 @@ import android.animation.ObjectAnimator
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
@@ -33,6 +35,9 @@ import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.graphics.drawable.DrawableCompat
 import com.airbnb.lottie.LottieAnimationView
 import com.airbnb.lottie.LottieDrawable
+import com.airbnb.lottie.LottieProperty
+import com.airbnb.lottie.model.KeyPath
+import com.airbnb.lottie.value.LottieValueCallback
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
@@ -51,6 +56,9 @@ private data class OverlayQuickReaction(
     val labelRes: Int,
     val tintHex: String,
     @RawRes val lottieRawRes: Int? = null,
+    /** Если задан — перекрашивает Lottie; null — оригинальные цвета ассета. */
+    val lottieTintHex: String? = null,
+    val burstAccentHex: String = "#CCFF5252",
 )
 
 /** Расширяемый каталог: новые реакции — новая строка в списке. */
@@ -61,24 +69,62 @@ private fun overlayQuickReactionCatalog(): List<OverlayQuickReaction> = listOf(
         labelRes = R.string.overlay_reaction_heart_cd,
         tintHex = "#FFFF5252",
         lottieRawRes = R.raw.overlay_reaction_heart,
+        lottieTintHex = "#FFFF5252",
+        burstAccentHex = "#CCFF5252",
     ),
     OverlayQuickReaction(
-        id = "thumbs",
-        iconRes = R.drawable.ic_overlay_reaction_thumbs,
-        labelRes = R.string.overlay_reaction_thumbs_cd,
+        id = "doggie",
+        iconRes = R.drawable.ic_overlay_cmd_reaction,
+        labelRes = R.string.overlay_reaction_doggie_cd,
+        tintHex = "#FFF9C44F",
+        lottieRawRes = R.raw.overlay_reaction_doggie,
+        lottieTintHex = null,
+        burstAccentHex = "#CCF9C44F",
+    ),
+    OverlayQuickReaction(
+        id = "wumpus_angry",
+        iconRes = R.drawable.ic_overlay_cmd_reaction,
+        labelRes = R.string.overlay_reaction_wumpus_angry_cd,
+        tintHex = "#FF7C4DFF",
+        lottieRawRes = R.raw.overlay_reaction_wumpus_angry,
+        lottieTintHex = null,
+        burstAccentHex = "#CC7C4DFF",
+    ),
+    OverlayQuickReaction(
+        id = "crying_smoothymon",
+        iconRes = R.drawable.ic_overlay_cmd_reaction,
+        labelRes = R.string.overlay_reaction_crying_smoothymon_cd,
         tintHex = "#FF4FC3F7",
+        lottieRawRes = R.raw.overlay_reaction_crying_smoothymon,
+        lottieTintHex = null,
+        burstAccentHex = "#CC4FC3F7",
     ),
     OverlayQuickReaction(
-        id = "fire",
-        iconRes = R.drawable.ic_overlay_reaction_fire,
-        labelRes = R.string.overlay_reaction_fire_cd,
-        tintHex = "#FFFF9800",
+        id = "plane_heart",
+        iconRes = R.drawable.ic_overlay_cmd_reaction,
+        labelRes = R.string.overlay_reaction_plane_heart_cd,
+        tintHex = "#FFFF5252",
+        lottieRawRes = R.raw.overlay_reaction_plane_heart,
+        lottieTintHex = null,
+        burstAccentHex = "#CCFF5252",
     ),
     OverlayQuickReaction(
-        id = "star",
-        iconRes = R.drawable.ic_overlay_reaction_star,
-        labelRes = R.string.overlay_reaction_star_cd,
-        tintHex = "#FFFFD54F",
+        id = "cat_love",
+        iconRes = R.drawable.ic_overlay_cmd_reaction,
+        labelRes = R.string.overlay_reaction_cat_love_cd,
+        tintHex = "#FFFF8A80",
+        lottieRawRes = R.raw.overlay_reaction_cat_love,
+        lottieTintHex = null,
+        burstAccentHex = "#CCFF8A80",
+    ),
+    OverlayQuickReaction(
+        id = "cat_playing",
+        iconRes = R.drawable.ic_overlay_cmd_reaction,
+        labelRes = R.string.overlay_reaction_cat_playing_cd,
+        tintHex = "#FFFFB74D",
+        lottieRawRes = R.raw.overlay_reaction_cat_playing,
+        lottieTintHex = null,
+        burstAccentHex = "#CCFFB74D",
     ),
 )
 
@@ -100,6 +146,7 @@ class OverlayCommandsPopover(
     private var reactionBurstScrim: FrameLayout? = null
     private var reactionBurstLottie: LottieAnimationView? = null
     private var heartPreviewAnimator: Animator? = null
+    private var reactionPreviewLotties: List<LottieAnimationView> = emptyList()
     private var attachedWindowManager: WindowManager? = null
     private var gameGateSuppressHeld = false
 
@@ -172,19 +219,66 @@ class OverlayCommandsPopover(
     private fun stopHeartPreviewPulse() {
         heartPreviewAnimator?.cancel()
         heartPreviewAnimator = null
+        reactionPreviewLotties.forEach { lottie ->
+            lottie.cancelAnimation()
+            lottie.progress = 0f
+        }
     }
 
-    private fun startHeartPreviewPulse(target: ImageView) {
+    private fun applyLottieReactionTint(view: LottieAnimationView, tintHex: String) {
+        val color = Color.parseColor(tintHex)
+        view.addValueCallback(
+            KeyPath("**"),
+            LottieProperty.COLOR_FILTER,
+            LottieValueCallback { PorterDuffColorFilter(color, PorterDuff.Mode.SRC_ATOP) },
+        )
+    }
+
+    private fun createReactionTileIcon(reaction: OverlayQuickReaction): View {
+        val lottieRes = reaction.lottieRawRes
+        if (lottieRes != null) {
+            return LottieAnimationView(context).apply {
+                setAnimation(lottieRes)
+                reaction.lottieTintHex?.let { applyLottieReactionTint(this, it) }
+                scaleType = ImageView.ScaleType.CENTER_INSIDE
+                repeatCount = LottieDrawable.INFINITE
+            }
+        }
+        return ImageView(context).apply {
+            setImageDrawable(
+                AppCompatResources.getDrawable(context, reaction.iconRes)?.mutate()?.also { d ->
+                    DrawableCompat.setTint(d, Color.parseColor(reaction.tintHex))
+                },
+            )
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+        }
+    }
+
+    private fun startReactionStripPreviews() {
         stopHeartPreviewPulse()
-        val scaleX = ObjectAnimator.ofFloat(target, "scaleX", 1f, 1.14f, 1f).apply {
+        reactionPreviewLotties.forEach { lottie ->
+            lottie.repeatCount = LottieDrawable.INFINITE
+            lottie.playAnimation()
+        }
+    }
+
+    private fun startHeartPreviewPulse(target: View) {
+        stopHeartPreviewPulse()
+        if (target is LottieAnimationView) {
+            target.repeatCount = LottieDrawable.INFINITE
+            target.playAnimation()
+            return
+        }
+        val image = target as? ImageView ?: return
+        val scaleX = ObjectAnimator.ofFloat(image, "scaleX", 1f, 1.14f, 1f).apply {
             duration = 900L
             repeatCount = ObjectAnimator.INFINITE
         }
-        val scaleY = ObjectAnimator.ofFloat(target, "scaleY", 1f, 1.14f, 1f).apply {
+        val scaleY = ObjectAnimator.ofFloat(image, "scaleY", 1f, 1.14f, 1f).apply {
             duration = 900L
             repeatCount = ObjectAnimator.INFINITE
         }
-        val glow = ObjectAnimator.ofFloat(target, "alpha", 1f, 0.82f, 1f).apply {
+        val glow = ObjectAnimator.ofFloat(image, "alpha", 1f, 0.82f, 1f).apply {
             duration = 900L
             repeatCount = ObjectAnimator.INFINITE
         }
@@ -572,10 +666,10 @@ class OverlayCommandsPopover(
         }
 
         val reactionCatalog = overlayQuickReactionCatalog()
-        var reactionPreviewTarget: ImageView? = null
+        val reactionPreviewLottiesBuilder = mutableListOf<LottieAnimationView>()
         val reactionTilesPadding = dp(2)
         val reactionTileSize = dp(54)
-        val reactionIconInner = dp(30)
+        val reactionIconInner = dp(46)
 
         val reactionTilesRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -583,16 +677,10 @@ class OverlayCommandsPopover(
             setPadding(0, 0, reactionTilesPadding, 0)
         }
         for (reaction in reactionCatalog) {
-            val img = ImageView(context).apply {
-                setImageDrawable(
-                    AppCompatResources.getDrawable(context, reaction.iconRes)?.mutate()?.also { d ->
-                        DrawableCompat.setTint(d, Color.parseColor(reaction.tintHex))
-                    },
-                )
-                scaleType = ImageView.ScaleType.CENTER_INSIDE
+            val icon = createReactionTileIcon(reaction).apply {
                 contentDescription = context.getString(reaction.labelRes)
             }
-            if (reactionPreviewTarget == null) reactionPreviewTarget = img
+            if (icon is LottieAnimationView) reactionPreviewLottiesBuilder.add(icon)
             val host = FrameLayout(context).apply {
                 layoutParams = LinearLayout.LayoutParams(reactionTileSize, reactionTileSize).apply {
                     marginEnd = dp(8)
@@ -607,7 +695,7 @@ class OverlayCommandsPopover(
                 )
                 isClickable = true
                 addView(
-                    img,
+                    icon,
                     FrameLayout.LayoutParams(reactionIconInner, reactionIconInner, Gravity.CENTER),
                 )
                 setOnClickListener {
@@ -620,6 +708,7 @@ class OverlayCommandsPopover(
             }
             reactionTilesRow.addView(host)
         }
+        reactionPreviewLotties = reactionPreviewLottiesBuilder
 
         val reactionScroll = HorizontalScrollView(context).apply {
             isHorizontalScrollBarEnabled = false
@@ -744,7 +833,7 @@ class OverlayCommandsPopover(
             if (cat.isReactions) {
                 coordsAction.visibility = View.GONE
                 reactionRow.visibility = View.VISIBLE
-                reactionPreviewTarget?.let { startHeartPreviewPulse(it) }
+                startReactionStripPreviews()
             } else {
                 stopHeartPreviewPulse()
                 coordsAction.visibility = View.VISIBLE
@@ -1193,6 +1282,7 @@ class OverlayCommandsPopover(
         acquireGameGateSuppress()
         attachedWindowManager = windowManager
 
+        val selectedReaction = overlayQuickReactionById(reactionId)
         val container = AppContainer.from(context)
         val close = iconCloseButton()
         val title = labelText(
@@ -1201,6 +1291,21 @@ class OverlayCommandsPopover(
             Color.parseColor("#FFF4F7FF"),
             bold = true,
         )
+        val reactionPreviewSize = dp(72)
+        val reactionPreview = createReactionTileIcon(selectedReaction).apply {
+            contentDescription = context.getString(R.string.overlay_reactions_recipient_preview_cd)
+            if (this is LottieAnimationView) {
+                repeatCount = LottieDrawable.INFINITE
+                playAnimation()
+            }
+        }
+        val reactionPreviewRow = FrameLayout(context).apply {
+            setPadding(0, dp(8), 0, dp(4))
+            addView(
+                reactionPreview,
+                FrameLayout.LayoutParams(reactionPreviewSize, reactionPreviewSize, Gravity.CENTER),
+            )
+        }
         val loading = labelText(
             context.getString(R.string.overlay_reactions_loading),
             12f,
@@ -1241,6 +1346,7 @@ class OverlayCommandsPopover(
             background = panelShellBackground()
             elevation = dp(10).toFloat()
             addView(headerRow)
+            addView(reactionPreviewRow)
             addView(
                 divider,
                 LinearLayout.LayoutParams(
@@ -1394,6 +1500,8 @@ class OverlayCommandsPopover(
         if (lottieRes != null) {
             return LottieAnimationView(context).apply {
                 setAnimation(lottieRes)
+                reaction.lottieTintHex?.let { applyLottieReactionTint(this, it) }
+                scaleType = ImageView.ScaleType.FIT_CENTER
                 repeatCount = LottieDrawable.INFINITE
                 playAnimation()
             }.also { reactionBurstLottie = it }
@@ -1425,13 +1533,15 @@ class OverlayCommandsPopover(
         }
         val burstAnimSize = if (reaction.lottieRawRes != null) dp(160) else dp(120)
         val heart = createReactionBurstAnimView(reaction)
+        val accentOpaque = Color.parseColor(reaction.burstAccentHex)
+        val accentTransparent = accentOpaque and 0x00FFFFFF
         val accentBar = View(context).apply {
             background = GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
                 intArrayOf(
-                    Color.parseColor("#00FF5252"),
-                    Color.parseColor("#CCFF5252"),
-                    Color.parseColor("#00FF5252"),
+                    accentTransparent,
+                    accentOpaque,
+                    accentTransparent,
                 ),
             ).apply {
                 cornerRadius = dp(2).toFloat()

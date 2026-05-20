@@ -210,14 +210,11 @@ class TeamsRepository(
             val replyId = replyToMessageId?.trim()?.takeIf { it.isNotEmpty() }
             val imgs = imageFileIds?.map { it.trim() }?.filter { it.isNotEmpty() }?.distinct()
             val fileId = fileFileId?.trim()?.takeIf { it.isNotEmpty() }
-            val t = trimmed.ifBlank {
-                if (!imgs.isNullOrEmpty() || img != null || fileId != null) " " else ""
-            }
             teamsApi.postForumMessage(
                 teamId,
                 topicId,
                 CreateTeamForumMessageBody(
-                    text = t,
+                    text = trimmed,
                     replyToMessageId = replyId,
                     imageFileIds = imgs?.takeIf { it.isNotEmpty() },
                     imageFileId = img,

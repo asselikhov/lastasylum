@@ -19,6 +19,8 @@ object OverlayActivityResultKind {
         is ActivityResultContracts.GetContent -> OverlaySystemDialogActivity.KIND_GET_CONTENT
         is ActivityResultContracts.RequestPermission ->
             kindForPermission(input as? String)
+        is ActivityResultContracts.RequestMultiplePermissions ->
+            OverlaySystemDialogActivity.KIND_REQUEST_GALLERY_READ
         else -> null
     }
 

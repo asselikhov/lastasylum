@@ -74,9 +74,8 @@ fun OverlayChatImagePickerSheet(
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
-    ) { results ->
-        val granted = results.values.any { it }
-        if (granted) {
+    ) { _ ->
+        if (OverlayDeviceGallery.hasReadPermission(context)) {
             galleryUris = null
             loading = true
             permissionEpoch++

@@ -1033,13 +1033,10 @@ private fun TeamForumTopicChatRoute(
                     }
                     if (uploadingImage || uploadingFile) return@launch
                     sending = true
-                    val textForApi = trimmed.ifBlank {
-                        if (pendingImageFileIds.isNotEmpty() || pendingApkFileId != null) " " else ""
-                    }
                     teamsRepository.postForumMessage(
                         teamId,
                         topicId,
-                        textForApi,
+                        trimmed,
                         replyToMessageId = replyToMessage?.id,
                         imageFileId = null,
                         imageFileIds = pendingImageFileIds.takeIf { it.isNotEmpty() },

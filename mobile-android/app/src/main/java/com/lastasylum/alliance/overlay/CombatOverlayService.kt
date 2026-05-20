@@ -456,6 +456,27 @@ class CombatOverlayService : Service() {
         overlayChatViewModel?.onImagesPicked(pending)
     }
 
+    private fun intentForOverlayGalleryPermissionResults(): Intent {
+        val permissions = OverlayDeviceGallery.requiredReadPermissions()
+        val grantResults = permissions.map { perm ->
+            if (ContextCompat.checkSelfPermission(this, perm) == PackageManager.PERMISSION_GRANTED) {
+                PackageManager.PERMISSION_GRANTED
+            } else {
+                PackageManager.PERMISSION_DENIED
+            }
+        }.toIntArray()
+        return Intent().apply {
+            putExtra(
+                "androidx.activity.result.contract.extra.PERMISSIONS",
+                permissions,
+            )
+            putExtra(
+                "androidx.activity.result.contract.extra.PERMISSION_GRANT_RESULTS",
+                grantResults,
+            )
+        }
+    }
+
     private val overlaySystemResultReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val i = intent ?: return
@@ -557,6 +578,15 @@ class CombatOverlayService : Service() {
                                 intArrayOf(if (granted) 0 else -1),
                             )
                         }
+                        deliverOverlayActivityResult(
+                            requestCode = requestCode,
+                            resultCode = android.app.Activity.RESULT_OK,
+                            data = data,
+                        )
+                        resumeOverlayWindowsAfterSystemActivity(skipFullscreenRebalance = true)
+                    }
+                    OverlaySystemDialogActivity.ACTION_OVERLAY_GALLERY_PERMISSION_RESULT -> {
+                        val data = intentForOverlayGalleryPermissionResults()
                         deliverOverlayActivityResult(
                             requestCode = requestCode,
                             resultCode = android.app.Activity.RESULT_OK,
@@ -2659,6 +2689,7 @@ class CombatOverlayService : Service() {
                     addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_PICK_IMAGES_RESULT)
                     addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_GET_CONTENT_RESULT)
                     addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_MIC_PERMISSION_RESULT)
+                    addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_GALLERY_PERMISSION_RESULT)
                     addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_ACTIVITY_CANCELED)
                 },
                 ContextCompat.RECEIVER_NOT_EXPORTED,

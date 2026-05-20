@@ -1,5 +1,7 @@
 package com.lastasylum.alliance.data.voice
 
+import java.nio.ByteBuffer
+
 /**
  * Binary Socket.IO payloads for voice frames (no base64 / JSON overhead).
  *
@@ -56,7 +58,16 @@ object VoiceWire {
 
     fun asByteArray(arg: Any?): ByteArray? = when (arg) {
         is ByteArray -> arg
-        is Array<*> -> arg.firstOrNull() as? ByteArray
+        is ByteBuffer -> {
+            val dup = arg.duplicate()
+            ByteArray(dup.remaining()).also { dup.get(it) }
+        }
+        is Array<*> -> {
+            for (item in arg) {
+                asByteArray(item)?.let { return it }
+            }
+            null
+        }
         else -> null
     }
 }

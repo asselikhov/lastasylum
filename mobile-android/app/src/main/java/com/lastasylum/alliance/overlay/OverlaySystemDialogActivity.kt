@@ -47,6 +47,12 @@ class OverlaySystemDialogActivity : ComponentActivity() {
         deliverGalleryReadPermission(granted)
     }
 
+    private val requestMultipleGalleryReadLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { _ ->
+        deliverGalleryReadPermission(OverlayDeviceGallery.hasReadPermission(this))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pendingRequestCode = intent?.getIntExtra(EXTRA_REQUEST_CODE, -1) ?: -1
@@ -74,6 +80,7 @@ class OverlaySystemDialogActivity : ComponentActivity() {
                 getContentLauncher.launch(mime)
             }
             KIND_REQUEST_MIC -> requestMicLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            KIND_REQUEST_GALLERY_READ -> launchGalleryReadPermissionRequest()
             else -> finish()
         }
     }
@@ -126,6 +133,15 @@ class OverlaySystemDialogActivity : ComponentActivity() {
                 .putExtra(EXTRA_COPY_FAILED, copyFailed),
         )
         finish()
+    }
+
+    private fun launchGalleryReadPermissionRequest() {
+        val perms = OverlayDeviceGallery.requiredReadPermissions()
+        if (perms.size > 1) {
+            requestMultipleGalleryReadLauncher.launch(perms)
+        } else {
+            requestGalleryReadLauncher.launch(perms.first())
+        }
     }
 
     private fun deliverGalleryReadPermission(granted: Boolean) {
