@@ -8,10 +8,18 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/chat-room-constants';
+import {
+  GLOBAL_CHAT_ALLIANCE_ID,
+  isServerChatScope,
+} from '../common/constants/chat-room-constants';
+import { parsePlayerTeamIdFromChatScope } from './chat-alliance-scope';
 import { userMayAccessChatRoom } from './chat-room-access';
+import { isAppAdminRole } from '../common/alliance-role.util';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
-import { PlayerTeamMemberRole } from '../common/enums/player-team-member-role.enum';
+import {
+  isSquadOfficerRole,
+  PlayerTeamMemberRole,
+} from '../common/enums/player-team-member-role.enum';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
 import { UserDocument } from '../users/schemas/user.schema';
 import { TeamsService } from '../users/teams.service';
@@ -195,6 +203,49 @@ export class ChatService {
     ) {
       throw new ForbiddenException('GLOBAL_CHAT_TEAM_PROFILE_REQUIRED');
     }
+  }
+
+  /**
+   * Moderate others' messages: app admin (AllianceRole.ADMIN) in «Межсерв» / server rooms;
+   * squad R4/R5 in `pt:<teamId>` team chat rooms.
+   */
+  private async assertMayModerateOthersMessage(
+    actor: UserDocument,
+    message: MessageLean,
+  ): Promise<void> {
+    if (message.senderId === actor._id.toString()) {
+      return;
+    }
+    const allianceId = message.allianceId;
+    if (
+      allianceId === GLOBAL_CHAT_ALLIANCE_ID ||
+      isServerChatScope(allianceId)
+    ) {
+      if (!isAppAdminRole(actor.role)) {
+        throw new ForbiddenException(
+          'Only administrators can moderate messages in this room',
+        );
+      }
+      return;
+    }
+    const teamId = parsePlayerTeamIdFromChatScope(allianceId);
+    if (teamId) {
+      const team = await this.teamsService.getTeamIfMemberOrThrow(
+        teamId,
+        actor._id.toString(),
+      );
+      const squadRole = this.teamsService.getSquadRoleForUser(
+        team,
+        actor._id.toString(),
+      );
+      if (!isSquadOfficerRole(squadRole)) {
+        throw new ForbiddenException(
+          'Only squad ranks R4 and R5 can moderate team chat messages',
+        );
+      }
+      return;
+    }
+    throw new ForbiddenException('Not allowed to moderate this message');
   }
 
   private async assertMayAccessMessageRoom(
@@ -609,12 +660,9 @@ export class ChatService {
     this.assertNotMuted(actor);
     const message = await this.messageModel.findById(messageId).exec();
     if (!message) throw new NotFoundException('Message not found');
-    await this.assertMayAccessMessageRoom(userId, message.toObject<MessageLean>());
-    const mayEdit =
-      message.senderId === userId || actor.role === AllianceRole.R5;
-    if (!mayEdit) {
-      throw new ForbiddenException('You may only edit your own messages');
-    }
+    const lean = message.toObject<MessageLean>();
+    await this.assertMayAccessMessageRoom(userId, lean);
+    await this.assertMayModerateOthersMessage(actor, lean);
     const trimmed = text.trim();
     if (!trimmed) throw new BadRequestException('Text is required');
     this.assertZlobyakaStickerPayload(trimmed);
@@ -906,11 +954,8 @@ export class ChatService {
         'Message is not available for your alliance',
       );
     }
-    const mayDelete =
-      message.senderId === userId || actor.role === AllianceRole.R5;
-    if (!mayDelete) {
-      throw new ForbiddenException('You may only delete your own messages');
-    }
+    const lean = message.toObject<MessageLean>();
+    await this.assertMayModerateOthersMessage(actor, lean);
     const roomId = this.asIdString(message.roomId)!;
     const res = await this.messageModel
       .deleteOne({

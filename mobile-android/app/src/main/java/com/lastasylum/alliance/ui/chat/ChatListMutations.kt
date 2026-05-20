@@ -127,7 +127,12 @@ internal fun syncSelections(state: ChatState): ChatState {
     val deleteTargetExists = state.confirmDeleteMessageId?.let { byId.containsKey(it) } == true
     val syncedSelection = state.selectedMessageIds.filter { id ->
         byId[id]?.let { m ->
-            m.deletedAt == null && canDeleteChatMessage(m, state.currentUserId, state.currentUserRole)
+            m.deletedAt == null && canDeleteChatMessage(
+                m,
+                state.currentUserId,
+                state.isAppAdmin,
+                state.playerTeamSquadRole,
+            )
         } == true
     }.toSet()
     val keepBulkConfirm = state.confirmBulkDelete && syncedSelection.isNotEmpty()
@@ -142,13 +147,4 @@ internal fun syncSelections(state: ChatState): ChatState {
         selectedMessageIds = syncedSelection,
         confirmBulkDelete = keepBulkConfirm,
     )
-}
-
-internal fun canDeleteChatMessage(
-    message: ChatMessage,
-    currentUserId: String,
-    currentUserRole: String,
-): Boolean {
-    if (message._id.isNullOrBlank()) return false
-    return message.senderId == currentUserId || currentUserRole == "R5"
 }

@@ -16,6 +16,7 @@ import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { normalizeAllianceRole } from '../common/alliance-role.util';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
 import { UserDocument } from '../users/schemas/user.schema';
 import { UsersService } from '../users/users.service';
@@ -45,7 +46,6 @@ export class AuthService {
       username: login,
       email: login,
       passwordHash,
-      role: dto.role,
       serverNumber: dto.serverNumber,
       gameNickname: dto.gameNickname,
     });
@@ -226,18 +226,19 @@ export class AuthService {
     username: string,
     role: string,
   ) {
+    const roleNorm = normalizeAllianceRole(role);
     const accessToken = await this.jwtService.signAsync({
       sub: userId,
       email,
       username,
-      role,
+      role: roleNorm,
     });
     const refreshToken = await this.jwtService.signAsync(
       {
         sub: userId,
         email,
         username,
-        role,
+        role: roleNorm,
       },
       {
         secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),

@@ -63,7 +63,8 @@ private data class OnlineListItem(
     val key: String,
 )
 
-private fun allianceRoleRank(role: String): Int = when (role.trim().uppercase()) {
+/** Squad rank R1–R5 for sorting team roster in overlay. */
+private fun squadRank(role: String): Int = when (role.trim().uppercase()) {
     "R5" -> 5
     "R4" -> 4
     "R3" -> 3
@@ -75,7 +76,7 @@ private fun allianceRoleRank(role: String): Int = when (role.trim().uppercase())
 private fun buildOnlineListItems(members: List<PlayerTeamMemberDto>): List<OnlineListItem> =
     members
         .sortedWith(
-            compareByDescending<PlayerTeamMemberDto> { allianceRoleRank(it.allianceRole) }
+            compareByDescending<PlayerTeamMemberDto> { squadRank(it.teamRole) }
                 .thenBy { it.username.lowercase() },
         )
         .map { member ->
@@ -276,8 +277,8 @@ private fun OverlayTeamOnlineMemberCard(
 ) {
     val avatarUrl = telegramAvatarUrl(member.telegramUsername)
     val letter = member.username.trim().take(1).uppercase().ifBlank { "?" }
-    val allianceRole = member.allianceRole.trim().uppercase().ifBlank { "R2" }
-    val roleCd = stringResource(R.string.overlay_member_alliance_role_cd, allianceRole)
+    val squadRole = member.teamRole.trim().uppercase().ifBlank { "R1" }
+    val roleCd = stringResource(R.string.overlay_member_squad_rank_cd, squadRole)
     val scheme = MaterialTheme.colorScheme
     val ingameRing = Color(0xFF81C784)
 
@@ -346,7 +347,7 @@ private fun OverlayTeamOnlineMemberCard(
                     modifier = Modifier.semantics { contentDescription = roleCd },
                 ) {
                     Text(
-                        text = allianceRole,
+                        text = squadRole,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = scheme.primary,

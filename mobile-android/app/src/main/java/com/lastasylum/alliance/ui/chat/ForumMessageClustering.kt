@@ -1,8 +1,32 @@
 package com.lastasylum.alliance.ui.chat
 
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.data.teams.TeamForumMessageDto
+
+data class ForumMessageClusterFlags(
+    val showHeader: Boolean,
+    val isChainBottom: Boolean,
+    val tightInnerTop: Boolean,
+    val topSpacing: Dp,
+)
+
+@Composable
+fun rememberForumMessageClusterFlags(
+    messages: List<TeamForumMessageDto>,
+): List<ForumMessageClusterFlags> =
+    remember(messages) {
+        List(messages.size) { index ->
+            ForumMessageClusterFlags(
+                showHeader = forumMessageShowsClusterHeader(messages, index),
+                isChainBottom = forumMessageIsClusterChainBottom(messages, index),
+                tightInnerTop = forumMessageClusterTightInnerTop(messages, index),
+                topSpacing = forumBubbleClusterTopSpacing(messages, index),
+            )
+        }
+    }
 
 /** Forum list is oldest-first (unlike main chat). */
 fun forumMessageIsClusterChainBottom(messages: List<TeamForumMessageDto>, index: Int): Boolean {

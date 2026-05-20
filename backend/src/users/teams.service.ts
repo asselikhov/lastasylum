@@ -12,6 +12,13 @@ import { playerTeamChatAllianceId } from '../chat/chat-alliance-scope';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
+  paginateParams,
+  type PaginatedResult,
+} from '../common/dto/paginated-result.dto';
+import { normalizeAllianceRole } from '../common/alliance-role.util';
+import { AllianceRole } from '../common/enums/alliance-role.enum';
+import {
+  isSquadOfficerRole,
   PlayerTeamMemberRole,
   SQUAD_ROLES_ASSIGNABLE_BY_R4,
   SQUAD_ROLES_ASSIGNABLE_BY_R5,
@@ -33,13 +40,16 @@ export type PlayerTeamProfileFields = {
   playerTeamLeaderUserId: string | null;
   isPlayerTeamLeader: boolean;
   pendingPlayerTeamJoinRequests: number;
+  /** Squad rank (R1–R5) on [playerTeamId]; null when not in a team. */
+  playerTeamSquadRole: string | null;
 };
 
 export type TeamMemberRow = {
   userId: string;
   username: string;
   isLeader: boolean;
-  allianceRole: string;
+  /** App account role (MEMBER…ADMIN), not squad rank R1–R5. */
+  accountRole: string;
   teamRole: string;
   telegramUsername: string | null;
   /** ingame | online | away — для клиента «в игре / нет». */
@@ -282,6 +292,7 @@ export class TeamsService {
         playerTeamLeaderUserId: null,
         isPlayerTeamLeader: false,
         pendingPlayerTeamJoinRequests: 0,
+        playerTeamSquadRole: null,
       };
     }
     const team = await this.teamModel.findById(teamOid).exec();
@@ -293,6 +304,7 @@ export class TeamsService {
         playerTeamLeaderUserId: null,
         isPlayerTeamLeader: false,
         pendingPlayerTeamJoinRequests: 0,
+        playerTeamSquadRole: null,
       };
     }
     await this.migrateLegacyIfNeeded(team);
@@ -306,6 +318,7 @@ export class TeamsService {
         status: TeamJoinRequestStatus.PENDING,
       });
     }
+    const squadRole = this.getSquadRoleForUser(team, uid);
     return {
       playerTeamId: team._id.toString(),
       playerTeamTag: team.tag,
@@ -313,6 +326,7 @@ export class TeamsService {
       playerTeamLeaderUserId: leaderId,
       isPlayerTeamLeader: isLeader,
       pendingPlayerTeamJoinRequests: pending,
+      playerTeamSquadRole: squadRole,
     };
   }
 
@@ -340,6 +354,19 @@ export class TeamsService {
     await this.migrateLegacyIfNeeded(team);
     this.assertMember(team, userId);
     return team;
+  }
+
+  async assertSquadOfficerOrThrow(
+    teamId: string,
+    userId: string,
+  ): Promise<void> {
+    const team = await this.getTeamIfMemberOrThrow(teamId, userId);
+    const role = this.getSquadRoleForUser(team, userId);
+    if (!isSquadOfficerRole(role)) {
+      throw new ForbiddenException(
+        'Only squad ranks R4 and R5 can perform this action',
+      );
+    }
   }
 
   getSquadRoleForUser(
@@ -549,7 +576,7 @@ export class TeamsService {
         userId: id,
         username: row?.username ?? '?',
         isLeader: id === leaderStr,
-        allianceRole: row?.role ?? 'R2',
+        accountRole: normalizeAllianceRole(row?.role ?? AllianceRole.MEMBER),
         teamRole,
         telegramUsername: row?.telegramUsername ?? null,
         presenceStatus: row?.presenceStatus ?? null,
@@ -1089,40 +1116,71 @@ export class TeamsService {
 
   async listAllTeamsForAdmin(opts?: {
     serverNumber?: number;
-  }): Promise<PlayerTeamAdminRow[]> {
-    const teams = await this.teamModel
-      .find({})
-      .sort({ displayName: 1, tag: 1 })
+    skip?: number;
+    limit?: number;
+  }): Promise<PaginatedResult<PlayerTeamAdminRow>> {
+    const { skip, limit } = paginateParams(opts?.skip, opts?.limit);
+
+    let teamFilter: Record<string, unknown> = {};
+    if (opts?.serverNumber != null) {
+      const teamIds = await this.gameIdentities.findTeamIdsWithMemberOnServer(
+        opts.serverNumber,
+      );
+      teamFilter = { _id: { $in: teamIds } };
+    }
+
+    const [teams, total] = await Promise.all([
+      this.teamModel
+        .find(teamFilter)
+        .sort({ displayName: 1, tag: 1 })
+        .skip(skip)
+        .limit(limit)
+        .exec(),
+      this.teamModel.countDocuments(teamFilter).exec(),
+    ]);
+
+    const teamIdStrs = teams.map((t) => t._id.toString());
+    const serverMap =
+      await this.gameIdentities.collectServerNumbersForTeams(teamIdStrs);
+
+    const leaderIds = teams.map((t) => t.leaderUserId);
+    const leaders = await this.userModel
+      .find({ _id: { $in: leaderIds } })
       .exec();
-    const out: PlayerTeamAdminRow[] = [];
+    const leaderById = new Map(leaders.map((u) => [u._id.toString(), u]));
+
+    const memberRoutes = await this.userModel
+      .aggregate<{ _id: Types.ObjectId; routes: string[] }>([
+        {
+          $match: {
+            playerTeamId: {
+              $in: teams.map((t) => t._id),
+            },
+          },
+        },
+        {
+          $group: {
+            _id: '$playerTeamId',
+            routes: { $addToSet: '$allianceName' },
+          },
+        },
+      ] as import('mongoose').PipelineStage[])
+      .exec();
+    const routesByTeam = new Map(
+      memberRoutes.map((r) => [
+        r._id.toString(),
+        (r.routes ?? []).map((x) => x?.trim()).filter(Boolean) as string[],
+      ]),
+    );
+
+    const items: PlayerTeamAdminRow[] = [];
     for (const team of teams) {
       await this.migrateLegacyIfNeeded(team);
       const teamIdStr = team._id.toString();
-      const serverNumbers =
-        await this.gameIdentities.collectServerNumbersForTeam(teamIdStr);
-      if (
-        opts?.serverNumber != null &&
-        !serverNumbers.includes(opts.serverNumber)
-      ) {
-        continue;
-      }
-      const leader = await this.userModel.findById(team.leaderUserId).exec();
-      const leaderServer = leader
-        ? this.gameIdentities.resolveServerNumberForTeam(leader, teamIdStr)
-        : null;
-      const memberUsers = await this.userModel
-        .find({ playerTeamId: team._id })
-        .select('allianceName')
-        .lean<Array<{ allianceName?: string }>>()
-        .exec();
-      const routes = [
-        ...new Set(
-          memberUsers
-            .map((u) => u.allianceName?.trim())
-            .filter((v): v is string => Boolean(v)),
-        ),
-      ];
-      out.push({
+      const serverNumbers = serverMap.get(teamIdStr) ?? [];
+      const leader = leaderById.get(team.leaderUserId.toString());
+      const routes = routesByTeam.get(teamIdStr) ?? [];
+      items.push({
         id: teamIdStr,
         tag: team.tag,
         displayName: team.displayName,
@@ -1133,13 +1191,22 @@ export class TeamsService {
               teamIdStr,
             )
           : '—',
-        leaderServerNumber: leaderServer,
+        leaderServerNumber: leader
+          ? this.gameIdentities.resolveServerNumberForTeam(leader, teamIdStr)
+          : null,
         serverNumbers,
         memberCount: team.squadMembers.length,
         chatRoutingSummary: routes.length > 0 ? routes.join(', ') : '—',
       });
     }
-    return out;
+
+    return {
+      items,
+      total,
+      skip,
+      limit,
+      hasMore: skip + items.length < total,
+    };
   }
 
   async assertTeamExistsForAdmin(teamId: string): Promise<PlayerTeamDocument> {
@@ -1192,7 +1259,7 @@ export class TeamsService {
         username: displayNick,
         email: u.email,
         isLeader: team.leaderUserId.equals(u._id),
-        allianceRole: u.role,
+        accountRole: normalizeAllianceRole(u.role),
         teamRole: roleByUserId.get(uid) ?? 'R1',
         telegramUsername: u.telegramUsername ?? null,
         presenceStatus: u.presenceStatus ?? null,

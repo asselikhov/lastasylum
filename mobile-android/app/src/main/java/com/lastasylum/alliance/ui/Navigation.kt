@@ -30,8 +30,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import android.provider.Settings
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -109,6 +115,15 @@ fun AppNavigation(
         chatViewModel.refreshChat()
     }
 
+    DisposableEffect(chatViewModel) {
+        CombatOverlayService.bindActivityChatViewModel(chatViewModel)
+        onDispose {
+            if (CombatOverlayService.activityScopedChatViewModel === chatViewModel) {
+                CombatOverlayService.bindActivityChatViewModel(null)
+            }
+        }
+    }
+
     LaunchedEffect(userId) {
         if (userId.isBlank()) return@LaunchedEffect
         CombatOverlayService.ensureRuntimeIfUserEnabled(activity.applicationContext)
@@ -156,6 +171,7 @@ fun AppNavigation(
         }
     }
 
+    val tabMotionDisabled = rememberTabMotionDisabled()
     val navController = rememberNavController()
     val navBackStackEntry = navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry.value?.destination
@@ -163,7 +179,7 @@ fun AppNavigation(
     val visibleTabs = remember(role, overlayTabVisible) {
         AppTab.entries.filter { tab ->
             when (tab) {
-                AppTab.ADMIN -> role == "R5"
+                AppTab.ADMIN -> com.lastasylum.alliance.data.auth.AccountRoles.isAppAdmin(role)
                 AppTab.OVERLAY -> overlayTabVisible
                 else -> true
             }
@@ -309,10 +325,22 @@ fun AppNavigation(
             navController = navController,
             startDestination = AppTab.CHAT.route,
             modifier = Modifier.fillMaxSize(),
-            enterTransition = { EnterTransition.None },
-            exitTransition = { ExitTransition.None },
-            popEnterTransition = { EnterTransition.None },
-            popExitTransition = { ExitTransition.None },
+            enterTransition = {
+                if (tabMotionDisabled) EnterTransition.None
+                else fadeIn(tween(180)) + slideInHorizontally(tween(180)) { w -> w / 10 }
+            },
+            exitTransition = {
+                if (tabMotionDisabled) ExitTransition.None
+                else fadeOut(tween(140)) + slideOutHorizontally(tween(140)) { w -> -w / 12 }
+            },
+            popEnterTransition = {
+                if (tabMotionDisabled) EnterTransition.None
+                else fadeIn(tween(180)) + slideInHorizontally(tween(180)) { w -> -w / 10 }
+            },
+            popExitTransition = {
+                if (tabMotionDisabled) ExitTransition.None
+                else fadeOut(tween(140)) + slideOutHorizontally(tween(140)) { w -> w / 12 }
+            },
         ) {
             composable(AppTab.CHAT.route) {
                 LaunchedEffect(Unit) {
@@ -395,6 +423,7 @@ fun AppNavigation(
                 TeamScreen(
                     currentUserId = userId,
                     teamsRepository = app.teamsRepository,
+                    usersRepository = app.usersRepository,
                 )
             }
             composable(AppTab.ADMIN.route) {
@@ -451,9 +480,23 @@ fun AppNavigation(
                             msgTeamSaved,
                         )
                     },
+                    onLoadMorePlayers = adminViewModel::loadMorePlayersList,
+                    onLoadMorePlayerTeams = adminViewModel::loadMorePlayerTeams,
                 )
             }
         }
         }
+    }
+}
+
+@Composable
+private fun rememberTabMotionDisabled(): Boolean {
+    val context = LocalContext.current
+    return remember(context) {
+        Settings.Global.getFloat(
+            context.contentResolver,
+            Settings.Global.ANIMATOR_DURATION_SCALE,
+            1f,
+        ) == 0f
     }
 }

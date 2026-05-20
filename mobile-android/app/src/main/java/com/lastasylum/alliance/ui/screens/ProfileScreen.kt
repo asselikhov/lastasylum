@@ -62,6 +62,9 @@ import com.lastasylum.alliance.data.users.GameIdentityDto
 import com.lastasylum.alliance.data.users.MyProfileDto
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.components.GlassSurface
+import com.lastasylum.alliance.ui.components.PremiumEmptyState
+import com.lastasylum.alliance.ui.components.SquadRelaySkeletonHero
+import androidx.compose.material.icons.outlined.PersonOutline
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.util.formatServerLabel
@@ -361,20 +364,6 @@ fun ProfileScreen(
                         editable = false,
                         onClick = null,
                     )
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 12.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
-                    )
-                    ProfileStatRow(
-                        label = stringResource(R.string.profile_field_role),
-                        value = p.role,
-                        editable = false,
-                        onClick = null,
-                    )
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 12.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
-                    )
                     ProfileStatRowEditable(
                         label = stringResource(R.string.profile_field_telegram),
                         value = telegramDisplayHandle(p.telegramUsername)
@@ -388,12 +377,16 @@ fun ProfileScreen(
                         },
                     )
                 } ?: run {
-                    Text(
-                        text = stringResource(R.string.profile_load_error),
-                        modifier = Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    if (profile == null && loadError == null) {
+                        SquadRelaySkeletonHero(Modifier.padding(16.dp))
+                    } else {
+                        PremiumEmptyState(
+                            icon = Icons.Outlined.PersonOutline,
+                            title = stringResource(R.string.profile_load_error),
+                            body = loadError ?: stringResource(R.string.profile_load_error),
+                            modifier = Modifier.padding(vertical = 8.dp),
+                        )
+                    }
                 }
                 Box(Modifier.padding(bottom = 8.dp))
             }

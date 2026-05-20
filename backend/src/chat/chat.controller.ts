@@ -21,6 +21,13 @@ import { memoryStorage } from 'multer';
 import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { isAppAdminRole } from '../common/alliance-role.util';
+import {
+  assertUploadSizeWithinLimit,
+  FORUM_APK_MAX_UPLOAD_BYTES,
+  FREE_TIER_MAX_UPLOAD_BYTES,
+  withUploadSlot,
+} from '../common/upload-concurrency';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/chat-room-constants';
@@ -75,7 +82,7 @@ export class ChatController {
   ) {}
 
   @Get('rooms')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   async listRooms(@Req() req: { user: RequestUser }) {
     await this.chatService.assertUserMayUseChat(req.user.userId);
     const user = await this.usersService.findById(req.user.userId);
@@ -108,7 +115,7 @@ export class ChatController {
   }
 
   @Post('rooms')
-  @Roles(AllianceRole.R5)
+  @Roles(AllianceRole.ADMIN)
   async createRoom(
     @Req() req: { user: RequestUser },
     @Body() dto: CreateChatRoomDto,
@@ -126,7 +133,7 @@ export class ChatController {
   }
 
   @Patch('rooms/:roomId')
-  @Roles(AllianceRole.R5)
+  @Roles(AllianceRole.ADMIN)
   async updateRoom(
     @Req() req: { user: RequestUser },
     @Param('roomId') roomId: string,
@@ -148,7 +155,7 @@ export class ChatController {
   }
 
   @Delete('rooms/:roomId')
-  @Roles(AllianceRole.R5)
+  @Roles(AllianceRole.ADMIN)
   async deleteRoom(
     @Req() req: { user: RequestUser },
     @Param('roomId') roomId: string,
@@ -166,7 +173,7 @@ export class ChatController {
   }
 
   @Get('messages')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   async getRecentMessages(
     @Req() req: { user: RequestUser },
     @Query('roomId') roomId?: string,
@@ -186,7 +193,7 @@ export class ChatController {
   }
 
   @Post('messages')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   @Throttle({ default: { limit: 8, ttl: 10_000 } })
   async createMessage(
     @Req() req: { user: RequestUser },
@@ -252,7 +259,7 @@ export class ChatController {
   }
 
   @Post('attachments')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
@@ -288,40 +295,46 @@ export class ChatController {
     const mimeType = (file.mimetype ?? '').trim() || 'application/octet-stream';
     const originalName = (file.originalname ?? '').trim();
 
-    if (mimeType.startsWith('image/')) {
-      return this.attachmentsService.uploadImage({
-        buffer: file.buffer,
-        filename: originalName,
-        mimeType,
-        size: file.size,
-        allianceId,
-        roomId: roomObjectId,
-        uploaderUserId: req.user.userId,
-      });
-    }
-
-    if (ChatAttachmentsService.isApkUpload(mimeType, originalName)) {
-      if (req.user.role !== AllianceRole.R5) {
-        throw new ForbiddenException('Only alliance admins (R5) may upload APK files');
+    return withUploadSlot(async () => {
+      if (mimeType.startsWith('image/')) {
+        assertUploadSizeWithinLimit(file.size, FREE_TIER_MAX_UPLOAD_BYTES);
+        return this.attachmentsService.uploadImage({
+          buffer: file.buffer,
+          filename: originalName,
+          mimeType,
+          size: file.size,
+          allianceId,
+          roomId: roomObjectId,
+          uploaderUserId: req.user.userId,
+        });
       }
-      return this.attachmentsService.uploadFile({
-        buffer: file.buffer,
-        filename: originalName || 'update.apk',
-        mimeType,
-        size: file.size,
-        allianceId,
-        roomId: roomObjectId,
-        uploaderUserId: req.user.userId,
-      });
-    }
 
-    throw new BadRequestException(
-      'Unsupported file type (images or APK for R5 admins only)',
-    );
+      if (ChatAttachmentsService.isApkUpload(mimeType, originalName)) {
+        if (!isAppAdminRole(req.user.role)) {
+          throw new ForbiddenException(
+            'Only app administrators may upload APK files',
+          );
+        }
+        assertUploadSizeWithinLimit(file.size, FORUM_APK_MAX_UPLOAD_BYTES, 'APK');
+        return this.attachmentsService.uploadFile({
+          buffer: file.buffer,
+          filename: originalName || 'update.apk',
+          mimeType,
+          size: file.size,
+          allianceId,
+          roomId: roomObjectId,
+          uploaderUserId: req.user.userId,
+        });
+      }
+
+      throw new BadRequestException(
+        'Unsupported file type (images or APK for app admins only)',
+      );
+    });
   }
 
   @Get('attachments/:fileId')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   @Header('Cache-Control', 'private, max-age=3600')
   async getAttachment(
     @Req() req: { user: RequestUser },
@@ -359,7 +372,7 @@ export class ChatController {
   }
 
   @Delete('messages/:messageId')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   async deleteMessage(
     @Req() req: { user: RequestUser },
     @Param('messageId') messageId: string,
@@ -376,7 +389,7 @@ export class ChatController {
   }
 
   @Patch('messages/:messageId')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   async editMessage(
     @Req() req: { user: RequestUser },
     @Param('messageId') messageId: string,
@@ -394,7 +407,7 @@ export class ChatController {
   }
 
   @Post('messages/:messageId/reactions')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   async toggleReaction(
     @Req() req: { user: RequestUser },
     @Param('messageId') messageId: string,
@@ -412,7 +425,7 @@ export class ChatController {
   }
 
   @Post('messages/:messageId/forward')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   async forwardMessage(
     @Req() req: { user: RequestUser },
     @Param('messageId') messageId: string,
@@ -432,7 +445,7 @@ export class ChatController {
   }
 
   @Post('rooms/:roomId/read')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   async markRoomRead(
     @Req() req: { user: RequestUser },
     @Param('roomId') roomId: string,

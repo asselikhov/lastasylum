@@ -33,7 +33,7 @@ export class CreateTeamForumMessageDto {
   @IsString({ each: true })
   imageFileIds?: string[];
 
-  /** Pre-uploaded APK/file via POST …/forum/attachments/file (R5 only). */
+  /** Pre-uploaded APK/file via POST …/forum/attachments/file (squad R4/R5). */
   @IsOptional()
   @IsString()
   fileFileId?: string;

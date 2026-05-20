@@ -5,18 +5,19 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { normalizeAllianceRole } from '../alliance-role.util';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { AllianceRole } from '../enums/alliance-role.enum';
 
 type UserWithRole = {
-  role: AllianceRole;
+  role: AllianceRole | string;
 };
 
 const rolePriority: Record<AllianceRole, number> = {
-  [AllianceRole.R2]: 1,
-  [AllianceRole.R3]: 2,
-  [AllianceRole.R4]: 3,
-  [AllianceRole.R5]: 4,
+  [AllianceRole.MEMBER]: 1,
+  [AllianceRole.OFFICER]: 2,
+  [AllianceRole.MODERATOR]: 3,
+  [AllianceRole.ADMIN]: 4,
 };
 
 @Injectable()
@@ -42,7 +43,7 @@ export class RolesGuard implements CanActivate {
       throw new UnauthorizedException('User role is missing in access token');
     }
 
-    const userScore = rolePriority[user.role];
+    const userScore = rolePriority[normalizeAllianceRole(user.role)];
     const minimumRequiredScore = Math.min(
       ...requiredRoles.map((role) => rolePriority[role]),
     );

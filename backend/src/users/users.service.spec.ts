@@ -7,6 +7,7 @@ import { TeamMembershipStatus } from '../common/enums/team-membership-status.enu
 import { AllianceRegistryService } from './alliance-registry.service';
 import { TeamsService } from './teams.service';
 import { StickerAccessService } from './sticker-access.service';
+import { GameIdentitiesService } from './game-identities.service';
 
 describe('UsersService', () => {
   const updateOneExec = jest.fn().mockResolvedValue({ modifiedCount: 1 });
@@ -42,6 +43,7 @@ describe('UsersService', () => {
         { provide: AllianceRegistryService, useValue: {} },
         { provide: TeamsService, useValue: {} },
         { provide: StickerAccessService, useValue: {} },
+        { provide: GameIdentitiesService, useValue: {} },
         {
           provide: getModelToken(User.name),
           useValue: {

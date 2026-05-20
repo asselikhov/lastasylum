@@ -2,7 +2,8 @@ import { Module, forwardRef } from '@nestjs/common';
 import { ChatModule } from '../chat/chat.module';
 import { MongooseModule } from '@nestjs/mongoose';
 import { TeamForumSocketModule } from './team-forum-socket.module';
-import { AdminAlliancesController } from './admin-alliances.controller';
+import { AdminModule } from './admin.module';
+import { ForumModule } from './forum.module';
 import { AllianceRegistryService } from './alliance-registry.service';
 import {
   AllianceRegistry,
@@ -14,8 +15,6 @@ import {
   TeamJoinRequestSchema,
 } from './schemas/team-join-request.schema';
 import { User, UserSchema } from './schemas/user.schema';
-import { AdminGameIdentitiesController } from './admin-game-identities.controller';
-import { AdminTeamsController } from './admin-teams.controller';
 import { TeamsController } from './teams.controller';
 import { TeamsService } from './teams.service';
 import { GameIdentitiesService } from './game-identities.service';
@@ -34,19 +33,6 @@ import {
 import { TeamNewsService } from './team-news.service';
 import { TeamNewsAttachmentsService } from './team-news-attachments.service';
 import {
-  TeamForumMessage,
-  TeamForumMessageSchema,
-} from './schemas/team-forum-message.schema';
-import {
-  TeamForumTopic,
-  TeamForumTopicSchema,
-} from './schemas/team-forum-topic.schema';
-import {
-  TeamForumTopicReadState,
-  TeamForumTopicReadStateSchema,
-} from './schemas/team-forum-topic-read-state.schema';
-import { TeamForumService } from './team-forum.service';
-import {
   AllianceStickerRoleGrant,
   AllianceStickerRoleGrantSchema,
 } from './schemas/alliance-sticker-role-grant.schema';
@@ -54,7 +40,6 @@ import {
   AllianceStickerUserGrant,
   AllianceStickerUserGrantSchema,
 } from './schemas/alliance-sticker-user-grant.schema';
-import { AdminStickerAccessController } from './admin-sticker-access.controller';
 import { StickerAccessService } from './sticker-access.service';
 
 @Module({
@@ -62,6 +47,8 @@ import { StickerAccessService } from './sticker-access.service';
     StorageModule,
     forwardRef(() => ChatModule),
     forwardRef(() => TeamForumSocketModule),
+    forwardRef(() => AdminModule),
+    ForumModule,
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: AllianceRegistry.name, schema: AllianceRegistrySchema },
@@ -69,12 +56,6 @@ import { StickerAccessService } from './sticker-access.service';
       { name: TeamJoinRequest.name, schema: TeamJoinRequestSchema },
       { name: TeamNews.name, schema: TeamNewsSchema },
       { name: TeamNewsAttachment.name, schema: TeamNewsAttachmentSchema },
-      { name: TeamForumTopic.name, schema: TeamForumTopicSchema },
-      { name: TeamForumMessage.name, schema: TeamForumMessageSchema },
-      {
-        name: TeamForumTopicReadState.name,
-        schema: TeamForumTopicReadStateSchema,
-      },
       { name: AllianceStickerRoleGrant.name, schema: AllianceStickerRoleGrantSchema },
       {
         name: AllianceStickerUserGrant.name,
@@ -82,14 +63,7 @@ import { StickerAccessService } from './sticker-access.service';
       },
     ]),
   ],
-  controllers: [
-    UsersController,
-    AdminAlliancesController,
-    AdminStickerAccessController,
-    TeamsController,
-    AdminTeamsController,
-    AdminGameIdentitiesController,
-  ],
+  controllers: [UsersController, TeamsController],
   providers: [
     UsersService,
     GameIdentitiesService,
@@ -97,7 +71,6 @@ import { StickerAccessService } from './sticker-access.service';
     TeamsService,
     TeamNewsService,
     TeamNewsAttachmentsService,
-    TeamForumService,
     StickerAccessService,
   ],
   exports: [
@@ -105,7 +78,7 @@ import { StickerAccessService } from './sticker-access.service';
     GameIdentitiesService,
     TeamsService,
     MongooseModule,
-    TeamForumService,
+    ForumModule,
     StickerAccessService,
   ],
 })

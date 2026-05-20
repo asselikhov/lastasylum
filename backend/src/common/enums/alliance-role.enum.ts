@@ -1,6 +1,9 @@
+/**
+ * App account role (JWT `role`, user.role). Not squad ranks — those are R1–R5 only.
+ */
 export enum AllianceRole {
-  R5 = 'R5',
-  R4 = 'R4',
-  R3 = 'R3',
-  R2 = 'R2',
+  MEMBER = 'MEMBER',
+  OFFICER = 'OFFICER',
+  MODERATOR = 'MODERATOR',
+  ADMIN = 'ADMIN',
 }

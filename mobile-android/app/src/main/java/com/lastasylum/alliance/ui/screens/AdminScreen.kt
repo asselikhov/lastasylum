@@ -118,6 +118,8 @@ fun AdminScreen(
     onDismissSnack: () -> Unit,
     onUpdateGameIdentity: (userId: String, identityId: String, gameNickname: String, serverNumber: Int) -> Unit = { _, _, _, _ -> },
     onUpdatePlayerTeam: (teamId: String, tag: String, displayName: String) -> Unit = { _, _, _ -> },
+    onLoadMorePlayers: () -> Unit = {},
+    onLoadMorePlayerTeams: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var selectedPlayer by remember { mutableStateOf<AdminUserOnServerDto?>(null) }
@@ -200,6 +202,7 @@ fun AdminScreen(
                 onSearchChange = onTeamSearchChange,
                 onServerFilter = onTeamsServerFilter,
                 onTeamClick = onOpenPlayerTeam,
+                onLoadMore = onLoadMorePlayerTeams,
             )
             is AdminRoute.PlayerTeamDetail -> AdminTeamDetailContent(
                 state = state,
@@ -229,6 +232,7 @@ fun AdminScreen(
                 onServerFilter = onPlayersServerFilter,
                 onSearchChange = onPlayersSearchChange,
                 onPlayerClick = { selectedPlayer = it },
+                onLoadMore = onLoadMorePlayers,
             )
         }
     }
@@ -307,13 +311,13 @@ fun AdminScreen(
                         }
                     }
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("R2", "R3", "R4", "R5").forEach { role ->
+                        com.lastasylum.alliance.data.auth.AccountRoles.ALL.forEach { role ->
                             FilterChip(
                                 selected = state.stickerRolesZlobyaka.contains(role),
                                 onClick = {
                                     onToggleStickerAllianceRole(role, !state.stickerRolesZlobyaka.contains(role))
                                 },
-                                label = { Text(role) },
+                                label = { Text(com.lastasylum.alliance.ui.util.accountRoleLabel(role)) },
                             )
                         }
                     }
@@ -484,106 +488,159 @@ private fun AdminPlayersContent(
     onServerFilter: (Int?) -> Unit,
     onSearchChange: (String) -> Unit,
     onPlayerClick: (AdminUserOnServerDto) -> Unit,
+    onLoadMore: () -> Unit,
 ) {
-    val scroll = rememberScrollState()
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(scroll)
-            .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal, vertical = 8.dp),
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            horizontal = SquadRelayDimens.contentPaddingHorizontal,
+            vertical = 8.dp,
+        ),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text(
-            stringResource(R.string.admin_players_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        state.gameServersError?.let { AdminErrorBanner(it) {} }
-        state.usersOnServersError?.let { AdminErrorBanner(it) {} }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(
-                selected = state.playersSegment == AdminPlayersSegment.ALL,
-                onClick = { onSegmentChange(AdminPlayersSegment.ALL) },
-                label = { Text(stringResource(R.string.admin_players_tab_all)) },
-            )
-            FilterChip(
-                selected = state.playersSegment == AdminPlayersSegment.WITHOUT_TEAM,
-                onClick = { onSegmentChange(AdminPlayersSegment.WITHOUT_TEAM) },
-                label = {
-                    Text(
-                        stringResource(
-                            R.string.admin_players_tab_no_team,
-                            state.usersWithoutTeamCount,
-                        ),
-                    )
-                },
-            )
-        }
-        OutlinedTextField(
-            value = state.playersSearchQuery,
-            onValueChange = onSearchChange,
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            label = { Text(stringResource(R.string.admin_game_servers_search)) },
-        )
-        AdminServerFilterChips(
-            servers = state.gameServers,
-            selected = state.gameServerFilter,
-            onSelect = onServerFilter,
-        )
-        if (state.usersOnServersLoading && state.usersOnServers.isEmpty()) {
-            Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(strokeWidth = 2.dp)
-            }
-        } else if (state.usersOnServers.isEmpty()) {
+        item {
             Text(
-                stringResource(R.string.admin_game_servers_empty),
-                style = MaterialTheme.typography.bodyMedium,
+                stringResource(R.string.admin_players_hint),
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        } else {
-            state.usersOnServers.forEach { row ->
-                Surface(
-                    onClick = { onPlayerClick(row) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.medium,
-                    color = SquadRelaySurfaces.panelColor(0.42f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
-                ) {
-                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        }
+        state.gameServersError?.let { err ->
+            item { AdminErrorBanner(err) {} }
+        }
+        state.usersOnServersError?.let { err ->
+            item { AdminErrorBanner(err) {} }
+        }
+        item {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = state.playersSegment == AdminPlayersSegment.ALL,
+                    onClick = { onSegmentChange(AdminPlayersSegment.ALL) },
+                    label = { Text(stringResource(R.string.admin_players_tab_all)) },
+                )
+                FilterChip(
+                    selected = state.playersSegment == AdminPlayersSegment.WITHOUT_TEAM,
+                    onClick = { onSegmentChange(AdminPlayersSegment.WITHOUT_TEAM) },
+                    label = {
                         Text(
                             stringResource(
-                                R.string.admin_game_servers_row,
-                                com.lastasylum.alliance.ui.util.formatServerLabel(row.serverNumber)
-                                    ?: "#${row.serverNumber}",
-                                row.gameNickname,
+                                R.string.admin_players_tab_no_team,
+                                state.usersWithoutTeamCount,
                             ),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
                         )
-                        Text(
-                            stringResource(R.string.admin_game_servers_account, row.email),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        val team = row.playerTeamTag?.let { tag ->
-                            val prefix = teamTagWithServerPrefix(tag, row.serverNumber)
-                            "$prefix ${row.playerTeamDisplayName.orEmpty()}".trim()
-                        } ?: row.playerTeamDisplayName
-                        if (!team.isNullOrBlank()) {
-                            Text(
-                                stringResource(R.string.admin_game_servers_team, team),
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                        if (row.isActiveIdentity) {
-                            Text(
-                                stringResource(R.string.admin_game_servers_active),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
+                    },
+                )
+            }
+        }
+        item {
+            OutlinedTextField(
+                value = state.playersSearchQuery,
+                onValueChange = onSearchChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text(stringResource(R.string.admin_game_servers_search)) },
+            )
+        }
+        item {
+            AdminServerFilterChips(
+                servers = state.gameServers,
+                selected = state.gameServerFilter,
+                onSelect = onServerFilter,
+            )
+        }
+        if (state.usersOnServersLoading && state.usersOnServers.isEmpty()) {
+            item {
+                Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(strokeWidth = 2.dp)
                 }
+            }
+        } else if (state.usersOnServers.isEmpty()) {
+            item {
+                Text(
+                    stringResource(R.string.admin_game_servers_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else {
+            items(state.usersOnServers, key = { "${it.userId}_${it.identityId}" }) { row ->
+                AdminPlayerListRow(row = row, onClick = { onPlayerClick(row) })
+            }
+            if (state.usersOnServersHasMore) {
+                item {
+                    AdminLoadMoreRow(
+                        loading = state.usersOnServersLoadingMore,
+                        onClick = onLoadMore,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdminPlayerListRow(
+    row: AdminUserOnServerDto,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = SquadRelaySurfaces.panelColor(0.42f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                stringResource(
+                    R.string.admin_game_servers_row,
+                    formatServerLabel(row.serverNumber) ?: "#${row.serverNumber}",
+                    row.gameNickname,
+                ),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                stringResource(R.string.admin_game_servers_account, row.email),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            val team = row.playerTeamTag?.let { tag ->
+                val prefix = teamTagWithServerPrefix(tag, row.serverNumber)
+                "$prefix ${row.playerTeamDisplayName.orEmpty()}".trim()
+            } ?: row.playerTeamDisplayName
+            if (!team.isNullOrBlank()) {
+                Text(
+                    stringResource(R.string.admin_game_servers_team, team),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            if (row.isActiveIdentity) {
+                Text(
+                    stringResource(R.string.admin_game_servers_active),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdminLoadMoreRow(
+    loading: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (loading) {
+            CircularProgressIndicator(strokeWidth = 2.dp)
+        } else {
+            OutlinedButton(onClick = onClick) {
+                Text(stringResource(R.string.admin_load_more))
             }
         }
     }
@@ -665,6 +722,7 @@ private fun AdminPlayerTeamsContent(
     onSearchChange: (String) -> Unit,
     onServerFilter: (Int?) -> Unit,
     onTeamClick: (PlayerTeamAdminDto) -> Unit,
+    onLoadMore: () -> Unit,
 ) {
     val q = state.teamSearchQuery.trim().lowercase()
     val filtered = remember(state.playerTeams, q) {
@@ -710,6 +768,14 @@ private fun AdminPlayerTeamsContent(
         }
         items(filtered, key = { it.id }) { team ->
             AdminTeamListRow(team = team, onClick = { onTeamClick(team) })
+        }
+        if (state.playerTeamsHasMore && q.isEmpty()) {
+            item {
+                AdminLoadMoreRow(
+                    loading = state.playerTeamsLoadingMore,
+                    onClick = onLoadMore,
+                )
+            }
         }
     }
 }

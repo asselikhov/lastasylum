@@ -24,17 +24,19 @@ export class AdminGameIdentitiesController {
   ) {}
 
   @Get('game-servers')
-  @Roles(AllianceRole.R5)
+  @Roles(AllianceRole.ADMIN)
   listGameServers() {
     return this.gameIdentities.listServerSummariesForAdmin();
   }
 
   @Get('game-identities/users')
-  @Roles(AllianceRole.R5)
+  @Roles(AllianceRole.ADMIN)
   async listUsersOnServers(
     @Query('serverNumber') serverNumberRaw?: string,
     @Query('q') q?: string,
     @Query('withoutTeam') withoutTeamRaw?: string,
+    @Query('skip') skipRaw?: string,
+    @Query('limit') limitRaw?: string,
   ) {
     const serverNumber =
       serverNumberRaw != null && serverNumberRaw.trim() !== ''
@@ -44,15 +46,22 @@ export class AdminGameIdentitiesController {
       withoutTeamRaw === '1' ||
       withoutTeamRaw === 'true' ||
       withoutTeamRaw === 'yes';
+    const skip = Math.max(0, Number.parseInt(skipRaw ?? '0', 10) || 0);
+    const limit = Math.min(
+      200,
+      Math.max(1, Number.parseInt(limitRaw ?? '50', 10) || 50),
+    );
     return this.gameIdentities.listUsersForAdminByServer({
       serverNumber: Number.isFinite(serverNumber) ? serverNumber : undefined,
       q: q?.trim() || undefined,
       withoutTeam,
+      skip,
+      limit,
     });
   }
 
   @Patch('users/:userId/game-identities/:identityId')
-  @Roles(AllianceRole.R5)
+  @Roles(AllianceRole.ADMIN)
   async adminUpdateGameIdentity(
     @Param('userId') userId: string,
     @Param('identityId') identityId: string,

@@ -24,6 +24,7 @@ import com.lastasylum.alliance.data.users.UsersRepository
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -59,6 +60,7 @@ class ChatViewModel(
         ChatState(
             currentUserId = currentUserId,
             currentUserRole = currentUserRole,
+            isAppAdmin = isAppAdmin(currentUserRole),
         ),
     )
     val state: StateFlow<ChatState> = _state.asStateFlow()
@@ -90,7 +92,10 @@ class ChatViewModel(
     private val typingPeerJobsLock = Any()
     private var typingEmitJob: Job? = null
 
-    private val incomingMessages = Channel<ChatMessage>(capacity = Channel.UNLIMITED)
+    private val incomingMessages = Channel<ChatMessage>(
+        capacity = 256,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
     private val roomMessageCache = mutableMapOf<String, RoomMessageCache>()
     /** Latest message id we successfully marked read per room (avoids regress + duplicate bumps). */
     private val lastMarkedReadByRoom = mutableMapOf<String, String>()
@@ -263,11 +268,22 @@ class ChatViewModel(
     private suspend fun loadTeamProfileGate(): Boolean {
         val p = usersRepository.getMyProfile().getOrNull()
         val keys = p?.enabledStickerPacks?.toSet() ?: emptySet()
-        _state.value = _state.value.copy(enabledStickerPackKeys = keys)
+        _state.value = _state.value.copy(
+            enabledStickerPackKeys = keys,
+            playerTeamSquadRole = p?.playerTeamSquadRole,
+        )
         return p?.let {
             !it.teamDisplayName.isNullOrBlank() && !it.teamTag.isNullOrBlank()
         } ?: false
     }
+
+    private fun canModerateChat(message: ChatMessage): Boolean =
+        canDeleteChatMessage(
+            message = message,
+            currentUserId = currentUserId,
+            isAppAdmin = _state.value.isAppAdmin,
+            playerTeamSquadRole = _state.value.playerTeamSquadRole,
+        )
 
     private fun allianceHubRoomId(rooms: List<ChatRoomDto>): String? =
         rooms.firstOrNull { isAllianceHubRoom(it) }?.id
@@ -304,6 +320,7 @@ class ChatViewModel(
                 error = e.toUserMessageRu(res),
                 currentUserId = currentUserId,
                 currentUserRole = currentUserRole,
+                isAppAdmin = isAppAdmin(currentUserRole),
                 hasTeamProfileForGlobalChat = false,
                 enabledStickerPackKeys = emptySet(),
             )
@@ -321,6 +338,7 @@ class ChatViewModel(
                 isRoomsLoading = false,
                 currentUserId = currentUserId,
                 currentUserRole = currentUserRole,
+                isAppAdmin = isAppAdmin(currentUserRole),
                 hasTeamProfileForGlobalChat = false,
                 error = getApplication<Application>().getString(
                     com.lastasylum.alliance.R.string.chat_no_rooms,
@@ -945,7 +963,7 @@ class ChatViewModel(
     fun beginMessageSelection(messageId: String) {
         val target = _state.value.messages.find { it._id == messageId } ?: return
         if (target.deletedAt != null) return
-        if (!canDeleteChatMessage(target, currentUserId, currentUserRole)) return
+        if (!canModerateChat(target)) return
         _state.value = _state.value.copy(
             selectedMessageIds = setOf(messageId),
             activeActionMessageId = null,
@@ -957,7 +975,7 @@ class ChatViewModel(
     fun toggleMessageSelection(messageId: String) {
         val target = _state.value.messages.find { it._id == messageId } ?: return
         if (target.deletedAt != null) return
-        if (!canDeleteChatMessage(target, currentUserId, currentUserRole)) return
+        if (!canModerateChat(target)) return
         val cur = _state.value.selectedMessageIds
         if (cur.isEmpty()) return
         val next = if (messageId in cur) cur - messageId else cur + messageId

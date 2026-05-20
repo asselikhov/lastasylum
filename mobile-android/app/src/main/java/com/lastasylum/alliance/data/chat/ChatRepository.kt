@@ -1,94 +1,23 @@
 package com.lastasylum.alliance.data.chat
 
-import com.lastasylum.alliance.BuildConfig
-import com.lastasylum.alliance.data.auth.TokenStore
-import kotlinx.coroutines.delay
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import okhttp3.MultipartBody
-import okhttp3.RequestBody.Companion.asRequestBody
-import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
 
 class ChatRepository(
-    private val chatApi: ChatApi,
-    private val tokenStore: TokenStore,
-    private val socketManager: ChatSocketManager,
-    private val chatRoomPreferences: ChatRoomPreferences,
+    chatApi: ChatApi,
+    tokenStore: com.lastasylum.alliance.data.auth.TokenStore,
+    socketManager: ChatSocketManager,
+    chatRoomPreferences: ChatRoomPreferences,
 ) {
-    /** Primary chat tab + alliance «Рейд» so overlay can receive raid while another tab is open. */
-    private fun realtimeRoomIdsForPrimary(primaryRoomId: String): List<String> {
-        val raid = chatRoomPreferences.getRaidRoomId()
-        return buildList {
-            add(primaryRoomId)
-            if (!raid.isNullOrBlank() && raid != primaryRoomId) add(raid)
-        }
-    }
+    private val rest = ChatRestRepository(chatApi, chatRoomPreferences)
+    private val realtime = ChatRealtimeSubscriber(socketManager, tokenStore, chatRoomPreferences)
 
-    /** When only the overlay is active: subscribe to raid first, then any stored selected room. */
-    private fun realtimeRoomIdsForOverlayBootstrap(): List<String> {
-        val raid = chatRoomPreferences.getRaidRoomId()
-        val selected = chatRoomPreferences.getSelectedRoomId()
-        return buildList {
-            if (!raid.isNullOrBlank()) add(raid)
-            if (!selected.isNullOrBlank() && selected !in this) add(selected)
-        }
-    }
-
-    private val primaryRealtimeRoomIds = LinkedHashSet<String>()
-    private val overlayRealtimeRoomIds = LinkedHashSet<String>()
-
-    private var realtimeUiListener: ((ChatMessage) -> Unit)? = null
-    private var realtimeDeleteListener: ((ChatMessageDeletedEvent) -> Unit)? = null
-    private var realtimeTypingListener: ((ChatTypingEvent) -> Unit)? = null
-    private var realtimeReadListener: ((ChatRoomReadEvent) -> Unit)? = null
-    private val overlayMessageListeners = java.util.concurrent.CopyOnWriteArrayList<(ChatMessage) -> Unit>()
-    private val overlayReactionListeners =
-        java.util.concurrent.CopyOnWriteArrayList<(OverlayReactionEvent) -> Unit>()
-    private val overlayChatPanelClosedListeners =
-        java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
-
-    private fun mergedRealtimeRoomIds(): List<String> =
-        (primaryRealtimeRoomIds + overlayRealtimeRoomIds).distinct()
-
-    private fun ensureRealtimeSocketConnected() {
-        val distinct = mergedRealtimeRoomIds()
-        if (distinct.isEmpty()) return
-        socketManager.connect(
-            baseUrl = BuildConfig.API_BASE_URL,
-            roomIds = distinct,
-            tokenProvider = { tokenStore.getAccessToken() },
-        )
-    }
-
-    fun addOverlayChatPanelClosedListener(listener: () -> Unit) {
-        if (!overlayChatPanelClosedListeners.contains(listener)) {
-            overlayChatPanelClosedListeners.add(listener)
-        }
-    }
-
-    fun removeOverlayChatPanelClosedListener(listener: () -> Unit) {
-        overlayChatPanelClosedListeners.remove(listener)
-    }
-
-    /** Full-screen overlay chat closed — main app should resync unread and reclaim socket listeners. */
-    fun notifyOverlayChatPanelClosed() {
-        overlayChatPanelClosedListeners.forEach { listener ->
-            runCatching { listener() }
-        }
-    }
-
-    suspend fun listRooms(): Result<List<ChatRoomDto>> =
-        runCatching { chatApi.listRooms() }
+    suspend fun listRooms(): Result<List<ChatRoomDto>> = rest.listRooms()
 
     suspend fun loadRecentMessages(
         roomId: String,
         beforeMessageId: String? = null,
         limit: Int = 30,
-    ): Result<List<ChatMessage>> {
-        return runCatching {
-            chatApi.getMessages(roomId = roomId, before = beforeMessageId, limit = limit)
-        }
-    }
+    ): Result<List<ChatMessage>> = rest.loadRecentMessages(roomId, beforeMessageId, limit)
 
     suspend fun sendMessage(
         text: String,
@@ -96,88 +25,55 @@ class ChatRepository(
         replyToMessageId: String? = null,
         attachments: List<String>? = null,
         excavationAlert: Boolean = false,
-    ): Result<ChatMessage> {
-        return runCatching {
-            chatApi.sendMessage(
-                SendMessageRequest(
-                    text = text,
-                    roomId = roomId,
-                    replyToMessageId = replyToMessageId,
-                    attachments = attachments,
-                    excavationAlert = if (excavationAlert) true else null,
-                ),
-            )
-        }
-    }
+    ): Result<ChatMessage> = rest.sendMessage(text, roomId, replyToMessageId, attachments, excavationAlert)
 
     suspend fun sendExcavationAlertWithRetries(text: String, roomId: String): Result<ChatMessage> =
-        sendMessageWithRetries(text, roomId, excavationAlert = true)
+        rest.sendExcavationAlertWithRetries(text, roomId)
 
-    /** Несколько попыток с задержкой — для UI и оверлея при нестабильной сети. */
     suspend fun sendMessageWithRetries(
         text: String,
         roomId: String,
         replyToMessageId: String? = null,
         attachments: List<String>? = null,
         excavationAlert: Boolean = false,
-    ): Result<ChatMessage> {
-        var last: Throwable? = null
-        repeat(3) { attempt ->
-            val r = sendMessage(text, roomId, replyToMessageId, attachments, excavationAlert)
-            if (r.isSuccess) {
-                // For the overlay strip we want the message to appear immediately after HTTP success,
-                // even if the socket broadcast is delayed or the room subscription is rebuilding.
-                r.getOrNull()?.let { sent ->
-                    overlayMessageListeners.forEach { l -> runCatching { l(sent) } }
-                }
-                return r
-            }
-            last = r.exceptionOrNull()
-            if (attempt < 2) {
-                delay(listOf(400L, 1200L)[attempt])
-            }
-        }
-        return Result.failure(last ?: IllegalStateException("send_failed"))
-    }
+    ): Result<ChatMessage> =
+        rest.sendMessageWithRetries(
+            text,
+            roomId,
+            replyToMessageId,
+            attachments,
+            excavationAlert,
+            onHttpSuccess = realtime::dispatchOverlayHttpMessage,
+        )
 
     suspend fun uploadImageFile(roomId: String, file: File, mimeType: String): Result<UploadChatAttachmentResponse> =
-        uploadAttachmentFile(roomId, file, mimeType, file.name)
+        rest.uploadImageFile(roomId, file, mimeType)
 
     suspend fun uploadAttachmentFile(
         roomId: String,
         file: File,
         mimeType: String,
         uploadFilename: String,
-    ): Result<UploadChatAttachmentResponse> = runCatching {
-        val body = file.asRequestBody(mimeType.toMediaTypeOrNull())
-        val part = MultipartBody.Part.createFormData("file", uploadFilename, body)
-        val roomPart = roomId.toRequestBody("text/plain".toMediaTypeOrNull())
-        chatApi.uploadAttachment(part, roomPart)
-    }
+    ): Result<UploadChatAttachmentResponse> =
+        rest.uploadAttachmentFile(roomId, file, mimeType, uploadFilename)
 
-    suspend fun sendSystemVoiceMessage(text: String): Result<ChatMessage> {
-        val roomId = chatRoomPreferences.getRaidRoomId()
-            ?: return Result.failure(IllegalStateException("no_room"))
-        return sendMessageWithRetries(text.trim(), roomId)
-    }
+    suspend fun sendSystemVoiceMessage(text: String): Result<ChatMessage> =
+        rest.sendSystemVoiceMessage(text)
 
     suspend fun deleteMessage(messageId: String): Result<ChatMessageDeleteResult> =
-        runCatching { chatApi.deleteMessage(messageId) }
+        rest.deleteMessage(messageId)
 
     suspend fun editMessage(messageId: String, text: String): Result<ChatMessage> =
-        runCatching { chatApi.editMessage(messageId, EditMessageRequest(text = text)) }
+        rest.editMessage(messageId, text)
 
     suspend fun toggleReaction(messageId: String, emoji: String): Result<ChatMessage> =
-        runCatching { chatApi.toggleReaction(messageId, ToggleReactionRequest(emoji = emoji)) }
+        rest.toggleReaction(messageId, emoji)
 
     suspend fun forwardMessage(messageId: String, roomId: String): Result<ChatMessage> =
-        runCatching { chatApi.forwardMessage(messageId, ForwardMessageRequest(roomId = roomId)) }
+        rest.forwardMessage(messageId, roomId)
 
     suspend fun markRoomRead(roomId: String, messageId: String): Result<Unit> =
-        runCatching {
-            chatApi.markRoomRead(roomId, MarkRoomReadRequest(messageId = messageId))
-            Unit
-        }
+        rest.markRoomRead(roomId, messageId)
 
     fun connectRealtime(
         roomId: String,
@@ -185,15 +81,7 @@ class ChatRepository(
         onDeleteMessage: (ChatMessageDeletedEvent) -> Unit = {},
         onTyping: (ChatTypingEvent) -> Unit = {},
         onRead: (ChatRoomReadEvent) -> Unit = {},
-    ) {
-        connectRealtimeRooms(
-            roomIds = realtimeRoomIdsForPrimary(roomId),
-            onMessage = onMessage,
-            onDeleteMessage = onDeleteMessage,
-            onTyping = onTyping,
-            onRead = onRead,
-        )
-    }
+    ) = realtime.connectRealtime(roomId, onMessage, onDeleteMessage, onTyping, onRead)
 
     fun connectRealtimeRooms(
         roomIds: List<String>,
@@ -201,111 +89,39 @@ class ChatRepository(
         onDeleteMessage: (ChatMessageDeletedEvent) -> Unit = {},
         onTyping: (ChatTypingEvent) -> Unit = {},
         onRead: (ChatRoomReadEvent) -> Unit = {},
-    ) {
-        realtimeUiListener?.let { socketManager.removeMessageListener(it) }
-        realtimeDeleteListener?.let { socketManager.removeMessageDeletedListener(it) }
-        realtimeTypingListener?.let { socketManager.removeTypingListener(it) }
-        realtimeReadListener?.let { socketManager.removeReadListener(it) }
-        realtimeUiListener = onMessage
-        realtimeDeleteListener = onDeleteMessage
-        realtimeTypingListener = onTyping
-        realtimeReadListener = onRead
-        socketManager.addMessageListener(onMessage)
-        socketManager.addMessageDeletedListener(onDeleteMessage)
-        socketManager.addTypingListener(onTyping)
-        socketManager.addReadListener(onRead)
-        primaryRealtimeRoomIds.clear()
-        primaryRealtimeRoomIds.addAll(roomIds.map { it.trim() }.filter { it.isNotEmpty() })
-        ensureRealtimeSocketConnected()
-    }
+    ) = realtime.connectRealtimeRooms(roomIds, onMessage, onDeleteMessage, onTyping, onRead)
 
-    fun emitTypingPing(roomId: String) {
-        socketManager.emitTyping(roomId)
-    }
+    fun emitTypingPing(roomId: String) = realtime.emitTypingPing(roomId)
 
-    fun emitOverlayReaction(targetUserId: String, reaction: String = "heart") {
-        socketManager.emitOverlayReaction(targetUserId, reaction)
-    }
+    fun emitOverlayReaction(targetUserId: String, reaction: String = "heart") =
+        realtime.emitOverlayReaction(targetUserId, reaction)
 
-    fun emitOverlayReactionBroadcast(reaction: String = "heart") {
-        socketManager.emitOverlayReactionBroadcast(reaction)
-    }
+    fun emitOverlayReactionBroadcast(reaction: String = "heart") =
+        realtime.emitOverlayReactionBroadcast(reaction)
 
-    fun addOverlayReactionListener(listener: (OverlayReactionEvent) -> Unit) {
-        if (!overlayReactionListeners.contains(listener)) {
-            overlayReactionListeners.add(listener)
-        }
-        socketManager.addOverlayReactionListener(listener)
-        overlayRealtimeRoomIds.clear()
-        overlayRealtimeRoomIds.addAll(realtimeRoomIdsForOverlayBootstrap())
-        ensureRealtimeSocketConnected()
-    }
+    fun addOverlayReactionListener(listener: (OverlayReactionEvent) -> Unit) =
+        realtime.addOverlayReactionListener(listener)
 
-    fun removeOverlayReactionListener(listener: (OverlayReactionEvent) -> Unit) {
-        overlayReactionListeners.remove(listener)
-        socketManager.removeOverlayReactionListener(listener)
-        if (overlayMessageListeners.isEmpty() && overlayReactionListeners.isEmpty()) {
-            overlayRealtimeRoomIds.clear()
-            if (primaryRealtimeRoomIds.isEmpty()) {
-                socketManager.disconnect()
-            } else {
-                ensureRealtimeSocketConnected()
-            }
-        }
-    }
+    fun removeOverlayReactionListener(listener: (OverlayReactionEvent) -> Unit) =
+        realtime.removeOverlayReactionListener(listener)
 
-    /** Called after OkHttp refreshes access token so the socket re-authenticates. */
-    fun onAccessTokenRefreshed() {
-        socketManager.reconnectWithFreshToken()
-    }
+    fun onAccessTokenRefreshed() = realtime.onAccessTokenRefreshed()
 
-    fun disconnectRealtime() {
-        realtimeUiListener?.let { socketManager.removeMessageListener(it) }
-        realtimeDeleteListener?.let { socketManager.removeMessageDeletedListener(it) }
-        realtimeTypingListener?.let { socketManager.removeTypingListener(it) }
-        realtimeReadListener?.let { socketManager.removeReadListener(it) }
-        realtimeUiListener = null
-        realtimeDeleteListener = null
-        realtimeTypingListener = null
-        realtimeReadListener = null
-        primaryRealtimeRoomIds.clear()
-        if (overlayRealtimeRoomIds.isEmpty()) {
-            socketManager.disconnect()
-        } else {
-            ensureRealtimeSocketConnected()
-        }
-    }
+    fun disconnectRealtime() = realtime.disconnectRealtime()
 
-    fun addOverlayMessageListener(listener: (ChatMessage) -> Unit) {
-        if (!overlayMessageListeners.contains(listener)) {
-            overlayMessageListeners.add(listener)
-        }
-        socketManager.addMessageListener(listener)
-        overlayRealtimeRoomIds.clear()
-        overlayRealtimeRoomIds.addAll(realtimeRoomIdsForOverlayBootstrap())
-        ensureRealtimeSocketConnected()
-    }
+    fun addOverlayMessageListener(listener: (ChatMessage) -> Unit) =
+        realtime.addOverlayMessageListener(listener)
 
-    fun removeOverlayMessageListener(listener: (ChatMessage) -> Unit) {
-        overlayMessageListeners.remove(listener)
-        socketManager.removeMessageListener(listener)
-        if (overlayMessageListeners.isEmpty() && overlayReactionListeners.isEmpty()) {
-            overlayRealtimeRoomIds.clear()
-            if (primaryRealtimeRoomIds.isEmpty()) {
-                socketManager.disconnect()
-            } else {
-                ensureRealtimeSocketConnected()
-            }
-        }
-    }
+    fun removeOverlayMessageListener(listener: (ChatMessage) -> Unit) =
+        realtime.removeOverlayMessageListener(listener)
 
-    fun resetRealtimeForLogout() {
-        realtimeUiListener?.let { socketManager.removeMessageListener(it) }
-        realtimeUiListener = null
-        primaryRealtimeRoomIds.clear()
-        overlayRealtimeRoomIds.clear()
-        overlayReactionListeners.forEach { socketManager.removeOverlayReactionListener(it) }
-        overlayReactionListeners.clear()
-        socketManager.disconnectSocketAndClearListeners()
-    }
+    fun addOverlayChatPanelClosedListener(listener: () -> Unit) =
+        realtime.addOverlayChatPanelClosedListener(listener)
+
+    fun removeOverlayChatPanelClosedListener(listener: () -> Unit) =
+        realtime.removeOverlayChatPanelClosedListener(listener)
+
+    fun notifyOverlayChatPanelClosed() = realtime.notifyOverlayChatPanelClosed()
+
+    fun resetRealtimeForLogout() = realtime.resetRealtimeForLogout()
 }

@@ -33,7 +33,7 @@
     <string name="auth_reset_submit">Сохранить пароль</string>
     <string name="auth_reset_success">Пароль обновлён. Войдите с новым паролем.</string>
     <string name="auth_back_to_login">Назад ко входу</string>
-    <string name="auth_register_pending">Аккаунт создан. Дождитесь подтверждения администратора (R5), затем войдите по email и паролю.</string>
+    <string name="auth_register_pending">Аккаунт создан. Дождитесь подтверждения администратора, затем войдите по email и паролю.</string>
     <string name="auth_build_footer">Сборка %1$s (%2$d) · %3$s</string>
 
     <!-- Navigation -->
@@ -79,7 +79,7 @@
     <string name="chat_attach_menu_apk">APK обновление</string>
     <string name="chat_picked_apk_label">APK: %1$s</string>
     <string name="chat_picked_apk_remove">Убрать APK</string>
-    <string name="chat_attachment_apk_only_server">Только администратор (R5) может загружать APK в чат.</string>
+    <string name="chat_attachment_apk_only_server">Только администратор приложения может загружать APK в чат.</string>
     <string name="chat_attachment_apk_invalid">Выберите файл .apk</string>
     <string name="chat_apk_download">Скачать и установить</string>
     <string name="chat_apk_downloading">Загрузка APK…</string>
@@ -256,14 +256,18 @@
     <string name="update_dialog_download">Скачать</string>
     <string name="update_dialog_later">Позже</string>
 
-    <!-- Admin (R5) -->
+    <!-- Admin (app ADMIN role) -->
+    <string name="account_role_member">Участник</string>
+    <string name="account_role_officer">Офицер</string>
+    <string name="account_role_moderator">Модератор</string>
+    <string name="account_role_admin">Администратор</string>
     <string name="admin_title">Админка команды</string>
     <string name="admin_refresh">Обновить список</string>
     <string name="admin_dismiss_error">Скрыть ошибку</string>
     <string name="admin_status_pending">ожидает подтверждения</string>
     <string name="admin_status_active">в команде</string>
     <string name="admin_status_removed">исключён из команды</string>
-    <string name="admin_field_role">Роль: %1$s</string>
+    <string name="admin_field_role">Роль аккаунта: %1$s</string>
     <string name="admin_field_status">Статус: %1$s</string>
     <string name="admin_field_last_app_active">Последний вход в приложение: %1$s</string>
     <string name="admin_field_last_overlay_ingame">В игре с оверлеем: %1$s</string>
@@ -325,6 +329,7 @@
     <string name="admin_sticker_user_switch">Персональный доступ к стикерам</string>
     <string name="admin_sticker_save">Сохранить правила стикеров</string>
     <string name="admin_sticker_saved">Правила стикеров сохранены</string>
+    <string name="admin_load_more">Загрузить ещё</string>
     <string name="admin_hub_subtitle">Команды, игроки и настройки чата — каждый раздел отдельно, без дублирования списков.</string>
     <string name="admin_hub_players">Игроки</string>
     <string name="admin_hub_players_sub">Все ники и %1$d без команды</string>
@@ -586,7 +591,7 @@
     <string name="overlay_online_refresh_cd">Обновить список</string>
     <string name="overlay_online_loading">Загрузка…</string>
     <string name="overlay_online_empty">Сейчас никто из команды не в игре с оверлеем.</string>
-    <string name="overlay_member_alliance_role_cd">Ранг в альянсе: %1$s</string>
+    <string name="overlay_member_squad_rank_cd">Ранг в команде: %1$s</string>
     <string name="overlay_online_error">Не удалось загрузить список.</string>
     <string name="overlay_online_close_cd">Закрыть список</string>
     <string name="overlay_hud_online_cd">Участники в игре: %1$d</string>
@@ -676,6 +681,9 @@
     <string name="err_chat_muted">Вам временно запрещено писать в чат.</string>
     <string name="err_chat_unavailable">Чат недоступен для этого аккаунта.</string>
     <string name="err_chat_room_unavailable">Эта комната чата вам недоступна.</string>
+    <string name="err_chat_moderate_global_server_admin_only">В «Межсерв» и серверных комнатах чужие сообщения может менять только администратор приложения.</string>
+    <string name="err_chat_moderate_team_r5_only">В командном чате чужие сообщения могут менять только ранги R4 и R5.</string>
+    <string name="err_forum_topics_r5_only">Темами форума могут управлять только ранги R4 и R5.</string>
     <string name="err_form_check">Проверьте данные в форме.</string>
     <string name="err_forbidden">Доступ запрещён.</string>
     <string name="err_rate_limit">Слишком много запросов. Подождите минуту.</string>

@@ -5,7 +5,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model, PipelineStage, Types } from 'mongoose';
+import {
+  paginateParams,
+  type PaginatedResult,
+} from '../common/dto/paginated-result.dto';
+import { normalizeAllianceRole } from '../common/alliance-role.util';
 import {
   GameIdentity,
   GameIdentityDocument,
@@ -32,7 +37,7 @@ export type AdminUserOnServerRow = {
   playerTeamTag: string | null;
   playerTeamDisplayName: string | null;
   isActiveIdentity: boolean;
-  allianceRole: string;
+  accountRole: string;
   membershipStatus: string;
 };
 
@@ -654,11 +659,63 @@ export class GameIdentitiesService {
       })
       .exec();
     for (const user of users) {
-      const migrated = await this.ensureMigrated(user);
-      out.set(
-        migrated._id.toString(),
-        this.resolveSenderServerNumber(migrated),
-      );
+      if ((user.gameIdentities?.length ?? 0) === 0) {
+        continue;
+      }
+      out.set(user._id.toString(), this.resolveSenderServerNumber(user));
+    }
+    return out;
+  }
+
+  /** Team ids that have at least one identity on [serverNumber]. */
+  async findTeamIdsWithMemberOnServer(serverNumber: number): Promise<Types.ObjectId[]> {
+    const rows = await this.userModel
+      .aggregate<{ _id: Types.ObjectId }>([
+        { $match: { 'gameIdentities.serverNumber': serverNumber } },
+        { $unwind: '$gameIdentities' },
+        { $match: { 'gameIdentities.serverNumber': serverNumber } },
+        {
+          $group: {
+            _id: '$gameIdentities.playerTeamId',
+          },
+        },
+        { $match: { _id: { $ne: null } } },
+      ])
+      .exec();
+    return rows.map((r) => r._id).filter((id) => id instanceof Types.ObjectId);
+  }
+
+  async collectServerNumbersForTeams(
+    teamIds: string[],
+  ): Promise<Map<string, number[]>> {
+    const out = new Map<string, number[]>();
+    if (!teamIds.length) return out;
+    const oids = teamIds
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    if (!oids.length) return out;
+    const rows = await this.userModel
+      .aggregate<{ _id: { teamId: Types.ObjectId; server: number } }>([
+        { $match: { 'gameIdentities.playerTeamId': { $in: oids } } },
+        { $unwind: '$gameIdentities' },
+        { $match: { 'gameIdentities.playerTeamId': { $in: oids } } },
+        {
+          $group: {
+            _id: {
+              teamId: '$gameIdentities.playerTeamId',
+              server: '$gameIdentities.serverNumber',
+            },
+          },
+        },
+      ])
+      .exec();
+    for (const row of rows) {
+      const tid = row._id?.teamId?.toString();
+      const server = row._id?.server;
+      if (!tid || server == null || server < 1) continue;
+      const list = out.get(tid) ?? [];
+      if (!list.includes(server)) list.push(server);
+      out.set(tid, list.sort((a, b) => a - b));
     }
     return out;
   }
@@ -667,98 +724,132 @@ export class GameIdentitiesService {
     serverNumber?: number;
     q?: string;
     withoutTeam?: boolean;
-  }): Promise<AdminUserOnServerRow[]> {
-    const users = await this.userModel.find({}).exec();
-    const teamIds = [
-      ...new Set(
-        users.flatMap((u) =>
-          (u.gameIdentities ?? [])
-            .map((g) => g.playerTeamId?.toString())
-            .filter((v): v is string => Boolean(v)),
-        ),
-      ),
+    skip?: number;
+    limit?: number;
+  }): Promise<PaginatedResult<AdminUserOnServerRow>> {
+    const { skip, limit } = paginateParams(opts.skip, opts.limit);
+    const qTrim = opts.q?.trim();
+    const qLower = qTrim?.toLowerCase();
+
+    const pipeline: Record<string, unknown>[] = [
+      { $match: { gameIdentities: { $exists: true, $not: { $size: 0 } } } },
+      { $unwind: '$gameIdentities' },
     ];
-    const teams =
-      teamIds.length === 0
-        ? []
-        : await this.teamModel
-            .find({
-              _id: {
-                $in: teamIds.map((id) => new Types.ObjectId(id)),
-              },
-            })
-            .select('tag displayName')
-            .lean<
-              Array<{
-                _id: Types.ObjectId;
-                tag: string;
-                displayName: string;
-              }>
-            >()
-            .exec();
-    const teamById = new Map(teams.map((t) => [t._id.toString(), t]));
-    const qLower = opts.q?.toLowerCase();
-    const out: AdminUserOnServerRow[] = [];
-    for (const user of users) {
-      const migrated = await this.ensureMigrated(user);
-      const activeId = migrated.activeGameIdentityId?.toString();
-      for (const g of migrated.gameIdentities ?? []) {
-        if (
-          opts.serverNumber != null &&
-          g.serverNumber !== opts.serverNumber
-        ) {
-          continue;
-        }
-        const tid = g.playerTeamId?.toString() ?? null;
-        const team = tid ? teamById.get(tid) : undefined;
-        if (opts.withoutTeam && tid != null) {
-          continue;
-        }
-        if (
-          opts.serverNumber != null &&
-          g.serverNumber !== opts.serverNumber
-        ) {
-          continue;
-        }
-        const row: AdminUserOnServerRow = {
-          userId: migrated._id.toString(),
-          identityId: this.identityId(g),
-          accountUsername: migrated.email,
-          email: migrated.email,
-          serverNumber: g.serverNumber,
-          gameNickname: g.gameNickname,
-          playerTeamId: tid,
-          playerTeamTag: team?.tag ?? null,
-          playerTeamDisplayName: team?.displayName ?? null,
-          isActiveIdentity: activeId === this.identityId(g),
-          allianceRole: migrated.role,
-          membershipStatus: migrated.membershipStatus ?? 'active',
-        };
-        if (qLower) {
-          const hay = [
-            row.accountUsername,
-            row.email,
-            row.gameNickname,
-            row.playerTeamTag,
-            row.playerTeamDisplayName,
-            String(row.serverNumber),
-          ]
-            .join(' ')
-            .toLowerCase();
-          if (!hay.includes(qLower)) continue;
-        }
-        out.push(row);
-      }
-    }
-    out.sort((a, b) => {
-      if (a.serverNumber !== b.serverNumber) {
-        return a.serverNumber - b.serverNumber;
-      }
-      return a.gameNickname.localeCompare(b.gameNickname, 'ru', {
-        sensitivity: 'base',
+    if (opts.serverNumber != null) {
+      pipeline.push({
+        $match: { 'gameIdentities.serverNumber': opts.serverNumber },
       });
+    }
+    if (opts.withoutTeam) {
+      pipeline.push({
+        $match: {
+          $or: [
+            { 'gameIdentities.playerTeamId': null },
+            { 'gameIdentities.playerTeamId': { $exists: false } },
+          ],
+        },
+      });
+    }
+    if (qLower) {
+      const esc = this.escapeRegex(qTrim ?? '');
+      pipeline.push({
+        $match: {
+          $or: [
+            { email: { $regex: esc, $options: 'i' } },
+            { username: { $regex: esc, $options: 'i' } },
+            { 'gameIdentities.gameNickname': { $regex: esc, $options: 'i' } },
+          ],
+        },
+      });
+    }
+    pipeline.push({
+      $lookup: {
+        from: 'playerteams',
+        localField: 'gameIdentities.playerTeamId',
+        foreignField: '_id',
+        as: 'teamDoc',
+      },
     });
-    return out;
+    pipeline.push({
+      $addFields: {
+        team: { $arrayElemAt: ['$teamDoc', 0] },
+        activeIdStr: { $toString: '$activeGameIdentityId' },
+        identityIdStr: { $toString: '$gameIdentities._id' },
+      },
+    });
+    pipeline.push({
+      $project: {
+        userId: { $toString: '$_id' },
+        identityId: '$identityIdStr',
+        email: 1,
+        role: 1,
+        membershipStatus: 1,
+        serverNumber: '$gameIdentities.serverNumber',
+        gameNickname: '$gameIdentities.gameNickname',
+        playerTeamId: {
+          $cond: [
+            { $ifNull: ['$gameIdentities.playerTeamId', false] },
+            { $toString: '$gameIdentities.playerTeamId' },
+            null,
+          ],
+        },
+        playerTeamTag: '$team.tag',
+        playerTeamDisplayName: '$team.displayName',
+        isActiveIdentity: { $eq: ['$activeIdStr', '$identityIdStr'] },
+      },
+    });
+    pipeline.push({
+      $sort: { serverNumber: 1, gameNickname: 1 },
+    });
+    pipeline.push({
+      $facet: {
+        data: [{ $skip: skip }, { $limit: limit }],
+        meta: [{ $count: 'total' }],
+      },
+    });
+
+    const [facet] = await this.userModel
+      .aggregate<{
+        data: Array<{
+          userId: string;
+          identityId: string;
+          email: string;
+          role: string;
+          membershipStatus?: string;
+          serverNumber: number;
+          gameNickname: string;
+          playerTeamId: string | null;
+          playerTeamTag?: string | null;
+          playerTeamDisplayName?: string | null;
+          isActiveIdentity: boolean;
+        }>;
+        meta: Array<{ total: number }>;
+      }>(pipeline as unknown as PipelineStage[])
+      .exec();
+
+    const total = facet?.meta?.[0]?.total ?? 0;
+    const items: AdminUserOnServerRow[] = (facet?.data ?? []).map((row) => ({
+      userId: row.userId,
+      identityId: row.identityId,
+      accountUsername: row.email,
+      email: row.email,
+      serverNumber: row.serverNumber,
+      gameNickname: row.gameNickname,
+      playerTeamId: row.playerTeamId,
+      playerTeamTag: row.playerTeamTag ?? null,
+      playerTeamDisplayName: row.playerTeamDisplayName ?? null,
+      isActiveIdentity: row.isActiveIdentity,
+      accountRole: normalizeAllianceRole(row.role),
+      membershipStatus: row.membershipStatus ?? 'active',
+    }));
+
+    return {
+      items,
+      total,
+      skip,
+      limit,
+      hasMore: skip + items.length < total,
+    };
   }
 
   async switchActive(

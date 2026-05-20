@@ -261,6 +261,12 @@ private sealed interface ChatTimelineEntry {
     ) : ChatTimelineEntry
 }
 
+private data class ChatMessageClusterFlags(
+    val showHeader: Boolean,
+    val isChainBottom: Boolean,
+    val tightInnerTop: Boolean,
+)
+
 /**
  * Newest-first list: true when this bubble sits at the **visual bottom** of a same-sender streak
  * (newer neighbor in list is missing or another user / another day) — Telegram "tail" corner.
@@ -863,17 +869,18 @@ fun ChatScreen(
                 )
                 }
             }
-            val sheetCanDelete = canDeleteChatMessage(
+            val sheetCanModerate = canDeleteChatMessage(
                 message = message,
                 currentUserId = state.currentUserId,
-                currentUserRole = state.currentUserRole,
+                isAppAdmin = state.isAppAdmin,
+                playerTeamSquadRole = state.playerTeamSquadRole,
             )
             ChatMessageActionsSheet(
                 message = message,
-                canDelete = sheetCanDelete,
+                canDelete = sheetCanModerate,
                 mayEdit = message._id != null &&
                     message.deletedAt == null &&
-                    message.senderId == state.currentUserId &&
+                    sheetCanModerate &&
                     message.text.isNotBlank(),
                 onDismiss = onDismissMessageActions,
                 onReply = {
@@ -1159,6 +1166,15 @@ private fun ChatMessagesLazyList(
         hash
     }
     val timeline = remember(timelineVersion, state.messages) { buildChatTimeline(state.messages) }
+    val messageClusterFlags = remember(state.messages) {
+        List(state.messages.size) { index ->
+            ChatMessageClusterFlags(
+                showHeader = chatMessageShowsClusterHeader(state.messages, index),
+                isChainBottom = chatMessageIsClusterChainBottom(state.messages, index),
+                tightInnerTop = chatMessageClusterTightInnerTop(state.messages, index),
+            )
+        }
+    }
     LazyColumn(
         state = listState,
         modifier = modifier,
@@ -1267,19 +1283,19 @@ private fun ChatMessagesLazyList(
                         is ChatTimelineEntry.DaySeparator -> ChatDayDivider(e.label)
                         is ChatTimelineEntry.ChatMessageItem -> {
                             val message = e.message
-                            val showClusterHeader = chatMessageShowsClusterHeader(state.messages, e.messageIndex)
+                            val cluster = messageClusterFlags.getOrNull(e.messageIndex)
                             val clusterTop = chatBubbleClusterTopSpacing(timeline, idx, message)
                             ChatBubbleRow(
-                                messages = state.messages,
                                 messageIndex = e.messageIndex,
                                 message = message,
+                                cluster = cluster,
                                 isMine = chatMessageIsOwn(message, state.currentUserId),
-                                showClusterHeader = showClusterHeader,
                                 clusterTopSpacing = clusterTop,
                                 canDelete = canDeleteChatMessage(
                                     message = message,
                                     currentUserId = state.currentUserId,
-                                    currentUserRole = state.currentUserRole,
+                                    isAppAdmin = state.isAppAdmin,
+                                    playerTeamSquadRole = state.playerTeamSquadRole,
                                 ),
                                 deleting = state.deletingMessageId == message._id,
                                 inSelectionMode = inSelectionMode,
@@ -1294,21 +1310,21 @@ private fun ChatMessagesLazyList(
                         }
                         is ChatTimelineEntry.ChatAlbumItem -> {
                             val message = e.representativeMessage
-                            val showClusterHeader = chatMessageShowsClusterHeader(state.messages, e.firstMessageIndex)
+                            val cluster = messageClusterFlags.getOrNull(e.firstMessageIndex)
                             val clusterTop = chatBubbleClusterTopSpacing(timeline, idx, message)
                             ChatAlbumRow(
-                                messages = state.messages,
                                 messageIndex = e.firstMessageIndex,
                                 message = message,
+                                cluster = cluster,
                                 resolvedImageUrls = e.resolvedImageUrls,
                                 caption = e.caption,
                                 isMine = chatMessageIsOwn(message, state.currentUserId),
-                                showClusterHeader = showClusterHeader,
                                 clusterTopSpacing = clusterTop,
                                 canDelete = canDeleteChatMessage(
                                     message = message,
                                     currentUserId = state.currentUserId,
-                                    currentUserRole = state.currentUserRole,
+                                    isAppAdmin = state.isAppAdmin,
+                                    playerTeamSquadRole = state.playerTeamSquadRole,
                                 ),
                                 deleting = state.deletingMessageId == message._id,
                                 inSelectionMode = inSelectionMode,
@@ -2728,13 +2744,12 @@ private fun ChatFloatingImageAttachmentsBlock(
 @Composable
 @Suppress("UNUSED_PARAMETER")
 private fun ChatAlbumRow(
-    messages: List<ChatMessage>,
     messageIndex: Int,
     message: ChatMessage,
+    cluster: ChatMessageClusterFlags?,
     resolvedImageUrls: List<String>,
     caption: String?,
     isMine: Boolean,
-    showClusterHeader: Boolean,
     clusterTopSpacing: Dp,
     canDelete: Boolean,
     deleting: Boolean,
@@ -2763,7 +2778,8 @@ private fun ChatAlbumRow(
     val stemTag = message.senderTeamTag?.trim()?.takeIf { it.isNotEmpty() }
     val displayName = message.senderUsername.trim().ifBlank { senderLine }
     val nickname = message.senderUsername.trim().ifBlank { displayName }
-    val isChainBottom = chatMessageIsClusterChainBottom(messages, messageIndex)
+    val showClusterHeader = cluster?.showHeader ?: true
+    val isChainBottom = cluster?.isChainBottom ?: true
     val formattedTime = formatChatTime(message.createdAt)
     val scheme = MaterialTheme.colorScheme
     val onBubble = if (isMine) Color.White else scheme.onSurface
@@ -2889,11 +2905,10 @@ private fun ChatAlbumRow(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ChatBubbleRow(
-    messages: List<ChatMessage>,
     messageIndex: Int,
     message: ChatMessage,
+    cluster: ChatMessageClusterFlags?,
     isMine: Boolean,
-    showClusterHeader: Boolean,
     clusterTopSpacing: Dp,
     canDelete: Boolean,
     deleting: Boolean,
@@ -2952,8 +2967,9 @@ private fun ChatBubbleRow(
     val stemTag = message.senderTeamTag?.trim()?.takeIf { it.isNotEmpty() }
     val displayName = message.senderUsername.trim().ifBlank { senderLine }
     val nickname = message.senderUsername.trim().ifBlank { displayName }
-    val isChainBottom = chatMessageIsClusterChainBottom(messages, messageIndex)
-    val tightClusterTop = chatMessageClusterTightInnerTop(messages, messageIndex)
+    val showClusterHeader = cluster?.showHeader ?: true
+    val isChainBottom = cluster?.isChainBottom ?: true
+    val tightClusterTop = cluster?.tightInnerTop ?: false
     val bubbleShape = if (isMine) {
         chatBubbleShapeOutgoing(isChainBottom)
     } else {

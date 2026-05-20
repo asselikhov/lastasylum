@@ -25,13 +25,13 @@ export class AdminStickerAccessController {
   ) {}
 
   @Get(':allianceCode')
-  @Roles(AllianceRole.R5)
+  @Roles(AllianceRole.ADMIN)
   getOne(@Param('allianceCode') allianceCode: string) {
     return this.stickerAccess.getAllianceAccess(allianceCode);
   }
 
   @Put(':allianceCode')
-  @Roles(AllianceRole.R5)
+  @Roles(AllianceRole.ADMIN)
   async putOne(
     @Param('allianceCode') allianceCode: string,
     @Body() dto: PutAllianceStickerAccessDto,

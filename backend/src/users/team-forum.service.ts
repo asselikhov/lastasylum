@@ -6,7 +6,10 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model, Types } from 'mongoose';
-import { PlayerTeamMemberRole } from '../common/enums/player-team-member-role.enum';
+import {
+  isSquadOfficerRole,
+  PlayerTeamMemberRole,
+} from '../common/enums/player-team-member-role.enum';
 import {
   parseZlobyakaStickerStem,
   ZLOBYAKA_STICKER_STEMS,
@@ -105,12 +108,9 @@ export class TeamForumService {
   ): Promise<void> {
     const team = await this.teams.getTeamIfMemberOrThrow(teamId, userId);
     const role = this.teams.getSquadRoleForUser(team, userId);
-    if (
-      role !== PlayerTeamMemberRole.R4 &&
-      role !== PlayerTeamMemberRole.R5
-    ) {
+    if (!isSquadOfficerRole(role)) {
       throw new ForbiddenException(
-        'Only squad roles R4 and R5 can manage forum topics',
+        'Only squad ranks R4 and R5 can manage forum topics',
       );
     }
   }
@@ -381,6 +381,7 @@ export class TeamForumService {
     const rows = await this.topicModel
       .find({ teamId: tid })
       .sort({ lastMessageAt: -1, updatedAt: -1 })
+      .limit(100)
       .lean();
     const topicIds = rows.map(
       (r) => (r as { _id: Types.ObjectId })._id as Types.ObjectId,
@@ -398,7 +399,7 @@ export class TeamForumService {
     return rows.map((r) => {
       const doc = r as unknown as TeamForumTopicDocument;
       const id = doc._id.toString();
-      const actualCount = countMap.get(id) ?? 0;
+      const actualCount = countMap.get(id) ?? doc.messageCount ?? 0;
       return this.topicRow(doc, {
         messageCount: actualCount,
         unreadCount: 0,
@@ -435,9 +436,11 @@ export class TeamForumService {
   async listTopics(teamId: string, userId: string): Promise<TeamForumTopicRow[]> {
     await this.teams.getTeamIfMemberOrThrow(teamId, userId);
     const tid = new Types.ObjectId(teamId);
+    const topicLimit = 100;
     const rows = await this.topicModel
       .find({ teamId: tid })
       .sort({ lastMessageAt: -1, updatedAt: -1 })
+      .limit(topicLimit)
       .lean();
     const topicIds = rows.map(
       (r) => (r as { _id: Types.ObjectId })._id as Types.ObjectId,
@@ -457,12 +460,7 @@ export class TeamForumService {
     return rows.map((r) => {
       const doc = r as unknown as TeamForumTopicDocument;
       const id = doc._id.toString();
-      const actualCount = countMap.get(id) ?? 0;
-      if ((doc.messageCount ?? 0) !== actualCount) {
-        void this.topicModel
-          .updateOne({ _id: doc._id }, { $set: { messageCount: actualCount } })
-          .exec();
-      }
+      const actualCount = countMap.get(id) ?? doc.messageCount ?? 0;
       return this.topicRow(doc, {
         messageCount: actualCount,
         unreadCount: unreadMap.get(id) ?? 0,
@@ -903,7 +901,7 @@ export class TeamForumService {
       return;
     }
     const role = this.teams.getSquadRoleForUser(team, userId);
-    if (role === PlayerTeamMemberRole.R5) {
+    if (isSquadOfficerRole(role)) {
       return;
     }
     throw new ForbiddenException('Not allowed to edit this message');

@@ -2703,17 +2703,19 @@ class CombatOverlayService : Service() {
                 val userRole = remember { jwtRoleFromAccessToken() }
                 var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab) }
                 val vm = remember(userId, userRole) {
-                    overlayChatViewModel ?: ChatViewModel(
-                        application = app,
-                        repository = container.chatRepository,
-                        chatRoomPreferences = container.chatRoomPreferences,
-                        usersRepository = container.usersRepository,
-                        currentUserId = userId,
-                        currentUserRole = userRole,
-                    ).also {
-                        overlayChatViewModel = it
-                        it.refreshChatForOverlay()
-                    }
+                    activityScopedChatViewModel
+                        ?: overlayChatViewModel
+                        ?: ChatViewModel(
+                            application = app,
+                            repository = container.chatRepository,
+                            chatRoomPreferences = container.chatRoomPreferences,
+                            usersRepository = container.usersRepository,
+                            currentUserId = userId,
+                            currentUserRole = userRole,
+                        ).also {
+                            overlayChatViewModel = it
+                            it.refreshChatForOverlay()
+                        }
                 }
                 LaunchedEffect(vm) {
                     flushPendingOverlayPickedImages()
@@ -2836,6 +2838,7 @@ class CombatOverlayService : Service() {
                                             TeamScreen(
                                                 currentUserId = userId,
                                                 teamsRepository = container.teamsRepository,
+                                                usersRepository = container.usersRepository,
                                                 initialMainSection = TeamMainSection.News,
                                             )
                                         }
@@ -3067,6 +3070,13 @@ class CombatOverlayService : Service() {
     }
 
     companion object {
+        @Volatile
+        var activityScopedChatViewModel: ChatViewModel? = null
+
+        fun bindActivityChatViewModel(viewModel: ChatViewModel?) {
+            activityScopedChatViewModel = viewModel
+        }
+
         /** Частый prune ленты относительно TTL ~10 с. */
         private const val STRIP_TICK_MS = 2_500L
         /** Лента на экране — отзывчивый гейт. */

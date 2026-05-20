@@ -54,7 +54,7 @@ internal object OverlayTeamContextCache {
             myTeamRole = myTeamRole,
             canPublishNews = myTeamRole == "R4" || myTeamRole == "R5",
             canManageForumTopics = myTeamRole == "R4" || myTeamRole == "R5",
-            canModerateForumMessages = myTeamRole == "R5",
+            canModerateForumMessages = myTeamRole == "R4" || myTeamRole == "R5",
             enabledStickerPackKeys = profile.enabledStickerPacks.toSet(),
             teamTag = team.tag,
             teamDisplayName = team.displayName,

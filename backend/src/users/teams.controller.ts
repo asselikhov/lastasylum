@@ -21,6 +21,12 @@ import type { Response } from 'express';
 import { Types } from 'mongoose';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import {
+  assertUploadSizeWithinLimit,
+  FORUM_APK_MAX_UPLOAD_BYTES,
+  FREE_TIER_MAX_UPLOAD_BYTES,
+  withUploadSlot,
+} from '../common/upload-concurrency';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { AddTeamMemberDto } from './dto/add-team-member.dto';
@@ -61,7 +67,7 @@ export class TeamsController {
   ) {}
 
   @Post()
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   createTeam(
     @Req() req: { user: RequestUser },
     @Body() dto: CreatePlayerTeamDto,
@@ -70,7 +76,7 @@ export class TeamsController {
   }
 
   @Get('search')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   search(
     @Req() req: { user: RequestUser },
     @Query('q') q: string,
@@ -85,13 +91,13 @@ export class TeamsController {
   }
 
   @Get('me/join-requests')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   myJoinRequests(@Req() req: { user: RequestUser }) {
     return this.teams.listPendingJoinRequestsForLeader(req.user.userId);
   }
 
   @Post('join-requests/:requestId/accept')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   acceptRequest(
     @Req() req: { user: RequestUser },
     @Param('requestId') requestId: string,
@@ -100,7 +106,7 @@ export class TeamsController {
   }
 
   @Post('join-requests/:requestId/reject')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   rejectRequest(
     @Req() req: { user: RequestUser },
     @Param('requestId') requestId: string,
@@ -109,7 +115,7 @@ export class TeamsController {
   }
 
   @Get(':teamId/news/attachments/:fileId')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   @Header('Cache-Control', 'private, max-age=3600')
   async getNewsAttachment(
     @Req() req: { user: RequestUser },
@@ -128,7 +134,7 @@ export class TeamsController {
   }
 
   @Post(':teamId/news/attachments')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
@@ -144,17 +150,20 @@ export class TeamsController {
       throw new BadRequestException('file is required');
     }
     await this.teamNews.assertMayUploadNewsImage(teamId, req.user.userId);
-    return this.teamNewsAttachments.uploadImage({
-      teamId: new Types.ObjectId(teamId),
-      uploaderUserId: req.user.userId,
-      buffer: file.buffer,
-      mimeType: file.mimetype,
-      size: file.size,
+    return withUploadSlot(async () => {
+      assertUploadSizeWithinLimit(file.size, FREE_TIER_MAX_UPLOAD_BYTES);
+      return this.teamNewsAttachments.uploadImage({
+        teamId: new Types.ObjectId(teamId),
+        uploaderUserId: req.user.userId,
+        buffer: file.buffer,
+        mimeType: file.mimetype,
+        size: file.size,
+      });
     });
   }
 
   @Post(':teamId/forum/attachments')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
@@ -170,17 +179,19 @@ export class TeamsController {
       throw new BadRequestException('file is required');
     }
     await this.teams.getTeamIfMemberOrThrow(teamId, req.user.userId);
-    return this.teamNewsAttachments.uploadImage({
-      teamId: new Types.ObjectId(teamId),
-      uploaderUserId: req.user.userId,
-      buffer: file.buffer,
-      mimeType: file.mimetype,
-      size: file.size,
+    return withUploadSlot(async () => {
+      assertUploadSizeWithinLimit(file.size, FREE_TIER_MAX_UPLOAD_BYTES);
+      return this.teamNewsAttachments.uploadImage({
+        teamId: new Types.ObjectId(teamId),
+        uploaderUserId: req.user.userId,
+        buffer: file.buffer,
+        mimeType: file.mimetype,
+        size: file.size,
+      });
     });
   }
 
   @Post(':teamId/forum/attachments/file')
-  @Roles(AllianceRole.R5)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
@@ -195,23 +206,26 @@ export class TeamsController {
     if (!file?.buffer?.length) {
       throw new BadRequestException('file is required');
     }
-    await this.teams.getTeamIfMemberOrThrow(teamId, req.user.userId);
+    await this.teams.assertSquadOfficerOrThrow(teamId, req.user.userId);
     const name =
       typeof file.originalname === 'string' && file.originalname.trim()
         ? file.originalname.trim()
         : 'update.apk';
-    return this.teamNewsAttachments.uploadForumFile({
-      teamId: new Types.ObjectId(teamId),
-      uploaderUserId: req.user.userId,
-      buffer: file.buffer,
-      mimeType: file.mimetype,
-      size: file.size,
-      filename: name,
+    return withUploadSlot(async () => {
+      assertUploadSizeWithinLimit(file.size, FORUM_APK_MAX_UPLOAD_BYTES, 'APK');
+      return this.teamNewsAttachments.uploadForumFile({
+        teamId: new Types.ObjectId(teamId),
+        uploaderUserId: req.user.userId,
+        buffer: file.buffer,
+        mimeType: file.mimetype,
+        size: file.size,
+        filename: name,
+      });
     });
   }
 
   @Get(':teamId/news')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   listNews(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
@@ -228,7 +242,7 @@ export class TeamsController {
   }
 
   @Post(':teamId/news')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   createNews(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
@@ -238,7 +252,7 @@ export class TeamsController {
   }
 
   @Get(':teamId/news/:newsId')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   getNews(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
@@ -248,7 +262,7 @@ export class TeamsController {
   }
 
   @Patch(':teamId/news/:newsId')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   updateNews(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
@@ -259,7 +273,7 @@ export class TeamsController {
   }
 
   @Delete(':teamId/news/:newsId')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   async deleteNews(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
@@ -270,7 +284,7 @@ export class TeamsController {
   }
 
   @Post(':teamId/news/:newsId/vote')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   voteNews(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
@@ -286,7 +300,7 @@ export class TeamsController {
   }
 
   @Get(':teamId/forum/topics')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   listForumTopics(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
@@ -295,7 +309,7 @@ export class TeamsController {
   }
 
   @Post(':teamId/forum/topics')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   createForumTopic(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
@@ -305,7 +319,7 @@ export class TeamsController {
   }
 
   @Patch(':teamId/forum/topics/:topicId')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   patchForumTopic(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
@@ -321,7 +335,7 @@ export class TeamsController {
   }
 
   @Delete(':teamId/forum/topics/:topicId')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   async deleteForumTopic(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
@@ -332,7 +346,7 @@ export class TeamsController {
   }
 
   @Get(':teamId/forum/topics/:topicId/messages')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   listForumMessages(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
@@ -351,7 +365,7 @@ export class TeamsController {
   }
 
   @Post(':teamId/forum/topics/:topicId/read')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   @Throttle({ default: { limit: 120, ttl: 60_000 } })
   markForumTopicRead(
     @Req() req: { user: RequestUser },
@@ -368,7 +382,7 @@ export class TeamsController {
   }
 
   @Post(':teamId/forum/topics/:topicId/messages')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   @Throttle({ default: { limit: 8, ttl: 10_000 } })
   async postForumMessage(
     @Req() req: { user: RequestUser },
@@ -391,7 +405,7 @@ export class TeamsController {
   }
 
   @Post(':teamId/forum/topics/:topicId/messages/:messageId/forward')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   async forwardForumMessage(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
@@ -409,7 +423,7 @@ export class TeamsController {
   }
 
   @Patch(':teamId/forum/topics/:topicId/messages/:messageId')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   async patchForumMessage(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
@@ -429,7 +443,7 @@ export class TeamsController {
   }
 
   @Delete(':teamId/forum/topics/:topicId/messages/:messageId')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   async deleteForumMessage(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
@@ -454,7 +468,7 @@ export class TeamsController {
   }
 
   @Post(':teamId/forum/topics/:topicId/messages/bulk-delete')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   async bulkDeleteForumMessages(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
@@ -484,13 +498,13 @@ export class TeamsController {
   }
 
   @Get(':teamId')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   getTeam(@Req() req: { user: RequestUser }, @Param('teamId') teamId: string) {
     return this.teams.getTeamDetailForUser(teamId, req.user.userId);
   }
 
   @Patch(':teamId/display')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   updateTeamBranding(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
@@ -505,7 +519,7 @@ export class TeamsController {
   }
 
   @Patch(':teamId/members/:memberUserId/role')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   updateMemberSquadRole(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
@@ -521,7 +535,7 @@ export class TeamsController {
   }
 
   @Post(':teamId/join-requests')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   submitJoin(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
@@ -530,7 +544,7 @@ export class TeamsController {
   }
 
   @Post(':teamId/members')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   addMember(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
@@ -544,7 +558,7 @@ export class TeamsController {
   }
 
   @Delete(':teamId/members/:userId')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   removeMember(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,

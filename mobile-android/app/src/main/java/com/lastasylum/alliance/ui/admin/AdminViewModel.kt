@@ -106,7 +106,11 @@ data class AdminUiState(
     val gameServerFilter: Int? = null,
     val usersOnServers: List<com.lastasylum.alliance.data.admin.AdminUserOnServerDto> = emptyList(),
     val usersOnServersLoading: Boolean = false,
+    val usersOnServersLoadingMore: Boolean = false,
+    val usersOnServersHasMore: Boolean = false,
     val usersOnServersError: String? = null,
+    val playerTeamsHasMore: Boolean = false,
+    val playerTeamsLoadingMore: Boolean = false,
 )
 
 /** Unified player row for admin lists and edit sheet. */
@@ -226,22 +230,57 @@ class AdminViewModel(
 
     fun refreshPlayersList() {
         viewModelScope.launch {
-            _state.value = _state.value.copy(usersOnServersLoading = true, usersOnServersError = null)
+            _state.value = _state.value.copy(
+                usersOnServersLoading = true,
+                usersOnServersError = null,
+            )
             val withoutTeam = _state.value.playersSegment == AdminPlayersSegment.WITHOUT_TEAM
             adminRepository.listUsersOnServers(
                 serverNumber = _state.value.gameServerFilter,
                 q = _state.value.playersSearchQuery,
                 withoutTeam = withoutTeam,
+                skip = 0,
             )
-                .onSuccess { rows ->
+                .onSuccess { page ->
                     _state.value = _state.value.copy(
                         usersOnServersLoading = false,
-                        usersOnServers = rows,
+                        usersOnServers = page.items,
+                        usersOnServersHasMore = page.hasMore,
                     )
                 }
                 .onFailure { e ->
                     _state.value = _state.value.copy(
                         usersOnServersLoading = false,
+                        usersOnServersError = e.toUserMessageRu(res),
+                    )
+                }
+        }
+    }
+
+    fun loadMorePlayersList() {
+        val s = _state.value
+        if (!s.usersOnServersHasMore || s.usersOnServersLoading || s.usersOnServersLoadingMore) {
+            return
+        }
+        viewModelScope.launch {
+            _state.value = s.copy(usersOnServersLoadingMore = true)
+            val withoutTeam = s.playersSegment == AdminPlayersSegment.WITHOUT_TEAM
+            adminRepository.listUsersOnServers(
+                serverNumber = s.gameServerFilter,
+                q = s.playersSearchQuery,
+                withoutTeam = withoutTeam,
+                skip = s.usersOnServers.size,
+            )
+                .onSuccess { page ->
+                    _state.value = _state.value.copy(
+                        usersOnServersLoadingMore = false,
+                        usersOnServers = _state.value.usersOnServers + page.items,
+                        usersOnServersHasMore = page.hasMore,
+                    )
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(
+                        usersOnServersLoadingMore = false,
                         usersOnServersError = e.toUserMessageRu(res),
                     )
                 }
@@ -494,16 +533,47 @@ class AdminViewModel(
     fun refreshPlayerTeams() {
         viewModelScope.launch {
             _state.value = _state.value.copy(playerTeamsLoading = true, playerTeamsError = null)
-            adminRepository.listPlayerTeams(serverNumber = _state.value.teamsServerFilter)
-                .onSuccess { list ->
+            adminRepository.listPlayerTeams(
+                serverNumber = _state.value.teamsServerFilter,
+                skip = 0,
+            )
+                .onSuccess { page ->
                     _state.value = _state.value.copy(
                         playerTeamsLoading = false,
-                        playerTeams = list.sortedBy { it.displayName.lowercase() },
+                        playerTeams = page.items.sortedBy { it.displayName.lowercase() },
+                        playerTeamsHasMore = page.hasMore,
                     )
                 }
                 .onFailure { e ->
                     _state.value = _state.value.copy(
                         playerTeamsLoading = false,
+                        playerTeamsError = e.toUserMessageRu(res),
+                    )
+                }
+        }
+    }
+
+    fun loadMorePlayerTeams() {
+        val s = _state.value
+        if (!s.playerTeamsHasMore || s.playerTeamsLoading || s.playerTeamsLoadingMore) return
+        viewModelScope.launch {
+            _state.value = s.copy(playerTeamsLoadingMore = true)
+            adminRepository.listPlayerTeams(
+                serverNumber = s.teamsServerFilter,
+                skip = s.playerTeams.size,
+            )
+                .onSuccess { page ->
+                    val merged = (s.playerTeams + page.items)
+                        .sortedBy { it.displayName.lowercase() }
+                    _state.value = _state.value.copy(
+                        playerTeamsLoadingMore = false,
+                        playerTeams = merged,
+                        playerTeamsHasMore = page.hasMore,
+                    )
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(
+                        playerTeamsLoadingMore = false,
                         playerTeamsError = e.toUserMessageRu(res),
                     )
                 }
@@ -593,7 +663,9 @@ class AdminViewModel(
                 .onSuccess { dto ->
                     _state.value = _state.value.copy(
                         stickerAccessLoading = false,
-                        stickerRolesZlobyaka = dto.roleGrants["zlobyaka"]?.toSet() ?: emptySet(),
+                        stickerRolesZlobyaka = dto.roleGrants["zlobyaka"]
+                            ?.map { com.lastasylum.alliance.data.auth.AccountRoles.normalize(it) }
+                            ?.toSet() ?: emptySet(),
                         stickerUsersZlobyaka = dto.userGrants["zlobyaka"]?.toSet() ?: emptySet(),
                     )
                 }
@@ -709,7 +781,7 @@ fun AdminUserOnServerDto.toTeamMemberDto(): TeamMemberDto =
         id = userId,
         username = gameNickname,
         email = email,
-        role = allianceRole,
+        role = accountRole,
         allianceName = "—",
         teamDisplayName = playerTeamDisplayName,
         teamTag = playerTeamTag,
@@ -729,7 +801,7 @@ fun AdminTeamMemberDto.toAdminPlayerRow(team: PlayerTeamAdminDto?): AdminPlayerR
         playerTeamTag = team?.tag,
         playerTeamDisplayName = team?.displayName,
         isActiveIdentity = true,
-        allianceRole = allianceRole,
+        accountRole = accountRole,
         membershipStatus = membershipStatus,
     )
 }
@@ -739,7 +811,7 @@ fun AdminTeamMemberDto.toTeamMemberDto(team: PlayerTeamAdminDto?): TeamMemberDto
         id = userId,
         username = username,
         email = email,
-        role = allianceRole,
+        role = accountRole,
         allianceName = allianceName,
         alliancePublicId = team?.id,
         teamDisplayName = team?.displayName,

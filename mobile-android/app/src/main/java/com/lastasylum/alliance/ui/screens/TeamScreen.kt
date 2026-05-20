@@ -56,6 +56,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.lastasylum.alliance.ui.team.TeamViewModel
+import com.lastasylum.alliance.ui.team.TeamViewModelFactory
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -120,6 +124,7 @@ enum class TeamMainSection {
 fun TeamScreen(
     currentUserId: String,
     teamsRepository: TeamsRepository,
+    usersRepository: com.lastasylum.alliance.data.users.UsersRepository,
     /** When set (e.g. overlay), open this section on first composition. */
     initialMainSection: TeamMainSection? = null,
 ) {
@@ -127,11 +132,16 @@ fun TeamScreen(
     val app = remember { AppContainer.from(context.applicationContext) }
     val res = context.resources
     val scope = rememberCoroutineScope()
-
-    var profile by remember { mutableStateOf<MyProfileDto?>(null) }
-    var teamDetail by remember { mutableStateOf<TeamDetailDto?>(null) }
-    var loading by remember { mutableStateOf(true) }
-    var error by remember { mutableStateOf<String?>(null) }
+    val teamViewModel: TeamViewModel = viewModel(
+        factory = TeamViewModelFactory(usersRepository, teamsRepository),
+    )
+    val teamData by teamViewModel.data.collectAsStateWithLifecycle()
+    val profile = teamData.profile
+    val teamDetail = teamData.teamDetail
+    val loading = teamData.loading
+    val loadError = teamData.error
+    var actionError by remember { mutableStateOf<String?>(null) }
+    val error = actionError ?: loadError
 
     var showCreate by remember { mutableStateOf(false) }
     var showJoin by remember { mutableStateOf(false) }
@@ -178,31 +188,7 @@ fun TeamScreen(
     }
 
     fun reloadProfileAndTeam() {
-        scope.launch {
-            loading = true
-            error = null
-            app.usersRepository.getMyProfile()
-                .onSuccess { my ->
-                    profile = my
-                    val teamId = my.playerTeamId
-                    if (teamId.isNullOrBlank()) {
-                        teamDetail = null
-                    } else {
-                        teamsRepository.getTeam(teamId)
-                            .onSuccess { detail -> teamDetail = detail }
-                            .onFailure { e ->
-                                teamDetail = null
-                                error = e.toUserMessageRu(res)
-                            }
-                    }
-                }
-                .onFailure {
-                    error = context.getString(R.string.profile_load_error)
-                    profile = null
-                    teamDetail = null
-                }
-            loading = false
-        }
+        teamViewModel.reloadProfileAndTeam(res)
     }
 
     LaunchedEffect(Unit) {
@@ -223,7 +209,8 @@ fun TeamScreen(
             joinResults = emptyList()
             return@LaunchedEffect
         }
-        if (profile?.activeServerNumber == null || profile.activeServerNumber < 1) {
+        val activeServer = profile?.activeServerNumber
+        if (activeServer == null || activeServer < 1) {
             joinResults = emptyList()
             joinFeedback = res.getString(R.string.err_active_game_server_required)
             return@LaunchedEffect
@@ -332,10 +319,11 @@ fun TeamScreen(
                         val canPublishNews = remember(myTeamRole) {
                             myTeamRole == "R4" || myTeamRole == "R5"
                         }
-                        val canManageForumTopics = remember(myTeamRole) {
+                        val isSquadOfficer = remember(myTeamRole) {
                             myTeamRole == "R4" || myTeamRole == "R5"
                         }
-                        val canModerateForumMessages = remember(myTeamRole) { myTeamRole == "R5" }
+                        val canManageForumTopics = isSquadOfficer
+                        val canModerateForumMessages = isSquadOfficer
                         val enabledStickerPackKeys = remember(profile?.enabledStickerPacks) {
                             profile?.enabledStickerPacks?.toSet() ?: emptySet()
                         }
@@ -379,7 +367,7 @@ fun TeamScreen(
                                                 .onSuccess { inboxRequests = it }
                                                 .onFailure { e ->
                                                     inboxRequests = emptyList()
-                                                    error = e.toUserMessageRu(res)
+                                                    actionError = e.toUserMessageRu(res)
                                                 }
                                             inboxBusy = false
                                         }
@@ -457,7 +445,7 @@ fun TeamScreen(
                                                 busy = membersBusy,
                                                 onBusyChange = { membersBusy = it },
                                                 onReload = { reloadProfileAndTeam() },
-                                                onError = { msg -> error = msg },
+                                                onError = { msg -> actionError = msg },
                                                 teamsRepository = teamsRepository,
                                                 onRequestEditMemberRole = { m ->
                                                     OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
@@ -796,7 +784,7 @@ fun TeamScreen(
                                     showAddMemberDialog = false
                                     reloadProfileAndTeam()
                                 }
-                                .onFailure { e -> error = e.toUserMessageRu(res) }
+                                .onFailure { e -> actionError = e.toUserMessageRu(res) }
                             membersBusy = false
                         }
                     },
@@ -856,7 +844,7 @@ fun TeamScreen(
                                     showEditTeamNameDialog = false
                                     reloadProfileAndTeam()
                                 }
-                                .onFailure { e -> error = e.toUserMessageRu(res) }
+                                .onFailure { e -> actionError = e.toUserMessageRu(res) }
                             editNameBusy = false
                         }
                     },
@@ -883,7 +871,7 @@ fun TeamScreen(
                 onSaved = { reloadProfileAndTeam() },
                 teamId = teamIdForDialogs,
                 teamsRepository = teamsRepository,
-                onError = { msg -> error = msg },
+                onError = { msg -> actionError = msg },
             )
             }
         }

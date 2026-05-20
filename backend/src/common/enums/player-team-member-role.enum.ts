@@ -21,3 +21,11 @@ export const SQUAD_ROLES_ASSIGNABLE_BY_R5: PlayerTeamMemberRole[] = [
 
 /** @deprecated Use [SQUAD_ROLES_ASSIGNABLE_BY_R5]. */
 export const SQUAD_ROLES_ASSIGNABLE_BY_LEADER = SQUAD_ROLES_ASSIGNABLE_BY_R5;
+
+/** R4 and R5 share the same team moderation powers (assign R5 only by R5). */
+export function isSquadOfficerRole(
+  role: PlayerTeamMemberRole | string | null | undefined,
+): boolean {
+  const r = (role ?? '').toString().trim().toUpperCase();
+  return r === PlayerTeamMemberRole.R4 || r === PlayerTeamMemberRole.R5;
+}

@@ -7,7 +7,10 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model, Types } from 'mongoose';
-import { PlayerTeamMemberRole } from '../common/enums/player-team-member-role.enum';
+import {
+  isSquadOfficerRole,
+  PlayerTeamMemberRole,
+} from '../common/enums/player-team-member-role.enum';
 import { User } from './schemas/user.schema';
 import { TeamNews, TeamNewsDocument } from './schemas/team-news.schema';
 import { CreateTeamNewsDto } from './dto/create-team-news.dto';
@@ -87,7 +90,7 @@ export class TeamNewsService {
     if (news.authorUserId === userId) {
       return;
     }
-    if (role === PlayerTeamMemberRole.R5) {
+    if (isSquadOfficerRole(role)) {
       return;
     }
     throw new ForbiddenException('Not allowed to modify this news post');

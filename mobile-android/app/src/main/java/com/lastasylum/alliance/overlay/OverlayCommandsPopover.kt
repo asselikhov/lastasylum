@@ -1252,7 +1252,7 @@ class OverlayCommandsPopover(
         }
         val name = labelText(member.username, 13.5f, Color.parseColor("#FFF4F7FF"), bold = true)
         val role = labelText(
-            member.allianceRole.trim().ifBlank { "R2" },
+            member.teamRole.trim().ifBlank { "R1" },
             10f,
             Color.parseColor("#7A90A4B8"),
         )

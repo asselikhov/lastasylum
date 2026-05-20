@@ -20,7 +20,9 @@ interface AdminApi {
     @GET("admin/player-teams")
     suspend fun listPlayerTeams(
         @Query("serverNumber") serverNumber: Int? = null,
-    ): List<PlayerTeamAdminDto>
+        @Query("skip") skip: Int = 0,
+        @Query("limit") limit: Int = 50,
+    ): AdminTeamsPageDto
 
     @GET("admin/player-teams/{teamId}")
     suspend fun getPlayerTeam(
@@ -68,7 +70,9 @@ interface AdminApi {
         @Query("serverNumber") serverNumber: Int? = null,
         @Query("q") q: String? = null,
         @Query("withoutTeam") withoutTeam: Boolean? = null,
-    ): List<AdminUserOnServerDto>
+        @Query("skip") skip: Int = 0,
+        @Query("limit") limit: Int = 50,
+    ): AdminUsersPageDto
 
     @GET("admin/player-teams/{teamId}/chat-rooms")
     suspend fun listTeamChatRooms(

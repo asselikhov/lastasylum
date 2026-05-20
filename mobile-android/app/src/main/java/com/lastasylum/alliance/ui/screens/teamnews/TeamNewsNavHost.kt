@@ -575,10 +575,12 @@ private fun TeamNewsListRoute(
                                     onClick = { onOpenDetail(item.id) },
                                     onEdit = {
                                         val isAuthor = item.authorUserId == currentUserId
-                                        val isR5 = myTeamRole == "R5"
-                                        if (isAuthor || isR5) onEditFromList(item.id)
+                                        val isOfficer =
+                                            myTeamRole == "R4" || myTeamRole == "R5"
+                                        if (isAuthor || isOfficer) onEditFromList(item.id)
                                     },
-                                    showEdit = item.authorUserId == currentUserId || myTeamRole == "R5",
+                                    showEdit = item.authorUserId == currentUserId ||
+                                        myTeamRole == "R4" || myTeamRole == "R5",
                                 )
                             }
                             if (!newsNextCursor.isNullOrBlank()) {
@@ -645,7 +647,10 @@ private fun TeamNewsDetailRoute(
     }
 
     val d = detail
-    val canEdit = d != null && (d.authorUserId == currentUserId || myTeamRole == "R5")
+    val canEdit = d != null && (
+        d.authorUserId == currentUserId ||
+            myTeamRole == "R4" || myTeamRole == "R5"
+        )
     val poll = d?.poll
 
     Scaffold(

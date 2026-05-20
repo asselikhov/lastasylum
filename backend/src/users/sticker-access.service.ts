@@ -2,9 +2,16 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import {
+  isAppAdminRole,
+  LEGACY_ALLIANCE_ROLE_MIGRATION,
+  normalizeAllianceRole,
+} from '../common/alliance-role.util';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import {
   isKnownStickerPackKey,
@@ -35,13 +42,28 @@ export type AllianceStickerAccessView = {
 const ZLOBYAKA_TITLE = 'Злобяка';
 
 @Injectable()
-export class StickerAccessService {
+export class StickerAccessService implements OnModuleInit {
+  private readonly logger = new Logger(StickerAccessService.name);
+
   constructor(
     @InjectModel(AllianceStickerRoleGrant.name)
     private readonly roleGrantModel: Model<AllianceStickerRoleGrantDocument>,
     @InjectModel(AllianceStickerUserGrant.name)
     private readonly userGrantModel: Model<AllianceStickerUserGrantDocument>,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    for (const { from, to } of LEGACY_ALLIANCE_ROLE_MIGRATION) {
+      const res = await this.roleGrantModel
+        .updateMany({ role: from }, { $set: { role: to } })
+        .exec();
+      if (res.modifiedCount > 0) {
+        this.logger.log(
+          `Migrated ${res.modifiedCount} sticker role grant(s) ${from} → ${to}`,
+        );
+      }
+    }
+  }
 
   catalog(): StickerPackCatalogEntry[] {
     return KNOWN_STICKER_PACK_KEYS.map((key) => ({
@@ -50,9 +72,9 @@ export class StickerAccessService {
     }));
   }
 
-  /** Alliance admins (R5) may use every built-in pack without explicit grants. */
+  /** App admins may use every built-in pack without explicit grants. */
   private isAllianceAdmin(user: UserDocument): boolean {
-    return user.role === AllianceRole.R5;
+    return isAppAdminRole(user.role);
   }
 
   async listEnabledPackKeysForUser(user: UserDocument): Promise<string[]> {
@@ -67,7 +89,7 @@ export class StickerAccessService {
     const keys = new Set<string>();
 
     const roleRows = await this.roleGrantModel
-      .find({ allianceName, role: user.role })
+      .find({ allianceName, role: normalizeAllianceRole(user.role) })
       .select('packKey')
       .lean<Array<{ packKey: string }>>()
       .exec();
@@ -177,10 +199,11 @@ export class StickerAccessService {
     for (const [packKey, roles] of Object.entries(body.roleGrants ?? {})) {
       if (!isKnownStickerPackKey(packKey)) continue;
       for (const role of roles ?? []) {
-        if (!Object.values(AllianceRole).includes(role)) {
+        const norm = normalizeAllianceRole(role);
+        if (!Object.values(AllianceRole).includes(norm)) {
           throw new BadRequestException(`Invalid alliance role: ${role}`);
         }
-        roleBulk.push({ allianceName: trimmed, packKey, role });
+        roleBulk.push({ allianceName: trimmed, packKey, role: norm });
       }
     }
     if (roleBulk.length > 0) {

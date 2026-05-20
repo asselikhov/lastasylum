@@ -12,13 +12,13 @@ export class AdminAlliancesController {
   constructor(private readonly registry: AllianceRegistryService) {}
 
   @Get()
-  @Roles(AllianceRole.R5)
+  @Roles(AllianceRole.ADMIN)
   list() {
     return this.registry.listForAdmin();
   }
 
   @Patch(':publicId/overlay')
-  @Roles(AllianceRole.R5)
+  @Roles(AllianceRole.ADMIN)
   updateOverlay(
     @Param('publicId') publicId: string,
     @Body() dto: UpdateAllianceOverlayDto,

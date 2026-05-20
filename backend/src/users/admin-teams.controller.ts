@@ -33,19 +33,30 @@ export class AdminTeamsController {
   ) {}
 
   @Get('player-teams')
-  @Roles(AllianceRole.R5)
-  listPlayerTeams(@Query('serverNumber') serverNumberRaw?: string) {
+  @Roles(AllianceRole.ADMIN)
+  listPlayerTeams(
+    @Query('serverNumber') serverNumberRaw?: string,
+    @Query('skip') skipRaw?: string,
+    @Query('limit') limitRaw?: string,
+  ) {
     const serverNumber =
       serverNumberRaw != null && serverNumberRaw.trim() !== ''
         ? Number.parseInt(serverNumberRaw, 10)
         : undefined;
+    const skip = Math.max(0, Number.parseInt(skipRaw ?? '0', 10) || 0);
+    const limit = Math.min(
+      200,
+      Math.max(1, Number.parseInt(limitRaw ?? '50', 10) || 50),
+    );
     return this.teams.listAllTeamsForAdmin({
       serverNumber: Number.isFinite(serverNumber) ? serverNumber : undefined,
+      skip,
+      limit,
     });
   }
 
   @Get('player-teams/:teamId')
-  @Roles(AllianceRole.R5)
+  @Roles(AllianceRole.ADMIN)
   async getPlayerTeam(@Param('teamId') teamId: string) {
     const detail = await this.teams.getTeamDetailForAdmin(teamId);
     if (!detail) {
@@ -55,7 +66,7 @@ export class AdminTeamsController {
   }
 
   @Patch('player-teams/:teamId')
-  @Roles(AllianceRole.R5)
+  @Roles(AllianceRole.ADMIN)
   async updatePlayerTeam(
     @Param('teamId') teamId: string,
     @Body() dto: UpdatePlayerTeamAdminDto,
@@ -71,13 +82,13 @@ export class AdminTeamsController {
   }
 
   @Get('player-teams/:teamId/chat-rooms')
-  @Roles(AllianceRole.R5)
+  @Roles(AllianceRole.ADMIN)
   listTeamChatRooms(@Param('teamId') teamId: string) {
     return this.chatRooms.listForPlayerTeamAdmin(teamId);
   }
 
   @Get('player-teams/:teamId/news')
-  @Roles(AllianceRole.R5)
+  @Roles(AllianceRole.ADMIN)
   listTeamNews(
     @Param('teamId') teamId: string,
     @Query('limit') limitRaw?: string,
@@ -90,13 +101,13 @@ export class AdminTeamsController {
   }
 
   @Get('player-teams/:teamId/forum/topics')
-  @Roles(AllianceRole.R5)
+  @Roles(AllianceRole.ADMIN)
   listTeamForumTopics(@Param('teamId') teamId: string) {
     return this.teamForum.listTopicsForAdmin(teamId);
   }
 
   @Get('player-teams/:teamId/forum/topics/:topicId/messages')
-  @Roles(AllianceRole.R5)
+  @Roles(AllianceRole.ADMIN)
   listTeamForumMessages(
     @Param('teamId') teamId: string,
     @Param('topicId') topicId: string,
@@ -111,7 +122,7 @@ export class AdminTeamsController {
   }
 
   @Get('chat-rooms/:roomId/messages')
-  @Roles(AllianceRole.R5)
+  @Roles(AllianceRole.ADMIN)
   listChatRoomMessages(
     @Param('roomId') roomId: string,
     @Query('before') before?: string,
@@ -125,7 +136,7 @@ export class AdminTeamsController {
   }
 
   @Get('users/without-team')
-  @Roles(AllianceRole.R5)
+  @Roles(AllianceRole.ADMIN)
   async listUsersWithoutTeam(
     @Query('q') q?: string,
     @Query('skip') skipRaw?: string,
@@ -145,7 +156,7 @@ export class AdminTeamsController {
   }
 
   @Get('overview')
-  @Roles(AllianceRole.R5)
+  @Roles(AllianceRole.ADMIN)
   async overview() {
     const [teams, withoutTeamCount] = await Promise.all([
       this.teams.countTeams(),

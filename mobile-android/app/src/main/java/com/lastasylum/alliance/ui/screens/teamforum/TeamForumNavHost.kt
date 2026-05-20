@@ -24,6 +24,8 @@ import androidx.compose.foundation.gestures.transformable
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import com.lastasylum.alliance.ui.chat.capForumMessagesOldestFirst
+import com.lastasylum.alliance.ui.chat.rememberForumMessageClusterFlags
 import com.lastasylum.alliance.ui.chat.ChatBubbleAuthorHeader
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarEndPad
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarSize
@@ -179,7 +181,7 @@ fun TeamForumNavHost(
     teamId: String,
     currentUserId: String,
     canManageTopics: Boolean,
-    /** РўРѕР»СЊРєРѕ R5 РјРѕР¶РµС‚ СЂРµРґР°РєС‚РёСЂРѕРІР°С‚СЊ/СѓРґР°Р»СЏС‚СЊ С‡СѓР¶РёРµ СЃРѕРѕР±С‰РµРЅРёСЏ (РєР°Рє РЅР° Р±СЌРєРµРЅРґРµ). */
+    /** R4/R5 may edit/delete others' messages (matches backend). */
     canModerateForumMessages: Boolean,
     teamsRepository: TeamsRepository,
     forumSocket: TeamForumSocketManager,
@@ -608,6 +610,11 @@ private fun TeamForumTopicChatRoute(
     val sortedMessages by remember {
         derivedStateOf { messages.sortedBy { it.createdAt } }
     }
+    val forumClusterFlags = rememberForumMessageClusterFlags(sortedMessages)
+
+    fun trimForumMessagesInMemory() {
+        capForumMessagesOldestFirst(messages)
+    }
     val forumPrefs = remember { TeamForumPreferences(context) }
     var lastReadCursor by remember { mutableStateOf<String?>(null) }
 
@@ -639,6 +646,7 @@ private fun TeamForumTopicChatRoute(
             messages[i] = msg
         } else {
             messages.add(msg)
+            trimForumMessagesInMemory()
         }
     }
 
@@ -675,6 +683,7 @@ private fun TeamForumTopicChatRoute(
     fun mergeNew(msg: TeamForumMessageDto) {
         if (messages.any { it.id == msg.id }) return
         messages.add(msg)
+        trimForumMessagesInMemory()
         markTopicReadToLatest()
     }
 
@@ -742,9 +751,11 @@ private fun TeamForumTopicChatRoute(
                         val existing = messages.map { it.id }.toSet()
                         val older = visible.filter { it.id !in existing }
                         messages.addAll(0, older)
+                        trimForumMessagesInMemory()
                     } else {
                         messages.clear()
                         messages.addAll(visible)
+                        trimForumMessagesInMemory()
                     }
                     hasMoreOlder = page.size >= 50
                 }
@@ -952,7 +963,7 @@ private fun TeamForumTopicChatRoute(
                         val canDeleteMsg = canDeleteForumMessage(msg)
                         ForumMessageBubble(
                             message = msg,
-                            sortedMessages = sortedMessages,
+                            cluster = forumClusterFlags.getOrNull(idx),
                             messageIndex = idx,
                             isMine = mine,
                             canDelete = canDeleteMsg,

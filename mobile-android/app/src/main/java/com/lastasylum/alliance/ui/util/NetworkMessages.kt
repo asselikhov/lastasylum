@@ -141,6 +141,12 @@ private fun translateKnownServerMessage(english: String, resources: Resources): 
         resources.getString(R.string.err_team_join_server_mismatch)
     english.contains("ACTIVE_GAME_SERVER_REQUIRED", ignoreCase = true) ->
         resources.getString(R.string.err_active_game_server_required)
+    english.contains("Only administrators can moderate messages in this room", ignoreCase = true) ->
+        resources.getString(R.string.err_chat_moderate_global_server_admin_only)
+    english.contains("Only squad ranks R4 and R5 can moderate team chat messages", ignoreCase = true) ->
+        resources.getString(R.string.err_chat_moderate_team_r5_only)
+    english.contains("Only squad ranks R4 and R5 can manage forum topics", ignoreCase = true) ->
+        resources.getString(R.string.err_forum_topics_r5_only)
     english.contains("User already joined another team", ignoreCase = true) ->
         resources.getString(R.string.profile_join_user_already_in_team)
     else -> english

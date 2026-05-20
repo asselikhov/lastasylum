@@ -15,8 +15,16 @@ class AdminRepository(
 
     suspend fun listPlayerTeams(
         serverNumber: Int? = null,
-    ): Result<List<PlayerTeamAdminDto>> =
-        runCatching { adminApi.listPlayerTeams(serverNumber = serverNumber) }
+        skip: Int = 0,
+        limit: Int = 50,
+    ): Result<AdminTeamsPageDto> =
+        runCatching {
+            adminApi.listPlayerTeams(
+                serverNumber = serverNumber,
+                skip = skip,
+                limit = limit,
+            )
+        }
 
     suspend fun getPlayerTeam(teamId: String): Result<PlayerTeamDetailAdminDto> =
         runCatching { adminApi.getPlayerTeam(teamId) }
@@ -79,12 +87,16 @@ class AdminRepository(
         serverNumber: Int? = null,
         q: String? = null,
         withoutTeam: Boolean = false,
-    ): Result<List<AdminUserOnServerDto>> =
+        skip: Int = 0,
+        limit: Int = 50,
+    ): Result<AdminUsersPageDto> =
         runCatching {
             adminApi.listUsersOnServers(
                 serverNumber = serverNumber,
                 q = q?.trim()?.takeIf { it.isNotEmpty() },
                 withoutTeam = if (withoutTeam) true else null,
+                skip = skip,
+                limit = limit,
             )
         }
 

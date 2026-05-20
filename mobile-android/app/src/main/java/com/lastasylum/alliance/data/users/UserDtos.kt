@@ -69,6 +69,7 @@ data class MyProfileDto(
     val playerTeamLeaderUserId: String? = null,
     val isPlayerTeamLeader: Boolean = false,
     val pendingPlayerTeamJoinRequests: Int = 0,
+    val playerTeamSquadRole: String? = null,
     val enabledStickerPacks: List<String> = emptyList(),
     val excavationPushEnabled: Boolean = true,
     val pushNotificationsRegistered: Boolean = false,

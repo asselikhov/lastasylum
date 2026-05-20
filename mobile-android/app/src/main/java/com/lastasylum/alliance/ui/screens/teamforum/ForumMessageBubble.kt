@@ -64,10 +64,7 @@ import com.lastasylum.alliance.ui.chat.TelegramImageCaptionBar
 import com.lastasylum.alliance.ui.chat.TelegramLikeAttachmentsGrid
 import com.lastasylum.alliance.ui.chat.chatBubbleShapeIncoming
 import com.lastasylum.alliance.ui.chat.chatBubbleShapeOutgoing
-import com.lastasylum.alliance.ui.chat.forumBubbleClusterTopSpacing
-import com.lastasylum.alliance.ui.chat.forumMessageClusterTightInnerTop
-import com.lastasylum.alliance.ui.chat.forumMessageIsClusterChainBottom
-import com.lastasylum.alliance.ui.chat.forumMessageShowsClusterHeader
+import com.lastasylum.alliance.ui.chat.ForumMessageClusterFlags
 import com.lastasylum.alliance.ui.chat.replyPreviewText
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.ui.chat.resolvedChatAttachmentImageUrl
@@ -80,7 +77,7 @@ import androidx.compose.ui.platform.LocalDensity
 @Composable
 internal fun ForumMessageBubble(
     message: TeamForumMessageDto,
-    sortedMessages: List<TeamForumMessageDto>,
+    cluster: ForumMessageClusterFlags?,
     messageIndex: Int,
     isMine: Boolean,
     canDelete: Boolean,
@@ -104,10 +101,10 @@ internal fun ForumMessageBubble(
     val density = LocalDensity.current
     val swipePx = remember(density) { with(density) { 56.dp.toPx() } }
 
-    val clusterTop = forumBubbleClusterTopSpacing(sortedMessages, messageIndex)
-    val showClusterHeader = forumMessageShowsClusterHeader(sortedMessages, messageIndex)
-    val isChainBottom = forumMessageIsClusterChainBottom(sortedMessages, messageIndex)
-    val tightClusterTop = forumMessageClusterTightInnerTop(sortedMessages, messageIndex)
+    val clusterTop = cluster?.topSpacing ?: 8.dp
+    val showClusterHeader = cluster?.showHeader ?: true
+    val isChainBottom = cluster?.isChainBottom ?: true
+    val tightClusterTop = cluster?.tightInnerTop ?: false
 
     val stickerStem = if (!deleted) ZlobyakaStickerPack.parseStem(message.text) else null
     val rawImagePaths = remember(message.id, message.imageRelativeUrls, message.imageRelativeUrl) {

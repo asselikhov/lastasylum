@@ -16,6 +16,7 @@ import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { DEFAULT_ALLIANCE_ID } from '../common/constants/default-alliance-id';
 import { Roles } from '../common/decorators/roles.decorator';
+import { isAppAdminRole } from '../common/alliance-role.util';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { UpdateMembershipDto } from './dto/update-membership.dto';
@@ -52,7 +53,7 @@ export class UsersController {
   ) {}
 
   @Get('me')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   async getMyProfile(@Req() req: { user: RequestUser }) {
     const user = await this.usersService.findById(req.user.userId);
     if (!user) {
@@ -63,7 +64,7 @@ export class UsersController {
   }
 
   @Post('me/push-token')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   async registerPushToken(
     @Req() req: { user: RequestUser },
@@ -77,14 +78,14 @@ export class UsersController {
   }
 
   @Delete('me/push-tokens')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   async clearPushTokens(@Req() req: { user: RequestUser }) {
     await this.usersService.clearPushTokens(req.user.userId);
     return { success: true };
   }
 
   @Post('me/presence')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   @Throttle({ default: { limit: 120, ttl: 60_000 } })
   async updatePresence(
     @Req() req: { user: RequestUser },
@@ -95,7 +96,7 @@ export class UsersController {
   }
 
   @Patch('me/notification-preferences')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async updateMyNotificationPreferences(
     @Req() req: { user: RequestUser },
@@ -112,7 +113,7 @@ export class UsersController {
   }
 
   @Patch('me/telegram')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   async updateMyTelegram(
     @Req() req: { user: RequestUser },
@@ -129,7 +130,7 @@ export class UsersController {
   }
 
   @Patch('me/username')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async updateMyUsername(
     @Req() req: { user: RequestUser },
@@ -146,7 +147,7 @@ export class UsersController {
   }
 
   @Post('me/game-identities')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   async addGameIdentity(
     @Req() req: { user: RequestUser },
@@ -161,7 +162,7 @@ export class UsersController {
   }
 
   @Patch('me/game-identities/:identityId')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async updateGameIdentity(
     @Req() req: { user: RequestUser },
@@ -177,7 +178,7 @@ export class UsersController {
   }
 
   @Delete('me/game-identities/:identityId')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   async deleteGameIdentity(
     @Req() req: { user: RequestUser },
@@ -191,7 +192,7 @@ export class UsersController {
   }
 
   @Post('me/active-game-identity')
-  @Roles(AllianceRole.R2)
+  @Roles(AllianceRole.MEMBER)
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   async switchActiveGameIdentity(
     @Req() req: { user: RequestUser },
@@ -205,7 +206,7 @@ export class UsersController {
   }
 
   @Get()
-  @Roles(AllianceRole.R4)
+  @Roles(AllianceRole.MODERATOR)
   async listAllianceMembers(
     @Req() req: { user: RequestUser },
     @Query('allianceCode') allianceCode?: string,
@@ -220,7 +221,7 @@ export class UsersController {
     }
 
     let usersList: UserDocument[];
-    if (me.role === AllianceRole.R5) {
+    if (isAppAdminRole(me.role)) {
       const skip = Math.max(0, Number.parseInt(skipRaw ?? '0', 10) || 0);
       const limit = Math.min(
         500,
@@ -243,7 +244,7 @@ export class UsersController {
     );
   }
 
-  @Roles(AllianceRole.R5)
+  @Roles(AllianceRole.ADMIN)
   @Patch('role')
   async updateRole(@Body() dto: UpdateRoleDto) {
     const updatedUser = await this.usersService.updateRole(
@@ -258,7 +259,7 @@ export class UsersController {
   }
 
   /** Must be before :id routes so "mute" is not captured as id. */
-  @Roles(AllianceRole.R4)
+  @Roles(AllianceRole.MODERATOR)
   @Patch('mute')
   async muteUser(@Body() dto: MuteUserDto) {
     const mutedUntil = new Date(Date.now() + dto.minutes * 60 * 1000);
@@ -273,7 +274,7 @@ export class UsersController {
     return await this.usersService.toSafeUser(updatedUser);
   }
 
-  @Roles(AllianceRole.R5)
+  @Roles(AllianceRole.ADMIN)
   @Patch(':id/membership')
   async updateMembership(
     @Param('id') id: string,
@@ -289,7 +290,7 @@ export class UsersController {
     return await this.usersService.toSafeUser(updatedUser);
   }
 
-  @Roles(AllianceRole.R5)
+  @Roles(AllianceRole.ADMIN)
   @Patch(':id/username')
   async updateUsername(
     @Param('id') id: string,
@@ -305,7 +306,7 @@ export class UsersController {
     return await this.usersService.toSafeUser(updatedUser);
   }
 
-  @Roles(AllianceRole.R5)
+  @Roles(AllianceRole.ADMIN)
   @Delete(':id')
   async deleteUser(@Param('id') id: string, @Req() req: { user: RequestUser }) {
     if (id === req.user.userId) {

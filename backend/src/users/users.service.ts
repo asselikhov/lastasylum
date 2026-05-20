@@ -2,9 +2,15 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import {
+  LEGACY_ALLIANCE_ROLE_MIGRATION,
+  normalizeAllianceRole,
+} from '../common/alliance-role.util';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
 import { AllianceRegistryService } from './alliance-registry.service';
@@ -17,6 +23,7 @@ export type SafeUser = {
   id: string;
   username: string;
   email: string;
+  /** App account role (MEMBER…ADMIN), not squad rank R1–R5. */
   role: AllianceRole;
   allianceName: string;
   alliancePublicId: string;
@@ -34,6 +41,8 @@ export type SafeUser = {
   playerTeamLeaderUserId: string | null;
   isPlayerTeamLeader: boolean;
   pendingPlayerTeamJoinRequests: number;
+  /** Squad rank on the player team (R1–R5), not app alliance role. */
+  playerTeamSquadRole: string | null;
   /** Alliance sticker packs this account may send (wire keys, e.g. zlobyaka). */
   enabledStickerPacks: string[];
   excavationPushEnabled: boolean;
@@ -46,7 +55,9 @@ export type SafeUser = {
 };
 
 @Injectable()
-export class UsersService {
+export class UsersService implements OnModuleInit {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<User>,
     private readonly allianceRegistry: AllianceRegistryService,
@@ -54,6 +65,23 @@ export class UsersService {
     private readonly stickerAccess: StickerAccessService,
     private readonly gameIdentities: GameIdentitiesService,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    await this.migrateLegacyAllianceRoles();
+  }
+
+  private async migrateLegacyAllianceRoles(): Promise<void> {
+    for (const { from, to } of LEGACY_ALLIANCE_ROLE_MIGRATION) {
+      const res = await this.userModel
+        .updateMany({ role: from }, { $set: { role: to } })
+        .exec();
+      if (res.modifiedCount > 0) {
+        this.logger.log(
+          `Migrated ${res.modifiedCount} user(s) alliance role ${from} → ${to}`,
+        );
+      }
+    }
+  }
 
   effectiveMembership(user: UserDocument): TeamMembershipStatus {
     return user.membershipStatus ?? TeamMembershipStatus.ACTIVE;
@@ -63,11 +91,11 @@ export class UsersService {
     return this.userModel.findOne({ email: email.toLowerCase() }).exec();
   }
 
+  /** New accounts are always regular members; app admin (AllianceRole.ADMIN) is assigned manually. */
   async createUser(input: {
     username: string;
     email: string;
     passwordHash: string;
-    role?: AllianceRole;
     serverNumber?: number;
     gameNickname?: string;
   }): Promise<UserDocument> {
@@ -75,7 +103,7 @@ export class UsersService {
       username: input.username,
       email: input.email.toLowerCase(),
       passwordHash: input.passwordHash,
-      role: input.role ?? AllianceRole.R2,
+      role: AllianceRole.MEMBER,
       membershipStatus: TeamMembershipStatus.ACTIVE,
     });
     if (input.serverNumber != null && input.gameNickname != null) {
@@ -186,8 +214,9 @@ export class UsersService {
     userId: string,
     role: AllianceRole,
   ): Promise<UserDocument | null> {
+    const normalized = normalizeAllianceRole(role);
     return this.userModel
-      .findByIdAndUpdate(userId, { role }, { returnDocument: 'after' })
+      .findByIdAndUpdate(userId, { role: normalized }, { returnDocument: 'after' })
       .exec();
   }
 
@@ -305,7 +334,7 @@ export class UsersService {
       id: synced._id.toString(),
       username: synced.username,
       email: synced.email,
-      role: synced.role,
+      role: normalizeAllianceRole(synced.role),
       allianceName: synced.allianceName,
       alliancePublicId: flags.alliancePublicId,
       overlayTabVisible: flags.overlayTabVisible,

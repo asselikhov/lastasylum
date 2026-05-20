@@ -44,6 +44,10 @@ private val SquadRelayColorScheme = darkColorScheme(
     surfaceTint = Color.Transparent,
 )
 
+/**
+ * Product decision: dark theme only on Render Free — avoids double QA/assets for light mode.
+ * Use [SquadRelayColorScheme] tokens in chat/forum bubbles (not hard-coded Telegram blue).
+ */
 @Composable
 fun SquadRelayTheme(content: @Composable () -> Unit) {
     MaterialTheme(

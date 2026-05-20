@@ -21,8 +21,7 @@ export class User {
   @Prop({
     type: String,
     required: true,
-    default: AllianceRole.R2,
-    enum: AllianceRole,
+    default: AllianceRole.MEMBER,
   })
   role: AllianceRole;
 
@@ -114,3 +113,6 @@ UserSchema.index({
   playerTeamId: 1,
   pushFcmTokens: 1,
 });
+UserSchema.index({ playerTeamId: 1 });
+UserSchema.index({ 'gameIdentities.serverNumber': 1 });
+UserSchema.index({ 'gameIdentities.playerTeamId': 1 });

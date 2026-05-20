@@ -25,7 +25,11 @@ data class ChatState(
     val messages: List<ChatMessage> = emptyList(),
     val error: String? = null,
     val currentUserId: String = "",
+    /** App alliance role (admin tab); not squad rank. */
     val currentUserRole: String = "",
+    val isAppAdmin: Boolean = false,
+    /** Squad rank R1–R5 on current player team; used for team chat moderation. */
+    val playerTeamSquadRole: String? = null,
     val isLoadingOlder: Boolean = false,
     val hasMoreOlder: Boolean = true,
     val isSending: Boolean = false,

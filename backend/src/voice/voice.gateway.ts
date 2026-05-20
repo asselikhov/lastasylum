@@ -9,6 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Namespace, Socket } from 'socket.io';
+import { authenticateSocketConnection } from '../common/socket-auth.util';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
 import { userMayAccessChatRoom } from '../chat/chat-room-access';
@@ -76,36 +77,11 @@ export class VoiceGateway {
   ) {}
 
   handleConnection(client: AuthSocket) {
-    const authPayload = client.handshake.auth as { token?: unknown };
-    const authTokenValue = authPayload.token;
-    const headerValue = client.handshake.headers.authorization;
-    const headerToken =
-      typeof headerValue === 'string'
-        ? headerValue.replace(/^Bearer\s+/i, '')
-        : undefined;
-    const rawToken =
-      typeof authTokenValue === 'string' ? authTokenValue : headerToken;
-
-    if (!rawToken) {
-      throw new WsException('Missing websocket token');
-    }
-
-    let payload: GatewayUser & { sub: string };
-    try {
-      payload = this.jwtService.verify<GatewayUser & { sub: string }>(
-        rawToken,
-        {
-          secret: this.configService.getOrThrow<string>('JWT_SECRET'),
-        },
-      );
-    } catch {
-      throw new WsException('Invalid websocket token');
-    }
-    client.data.user = {
-      userId: payload.sub,
-      username: payload.username,
-      role: payload.role,
-    } satisfies GatewayUser;
+    authenticateSocketConnection(
+      client,
+      this.jwtService,
+      this.configService,
+    );
     client.data.micOn = false;
     client.data.soundOn = false;
   }

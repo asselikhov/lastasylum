@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.ui.util.accountRoleLabel
 import com.lastasylum.alliance.data.admin.AdminUserOnServerDto
 import com.lastasylum.alliance.ui.util.formatServerLabel
 import com.lastasylum.alliance.ui.util.teamTagWithServerPrefix
@@ -86,7 +87,10 @@ fun AdminPlayerManageSheet(
             style = MaterialTheme.typography.bodySmall,
         )
         Text(
-            stringResource(R.string.admin_field_role, player.allianceRole),
+            stringResource(
+                R.string.admin_field_role,
+                accountRoleLabel(player.accountRole),
+            ),
             style = MaterialTheme.typography.bodySmall,
         )
         val teamLine = player.playerTeamTag?.let { tag ->
@@ -159,8 +163,10 @@ fun AdminPlayerManageSheet(
         }
         Text(stringResource(R.string.admin_role_change), style = MaterialTheme.typography.labelMedium)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("R2", "R3", "R4", "R5").forEach { r ->
-                OutlinedButton(onClick = { onSetRole(r) }) { Text(r) }
+            com.lastasylum.alliance.data.auth.AccountRoles.ALL.forEach { r ->
+                OutlinedButton(onClick = { onSetRole(r) }) {
+                    Text(accountRoleLabel(r))
+                }
             }
         }
         if (player.userId != currentUserId) {

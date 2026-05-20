@@ -18,8 +18,8 @@ data class PlayerTeamMemberDto(
     val userId: String,
     val username: String,
     val isLeader: Boolean,
-    /** Alliance / app role (R2–R5 in backend). */
-    val allianceRole: String = "R2",
+    /** App account role (MEMBER…ADMIN), not squad rank. */
+    val accountRole: String = "MEMBER",
     /** Squad role R1–R5 (R5 = leader). */
     val teamRole: String = "R1",
     val telegramUsername: String?,

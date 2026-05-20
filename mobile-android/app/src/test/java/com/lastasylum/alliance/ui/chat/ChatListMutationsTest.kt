@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.ui.chat
 
+import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatAttachment
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.mergePreservingAttachments
@@ -147,11 +148,13 @@ class ChatListMutationsTest {
 
     @Test
     fun syncSelections_keepsAdminSelectionForOthersMessages() {
-        val other = msg("2").copy(senderId = "other")
+        val globalRoom = ChatAllianceIds.GLOBAL
+        val other = msg("2").copy(senderId = "other", allianceId = globalRoom)
         val state = ChatState(
             currentUserId = "u1",
-            currentUserRole = "R5",
-            messages = listOf(msg("1"), other),
+            currentUserRole = "ADMIN",
+            isAppAdmin = true,
+            messages = listOf(msg("1").copy(allianceId = globalRoom), other),
             selectedMessageIds = setOf("1", "2"),
         )
         val synced = syncSelections(state)

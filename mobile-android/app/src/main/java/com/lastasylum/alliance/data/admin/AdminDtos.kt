@@ -35,6 +35,24 @@ data class PutAllianceStickerAccessBody(
 )
 
 @JsonClass(generateAdapter = true)
+data class AdminUsersPageDto(
+    val items: List<AdminUserOnServerDto>,
+    val total: Int,
+    val skip: Int,
+    val limit: Int,
+    val hasMore: Boolean,
+)
+
+@JsonClass(generateAdapter = true)
+data class AdminTeamsPageDto(
+    val items: List<PlayerTeamAdminDto>,
+    val total: Int,
+    val skip: Int,
+    val limit: Int,
+    val hasMore: Boolean,
+)
+
+@JsonClass(generateAdapter = true)
 data class AdminOverviewDto(
     val playerTeamCount: Int = 0,
     val usersWithoutTeamCount: Int = 0,
@@ -83,7 +101,7 @@ data class AdminUserOnServerDto(
     val playerTeamTag: String? = null,
     val playerTeamDisplayName: String? = null,
     val isActiveIdentity: Boolean = false,
-    val allianceRole: String = "R2",
+    val accountRole: String = "MEMBER",
     val membershipStatus: String = "active",
 )
 
@@ -96,7 +114,7 @@ data class AdminTeamMemberDto(
     val serverNumber: Int? = null,
     val email: String,
     val isLeader: Boolean = false,
-    val allianceRole: String,
+    val accountRole: String,
     val teamRole: String,
     val membershipStatus: String,
     val allianceName: String,
