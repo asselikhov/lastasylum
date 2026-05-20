@@ -76,7 +76,9 @@ import { StickerAccessService } from './sticker-access.service';
   exports: [
     UsersService,
     GameIdentitiesService,
+    AllianceRegistryService,
     TeamsService,
+    TeamNewsService,
     TeamNewsAttachmentsService,
     MongooseModule,
     ForumModule,
