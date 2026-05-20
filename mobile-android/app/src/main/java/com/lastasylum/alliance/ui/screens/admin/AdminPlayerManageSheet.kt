@@ -45,19 +45,25 @@ fun AdminPlayerManageSheet(
     onDelete: () -> Unit,
 ) {
     var nickDraft by remember(player.identityId) { mutableStateOf(player.gameNickname) }
+    val needsGameIdentity = player.identityId.isBlank()
     var serverDraft by remember(player.identityId) {
-        mutableStateOf(player.serverNumber.toString())
+        mutableStateOf(
+            if (player.serverNumber >= 1) player.serverNumber.toString() else "",
+        )
     }
-    LaunchedEffect(player.gameNickname, player.serverNumber) {
+    LaunchedEffect(player.gameNickname, player.serverNumber, player.identityId) {
         nickDraft = player.gameNickname
-        serverDraft = player.serverNumber.toString()
+        serverDraft =
+            if (player.serverNumber >= 1) player.serverNumber.toString() else ""
     }
 
     val serverNum = serverDraft.trim().toIntOrNull()
     val nickOk = nickDraft.trim().length in 2..32
     val serverOk = serverNum != null && serverNum in 1..9999
     val identityChanged = nickOk && serverOk && (
-        nickDraft.trim() != player.gameNickname || serverNum != player.serverNumber
+        needsGameIdentity ||
+            nickDraft.trim() != player.gameNickname ||
+            serverNum != player.serverNumber
         )
 
     val statusLabel = when (player.membershipStatus) {
@@ -73,11 +79,23 @@ fun AdminPlayerManageSheet(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            formatServerLabel(player.serverNumber)?.let { "$it ${player.gameNickname}" }
-                ?: player.gameNickname,
+            when {
+                formatServerLabel(player.serverNumber) != null ->
+                    "${formatServerLabel(player.serverNumber)} ${player.gameNickname}"
+                needsGameIdentity ->
+                    stringResource(R.string.admin_players_no_server_title, player.gameNickname)
+                else -> player.gameNickname
+            },
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold,
         )
+        if (needsGameIdentity) {
+            Text(
+                stringResource(R.string.admin_players_no_server_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
         Text(
             stringResource(R.string.admin_players_account, player.email),
             style = MaterialTheme.typography.bodySmall,

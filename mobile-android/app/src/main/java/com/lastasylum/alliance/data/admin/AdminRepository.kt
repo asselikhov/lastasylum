@@ -123,6 +123,21 @@ class AdminRepository(
             adminApi.listChatRoomMessages(roomId = roomId, before = before)
         }
 
+    suspend fun createGameIdentity(
+        userId: String,
+        gameNickname: String,
+        serverNumber: Int,
+    ): Result<Unit> =
+        runCatching {
+            adminApi.createGameIdentity(
+                userId = userId,
+                body = AdminCreateGameIdentityBody(
+                    serverNumber = serverNumber,
+                    gameNickname = gameNickname.trim(),
+                ),
+            )
+        }
+
     suspend fun updateGameIdentity(
         userId: String,
         identityId: String,

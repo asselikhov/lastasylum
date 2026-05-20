@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   Patch,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -11,7 +12,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { RolesGuard } from '../common/guards/roles.guard';
-import { UpdateGameIdentityDto } from './dto/game-identity.dto';
+import { CreateGameIdentityDto, UpdateGameIdentityDto } from './dto/game-identity.dto';
 import { GameIdentitiesService } from './game-identities.service';
 import { UsersService } from './users.service';
 
@@ -58,6 +59,22 @@ export class AdminGameIdentitiesController {
       skip,
       limit,
     });
+  }
+
+  @Post('users/:userId/game-identities')
+  @Roles(AllianceRole.ADMIN)
+  async adminCreateGameIdentity(
+    @Param('userId') userId: string,
+    @Body() dto: CreateGameIdentityDto,
+  ) {
+    const updated = await this.gameIdentities.adminBootstrapGameIdentity(
+      userId,
+      {
+        serverNumber: dto.serverNumber,
+        gameNickname: dto.gameNickname,
+      },
+    );
+    return this.users.toSafeUser(updated);
   }
 
   @Patch('users/:userId/game-identities/:identityId')

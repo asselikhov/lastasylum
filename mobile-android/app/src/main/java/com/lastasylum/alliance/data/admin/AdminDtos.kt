@@ -78,6 +78,12 @@ data class AdminServerSummaryDto(
 )
 
 @JsonClass(generateAdapter = true)
+data class AdminCreateGameIdentityBody(
+    val serverNumber: Int,
+    val gameNickname: String,
+)
+
+@JsonClass(generateAdapter = true)
 data class AdminUpdateGameIdentityBody(
     val serverNumber: Int? = null,
     val gameNickname: String? = null,

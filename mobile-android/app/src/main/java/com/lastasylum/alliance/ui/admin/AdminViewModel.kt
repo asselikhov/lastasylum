@@ -295,12 +295,21 @@ class AdminViewModel(
         successMessage: String,
     ) {
         viewModelScope.launch {
-            adminRepository.updateGameIdentity(
-                userId,
-                identityId,
-                gameNickname.trim(),
-                serverNumber = serverNumber,
-            )
+            val op = if (identityId.isBlank()) {
+                adminRepository.createGameIdentity(
+                    userId,
+                    gameNickname.trim(),
+                    serverNumber,
+                )
+            } else {
+                adminRepository.updateGameIdentity(
+                    userId,
+                    identityId,
+                    gameNickname.trim(),
+                    serverNumber = serverNumber,
+                )
+            }
+            op
                 .onSuccess {
                     _state.value = _state.value.copy(snackMessage = successMessage, actionError = null)
                     reloadCurrentList()

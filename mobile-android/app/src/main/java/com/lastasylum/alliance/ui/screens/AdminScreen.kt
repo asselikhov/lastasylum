@@ -594,7 +594,8 @@ private fun AdminPlayerListRow(
             Text(
                 stringResource(
                     R.string.admin_game_servers_row,
-                    formatServerLabel(row.serverNumber) ?: "#${row.serverNumber}",
+                    formatServerLabel(row.serverNumber)
+                        ?: stringResource(R.string.admin_players_server_unset),
                     row.gameNickname,
                 ),
                 style = MaterialTheme.typography.titleMedium,

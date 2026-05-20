@@ -342,6 +342,9 @@
     <string name="admin_players_game_nick">Игровой ник</string>
     <string name="admin_players_save_game">Сохранить ник и сервер</string>
     <string name="admin_players_save_game_ok">Игровой ник и сервер обновлены</string>
+    <string name="admin_players_no_server_title">%1$s (сервер не указан)</string>
+    <string name="admin_players_no_server_hint">Укажите номер сервера (1–9999) и нажмите «Сохранить» — игрок появится в чате с префиксом #сервер.</string>
+    <string name="admin_players_server_unset">без сервера</string>
     <string name="admin_players_moderation_section">Модерация альянса</string>
     <string name="admin_team_edit_title">Редактировать команду</string>
     <string name="admin_team_edit_tag">Тег (3–4 буквы)</string>

@@ -9,6 +9,7 @@ import com.lastasylum.alliance.data.users.TeamMemberDto
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.PATCH
+import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
@@ -103,6 +104,12 @@ interface AdminApi {
         @Query("before") before: String? = null,
         @Query("limit") limit: Int = 80,
     ): List<ChatMessage>
+
+    @POST("admin/users/{userId}/game-identities")
+    suspend fun createGameIdentity(
+        @Path("userId") userId: String,
+        @Body body: AdminCreateGameIdentityBody,
+    ): com.lastasylum.alliance.data.users.MyProfileDto
 
     @PATCH("admin/users/{userId}/game-identities/{identityId}")
     suspend fun updateGameIdentity(

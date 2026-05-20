@@ -478,6 +478,27 @@ export class GameIdentitiesService {
     return updated;
   }
 
+  /** First game identity for legacy accounts (admin). */
+  async adminBootstrapGameIdentity(
+    userId: string,
+    body: { serverNumber: number; gameNickname: string },
+  ): Promise<UserDocument> {
+    const user = await this.userModel.findById(userId).exec();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if ((user.gameIdentities?.length ?? 0) > 0) {
+      throw new BadRequestException(
+        'User already has a game identity; update the existing row instead',
+      );
+    }
+    return this.createInitialIdentity(
+      user,
+      body.serverNumber,
+      body.gameNickname,
+    );
+  }
+
   async updateIdentity(
     userId: string,
     identityId: string,
@@ -659,9 +680,6 @@ export class GameIdentitiesService {
       })
       .exec();
     for (const user of users) {
-      if ((user.gameIdentities?.length ?? 0) === 0) {
-        continue;
-      }
       out.set(user._id.toString(), this.resolveSenderServerNumber(user));
     }
     return out;
@@ -731,10 +749,25 @@ export class GameIdentitiesService {
     const qTrim = opts.q?.trim();
     const qLower = qTrim?.toLowerCase();
 
-    const pipeline: Record<string, unknown>[] = [
-      { $match: { gameIdentities: { $exists: true, $not: { $size: 0 } } } },
-      { $unwind: '$gameIdentities' },
-    ];
+    const pipeline: Record<string, unknown>[] = [];
+    if (qLower) {
+      const esc = this.escapeRegex(qTrim ?? '');
+      pipeline.push({
+        $match: {
+          $or: [
+            { email: { $regex: esc, $options: 'i' } },
+            { username: { $regex: esc, $options: 'i' } },
+            { 'gameIdentities.gameNickname': { $regex: esc, $options: 'i' } },
+          ],
+        },
+      });
+    }
+    pipeline.push({
+      $unwind: {
+        path: '$gameIdentities',
+        preserveNullAndEmptyArrays: true,
+      },
+    });
     if (opts.serverNumber != null) {
       pipeline.push({
         $match: { 'gameIdentities.serverNumber': opts.serverNumber },
@@ -744,20 +777,15 @@ export class GameIdentitiesService {
       pipeline.push({
         $match: {
           $or: [
+            {
+              gameIdentities: null,
+              $or: [
+                { playerTeamId: null },
+                { playerTeamId: { $exists: false } },
+              ],
+            },
             { 'gameIdentities.playerTeamId': null },
             { 'gameIdentities.playerTeamId': { $exists: false } },
-          ],
-        },
-      });
-    }
-    if (qLower) {
-      const esc = this.escapeRegex(qTrim ?? '');
-      pipeline.push({
-        $match: {
-          $or: [
-            { email: { $regex: esc, $options: 'i' } },
-            { username: { $regex: esc, $options: 'i' } },
-            { 'gameIdentities.gameNickname': { $regex: esc, $options: 'i' } },
           ],
         },
       });
@@ -774,7 +802,19 @@ export class GameIdentitiesService {
       $addFields: {
         team: { $arrayElemAt: ['$teamDoc', 0] },
         activeIdStr: { $toString: '$activeGameIdentityId' },
-        identityIdStr: { $toString: '$gameIdentities._id' },
+        identityIdStr: {
+          $cond: [
+            { $ifNull: ['$gameIdentities._id', false] },
+            { $toString: '$gameIdentities._id' },
+            '',
+          ],
+        },
+        rowServerNumber: {
+          $ifNull: ['$gameIdentities.serverNumber', 0],
+        },
+        rowGameNickname: {
+          $ifNull: ['$gameIdentities.gameNickname', '$username'],
+        },
       },
     });
     pipeline.push({
@@ -784,8 +824,8 @@ export class GameIdentitiesService {
         email: 1,
         role: 1,
         membershipStatus: 1,
-        serverNumber: '$gameIdentities.serverNumber',
-        gameNickname: '$gameIdentities.gameNickname',
+        serverNumber: '$rowServerNumber',
+        gameNickname: '$rowGameNickname',
         playerTeamId: {
           $cond: [
             { $ifNull: ['$gameIdentities.playerTeamId', false] },
@@ -795,7 +835,14 @@ export class GameIdentitiesService {
         },
         playerTeamTag: '$team.tag',
         playerTeamDisplayName: '$team.displayName',
-        isActiveIdentity: { $eq: ['$activeIdStr', '$identityIdStr'] },
+        isActiveIdentity: {
+          $cond: [
+            { $eq: ['$gameIdentities', null] },
+            false,
+            { $eq: ['$activeIdStr', '$identityIdStr'] },
+          ],
+        },
+        needsGameIdentity: { $eq: ['$gameIdentities', null] },
       },
     });
     pipeline.push({
