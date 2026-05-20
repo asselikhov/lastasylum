@@ -56,6 +56,7 @@ class OverlayCommandsPopover(
     private val scope: CoroutineScope,
     private val dp: (Int) -> Int,
     private val sendCoords: suspend (label: String, x: Int, y: Int, excavation: Boolean) -> Result<ChatMessage>,
+    private val notifyExcavation: suspend () -> Result<ChatMessage>,
     private val emitOverlayReaction: (targetUserId: String, reactionId: String) -> Unit = { _, _ -> },
     private val emitOverlayReactionBroadcast: (reactionId: String) -> Unit = {},
 ) {
@@ -812,6 +813,24 @@ class OverlayCommandsPopover(
             }
         }
 
+        fun refreshPrimaryAction(cat: CommandCategory) {
+            if (cat.excavation) {
+                coordsLabel.text = context.getString(R.string.overlay_cmd_excavation_notify)
+                coordsIcon.setImageDrawable(
+                    AppCompatResources.getDrawable(context, R.drawable.ic_overlay_send)?.mutate()?.also { d ->
+                        DrawableCompat.setTint(d, Color.parseColor("#FF8FAEFF"))
+                    },
+                )
+            } else {
+                coordsLabel.text = context.getString(R.string.overlay_cmd_column_open_coords)
+                coordsIcon.setImageDrawable(
+                    AppCompatResources.getDrawable(context, R.drawable.ic_overlay_cmd_coords)?.mutate()?.also { d ->
+                        DrawableCompat.setTint(d, Color.parseColor("#FF8FAEFF"))
+                    },
+                )
+            }
+        }
+
         fun applyCategory(index: Int) {
             selectedCategoryIndex = index.coerceIn(0, categories.lastIndex)
             val cat = categories[selectedCategoryIndex]
@@ -833,6 +852,7 @@ class OverlayCommandsPopover(
                 stopHeartPreviewPulse()
                 coordsAction.visibility = View.VISIBLE
                 reactionRow.visibility = View.GONE
+                refreshPrimaryAction(cat)
             }
         }
 
@@ -891,13 +911,38 @@ class OverlayCommandsPopover(
         close.setOnClickListener { hide() }
         coordsAction.setOnClickListener {
             val cat = categories[selectedCategoryIndex]
+            if (cat.excavation) {
+                coordsAction.isEnabled = false
+                scope.launch {
+                    val result = notifyExcavation()
+                    mainHandler.post {
+                        coordsAction.isEnabled = true
+                        result.onSuccess {
+                            hide()
+                        }.onFailure { e ->
+                            val msg = when (e.message) {
+                                "no_room" -> context.getString(R.string.overlay_strip_no_room)
+                                "no_raid" -> context.getString(R.string.overlay_strip_no_raid)
+                                else ->
+                                    e.message?.takeIf { it.isNotBlank() }
+                                        ?: context.getString(
+                                            R.string.overlay_history_send_failed,
+                                            e.javaClass.simpleName,
+                                        )
+                            }
+                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+                return@setOnClickListener
+            }
             val label = if (cat.options != null) {
                 val idx = selectedOptionIndex.coerceIn(0, cat.options.lastIndex)
                 context.getString(cat.options[idx].labelCommandRes)
             } else {
                 context.getString(cat.titleRes)
             }
-            openCoordsFromMenu(label, cat.excavation)
+            openCoordsFromMenu(label, excavation = false)
         }
 
         applyCategory(0)

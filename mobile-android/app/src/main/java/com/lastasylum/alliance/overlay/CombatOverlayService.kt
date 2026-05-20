@@ -178,6 +178,13 @@ class CombatOverlayService : Service() {
                     repo.sendMessageWithRetries(text, roomId)
                 }
             },
+            notifyExcavation = {
+                val roomId = AppContainer.from(this@CombatOverlayService).chatRoomPreferences.getRaidRoomId()
+                    ?: return@OverlayCommandsPopover Result.failure(IllegalStateException("no_raid"))
+                val text = getString(R.string.overlay_excavation_notify_message)
+                AppContainer.from(this@CombatOverlayService).chatRepository
+                    .sendExcavationAlertWithRetries(text, roomId)
+            },
             emitOverlayReaction = { targetUserId, reactionId ->
                 AppContainer.from(this@CombatOverlayService).chatRepository.emitOverlayReaction(targetUserId, reactionId)
             },

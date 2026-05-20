@@ -616,6 +616,7 @@
     <string name="overlay_cmd_tab_reinf">Подкр.</string>
     <string name="overlay_cmd_tab_excavation">Раскопки</string>
     <string name="overlay_excavation_message">Раскопки альянса X:%1$d Y:%2$d</string>
+    <string name="overlay_excavation_notify_message">Раскопки альянса</string>
     <string name="overlay_cmd_column_excavation">Раскопки</string>
     <string name="settings_excavation_push_title">Уведомления о раскопках</string>
     <string name="settings_excavation_push_subtitle">Звуковой push с координатами, когда вы не в игре. Обычный чат альянса вне игры push не присылает.</string>
@@ -667,7 +668,8 @@
     <string name="overlay_cmd_spinner_reinf_to_city">В город</string>
     <string name="overlay_cmd_spinner_reinf_to_player">Игроку</string>
     <string name="overlay_cmd_column_open_coords">Координаты</string>
-    <string name="overlay_cmd_excavation_hint">Push союзникам вне игры</string>
+    <string name="overlay_cmd_excavation_notify">Оповестить</string>
+    <string name="overlay_cmd_excavation_hint">Push союзникам вне игры (без координат)</string>
     <string name="overlay_coord_dialog_subtitle">Введите координаты цели</string>
 
     <!-- API / network (ViewModel) -->
