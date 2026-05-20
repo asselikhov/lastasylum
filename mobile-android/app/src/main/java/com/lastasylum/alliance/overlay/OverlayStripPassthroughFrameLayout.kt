@@ -31,7 +31,14 @@ internal class OverlayStripPassthroughFrameLayout(context: Context) : FrameLayou
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 forwardingToCompose = false
-                if (dismissRectsInCompose.isEmpty()) return false
+                if (dismissRectsInCompose.isEmpty()) {
+                    return if (OverlayPassthroughMultitouchFrameLayout.hitVisibleLeafDescendant(this, ev.x, ev.y)) {
+                        forwardingToCompose = true
+                        super.dispatchTouchEvent(ev)
+                    } else {
+                        false
+                    }
+                }
                 // [compose] вложен в промежуточный [FrameLayout]; [View.getLeft]/[getTop] — относительно родителя,
                 // не этого хоста. Без экранных координат зоны крестика смещаются: DOWN уходит в Compose мимо кнопки,
                 // жест не доходит до игре — остаётся «мёртвая» полоса после закрытия карточек.

@@ -58,7 +58,7 @@ squadrelay.certPins=sha256/AAAA...,sha256/BBBB...
 
 - [`../SECURITY.md`](../SECURITY.md)
 - Токены: `TokenStore.kt` (EncryptedSharedPreferences)
-- minSdk **28** (Android 9+)
+- minSdk **28** (Android 9+), targetSdk **35** (Android 15 overlay/touch compatibility)
 
 ## Тесты
 

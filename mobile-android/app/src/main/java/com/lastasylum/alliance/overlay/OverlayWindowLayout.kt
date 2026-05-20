@@ -9,9 +9,11 @@ import android.view.WindowManager
  * Общие [WindowManager.LayoutParams] для окон оверлея: флаги и вырезы.
  *
  * **Конфликты с игрой (аудит поверхностей):**
- * - **Панель кнопок** ([CombatOverlayService]): `WRAP_CONTENT` окно, без `MATCH_PARENT` по ширине у контента;
- *   [FLAG_NOT_TOUCH_MODAL] — касания вне прямоугольника окна уходят в игру;
- *   корень [OverlayPassthroughMultitouchFrameLayout] — при pinch (>1 пальца) окно не участвует в dispatch (зум карты).
+ * - **HUD / панель кнопок** ([CombatOverlayService]): `WRAP_CONTENT`, [FLAG_NOT_TOUCH_MODAL];
+ *   корень [OverlayPassthroughMultitouchFrameLayout] — тапы в прозрачные зоны и pinch не забираются оверлеем.
+ *   Левый HUD сдвинут от края ([OVERLAY_HUD_LEFT_WINDOW_X_DP]), чтобы не перекрывать «назад» в игре.
+ * - **targetSdk 35+** обязателен на Android 15: иначе система показывает диалог «не оптимизировано»
+ *   и касания через TYPE_APPLICATION_OVERLAY могут не доходить до игры.
  * - **Лента чата**: отдельное окно; ширина по контенту + центр; вертикальный скролл и max-height от экрана;
  *   касания — [OverlayStripPassthroughFrameLayout]: проходят в игру, кроме зон крестика закрытия.
  * - **Тикер**: окно создаётся только при первом [OverlayTickerWindow.showTicker], чтобы не держать

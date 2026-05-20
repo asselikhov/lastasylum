@@ -26,7 +26,7 @@ internal class OverlayPassthroughMultitouchFrameLayout(context: Context) : Frame
         return super.onTouchEvent(event)
     }
 
-    private companion object {
+    companion object {
         /**
          * Есть ли под (x,y) в координатах [parent] видимый не-[ViewGroup] view или [ViewGroup] с попаданием во внутреннего.
          */
