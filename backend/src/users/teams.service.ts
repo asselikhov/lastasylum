@@ -69,6 +69,7 @@ export type AdminTeamMemberRow = TeamMemberRow & {
   serverNumber: number | null;
   gameNickname: string;
   accountUsername: string;
+  identityId: string | null;
 };
 
 export type TeamJoinRequestRow = {
@@ -848,6 +849,69 @@ export class TeamsService {
     return { ok: true };
   }
 
+  /** R5 admin: rename team tag/display name without leader check. */
+  async updateTeamBrandingForAdmin(
+    teamId: string,
+    rawName?: string,
+    rawTag?: string,
+  ): Promise<{ ok: true }> {
+    if (!Types.ObjectId.isValid(teamId)) {
+      throw new NotFoundException('Team not found');
+    }
+    const team = await this.teamModel.findById(teamId).exec();
+    if (!team) {
+      throw new NotFoundException('Team not found');
+    }
+    await this.migrateLegacyIfNeeded(team);
+
+    let nameVal = team.displayName;
+    let tagNorm = team.tag;
+
+    if (rawName != null) {
+      const nameTrim = rawName.trim();
+      if (nameTrim.length < 2) {
+        throw new BadRequestException('Team name is too short');
+      }
+      nameVal = nameTrim.slice(0, 48);
+      const nameOther = await this.findTeamByDisplayNameCaseInsensitive(
+        nameVal,
+        team._id as Types.ObjectId,
+      );
+      if (nameOther) {
+        throw new ConflictException('This team name is already taken');
+      }
+    }
+
+    if (rawTag != null) {
+      tagNorm = this.normalizeTag(rawTag);
+      const tagOther = await this.findTeamByTag(
+        tagNorm,
+        team._id as Types.ObjectId,
+      );
+      if (tagOther) {
+        throw new ConflictException('This team tag is already taken');
+      }
+    }
+
+    await this.teamModel
+      .updateOne(
+        { _id: team._id },
+        { $set: { displayName: nameVal, tag: tagNorm } },
+      )
+      .exec();
+    await this.userModel
+      .updateMany(
+        { playerTeamId: team._id },
+        { $set: { teamDisplayName: nameVal, teamTag: tagNorm } },
+      )
+      .exec();
+    await this.chatRoomsService.ensureAllianceChatRoomsForScope(
+      playerTeamChatAllianceId(team._id.toString()),
+      nameVal,
+    );
+    return { ok: true };
+  }
+
   async updateMemberSquadRole(
     teamId: string,
     actorUserId: string,
@@ -1027,6 +1091,7 @@ export class TeamsService {
         ),
         gameNickname: displayNick,
         accountUsername: u.username,
+        identityId: this.gameIdentities.resolveIdentityIdForTeam(u, teamIdStr),
       };
     });
     members.sort((a, b) => squadRoleRank(b.teamRole) - squadRoleRank(a.teamRole));

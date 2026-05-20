@@ -32,6 +32,8 @@ export type AdminUserOnServerRow = {
   playerTeamTag: string | null;
   playerTeamDisplayName: string | null;
   isActiveIdentity: boolean;
+  allianceRole: string;
+  membershipStatus: string;
 };
 
 export type SafeGameIdentity = {
@@ -582,9 +584,26 @@ export class GameIdentitiesService {
       }));
   }
 
+  resolveIdentityIdForTeam(
+    user: UserDocument,
+    teamId: string,
+  ): string | null {
+    const list = user.gameIdentities ?? [];
+    const onTeam = list.find((g) => g.playerTeamId?.toString() === teamId);
+    if (onTeam?._id) {
+      return this.identityId(onTeam);
+    }
+    if (user.playerTeamId?.toString() === teamId) {
+      const active = this.getActiveIdentity(user);
+      return active ? this.identityId(active) : null;
+    }
+    return null;
+  }
+
   async listUsersForAdminByServer(opts: {
     serverNumber?: number;
     q?: string;
+    withoutTeam?: boolean;
   }): Promise<AdminUserOnServerRow[]> {
     const filter: Record<string, unknown> = {
       gameIdentities: { $exists: true, $ne: [] },
@@ -637,6 +656,9 @@ export class GameIdentitiesService {
         }
         const tid = g.playerTeamId?.toString() ?? null;
         const team = tid ? teamById.get(tid) : undefined;
+        if (opts.withoutTeam && tid != null) {
+          continue;
+        }
         const row: AdminUserOnServerRow = {
           userId: migrated._id.toString(),
           identityId: this.identityId(g),
@@ -648,6 +670,8 @@ export class GameIdentitiesService {
           playerTeamTag: team?.tag ?? null,
           playerTeamDisplayName: team?.displayName ?? null,
           isActiveIdentity: activeId === this.identityId(g),
+          allianceRole: migrated.role,
+          membershipStatus: migrated.membershipStatus ?? 'active',
         };
         if (qLower) {
           const hay = [

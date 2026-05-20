@@ -20,6 +20,12 @@ interface AdminApi {
         @Path("teamId") teamId: String,
     ): PlayerTeamDetailAdminDto
 
+    @PATCH("admin/player-teams/{teamId}")
+    suspend fun updatePlayerTeam(
+        @Path("teamId") teamId: String,
+        @Body body: AdminUpdatePlayerTeamBody,
+    ): Map<String, Boolean>
+
     @GET("admin/users/without-team")
     suspend fun listUsersWithoutTeam(
         @Query("q") q: String? = null,
@@ -54,6 +60,7 @@ interface AdminApi {
     suspend fun listUsersOnServers(
         @Query("serverNumber") serverNumber: Int? = null,
         @Query("q") q: String? = null,
+        @Query("withoutTeam") withoutTeam: Boolean? = null,
     ): List<AdminUserOnServerDto>
 
     @PATCH("admin/users/{userId}/game-identities/{identityId}")

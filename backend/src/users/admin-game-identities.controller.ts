@@ -34,14 +34,20 @@ export class AdminGameIdentitiesController {
   async listUsersOnServers(
     @Query('serverNumber') serverNumberRaw?: string,
     @Query('q') q?: string,
+    @Query('withoutTeam') withoutTeamRaw?: string,
   ) {
     const serverNumber =
       serverNumberRaw != null && serverNumberRaw.trim() !== ''
         ? Number.parseInt(serverNumberRaw, 10)
         : undefined;
+    const withoutTeam =
+      withoutTeamRaw === '1' ||
+      withoutTeamRaw === 'true' ||
+      withoutTeamRaw === 'yes';
     return this.gameIdentities.listUsersForAdminByServer({
       serverNumber: Number.isFinite(serverNumber) ? serverNumber : undefined,
       q: q?.trim() || undefined,
+      withoutTeam,
     });
   }
 

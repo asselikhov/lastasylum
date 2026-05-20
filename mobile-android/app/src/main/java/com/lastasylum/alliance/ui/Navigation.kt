@@ -174,8 +174,8 @@ fun AppNavigation(
     val msgRemoved = stringResource(R.string.admin_ok_removed)
     val msgPending = stringResource(R.string.admin_ok_pending)
     val msgRole = stringResource(R.string.admin_ok_role)
-    val msgRename = stringResource(R.string.admin_ok_rename)
-    val msgNicknameSaved = stringResource(R.string.admin_game_servers_edit_saved)
+    val msgNicknameSaved = stringResource(R.string.admin_players_save_game_ok)
+    val msgTeamSaved = stringResource(R.string.admin_team_edit_saved)
     val msgDeleted = stringResource(R.string.admin_ok_deleted)
     val msgRoomCreated = stringResource(R.string.admin_ok_room_created)
     val msgRoomRenamed = stringResource(R.string.admin_ok_room_renamed)
@@ -410,11 +410,13 @@ fun AppNavigation(
                     onOpenRoute = adminViewModel::openRoute,
                     onOpenPlayerTeam = adminViewModel::openPlayerTeam,
                     onTeamSearchChange = adminViewModel::setTeamSearchQuery,
-                    onUserSearchChange = adminViewModel::setUserSearchQuery,
+                    onPlayersSearchChange = adminViewModel::setPlayersSearch,
+                    onPlayersSegmentChange = adminViewModel::setPlayersSegment,
+                    onPlayersServerFilter = adminViewModel::setPlayersServerFilter,
                     onRefreshOverview = adminViewModel::refreshOverview,
                     onRefreshPlayerTeams = adminViewModel::refreshPlayerTeams,
                     onRefreshTeamMembers = adminViewModel::refreshTeamMembers,
-                    onRefreshUsersWithoutTeam = adminViewModel::refreshUsersWithoutTeam,
+                    onRefreshPlayers = adminViewModel::refreshPlayersScreen,
                     onRefreshAlliances = adminViewModel::refreshAlliances,
                     onAllianceOverlayChange = { publicId, enabled ->
                         adminViewModel.setAllianceOverlay(publicId, enabled, msgOverlaySaved)
@@ -434,20 +436,25 @@ fun AppNavigation(
                     onRemoveFromTeam = { id -> adminViewModel.setMembership(id, "removed", msgRemoved) },
                     onRestorePending = { id -> adminViewModel.setMembership(id, "pending", msgPending) },
                     onSetRole = { memberId, newRole -> adminViewModel.setRole(memberId, newRole, msgRole) },
-                    onRename = { memberId, newName -> adminViewModel.setUsername(memberId, newName, msgRename) },
                     onDeleteUser = { memberId -> adminViewModel.deleteUser(memberId, msgDeleted) },
                     onClearActionError = adminViewModel::clearActionError,
                     onClearRoomError = adminViewModel::clearRoomError,
                     onDismissSnack = adminViewModel::clearSnack,
-                    onGameServerFilter = adminViewModel::setGameServerFilter,
-                    onGameServerSearchChange = adminViewModel::setGameServerSearch,
-                    onRefreshGameServers = adminViewModel::refreshGameServers,
-                    onUpdateGameIdentity = { userId, identityId, nickname ->
+                    onUpdateGameIdentity = { userId, identityId, nickname, server ->
                         adminViewModel.updateGameIdentityAdmin(
                             userId,
                             identityId,
                             nickname,
+                            server,
                             msgNicknameSaved,
+                        )
+                    },
+                    onUpdatePlayerTeam = { teamId, tag, name ->
+                        adminViewModel.updatePlayerTeamBranding(
+                            teamId,
+                            name,
+                            tag,
+                            msgTeamSaved,
                         )
                     },
                 )

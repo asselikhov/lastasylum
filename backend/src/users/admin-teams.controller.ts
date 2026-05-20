@@ -1,11 +1,14 @@
 import {
+  Body,
   Controller,
   Get,
   NotFoundException,
   Param,
+  Patch,
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { UpdatePlayerTeamAdminDto } from './dto/update-player-team-admin.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
@@ -35,6 +38,22 @@ export class AdminTeamsController {
       throw new NotFoundException('Team not found');
     }
     return detail;
+  }
+
+  @Patch('player-teams/:teamId')
+  @Roles(AllianceRole.R5)
+  async updatePlayerTeam(
+    @Param('teamId') teamId: string,
+    @Body() dto: UpdatePlayerTeamAdminDto,
+  ) {
+    if (dto.displayName == null && dto.tag == null) {
+      return { ok: true };
+    }
+    return this.teams.updateTeamBrandingForAdmin(
+      teamId,
+      dto.displayName,
+      dto.tag,
+    );
   }
 
   @Get('users/without-team')

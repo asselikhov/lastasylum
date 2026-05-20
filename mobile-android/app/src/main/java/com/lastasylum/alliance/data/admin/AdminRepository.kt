@@ -14,6 +14,21 @@ class AdminRepository(
     suspend fun getPlayerTeam(teamId: String): Result<PlayerTeamDetailAdminDto> =
         runCatching { adminApi.getPlayerTeam(teamId) }
 
+    suspend fun updatePlayerTeam(
+        teamId: String,
+        displayName: String?,
+        tag: String?,
+    ): Result<Unit> =
+        runCatching {
+            adminApi.updatePlayerTeam(
+                teamId,
+                AdminUpdatePlayerTeamBody(
+                    displayName = displayName?.trim()?.takeIf { it.isNotEmpty() },
+                    tag = tag?.trim()?.takeIf { it.isNotEmpty() },
+                ),
+            )
+        }
+
     suspend fun listUsersWithoutTeam(
         q: String? = null,
         skip: Int = 0,
@@ -56,11 +71,13 @@ class AdminRepository(
     suspend fun listUsersOnServers(
         serverNumber: Int? = null,
         q: String? = null,
+        withoutTeam: Boolean = false,
     ): Result<List<AdminUserOnServerDto>> =
         runCatching {
             adminApi.listUsersOnServers(
                 serverNumber = serverNumber,
                 q = q?.trim()?.takeIf { it.isNotEmpty() },
+                withoutTeam = if (withoutTeam) true else null,
             )
         }
 
@@ -75,7 +92,7 @@ class AdminRepository(
                 userId = userId,
                 identityId = identityId,
                 body = AdminUpdateGameIdentityBody(
-                    gameNickname = gameNickname,
+                    gameNickname = gameNickname.trim(),
                     serverNumber = serverNumber,
                 ),
             )

@@ -65,6 +65,12 @@ data class AdminUpdateGameIdentityBody(
 )
 
 @JsonClass(generateAdapter = true)
+data class AdminUpdatePlayerTeamBody(
+    val displayName: String? = null,
+    val tag: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
 data class AdminUserOnServerDto(
     val userId: String,
     val identityId: String,
@@ -76,6 +82,8 @@ data class AdminUserOnServerDto(
     val playerTeamTag: String? = null,
     val playerTeamDisplayName: String? = null,
     val isActiveIdentity: Boolean = false,
+    val allianceRole: String = "R2",
+    val membershipStatus: String = "active",
 )
 
 @JsonClass(generateAdapter = true)
@@ -91,6 +99,7 @@ data class AdminTeamMemberDto(
     val teamRole: String,
     val membershipStatus: String,
     val allianceName: String,
+    val identityId: String? = null,
     val telegramUsername: String? = null,
     val presenceStatus: String? = null,
     val lastPresenceAt: String? = null,
