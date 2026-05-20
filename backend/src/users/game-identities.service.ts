@@ -299,7 +299,11 @@ export class GameIdentitiesService {
     return any?.gameNickname?.trim() ?? this.resolveSenderUsername(user);
   }
 
-  async setPlayerTeamOnActive(
+  /**
+   * Bind squad team on every game identity (authoritative for chat + profile).
+   * When [teamId] is null, clears team on all identities.
+   */
+  async bindAllIdentitiesToTeam(
     userId: string,
     teamId: Types.ObjectId | null,
     teamTag: string | null,
@@ -307,28 +311,16 @@ export class GameIdentitiesService {
   ): Promise<UserDocument | null> {
     const user = await this.userModel.findById(userId).exec();
     if (!user) return null;
-    const migrated = await this.ensureMigrated(user);
-    const active = this.getActiveIdentity(migrated);
-    if (!active?._id) return migrated;
-    const activeIdStr = active._id.toString();
-    const identities = (migrated.gameIdentities ?? []).map((g) => {
-      const base = {
-        _id: g._id,
-        serverNumber: g.serverNumber,
-        gameNickname: g.gameNickname,
-        playerTeamId: g.playerTeamId ?? null,
-      };
-      if (teamId == null) {
-        if (this.identityId(g) !== activeIdStr) {
-          return base;
-        }
-        return { ...base, playerTeamId: null };
-      }
-      if (this.identityId(g) === activeIdStr) {
-        return { ...base, playerTeamId: teamId };
-      }
-      return { ...base, playerTeamId: null };
-    });
+    const migrated =
+      (user.gameIdentities?.length ?? 0) > 0
+        ? user
+        : await this.ensureMigrated(user);
+    const identities = (migrated.gameIdentities ?? []).map((g) => ({
+      _id: g._id,
+      serverNumber: g.serverNumber,
+      gameNickname: g.gameNickname,
+      playerTeamId: teamId,
+    }));
     const updated = await this.userModel
       .findByIdAndUpdate(
         userId,
@@ -336,8 +328,8 @@ export class GameIdentitiesService {
           $set: {
             gameIdentities: identities,
             playerTeamId: teamId,
-            teamTag,
-            teamDisplayName,
+            teamTag: teamId ? teamTag : null,
+            teamDisplayName: teamId ? teamDisplayName : null,
           },
         },
         { returnDocument: 'after' },
@@ -345,6 +337,20 @@ export class GameIdentitiesService {
       .exec();
     if (!updated) return null;
     return this.syncUserFromActiveIdentity(updated);
+  }
+
+  async setPlayerTeamOnActive(
+    userId: string,
+    teamId: Types.ObjectId | null,
+    teamTag: string | null,
+    teamDisplayName: string | null,
+  ): Promise<UserDocument | null> {
+    return this.bindAllIdentitiesToTeam(
+      userId,
+      teamId,
+      teamTag,
+      teamDisplayName,
+    );
   }
 
   async clearPlayerTeamOnActive(userId: string): Promise<UserDocument | null> {

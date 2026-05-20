@@ -109,10 +109,38 @@ const clearedOthers = await usersCol.updateMany(
 );
 
 for (const u of memberDocs) {
+  const role = squadMembers.find((m) => m.userId.equals(u._id))?.role ?? 'R1';
+  let identities = (u.gameIdentities ?? []).map((g) => ({
+    _id: g._id,
+    serverNumber: g.serverNumber,
+    gameNickname: g.gameNickname,
+    playerTeamId: teamId,
+  }));
+  if (identities.length === 0) {
+    const identityId = new mongoose.Types.ObjectId();
+    identities = [
+      {
+        _id: identityId,
+        serverNumber: 1,
+        gameNickname: (u.username ?? 'player').trim().slice(0, 32),
+        playerTeamId: teamId,
+      },
+    ];
+    await usersCol.updateOne(
+      { _id: u._id },
+      {
+        $set: {
+          gameIdentities: identities,
+          activeGameIdentityId: identityId,
+        },
+      },
+    );
+  }
   await usersCol.updateOne(
     { _id: u._id },
     {
       $set: {
+        gameIdentities: identities,
         playerTeamId: teamId,
         teamDisplayName: keepTeam.displayName || TEAM_TAG,
         teamTag: TEAM_TAG,
@@ -121,6 +149,7 @@ for (const u of memberDocs) {
       },
     },
   );
+  void role;
 }
 
 const joinCleanup = await joinCol.deleteMany({ teamId: { $ne: teamId } });

@@ -141,7 +141,7 @@ export class TeamsService {
     if (user) {
       await this.gameIdentities.ensureMigrated(user);
     }
-    await this.gameIdentities.setPlayerTeamOnActive(
+    await this.gameIdentities.bindAllIdentitiesToTeam(
       userId.toString(),
       team._id,
       team.tag,
@@ -318,7 +318,7 @@ export class TeamsService {
         status: TeamJoinRequestStatus.PENDING,
       });
     }
-    const squadRole = this.getSquadRoleForUser(team, uid);
+    const squadRole = this.resolveSquadRoleForMember(team, uid);
     return {
       playerTeamId: team._id.toString(),
       playerTeamTag: team.tag,
@@ -328,6 +328,59 @@ export class TeamsService {
       pendingPlayerTeamJoinRequests: pending,
       playerTeamSquadRole: squadRole,
     };
+  }
+
+  /**
+   * Align `users.playerTeamId` and all `gameIdentities[].playerTeamId` with squad roster.
+   * No-op when already consistent.
+   */
+  async reconcileSquadTeamBindingForUser(
+    userId: string,
+  ): Promise<UserDocument | null> {
+    if (!Types.ObjectId.isValid(userId)) {
+      return null;
+    }
+    const user = await this.userModel.findById(userId).exec();
+    if (!user) {
+      return null;
+    }
+    const squadTeamId = await this.findSquadMembershipTeamId(userId);
+    if (!squadTeamId) {
+      const hasTeamLink =
+        Boolean(user.playerTeamId) ||
+        (user.gameIdentities ?? []).some((g) => g.playerTeamId != null);
+      if (!hasTeamLink) {
+        return user;
+      }
+      return this.gameIdentities.bindAllIdentitiesToTeam(
+        userId,
+        null,
+        null,
+        null,
+      );
+    }
+    const team = await this.teamModel.findById(squadTeamId).exec();
+    if (!team) {
+      return user;
+    }
+    await this.migrateLegacyIfNeeded(team);
+    const teamOid = team._id;
+    const needsBind =
+      !user.playerTeamId?.equals(teamOid) ||
+      (user.gameIdentities ?? []).some(
+        (g) => !g.playerTeamId?.equals(teamOid),
+      ) ||
+      user.teamTag !== team.tag ||
+      user.teamDisplayName !== team.displayName;
+    if (!needsBind) {
+      return user;
+    }
+    return this.gameIdentities.bindAllIdentitiesToTeam(
+      userId,
+      teamOid,
+      team.tag,
+      team.displayName,
+    );
   }
 
   private assertMember(team: PlayerTeamDocument, userId: string): void {
@@ -403,47 +456,32 @@ export class TeamsService {
     const validOids = unique
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
-    const users =
+
+    const rosterTeams =
       validOids.length === 0
         ? []
-        : await this.userModel
-            .find({ _id: { $in: validOids } })
-            .select('_id playerTeamId')
-            .lean<
-              Array<{
-                _id: Types.ObjectId;
-                playerTeamId?: Types.ObjectId | null;
-              }>
-            >()
+        : await this.teamModel
+            .find({ 'squadMembers.userId': { $in: validOids } })
             .exec();
 
-    const teamIdStrs = [
-      ...new Set(
-        users
-          .map((u) => u.playerTeamId?.toString())
-          .filter((v): v is string => Boolean(v)),
-      ),
-    ];
-    const teams =
-      teamIdStrs.length === 0
-        ? []
-        : await this.teamModel
-            .find({
-              _id: {
-                $in: teamIdStrs.map((id) => new Types.ObjectId(id)),
-              },
-            })
-            .exec();
-    const teamById = new Map(teams.map((t) => [t._id.toString(), t]));
+    const teamIdByUserId = new Map<string, string>();
+    for (const team of rosterTeams) {
+      await this.migrateLegacyIfNeeded(team);
+      const teamIdStr = team._id.toString();
+      for (const m of team.squadMembers) {
+        teamIdByUserId.set(m.userId.toString(), teamIdStr);
+      }
+    }
+
+    const teamById = new Map(rosterTeams.map((t) => [t._id.toString(), t]));
 
     for (const id of unique) {
       if (!Types.ObjectId.isValid(id)) {
         out.set(id, PlayerTeamMemberRole.R1);
         continue;
       }
-      const user = users.find((u) => u._id.toString() === id);
-      const teamId = user?.playerTeamId?.toString();
-      if (!user || !teamId) {
+      const teamId = teamIdByUserId.get(id);
+      if (!teamId) {
         out.set(id, PlayerTeamMemberRole.R1);
         continue;
       }
@@ -452,15 +490,7 @@ export class TeamsService {
         out.set(id, PlayerTeamMemberRole.R1);
         continue;
       }
-      await this.migrateLegacyIfNeeded(team);
-      const leaderStr = team.leaderUserId.toString();
-      out.set(
-        id,
-        this.getSquadRoleForUser(team, id) ??
-          (id === leaderStr
-            ? PlayerTeamMemberRole.R5
-            : PlayerTeamMemberRole.R1),
-      );
+      out.set(id, this.resolveSquadRoleForMember(team, id));
     }
     return out;
   }
@@ -507,7 +537,7 @@ export class TeamsService {
       throw e;
     }
     await this.ensurePlayerTeamChatRooms(team);
-    await this.gameIdentities.setPlayerTeamOnActive(
+    await this.gameIdentities.bindAllIdentitiesToTeam(
       userId,
       team._id,
       team.tag,

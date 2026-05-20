@@ -117,7 +117,11 @@ export class UsersService implements OnModuleInit {
   }
 
   async findById(id: string): Promise<UserDocument | null> {
-    return this.userModel.findById(id).exec();
+    const user = await this.userModel.findById(id).exec();
+    if (!user) {
+      return null;
+    }
+    return this.teamsService.reconcileSquadTeamBindingForUser(id);
   }
 
   async findByUsername(username: string): Promise<UserDocument | null> {
@@ -320,41 +324,46 @@ export class UsersService implements OnModuleInit {
 
   async toSafeUser(user: UserDocument): Promise<SafeUser> {
     const synced = await this.gameIdentities.ensureMigrated(user);
+    const reconciled =
+      (await this.teamsService.reconcileSquadTeamBindingForUser(
+        synced._id.toString(),
+      )) ?? synced;
     const flags = await this.allianceRegistry.resolveFlagsByAllianceCode(
-      synced.allianceName,
+      reconciled.allianceName,
     );
-    const teamFields = await this.teamsService.getPlayerTeamProfileFields(synced);
+    const teamFields =
+      await this.teamsService.getPlayerTeamProfileFields(reconciled);
     const gameIdentities =
-      await this.gameIdentities.buildSafeIdentities(synced);
-    const active = this.gameIdentities.getActiveIdentity(synced);
+      await this.gameIdentities.buildSafeIdentities(reconciled);
+    const active = this.gameIdentities.getActiveIdentity(reconciled);
     const inSquad = Boolean(teamFields.playerTeamId);
     const enabledStickerPacks =
-      await this.stickerAccess.listEnabledPackKeysForUser(user);
+      await this.stickerAccess.listEnabledPackKeysForUser(reconciled);
     return {
-      id: synced._id.toString(),
-      username: synced.username,
-      email: synced.email,
-      role: normalizeAllianceRole(synced.role),
-      allianceName: synced.allianceName,
+      id: reconciled._id.toString(),
+      username: reconciled.username,
+      email: reconciled.email,
+      role: normalizeAllianceRole(reconciled.role),
+      allianceName: reconciled.allianceName,
       alliancePublicId: flags.alliancePublicId,
       overlayTabVisible: flags.overlayTabVisible,
       teamDisplayName: inSquad
         ? teamFields.playerTeamDisplayName
-        : (synced.teamDisplayName ?? null),
-      teamTag: inSquad ? teamFields.playerTeamTag : (synced.teamTag ?? null),
-      membershipStatus: this.effectiveMembership(synced),
-      presenceStatus: synced.presenceStatus ?? null,
-      lastPresenceAt: synced.lastPresenceAt
-        ? synced.lastPresenceAt.toISOString()
+        : (reconciled.teamDisplayName ?? null),
+      teamTag: inSquad ? teamFields.playerTeamTag : (reconciled.teamTag ?? null),
+      membershipStatus: this.effectiveMembership(reconciled),
+      presenceStatus: reconciled.presenceStatus ?? null,
+      lastPresenceAt: reconciled.lastPresenceAt
+        ? reconciled.lastPresenceAt.toISOString()
         : null,
-      lastAppActiveAt: synced.lastAppActiveAt
-        ? synced.lastAppActiveAt.toISOString()
+      lastAppActiveAt: reconciled.lastAppActiveAt
+        ? reconciled.lastAppActiveAt.toISOString()
         : null,
-      telegramUsername: synced.telegramUsername ?? null,
+      telegramUsername: reconciled.telegramUsername ?? null,
       ...teamFields,
       enabledStickerPacks,
-      excavationPushEnabled: synced.excavationPushEnabled !== false,
-      pushNotificationsRegistered: (synced.pushFcmTokens?.length ?? 0) > 0,
+      excavationPushEnabled: reconciled.excavationPushEnabled !== false,
+      pushNotificationsRegistered: (reconciled.pushFcmTokens?.length ?? 0) > 0,
       gameIdentities,
       activeGameIdentityId: active?._id?.toString() ?? null,
       activeGameNickname: active?.gameNickname ?? null,
