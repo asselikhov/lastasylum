@@ -4,6 +4,13 @@ import type { User } from '../users/schemas/user.schema';
 /** Chat rooms for an in-app player team use `pt:<mongoTeamId>` as [ChatRoom.allianceId]. */
 export const PLAYER_TEAM_CHAT_PREFIX = 'pt:';
 
+export {
+  isServerChatScope,
+  parseServerNumberFromChatScope,
+  serverChatAllianceId,
+  SERVER_CHAT_ALLIANCE_PREFIX,
+} from '../common/constants/chat-room-constants';
+
 export function playerTeamChatAllianceId(teamId: string): string {
   return `${PLAYER_TEAM_CHAT_PREFIX}${teamId}`;
 }

@@ -1,6 +1,11 @@
-import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/global-chat-alliance-id';
+import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/chat-room-constants';
 import type { User } from '../users/schemas/user.schema';
-import { playerTeamChatAllianceId } from './chat-alliance-scope';
+import {
+  isServerChatScope,
+  parseServerNumberFromChatScope,
+  playerTeamChatAllianceId,
+} from './chat-alliance-scope';
+import { resolveUserActiveServerNumber } from './chat-user-server';
 
 export type ChatRoomAccessFields = {
   allianceId: string;
@@ -18,10 +23,10 @@ export function resolveTeamChatScope(
 }
 
 /**
- * «Мир» — для всех; комната команды и «Рейд» — только участникам этой player team.
+ * «Межсерв» и комната сервера — для всех; «Альянс» и «Рейд» — только участникам player team.
  */
 export function userMayAccessChatRoom(
-  user: Pick<User, 'allianceName' | 'playerTeamId'>,
+  user: Pick<User, 'allianceName' | 'playerTeamId' | 'gameIdentities' | 'activeGameIdentityId'>,
   room: ChatRoomAccessFields,
 ): boolean {
   if (room.archivedAt) {
@@ -29,6 +34,15 @@ export function userMayAccessChatRoom(
   }
   if (room.allianceId === GLOBAL_CHAT_ALLIANCE_ID) {
     return true;
+  }
+  if (isServerChatScope(room.allianceId)) {
+    const roomServer = parseServerNumberFromChatScope(room.allianceId);
+    const userServer = resolveUserActiveServerNumber(user);
+    return (
+      roomServer != null &&
+      userServer != null &&
+      roomServer === userServer
+    );
   }
   const teamScope = resolveTeamChatScope(user);
   if (!teamScope) {

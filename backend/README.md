@@ -80,15 +80,16 @@ npm run start:dev
 
 ## Chat rooms (per player team)
 
-Each **player team** gets three rooms in the Chat tab:
+Chat tab rooms:
 
 | Room | Scope | `ChatRoom.allianceId` |
 |------|--------|------------------------|
-| **Мир** | All alliances and users without a team | `__global__` |
-| **Team name** (display name) | Members of that team only | `pt:<teamMongoId>` |
+| **Межсерв** | All players, any server and team | `__global__` |
+| **#&lt;n&gt;** (active game server) | All players on that server | `srv:<n>` |
+| **Альянс** | Members of that player team only | `pt:<teamMongoId>` |
 | **Рейд** | Same team; messages feed the combat overlay strip | `pt:<teamMongoId>` |
 
-Users **without** `playerTeamId` only see **Мир**. Rooms are provisioned when a team is created or joined (`TeamsService` → `ChatRoomsService.ensureAllianceChatRoomsForScope`).
+Users **without** `playerTeamId` see **Межсерв** and their server room. Team rooms are provisioned when a team is created or joined (`TeamsService` → `ChatRoomsService.ensureAllianceChatRoomsForScope`).
 
 ## WebSocket overview
 

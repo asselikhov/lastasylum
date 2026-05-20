@@ -131,6 +131,10 @@ private fun translateKnownServerMessage(english: String, resources: Resources): 
         resources.getString(R.string.profile_player_team_join_already_in_team)
     english.contains("Already a member", ignoreCase = true) ->
         resources.getString(R.string.profile_player_team_join_already_member)
+    english.contains("TEAM_JOIN_SERVER_MISMATCH", ignoreCase = true) ->
+        resources.getString(R.string.err_team_join_server_mismatch)
+    english.contains("ACTIVE_GAME_SERVER_REQUIRED", ignoreCase = true) ->
+        resources.getString(R.string.err_active_game_server_required)
     english.contains("User already joined another team", ignoreCase = true) ->
         resources.getString(R.string.profile_join_user_already_in_team)
     else -> english

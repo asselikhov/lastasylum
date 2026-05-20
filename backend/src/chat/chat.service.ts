@@ -8,8 +8,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/global-chat-alliance-id';
-import { resolveChatAllianceScope } from './chat-alliance-scope';
+import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/chat-room-constants';
 import { userMayAccessChatRoom } from './chat-room-access';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { PlayerTeamMemberRole } from '../common/enums/player-team-member-role.enum';
@@ -861,8 +860,10 @@ export class ChatService {
       throw new NotFoundException('Message not found');
     }
     if (
-      message.allianceId !== GLOBAL_CHAT_ALLIANCE_ID &&
-      message.allianceId !== resolveChatAllianceScope(actor)
+      !userMayAccessChatRoom(actor, {
+        allianceId: message.allianceId,
+        archivedAt: null,
+      })
     ) {
       throw new ForbiddenException(
         'Message is not available for your alliance',

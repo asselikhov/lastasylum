@@ -221,9 +221,12 @@ class ChatViewModel(
             compareBy<ChatRoomDto> { room ->
                 when {
                     room.allianceId == ChatAllianceIds.GLOBAL -> 0
-                    room.sortOrder == 1 -> 1
-                    room.title == "Рейд" -> 2
-                    else -> 3
+                    ChatAllianceIds.isServerScope(room.allianceId) -> 1
+                    room.sortOrder == 1 &&
+                        room.allianceId != ChatAllianceIds.GLOBAL &&
+                        !ChatAllianceIds.isServerScope(room.allianceId) -> 2
+                    room.title == "Рейд" -> 3
+                    else -> 4
                 }
             }.thenBy { it.sortOrder }.thenBy { it.title },
         )
@@ -266,7 +269,8 @@ class ChatViewModel(
         rooms.firstOrNull { room ->
             room.sortOrder == 1 &&
                 !room.allianceId.isNullOrBlank() &&
-                room.allianceId != ChatAllianceIds.GLOBAL
+                room.allianceId != ChatAllianceIds.GLOBAL &&
+                !ChatAllianceIds.isServerScope(room.allianceId)
         }?.id
 
     private suspend fun bootstrap(preferAllianceHubRoom: Boolean = false) {

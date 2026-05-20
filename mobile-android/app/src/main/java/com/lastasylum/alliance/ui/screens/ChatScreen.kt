@@ -74,6 +74,7 @@ import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.Tag
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.Mood
@@ -654,9 +655,11 @@ fun ChatScreen(
                 )
             }
 
-            val onlyUnionRoom = state.rooms.size == 1 &&
-                state.rooms.first().allianceId == ChatAllianceIds.GLOBAL
-            if (onlyUnionRoom) {
+            val noTeamRooms = state.rooms.none { room ->
+                !room.allianceId.isNullOrBlank() &&
+                    room.allianceId.startsWith("pt:")
+            }
+            if (noTeamRooms) {
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1371,6 +1374,7 @@ private fun ChatMessagesLazyList(
 
 private enum class ChatRoomVisualKind {
     GlobalUnion,
+    Server,
     Raid,
     AllianceHub,
     Other,
@@ -1379,10 +1383,12 @@ private enum class ChatRoomVisualKind {
 private fun com.lastasylum.alliance.data.chat.ChatRoomDto.chatRoomVisualKind(): ChatRoomVisualKind =
     when {
         allianceId == ChatAllianceIds.GLOBAL -> ChatRoomVisualKind.GlobalUnion
+        ChatAllianceIds.isServerScope(allianceId) -> ChatRoomVisualKind.Server
         title == "Рейд" -> ChatRoomVisualKind.Raid
         sortOrder == 1 &&
             allianceId != null &&
-            allianceId != ChatAllianceIds.GLOBAL -> ChatRoomVisualKind.AllianceHub
+            allianceId != ChatAllianceIds.GLOBAL &&
+            !ChatAllianceIds.isServerScope(allianceId) -> ChatRoomVisualKind.AllianceHub
         else -> ChatRoomVisualKind.Other
     }
 
@@ -1401,12 +1407,14 @@ private fun ChatRoomsBar(
             val kind = room.chatRoomVisualKind()
             val accent = when (kind) {
                 ChatRoomVisualKind.GlobalUnion -> ChatRoomTabAccents.union
+                ChatRoomVisualKind.Server -> ChatRoomTabAccents.hub
                 ChatRoomVisualKind.Raid -> ChatRoomTabAccents.raid
                 ChatRoomVisualKind.AllianceHub -> ChatRoomTabAccents.hub
                 ChatRoomVisualKind.Other -> ChatRoomTabAccents.other
             }
             val icon = when (kind) {
                 ChatRoomVisualKind.GlobalUnion -> Icons.Outlined.Public
+                ChatRoomVisualKind.Server -> Icons.Outlined.Tag
                 ChatRoomVisualKind.Raid -> Icons.Outlined.Bolt
                 ChatRoomVisualKind.AllianceHub -> Icons.Outlined.Shield
                 ChatRoomVisualKind.Other -> Icons.Outlined.ChatBubbleOutline

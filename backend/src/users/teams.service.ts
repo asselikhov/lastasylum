@@ -547,15 +547,64 @@ export class TeamsService {
     };
   }
 
-  async searchTeams(q: string, limit = 20) {
+  /** Active game server from profile; null when no valid identity. */
+  private resolveActiveServerNumber(
+    user: UserDocument | null,
+  ): number | null {
+    if (!user) return null;
+    return this.gameIdentities.resolveSenderServerNumber(user);
+  }
+
+  /** Team ids with at least one member identity on [serverNumber]. */
+  private async teamIdsOnServer(serverNumber: number): Promise<Types.ObjectId[]> {
+    const rows = await this.userModel
+      .aggregate<{ _id: Types.ObjectId }>([
+        { $unwind: '$gameIdentities' },
+        {
+          $match: {
+            'gameIdentities.serverNumber': serverNumber,
+            'gameIdentities.playerTeamId': { $ne: null },
+          },
+        },
+        { $group: { _id: '$gameIdentities.playerTeamId' } },
+      ])
+      .exec();
+    return rows
+      .map((r) => r._id)
+      .filter((id): id is Types.ObjectId => id instanceof Types.ObjectId);
+  }
+
+  private async assertTeamHasMemberOnServer(
+    teamId: Types.ObjectId,
+    serverNumber: number,
+  ): Promise<void> {
+    const teamServers = await this.gameIdentities.collectServerNumbersForTeam(
+      teamId.toString(),
+    );
+    if (!teamServers.includes(serverNumber)) {
+      throw new BadRequestException('TEAM_JOIN_SERVER_MISMATCH');
+    }
+  }
+
+  async searchTeams(q: string, requesterUserId: string, limit = 20) {
     const term = q?.trim() ?? '';
     if (term.length < 1) {
+      return [];
+    }
+    const requester = await this.userModel.findById(requesterUserId).exec();
+    const serverNumber = this.resolveActiveServerNumber(requester);
+    if (serverNumber == null) {
+      return [];
+    }
+    const teamIds = await this.teamIdsOnServer(serverNumber);
+    if (teamIds.length === 0) {
       return [];
     }
     const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const rx = new RegExp(esc, 'i');
     const rows = await this.teamModel
       .find({
+        _id: { $in: teamIds },
         $or: [{ tag: rx }, { displayName: rx }],
       })
       .sort({ tag: 1 })
@@ -589,6 +638,11 @@ export class TeamsService {
     if (team.squadMembers.some((m) => squadMemberUserIdEquals(m.userId, requesterUserId))) {
       throw new ConflictException('Already a member');
     }
+    const serverNumber = this.resolveActiveServerNumber(requester);
+    if (serverNumber == null) {
+      throw new BadRequestException('ACTIVE_GAME_SERVER_REQUIRED');
+    }
+    await this.assertTeamHasMemberOnServer(team._id, serverNumber);
     const dup = await this.joinRequestModel.findOne({
       teamId: team._id,
       requesterUserId: rid,

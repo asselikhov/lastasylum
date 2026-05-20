@@ -23,7 +23,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { RolesGuard } from '../common/guards/roles.guard';
-import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/global-chat-alliance-id';
+import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/chat-room-constants';
 import { resolveChatAllianceScope } from './chat-alliance-scope';
 import { UsersService } from '../users/users.service';
 import { PushNotificationsService } from '../push/push-notifications.service';

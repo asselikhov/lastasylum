@@ -8,10 +8,14 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
+  ALLIANCE_HUB_ROOM_TITLE,
   GLOBAL_CHAT_ALLIANCE_ID,
   GLOBAL_CHAT_ROOM_TITLE,
-} from '../common/constants/global-chat-alliance-id';
+  formatServerChatRoomTitle,
+  serverChatAllianceId,
+} from '../common/constants/chat-room-constants';
 import { UsersService } from '../users/users.service';
+import { resolveUserActiveServerNumber } from './chat-user-server';
 import { PlayerTeam, PlayerTeamDocument } from '../users/schemas/player-team.schema';
 import {
   isPlayerTeamChatScope,
@@ -58,21 +62,19 @@ export class ChatRoomsService {
   }
 
   /**
-   * «Мир» for everyone; team hub (display name) + «Рейд» only when [user.playerTeamId] is set.
+   * «Межсерв» + комната сервера (#n) for everyone; «Альянс» + «Рейд» when [user.playerTeamId] is set.
    */
   async listRoomsVisibleToUser(
-    user: Pick<User, 'allianceName' | 'playerTeamId'>,
+    user: Pick<
+      User,
+      'allianceName' | 'playerTeamId' | 'gameIdentities' | 'activeGameIdentityId'
+    >,
   ) {
-    await this.ensureGlobalGeneralRoom();
-    const globalRooms = await this.roomModel
-      .find({ allianceId: GLOBAL_CHAT_ALLIANCE_ID, archivedAt: null })
-      .sort({ sortOrder: 1, title: 1 })
-      .lean()
-      .exec();
+    const publicRooms = await this.listPublicRoomsForUser(user);
 
     const teamId = user.playerTeamId?.toString();
     if (!teamId) {
-      return globalRooms;
+      return publicRooms;
     }
 
     const chatScope = playerTeamChatAllianceId(teamId);
@@ -87,18 +89,46 @@ export class ChatRoomsService {
       .lean()
       .exec();
 
-    return [...globalRooms, ...teamRooms];
+    return [...publicRooms, ...teamRooms];
+  }
+
+  /** «Межсерв» and active-server room visible to every active chat user. */
+  private async listPublicRoomsForUser(
+    user: Pick<User, 'gameIdentities' | 'activeGameIdentityId'>,
+  ) {
+    await this.ensureGlobalGeneralRoom();
+    const globalRooms = await this.roomModel
+      .find({ allianceId: GLOBAL_CHAT_ALLIANCE_ID, archivedAt: null })
+      .sort({ sortOrder: 1, title: 1 })
+      .lean()
+      .exec();
+
+    const serverNumber = resolveUserActiveServerNumber(user);
+    if (serverNumber == null) {
+      return globalRooms;
+    }
+
+    await this.ensureServerRoom(serverNumber);
+    const serverRoom = await this.roomModel
+      .findOne({
+        allianceId: serverChatAllianceId(serverNumber),
+        archivedAt: null,
+      })
+      .lean()
+      .exec();
+
+    if (!serverRoom) {
+      return globalRooms;
+    }
+    return [...globalRooms, serverRoom];
   }
 
   /** Ensure hub + raid exist for a chat scope (call when someone joins a player team). */
   async ensureAllianceChatRoomsForScope(
     chatScope: string,
-    hubTitleHint?: string,
+    _hubTitleHint?: string,
   ): Promise<void> {
-    const hubTitle =
-      hubTitleHint?.trim() ||
-      (await this.resolveHubTitleForScope(chatScope));
-    await this.ensureAllianceHubRoom(chatScope, hubTitle);
+    await this.ensureAllianceHubRoom(chatScope);
     await this.ensureAllianceRaidRoom(chatScope);
   }
 
@@ -207,8 +237,9 @@ export class ChatRoomsService {
     return created._id;
   }
 
-  /** Cross-alliance lobby: one «Мир» room for everyone (legacy titles are renamed). */
+  /** Cross-server lobby: one «Межсерв» room (legacy «Мир» titles are renamed). */
   async ensureGlobalGeneralRoom(): Promise<void> {
+    const legacyGlobalTitles = ['Мир', 'Общая', 'Союз'];
     const current = await this.roomModel
       .findOne({
         allianceId: GLOBAL_CHAT_ALLIANCE_ID,
@@ -225,8 +256,7 @@ export class ChatRoomsService {
       return;
     }
     if (
-      current.title === 'Общая' ||
-      current.title === 'Союз' ||
+      legacyGlobalTitles.includes(current.title) ||
       current.title !== GLOBAL_CHAT_ROOM_TITLE
     ) {
       current.title = GLOBAL_CHAT_ROOM_TITLE;
@@ -234,16 +264,32 @@ export class ChatRoomsService {
     }
   }
 
-  /**
-   * Alliance-only room (sortOrder 1): title follows team display name from members, else alliance key.
-   */
-  async ensureAllianceHubRoom(
-    allianceId: string,
-    displayTitleOverride?: string,
-  ): Promise<void> {
-    const displayTitle =
-      displayTitleOverride?.trim() ||
-      (await this.resolveHubTitleForScope(allianceId));
+  /** Same-server lobby: one `#<n>` room per game server. */
+  async ensureServerRoom(serverNumber: number): Promise<void> {
+    const server = Math.max(1, Math.floor(serverNumber));
+    const allianceId = serverChatAllianceId(server);
+    const title = formatServerChatRoomTitle(server);
+    const current = await this.roomModel
+      .findOne({ allianceId, archivedAt: null })
+      .exec();
+    if (!current) {
+      await this.roomModel.create({
+        allianceId,
+        title,
+        sortOrder: 0,
+        archivedAt: null,
+      });
+      return;
+    }
+    if (current.title !== title) {
+      current.title = title;
+      await current.save();
+    }
+  }
+
+  /** Team hub (sortOrder 1): fixed title «Альянс». */
+  async ensureAllianceHubRoom(allianceId: string): Promise<void> {
+    const displayTitle = ALLIANCE_HUB_ROOM_TITLE;
     let hub = await this.roomModel
       .findOne({ allianceId, sortOrder: 1, archivedAt: null })
       .exec();

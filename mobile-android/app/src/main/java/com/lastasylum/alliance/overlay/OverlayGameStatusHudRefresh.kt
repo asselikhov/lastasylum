@@ -119,7 +119,8 @@ internal object OverlayGameStatusHudRefresh {
         rooms.firstOrNull { room ->
             room.sortOrder == 1 &&
                 !room.allianceId.isNullOrBlank() &&
-                room.allianceId != ChatAllianceIds.GLOBAL
+                room.allianceId != ChatAllianceIds.GLOBAL &&
+                !ChatAllianceIds.isServerScope(room.allianceId)
         }
 
     fun allianceHubUnread(

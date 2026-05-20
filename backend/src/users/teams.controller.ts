@@ -71,9 +71,17 @@ export class TeamsController {
 
   @Get('search')
   @Roles(AllianceRole.R2)
-  search(@Query('q') q: string, @Query('limit') limit?: string) {
+  search(
+    @Req() req: { user: RequestUser },
+    @Query('q') q: string,
+    @Query('limit') limit?: string,
+  ) {
     const lim = limit != null ? Number.parseInt(limit, 10) : 20;
-    return this.teams.searchTeams(q ?? '', Number.isFinite(lim) ? lim : 20);
+    return this.teams.searchTeams(
+      q ?? '',
+      req.user.userId,
+      Number.isFinite(lim) ? lim : 20,
+    );
   }
 
   @Get('me/join-requests')
