@@ -1520,7 +1520,6 @@ class OverlayCommandsPopover(
         reactionId: String = "heart",
     ) {
         hideReactionBurstOnly()
-        acquireGameGateSuppress()
         attachedWindowManager = windowManager
 
         val displayName = subtitleUsername.trim().ifBlank { "—" }
@@ -1614,16 +1613,14 @@ class OverlayCommandsPopover(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             overlayWindowType(),
-            OverlayWindowLayout.popupWindowFlags(),
+            OverlayWindowLayout.reactionBurstWindowFlags(),
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
             OverlayWindowLayout.applyFullscreenOverlayWindow(context, this)
         }
 
         if (runCatching { windowManager.addView(root, params) }.isFailure) {
-            if (!isShowing()) {
-                releaseGameGateSuppress()
-            }
+            attachedWindowManager = null
             return
         }
         reactionBurstScrim = root

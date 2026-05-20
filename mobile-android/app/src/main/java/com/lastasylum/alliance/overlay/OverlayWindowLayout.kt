@@ -34,6 +34,12 @@ object OverlayWindowLayout {
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
 
+    /**
+     * Вспышка входящей реакции: только анимация, касания проходят в игру.
+     */
+    fun reactionBurstWindowFlags(): Int =
+        popupWindowFlags() or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+
     /** Полноэкранная панель истории: без NOT_FOCUSABLE — нужны поле ввода и IME. */
     fun historyPanelWindowFlags(): Int =
         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
