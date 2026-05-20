@@ -58,13 +58,21 @@ fun AuthScreen(
     errorMessage: String?,
     infoMessage: String?,
     onLoginClick: (email: String, password: String) -> Unit,
-    onRegisterClick: (username: String, email: String, password: String) -> Unit,
+    onRegisterClick: (
+        username: String,
+        serverNumber: Int,
+        gameNickname: String,
+        email: String,
+        password: String,
+    ) -> Unit,
     onForgotPassword: (email: String) -> Unit,
     onResetPassword: (email: String, token: String, newPassword: String) -> Unit,
     onClearError: () -> Unit,
 ) {
     var mode by remember { mutableStateOf(AuthMode.Login) }
     var username by remember { mutableStateOf("") }
+    var serverNumber by remember { mutableStateOf("") }
+    var gameNickname by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordConfirm by remember { mutableStateOf("") }
@@ -285,6 +293,33 @@ fun AuthScreen(
                                     singleLine = true,
                                     modifier = Modifier.fillMaxWidth(),
                                     shape = MaterialTheme.shapes.medium,
+                                    supportingText = {
+                                        Text(stringResource(R.string.auth_username_helper))
+                                    },
+                                )
+                                OutlinedTextField(
+                                    value = serverNumber,
+                                    onValueChange = { v ->
+                                        serverNumber = v.filter { it.isDigit() }.take(4)
+                                    },
+                                    label = { Text(stringResource(R.string.auth_server_number)) },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = MaterialTheme.shapes.medium,
+                                    supportingText = {
+                                        Text(stringResource(R.string.auth_server_number_helper))
+                                    },
+                                )
+                                OutlinedTextField(
+                                    value = gameNickname,
+                                    onValueChange = { gameNickname = it.trimStart() },
+                                    label = { Text(stringResource(R.string.auth_game_nickname)) },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = MaterialTheme.shapes.medium,
+                                    supportingText = {
+                                        Text(stringResource(R.string.auth_game_nickname_helper))
+                                    },
                                 )
                             }
 
@@ -332,8 +367,11 @@ fun AuthScreen(
 
                             val canSubmitLogin = !isLoading && email.isNotBlank() && password.length >= 8
                             val passwordsMatch = password == passwordConfirm && password.isNotEmpty()
+                            val serverNum = serverNumber.toIntOrNull()
                             val canSubmitRegister = !isLoading &&
                                 username.length >= 3 &&
+                                serverNum != null && serverNum in 1..9999 &&
+                                gameNickname.trim().length >= 2 &&
                                 email.isNotBlank() &&
                                 password.length >= 8 &&
                                 passwordsMatch
@@ -342,7 +380,13 @@ fun AuthScreen(
                                 onClick = {
                                     when (mode) {
                                         AuthMode.Login -> onLoginClick(email, password)
-                                        AuthMode.Register -> onRegisterClick(username, email, password)
+                                        AuthMode.Register -> onRegisterClick(
+                                            username,
+                                            serverNum!!,
+                                            gameNickname.trim(),
+                                            email,
+                                            password,
+                                        )
                                         else -> Unit
                                     }
                                 },

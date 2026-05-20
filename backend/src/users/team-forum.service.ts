@@ -24,6 +24,7 @@ import {
   TeamForumTopicReadState,
 } from './schemas/team-forum-topic-read-state.schema';
 import { TeamNewsAttachmentsService } from './team-news-attachments.service';
+import { GameIdentitiesService } from './game-identities.service';
 import { TeamsService } from './teams.service';
 import { StickerAccessService } from './sticker-access.service';
 
@@ -92,6 +93,7 @@ export class TeamForumService {
     private readonly teams: TeamsService,
     private readonly teamNewsAttachments: TeamNewsAttachmentsService,
     private readonly stickerAccess: StickerAccessService,
+    private readonly gameIdentities: GameIdentitiesService,
   ) {}
 
   private async assertCanManageTopicsAsync(
@@ -604,8 +606,8 @@ export class TeamForumService {
     if (!senderDoc) {
       throw new ForbiddenException('User not found');
     }
-    const username =
-      typeof senderDoc.username === 'string' ? senderDoc.username : userId;
+    const migrated = await this.gameIdentities.ensureMigrated(senderDoc);
+    const username = this.gameIdentities.resolveSenderUsername(migrated);
     const senderRole = this.teams.resolveSquadRoleForMember(team, userId);
     const senderTeamTag = senderDoc.teamTag ?? null;
     if (trimmed) {
@@ -741,8 +743,9 @@ export class TeamForumService {
       topicId: topOid,
       teamId: teamOid,
       senderUserId: userId,
-      senderUsername:
-        typeof actor.username === 'string' ? actor.username : userId,
+      senderUsername: this.gameIdentities.resolveSenderUsername(
+        await this.gameIdentities.ensureMigrated(actor),
+      ),
       senderRole: actorRole,
       senderTeamTag: actorTeamTag,
       text: fwdText,

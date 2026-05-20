@@ -9,6 +9,7 @@ import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
 import { AllianceRegistryService } from './alliance-registry.service';
 import { User, UserDocument } from './schemas/user.schema';
+import { GameIdentitiesService, SafeGameIdentity } from './game-identities.service';
 import { StickerAccessService } from './sticker-access.service';
 import { TeamsService } from './teams.service';
 
@@ -38,6 +39,10 @@ export type SafeUser = {
   excavationPushEnabled: boolean;
   /** True when at least one FCM device token is stored (push can be delivered). */
   pushNotificationsRegistered: boolean;
+  gameIdentities: SafeGameIdentity[];
+  activeGameIdentityId: string | null;
+  activeGameNickname: string | null;
+  activeServerNumber: number | null;
 };
 
 @Injectable()
@@ -47,6 +52,7 @@ export class UsersService {
     private readonly allianceRegistry: AllianceRegistryService,
     private readonly teamsService: TeamsService,
     private readonly stickerAccess: StickerAccessService,
+    private readonly gameIdentities: GameIdentitiesService,
   ) {}
 
   effectiveMembership(user: UserDocument): TeamMembershipStatus {
@@ -62,14 +68,24 @@ export class UsersService {
     email: string;
     passwordHash: string;
     role?: AllianceRole;
+    serverNumber?: number;
+    gameNickname?: string;
   }): Promise<UserDocument> {
-    return this.userModel.create({
+    const user = await this.userModel.create({
       username: input.username,
       email: input.email.toLowerCase(),
       passwordHash: input.passwordHash,
       role: input.role ?? AllianceRole.R2,
       membershipStatus: TeamMembershipStatus.ACTIVE,
     });
+    if (input.serverNumber != null && input.gameNickname != null) {
+      return this.gameIdentities.createInitialIdentity(
+        user,
+        input.serverNumber,
+        input.gameNickname,
+      );
+    }
+    return this.gameIdentities.ensureMigrated(user);
   }
 
   async findById(id: string): Promise<UserDocument | null> {
@@ -269,38 +285,46 @@ export class UsersService {
   }
 
   async toSafeUser(user: UserDocument): Promise<SafeUser> {
+    const synced = await this.gameIdentities.ensureMigrated(user);
     const flags = await this.allianceRegistry.resolveFlagsByAllianceCode(
-      user.allianceName,
+      synced.allianceName,
     );
-    const teamFields = await this.teamsService.getPlayerTeamProfileFields(user);
+    const teamFields = await this.teamsService.getPlayerTeamProfileFields(synced);
+    const gameIdentities =
+      await this.gameIdentities.buildSafeIdentities(synced);
+    const active = this.gameIdentities.getActiveIdentity(synced);
     const inSquad = Boolean(teamFields.playerTeamId);
     const enabledStickerPacks =
       await this.stickerAccess.listEnabledPackKeysForUser(user);
     return {
-      id: user._id.toString(),
-      username: user.username,
-      email: user.email,
-      role: user.role,
-      allianceName: user.allianceName,
+      id: synced._id.toString(),
+      username: synced.username,
+      email: synced.email,
+      role: synced.role,
+      allianceName: synced.allianceName,
       alliancePublicId: flags.alliancePublicId,
       overlayTabVisible: flags.overlayTabVisible,
       teamDisplayName: inSquad
         ? teamFields.playerTeamDisplayName
-        : (user.teamDisplayName ?? null),
-      teamTag: inSquad ? teamFields.playerTeamTag : (user.teamTag ?? null),
-      membershipStatus: this.effectiveMembership(user),
-      presenceStatus: user.presenceStatus ?? null,
-      lastPresenceAt: user.lastPresenceAt
-        ? user.lastPresenceAt.toISOString()
+        : (synced.teamDisplayName ?? null),
+      teamTag: inSquad ? teamFields.playerTeamTag : (synced.teamTag ?? null),
+      membershipStatus: this.effectiveMembership(synced),
+      presenceStatus: synced.presenceStatus ?? null,
+      lastPresenceAt: synced.lastPresenceAt
+        ? synced.lastPresenceAt.toISOString()
         : null,
-      lastAppActiveAt: user.lastAppActiveAt
-        ? user.lastAppActiveAt.toISOString()
+      lastAppActiveAt: synced.lastAppActiveAt
+        ? synced.lastAppActiveAt.toISOString()
         : null,
-      telegramUsername: user.telegramUsername ?? null,
+      telegramUsername: synced.telegramUsername ?? null,
       ...teamFields,
       enabledStickerPacks,
-      excavationPushEnabled: user.excavationPushEnabled !== false,
-      pushNotificationsRegistered: (user.pushFcmTokens?.length ?? 0) > 0,
+      excavationPushEnabled: synced.excavationPushEnabled !== false,
+      pushNotificationsRegistered: (synced.pushFcmTokens?.length ?? 0) > 0,
+      gameIdentities,
+      activeGameIdentityId: active?._id?.toString() ?? null,
+      activeGameNickname: active?.gameNickname ?? null,
+      activeServerNumber: active?.serverNumber ?? null,
     };
   }
 

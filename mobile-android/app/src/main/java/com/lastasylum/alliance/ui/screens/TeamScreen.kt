@@ -27,8 +27,12 @@ import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
 import androidx.compose.material3.Badge
@@ -166,6 +170,7 @@ fun TeamScreen(
         mutableStateOf(initial)
     }
     var forumTabReselectSignal by remember { mutableStateOf(0) }
+    var identitySwitching by remember { mutableStateOf(false) }
 
     LaunchedEffect(mainSectionOrdinal) {
         if (mainSectionOrdinal !in TeamMainSection.entries.indices) {
@@ -205,6 +210,12 @@ fun TeamScreen(
         reloadProfileAndTeam()
     }
 
+    LaunchedEffect(profile?.activeGameIdentityId) {
+        if (profile != null) {
+            reloadProfileAndTeam()
+        }
+    }
+
     LaunchedEffect(joinSearch) {
         delay(350)
         ensureActive()
@@ -239,7 +250,6 @@ fun TeamScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            // Full-width content like Chat: small side padding is applied per-section/list.
             .then(
                 if (overlayUi) {
                     Modifier
@@ -262,6 +272,68 @@ fun TeamScreen(
                         .fillMaxWidth()
                         .weight(1f),
                 ) {
+                    profile?.takeIf { it.gameIdentities.size > 1 }?.let { p ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(
+                                    horizontal = SquadRelayDimens.contentPaddingHorizontal,
+                                    vertical = 4.dp,
+                                ),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.team_active_identity_title),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Text(
+                                text = stringResource(R.string.team_switch_identity_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                p.gameIdentities.forEach { identity ->
+                                    val selected = identity.id == p.activeGameIdentityId
+                                    FilterChip(
+                                        selected = selected,
+                                        onClick = {
+                                            if (selected || identitySwitching) return@FilterChip
+                                            scope.launch {
+                                                identitySwitching = true
+                                                app.usersRepository.switchActiveGameIdentity(identity.id)
+                                                    .onSuccess { reloadProfileAndTeam() }
+                                                    .onFailure { e ->
+                                                        error = e.toUserMessageRu(res)
+                                                    }
+                                                identitySwitching = false
+                                            }
+                                        },
+                                        enabled = !identitySwitching,
+                                        label = {
+                                            Text(
+                                                stringResource(
+                                                    R.string.profile_game_identity_line,
+                                                    identity.serverNumber,
+                                                    identity.gameNickname,
+                                                ),
+                                            )
+                                        },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor =
+                                                MaterialTheme.colorScheme.primary.copy(alpha = 0.28f),
+                                        ),
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     error?.let { err ->
                         val scheme = MaterialTheme.colorScheme
                         Surface(

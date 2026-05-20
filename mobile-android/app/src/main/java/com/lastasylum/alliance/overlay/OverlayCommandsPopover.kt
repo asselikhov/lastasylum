@@ -1526,7 +1526,7 @@ class OverlayCommandsPopover(
         val displayName = subtitleUsername.trim().ifBlank { "—" }
         val reaction = overlayQuickReactionById(reactionId)
 
-        val root = FrameLayout(context).apply {
+        val root = OverlayPassthroughMultitouchFrameLayout(context).apply {
             setBackgroundColor(Color.argb(38, 6, 12, 22))
         }
         val burstAnimSize = when {
@@ -1614,10 +1614,7 @@ class OverlayCommandsPopover(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             overlayWindowType(),
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+            OverlayWindowLayout.popupWindowFlags(),
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
             OverlayWindowLayout.applyFullscreenOverlayWindow(context, this)

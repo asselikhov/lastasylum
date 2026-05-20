@@ -16,6 +16,7 @@ import { PlayerTeamMemberRole } from '../common/enums/player-team-member-role.en
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
 import { UserDocument } from '../users/schemas/user.schema';
 import { TeamsService } from '../users/teams.service';
+import { GameIdentitiesService } from '../users/game-identities.service';
 import { UsersService } from '../users/users.service';
 import { StickerAccessService } from '../users/sticker-access.service';
 import { ChatRoomsService } from './chat-rooms.service';
@@ -116,6 +117,7 @@ export class ChatService {
     @InjectModel(ChatRoomReadState.name)
     private readonly chatReadStateModel: Model<ChatRoomReadState>,
     private readonly usersService: UsersService,
+    private readonly gameIdentities: GameIdentitiesService,
     @Inject(forwardRef(() => TeamsService))
     private readonly teamsService: TeamsService,
     private readonly chatRoomsService: ChatRoomsService,
@@ -447,7 +449,7 @@ export class ChatService {
       text: trimmedText,
       attachments: input.attachments ?? [],
       senderId: input.author.userId,
-      senderUsername: input.author.username,
+      senderUsername: this.gameIdentities.resolveSenderUsername(authorUser),
       senderRole: senderSquadRole,
       senderTeamTag: authorUser.teamTag ?? null,
       replyToMessageId: replyTarget?._id ?? null,
@@ -589,7 +591,7 @@ export class ChatService {
       text: fwdText,
       attachments: source.attachments ?? [],
       senderId: userId,
-      senderUsername: actor.username,
+      senderUsername: this.gameIdentities.resolveSenderUsername(actor),
       senderRole: actorSquadRole,
       senderTeamTag: actor.teamTag ?? null,
       replyToMessageId: null,

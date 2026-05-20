@@ -3,6 +3,7 @@ import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 import { DEFAULT_ALLIANCE_ID } from '../../common/constants/default-alliance-id';
 import { AllianceRole } from '../../common/enums/alliance-role.enum';
 import { TeamMembershipStatus } from '../../common/enums/team-membership-status.enum';
+import { GameIdentity, GameIdentitySchema } from './game-identity.schema';
 
 export type UserDocument = HydratedDocument<User>;
 
@@ -93,6 +94,13 @@ export class User {
   /** Push when allies post excavation coords from overlay (off-game allies). */
   @Prop({ type: Boolean, default: true })
   excavationPushEnabled: boolean;
+
+  /** Игровые ники по серверам; команда привязана к записи, не к аккаунту целиком. */
+  @Prop({ type: [GameIdentitySchema], default: [] })
+  gameIdentities: GameIdentity[];
+
+  @Prop({ type: MongooseSchema.Types.ObjectId, default: null })
+  activeGameIdentityId: Types.ObjectId | null;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

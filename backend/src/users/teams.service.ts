@@ -23,6 +23,7 @@ import {
   TeamJoinRequestDocument,
   TeamJoinRequestStatus,
 } from './schemas/team-join-request.schema';
+import { GameIdentitiesService } from './game-identities.service';
 import { squadMemberUserIdEquals } from './squad-member-id.util';
 
 export type PlayerTeamProfileFields = {
@@ -100,6 +101,7 @@ export class TeamsService {
     @InjectModel(User.name) private readonly userModel: Model<User>,
     @Inject(forwardRef(() => ChatRoomsService))
     private readonly chatRoomsService: ChatRoomsService,
+    private readonly gameIdentities: GameIdentitiesService,
   ) {}
 
   private async ensurePlayerTeamChatRooms(
@@ -118,21 +120,24 @@ export class TeamsService {
   ): Promise<void> {
     const leader = await this.userModel.findById(team.leaderUserId).exec();
     await this.ensurePlayerTeamChatRooms(team);
-    await this.userModel
-      .updateOne(
-        { _id: userId },
-        {
-          $set: {
-            playerTeamId: team._id,
-            teamDisplayName: team.displayName,
-            teamTag: team.tag,
-            ...(leader
-              ? { allianceName: leader.allianceName }
-              : {}),
-          },
-        },
-      )
-      .exec();
+    const user = await this.userModel.findById(userId).exec();
+    if (user) {
+      await this.gameIdentities.ensureMigrated(user);
+    }
+    await this.gameIdentities.setPlayerTeamOnActive(
+      userId.toString(),
+      team._id,
+      team.tag,
+      team.displayName,
+    );
+    if (leader) {
+      await this.userModel
+        .updateOne(
+          { _id: userId },
+          { $set: { allianceName: leader.allianceName } },
+        )
+        .exec();
+    }
     void squadRole;
   }
 
@@ -440,18 +445,12 @@ export class TeamsService {
       throw e;
     }
     await this.ensurePlayerTeamChatRooms(team);
-    await this.userModel
-      .updateOne(
-        { _id: userId },
-        {
-          $set: {
-            playerTeamId: team._id,
-            teamDisplayName: team.displayName,
-            teamTag: team.tag,
-          },
-        },
-      )
-      .exec();
+    await this.gameIdentities.setPlayerTeamOnActive(
+      userId,
+      team._id,
+      team.tag,
+      team.displayName,
+    );
     return { teamId: team._id.toString() };
   }
 
@@ -479,22 +478,9 @@ export class TeamsService {
     const roleByUserId = new Map(
       team.squadMembers.map((m) => [m.userId.toString(), m.role]),
     );
+    const teamIdStr = team._id.toString();
     const users = await this.userModel
       .find({ _id: { $in: team.squadMembers.map((m) => m.userId) } })
-      .select(
-        'username role telegramUsername presenceStatus lastPresenceAt lastAppActiveAt',
-      )
-      .lean<
-        Array<{
-          _id: Types.ObjectId;
-          username: string;
-          role: string;
-          telegramUsername?: string | null;
-          presenceStatus?: string | null;
-          lastPresenceAt?: Date | string | null;
-          lastAppActiveAt?: Date | string | null;
-        }>
-      >()
       .exec();
     const toIso = (v: Date | string | null | undefined): string | null => {
       if (v == null) return null;
@@ -506,7 +492,10 @@ export class TeamsService {
       users.map((u) => [
         u._id.toString(),
         {
-          username: u.username,
+          username: this.gameIdentities.resolveMemberDisplayNickname(
+            u,
+            teamIdStr,
+          ),
           role: u.role,
           telegramUsername: u.telegramUsername ?? null,
           presenceStatus: u.presenceStatus ?? null,
@@ -803,18 +792,10 @@ export class TeamsService {
     await this.teamModel
       .updateOne({ _id: team._id }, { $pull: { squadMembers: { userId: mid } } })
       .exec();
-    await this.userModel
-      .updateOne(
-        { _id: mid },
-        {
-          $set: {
-            playerTeamId: null,
-            teamDisplayName: null,
-            teamTag: null,
-          },
-        },
-      )
-      .exec();
+    await this.gameIdentities.clearPlayerTeamForTeam(
+      memberUserId,
+      team._id,
+    );
     return { ok: true };
   }
 

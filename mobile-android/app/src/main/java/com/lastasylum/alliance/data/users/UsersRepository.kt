@@ -14,6 +14,41 @@ class UsersRepository(
             usersApi.updateMyUsername(UpdateUsernameBody(username = username.trim()))
         }
 
+    suspend fun addGameIdentity(serverNumber: Int, gameNickname: String): Result<MyProfileDto> =
+        runCatching {
+            usersApi.addGameIdentity(
+                CreateGameIdentityBody(
+                    serverNumber = serverNumber,
+                    gameNickname = gameNickname.trim(),
+                ),
+            )
+        }
+
+    suspend fun updateGameIdentity(
+        identityId: String,
+        serverNumber: Int?,
+        gameNickname: String?,
+    ): Result<MyProfileDto> =
+        runCatching {
+            usersApi.updateGameIdentity(
+                identityId,
+                UpdateGameIdentityBody(
+                    serverNumber = serverNumber,
+                    gameNickname = gameNickname?.trim(),
+                ),
+            )
+        }
+
+    suspend fun deleteGameIdentity(identityId: String): Result<MyProfileDto> =
+        runCatching { usersApi.deleteGameIdentity(identityId) }
+
+    suspend fun switchActiveGameIdentity(identityId: String): Result<MyProfileDto> =
+        runCatching {
+            usersApi.switchActiveGameIdentity(
+                SwitchActiveGameIdentityBody(gameIdentityId = identityId),
+            )
+        }
+
     suspend fun updateExcavationPushEnabled(enabled: Boolean): Result<MyProfileDto> =
         runCatching {
             usersApi.updateNotificationPreferences(

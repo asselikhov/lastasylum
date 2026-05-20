@@ -13,6 +13,8 @@ data class RegisterRequest(
     val username: String,
     val email: String,
     val password: String,
+    val serverNumber: Int,
+    val gameNickname: String,
 )
 
 @JsonClass(generateAdapter = true)
@@ -42,6 +44,10 @@ data class AuthUser(
     val playerTeamLeaderUserId: String? = null,
     val isPlayerTeamLeader: Boolean = false,
     val pendingPlayerTeamJoinRequests: Int = 0,
+    val gameIdentities: List<com.lastasylum.alliance.data.users.GameIdentityDto> = emptyList(),
+    val activeGameIdentityId: String? = null,
+    val activeGameNickname: String? = null,
+    val activeServerNumber: Int? = null,
 )
 
 @JsonClass(generateAdapter = true)

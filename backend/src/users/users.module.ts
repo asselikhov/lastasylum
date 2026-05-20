@@ -17,6 +17,7 @@ import { User, UserSchema } from './schemas/user.schema';
 import { AdminTeamsController } from './admin-teams.controller';
 import { TeamsController } from './teams.controller';
 import { TeamsService } from './teams.service';
+import { GameIdentitiesService } from './game-identities.service';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 
@@ -89,6 +90,7 @@ import { StickerAccessService } from './sticker-access.service';
   ],
   providers: [
     UsersService,
+    GameIdentitiesService,
     AllianceRegistryService,
     TeamsService,
     TeamNewsService,
@@ -98,6 +100,7 @@ import { StickerAccessService } from './sticker-access.service';
   ],
   exports: [
     UsersService,
+    GameIdentitiesService,
     TeamsService,
     MongooseModule,
     TeamForumService,

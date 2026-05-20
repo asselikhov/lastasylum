@@ -18,6 +18,23 @@ interface UsersApi {
     @PATCH("users/me/username")
     suspend fun updateMyUsername(@Body body: UpdateUsernameBody): MyProfileDto
 
+    @POST("users/me/game-identities")
+    suspend fun addGameIdentity(@Body body: CreateGameIdentityBody): MyProfileDto
+
+    @PATCH("users/me/game-identities/{identityId}")
+    suspend fun updateGameIdentity(
+        @Path("identityId") identityId: String,
+        @Body body: UpdateGameIdentityBody,
+    ): MyProfileDto
+
+    @DELETE("users/me/game-identities/{identityId}")
+    suspend fun deleteGameIdentity(@Path("identityId") identityId: String): MyProfileDto
+
+    @POST("users/me/active-game-identity")
+    suspend fun switchActiveGameIdentity(
+        @Body body: SwitchActiveGameIdentityBody,
+    ): MyProfileDto
+
     @PATCH("users/me/notification-preferences")
     suspend fun updateNotificationPreferences(
         @Body body: UpdateNotificationPreferencesBody,

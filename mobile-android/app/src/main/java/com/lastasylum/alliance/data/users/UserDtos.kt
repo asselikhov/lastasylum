@@ -21,6 +21,33 @@ data class TeamMemberDto(
 )
 
 @JsonClass(generateAdapter = true)
+data class GameIdentityDto(
+    val id: String,
+    val serverNumber: Int,
+    val gameNickname: String,
+    val playerTeamId: String? = null,
+    val playerTeamTag: String? = null,
+    val playerTeamDisplayName: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class CreateGameIdentityBody(
+    val serverNumber: Int,
+    val gameNickname: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class UpdateGameIdentityBody(
+    val serverNumber: Int? = null,
+    val gameNickname: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class SwitchActiveGameIdentityBody(
+    val gameIdentityId: String,
+)
+
+@JsonClass(generateAdapter = true)
 data class MyProfileDto(
     val id: String,
     val username: String,
@@ -45,6 +72,10 @@ data class MyProfileDto(
     val enabledStickerPacks: List<String> = emptyList(),
     val excavationPushEnabled: Boolean = true,
     val pushNotificationsRegistered: Boolean = false,
+    val gameIdentities: List<GameIdentityDto> = emptyList(),
+    val activeGameIdentityId: String? = null,
+    val activeGameNickname: String? = null,
+    val activeServerNumber: Int? = null,
 )
 
 @JsonClass(generateAdapter = true)

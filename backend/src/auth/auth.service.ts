@@ -49,6 +49,8 @@ export class AuthService {
       email: dto.email,
       passwordHash,
       role: dto.role,
+      serverNumber: dto.serverNumber,
+      gameNickname: dto.gameNickname,
     });
 
     if (

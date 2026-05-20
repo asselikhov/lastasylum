@@ -14,10 +14,18 @@ class AuthRepository(
         username: String,
         email: String,
         password: String,
+        serverNumber: Int,
+        gameNickname: String,
     ): Result<RegisterResult> {
         return suspendRunCatching {
             val body = authApi.register(
-                RegisterRequest(username = username.trim(), email = email.trim(), password = password),
+                RegisterRequest(
+                    username = username.trim(),
+                    email = email.trim(),
+                    password = password,
+                    serverNumber = serverNumber,
+                    gameNickname = gameNickname.trim(),
+                ),
             )
             if (body.approvalRequired == true) {
                 return@suspendRunCatching RegisterResult.PendingApproval

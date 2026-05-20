@@ -28,6 +28,12 @@ import {
   RegisterPushTokenDto,
   UpdatePresenceDto,
 } from './dto/register-push-token.dto';
+import {
+  CreateGameIdentityDto,
+  SwitchActiveGameIdentityDto,
+  UpdateGameIdentityDto,
+} from './dto/game-identity.dto';
+import { GameIdentitiesService } from './game-identities.service';
 import { UserDocument } from './schemas/user.schema';
 import { UsersService } from './users.service';
 
@@ -40,7 +46,10 @@ type RequestUser = {
 export class UsersController {
   private readonly logger = new Logger(UsersController.name);
 
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly gameIdentities: GameIdentitiesService,
+  ) {}
 
   @Get('me')
   @Roles(AllianceRole.R2)
@@ -133,6 +142,65 @@ export class UsersController {
     if (!updated) {
       throw new NotFoundException('User not found');
     }
+    return await this.usersService.toSafeUser(updated);
+  }
+
+  @Post('me/game-identities')
+  @Roles(AllianceRole.R2)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  async addGameIdentity(
+    @Req() req: { user: RequestUser },
+    @Body() dto: CreateGameIdentityDto,
+  ) {
+    const updated = await this.gameIdentities.addIdentity(
+      req.user.userId,
+      dto.serverNumber,
+      dto.gameNickname,
+    );
+    return await this.usersService.toSafeUser(updated);
+  }
+
+  @Patch('me/game-identities/:identityId')
+  @Roles(AllianceRole.R2)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async updateGameIdentity(
+    @Req() req: { user: RequestUser },
+    @Param('identityId') identityId: string,
+    @Body() dto: UpdateGameIdentityDto,
+  ) {
+    const updated = await this.gameIdentities.updateIdentity(
+      req.user.userId,
+      identityId,
+      dto,
+    );
+    return await this.usersService.toSafeUser(updated);
+  }
+
+  @Delete('me/game-identities/:identityId')
+  @Roles(AllianceRole.R2)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  async deleteGameIdentity(
+    @Req() req: { user: RequestUser },
+    @Param('identityId') identityId: string,
+  ) {
+    const updated = await this.gameIdentities.removeIdentity(
+      req.user.userId,
+      identityId,
+    );
+    return await this.usersService.toSafeUser(updated);
+  }
+
+  @Post('me/active-game-identity')
+  @Roles(AllianceRole.R2)
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  async switchActiveGameIdentity(
+    @Req() req: { user: RequestUser },
+    @Body() dto: SwitchActiveGameIdentityDto,
+  ) {
+    const updated = await this.gameIdentities.switchActive(
+      req.user.userId,
+      dto.gameIdentityId,
+    );
     return await this.usersService.toSafeUser(updated);
   }
 
