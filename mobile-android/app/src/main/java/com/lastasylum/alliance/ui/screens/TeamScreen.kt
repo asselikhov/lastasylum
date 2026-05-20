@@ -133,11 +133,16 @@ fun TeamScreen(
     val res = context.resources
     val scope = rememberCoroutineScope()
     val teamViewModel: TeamViewModel = viewModel(
-        factory = TeamViewModelFactory(usersRepository, teamsRepository),
+        factory = TeamViewModelFactory(
+            usersRepository,
+            teamsRepository,
+            AppContainer.from(context).userSettingsPreferences,
+        ),
     )
     val teamData by teamViewModel.data.collectAsStateWithLifecycle()
     val profile = teamData.profile
     val teamDetail = teamData.teamDetail
+    val sectionBadges = teamData.sectionBadges
     val loading = teamData.loading
     val loadError = teamData.error
     var actionError by remember { mutableStateOf<String?>(null) }
@@ -189,10 +194,17 @@ fun TeamScreen(
 
     fun reloadProfileAndTeam() {
         teamViewModel.reloadProfileAndTeam(res)
+        teamViewModel.refreshSectionBadges()
     }
 
     LaunchedEffect(Unit) {
         reloadProfileAndTeam()
+    }
+
+    LaunchedEffect(profile?.playerTeamId, mainSectionOrdinal) {
+        if (!profile?.playerTeamId.isNullOrBlank()) {
+            teamViewModel.refreshSectionBadges()
+        }
     }
 
     LaunchedEffect(profile?.activeGameIdentityId) {
@@ -376,6 +388,9 @@ fun TeamScreen(
                                 val activeSection = TeamMainSection.entries[mainSectionOrdinal]
                                 TeamSectionPills(
                                     selectedSection = activeSection,
+                                    newsUnread = sectionBadges.newsUnread,
+                                    forumUnread = sectionBadges.forumUnread,
+                                    pendingJoinRequests = if (isLeader) pending else 0,
                                     onSelect = { section ->
                                         visitedSectionOrdinals = visitedSectionOrdinals + section.ordinal
                                         if (section == TeamMainSection.Forum &&
@@ -409,6 +424,9 @@ fun TeamScreen(
                                                 canPublishNews = canPublishNews,
                                                 teamsRepository = teamsRepository,
                                                 modifier = Modifier.fillMaxSize(),
+                                                onInboxBadgesChanged = {
+                                                    teamViewModel.refreshSectionBadges()
+                                                },
                                             )
                                         }
                                     }
@@ -428,6 +446,9 @@ fun TeamScreen(
                                                 forumTabReselectSignal = forumTabReselectSignal,
                                                 enabledStickerPackKeys = enabledStickerPackKeys,
                                                 modifier = Modifier.fillMaxSize(),
+                                                onInboxBadgesChanged = {
+                                                    teamViewModel.refreshSectionBadges()
+                                                },
                                             )
                                         }
                                     }
@@ -717,6 +738,7 @@ fun TeamScreen(
                                                         )
                                                         teamsRepository.listPendingJoinRequests()
                                                             .onSuccess { inboxRequests = it }
+                                                        reloadProfileAndTeam()
                                                     }
                                                     .onFailure { e ->
                                                         inboxFeedback = e.toUserMessageRu(res)
@@ -1021,13 +1043,23 @@ private fun TeamNoTeamOnboardingCard(
 @Composable
 private fun TeamSectionPills(
     selectedSection: TeamMainSection,
+    newsUnread: Int,
+    forumUnread: Int,
+    pendingJoinRequests: Int,
     onSelect: (TeamMainSection) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val newsLabel = stringResource(R.string.team_tab_news)
     val forumLabel = stringResource(R.string.team_tab_forum)
     val membersLabel = stringResource(R.string.team_tab_members)
-    val tabs = remember(newsLabel, forumLabel, membersLabel) {
+    val tabs = remember(
+        newsLabel,
+        forumLabel,
+        membersLabel,
+        newsUnread,
+        forumUnread,
+        pendingJoinRequests,
+    ) {
         TeamMainSection.entries.map { section ->
         when (section) {
             TeamMainSection.News -> TeamSectionTabSpec(
@@ -1036,6 +1068,7 @@ private fun TeamSectionPills(
                 icon = Icons.AutoMirrored.Outlined.Article,
                 accentStart = TeamSectionTabAccents.newsStart,
                 accentEnd = TeamSectionTabAccents.newsEnd,
+                unreadCount = newsUnread,
             )
             TeamMainSection.Forum -> TeamSectionTabSpec(
                 id = section.name,
@@ -1043,6 +1076,7 @@ private fun TeamSectionPills(
                 icon = Icons.Outlined.Forum,
                 accentStart = TeamSectionTabAccents.forumStart,
                 accentEnd = TeamSectionTabAccents.forumEnd,
+                unreadCount = forumUnread,
             )
             TeamMainSection.Members -> TeamSectionTabSpec(
                 id = section.name,
@@ -1050,6 +1084,7 @@ private fun TeamSectionPills(
                 icon = Icons.Outlined.Groups,
                 accentStart = TeamSectionTabAccents.membersStart,
                 accentEnd = TeamSectionTabAccents.membersEnd,
+                unreadCount = pendingJoinRequests,
             )
         }
         }

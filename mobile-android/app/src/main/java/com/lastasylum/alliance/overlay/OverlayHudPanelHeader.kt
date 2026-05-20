@@ -1,10 +1,12 @@
 package com.lastasylum.alliance.overlay
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -24,6 +26,9 @@ fun OverlayHudPanelHeader(
     title: String,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    onRefresh: (() -> Unit)? = null,
+    refreshing: Boolean = false,
 ) {
     Row(
         modifier = modifier
@@ -35,15 +40,40 @@ fun OverlayHudPanelHeader(
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        Column(
             modifier = Modifier.weight(1f),
-        )
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+        }
+        if (onRefresh != null) {
+            IconButton(
+                onClick = onRefresh,
+                enabled = !refreshing,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Refresh,
+                    contentDescription = stringResource(R.string.overlay_online_refresh_cd),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
         IconButton(onClick = onClose) {
             Icon(
                 imageVector = Icons.Outlined.Close,

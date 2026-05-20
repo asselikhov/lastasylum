@@ -366,6 +366,7 @@ fun TeamNewsNavHost(
     canPublishNews: Boolean,
     teamsRepository: TeamsRepository,
     modifier: Modifier = Modifier,
+    onInboxBadgesChanged: () -> Unit = {},
 ) {
     val overlayUi = LocalOverlayUiMode.current
     val nav = rememberNavController()
@@ -404,6 +405,7 @@ fun TeamNewsNavHost(
                 teamsRepository = teamsRepository,
                 onBack = { nav.popBackStack() },
                 onEdit = { nav.navigate(TeamNewsRoutes.edit(it)) },
+                onInboxBadgesChanged = onInboxBadgesChanged,
             )
         }
         composable(TeamNewsRoutes.CREATE) {
@@ -473,12 +475,6 @@ private fun TeamNewsListRoute(
             .onSuccess { page ->
                 newsItems = if (append) newsItems + page.items else page.items
                 newsNextCursor = page.nextCursor
-                if (!append && page.items.isNotEmpty()) {
-                    OverlayGameStatusHudRefresh.markTeamNewsSeenFromItems(
-                        page.items,
-                        AppContainer.from(context).userSettingsPreferences,
-                    )
-                }
                 loading = false
                 loadingMore = false
             }
@@ -621,6 +617,7 @@ private fun TeamNewsDetailRoute(
     teamsRepository: TeamsRepository,
     onBack: () -> Unit,
     onEdit: (String) -> Unit,
+    onInboxBadgesChanged: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val res = context.resources
@@ -638,6 +635,11 @@ private fun TeamNewsDetailRoute(
         teamsRepository.getTeamNews(teamId, newsId)
             .onSuccess { doc ->
                 detail = doc
+                OverlayGameStatusHudRefresh.markTeamNewsSeenAt(
+                    doc.createdAt,
+                    AppContainer.from(context).userSettingsPreferences,
+                )
+                onInboxBadgesChanged()
                 loading = false
             }
             .onFailure { e ->

@@ -288,6 +288,28 @@ export class TeamNewsService {
     return { items, nextCursor: null };
   }
 
+  /**
+   * Posts in [teamId] with createdAt strictly after [afterIso] (client last-seen cursor).
+   */
+  async countUnread(
+    teamId: string,
+    userId: string,
+    afterIso?: string | null,
+  ): Promise<number> {
+    await this.teams.getTeamIfMemberOrThrow(teamId, userId);
+    const filter: Record<string, unknown> = {
+      teamId: new Types.ObjectId(teamId),
+    };
+    const trimmed = afterIso?.trim();
+    if (trimmed) {
+      const after = new Date(trimmed);
+      if (!Number.isNaN(after.getTime())) {
+        filter.createdAt = { $gt: after };
+      }
+    }
+    return this.newsModel.countDocuments(filter).exec();
+  }
+
   async list(
     teamId: string,
     userId: string,

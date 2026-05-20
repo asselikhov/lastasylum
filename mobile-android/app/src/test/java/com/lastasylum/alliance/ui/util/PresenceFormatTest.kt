@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.ui.util
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -22,5 +23,10 @@ class PresenceFormatTest {
     fun staleIngamePing_isNotOverlayIngameNow() {
         val stale = Instant.now().minusMillis(OVERLAY_INGAME_PRESENCE_STALE_MS + 1).toString()
         assertFalse(isOverlayIngameNow("ingame", stale))
+    }
+
+    @Test
+    fun freshPing_formatsJustNow() {
+        assertEquals("только что", formatOverlayPresenceAgeRu(Instant.now().toString()))
     }
 }

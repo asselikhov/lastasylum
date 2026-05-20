@@ -36,6 +36,7 @@ import {
 } from './dto/game-identity.dto';
 import { GameIdentitiesService } from './game-identities.service';
 import { UserDocument } from './schemas/user.schema';
+import { TeamPresenceGateway } from './team-presence.gateway';
 import { UsersService } from './users.service';
 
 type RequestUser = {
@@ -50,6 +51,7 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly gameIdentities: GameIdentitiesService,
+    private readonly teamPresenceGateway: TeamPresenceGateway,
   ) {}
 
   @Get('me')
@@ -92,6 +94,7 @@ export class UsersController {
     @Body() dto: UpdatePresenceDto,
   ) {
     await this.usersService.updatePresence(req.user.userId, dto.status);
+    void this.teamPresenceGateway.broadcastUserPresence(req.user.userId);
     return { success: true };
   }
 

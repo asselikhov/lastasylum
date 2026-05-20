@@ -224,6 +224,29 @@ export class TeamsController {
     });
   }
 
+  @Get(':teamId/ingame-online')
+  @Roles(AllianceRole.MEMBER)
+  teamIngameOnline(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+  ) {
+    return this.teams.getTeamOverlayPresence(teamId, req.user.userId);
+  }
+
+  @Get(':teamId/inbox-badges')
+  @Roles(AllianceRole.MEMBER)
+  async teamInboxBadges(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Query('newsAfter') newsAfter?: string,
+  ) {
+    const [forumUnread, newsUnread] = await Promise.all([
+      this.teamForum.sumUnreadMessages(teamId, req.user.userId),
+      this.teamNews.countUnread(teamId, req.user.userId, newsAfter ?? null),
+    ]);
+    return { forumUnread, newsUnread };
+  }
+
   @Get(':teamId/news')
   @Roles(AllianceRole.MEMBER)
   listNews(

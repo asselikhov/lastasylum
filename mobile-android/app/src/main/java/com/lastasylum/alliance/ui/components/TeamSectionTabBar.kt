@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -57,6 +58,7 @@ data class TeamSectionTabSpec(
     val icon: ImageVector,
     val accentStart: Color,
     val accentEnd: Color,
+    val unreadCount: Int = 0,
 )
 
 /**
@@ -151,12 +153,40 @@ fun TeamSectionTabBar(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
-                        Icon(
-                            imageVector = tab.icon,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                            tint = iconTint,
-                        )
+                        Box(contentAlignment = Alignment.TopEnd) {
+                            Icon(
+                                imageVector = tab.icon,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = iconTint,
+                            )
+                            if (tab.unreadCount > 0) {
+                                Surface(
+                                    modifier = Modifier
+                                        .padding(start = 10.dp, bottom = 12.dp),
+                                    shape = CircleShape,
+                                    color = if (selected) {
+                                        Color.White.copy(alpha = 0.95f)
+                                    } else {
+                                        Color(0xFFFF5252)
+                                    },
+                                ) {
+                                    Text(
+                                        text = if (tab.unreadCount > 99) {
+                                            "99+"
+                                        } else {
+                                            tab.unreadCount.toString()
+                                        },
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontSize = 9.sp,
+                                        ),
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (selected) Color(0xFF8B3A1A) else Color.White,
+                                    )
+                                }
+                            }
+                        }
                         Text(
                             text = tab.label,
                             modifier = Modifier.padding(top = 2.dp),

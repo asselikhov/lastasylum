@@ -48,18 +48,18 @@ class TeamForumViewModel(
                         topic.copy(unreadCount = effective)
                     }
                     onTopicTitles(withUnread)
-                    withUnread.filter { topic ->
-                        topic.unreadCount > 0 &&
+                    rows.filter { server ->
+                        server.unreadCount > 0 &&
                             effectiveUnreadCount(
-                                serverUnread = topic.unreadCount,
-                                lastReadMessageId = topic.lastReadMessageId,
-                                localLastReadMessageId = lastReadByTopic[topic.id],
+                                serverUnread = server.unreadCount,
+                                lastReadMessageId = server.lastReadMessageId,
+                                localLastReadMessageId = lastReadByTopic[server.id],
                             ) == 0
-                    }.forEach { topic ->
-                        val localLast = lastReadByTopic[topic.id]
-                            ?: topic.lastReadMessageId?.trim().orEmpty().takeIf { it.isNotBlank() }
+                    }.forEach { server ->
+                        val localLast = lastReadByTopic[server.id]
+                            ?: server.lastReadMessageId?.trim().orEmpty().takeIf { it.isNotBlank() }
                             ?: return@forEach
-                        markReadStale(topic, localLast)
+                        markReadStale(server, localLast)
                     }
                     _state.update { it.copy(topics = withUnread, loading = false) }
                 }

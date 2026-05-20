@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.overlay
 
+import com.lastasylum.alliance.data.teams.TeamDetailDto
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.users.UsersRepository
 
@@ -25,9 +26,36 @@ internal object OverlayTeamContextCache {
     @Volatile
     private var cachedAtMs: Long = 0L
 
+    @Volatile
+    private var cachedTeam: TeamDetailDto? = null
+
+    @Volatile
+    private var cachedTeamAtMs: Long = 0L
+
     fun invalidate() {
         cached = null
         cachedAtMs = 0L
+        cachedTeam = null
+        cachedTeamAtMs = 0L
+    }
+
+    suspend fun loadTeamDetail(
+        teamId: String,
+        teamsRepository: TeamsRepository,
+        forceRefresh: Boolean = false,
+    ): Result<TeamDetailDto> = runCatching {
+        val now = System.currentTimeMillis()
+        if (!forceRefresh) {
+            cachedTeam?.let { team ->
+                if (team.id == teamId && now - cachedTeamAtMs < TTL_MS) {
+                    return@runCatching team
+                }
+            }
+        }
+        teamsRepository.getTeam(teamId).getOrThrow().also { team ->
+            cachedTeam = team
+            cachedTeamAtMs = now
+        }
     }
 
     suspend fun load(

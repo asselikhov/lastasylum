@@ -21,6 +21,9 @@ class TeamsRepository(
     suspend fun getTeam(teamId: String): Result<TeamDetailDto> =
         runCatching { teamsApi.getTeam(teamId) }
 
+    suspend fun getTeamOverlayPresence(teamId: String): Result<TeamOverlayPresenceDto> =
+        runCatching { teamsApi.getTeamOverlayPresence(teamId) }
+
     suspend fun submitJoinRequest(teamId: String): Result<SubmitJoinResponse> =
         runCatching {
             teamsApi.submitJoinRequest(teamId).requireTeamsSuccess()
@@ -72,6 +75,12 @@ class TeamsRepository(
                 UpdateSquadMemberRoleBody(role = role.trim()),
             ).let { }
         }
+
+    suspend fun getTeamInboxBadges(
+        teamId: String,
+        newsAfter: String? = null,
+    ): Result<TeamInboxBadgesDto> =
+        runCatching { teamsApi.getTeamInboxBadges(teamId, newsAfter) }
 
     suspend fun listTeamNews(
         teamId: String,

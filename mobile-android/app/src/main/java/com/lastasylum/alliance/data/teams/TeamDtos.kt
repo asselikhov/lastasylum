@@ -201,6 +201,18 @@ data class UploadedTeamNewsImageDto(
 )
 
 @JsonClass(generateAdapter = true)
+data class TeamOverlayPresenceDto(
+    val ingame: List<PlayerTeamMemberDto> = emptyList(),
+    val recentlyActive: List<PlayerTeamMemberDto> = emptyList(),
+)
+
+@JsonClass(generateAdapter = true)
+data class TeamInboxBadgesDto(
+    val forumUnread: Int = 0,
+    val newsUnread: Int = 0,
+)
+
+@JsonClass(generateAdapter = true)
 data class TeamForumTopicDto(
     val id: String,
     val teamId: String,

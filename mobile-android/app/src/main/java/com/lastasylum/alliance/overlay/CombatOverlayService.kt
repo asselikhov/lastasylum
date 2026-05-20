@@ -274,6 +274,8 @@ class CombatOverlayService : Service() {
     @Volatile
     private var overlayChatTeamPanelVisible = false
     private var currentOverlayHudPane: OverlayHudPane? = null
+    @Volatile
+    private var pendingOpenJoinInboxOnParticipants = false
     private var overlayChatTeamComposeOwner: OverlayChatComposeOwner? = null
     private var overlayChatViewModel: ChatViewModel? = null
     /** URIs from picker if result arrived while Compose owner was torn down. */
@@ -1374,7 +1376,18 @@ class CombatOverlayService : Service() {
                         refreshNewsForum = refreshNewsForum,
                     )
                 }.getOrElse { OverlayGameStatusHudState() }
-                val joinRequestCount = if (force || refreshNewsForum) {
+                val refreshPresenceCounts = force || refreshNewsForum
+                val onlineIngameCount = if (refreshPresenceCounts) {
+                    runCatching {
+                        OverlayGameStatusHudRefresh.countTeamIngameOverlayMembers(
+                            container.usersRepository,
+                            container.teamsRepository,
+                        )
+                    }.getOrDefault(0)
+                } else {
+                    overlayTopRightHudFlow.value.onlineIngameCount
+                }
+                val joinRequestCount = if (refreshPresenceCounts) {
                     runCatching {
                         OverlayGameStatusHudRefresh.loadTeamJoinRequestCount(this@CombatOverlayService)
                     }.getOrDefault(0)
@@ -1392,6 +1405,7 @@ class CombatOverlayService : Service() {
                         newsUnread = state.teamNewsUnread,
                     )
                     overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
+                        onlineIngameCount = onlineIngameCount,
                         teamJoinRequestCount = joinRequestCount,
                     )
                     attachOverlayHudWindowsIfNeeded()
@@ -1731,6 +1745,12 @@ class CombatOverlayService : Service() {
                         state = state,
                         onOnlineClick = {
                             overlayCommandsPopover.hide()
+                            pendingOpenJoinInboxOnParticipants = false
+                            showOverlayHudPane(OverlayHudPane.Participants)
+                        },
+                        onJoinRequestsClick = {
+                            overlayCommandsPopover.hide()
+                            pendingOpenJoinInboxOnParticipants = true
                             showOverlayHudPane(OverlayHudPane.Participants)
                         },
                         onQuickCommandsClick = { openOverlayQuickCommandsFromHud() },
@@ -2817,6 +2837,7 @@ class CombatOverlayService : Service() {
                                     OverlayHudPane.Participants -> {
                                         OverlayHudPanelHeader(
                                             title = stringResource(R.string.overlay_online_title),
+                                            subtitle = stringResource(R.string.overlay_online_subtitle),
                                             onClose = { hideOverlayChatTeamPanel() },
                                         )
                                     }
@@ -2870,6 +2891,12 @@ class CombatOverlayService : Service() {
                                             OverlayTeamOnlinePanel(
                                                 teamsRepository = container.teamsRepository,
                                                 usersRepository = container.usersRepository,
+                                                teamPresenceSocket = container.teamPresenceSocket,
+                                                tokenProvider = { container.tokenStore.getAccessToken() },
+                                                openJoinInboxInitially = pendingOpenJoinInboxOnParticipants,
+                                                onOpenJoinInboxConsumed = {
+                                                    pendingOpenJoinInboxOnParticipants = false
+                                                },
                                                 onHudRefresh = {
                                                     OverlayGameStatusHudRefresh.invalidateNewsForumCache()
                                                     refreshOverlayStatusHudData(force = true)

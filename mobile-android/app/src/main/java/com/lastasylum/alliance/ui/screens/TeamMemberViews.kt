@@ -31,7 +31,7 @@ import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.PersonRemove
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
-import com.lastasylum.alliance.ui.components.OverlayMemberVoiceBadges
+import com.lastasylum.alliance.ui.components.team.TeamMemberPresenceCard
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
 import com.lastasylum.alliance.overlay.OverlayAwareBottomSheet
@@ -374,7 +374,6 @@ private fun SquadMemberCard(
     val scope = rememberCoroutineScope()
     val res = LocalContext.current.resources
     val overlayUi = LocalOverlayUiMode.current
-    val avatar = telegramAvatarUrl(member.telegramUsername)
     val unknownPresence = stringResource(R.string.team_member_last_in_game_unknown)
     val lastInGameTemplate = stringResource(R.string.team_member_last_in_game_template)
     val lastInGameLine = remember(member.lastPresenceAt, unknownPresence, lastInGameTemplate) {
@@ -387,8 +386,7 @@ private fun SquadMemberCard(
     }
     val voiceMicOn = voicePeer?.micOn == true
     val voiceSoundOn = voicePeer?.soundOn == true
-    val inGameCd = stringResource(R.string.team_member_in_game_cd)
-    val notInGameCd = stringResource(R.string.team_member_not_in_game_cd)
+    val squadRole = member.teamRole.trim().uppercase().ifBlank { "R1" }
     val canEditThisMemberRole = canManageMemberSquadRole(
         myTeamRole = myTeamRole,
         isTeamCreator = isSquadLeader,
@@ -400,91 +398,19 @@ private fun SquadMemberCard(
     var removeConfirmTarget by remember(member.userId) { mutableStateOf(false) }
     var showActionsSheet by remember(member.userId) { mutableStateOf(false) }
 
-    val scheme = MaterialTheme.colorScheme
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        color = scheme.surface.copy(alpha = 0.58f),
-        tonalElevation = 0.dp,
-        shadowElevation = 4.dp,
-        border = BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = 0.22f)),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (avatar != null) {
-                    AsyncImage(
-                        model = avatar,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(CircleShape),
-                        contentScale = ContentScale.Crop,
-                    )
-                } else {
-                    Text(
-                        text = member.username.firstOrNull()?.uppercase() ?: "?",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                }
-            }
-            Column(Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Text(
-                        text = member.username,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    if (inGameNow && (overlayUi || overlayVisible)) {
-                        OverlayMemberVoiceBadges(
-                            micOn = voiceMicOn,
-                            soundOn = voiceSoundOn,
-                        )
-                    }
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Circle,
-                        contentDescription = if (inGameNow) inGameCd else notInGameCd,
-                        modifier = Modifier.size(10.dp),
-                        tint = if (inGameNow) {
-                            Color(0xFF2E7D32)
-                        } else {
-                            MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)
-                        },
-                    )
-                    Text(
-                        text = lastInGameLine,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            if (canManage) {
+    TeamMemberPresenceCard(
+        username = member.username,
+        telegramUsername = member.telegramUsername,
+        squadRole = squadRole,
+        displayName = member.username,
+        presenceSubtitle = lastInGameLine,
+        inGameNow = inGameNow,
+        showIngameAvatarRing = inGameNow,
+        micOn = voiceMicOn,
+        soundOn = voiceSoundOn,
+        showVoiceBadges = inGameNow && (overlayUi || overlayVisible),
+        trailingContent = if (canManage) {
+            {
                 IconButton(
                     onClick = {
                         OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
@@ -500,8 +426,10 @@ private fun SquadMemberCard(
                     )
                 }
             }
-        }
-    }
+        } else {
+            null
+        },
+    )
 
     if (showActionsSheet) {
         OverlayModalScope(preparedByCaller = true) {

@@ -5,6 +5,7 @@ import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.effectiveUnreadCount
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
+import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.teams.TeamForumPreferences
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamNewsListItemDto
@@ -70,17 +71,21 @@ internal object OverlayGameStatusHudRefresh {
             newsUnread = 0
             forumUnread = 0
         } else {
-            newsUnread = teamsRepository.listTeamNews(teamId, cursor = null, limit = 40)
-                .getOrNull()
-                ?.items
-                ?.let { countUnreadNews(it, prefs) }
-                ?: 0
+            val newsAfter = prefs.getLastSeenTeamNewsCreatedAt()
+            val badges = teamsRepository.getTeamInboxBadges(teamId, newsAfter).getOrNull()
+            newsUnread = badges?.newsUnread?.coerceAtLeast(0)
+                ?: teamsRepository.listTeamNews(teamId, cursor = null, limit = 40)
+                    .getOrNull()
+                    ?.items
+                    ?.let { countUnreadNews(it, prefs) }
+                    ?: 0
             val forumPrefs = TeamForumPreferences(context)
             val localRead = forumPrefs.loadAllLastReadMessageIds(teamId)
-            forumUnread = teamsRepository.listForumTopics(teamId)
-                .getOrNull()
-                ?.sumOf { topic -> effectiveForumTopicUnread(topic, localRead[topic.id]) }
-                ?: 0
+            forumUnread = badges?.forumUnread?.coerceAtLeast(0)
+                ?: teamsRepository.listForumTopics(teamId)
+                    .getOrNull()
+                    ?.sumOf { topic -> effectiveForumTopicUnread(topic, localRead[topic.id]) }
+                    ?: 0
             cachedBadgeTeamId = teamId
             cachedNewsUnread = newsUnread
             cachedForumUnread = forumUnread
@@ -145,7 +150,20 @@ internal object OverlayGameStatusHudRefresh {
     fun filterTeamIngameOverlayMembers(members: List<PlayerTeamMemberDto>): List<PlayerTeamMemberDto> =
         members.filter { m ->
             isOverlayIngameNow(m.presenceStatus, m.lastPresenceAt)
-        }.sortedBy { it.username.lowercase() }
+        }
+
+    suspend fun countTeamIngameOverlayMembers(
+        usersRepository: UsersRepository,
+        teamsRepository: TeamsRepository,
+    ): Int {
+        val teamId = usersRepository.getMyProfile().getOrNull()?.playerTeamId?.trim().orEmpty()
+        if (teamId.isEmpty()) return 0
+        return teamsRepository.getTeamOverlayPresence(teamId)
+            .getOrNull()
+            ?.ingame
+            ?.size
+            ?: 0
+    }
 
     fun countUnreadNews(
         items: List<TeamNewsListItemDto>,
@@ -162,16 +180,15 @@ internal object OverlayGameStatusHudRefresh {
         }
     }
 
-    /** Mark all items in the fetched page as seen (newest createdAt wins). */
-    fun markTeamNewsSeenFromItems(
-        items: List<TeamNewsListItemDto>,
-        prefs: UserSettingsPreferences,
-    ) {
-        val newest = items.maxByOrNull { item ->
-            runCatching { Instant.parse(item.createdAt) }.getOrNull() ?: Instant.EPOCH
-        }?.createdAt
-        if (!newest.isNullOrBlank()) {
-            prefs.setLastSeenTeamNewsCreatedAt(newest)
+    /** Advance last-seen cursor when the user opens a post (not when merely loading the list). */
+    fun markTeamNewsSeenAt(createdAt: String?, prefs: UserSettingsPreferences) {
+        val iso = createdAt?.trim().orEmpty()
+        if (iso.isBlank()) return
+        val incoming = runCatching { Instant.parse(iso) }.getOrNull() ?: return
+        val prevIso = prefs.getLastSeenTeamNewsCreatedAt()
+        val prev = prevIso?.let { runCatching { Instant.parse(it) }.getOrNull() }
+        if (prev == null || incoming.isAfter(prev)) {
+            prefs.setLastSeenTeamNewsCreatedAt(iso)
             invalidateNewsForumCache()
         }
     }

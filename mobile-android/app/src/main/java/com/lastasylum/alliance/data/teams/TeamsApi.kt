@@ -28,6 +28,11 @@ interface TeamsApi {
     @GET("teams/{teamId}")
     suspend fun getTeam(@Path("teamId") teamId: String): TeamDetailDto
 
+    @GET("teams/{teamId}/ingame-online")
+    suspend fun getTeamOverlayPresence(
+        @Path("teamId") teamId: String,
+    ): TeamOverlayPresenceDto
+
     @PATCH("teams/{teamId}/display")
     suspend fun updateTeamDisplay(
         @Path("teamId") teamId: String,
@@ -61,6 +66,12 @@ interface TeamsApi {
         @Path("teamId") teamId: String,
         @Path("userId") userId: String,
     ): OkResponse
+
+    @GET("teams/{teamId}/inbox-badges")
+    suspend fun getTeamInboxBadges(
+        @Path("teamId") teamId: String,
+        @Query("newsAfter") newsAfter: String? = null,
+    ): TeamInboxBadgesDto
 
     @GET("teams/{teamId}/news")
     suspend fun listTeamNews(

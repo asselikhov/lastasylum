@@ -141,6 +141,7 @@ class ChatViewModel(
             } else if (message.senderId != currentUserId) {
                 val mid = message._id ?: continue
                 if (!shouldTrackUnreadForMessage(roomId, mid)) continue
+                bumpRoomUnreadLocally(roomId)
                 scheduleUnreadSyncFromServer()
             }
         }
@@ -149,8 +150,10 @@ class ChatViewModel(
     private fun realtimeSubscriptionRoomIds(rooms: List<ChatRoomDto>): List<String> {
         val raid = chatRoomPreferences.getRaidRoomId()
         val selected = _state.value.selectedRoomId
+        val hub = rooms.firstOrNull { isAllianceHubRoom(it) }?.id
         return buildList {
             if (!raid.isNullOrBlank()) add(raid)
+            if (!hub.isNullOrBlank() && hub !in this) add(hub)
             if (!selected.isNullOrBlank() && selected !in this) add(selected)
             if (rooms.isNotEmpty() && isEmpty()) {
                 rooms.firstOrNull { it.id == selected }?.id?.let { add(it) }
@@ -502,10 +505,23 @@ class ChatViewModel(
         return true
     }
 
+    private fun bumpRoomUnreadLocally(roomId: String) {
+        _state.update { st ->
+            st.copy(
+                rooms = st.rooms.map { room ->
+                    if (room.id != roomId) room
+                    else room.copy(
+                        unreadCount = (effectiveUnreadForRoom(room) + 1).coerceAtMost(999),
+                    )
+                },
+            )
+        }
+    }
+
     private fun scheduleUnreadSyncFromServer() {
         unreadSyncJob?.cancel()
         unreadSyncJob = viewModelScope.launch {
-            delay(350)
+            delay(120)
             syncRoomsFromServer()
         }
     }

@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { ChatModule } from '../chat/chat.module';
 import { MongooseModule } from '@nestjs/mongoose';
 import { TeamForumSocketModule } from './team-forum-socket.module';
+import { TeamPresenceSocketModule } from './team-presence-socket.module';
 import { AdminModule } from './admin.module';
 import { ForumModule } from './forum.module';
 import { AllianceRegistryService } from './alliance-registry.service';
@@ -47,6 +48,7 @@ import { StickerAccessService } from './sticker-access.service';
     StorageModule,
     forwardRef(() => ChatModule),
     forwardRef(() => TeamForumSocketModule),
+    forwardRef(() => TeamPresenceSocketModule),
     forwardRef(() => AdminModule),
     ForumModule,
     MongooseModule.forFeature([

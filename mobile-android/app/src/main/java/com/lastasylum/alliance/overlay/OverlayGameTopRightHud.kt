@@ -3,6 +3,7 @@ package com.lastasylum.alliance.overlay
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.MicOff
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
@@ -15,6 +16,8 @@ import androidx.compose.ui.res.stringResource
 import com.lastasylum.alliance.R
 
 data class OverlayGameTopRightHudState(
+    /** Teammates in game with a fresh overlay heartbeat (see [OverlayGameStatusHudRefresh.filterTeamIngameOverlayMembers]). */
+    val onlineIngameCount: Int = 0,
     val teamJoinRequestCount: Int = 0,
     val micOn: Boolean = false,
     val soundOn: Boolean = false,
@@ -25,6 +28,7 @@ data class OverlayGameTopRightHudState(
 fun OverlayGameTopRightHud(
     state: OverlayGameTopRightHudState,
     onOnlineClick: () -> Unit,
+    onJoinRequestsClick: () -> Unit,
     onQuickCommandsClick: () -> Unit,
     onVoiceHubClick: () -> Unit,
     onMicClick: () -> Unit,
@@ -39,13 +43,25 @@ fun OverlayGameTopRightHud(
             OverlayGameHudChip(
                 icon = Icons.Outlined.Groups,
                 tint = Color(0xFF81C784),
-                badgeCount = state.teamJoinRequestCount,
+                badgeCount = state.onlineIngameCount,
                 contentDescription = stringResource(
-                    R.string.overlay_hud_join_requests_cd,
-                    state.teamJoinRequestCount,
+                    R.string.overlay_hud_online_cd,
+                    state.onlineIngameCount,
                 ),
                 onClick = onOnlineClick,
             )
+            if (state.teamJoinRequestCount > 0) {
+                OverlayGameHudChip(
+                    icon = Icons.Outlined.PersonAdd,
+                    tint = Color(0xFFFFB74D),
+                    badgeCount = state.teamJoinRequestCount,
+                    contentDescription = stringResource(
+                        R.string.overlay_hud_join_requests_cd,
+                        state.teamJoinRequestCount,
+                    ),
+                    onClick = onJoinRequestsClick,
+                )
+            }
             OverlayGameHudChip(
                 painter = painterResource(R.drawable.ic_overlay_quick_commands),
                 tint = Color(0xFFFFB74D),

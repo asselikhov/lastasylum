@@ -632,6 +632,101 @@ export class TeamsService {
     };
   }
 
+  /** Matches Android [OVERLAY_INGAME_PRESENCE_STALE_MS] and UsersService.OVERLAY_INGAME_LIST_STALE_MS. */
+  static readonly OVERLAY_PRESENCE_LIST_STALE_MS = 180_000;
+
+  private isOverlayIngameRow(
+    row: TeamMemberRow,
+    nowMs: number,
+    staleMs: number,
+  ): boolean {
+    if ((row.presenceStatus ?? '').trim().toLowerCase() !== 'ingame') {
+      return false;
+    }
+    const at = row.lastPresenceAt
+      ? Date.parse(row.lastPresenceAt)
+      : Number.NaN;
+    return !Number.isNaN(at) && nowMs - at <= staleMs;
+  }
+
+  private isRecentlyActiveOverlayRow(
+    row: TeamMemberRow,
+    nowMs: number,
+    staleMs: number,
+  ): boolean {
+    if ((row.presenceStatus ?? '').trim().toLowerCase() === 'ingame') {
+      return false;
+    }
+    const at = row.lastPresenceAt
+      ? Date.parse(row.lastPresenceAt)
+      : Number.NaN;
+    return !Number.isNaN(at) && nowMs - at <= staleMs;
+  }
+
+  /**
+   * Overlay «Участники онлайн»: only members with a fresh lastPresenceAt ping.
+   */
+  async getTeamOverlayPresence(
+    teamId: string,
+    requesterUserId: string,
+  ): Promise<{
+    ingame: TeamMemberRow[];
+    recentlyActive: TeamMemberRow[];
+  }> {
+    const detail = await this.getTeamDetailForUser(teamId, requesterUserId);
+    const nowMs = Date.now();
+    const staleMs = TeamsService.OVERLAY_PRESENCE_LIST_STALE_MS;
+    const ingame: TeamMemberRow[] = [];
+    const recentlyActive: TeamMemberRow[] = [];
+    for (const row of detail.members) {
+      if (this.isOverlayIngameRow(row, nowMs, staleMs)) {
+        ingame.push(row);
+      } else if (this.isRecentlyActiveOverlayRow(row, nowMs, staleMs)) {
+        recentlyActive.push(row);
+      }
+    }
+    const byRankThenName = (a: TeamMemberRow, b: TeamMemberRow) => {
+      const dr = squadRoleRank(b.teamRole) - squadRoleRank(a.teamRole);
+      if (dr !== 0) return dr;
+      return a.username.localeCompare(b.username, 'ru', {
+        sensitivity: 'base',
+      });
+    };
+    ingame.sort(byRankThenName);
+    recentlyActive.sort(byRankThenName);
+    return { ingame, recentlyActive };
+  }
+
+  async getUserPresenceBroadcastRow(userId: string): Promise<{
+    userId: string;
+    playerTeamId: string | null;
+    presenceStatus: string | null;
+    lastPresenceAt: string | null;
+  } | null> {
+    if (!Types.ObjectId.isValid(userId)) return null;
+    const u = await this.userModel
+      .findById(userId)
+      .select('playerTeamId presenceStatus lastPresenceAt')
+      .lean<{
+        playerTeamId?: Types.ObjectId | null;
+        presenceStatus?: string | null;
+        lastPresenceAt?: Date | null;
+      }>()
+      .exec();
+    if (!u) return null;
+    const toIso = (v: Date | null | undefined): string | null => {
+      if (v == null) return null;
+      if (v instanceof Date) return v.toISOString();
+      return null;
+    };
+    return {
+      userId,
+      playerTeamId: u.playerTeamId?.toString() ?? null,
+      presenceStatus: u.presenceStatus ?? null,
+      lastPresenceAt: toIso(u.lastPresenceAt),
+    };
+  }
+
   /** Active game server from profile; null when no valid identity. */
   private resolveActiveServerNumber(
     user: UserDocument | null,

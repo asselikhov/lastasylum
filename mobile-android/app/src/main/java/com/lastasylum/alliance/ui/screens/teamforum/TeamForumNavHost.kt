@@ -74,7 +74,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.Checkbox
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -190,10 +189,14 @@ fun TeamForumNavHost(
     forumTabReselectSignal: Int = 0,
     /** Wire keys of sticker packs the current user may send. */
     enabledStickerPackKeys: Set<String> = emptySet(),
+    onInboxBadgesChanged: () -> Unit = {},
 ) {
     val nav = rememberNavController()
     val topicTitles = remember { mutableStateMapOf<String, String>() }
     var listRefreshNonce by remember { mutableIntStateOf(0) }
+    LaunchedEffect(listRefreshNonce) {
+        if (listRefreshNonce > 0) onInboxBadgesChanged()
+    }
     LaunchedEffect(forumTabReselectSignal) {
         if (forumTabReselectSignal > 0) {
             nav.popBackStack(ForumRoutes.LIST, inclusive = false)
@@ -223,6 +226,9 @@ fun TeamForumNavHost(
             arguments = listOf(navArgument("topicId") { type = NavType.StringType }),
         ) { entry ->
             val topicId = entry.arguments?.getString("topicId")
+            DisposableEffect(topicId) {
+                onDispose { listRefreshNonce++ }
+            }
             if (topicId.isNullOrBlank()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     TextButton(onClick = { nav.popBackStack() }) {
@@ -387,7 +393,7 @@ private fun TeamForumListRoute(
                                 listIndex = index,
                                 messageMeta = t.lastMessageAt?.let { formatForumTime(it) } ?: "—",
                                 onClick = {
-                                    onOpenTopic(t.copy(unreadCount = 0))
+                                    onOpenTopic(t)
                                 },
                                 menu = {
                                     if (canManageTopics) {

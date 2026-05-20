@@ -21,10 +21,11 @@ fun effectiveUnreadCount(
 ): Int {
     if (serverUnread <= 0) return 0
     val localLast = localLastReadMessageId?.trim().orEmpty()
-    if (localLast.isBlank()) return serverUnread
     val serverLast = lastReadMessageId?.trim().orEmpty()
-    if (serverLast.isBlank()) return 0
-    if (!isObjectIdNewer(serverLast, localLast)) return 0
-    if (isObjectIdNewer(localLast, serverLast)) return 0
+    if (localLast.isNotBlank()) {
+        if (serverLast.isBlank()) return 0
+        if (!isObjectIdNewer(serverLast, localLast)) return 0
+        if (isObjectIdNewer(localLast, serverLast)) return 0
+    }
     return serverUnread
 }

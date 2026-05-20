@@ -17,6 +17,24 @@ fun formatPresenceTimestampRu(iso: String?): String {
 }
 
 /** Онлайн в игре = активный оверлей (status ingame + свежий lastPresenceAt). */
+/** Короткая подпись свежести пинга для списка «Участники онлайн». */
+fun formatOverlayPresenceAgeRu(lastOverlayPresenceAt: String?): String {
+    val iso = lastOverlayPresenceAt?.trim().orEmpty()
+    if (iso.isEmpty()) return ""
+    return runCatching {
+        val instant = Instant.parse(iso)
+        val mins = java.time.Duration.between(instant, Instant.now()).toMinutes().coerceAtLeast(0)
+        when {
+            mins < 1 -> "только что"
+            mins < 60 -> "$mins мин назад"
+            else -> {
+                val hours = mins / 60
+                if (hours < 24) "$hours ч назад" else formatPresenceTimestampRu(iso)
+            }
+        }
+    }.getOrDefault("")
+}
+
 fun isOverlayIngameNow(
     presenceStatus: String?,
     lastOverlayPresenceAt: String?,

@@ -1447,9 +1447,10 @@ class OverlayCommandsPopover(
                         usersRepository = container.usersRepository,
                         teamsRepository = container.teamsRepository,
                     ).getOrThrow()
-                    val team = container.teamsRepository.getTeam(ctx.teamId).getOrThrow()
                     val self = ctx.currentUserId
-                    OverlayGameStatusHudRefresh.filterTeamIngameOverlayMembers(team.members)
+                    container.teamsRepository.getTeamOverlayPresence(ctx.teamId)
+                        .getOrThrow()
+                        .ingame
                         .filter { it.userId != self }
                 }
             }

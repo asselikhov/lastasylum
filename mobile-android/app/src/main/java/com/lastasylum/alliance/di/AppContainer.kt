@@ -13,6 +13,7 @@ import com.lastasylum.alliance.data.network.RealtimeCoordinator
 import com.lastasylum.alliance.data.settings.OnboardingPreferences
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.teams.TeamForumSocketManager
+import com.lastasylum.alliance.data.teams.TeamPresenceSocketManager
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.users.UsersRepository
 import com.lastasylum.alliance.data.voice.VoiceChatSession
@@ -31,6 +32,7 @@ class AppContainer private constructor(context: Context) {
     private val chatSocketManager = ChatSocketManager()
     private val voiceSocketManager = VoiceSocketManager()
     private val teamForumSocketManager = TeamForumSocketManager()
+    private val teamPresenceSocketManager = TeamPresenceSocketManager()
     private val realtimeCoordinator = RealtimeCoordinator()
 
     @Volatile
@@ -45,6 +47,9 @@ class AppContainer private constructor(context: Context) {
         }
         realtimeCoordinator.registerReconnect {
             teamForumSocketManager.reconnectWithFreshToken()
+        }
+        realtimeCoordinator.registerReconnect {
+            teamPresenceSocketManager.reconnectWithFreshToken()
         }
     }
 
@@ -97,6 +102,8 @@ class AppContainer private constructor(context: Context) {
     }
 
     val teamForumSocket: TeamForumSocketManager get() = teamForumSocketManager
+
+    val teamPresenceSocket: TeamPresenceSocketManager get() = teamPresenceSocketManager
 
     val voiceSocket: VoiceSocketManager get() = voiceSocketManager
 

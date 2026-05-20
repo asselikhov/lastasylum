@@ -472,6 +472,12 @@ export class TeamForumService {
     );
   }
 
+  /** Sum of per-topic unread message counts for the member (excludes own messages). */
+  async sumUnreadMessages(teamId: string, userId: string): Promise<number> {
+    const topics = await this.listTopics(teamId, userId);
+    return topics.reduce((sum, t) => sum + (t.unreadCount ?? 0), 0);
+  }
+
   async listTopics(teamId: string, userId: string): Promise<TeamForumTopicRow[]> {
     await this.teams.getTeamIfMemberOrThrow(teamId, userId);
     const tid = new Types.ObjectId(teamId);
