@@ -31,6 +31,7 @@ import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
 import com.lastasylum.alliance.ui.chat.TelegramImageCaptionBar
 import com.lastasylum.alliance.ui.chat.chatBubbleShapeIncoming
 import com.lastasylum.alliance.ui.chat.chatBubbleShapeOutgoing
+import com.lastasylum.alliance.ui.chat.MessengerImagesPreviewHost
 import com.lastasylum.alliance.ui.chat.TelegramLikeAttachmentsGrid
 import com.lastasylum.alliance.ui.theme.roleAccentColor
 import androidx.compose.foundation.BorderStroke
@@ -812,10 +813,13 @@ private fun TeamForumTopicChatRoute(
         }
     }
 
-    Column(
+    Box(
         Modifier
             .fillMaxSize()
             .padding(bottom = SquadRelayDimens.chatComposerNavGap),
+    ) {
+    Column(
+        Modifier.fillMaxSize(),
     ) {
         if (overlayUi) {
             Row(
@@ -1083,13 +1087,13 @@ private fun TeamForumTopicChatRoute(
 
     remoteImagePreview?.let { (urls, start) ->
         if (urls.isNotEmpty()) {
-            ForumImagesPreviewOverlay(
-                modifier = Modifier.fillMaxSize(),
+            MessengerImagesPreviewHost(
                 urls = urls,
                 startIndex = start,
                 onDismiss = { remoteImagePreview = null },
             )
         }
+    }
     }
 
     // legacy menu dialog removed (replaced with bottom sheet)
@@ -1573,88 +1577,3 @@ private fun ForumMessageActionsSheet(
 }
 
 
-@Composable
-private fun ForumImagesPreviewOverlay(
-    modifier: Modifier = Modifier,
-    urls: List<String>,
-    startIndex: Int,
-    onDismiss: () -> Unit,
-) {
-    if (urls.isEmpty()) return
-    var index by remember(startIndex, urls) { mutableStateOf(startIndex.coerceIn(0, urls.lastIndex)) }
-    val url = urls.getOrNull(index) ?: urls.first()
-
-    var scale by remember(url) { mutableStateOf(1f) }
-    var offsetX by remember(url) { mutableStateOf(0f) }
-    var offsetY by remember(url) { mutableStateOf(0f) }
-    val context = LocalContext.current
-
-    OverlayInteractionSuppressEffect()
-    BackHandler(onBack = onDismiss)
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Color.Black),
-    ) {
-        val density = LocalDensity.current
-        val wPx = with(density) { maxWidth.toPx() }
-        val hPx = with(density) { maxHeight.toPx() }
-
-        fun clampOffsets() {
-            if (scale <= 1f) {
-                offsetX = 0f
-                offsetY = 0f
-                return
-            }
-            val maxX = (wPx * (scale - 1f) / 2f).coerceAtLeast(0f)
-            val maxY = (hPx * (scale - 1f) / 2f).coerceAtLeast(0f)
-            offsetX = offsetX.coerceIn(-maxX, maxX)
-            offsetY = offsetY.coerceIn(-maxY, maxY)
-        }
-
-        val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-            val nextScale = (scale * zoomChange).coerceIn(1f, 4f)
-            scale = nextScale
-            if (scale > 1f) {
-                offsetX += panChange.x
-                offsetY += panChange.y
-            }
-            clampOffsets()
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(urls, index, scale) {
-                    detectTapGestures(
-                        onDoubleTap = {
-                            scale = if (scale > 1f) 1f else 2.5f
-                            clampOffsets()
-                        },
-                    )
-                    detectHorizontalDragGestures { change, dragAmount ->
-                        if (scale > 1f) return@detectHorizontalDragGestures
-                        change.consume()
-                        if (kotlin.math.abs(dragAmount) < 14f) return@detectHorizontalDragGestures
-                        if (dragAmount > 0 && index > 0) index -= 1
-                        if (dragAmount < 0 && index < urls.lastIndex) index += 1
-                    }
-                }
-                .transformable(state = transformState),
-        ) {
-            AsyncImage(
-                model = chatAuthedImageRequest(context, url),
-                contentDescription = stringResource(R.string.cd_chat_message_image),
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                        translationX = offsetX
-                        translationY = offsetY
-                    },
-                contentScale = ContentScale.Fit,
-            )
-        }
-    }
-}

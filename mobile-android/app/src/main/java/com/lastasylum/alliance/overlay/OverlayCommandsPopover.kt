@@ -230,7 +230,7 @@ class OverlayCommandsPopover(
         view.addValueCallback(
             KeyPath("**"),
             LottieProperty.COLOR_FILTER,
-            LottieValueCallback { PorterDuffColorFilter(color, PorterDuff.Mode.SRC_ATOP) },
+            LottieValueCallback(PorterDuffColorFilter(color, PorterDuff.Mode.SRC_ATOP)),
         )
     }
 

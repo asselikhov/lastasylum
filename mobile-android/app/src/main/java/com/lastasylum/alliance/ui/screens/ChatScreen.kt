@@ -177,6 +177,7 @@ import com.lastasylum.alliance.ui.chat.chatDayKey
 import com.lastasylum.alliance.ui.chat.formatChatDaySeparator
 import com.lastasylum.alliance.ui.chat.formatChatTime
 import com.lastasylum.alliance.ui.chat.ChatBubbleAttachmentsWithCaption
+import com.lastasylum.alliance.ui.chat.MessengerImagesPreviewHost
 import com.lastasylum.alliance.ui.components.ChatRoomTabAccents
 import com.lastasylum.alliance.ui.components.ChatRoomTabSpec
 import com.lastasylum.alliance.ui.components.ChatRoomsSwitcher
@@ -972,10 +973,7 @@ fun ChatScreen(
 
             remoteChatImagePreview?.let { (urls, start) ->
                 if (urls.isNotEmpty()) {
-                    RemoteChatImagesPreviewOverlay(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .zIndex(8f),
+                    MessengerImagesPreviewHost(
                         urls = urls,
                         startIndex = start,
                         onDismiss = { remoteChatImagePreview = null },
@@ -2301,166 +2299,6 @@ private fun AttachmentPreviewOverlay(
                         ) {
                             AsyncImage(
                                 model = SquadRelayImageRequests.localUriPreview(context, u),
-                                contentDescription = null,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-}
-
-/** Full-screen viewer for chat message images (same gestures as draft preview: zoom, swipe). */
-@Composable
-private fun RemoteChatImagesPreviewOverlay(
-    modifier: Modifier = Modifier,
-    urls: List<String>,
-    startIndex: Int,
-    onDismiss: () -> Unit,
-) {
-    if (urls.isEmpty()) return
-    var index by remember(startIndex, urls) {
-        mutableStateOf(startIndex.coerceIn(0, urls.lastIndex))
-    }
-    val url = urls.getOrNull(index) ?: urls.first()
-
-    var scale by remember(url) { mutableStateOf(1f) }
-    var offsetX by remember(url) { mutableStateOf(0f) }
-    var offsetY by remember(url) { mutableStateOf(0f) }
-    val context = LocalContext.current
-
-    OverlayInteractionSuppressEffect()
-    BackHandler(onBack = onDismiss)
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Color.Black),
-    ) {
-        val density = LocalDensity.current
-        val wPx = with(density) { maxWidth.toPx() }
-        val hPx = with(density) { maxHeight.toPx() }
-
-        fun clampOffsets() {
-            if (scale <= 1f) {
-                offsetX = 0f
-                offsetY = 0f
-                return
-            }
-            val maxX = (wPx * (scale - 1f) / 2f).coerceAtLeast(0f)
-            val maxY = (hPx * (scale - 1f) / 2f).coerceAtLeast(0f)
-            offsetX = offsetX.coerceIn(-maxX, maxX)
-            offsetY = offsetY.coerceIn(-maxY, maxY)
-        }
-
-        val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-            val nextScale = (scale * zoomChange).coerceIn(1f, 4f)
-            scale = nextScale
-            if (scale > 1f) {
-                offsetX += panChange.x
-                offsetY += panChange.y
-            }
-            clampOffsets()
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(urls, index, scale) {
-                    detectTapGestures(
-                        onDoubleTap = {
-                            scale = if (scale > 1f) 1f else 2.5f
-                            clampOffsets()
-                        },
-                    )
-                    detectHorizontalDragGestures(
-                        onDragEnd = { /* noop */ },
-                        onHorizontalDrag = { change, dragAmount ->
-                            if (scale > 1f) return@detectHorizontalDragGestures
-                            change.consume()
-                            if (kotlin.math.abs(dragAmount) < 14f) return@detectHorizontalDragGestures
-                            if (dragAmount > 0 && index > 0) index -= 1
-                            if (dragAmount < 0 && index < urls.lastIndex) index += 1
-                        },
-                    )
-                }
-                .transformable(state = transformState),
-        ) {
-                AsyncImage(
-                    model = chatAuthedImageRequest(context, url),
-                    contentDescription = stringResource(R.string.cd_chat_message_image),
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            scaleX = scale
-                            scaleY = scale
-                            translationX = offsetX
-                            translationY = offsetY
-                        },
-                    contentScale = ContentScale.Fit,
-                )
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.45f))
-                    .padding(horizontal = 8.dp, vertical = 6.dp)
-                    .align(Alignment.TopCenter),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.Outlined.Close,
-                        contentDescription = null,
-                        tint = Color.White,
-                    )
-                }
-                Text(
-                    text = "${index + 1}/${urls.size}",
-                    color = Color.White,
-                    style = MaterialTheme.typography.labelLarge,
-                )
-                Spacer(modifier = Modifier.width(48.dp))
-            }
-
-            if (urls.size > 1) {
-                LazyRow(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.BottomCenter)
-                        .background(Color.Black.copy(alpha = 0.35f))
-                        .navigationBarsPadding()
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(
-                        count = urls.size,
-                        key = { it },
-                    ) { i ->
-                        val u = urls[i]
-                        val isActive = i == index
-                        val border = if (isActive) BorderStroke(2.dp, Color.White) else null
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            border = border,
-                            tonalElevation = 0.dp,
-                            shadowElevation = 0.dp,
-                            color = Color.Transparent,
-                            modifier = Modifier
-                                .size(54.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable {
-                                    index = i
-                                    scale = 1f
-                                    offsetX = 0f
-                                    offsetY = 0f
-                                },
-                        ) {
-                            AsyncImage(
-                                model = chatAuthedImageRequest(context, u),
                                 contentDescription = null,
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop,
