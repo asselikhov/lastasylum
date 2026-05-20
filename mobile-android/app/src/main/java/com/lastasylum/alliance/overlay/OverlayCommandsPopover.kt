@@ -47,87 +47,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Время показа входящей реакции на экране (мс). */
-private const val OVERLAY_REACTION_BURST_VISIBLE_MS = 5_000L
-
-private data class OverlayQuickReaction(
-    val id: String,
-    @DrawableRes val iconRes: Int,
-    val labelRes: Int,
-    val tintHex: String,
-    @RawRes val lottieRawRes: Int? = null,
-    /** Если задан — перекрашивает Lottie; null — оригинальные цвета ассета. */
-    val lottieTintHex: String? = null,
-    val burstAccentHex: String = "#CCFF5252",
-)
-
-/** Расширяемый каталог: новые реакции — новая строка в списке. */
-private fun overlayQuickReactionCatalog(): List<OverlayQuickReaction> = listOf(
-    OverlayQuickReaction(
-        id = "heart",
-        iconRes = R.drawable.ic_overlay_cmd_reaction,
-        labelRes = R.string.overlay_reaction_heart_cd,
-        tintHex = "#FFFF5252",
-        lottieRawRes = R.raw.overlay_reaction_heart,
-        lottieTintHex = "#FFFF5252",
-        burstAccentHex = "#CCFF5252",
-    ),
-    OverlayQuickReaction(
-        id = "doggie",
-        iconRes = R.drawable.ic_overlay_cmd_reaction,
-        labelRes = R.string.overlay_reaction_doggie_cd,
-        tintHex = "#FFF9C44F",
-        lottieRawRes = R.raw.overlay_reaction_doggie,
-        lottieTintHex = null,
-        burstAccentHex = "#CCF9C44F",
-    ),
-    OverlayQuickReaction(
-        id = "wumpus_angry",
-        iconRes = R.drawable.ic_overlay_cmd_reaction,
-        labelRes = R.string.overlay_reaction_wumpus_angry_cd,
-        tintHex = "#FF7C4DFF",
-        lottieRawRes = R.raw.overlay_reaction_wumpus_angry,
-        lottieTintHex = null,
-        burstAccentHex = "#CC7C4DFF",
-    ),
-    OverlayQuickReaction(
-        id = "crying_smoothymon",
-        iconRes = R.drawable.ic_overlay_cmd_reaction,
-        labelRes = R.string.overlay_reaction_crying_smoothymon_cd,
-        tintHex = "#FF4FC3F7",
-        lottieRawRes = R.raw.overlay_reaction_crying_smoothymon,
-        lottieTintHex = null,
-        burstAccentHex = "#CC4FC3F7",
-    ),
-    OverlayQuickReaction(
-        id = "plane_heart",
-        iconRes = R.drawable.ic_overlay_cmd_reaction,
-        labelRes = R.string.overlay_reaction_plane_heart_cd,
-        tintHex = "#FFFF5252",
-        lottieRawRes = R.raw.overlay_reaction_plane_heart,
-        lottieTintHex = null,
-        burstAccentHex = "#CCFF5252",
-    ),
-    OverlayQuickReaction(
-        id = "cat_love",
-        iconRes = R.drawable.ic_overlay_cmd_reaction,
-        labelRes = R.string.overlay_reaction_cat_love_cd,
-        tintHex = "#FFFF8A80",
-        lottieRawRes = R.raw.overlay_reaction_cat_love,
-        lottieTintHex = null,
-        burstAccentHex = "#CCFF8A80",
-    ),
-    OverlayQuickReaction(
-        id = "cat_playing",
-        iconRes = R.drawable.ic_overlay_cmd_reaction,
-        labelRes = R.string.overlay_reaction_cat_playing_cd,
-        tintHex = "#FFFFB74D",
-        lottieRawRes = R.raw.overlay_reaction_cat_playing,
-        lottieTintHex = null,
-        burstAccentHex = "#CCFFB74D",
-    ),
-)
-
 /**
  * Компактное меню быстрых команд: вкладки типов, мелкие чипы варианта, лаконичный ввод координат.
  */
@@ -235,6 +154,13 @@ class OverlayCommandsPopover(
     }
 
     private fun createReactionTileIcon(reaction: OverlayQuickReaction): View {
+        val memeRes = reaction.memeDrawableRes
+        if (memeRes != null) {
+            return ImageView(context).apply {
+                setImageDrawable(AppCompatResources.getDrawable(context, memeRes))
+                scaleType = ImageView.ScaleType.CENTER_CROP
+            }
+        }
         val lottieRes = reaction.lottieRawRes
         if (lottieRes != null) {
             return LottieAnimationView(context).apply {
@@ -665,8 +591,7 @@ class OverlayCommandsPopover(
             )
         }
 
-        val reactionCatalog = overlayQuickReactionCatalog()
-        val reactionPreviewLottiesBuilder = mutableListOf<LottieAnimationView>()
+        var selectedReactionSubcategory = OverlayReactionCategory.ANIMATIONS
         val reactionTilesPadding = dp(2)
         val reactionTileSize = dp(54)
         val reactionIconInner = dp(46)
@@ -676,39 +601,108 @@ class OverlayCommandsPopover(
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, 0, reactionTilesPadding, 0)
         }
-        for (reaction in reactionCatalog) {
-            val icon = createReactionTileIcon(reaction).apply {
-                contentDescription = context.getString(reaction.labelRes)
-            }
-            if (icon is LottieAnimationView) reactionPreviewLottiesBuilder.add(icon)
-            val host = FrameLayout(context).apply {
-                layoutParams = LinearLayout.LayoutParams(reactionTileSize, reactionTileSize).apply {
-                    marginEnd = dp(8)
-                }
-                background = rippleOn(
-                    GradientDrawable().apply {
-                        shape = GradientDrawable.RECTANGLE
-                        cornerRadius = dp(12).toFloat()
-                        setColor(Color.parseColor("#33182533"))
-                        setStroke(dp(1).coerceAtLeast(1), Color.parseColor("#33445566"))
-                    },
-                )
-                isClickable = true
-                addView(
-                    icon,
-                    FrameLayout.LayoutParams(reactionIconInner, reactionIconInner, Gravity.CENTER),
-                )
-                setOnClickListener {
-                    val wmUse = attachedWindowManager ?: return@setOnClickListener
-                    stopHeartPreviewPulse()
-                    removeShell(menuScrim)
-                    menuScrim = null
-                    showReactionRecipientPicker(wmUse, reaction.id)
+
+        fun reactionSubChipBackground(selected: Boolean): GradientDrawable =
+            GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(999).toFloat()
+                if (selected) {
+                    setColor(Color.parseColor("#553A5A78"))
+                    setStroke(dp(1).coerceAtLeast(1), Color.parseColor("#88A8C4E8"))
+                } else {
+                    setColor(Color.parseColor("#22182533"))
+                    setStroke(dp(1).coerceAtLeast(1), Color.parseColor("#33445566"))
                 }
             }
-            reactionTilesRow.addView(host)
+
+        val reactionSubAnimChip = choiceChip(
+            context.getString(R.string.overlay_reactions_sub_animations),
+            selected = true,
+        )
+        val reactionSubMemeChip = choiceChip(
+            context.getString(R.string.overlay_reactions_sub_memes),
+            selected = false,
+        )
+        val reactionSubTabsRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(6))
         }
-        reactionPreviewLotties = reactionPreviewLottiesBuilder
+
+        fun refreshReactionSubTabs() {
+            val animSel = selectedReactionSubcategory == OverlayReactionCategory.ANIMATIONS
+            reactionSubAnimChip.background = reactionSubChipBackground(animSel)
+            reactionSubAnimChip.setTextColor(Color.parseColor(if (animSel) "#FFE8F4FF" else "#9AB0C4D8"))
+            reactionSubAnimChip.typeface = if (animSel) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+            reactionSubMemeChip.background = reactionSubChipBackground(!animSel)
+            reactionSubMemeChip.setTextColor(Color.parseColor(if (!animSel) "#FFE8F4FF" else "#9AB0C4D8"))
+            reactionSubMemeChip.typeface = if (!animSel) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+        }
+
+        fun rebuildReactionTiles() {
+            reactionTilesRow.removeAllViews()
+            val previewBuilder = mutableListOf<LottieAnimationView>()
+            val items = overlayQuickReactionCatalog().filter { it.category == selectedReactionSubcategory }
+            for (reaction in items) {
+                val icon = createReactionTileIcon(reaction).apply {
+                    contentDescription = context.getString(reaction.labelRes)
+                }
+                if (icon is LottieAnimationView) previewBuilder.add(icon)
+                val host = FrameLayout(context).apply {
+                    layoutParams = LinearLayout.LayoutParams(reactionTileSize, reactionTileSize).apply {
+                        marginEnd = dp(8)
+                    }
+                    background = rippleOn(
+                        GradientDrawable().apply {
+                            shape = GradientDrawable.RECTANGLE
+                            cornerRadius = dp(12).toFloat()
+                            setColor(Color.parseColor("#33182533"))
+                            setStroke(dp(1).coerceAtLeast(1), Color.parseColor("#33445566"))
+                        },
+                    )
+                    isClickable = true
+                    addView(
+                        icon,
+                        FrameLayout.LayoutParams(reactionIconInner, reactionIconInner, Gravity.CENTER),
+                    )
+                    setOnClickListener {
+                        val wmUse = attachedWindowManager ?: return@setOnClickListener
+                        stopHeartPreviewPulse()
+                        removeShell(menuScrim)
+                        menuScrim = null
+                        showReactionRecipientPicker(wmUse, reaction.id)
+                    }
+                }
+                reactionTilesRow.addView(host)
+            }
+            reactionPreviewLotties = previewBuilder
+            if (categories[selectedCategoryIndex].isReactions) {
+                startReactionStripPreviews()
+            }
+        }
+
+        reactionSubAnimChip.setOnClickListener {
+            if (selectedReactionSubcategory == OverlayReactionCategory.ANIMATIONS) return@setOnClickListener
+            selectedReactionSubcategory = OverlayReactionCategory.ANIMATIONS
+            refreshReactionSubTabs()
+            rebuildReactionTiles()
+        }
+        reactionSubMemeChip.setOnClickListener {
+            if (selectedReactionSubcategory == OverlayReactionCategory.MEMES) return@setOnClickListener
+            selectedReactionSubcategory = OverlayReactionCategory.MEMES
+            refreshReactionSubTabs()
+            rebuildReactionTiles()
+        }
+        reactionSubTabsRow.addView(
+            reactionSubAnimChip,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { marginEnd = dp(8) },
+        )
+        reactionSubTabsRow.addView(reactionSubMemeChip)
+
+        rebuildReactionTiles()
 
         val reactionScroll = HorizontalScrollView(context).apply {
             isHorizontalScrollBarEnabled = false
@@ -724,7 +718,7 @@ class OverlayCommandsPopover(
         }
 
         val reactionHintRow = labelText(
-            context.getString(R.string.overlay_reactions_animations_hint),
+            context.getString(R.string.overlay_reactions_pick_hint),
             10.5f,
             Color.parseColor("#7A90A4B8"),
         ).apply {
@@ -736,6 +730,7 @@ class OverlayCommandsPopover(
             gravity = Gravity.START
             visibility = View.GONE
             addView(reactionHintRow)
+            addView(reactionSubTabsRow)
             addView(
                 reactionScroll,
                 LinearLayout.LayoutParams(
@@ -1491,11 +1486,14 @@ class OverlayCommandsPopover(
             setStroke(dp(1).coerceAtLeast(1), Color.parseColor("#4D5C7499"))
         }
 
-    private fun overlayQuickReactionById(reactionId: String): OverlayQuickReaction =
-        overlayQuickReactionCatalog().find { it.id == reactionId }
-            ?: overlayQuickReactionCatalog().first()
-
     private fun createReactionBurstAnimView(reaction: OverlayQuickReaction): View {
+        val memeRes = reaction.memeDrawableRes
+        if (memeRes != null) {
+            return ImageView(context).apply {
+                setImageDrawable(AppCompatResources.getDrawable(context, memeRes))
+                scaleType = ImageView.ScaleType.FIT_CENTER
+            }
+        }
         val lottieRes = reaction.lottieRawRes
         if (lottieRes != null) {
             return LottieAnimationView(context).apply {
@@ -1531,7 +1529,11 @@ class OverlayCommandsPopover(
         val root = FrameLayout(context).apply {
             setBackgroundColor(Color.argb(38, 6, 12, 22))
         }
-        val burstAnimSize = if (reaction.lottieRawRes != null) dp(160) else dp(120)
+        val burstAnimSize = when {
+            reaction.memeDrawableRes != null -> dp(200)
+            reaction.lottieRawRes != null -> dp(160)
+            else -> dp(120)
+        }
         val heart = createReactionBurstAnimView(reaction)
         val accentOpaque = Color.parseColor(reaction.burstAccentHex)
         val accentTransparent = accentOpaque and 0x00FFFFFF

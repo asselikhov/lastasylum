@@ -27,7 +27,26 @@ const WS_MESSAGE_MAX = 8;
 const WS_OVERLAY_REACTION_WINDOW_MS = 10_000;
 const WS_OVERLAY_REACTION_MAX = 15;
 
-const ALLOWED_OVERLAY_REACTIONS = new Set(['heart', 'thumbs', 'fire', 'star']);
+/** Must match overlay reaction ids in Android OverlayQuickReactions.kt */
+const ALLOWED_OVERLAY_ANIMATION_REACTIONS = [
+  'heart',
+  'doggie',
+  'wumpus_angry',
+  'crying_smoothymon',
+  'plane_heart',
+  'cat_love',
+  'cat_playing',
+] as const;
+
+const ALLOWED_OVERLAY_MEME_REACTIONS = Array.from(
+  { length: 16 },
+  (_, i) => `meme_${String(i + 1).padStart(2, '0')}`,
+);
+
+const ALLOWED_OVERLAY_REACTIONS = new Set<string>([
+  ...ALLOWED_OVERLAY_ANIMATION_REACTIONS,
+  ...ALLOWED_OVERLAY_MEME_REACTIONS,
+]);
 
 type GatewayUser = {
   userId: string;
