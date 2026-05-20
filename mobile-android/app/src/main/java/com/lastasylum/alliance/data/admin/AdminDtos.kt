@@ -48,6 +48,7 @@ data class PlayerTeamAdminDto(
     val leaderUserId: String,
     val leaderUsername: String,
     val leaderServerNumber: Int? = null,
+    val serverNumbers: List<Int> = emptyList(),
     val memberCount: Int = 0,
     val chatRoutingSummary: String = "",
 )

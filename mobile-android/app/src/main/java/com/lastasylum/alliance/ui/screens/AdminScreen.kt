@@ -72,8 +72,12 @@ import com.lastasylum.alliance.ui.admin.AdminPlayersSegment
 import com.lastasylum.alliance.ui.admin.AdminRoute
 import com.lastasylum.alliance.ui.admin.AdminUiState
 import com.lastasylum.alliance.ui.admin.toAdminPlayerRow
+import com.lastasylum.alliance.ui.admin.AdminTeamDetailTab
+import com.lastasylum.alliance.ui.screens.admin.AdminChatRoomViewerContent
+import com.lastasylum.alliance.ui.screens.admin.AdminForumTopicViewerContent
 import com.lastasylum.alliance.ui.screens.admin.AdminPlayerManageSheet
 import com.lastasylum.alliance.ui.screens.admin.AdminTeamBrandingDialog
+import com.lastasylum.alliance.ui.screens.admin.AdminTeamDetailContent
 import androidx.compose.material.icons.outlined.Edit
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
@@ -90,9 +94,13 @@ fun AdminScreen(
     onPlayersSearchChange: (String) -> Unit,
     onPlayersSegmentChange: (AdminPlayersSegment) -> Unit,
     onPlayersServerFilter: (Int?) -> Unit,
+    onTeamsServerFilter: (Int?) -> Unit,
+    onTeamDetailTabChange: (AdminTeamDetailTab) -> Unit,
+    onOpenChatRoom: (String, com.lastasylum.alliance.data.chat.ChatRoomDto) -> Unit,
+    onOpenForumTopic: (String, com.lastasylum.alliance.data.teams.TeamForumTopicDto) -> Unit,
     onRefreshOverview: () -> Unit,
     onRefreshPlayerTeams: () -> Unit,
-    onRefreshTeamMembers: (String) -> Unit,
+    onRefreshTeamDetail: (String) -> Unit,
     onRefreshPlayers: () -> Unit,
     onRefreshAlliances: () -> Unit,
     onAllianceOverlayChange: (String, Boolean) -> Unit,
@@ -101,17 +109,12 @@ fun AdminScreen(
     onToggleStickerAllianceRole: (String, Boolean) -> Unit,
     onSaveStickerAccess: () -> Unit,
     onClearStickerAccessError: () -> Unit,
-    onRefreshRooms: () -> Unit,
-    onCreateRoom: (String) -> Unit,
-    onRenameRoom: (String, String) -> Unit,
-    onDeleteRoom: (String) -> Unit,
     onApprove: (String) -> Unit,
     onRemoveFromTeam: (String) -> Unit,
     onRestorePending: (String) -> Unit,
     onSetRole: (String, String) -> Unit,
     onDeleteUser: (String) -> Unit,
     onClearActionError: () -> Unit,
-    onClearRoomError: () -> Unit,
     onDismissSnack: () -> Unit,
     onUpdateGameIdentity: (userId: String, identityId: String, gameNickname: String, serverNumber: Int) -> Unit = { _, _, _, _ -> },
     onUpdatePlayerTeam: (teamId: String, tag: String, displayName: String) -> Unit = { _, _, _ -> },
@@ -121,18 +124,14 @@ fun AdminScreen(
     var removeFromTeamUserId by remember { mutableStateOf<String?>(null) }
     var deleteUserId by remember { mutableStateOf<String?>(null) }
     var editTeamTarget by remember { mutableStateOf<PlayerTeamAdminDto?>(null) }
-    var deleteRoomTarget by remember { mutableStateOf<ChatRoomDto?>(null) }
-    var renameRoomTarget by remember { mutableStateOf<ChatRoomDto?>(null) }
-    var renameDraft by remember { mutableStateOf("") }
-    var newRoomTitle by remember { mutableStateOf("") }
-
     val title = when (val route = state.route) {
         AdminRoute.Hub -> stringResource(R.string.admin_screen_title)
         AdminRoute.PlayerTeams -> stringResource(R.string.admin_hub_teams)
         is AdminRoute.PlayerTeamDetail -> route.title
+        is AdminRoute.ChatRoomViewer -> route.roomTitle
+        is AdminRoute.ForumTopicViewer -> route.topicTitle
         AdminRoute.Players -> stringResource(R.string.admin_hub_players)
         AdminRoute.ChatRouting -> stringResource(R.string.admin_hub_chat_routing)
-        AdminRoute.ChatRooms -> stringResource(R.string.admin_rooms_title)
     }
     val showBack = state.route != AdminRoute.Hub
 
@@ -149,15 +148,18 @@ fun AdminScreen(
                 AdminRoute.Hub -> onRefreshOverview
                 AdminRoute.PlayerTeams -> onRefreshPlayerTeams
                 is AdminRoute.PlayerTeamDetail -> {
-                    { onRefreshTeamMembers(route.teamId) }
+                    { onRefreshTeamDetail(route.teamId) }
                 }
+                is AdminRoute.ChatRoomViewer -> null
+                is AdminRoute.ForumTopicViewer -> null
                 AdminRoute.Players -> onRefreshPlayers
                 AdminRoute.ChatRouting -> onRefreshAlliances
-                AdminRoute.ChatRooms -> onRefreshRooms
             },
             refreshing = state.overviewLoading || state.playerTeamsLoading ||
-                state.teamMembersLoading ||
-                state.alliancesLoading || state.roomsLoading ||
+                state.teamMembersLoading || state.teamChatRoomsLoading ||
+                state.teamNewsLoading || state.teamForumLoading ||
+                state.chatRoomMessagesLoading || state.forumTopicMessagesLoading ||
+                state.alliancesLoading ||
                 state.gameServersLoading || state.usersOnServersLoading,
         )
 
@@ -196,15 +198,25 @@ fun AdminScreen(
             AdminRoute.PlayerTeams -> AdminPlayerTeamsContent(
                 state = state,
                 onSearchChange = onTeamSearchChange,
+                onServerFilter = onTeamsServerFilter,
                 onTeamClick = onOpenPlayerTeam,
             )
-            is AdminRoute.PlayerTeamDetail -> AdminTeamMembersContent(
+            is AdminRoute.PlayerTeamDetail -> AdminTeamDetailContent(
                 state = state,
                 onEditTeam = { editTeamTarget = state.selectedTeam },
+                onTabChange = onTeamDetailTabChange,
                 onMemberClick = { m ->
                     m.toAdminPlayerRow(state.selectedTeam)?.let { selectedPlayer = it }
                 },
+                onChatRoomClick = { room ->
+                    state.selectedTeam?.let { onOpenChatRoom(it.id, room) }
+                },
+                onForumTopicClick = { topic ->
+                    state.selectedTeam?.let { onOpenForumTopic(it.id, topic) }
+                },
             )
+            is AdminRoute.ChatRoomViewer -> AdminChatRoomViewerContent(state = state)
+            is AdminRoute.ForumTopicViewer -> AdminForumTopicViewerContent(state = state)
             AdminRoute.ChatRouting -> AdminChatRoutingContent(
                 state = state,
                 onOverlayChange = onAllianceOverlayChange,
@@ -217,21 +229,6 @@ fun AdminScreen(
                 onServerFilter = onPlayersServerFilter,
                 onSearchChange = onPlayersSearchChange,
                 onPlayerClick = { selectedPlayer = it },
-            )
-            AdminRoute.ChatRooms -> AdminChatRoomsContent(
-                state = state,
-                newRoomTitle = newRoomTitle,
-                onNewRoomTitleChange = { newRoomTitle = it },
-                onCreateRoom = {
-                    onCreateRoom(newRoomTitle)
-                    newRoomTitle = ""
-                },
-                onRenameRoom = { room ->
-                    renameRoomTarget = room
-                    renameDraft = room.title
-                },
-                onDeleteRoom = { deleteRoomTarget = it },
-                onClearRoomError = onClearRoomError,
             )
         }
     }
@@ -381,55 +378,6 @@ fun AdminScreen(
         )
     }
 
-    renameRoomTarget?.let { room ->
-        AlertDialog(
-            onDismissRequest = { renameRoomTarget = null },
-            containerColor = SquadRelaySurfaces.dialogColor(),
-            title = { Text(stringResource(R.string.admin_rooms_rename)) },
-            text = {
-                OutlinedTextField(
-                    value = renameDraft,
-                    onValueChange = { renameDraft = it },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.admin_room_new_title)) },
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onRenameRoom(room.id, renameDraft)
-                        renameRoomTarget = null
-                    },
-                    enabled = renameDraft.isNotBlank(),
-                ) { Text(stringResource(R.string.admin_save_nickname)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { renameRoomTarget = null }) {
-                    Text(stringResource(R.string.admin_delete_cancel))
-                }
-            },
-        )
-    }
-
-    deleteRoomTarget?.let { room ->
-        AlertDialog(
-            onDismissRequest = { deleteRoomTarget = null },
-            containerColor = SquadRelaySurfaces.dialogColor(),
-            title = { Text(stringResource(R.string.admin_rooms_delete_title)) },
-            text = { Text(stringResource(R.string.admin_rooms_delete_body, room.title)) },
-            confirmButton = {
-                TextButton(onClick = { onDeleteRoom(room.id); deleteRoomTarget = null }) {
-                    Text(stringResource(R.string.admin_delete_confirm), color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteRoomTarget = null }) {
-                    Text(stringResource(R.string.admin_delete_cancel))
-                }
-            },
-        )
-    }
 }
 
 @Composable
@@ -525,14 +473,6 @@ private fun AdminHubContent(
                 onClick = { onOpenRoute(AdminRoute.ChatRouting) },
             )
         }
-        item {
-            AdminHubTile(
-                icon = { Icon(Icons.AutoMirrored.Outlined.Chat, null, tint = MaterialTheme.colorScheme.primary) },
-                title = stringResource(R.string.admin_rooms_title),
-                subtitle = stringResource(R.string.admin_hub_rooms_sub),
-                onClick = { onOpenRoute(AdminRoute.ChatRooms) },
-            )
-        }
     }
 }
 
@@ -586,30 +526,11 @@ private fun AdminPlayersContent(
             singleLine = true,
             label = { Text(stringResource(R.string.admin_game_servers_search)) },
         )
-        if (state.playersSegment == AdminPlayersSegment.ALL) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = state.gameServerFilter == null,
-                    onClick = { onServerFilter(null) },
-                    label = { Text(stringResource(R.string.admin_game_servers_filter_all)) },
-                )
-                state.gameServers.forEach { s ->
-                    FilterChip(
-                        selected = state.gameServerFilter == s.serverNumber,
-                        onClick = { onServerFilter(s.serverNumber) },
-                        label = {
-                            Text(
-                                stringResource(
-                                    R.string.admin_game_servers_filter,
-                                    s.serverNumber,
-                                    s.userCount,
-                                ),
-                            )
-                        },
-                    )
-                }
-            }
-        }
+        AdminServerFilterChips(
+            servers = state.gameServers,
+            selected = state.gameServerFilter,
+            onSelect = onServerFilter,
+        )
         if (state.usersOnServersLoading && state.usersOnServers.isEmpty()) {
             Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(strokeWidth = 2.dp)
@@ -712,10 +633,42 @@ private fun AdminHubTile(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AdminServerFilterChips(
+    servers: List<com.lastasylum.alliance.data.admin.AdminServerSummaryDto>,
+    selected: Int?,
+    onSelect: (Int?) -> Unit,
+) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(
+            selected = selected == null,
+            onClick = { onSelect(null) },
+            label = { Text(stringResource(R.string.admin_game_servers_filter_all)) },
+        )
+        servers.forEach { s ->
+            FilterChip(
+                selected = selected == s.serverNumber,
+                onClick = { onSelect(s.serverNumber) },
+                label = {
+                    Text(
+                        stringResource(
+                            R.string.admin_game_servers_filter,
+                            s.serverNumber,
+                            s.userCount,
+                        ),
+                    )
+                },
+            )
+        }
+    }
+}
+
 @Composable
 private fun AdminPlayerTeamsContent(
     state: AdminUiState,
     onSearchChange: (String) -> Unit,
+    onServerFilter: (Int?) -> Unit,
     onTeamClick: (PlayerTeamAdminDto) -> Unit,
 ) {
     val q = state.teamSearchQuery.trim().lowercase()
@@ -744,6 +697,11 @@ private fun AdminPlayerTeamsContent(
                 label = { Text(stringResource(R.string.admin_teams_search_hint)) },
             )
             state.playerTeamsError?.let { AdminErrorBanner(it) {} }
+            AdminServerFilterChips(
+                servers = state.gameServers,
+                selected = state.teamsServerFilter,
+                onSelect = onServerFilter,
+            )
         }
         if (filtered.isEmpty() && !state.playerTeamsLoading) {
             item {
@@ -798,134 +756,6 @@ private fun AdminTeamListRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-        }
-    }
-}
-
-@Composable
-private fun AdminTeamMembersContent(
-    state: AdminUiState,
-    onEditTeam: () -> Unit,
-    onMemberClick: (AdminTeamMemberDto) -> Unit,
-) {
-    LazyColumn(
-        contentPadding = PaddingValues(
-            horizontal = SquadRelayDimens.contentPaddingHorizontal,
-            vertical = 8.dp,
-        ),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        item {
-            state.teamMembersError?.let { AdminErrorBanner(it) {} }
-            state.selectedTeam?.let { team ->
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.medium,
-                    color = SquadRelaySurfaces.panelColor(0.45f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
-                ) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                "${teamTagWithServerPrefix(team.tag.uppercase(), team.leaderServerNumber)} ${team.displayName}",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Text(
-                                stringResource(R.string.admin_team_leader, team.leaderUsername),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Text(
-                                stringResource(R.string.admin_team_routing, team.chatRoutingSummary),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        IconButton(onClick = onEditTeam) {
-                            Icon(
-                                Icons.Outlined.Edit,
-                                contentDescription = stringResource(R.string.admin_team_edit_cd),
-                            )
-                        }
-                    }
-                }
-            }
-        }
-        if (state.teamMembers.isEmpty() && !state.teamMembersLoading) {
-            item {
-                Text(
-                    stringResource(R.string.admin_members_empty),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 16.dp),
-                )
-            }
-        }
-        items(state.teamMembers, key = { it.userId }) { member ->
-            AdminMemberListRow(member = member, onClick = { onMemberClick(member) })
-        }
-    }
-}
-
-@Composable
-private fun AdminMemberListRow(
-    member: AdminTeamMemberDto,
-    onClick: () -> Unit,
-) {
-    val serverLabel = formatServerLabel(member.serverNumber)
-    val nickLine = if (member.gameNickname.isNotBlank() && serverLabel != null) {
-        "$serverLabel · ${member.gameNickname}"
-    } else {
-        member.gameNickname.ifBlank { member.username }
-    }
-    AdminMemberListRow(
-        username = nickLine + if (member.isLeader) " ★" else "",
-        subtitle = buildString {
-            append(member.teamRole)
-            append(" · ")
-            append(member.allianceRole)
-            append(" · ")
-            append(member.allianceName)
-            if (member.accountUsername.isNotBlank() && member.accountUsername != member.gameNickname) {
-                append(" · ")
-                append(member.accountUsername)
-            }
-        },
-        onClick = onClick,
-    )
-}
-
-@Composable
-private fun AdminMemberListRow(
-    username: String,
-    subtitle: String,
-    onClick: () -> Unit,
-) {
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        color = SquadRelaySurfaces.panelColor(0.38f),
-    ) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(username, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
-            }
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -987,54 +817,6 @@ private fun AdminChatRoutingContent(
                             Text(stringResource(R.string.admin_sticker_short))
                         }
                     }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AdminChatRoomsContent(
-    state: AdminUiState,
-    newRoomTitle: String,
-    onNewRoomTitleChange: (String) -> Unit,
-    onCreateRoom: () -> Unit,
-    onRenameRoom: (ChatRoomDto) -> Unit,
-    onDeleteRoom: (ChatRoomDto) -> Unit,
-    onClearRoomError: () -> Unit,
-) {
-    LazyColumn(
-        contentPadding = PaddingValues(
-            horizontal = SquadRelayDimens.contentPaddingHorizontal,
-            vertical = 8.dp,
-        ),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        item {
-            Text(stringResource(R.string.admin_rooms_subtitle), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = newRoomTitle,
-                    onValueChange = onNewRoomTitleChange,
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.admin_rooms_new_hint)) },
-                )
-                Button(onClick = onCreateRoom, enabled = newRoomTitle.isNotBlank()) {
-                    Text(stringResource(R.string.admin_rooms_create))
-                }
-            }
-            state.roomError?.let { AdminErrorBanner(it, onDismiss = onClearRoomError) }
-        }
-        items(state.rooms, key = { it.id }) { room ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(room.title, style = MaterialTheme.typography.bodyMedium)
-                    Text(room.allianceId ?: "—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                TextButton(onClick = { onRenameRoom(room) }) { Text(stringResource(R.string.admin_rooms_rename)) }
-                TextButton(onClick = { onDeleteRoom(room) }) {
-                    Text(stringResource(R.string.admin_rooms_delete), color = MaterialTheme.colorScheme.error)
                 }
             }
         }

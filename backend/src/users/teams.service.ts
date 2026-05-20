@@ -57,6 +57,8 @@ export type PlayerTeamAdminRow = {
   leaderUserId: string;
   leaderUsername: string;
   leaderServerNumber: number | null;
+  /** Distinct server numbers where the team has at least one member identity. */
+  serverNumbers: number[];
   memberCount: number;
   /** Distinct chat routing keys (allianceName) among members. */
   chatRoutingSummary: string;
@@ -993,7 +995,9 @@ export class TeamsService {
     return this.teamModel.countDocuments({}).exec();
   }
 
-  async listAllTeamsForAdmin(): Promise<PlayerTeamAdminRow[]> {
+  async listAllTeamsForAdmin(opts?: {
+    serverNumber?: number;
+  }): Promise<PlayerTeamAdminRow[]> {
     const teams = await this.teamModel
       .find({})
       .sort({ displayName: 1, tag: 1 })
@@ -1001,12 +1005,18 @@ export class TeamsService {
     const out: PlayerTeamAdminRow[] = [];
     for (const team of teams) {
       await this.migrateLegacyIfNeeded(team);
+      const teamIdStr = team._id.toString();
+      const serverNumbers =
+        await this.gameIdentities.collectServerNumbersForTeam(teamIdStr);
+      if (
+        opts?.serverNumber != null &&
+        !serverNumbers.includes(opts.serverNumber)
+      ) {
+        continue;
+      }
       const leader = await this.userModel.findById(team.leaderUserId).exec();
       const leaderServer = leader
-        ? this.gameIdentities.resolveServerNumberForTeam(
-            leader,
-            team._id.toString(),
-          )
+        ? this.gameIdentities.resolveServerNumberForTeam(leader, teamIdStr)
         : null;
       const memberUsers = await this.userModel
         .find({ playerTeamId: team._id })
@@ -1021,22 +1031,35 @@ export class TeamsService {
         ),
       ];
       out.push({
-        id: team._id.toString(),
+        id: teamIdStr,
         tag: team.tag,
         displayName: team.displayName,
         leaderUserId: team.leaderUserId.toString(),
         leaderUsername: leader
           ? this.gameIdentities.resolveMemberDisplayNickname(
               leader,
-              team._id.toString(),
+              teamIdStr,
             )
           : '—',
         leaderServerNumber: leaderServer,
+        serverNumbers,
         memberCount: team.squadMembers.length,
         chatRoutingSummary: routes.length > 0 ? routes.join(', ') : '—',
       });
     }
     return out;
+  }
+
+  async assertTeamExistsForAdmin(teamId: string): Promise<PlayerTeamDocument> {
+    if (!Types.ObjectId.isValid(teamId)) {
+      throw new NotFoundException('Team not found');
+    }
+    const team = await this.teamModel.findById(teamId).exec();
+    if (!team) {
+      throw new NotFoundException('Team not found');
+    }
+    await this.migrateLegacyIfNeeded(team);
+    return team;
   }
 
   async getTeamDetailForAdmin(teamId: string): Promise<{

@@ -1,5 +1,10 @@
 package com.lastasylum.alliance.data.admin
 
+import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.ChatRoomDto
+import com.lastasylum.alliance.data.teams.TeamForumMessageDto
+import com.lastasylum.alliance.data.teams.TeamForumTopicDto
+import com.lastasylum.alliance.data.teams.TeamNewsListPageDto
 import com.lastasylum.alliance.data.users.TeamMemberDto
 import retrofit2.http.Body
 import retrofit2.http.GET
@@ -13,7 +18,9 @@ interface AdminApi {
     suspend fun getOverview(): AdminOverviewDto
 
     @GET("admin/player-teams")
-    suspend fun listPlayerTeams(): List<PlayerTeamAdminDto>
+    suspend fun listPlayerTeams(
+        @Query("serverNumber") serverNumber: Int? = null,
+    ): List<PlayerTeamAdminDto>
 
     @GET("admin/player-teams/{teamId}")
     suspend fun getPlayerTeam(
@@ -62,6 +69,36 @@ interface AdminApi {
         @Query("q") q: String? = null,
         @Query("withoutTeam") withoutTeam: Boolean? = null,
     ): List<AdminUserOnServerDto>
+
+    @GET("admin/player-teams/{teamId}/chat-rooms")
+    suspend fun listTeamChatRooms(
+        @Path("teamId") teamId: String,
+    ): List<ChatRoomDto>
+
+    @GET("admin/player-teams/{teamId}/news")
+    suspend fun listTeamNews(
+        @Path("teamId") teamId: String,
+        @Query("limit") limit: Int = 100,
+    ): TeamNewsListPageDto
+
+    @GET("admin/player-teams/{teamId}/forum/topics")
+    suspend fun listTeamForumTopics(
+        @Path("teamId") teamId: String,
+    ): List<TeamForumTopicDto>
+
+    @GET("admin/player-teams/{teamId}/forum/topics/{topicId}/messages")
+    suspend fun listTeamForumMessages(
+        @Path("teamId") teamId: String,
+        @Path("topicId") topicId: String,
+        @Query("limit") limit: Int = 100,
+    ): List<TeamForumMessageDto>
+
+    @GET("admin/chat-rooms/{roomId}/messages")
+    suspend fun listChatRoomMessages(
+        @Path("roomId") roomId: String,
+        @Query("before") before: String? = null,
+        @Query("limit") limit: Int = 80,
+    ): List<ChatMessage>
 
     @PATCH("admin/users/{userId}/game-identities/{identityId}")
     suspend fun updateGameIdentity(

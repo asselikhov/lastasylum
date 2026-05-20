@@ -584,6 +584,25 @@ export class GameIdentitiesService {
       }));
   }
 
+  async collectServerNumbersForTeam(teamId: string): Promise<number[]> {
+    if (!Types.ObjectId.isValid(teamId)) {
+      return [];
+    }
+    const tid = new Types.ObjectId(teamId);
+    const rows = await this.userModel
+      .aggregate<{ _id: number }>([
+        { $match: { 'gameIdentities.playerTeamId': tid } },
+        { $unwind: '$gameIdentities' },
+        { $match: { 'gameIdentities.playerTeamId': tid } },
+        { $group: { _id: '$gameIdentities.serverNumber' } },
+        { $sort: { _id: 1 } },
+      ])
+      .exec();
+    return rows
+      .map((r) => r._id)
+      .filter((n) => Number.isFinite(n) && n >= 1);
+  }
+
   resolveIdentityIdForTeam(
     user: UserDocument,
     teamId: string,
@@ -608,10 +627,15 @@ export class GameIdentitiesService {
     const filter: Record<string, unknown> = {
       gameIdentities: { $exists: true, $ne: [] },
     };
+    const identityMatch: Record<string, unknown> = {};
     if (opts.serverNumber != null) {
-      filter.gameIdentities = {
-        $elemMatch: { serverNumber: opts.serverNumber },
-      };
+      identityMatch.serverNumber = opts.serverNumber;
+    }
+    if (opts.withoutTeam) {
+      identityMatch.playerTeamId = null;
+    }
+    if (Object.keys(identityMatch).length > 0) {
+      filter.gameIdentities = { $elemMatch: identityMatch };
     }
     const users = await this.userModel.find(filter).exec();
     const teamIds = [
@@ -657,6 +681,12 @@ export class GameIdentitiesService {
         const tid = g.playerTeamId?.toString() ?? null;
         const team = tid ? teamById.get(tid) : undefined;
         if (opts.withoutTeam && tid != null) {
+          continue;
+        }
+        if (
+          opts.serverNumber != null &&
+          g.serverNumber !== opts.serverNumber
+        ) {
           continue;
         }
         const row: AdminUserOnServerRow = {

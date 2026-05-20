@@ -342,6 +342,15 @@
     <string name="admin_team_edit_name">Название команды</string>
     <string name="admin_team_edit_saved">Команда обновлена</string>
     <string name="admin_team_edit_cd">Редактировать тег и название</string>
+    <string name="admin_team_tab_members">Участники</string>
+    <string name="admin_team_tab_chat">Чат комнаты</string>
+    <string name="admin_team_tab_news">Новости</string>
+    <string name="admin_team_tab_forum">Форум</string>
+    <string name="admin_team_chat_empty">Нет комнат чата для этой команды</string>
+    <string name="admin_team_news_empty">Новостей пока нет</string>
+    <string name="admin_team_forum_empty">Тем форума пока нет</string>
+    <string name="admin_team_forum_messages">Сообщений: %1$d</string>
+    <string name="admin_teams_server_filter">Сервер</string>
     <string name="admin_remove_team_confirm_body_short">Игрок будет убран из команды.</string>
     <string name="admin_delete_body_short">Аккаунт и все сессии будут удалены без возможности восстановления.</string>
     <string name="admin_hub_teams">Игровые команды</string>

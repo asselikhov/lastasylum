@@ -146,7 +146,6 @@ fun SquadRelayApp() {
                                     adminViewModelFactory = AdminViewModelFactory(
                                         application = application,
                                         usersRepository = appContainer.usersRepository,
-                                        chatRoomsRepository = appContainer.chatRoomsRepository,
                                         adminRepository = appContainer.adminRepository,
                                     ),
                                 )

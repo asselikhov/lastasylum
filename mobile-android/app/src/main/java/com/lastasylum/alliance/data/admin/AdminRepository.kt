@@ -1,5 +1,10 @@
 package com.lastasylum.alliance.data.admin
 
+import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.ChatRoomDto
+import com.lastasylum.alliance.data.teams.TeamForumMessageDto
+import com.lastasylum.alliance.data.teams.TeamForumTopicDto
+import com.lastasylum.alliance.data.teams.TeamNewsListPageDto
 import com.lastasylum.alliance.data.users.TeamMemberDto
 
 class AdminRepository(
@@ -8,8 +13,10 @@ class AdminRepository(
     suspend fun getOverview(): Result<AdminOverviewDto> =
         runCatching { adminApi.getOverview() }
 
-    suspend fun listPlayerTeams(): Result<List<PlayerTeamAdminDto>> =
-        runCatching { adminApi.listPlayerTeams() }
+    suspend fun listPlayerTeams(
+        serverNumber: Int? = null,
+    ): Result<List<PlayerTeamAdminDto>> =
+        runCatching { adminApi.listPlayerTeams(serverNumber = serverNumber) }
 
     suspend fun getPlayerTeam(teamId: String): Result<PlayerTeamDetailAdminDto> =
         runCatching { adminApi.getPlayerTeam(teamId) }
@@ -79,6 +86,29 @@ class AdminRepository(
                 q = q?.trim()?.takeIf { it.isNotEmpty() },
                 withoutTeam = if (withoutTeam) true else null,
             )
+        }
+
+    suspend fun listTeamChatRooms(teamId: String): Result<List<ChatRoomDto>> =
+        runCatching { adminApi.listTeamChatRooms(teamId) }
+
+    suspend fun listTeamNews(teamId: String): Result<TeamNewsListPageDto> =
+        runCatching { adminApi.listTeamNews(teamId) }
+
+    suspend fun listTeamForumTopics(teamId: String): Result<List<TeamForumTopicDto>> =
+        runCatching { adminApi.listTeamForumTopics(teamId) }
+
+    suspend fun listTeamForumMessages(
+        teamId: String,
+        topicId: String,
+    ): Result<List<TeamForumMessageDto>> =
+        runCatching { adminApi.listTeamForumMessages(teamId, topicId) }
+
+    suspend fun listChatRoomMessages(
+        roomId: String,
+        before: String? = null,
+    ): Result<List<ChatMessage>> =
+        runCatching {
+            adminApi.listChatRoomMessages(roomId = roomId, before = before)
         }
 
     suspend fun updateGameIdentity(

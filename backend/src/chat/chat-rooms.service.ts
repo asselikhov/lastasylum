@@ -43,6 +43,20 @@ export class ChatRoomsService {
       .exec();
   }
 
+  /** R5 admin: chat rooms scoped to a player team (`pt:<teamId>`). */
+  async listForPlayerTeamAdmin(teamId: string) {
+    if (!Types.ObjectId.isValid(teamId)) {
+      return [];
+    }
+    const chatScope = playerTeamChatAllianceId(teamId);
+    await this.ensureAllianceChatRoomsForScope(chatScope);
+    return this.roomModel
+      .find({ allianceId: chatScope, archivedAt: null })
+      .sort({ sortOrder: 1, title: 1 })
+      .lean()
+      .exec();
+  }
+
   /**
    * «Мир» for everyone; team hub (display name) + «Рейд» only when [user.playerTeamId] is set.
    */

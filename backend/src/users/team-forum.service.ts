@@ -340,6 +340,62 @@ export class TeamForumService {
     };
   }
 
+  async listTopicsForAdmin(teamId: string): Promise<TeamForumTopicRow[]> {
+    await this.teams.assertTeamExistsForAdmin(teamId);
+    const tid = new Types.ObjectId(teamId);
+    const rows = await this.topicModel
+      .find({ teamId: tid })
+      .sort({ lastMessageAt: -1, updatedAt: -1 })
+      .lean();
+    const topicIds = rows.map(
+      (r) => (r as { _id: Types.ObjectId })._id as Types.ObjectId,
+    );
+    const countAgg = await this.messageModel.aggregate<{
+      _id: Types.ObjectId;
+      count: number;
+    }>([
+      { $match: { teamId: tid, deletedAt: null } },
+      { $group: { _id: '$topicId', count: { $sum: 1 } } },
+    ]);
+    const countMap = new Map(
+      countAgg.map((c) => [c._id.toString(), c.count]),
+    );
+    return rows.map((r) => {
+      const doc = r as unknown as TeamForumTopicDocument;
+      const id = doc._id.toString();
+      const actualCount = countMap.get(id) ?? 0;
+      return this.topicRow(doc, {
+        messageCount: actualCount,
+        unreadCount: 0,
+        lastReadMessageId: null,
+      });
+    });
+  }
+
+  async listMessagesForAdmin(
+    teamId: string,
+    topicId: string,
+    limitRaw = 100,
+  ): Promise<TeamForumMessageRow[]> {
+    await this.teams.assertTeamExistsForAdmin(teamId);
+    const teamOid = new Types.ObjectId(teamId);
+    const topOid = new Types.ObjectId(topicId);
+    const topic = await this.topicModel.findOne({
+      _id: topOid,
+      teamId: teamOid,
+    });
+    if (!topic) {
+      throw new NotFoundException('Topic not found');
+    }
+    const limit = Math.min(200, Math.max(1, Math.floor(limitRaw)));
+    const docs = await this.messageModel
+      .find({ teamId: teamOid, topicId: topOid, deletedAt: null })
+      .sort({ createdAt: 1 })
+      .limit(limit)
+      .exec();
+    return docs.map((doc) => this.messageRow(doc, null));
+  }
+
   async listTopics(teamId: string, userId: string): Promise<TeamForumTopicRow[]> {
     await this.teams.getTeamIfMemberOrThrow(teamId, userId);
     const tid = new Types.ObjectId(teamId);

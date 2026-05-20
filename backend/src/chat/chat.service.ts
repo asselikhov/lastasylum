@@ -475,6 +475,41 @@ export class ChatService {
     );
   }
 
+  /** R5 admin: read room history without membership check. */
+  async getRecentMessagesForAdmin(
+    roomId: string,
+    options?: { limit?: number; before?: string },
+  ) {
+    if (!Types.ObjectId.isValid(roomId)) {
+      throw new BadRequestException('Invalid roomId');
+    }
+    const room = await this.chatRoomsService.findById(roomId);
+    if (!room || room.archivedAt) {
+      throw new NotFoundException('Room not found');
+    }
+    const rawLimit = options?.limit ?? 50;
+    const limit = Math.min(200, Math.max(1, Math.floor(rawLimit)));
+    const filter: Record<string, unknown> = {
+      allianceId: room.allianceId,
+      roomId: room._id,
+      deletedAt: null,
+    };
+    const before = options?.before?.trim();
+    if (before) {
+      if (!Types.ObjectId.isValid(before)) {
+        throw new BadRequestException('Invalid before cursor');
+      }
+      filter._id = { $lt: new Types.ObjectId(before) };
+    }
+    const messages = await this.messageModel
+      .find(filter)
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean<MessageLean[]>()
+      .exec();
+    return this.enrichMessages(messages, '');
+  }
+
   async getRecentMessages(
     userId: string,
     roomId: string,

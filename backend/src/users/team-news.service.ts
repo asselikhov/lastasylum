@@ -263,6 +263,28 @@ export class TeamNewsService {
     };
   }
 
+  async listForAdmin(
+    teamId: string,
+    limit = 100,
+  ): Promise<{ items: TeamNewsListRow[]; nextCursor: string | null }> {
+    await this.teams.assertTeamExistsForAdmin(teamId);
+    const lim = Math.min(200, Math.max(1, limit));
+    const rows = await this.newsModel
+      .find({ teamId: new Types.ObjectId(teamId) })
+      .sort({ _id: -1 })
+      .limit(lim)
+      .lean<
+        Array<
+          TeamNews & { _id: Types.ObjectId; createdAt: Date; updatedAt: Date }
+        >
+      >()
+      .exec();
+    const authorIds = rows.map((r) => r.authorUserId);
+    const names = await this.usernamesFor(authorIds);
+    const items = rows.map((r) => this.toListRow(r, names, ''));
+    return { items, nextCursor: null };
+  }
+
   async list(
     teamId: string,
     userId: string,

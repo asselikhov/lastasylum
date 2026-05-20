@@ -177,9 +177,6 @@ fun AppNavigation(
     val msgNicknameSaved = stringResource(R.string.admin_players_save_game_ok)
     val msgTeamSaved = stringResource(R.string.admin_team_edit_saved)
     val msgDeleted = stringResource(R.string.admin_ok_deleted)
-    val msgRoomCreated = stringResource(R.string.admin_ok_room_created)
-    val msgRoomRenamed = stringResource(R.string.admin_ok_room_renamed)
-    val msgRoomDeleted = stringResource(R.string.admin_ok_room_deleted)
     val msgOverlaySaved = stringResource(R.string.admin_ok_overlay)
     val msgStickerSaved = stringResource(R.string.admin_sticker_saved)
     Scaffold(
@@ -413,9 +410,13 @@ fun AppNavigation(
                     onPlayersSearchChange = adminViewModel::setPlayersSearch,
                     onPlayersSegmentChange = adminViewModel::setPlayersSegment,
                     onPlayersServerFilter = adminViewModel::setPlayersServerFilter,
+                    onTeamsServerFilter = adminViewModel::setTeamsServerFilter,
+                    onTeamDetailTabChange = adminViewModel::setTeamDetailTab,
+                    onOpenChatRoom = adminViewModel::openChatRoomViewer,
+                    onOpenForumTopic = adminViewModel::openForumTopicViewer,
                     onRefreshOverview = adminViewModel::refreshOverview,
                     onRefreshPlayerTeams = adminViewModel::refreshPlayerTeams,
-                    onRefreshTeamMembers = adminViewModel::refreshTeamMembers,
+                    onRefreshTeamDetail = adminViewModel::refreshTeamDetail,
                     onRefreshPlayers = adminViewModel::refreshPlayersScreen,
                     onRefreshAlliances = adminViewModel::refreshAlliances,
                     onAllianceOverlayChange = { publicId, enabled ->
@@ -426,19 +427,12 @@ fun AppNavigation(
                     onToggleStickerAllianceRole = adminViewModel::toggleStickerAllianceRole,
                     onSaveStickerAccess = { adminViewModel.saveStickerAccess(msgStickerSaved) },
                     onClearStickerAccessError = adminViewModel::clearStickerAccessError,
-                    onRefreshRooms = adminViewModel::refreshRooms,
-                    onCreateRoom = { title -> adminViewModel.createChatRoom(title, msgRoomCreated) },
-                    onRenameRoom = { roomId, title ->
-                        adminViewModel.renameChatRoom(roomId, title, msgRoomRenamed)
-                    },
-                    onDeleteRoom = { roomId -> adminViewModel.deleteChatRoom(roomId, msgRoomDeleted) },
                     onApprove = { id -> adminViewModel.setMembership(id, "active", msgApproved) },
                     onRemoveFromTeam = { id -> adminViewModel.setMembership(id, "removed", msgRemoved) },
                     onRestorePending = { id -> adminViewModel.setMembership(id, "pending", msgPending) },
                     onSetRole = { memberId, newRole -> adminViewModel.setRole(memberId, newRole, msgRole) },
                     onDeleteUser = { memberId -> adminViewModel.deleteUser(memberId, msgDeleted) },
                     onClearActionError = adminViewModel::clearActionError,
-                    onClearRoomError = adminViewModel::clearRoomError,
                     onDismissSnack = adminViewModel::clearSnack,
                     onUpdateGameIdentity = { userId, identityId, nickname, server ->
                         adminViewModel.updateGameIdentityAdmin(

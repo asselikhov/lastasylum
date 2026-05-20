@@ -4,13 +4,11 @@ import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.lastasylum.alliance.data.admin.AdminRepository
-import com.lastasylum.alliance.data.chat.ChatRoomsRepository
 import com.lastasylum.alliance.data.users.UsersRepository
 
 class AdminViewModelFactory(
     private val application: Application,
     private val usersRepository: UsersRepository,
-    private val chatRoomsRepository: ChatRoomsRepository,
     private val adminRepository: AdminRepository,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
@@ -19,7 +17,6 @@ class AdminViewModelFactory(
             return AdminViewModel(
                 application,
                 usersRepository,
-                chatRoomsRepository,
                 adminRepository,
             ) as T
         }

@@ -8,9 +8,12 @@ import com.lastasylum.alliance.data.admin.AdminUserOnServerDto
 import com.lastasylum.alliance.data.admin.AllianceAdminDto
 import com.lastasylum.alliance.data.admin.PlayerTeamAdminDto
 import com.lastasylum.alliance.data.admin.PutAllianceStickerAccessBody
+import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatRoomDto
-import com.lastasylum.alliance.data.chat.ChatRoomsRepository
 import com.lastasylum.alliance.data.admin.AdminRepository
+import com.lastasylum.alliance.data.teams.TeamForumMessageDto
+import com.lastasylum.alliance.data.teams.TeamForumTopicDto
+import com.lastasylum.alliance.data.teams.TeamNewsListItemDto
 import com.lastasylum.alliance.data.users.TeamMemberDto
 import com.lastasylum.alliance.data.users.UsersRepository
 import com.lastasylum.alliance.ui.util.toUserMessageRu
@@ -26,6 +29,13 @@ enum class AdminPlayersSegment {
     WITHOUT_TEAM,
 }
 
+enum class AdminTeamDetailTab {
+    MEMBERS,
+    CHAT_ROOMS,
+    NEWS,
+    FORUM,
+}
+
 sealed interface AdminRoute {
     data object Hub : AdminRoute
     data object PlayerTeams : AdminRoute
@@ -35,7 +45,16 @@ sealed interface AdminRoute {
     ) : AdminRoute
     data object Players : AdminRoute
     data object ChatRouting : AdminRoute
-    data object ChatRooms : AdminRoute
+    data class ChatRoomViewer(
+        val teamId: String,
+        val roomId: String,
+        val roomTitle: String,
+    ) : AdminRoute
+    data class ForumTopicViewer(
+        val teamId: String,
+        val topicId: String,
+        val topicTitle: String,
+    ) : AdminRoute
 }
 
 data class AdminUiState(
@@ -48,7 +67,24 @@ data class AdminUiState(
     val playerTeamsLoading: Boolean = false,
     val playerTeamsError: String? = null,
     val teamSearchQuery: String = "",
+    val teamsServerFilter: Int? = null,
     val selectedTeam: PlayerTeamAdminDto? = null,
+    val teamDetailTab: AdminTeamDetailTab = AdminTeamDetailTab.MEMBERS,
+    val teamChatRooms: List<ChatRoomDto> = emptyList(),
+    val teamChatRoomsLoading: Boolean = false,
+    val teamChatRoomsError: String? = null,
+    val teamNews: List<TeamNewsListItemDto> = emptyList(),
+    val teamNewsLoading: Boolean = false,
+    val teamNewsError: String? = null,
+    val teamForumTopics: List<TeamForumTopicDto> = emptyList(),
+    val teamForumLoading: Boolean = false,
+    val teamForumError: String? = null,
+    val chatRoomMessages: List<ChatMessage> = emptyList(),
+    val chatRoomMessagesLoading: Boolean = false,
+    val chatRoomMessagesError: String? = null,
+    val forumTopicMessages: List<TeamForumMessageDto> = emptyList(),
+    val forumTopicMessagesLoading: Boolean = false,
+    val forumTopicMessagesError: String? = null,
     val teamMembers: List<AdminTeamMemberDto> = emptyList(),
     val teamMembersLoading: Boolean = false,
     val teamMembersError: String? = null,
@@ -62,9 +98,6 @@ data class AdminUiState(
     val stickerAccessError: String? = null,
     val stickerRolesZlobyaka: Set<String> = emptySet(),
     val stickerUsersZlobyaka: Set<String> = emptySet(),
-    val rooms: List<ChatRoomDto> = emptyList(),
-    val roomsLoading: Boolean = false,
-    val roomError: String? = null,
     val snackMessage: String? = null,
     val actionError: String? = null,
     val gameServers: List<com.lastasylum.alliance.data.admin.AdminServerSummaryDto> = emptyList(),
@@ -82,7 +115,6 @@ typealias AdminPlayerRow = com.lastasylum.alliance.data.admin.AdminUserOnServerD
 class AdminViewModel(
     application: Application,
     private val usersRepository: UsersRepository,
-    private val chatRoomsRepository: ChatRoomsRepository,
     private val adminRepository: AdminRepository,
 ) : AndroidViewModel(application) {
     private val _state = MutableStateFlow(AdminUiState())
@@ -96,7 +128,19 @@ class AdminViewModel(
     }
 
     fun navigateBack() {
-        when (_state.value.route) {
+        when (val route = _state.value.route) {
+            is AdminRoute.ChatRoomViewer -> {
+                _state.value = _state.value.copy(
+                    route = AdminRoute.PlayerTeamDetail(route.teamId, teamDetailTitle(route.teamId)),
+                    teamDetailTab = AdminTeamDetailTab.CHAT_ROOMS,
+                )
+            }
+            is AdminRoute.ForumTopicViewer -> {
+                _state.value = _state.value.copy(
+                    route = AdminRoute.PlayerTeamDetail(route.teamId, teamDetailTitle(route.teamId)),
+                    teamDetailTab = AdminTeamDetailTab.FORUM,
+                )
+            }
             is AdminRoute.PlayerTeamDetail -> {
                 _state.value = _state.value.copy(route = AdminRoute.PlayerTeams)
             }
@@ -105,22 +149,38 @@ class AdminViewModel(
         }
     }
 
+    private fun teamDetailTitle(teamId: String): String {
+        val team = _state.value.selectedTeam
+        if (team != null && team.id == teamId) {
+            val tagLabel = com.lastasylum.alliance.ui.util.teamTagWithServerPrefix(
+                team.tag.uppercase(),
+                team.leaderServerNumber,
+            )
+            return "$tagLabel ${team.displayName}"
+        }
+        return teamId
+    }
+
     fun openRoute(route: AdminRoute) {
         _state.value = _state.value.copy(route = route, actionError = null)
         when (route) {
-            AdminRoute.PlayerTeams -> refreshPlayerTeams()
+            AdminRoute.PlayerTeams -> {
+                refreshGameServerSummaries()
+                refreshPlayerTeams()
+            }
             AdminRoute.Players -> refreshPlayersScreen()
             AdminRoute.ChatRouting -> refreshAlliances()
-            AdminRoute.ChatRooms -> refreshRooms()
             else -> Unit
         }
     }
 
+    fun setTeamsServerFilter(serverNumber: Int?) {
+        _state.value = _state.value.copy(teamsServerFilter = serverNumber)
+        refreshPlayerTeams()
+    }
+
     fun setPlayersSegment(segment: AdminPlayersSegment) {
-        _state.value = _state.value.copy(
-            playersSegment = segment,
-            gameServerFilter = if (segment == AdminPlayersSegment.WITHOUT_TEAM) null else _state.value.gameServerFilter,
-        )
+        _state.value = _state.value.copy(playersSegment = segment)
         refreshPlayersList()
     }
 
@@ -169,7 +229,7 @@ class AdminViewModel(
             _state.value = _state.value.copy(usersOnServersLoading = true, usersOnServersError = null)
             val withoutTeam = _state.value.playersSegment == AdminPlayersSegment.WITHOUT_TEAM
             adminRepository.listUsersOnServers(
-                serverNumber = if (withoutTeam) null else _state.value.gameServerFilter,
+                serverNumber = _state.value.gameServerFilter,
                 q = _state.value.playersSearchQuery,
                 withoutTeam = withoutTeam,
             )
@@ -259,10 +319,148 @@ class AdminViewModel(
         _state.value = _state.value.copy(
             route = AdminRoute.PlayerTeamDetail(team.id, "$tagLabel ${team.displayName}"),
             selectedTeam = team,
+            teamDetailTab = AdminTeamDetailTab.MEMBERS,
             teamMembers = emptyList(),
             teamMembersError = null,
+            teamChatRooms = emptyList(),
+            teamNews = emptyList(),
+            teamForumTopics = emptyList(),
         )
-        refreshTeamMembers(team.id)
+        refreshTeamDetailTab(team.id, AdminTeamDetailTab.MEMBERS)
+    }
+
+    fun setTeamDetailTab(tab: AdminTeamDetailTab) {
+        val teamId = (_state.value.route as? AdminRoute.PlayerTeamDetail)?.teamId ?: return
+        _state.value = _state.value.copy(teamDetailTab = tab)
+        refreshTeamDetailTab(teamId, tab)
+    }
+
+    fun openChatRoomViewer(teamId: String, room: ChatRoomDto) {
+        _state.value = _state.value.copy(
+            route = AdminRoute.ChatRoomViewer(teamId, room.id, room.title),
+            chatRoomMessages = emptyList(),
+            chatRoomMessagesError = null,
+        )
+        refreshChatRoomMessages(room.id)
+    }
+
+    fun openForumTopicViewer(teamId: String, topic: TeamForumTopicDto) {
+        _state.value = _state.value.copy(
+            route = AdminRoute.ForumTopicViewer(teamId, topic.id, topic.title),
+            forumTopicMessages = emptyList(),
+            forumTopicMessagesError = null,
+        )
+        refreshForumTopicMessages(teamId, topic.id)
+    }
+
+    private fun refreshTeamDetailTab(teamId: String, tab: AdminTeamDetailTab) {
+        when (tab) {
+            AdminTeamDetailTab.MEMBERS -> refreshTeamMembers(teamId)
+            AdminTeamDetailTab.CHAT_ROOMS -> refreshTeamChatRooms(teamId)
+            AdminTeamDetailTab.NEWS -> refreshTeamNews(teamId)
+            AdminTeamDetailTab.FORUM -> refreshTeamForumTopics(teamId)
+        }
+    }
+
+    fun refreshTeamChatRooms(teamId: String) {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(teamChatRoomsLoading = true, teamChatRoomsError = null)
+            adminRepository.listTeamChatRooms(teamId)
+                .onSuccess { list ->
+                    _state.value = _state.value.copy(
+                        teamChatRoomsLoading = false,
+                        teamChatRooms = list,
+                    )
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(
+                        teamChatRoomsLoading = false,
+                        teamChatRoomsError = e.toUserMessageRu(res),
+                    )
+                }
+        }
+    }
+
+    fun refreshTeamNews(teamId: String) {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(teamNewsLoading = true, teamNewsError = null)
+            adminRepository.listTeamNews(teamId)
+                .onSuccess { page ->
+                    _state.value = _state.value.copy(
+                        teamNewsLoading = false,
+                        teamNews = page.items,
+                    )
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(
+                        teamNewsLoading = false,
+                        teamNewsError = e.toUserMessageRu(res),
+                    )
+                }
+        }
+    }
+
+    fun refreshTeamForumTopics(teamId: String) {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(teamForumLoading = true, teamForumError = null)
+            adminRepository.listTeamForumTopics(teamId)
+                .onSuccess { list ->
+                    _state.value = _state.value.copy(
+                        teamForumLoading = false,
+                        teamForumTopics = list,
+                    )
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(
+                        teamForumLoading = false,
+                        teamForumError = e.toUserMessageRu(res),
+                    )
+                }
+        }
+    }
+
+    fun refreshChatRoomMessages(roomId: String) {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(
+                chatRoomMessagesLoading = true,
+                chatRoomMessagesError = null,
+            )
+            adminRepository.listChatRoomMessages(roomId)
+                .onSuccess { msgs ->
+                    _state.value = _state.value.copy(
+                        chatRoomMessagesLoading = false,
+                        chatRoomMessages = msgs.reversed(),
+                    )
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(
+                        chatRoomMessagesLoading = false,
+                        chatRoomMessagesError = e.toUserMessageRu(res),
+                    )
+                }
+        }
+    }
+
+    fun refreshForumTopicMessages(teamId: String, topicId: String) {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(
+                forumTopicMessagesLoading = true,
+                forumTopicMessagesError = null,
+            )
+            adminRepository.listTeamForumMessages(teamId, topicId)
+                .onSuccess { msgs ->
+                    _state.value = _state.value.copy(
+                        forumTopicMessagesLoading = false,
+                        forumTopicMessages = msgs,
+                    )
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(
+                        forumTopicMessagesLoading = false,
+                        forumTopicMessagesError = e.toUserMessageRu(res),
+                    )
+                }
+        }
     }
 
     fun clearSnack() {
@@ -271,10 +469,6 @@ class AdminViewModel(
 
     fun clearActionError() {
         _state.value = _state.value.copy(actionError = null)
-    }
-
-    fun clearRoomError() {
-        _state.value = _state.value.copy(roomError = null)
     }
 
     fun refreshOverview() {
@@ -300,7 +494,7 @@ class AdminViewModel(
     fun refreshPlayerTeams() {
         viewModelScope.launch {
             _state.value = _state.value.copy(playerTeamsLoading = true, playerTeamsError = null)
-            adminRepository.listPlayerTeams()
+            adminRepository.listPlayerTeams(serverNumber = _state.value.teamsServerFilter)
                 .onSuccess { list ->
                     _state.value = _state.value.copy(
                         playerTeamsLoading = false,
@@ -318,6 +512,10 @@ class AdminViewModel(
 
     fun setTeamSearchQuery(raw: String) {
         _state.value = _state.value.copy(teamSearchQuery = raw)
+    }
+
+    fun refreshTeamDetail(teamId: String) {
+        refreshTeamDetailTab(teamId, _state.value.teamDetailTab)
     }
 
     fun refreshTeamMembers(teamId: String) {
@@ -438,66 +636,6 @@ class AdminViewModel(
         _state.value = _state.value.copy(stickerAccessError = null)
     }
 
-    fun refreshRooms() {
-        viewModelScope.launch {
-            _state.value = _state.value.copy(roomsLoading = true, roomError = null)
-            chatRoomsRepository.listRooms()
-                .onSuccess { list ->
-                    _state.value = _state.value.copy(
-                        roomsLoading = false,
-                        rooms = list.sortedWith(compareBy({ it.sortOrder }, { it.title })),
-                    )
-                }
-                .onFailure { e ->
-                    _state.value = _state.value.copy(
-                        roomsLoading = false,
-                        roomError = e.toUserMessageRu(res),
-                    )
-                }
-        }
-    }
-
-    fun createChatRoom(title: String, okMessage: String) {
-        if (title.isBlank()) return
-        viewModelScope.launch {
-            chatRoomsRepository.createRoom(title.trim())
-                .onSuccess {
-                    _state.value = _state.value.copy(snackMessage = okMessage)
-                    refreshRooms()
-                }
-                .onFailure { e ->
-                    _state.value = _state.value.copy(roomError = e.toUserMessageRu(res))
-                }
-        }
-    }
-
-    fun renameChatRoom(roomId: String, title: String, okMessage: String) {
-        if (title.isBlank()) return
-        viewModelScope.launch {
-            chatRoomsRepository.updateRoom(roomId, title = title.trim())
-                .onSuccess {
-                    _state.value = _state.value.copy(snackMessage = okMessage)
-                    refreshRooms()
-                }
-                .onFailure { e ->
-                    _state.value = _state.value.copy(roomError = e.toUserMessageRu(res))
-                }
-        }
-    }
-
-    fun deleteChatRoom(roomId: String, okMessage: String) {
-        viewModelScope.launch {
-            chatRoomsRepository.deleteRoom(roomId)
-                .onSuccess {
-                    _state.value = _state.value.copy(snackMessage = okMessage)
-                    refreshRooms()
-                }
-                .onFailure { e ->
-                    _state.value = _state.value.copy(roomError = e.toUserMessageRu(res))
-                }
-        }
-    }
-
     fun setMembership(userId: String, status: String, okMessage: String) {
         viewModelScope.launch {
             usersRepository.updateMembership(userId, status)
@@ -555,7 +693,11 @@ class AdminViewModel(
     private fun reloadCurrentList() {
         when (val route = _state.value.route) {
             AdminRoute.PlayerTeams -> refreshPlayerTeams()
-            is AdminRoute.PlayerTeamDetail -> refreshTeamMembers(route.teamId)
+            is AdminRoute.PlayerTeamDetail ->
+                refreshTeamDetailTab(route.teamId, _state.value.teamDetailTab)
+            is AdminRoute.ChatRoomViewer -> refreshChatRoomMessages(route.roomId)
+            is AdminRoute.ForumTopicViewer ->
+                refreshForumTopicMessages(route.teamId, route.topicId)
             AdminRoute.Players -> refreshPlayersScreen()
             else -> Unit
         }
