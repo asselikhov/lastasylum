@@ -132,7 +132,29 @@ describe('UsersService', () => {
       );
     });
 
+    it('online does not downgrade fresh ingame overlay presence', async () => {
+      execFindByIdLean.mockResolvedValue({
+        presenceStatus: 'ingame',
+        lastPresenceAt: new Date(),
+      });
+      await usersService.updatePresence('u1', 'online');
+      expect(updateOne).toHaveBeenCalledWith(
+        { _id: 'u1' },
+        { $set: { lastAppActiveAt: expect.any(Date) } },
+      );
+      const downgraded = updateOne.mock.calls.some(
+        (call) =>
+          (call[1] as { $set?: { presenceStatus?: string } })?.$set
+            ?.presenceStatus === 'online',
+      );
+      expect(downgraded).toBe(false);
+    });
+
     it('non-ingame updates app activity without touching overlay timestamp', async () => {
+      execFindByIdLean.mockResolvedValue({
+        presenceStatus: 'away',
+        lastPresenceAt: null,
+      });
       const long = ` ${'p'.repeat(40)} `;
       await usersService.updatePresence('u1', long);
       expect(updateOne).toHaveBeenCalledWith(

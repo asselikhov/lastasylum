@@ -156,13 +156,14 @@ fun AppNavigation(
     }
 
     val overlayVisible by CombatOverlayService.overlayVisible.collectAsStateWithLifecycle()
+    val overlayServiceRunning by CombatOverlayService.serviceRunning.collectAsStateWithLifecycle()
 
-    LaunchedEffect(userId, overlayVisible) {
+    LaunchedEffect(userId, overlayVisible, overlayServiceRunning) {
         if (userId.isBlank()) return@LaunchedEffect
         while (isActive) {
             delay(45_000)
-            // Overlay heartbeat sends "ingame"; avoid overwriting it with "online" from the main UI loop.
-            if (overlayVisible) continue
+            // Overlay heartbeat sends "ingame"; do not downgrade while overlay runtime is up.
+            if (overlayVisible || overlayServiceRunning) continue
             runCatching {
                 withContext(Dispatchers.IO) {
                     app.usersRepository.updatePresence("online")

@@ -55,8 +55,11 @@ import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.lastasylum.alliance.ui.util.OVERLAY_INGAME_PRESENCE_STALE_MS
 
 private data class OnlineListItem(
     val member: PlayerTeamMemberDto,
@@ -134,7 +137,10 @@ fun OverlayTeamOnlinePanel(
     }
 
     LaunchedEffect(Unit) {
-        reload()
+        while (isActive) {
+            reload(forceTeamRefresh = true)
+            delay(OVERLAY_INGAME_PRESENCE_STALE_MS / 3)
+        }
     }
 
     val t = team

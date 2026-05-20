@@ -89,6 +89,7 @@ import com.lastasylum.alliance.ui.screens.TeamMainSection
 import com.lastasylum.alliance.ui.screens.TeamScreen
 import com.lastasylum.alliance.ui.chat.ChatViewModel
 import com.lastasylum.alliance.ui.theme.SquadRelayTheme
+import com.lastasylum.alliance.ui.util.OVERLAY_INGAME_PRESENCE_STALE_MS
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -197,6 +198,53 @@ class CombatOverlayService : Service() {
                 Unit
             },
         )
+    }
+
+    /**
+     * Список «Участники онлайн» — только ingame + свежий lastPresenceAt.
+     * Пинги идут, пока игрок в целевой игре (в т.ч. без действий и при скрытом HUD),
+     * а не пока открыта лента чата.
+     */
+    private fun shouldMaintainOverlayIngamePresence(inGameProbe: Boolean): Boolean {
+        val container = AppContainer.from(this)
+        if (!container.userSettingsPreferences.isOverlayPanelEnabled()) return false
+        if (!container.authRepository.hasSession()) return false
+        if (inGameProbe) return true
+        val lastInGame = lastOverlayInGameAtMs
+        if (lastInGame <= 0L) return false
+        return System.currentTimeMillis() - lastInGame < OVERLAY_INGAME_PRESENCE_STALE_MS
+    }
+
+    private fun syncOverlayIngamePresence(inGameProbe: Boolean) {
+        if (shouldMaintainOverlayIngamePresence(inGameProbe)) {
+            val firstStart = !overlayIngamePresenceActive
+            overlayIngamePresenceActive = true
+            presenceHeartbeat.start()
+            if (firstStart) {
+                serviceScope.launch {
+                    runCatching {
+                        AppContainer.from(this@CombatOverlayService).usersRepository.updatePresence(
+                            OVERLAY_PRESENCE_INGAME,
+                        )
+                    }
+                }
+            }
+            return
+        }
+        stopOverlayIngamePresence(markAway = true)
+    }
+
+    private fun stopOverlayIngamePresence(markAway: Boolean) {
+        presenceHeartbeat.stop()
+        overlayIngamePresenceActive = false
+        if (!markAway) return
+        val container = AppContainer.from(this)
+        if (!container.authRepository.hasSession()) return
+        serviceScope.launch {
+            runCatching {
+                container.usersRepository.updatePresence(OVERLAY_PRESENCE_AWAY)
+            }
+        }
     }
     private var voiceSession: VoiceChatSession? = null
     private var pendingVoiceMicEnable = false
@@ -738,6 +786,8 @@ class CombatOverlayService : Service() {
     private var lastForegroundHintPkg: String? = null
     @Volatile
     private var lastOverlayInGameAtMs: Long = 0L
+    /** Heartbeat «ingame» для списка союзников — не привязан к видимости HUD/ленты. */
+    private var overlayIngamePresenceActive = false
     /** Не вызывать [NotificationManager.notify] с тем же текстом подряд (лишние всплытия на части OEM). */
     private var lastForegroundNotificationText: String? = null
     private var lastForegroundMicActive: Boolean = false
@@ -1099,6 +1149,7 @@ class CombatOverlayService : Service() {
         val prefs = AppContainer.from(this).userSettingsPreferences
         if (!prefs.isOverlayPanelEnabled()) {
             gateNotifyKey = ""
+            syncOverlayIngamePresence(inGameProbe = false)
             if (isOverlayShellActive()) {
                 removeOverlayControl()
             }
@@ -1240,6 +1291,7 @@ class CombatOverlayService : Service() {
                             zOrderLifted = chatStripZOrderLifted,
                         )
                     }
+                    syncOverlayIngamePresence(inGameProbe = inGame)
                     applyGameGateState(
                         hasUsageAccess = hasUsageAccess,
                         shouldShow = stableShowInGameOverlayUi,
@@ -1862,6 +1914,7 @@ class CombatOverlayService : Service() {
     private fun shutdownRuntimeOnly(startId: Int): Int {
         gateCheckInFlight = false
         mainHandler.removeCallbacks(gameGateRunnable)
+        stopOverlayIngamePresence(markAway = true)
         cancelOverlayVoiceConnectScheduled()
         runCatching { hideOverlayChatTeamPanel() }
         runCatching { overlayTicker.hideTicker() }
@@ -1948,6 +2001,7 @@ class CombatOverlayService : Service() {
         stopOverlayVoice()
         overlayTicker.hideTicker()
         runCatching { hideOverlayChatTeamPanel() }
+        stopOverlayIngamePresence(markAway = true)
         removeOverlayControl(force = true)
         removeOverlayStatusHudWindow()
         removeOverlayTopRightHudWindow()
@@ -2420,7 +2474,6 @@ class CombatOverlayService : Service() {
             if (!isOverlayHudOnlyMode()) {
                 scheduleStripTick()
             }
-            presenceHeartbeat.start()
             resolveCachedAllianceHubRoomId()
         }
         serviceScope.launch {
@@ -2475,14 +2528,6 @@ class CombatOverlayService : Service() {
         cancelOverlayVoiceConnectScheduled()
         stopOverlayVoice()
         unregisterVoiceMicPermissionReceiver()
-        presenceHeartbeat.stop()
-        serviceScope.launch {
-            runCatching {
-                AppContainer.from(this@CombatOverlayService).usersRepository.updatePresence(
-                    OVERLAY_PRESENCE_AWAY,
-                )
-            }
-        }
         cancelStripTick()
         updateStripDismissScreenRects(emptyList())
         if (overlayChatTeamPanelVisible || OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible) {

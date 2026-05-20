@@ -590,7 +590,7 @@
     <string name="overlay_online_cd">Участники команды в игре с оверлеем</string>
     <string name="overlay_team_online_count">Онлайн: %1$d</string>
     <string name="overlay_online_title">Участники онлайн</string>
-    <string name="overlay_online_subtitle">Активны в игре с оверлеем</string>
+    <string name="overlay_online_subtitle">В игре с оверлеем (не обязательно в чате)</string>
     <string name="overlay_online_refresh_cd">Обновить список</string>
     <string name="overlay_online_loading">Загрузка…</string>
     <string name="overlay_online_empty">Сейчас никто из команды не в игре с оверлеем.</string>

@@ -495,6 +495,26 @@ export class UsersService implements OnModuleInit {
         .exec();
       return;
     }
+    // Main app pings "online" while overlay service still runs in the game — keep ingame for allies.
+    if (normalized === 'online') {
+      const row = await this.userModel
+        .findById(userId)
+        .select('presenceStatus lastPresenceAt')
+        .lean<{ presenceStatus?: string; lastPresenceAt?: Date | null }>()
+        .exec();
+      const lastAt = row?.lastPresenceAt;
+      if (
+        row?.presenceStatus === 'ingame' &&
+        lastAt instanceof Date &&
+        lastAt.getTime() >=
+          Date.now() - UsersService.OVERLAY_INGAME_LIST_STALE_MS
+      ) {
+        await this.userModel
+          .updateOne({ _id: userId }, { $set: { lastAppActiveAt: now } })
+          .exec();
+        return;
+      }
+    }
     await this.userModel
       .updateOne(
         { _id: userId },
@@ -513,9 +533,9 @@ export class UsersService implements OnModuleInit {
 
   /**
    * «Участники онлайн» / broadcast reactions — matches Android
-   * [OVERLAY_INGAME_PRESENCE_STALE_MS] (3× heartbeat).
+   * [OVERLAY_INGAME_PRESENCE_STALE_MS] (3× overlay heartbeat 60 s).
    */
-  static readonly OVERLAY_INGAME_LIST_STALE_MS = 135_000;
+  static readonly OVERLAY_INGAME_LIST_STALE_MS = 180_000;
 
   /**
    * Teammates currently in game with a fresh overlay heartbeat (excluding sender).

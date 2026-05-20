@@ -5,8 +5,8 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-/** Окно свежести пинга оверлея (~3× heartbeat 45 с). */
-const val OVERLAY_INGAME_PRESENCE_STALE_MS = 135_000L
+/** Окно свежести пинга оверлея (~3× heartbeat оверлея 60 с). */
+const val OVERLAY_INGAME_PRESENCE_STALE_MS = 180_000L
 
 fun formatPresenceTimestampRu(iso: String?): String {
     if (iso.isNullOrBlank()) return ""
