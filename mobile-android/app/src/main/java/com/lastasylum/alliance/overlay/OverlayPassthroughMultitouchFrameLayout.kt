@@ -5,32 +5,41 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import androidx.compose.ui.platform.AbstractComposeView
+import androidx.compose.ui.platform.ComposeView
 
 /**
  * Корень overlay-окна:
  * - при pinch (>1 пальца) не участвуем в dispatch;
- * - при [MotionEvent.ACTION_DOWN] в «пустой» зоне (нет видимого листового потомка под точкой) —
+ * - при [MotionEvent.ACTION_DOWN] в «пустой» зоне (нет интерактивного потомка под точкой) —
  *   не забираем жест (важно для свёрнутой панели и прозорых промежутков в ленте).
+ *
+ * [ComposeView] не имеет классических leaf-потомков View — hit-test идёт внутри Compose,
+ * поэтому для него достаточно попадания в bounds.
  */
 internal class OverlayPassthroughMultitouchFrameLayout(context: Context) : FrameLayout(context) {
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         if (ev.pointerCount > 1) return false
-        if (!hitVisibleLeafDescendant(this, ev.x, ev.y)) return false
+        if (!hitInteractiveDescendant(this, ev.x, ev.y)) return false
         return super.dispatchTouchEvent(ev)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.pointerCount > 1) return false
-        if (!hitVisibleLeafDescendant(this, event.x, event.y)) return false
+        if (!hitInteractiveDescendant(this, event.x, event.y)) return false
         return super.onTouchEvent(event)
     }
 
     companion object {
         /**
-         * Есть ли под (x,y) в координатах [parent] видимый не-[ViewGroup] view или [ViewGroup] с попаданием во внутреннего.
+         * Есть ли под (x,y) в координатах [parent] видимый интерактивный потомок.
+         * @see hitVisibleLeafDescendant — alias for strip dismiss fallback.
          */
-        fun hitVisibleLeafDescendant(parent: ViewGroup, x: Float, y: Float): Boolean {
+        fun hitVisibleLeafDescendant(parent: ViewGroup, x: Float, y: Float): Boolean =
+            hitInteractiveDescendant(parent, x, y)
+
+        fun hitInteractiveDescendant(parent: ViewGroup, x: Float, y: Float): Boolean {
             for (i in parent.childCount - 1 downTo 0) {
                 val child = parent.getChildAt(i)
                 if (child.visibility != View.VISIBLE) continue
@@ -38,8 +47,9 @@ internal class OverlayPassthroughMultitouchFrameLayout(context: Context) : Frame
                 val cy = y - child.top
                 if (cx < 0 || cy < 0 || cx >= child.width || cy >= child.height) continue
                 when (child) {
+                    is ComposeView, is AbstractComposeView -> return true
                     is ViewGroup -> {
-                        if (hitVisibleLeafDescendant(child, cx, cy)) return true
+                        if (hitInteractiveDescendant(child, cx, cy)) return true
                     }
                     else -> return true
                 }
