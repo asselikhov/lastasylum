@@ -64,8 +64,10 @@ import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.components.GlassSurface
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
+import com.lastasylum.alliance.ui.util.formatServerLabel
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import com.lastasylum.alliance.ui.util.telegramDisplayHandle
+import com.lastasylum.alliance.ui.util.teamTagWithServerPrefix
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -73,14 +75,15 @@ private enum class ProfileEditDialog {
     None,
     AccountLogin,
     ActiveNickname,
+    ServerManage,
     Telegram,
-    IdentityAdd,
-    IdentityEdit,
 }
 
 private fun playerTeamShortLabel(p: MyProfileDto): String? {
     val tag = p.playerTeamTag?.trim()?.takeIf { it.isNotEmpty() }
-    if (tag != null) return "[$tag]"
+    if (tag != null) {
+        return teamTagWithServerPrefix(tag, p.activeServerNumber)
+    }
     val n = p.playerTeamDisplayName?.trim().orEmpty()
     if (n.length >= 4) return "[${n.take(4).uppercase()}]"
     if (n.length >= 3) return "[${n.take(3).uppercase()}]"
@@ -160,8 +163,6 @@ fun ProfileScreen(
     var draft by remember { mutableStateOf("") }
     var dialogError by remember { mutableStateOf<String?>(null) }
     var dialogSaving by remember { mutableStateOf(false) }
-    var identitySwitching by remember { mutableStateOf(false) }
-    var editingIdentity by remember { mutableStateOf<GameIdentityDto?>(null) }
 
     LaunchedEffect(app) {
         app.usersRepository.getMyProfile()
@@ -307,38 +308,6 @@ fun ProfileScreen(
             }
         }
 
-        profile?.takeIf { it.gameIdentities.isNotEmpty() }?.let { p ->
-            ProfileGameIdentitiesSection(
-                profile = p,
-                switching = identitySwitching,
-                onSwitch = { identity ->
-                    scope.launch {
-                        identitySwitching = true
-                        app.usersRepository.switchActiveGameIdentity(identity.id)
-                            .onSuccess {
-                                profile = it
-                            }
-                            .onFailure {
-                                loadError = context.getString(R.string.profile_save_error_generic)
-                            }
-                        identitySwitching = false
-                    }
-                },
-                onAdd = {
-                    editingIdentity = null
-                    draft = ""
-                    openDialog(ProfileEditDialog.IdentityAdd, "")
-                },
-                onEdit = { identity ->
-                    editingIdentity = identity
-                    openDialog(
-                        ProfileEditDialog.IdentityEdit,
-                        "${identity.serverNumber}\n${identity.gameNickname}",
-                    )
-                },
-            )
-        }
-
         GlassSurface(
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.large,
@@ -352,27 +321,35 @@ fun ProfileScreen(
                     modifier = Modifier.padding(start = 16.dp, top = 14.dp, end = 16.dp, bottom = 4.dp),
                 )
                 profile?.let { p ->
-                    ProfileStatRow(
+                    ProfileStatRowEditable(
                         label = stringResource(R.string.profile_field_account_login),
                         value = p.username,
                         editable = true,
-                        onClick = { openDialog(ProfileEditDialog.AccountLogin, p.username) },
+                        onEdit = { openDialog(ProfileEditDialog.AccountLogin, p.username) },
                     )
                     HorizontalDivider(
                         modifier = Modifier.padding(horizontal = 12.dp),
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
                     )
-                    ProfileStatRow(
+                    ProfileStatRowEditable(
                         label = stringResource(R.string.profile_field_ingame_name),
                         value = p.activeGameNickname ?: p.username,
-                        subtitle = p.activeServerNumber?.let { sn ->
-                            "Сервер $sn"
-                        },
                         editable = p.activeGameIdentityId != null,
-                        onClick = {
-                            val nick = p.activeGameNickname ?: return@ProfileStatRow
+                        onEdit = {
+                            val nick = p.activeGameNickname ?: return@ProfileStatRowEditable
                             openDialog(ProfileEditDialog.ActiveNickname, nick)
                         },
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                    )
+                    ProfileStatRowEditable(
+                        label = stringResource(R.string.profile_field_server),
+                        value = formatServerLabel(p.activeServerNumber)
+                            ?: stringResource(R.string.profile_value_not_set),
+                        editable = true,
+                        onEdit = { openDialog(ProfileEditDialog.ServerManage, "") },
                     )
                     HorizontalDivider(
                         modifier = Modifier.padding(horizontal = 12.dp),
@@ -398,12 +375,12 @@ fun ProfileScreen(
                         modifier = Modifier.padding(horizontal = 12.dp),
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
                     )
-                    ProfileStatRow(
+                    ProfileStatRowEditable(
                         label = stringResource(R.string.profile_field_telegram),
                         value = telegramDisplayHandle(p.telegramUsername)
                             ?: stringResource(R.string.profile_value_not_set),
                         editable = true,
-                        onClick = {
+                        onEdit = {
                             openDialog(
                                 ProfileEditDialog.Telegram,
                                 p.telegramUsername?.let { h -> "@$h" } ?: "",
@@ -439,83 +416,103 @@ fun ProfileScreen(
     }
 
     when (dialog) {
-        ProfileEditDialog.AccountLogin,
-        ProfileEditDialog.ActiveNickname,
-        ProfileEditDialog.IdentityAdd,
-        ProfileEditDialog.IdentityEdit -> {
-            val isAdd = dialog == ProfileEditDialog.IdentityAdd
-            val isEdit = dialog == ProfileEditDialog.IdentityEdit
-            val isAccount = dialog == ProfileEditDialog.AccountLogin
-            val title = when (dialog) {
-                ProfileEditDialog.AccountLogin -> stringResource(R.string.profile_edit_name_title)
-                ProfileEditDialog.ActiveNickname -> stringResource(R.string.profile_edit_identity_title)
-                ProfileEditDialog.IdentityAdd -> stringResource(R.string.profile_add_identity_title)
-                ProfileEditDialog.IdentityEdit -> stringResource(R.string.profile_edit_identity_title)
-                else -> ""
-            }
-            var serverField by remember(dialog, editingIdentity) {
-                mutableStateOf(
-                    when {
-                        isEdit && editingIdentity != null -> editingIdentity!!.serverNumber.toString()
-                        isAdd -> ""
-                        else -> ""
-                    },
-                )
-            }
-            var nicknameField by remember(dialog, editingIdentity, draft) {
-                mutableStateOf(
-                    when {
-                        isEdit && editingIdentity != null -> editingIdentity!!.gameNickname
-                        isAdd -> draft
-                        isAccount -> draft
-                        else -> draft
-                    },
-                )
-            }
-            if (isAdd || isEdit) {
-                GameIdentityEditorDialog(
-                    title = title,
-                    serverDraft = serverField,
-                    nicknameDraft = nicknameField,
-                    error = dialogError,
+        ProfileEditDialog.ServerManage -> {
+            profile?.let { p ->
+                ProfileServerManageDialog(
+                    profile = p,
                     saving = dialogSaving,
-                    showDelete = isEdit && (profile?.gameIdentities?.size ?: 0) > 1,
-                    onServerChange = { serverField = it.filter { c -> c.isDigit() }.take(4) },
-                    onNicknameChange = { nicknameField = it.trimStart() },
+                    error = dialogError,
                     onDismiss = { closeDialog() },
-                    onSave = {
-                        val server = serverField.toIntOrNull()
-                        val nick = nicknameField.trim()
-                        if (server == null || server !in 1..9999 || nick.length < 2) return@GameIdentityEditorDialog
+                    onSwitch = { identity ->
                         scope.launch {
                             dialogSaving = true
                             dialogError = null
-                            val result = when {
-                                isAdd -> app.usersRepository.addGameIdentity(server, nick)
-                                isEdit && editingIdentity != null ->
-                                    app.usersRepository.updateGameIdentity(
-                                        editingIdentity!!.id,
-                                        server,
-                                        nick,
-                                    )
-                                else -> return@launch
-                            }
-                            result
-                                .onSuccess {
-                                    profile = it
-                                    closeDialog()
-                                }
+                            app.usersRepository.switchActiveGameIdentity(identity.id)
+                                .onSuccess { profile = it }
                                 .onFailure {
-                                    dialogError = context.getString(R.string.profile_save_error_generic)
+                                    dialogError =
+                                        context.getString(R.string.profile_save_error_generic)
                                 }
                             dialogSaving = false
                         }
                     },
-                    onDelete = if (isEdit && editingIdentity != null) {
-                        {
+                    onAddServer = { server, nick ->
+                        scope.launch {
+                            dialogSaving = true
+                            dialogError = null
+                            app.usersRepository.addGameIdentity(server, nick)
+                                .onSuccess { profile = it }
+                                .onFailure {
+                                    dialogError =
+                                        context.getString(R.string.profile_save_error_generic)
+                                }
+                            dialogSaving = false
+                        }
+                    },
+                )
+            }
+        }
+
+        ProfileEditDialog.AccountLogin,
+        ProfileEditDialog.ActiveNickname -> {
+            val isAccount = dialog == ProfileEditDialog.AccountLogin
+            val title = if (isAccount) {
+                stringResource(R.string.profile_edit_name_title)
+            } else {
+                stringResource(R.string.profile_edit_identity_title)
+            }
+            AlertDialog(
+                onDismissRequest = { if (!dialogSaving) closeDialog() },
+                title = { Text(title) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = draft,
+                            onValueChange = {
+                                draft = it
+                                dialogError = null
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            enabled = !dialogSaving,
+                            supportingText = {
+                                Text(
+                                    if (isAccount) {
+                                        stringResource(R.string.profile_hint_ingame_name)
+                                    } else {
+                                        stringResource(R.string.auth_game_nickname_helper)
+                                    },
+                                )
+                            },
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Words,
+                                keyboardType = KeyboardType.Text,
+                            ),
+                        )
+                        dialogError?.let { e ->
+                            Text(
+                                e,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val trimmed = draft.trim()
+                            if (trimmed.length < if (isAccount) 3 else 2) return@Button
                             scope.launch {
                                 dialogSaving = true
-                                app.usersRepository.deleteGameIdentity(editingIdentity!!.id)
+                                dialogError = null
+                                val call = if (isAccount) {
+                                    app.usersRepository.updateMyUsername(trimmed)
+                                } else {
+                                    val id = profile?.activeGameIdentityId ?: return@launch
+                                    app.usersRepository.updateGameIdentity(id, null, trimmed)
+                                }
+                                call
                                     .onSuccess {
                                         profile = it
                                         closeDialog()
@@ -526,67 +523,9 @@ fun ProfileScreen(
                                     }
                                 dialogSaving = false
                             }
-                        }
-                    } else {
-                        null
-                    },
-                )
-            } else {
-            AlertDialog(
-                onDismissRequest = { if (!dialogSaving) closeDialog() },
-                title = { Text(title) },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = nicknameField,
-                            onValueChange = {
-                                nicknameField = it
-                                dialogError = null
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            enabled = !dialogSaving,
-                            supportingText = {
-                                Text(stringResource(R.string.profile_hint_ingame_name))
-                            },
-                            keyboardOptions = KeyboardOptions(
-                                capitalization = KeyboardCapitalization.Words,
-                                keyboardType = KeyboardType.Text,
-                            ),
-                        )
-                        dialogError?.let { e ->
-                            Text(e, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            val trimmed = nicknameField.trim()
-                            if (trimmed.length < 3 && isAccount) return@Button
-                            if (trimmed.length < 2 && !isAccount) return@Button
-                            scope.launch {
-                                dialogSaving = true
-                                dialogError = null
-                                val call = if (isAccount) {
-                                    app.usersRepository.updateMyUsername(trimmed)
-                                } else {
-                                    val id = profile?.activeGameIdentityId
-                                    if (id == null) return@launch
-                                    app.usersRepository.updateGameIdentity(id, null, trimmed)
-                                }
-                                call
-                                    .onSuccess {
-                                        profile = it
-                                        closeDialog()
-                                    }
-                                    .onFailure {
-                                        dialogError = context.getString(R.string.profile_save_error_generic)
-                                    }
-                                dialogSaving = false
-                            }
                         },
-                        enabled = !dialogSaving && nicknameField.trim().length >= if (isAccount) 3 else 2,
+                        enabled = !dialogSaving &&
+                            draft.trim().length >= if (isAccount) 3 else 2,
                     ) {
                         if (dialogSaving) {
                             CircularProgressIndicator(
@@ -605,7 +544,6 @@ fun ProfileScreen(
                     }
                 },
             )
-            }
         }
 
         ProfileEditDialog.Telegram -> {

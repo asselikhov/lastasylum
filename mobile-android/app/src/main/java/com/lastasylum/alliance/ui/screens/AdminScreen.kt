@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -60,8 +62,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.admin.AdminTeamMemberDto
+import com.lastasylum.alliance.data.admin.AdminUserOnServerDto
 import com.lastasylum.alliance.data.admin.AllianceAdminDto
 import com.lastasylum.alliance.data.admin.PlayerTeamAdminDto
+import com.lastasylum.alliance.ui.util.formatServerLabel
+import com.lastasylum.alliance.ui.util.teamTagWithServerPrefix
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.users.TeamMemberDto
 import com.lastasylum.alliance.ui.admin.AdminRoute
@@ -105,6 +110,10 @@ fun AdminScreen(
     onClearActionError: () -> Unit,
     onClearRoomError: () -> Unit,
     onDismissSnack: () -> Unit,
+    onGameServerFilter: (Int?) -> Unit = {},
+    onGameServerSearchChange: (String) -> Unit = {},
+    onRefreshGameServers: () -> Unit = {},
+    onUpdateGameIdentity: (userId: String, identityId: String, gameNickname: String) -> Unit = { _, _, _ -> },
 ) {
     val context = LocalContext.current
     var selectedMember by remember { mutableStateOf<TeamMemberDto?>(null) }
@@ -122,6 +131,7 @@ fun AdminScreen(
         AdminRoute.UsersWithoutTeam -> stringResource(R.string.admin_hub_users_without_team)
         AdminRoute.ChatRouting -> stringResource(R.string.admin_hub_chat_routing)
         AdminRoute.ChatRooms -> stringResource(R.string.admin_rooms_title)
+        AdminRoute.GameServers -> stringResource(R.string.admin_hub_game_servers)
     }
     val showBack = state.route != AdminRoute.Hub
 
@@ -143,10 +153,12 @@ fun AdminScreen(
                 AdminRoute.UsersWithoutTeam -> onRefreshUsersWithoutTeam
                 AdminRoute.ChatRouting -> onRefreshAlliances
                 AdminRoute.ChatRooms -> onRefreshRooms
+                AdminRoute.GameServers -> onRefreshGameServers
             },
             refreshing = state.overviewLoading || state.playerTeamsLoading ||
                 state.teamMembersLoading || state.usersWithoutTeamLoading ||
-                state.alliancesLoading || state.roomsLoading,
+                state.alliancesLoading || state.roomsLoading ||
+                state.gameServersLoading || state.usersOnServersLoading,
         )
 
         state.snackMessage?.let { msg ->
@@ -202,6 +214,12 @@ fun AdminScreen(
                 onOverlayChange = onAllianceOverlayChange,
                 onStickerClick = onOpenStickerSettings,
                 context = context,
+            )
+            AdminRoute.GameServers -> AdminGameServersContent(
+                state = state,
+                onFilter = onGameServerFilter,
+                onSearchChange = onGameServerSearchChange,
+                onUpdateGameIdentity = onUpdateGameIdentity,
             )
             AdminRoute.ChatRooms -> AdminChatRoomsContent(
                 state = state,
@@ -501,6 +519,167 @@ private fun AdminHubContent(
                 onClick = { onOpenRoute(AdminRoute.ChatRooms) },
             )
         }
+        item {
+            AdminHubTile(
+                icon = { Icon(Icons.Outlined.Groups, null, tint = MaterialTheme.colorScheme.primary) },
+                title = stringResource(R.string.admin_hub_game_servers),
+                subtitle = stringResource(R.string.admin_hub_game_servers_sub),
+                onClick = { onOpenRoute(AdminRoute.GameServers) },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AdminGameServersContent(
+    state: AdminUiState,
+    onFilter: (Int?) -> Unit,
+    onSearchChange: (String) -> Unit,
+    onUpdateGameIdentity: (userId: String, identityId: String, gameNickname: String) -> Unit,
+) {
+    val scroll = rememberScrollState()
+    var editTarget by remember { mutableStateOf<AdminUserOnServerDto?>(null) }
+    var editDraft by remember { mutableStateOf("") }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(scroll)
+            .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        state.gameServersError?.let { AdminErrorBanner(it) {} }
+        state.usersOnServersError?.let { AdminErrorBanner(it) {} }
+        OutlinedTextField(
+            value = state.gameServerSearchQuery,
+            onValueChange = onSearchChange,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text(stringResource(R.string.admin_game_servers_search)) },
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = state.gameServerFilter == null,
+                onClick = { onFilter(null) },
+                label = { Text(stringResource(R.string.admin_game_servers_filter_all)) },
+            )
+            state.gameServers.forEach { s ->
+                FilterChip(
+                    selected = state.gameServerFilter == s.serverNumber,
+                    onClick = { onFilter(s.serverNumber) },
+                    label = {
+                        Text(
+                            stringResource(
+                                R.string.admin_game_servers_filter,
+                                s.serverNumber,
+                                s.userCount,
+                            ),
+                        )
+                    },
+                )
+            }
+        }
+        if (state.usersOnServersLoading && state.usersOnServers.isEmpty()) {
+            Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(strokeWidth = 2.dp)
+            }
+        } else if (state.usersOnServers.isEmpty()) {
+            Text(
+                stringResource(R.string.admin_game_servers_empty),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            state.usersOnServers.forEach { row ->
+                Surface(
+                    onClick = {
+                        editTarget = row
+                        editDraft = row.gameNickname
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    color = SquadRelaySurfaces.panelColor(0.42f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
+                ) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            stringResource(
+                                R.string.admin_game_servers_row,
+                                com.lastasylum.alliance.ui.util.formatServerLabel(row.serverNumber)
+                                    ?: "#${row.serverNumber}",
+                                row.gameNickname,
+                            ),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            row.email,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            stringResource(R.string.admin_game_servers_account, row.accountUsername),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        val team = row.playerTeamTag?.let { tag ->
+                            val prefix = teamTagWithServerPrefix(tag, row.serverNumber)
+                            "$prefix ${row.playerTeamDisplayName.orEmpty()}".trim()
+                        } ?: row.playerTeamDisplayName
+                        if (!team.isNullOrBlank()) {
+                            Text(
+                                stringResource(R.string.admin_game_servers_team, team),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        if (row.isActiveIdentity) {
+                            Text(
+                                stringResource(R.string.admin_game_servers_active),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    editTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { editTarget = null },
+            containerColor = SquadRelaySurfaces.dialogColor(),
+            title = { Text(stringResource(R.string.admin_game_servers_edit_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        formatServerLabel(target.serverNumber) ?: "#${target.serverNumber}",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    OutlinedTextField(
+                        value = editDraft,
+                        onValueChange = { editDraft = it },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.admin_game_servers_edit_hint)) },
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onUpdateGameIdentity(target.userId, target.identityId, editDraft)
+                        editTarget = null
+                    },
+                    enabled = editDraft.trim().length >= 2,
+                ) { Text(stringResource(R.string.admin_save_nickname)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { editTarget = null }) {
+                    Text(stringResource(R.string.admin_delete_cancel))
+                }
+            },
+        )
     }
 }
 
@@ -606,7 +785,7 @@ private fun AdminTeamListRow(
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
-                    "[${team.tag}] ${team.displayName}",
+                    "${teamTagWithServerPrefix(team.tag.uppercase(), team.leaderServerNumber)} ${team.displayName}",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),
@@ -717,9 +896,25 @@ private fun AdminMemberListRow(
     member: AdminTeamMemberDto,
     onClick: () -> Unit,
 ) {
+    val serverLabel = formatServerLabel(member.serverNumber)
+    val nickLine = if (member.gameNickname.isNotBlank() && serverLabel != null) {
+        "$serverLabel · ${member.gameNickname}"
+    } else {
+        member.gameNickname.ifBlank { member.username }
+    }
     AdminMemberListRow(
-        username = member.username + if (member.isLeader) " ★" else "",
-        subtitle = "${member.teamRole} · ${member.allianceRole} · ${member.allianceName}",
+        username = nickLine + if (member.isLeader) " ★" else "",
+        subtitle = buildString {
+            append(member.teamRole)
+            append(" · ")
+            append(member.allianceRole)
+            append(" · ")
+            append(member.allianceName)
+            if (member.accountUsername.isNotBlank() && member.accountUsername != member.gameNickname) {
+                append(" · ")
+                append(member.accountUsername)
+            }
+        },
         onClick = onClick,
     )
 }

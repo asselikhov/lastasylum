@@ -170,7 +170,6 @@ fun TeamScreen(
         mutableStateOf(initial)
     }
     var forumTabReselectSignal by remember { mutableStateOf(0) }
-    var identitySwitching by remember { mutableStateOf(false) }
 
     LaunchedEffect(mainSectionOrdinal) {
         if (mainSectionOrdinal !in TeamMainSection.entries.indices) {
@@ -272,68 +271,6 @@ fun TeamScreen(
                         .fillMaxWidth()
                         .weight(1f),
                 ) {
-                    profile?.takeIf { it.gameIdentities.size > 1 }?.let { p ->
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(
-                                    horizontal = SquadRelayDimens.contentPaddingHorizontal,
-                                    vertical = 4.dp,
-                                ),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.team_active_identity_title),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                            Text(
-                                text = stringResource(R.string.team_switch_identity_hint),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                p.gameIdentities.forEach { identity ->
-                                    val selected = identity.id == p.activeGameIdentityId
-                                    FilterChip(
-                                        selected = selected,
-                                        onClick = {
-                                            if (selected || identitySwitching) return@FilterChip
-                                            scope.launch {
-                                                identitySwitching = true
-                                                app.usersRepository.switchActiveGameIdentity(identity.id)
-                                                    .onSuccess { reloadProfileAndTeam() }
-                                                    .onFailure { e ->
-                                                        error = e.toUserMessageRu(res)
-                                                    }
-                                                identitySwitching = false
-                                            }
-                                        },
-                                        enabled = !identitySwitching,
-                                        label = {
-                                            Text(
-                                                stringResource(
-                                                    R.string.profile_game_identity_line,
-                                                    identity.serverNumber,
-                                                    identity.gameNickname,
-                                                ),
-                                            )
-                                        },
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor =
-                                                MaterialTheme.colorScheme.primary.copy(alpha = 0.28f),
-                                        ),
-                                    )
-                                }
-                            }
-                        }
-                    }
-
                     error?.let { err ->
                         val scheme = MaterialTheme.colorScheme
                         Surface(
@@ -409,6 +346,7 @@ fun TeamScreen(
                             Column(Modifier.fillMaxSize()) {
                                 TeamLeaderToolbar(
                                     team = team,
+                                    activeServerNumber = profile?.activeServerNumber,
                                     subtitle = stringResource(
                                         R.string.team_roster_count,
                                         team.members.size,

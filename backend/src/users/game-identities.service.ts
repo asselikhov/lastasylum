@@ -16,6 +16,24 @@ import {
 } from './schemas/player-team.schema';
 import { User, UserDocument } from './schemas/user.schema';
 
+export type AdminServerSummary = {
+  serverNumber: number;
+  userCount: number;
+};
+
+export type AdminUserOnServerRow = {
+  userId: string;
+  identityId: string;
+  accountUsername: string;
+  email: string;
+  serverNumber: number;
+  gameNickname: string;
+  playerTeamId: string | null;
+  playerTeamTag: string | null;
+  playerTeamDisplayName: string | null;
+  isActiveIdentity: boolean;
+};
+
 export type SafeGameIdentity = {
   id: string;
   serverNumber: number;
@@ -216,6 +234,30 @@ export class GameIdentitiesService {
   resolveSenderUsername(user: UserDocument): string {
     const active = this.getActiveIdentity(user);
     return active?.gameNickname?.trim() || user.username;
+  }
+
+  resolveSenderServerNumber(user: UserDocument): number | null {
+    const active = this.getActiveIdentity(user);
+    const n = active?.serverNumber;
+    return n != null && n >= 1 ? n : null;
+  }
+
+  resolveServerNumberForTeam(
+    user: UserDocument,
+    teamId: string,
+  ): number | null {
+    const teamOid = Types.ObjectId.isValid(teamId)
+      ? new Types.ObjectId(teamId)
+      : null;
+    if (teamOid) {
+      const match = (user.gameIdentities ?? []).find((g) =>
+        g.playerTeamId?.equals(teamOid),
+      );
+      if (match?.serverNumber != null && match.serverNumber >= 1) {
+        return match.serverNumber;
+      }
+    }
+    return this.resolveSenderServerNumber(user);
   }
 
   resolveMemberDisplayNickname(
@@ -517,6 +559,121 @@ export class GameIdentitiesService {
       .exec();
     if (!updated) throw new NotFoundException('User not found');
     return this.syncUserFromActiveIdentity(updated);
+  }
+
+  async listServerSummariesForAdmin(): Promise<AdminServerSummary[]> {
+    const rows = await this.userModel
+      .aggregate<{ _id: number; count: number }>([
+        { $unwind: '$gameIdentities' },
+        {
+          $group: {
+            _id: '$gameIdentities.serverNumber',
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ])
+      .exec();
+    return rows
+      .filter((r) => r._id != null && r._id >= 1)
+      .map((r) => ({
+        serverNumber: r._id,
+        userCount: r.count,
+      }));
+  }
+
+  async listUsersForAdminByServer(opts: {
+    serverNumber?: number;
+    q?: string;
+  }): Promise<AdminUserOnServerRow[]> {
+    const filter: Record<string, unknown> = {
+      gameIdentities: { $exists: true, $ne: [] },
+    };
+    if (opts.serverNumber != null) {
+      filter.gameIdentities = {
+        $elemMatch: { serverNumber: opts.serverNumber },
+      };
+    }
+    const users = await this.userModel.find(filter).exec();
+    const teamIds = [
+      ...new Set(
+        users.flatMap((u) =>
+          (u.gameIdentities ?? [])
+            .map((g) => g.playerTeamId?.toString())
+            .filter((v): v is string => Boolean(v)),
+        ),
+      ),
+    ];
+    const teams =
+      teamIds.length === 0
+        ? []
+        : await this.teamModel
+            .find({
+              _id: {
+                $in: teamIds.map((id) => new Types.ObjectId(id)),
+              },
+            })
+            .select('tag displayName')
+            .lean<
+              Array<{
+                _id: Types.ObjectId;
+                tag: string;
+                displayName: string;
+              }>
+            >()
+            .exec();
+    const teamById = new Map(teams.map((t) => [t._id.toString(), t]));
+    const qLower = opts.q?.toLowerCase();
+    const out: AdminUserOnServerRow[] = [];
+    for (const user of users) {
+      const migrated = await this.ensureMigrated(user);
+      const activeId = migrated.activeGameIdentityId?.toString();
+      for (const g of migrated.gameIdentities ?? []) {
+        if (
+          opts.serverNumber != null &&
+          g.serverNumber !== opts.serverNumber
+        ) {
+          continue;
+        }
+        const tid = g.playerTeamId?.toString() ?? null;
+        const team = tid ? teamById.get(tid) : undefined;
+        const row: AdminUserOnServerRow = {
+          userId: migrated._id.toString(),
+          identityId: this.identityId(g),
+          accountUsername: migrated.username,
+          email: migrated.email,
+          serverNumber: g.serverNumber,
+          gameNickname: g.gameNickname,
+          playerTeamId: tid,
+          playerTeamTag: team?.tag ?? null,
+          playerTeamDisplayName: team?.displayName ?? null,
+          isActiveIdentity: activeId === this.identityId(g),
+        };
+        if (qLower) {
+          const hay = [
+            row.accountUsername,
+            row.email,
+            row.gameNickname,
+            row.playerTeamTag,
+            row.playerTeamDisplayName,
+            String(row.serverNumber),
+          ]
+            .join(' ')
+            .toLowerCase();
+          if (!hay.includes(qLower)) continue;
+        }
+        out.push(row);
+      }
+    }
+    out.sort((a, b) => {
+      if (a.serverNumber !== b.serverNumber) {
+        return a.serverNumber - b.serverNumber;
+      }
+      return a.gameNickname.localeCompare(b.gameNickname, 'ru', {
+        sensitivity: 'base',
+      });
+    });
+    return out;
   }
 
   async switchActive(

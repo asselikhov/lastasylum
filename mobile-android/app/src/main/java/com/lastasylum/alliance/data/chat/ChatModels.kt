@@ -23,6 +23,7 @@ data class ChatMessage(
     val senderUsername: String,
     val senderRole: String,
     val senderTeamTag: String? = null,
+    val senderServerNumber: Int? = null,
     val senderTelegramUsername: String? = null,
     val text: String,
     val editedAt: String? = null,
@@ -44,6 +45,7 @@ data class ChatForwardedFrom(
     val senderUsername: String,
     val senderRole: String,
     val senderTeamTag: String? = null,
+    val senderServerNumber: Int? = null,
 )
 
 @Immutable
@@ -103,6 +105,7 @@ data class ChatMessageReplyPreview(
     val senderUsername: String,
     val senderRole: String,
     val senderTeamTag: String? = null,
+    val senderServerNumber: Int? = null,
     val text: String,
     val createdAt: String? = null,
     val deletedAt: String? = null,

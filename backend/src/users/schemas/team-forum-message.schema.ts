@@ -42,6 +42,9 @@ export class TeamForumMessage {
   @Prop({ type: String, default: null, trim: true })
   senderTeamTag: string | null;
 
+  @Prop({ type: Number, default: null })
+  senderServerNumber: number | null;
+
   /** May be empty for attachment-only posts; API validates text vs attachments. */
   @Prop({ type: String, trim: true, default: '' })
   text: string;
@@ -88,6 +91,7 @@ export class TeamForumMessage {
       senderUsername: { type: String, required: true },
       senderRole: { type: String, required: true },
       senderTeamTag: { type: String, default: null },
+      senderServerNumber: { type: Number, default: null },
     },
     default: null,
   })
@@ -98,6 +102,7 @@ export class TeamForumMessage {
         senderUsername: string;
         senderRole: PlayerTeamMemberRole;
         senderTeamTag: string | null;
+        senderServerNumber: number | null;
       }
     | null;
 

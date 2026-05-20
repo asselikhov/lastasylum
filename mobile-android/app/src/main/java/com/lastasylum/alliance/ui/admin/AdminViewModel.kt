@@ -30,6 +30,7 @@ sealed interface AdminRoute {
     data object UsersWithoutTeam : AdminRoute
     data object ChatRouting : AdminRoute
     data object ChatRooms : AdminRoute
+    data object GameServers : AdminRoute
 }
 
 data class AdminUiState(
@@ -63,6 +64,14 @@ data class AdminUiState(
     val roomError: String? = null,
     val snackMessage: String? = null,
     val actionError: String? = null,
+    val gameServers: List<com.lastasylum.alliance.data.admin.AdminServerSummaryDto> = emptyList(),
+    val gameServersLoading: Boolean = false,
+    val gameServersError: String? = null,
+    val gameServerFilter: Int? = null,
+    val usersOnServers: List<com.lastasylum.alliance.data.admin.AdminUserOnServerDto> = emptyList(),
+    val usersOnServersLoading: Boolean = false,
+    val usersOnServersError: String? = null,
+    val gameServerSearchQuery: String = "",
 )
 
 class AdminViewModel(
@@ -99,13 +108,101 @@ class AdminViewModel(
             AdminRoute.UsersWithoutTeam -> refreshUsersWithoutTeam()
             AdminRoute.ChatRouting -> refreshAlliances()
             AdminRoute.ChatRooms -> refreshRooms()
+            AdminRoute.GameServers -> refreshGameServers()
             else -> Unit
         }
     }
 
+    fun setGameServerFilter(serverNumber: Int?) {
+        _state.value = _state.value.copy(gameServerFilter = serverNumber)
+        refreshUsersOnServers()
+    }
+
+    fun setGameServerSearch(query: String) {
+        _state.value = _state.value.copy(gameServerSearchQuery = query)
+        refreshUsersOnServersDebounced()
+    }
+
+    private var gameServerSearchJob: Job? = null
+
+    private fun refreshUsersOnServersDebounced() {
+        gameServerSearchJob?.cancel()
+        gameServerSearchJob = viewModelScope.launch {
+            delay(300)
+            refreshUsersOnServers()
+        }
+    }
+
+    fun refreshGameServers() {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(gameServersLoading = true, gameServersError = null)
+            adminRepository.listGameServers()
+                .onSuccess { list ->
+                    _state.value = _state.value.copy(
+                        gameServersLoading = false,
+                        gameServers = list,
+                    )
+                    if (_state.value.route == AdminRoute.GameServers) {
+                        refreshUsersOnServers()
+                    }
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(
+                        gameServersLoading = false,
+                        gameServersError = e.toUserMessageRu(res),
+                    )
+                }
+        }
+    }
+
+    fun updateGameIdentityAdmin(
+        userId: String,
+        identityId: String,
+        gameNickname: String,
+        successMessage: String,
+    ) {
+        viewModelScope.launch {
+            adminRepository.updateGameIdentity(userId, identityId, gameNickname.trim())
+                .onSuccess {
+                    _state.value = _state.value.copy(snackMessage = successMessage, actionError = null)
+                    refreshUsersOnServers()
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(actionError = e.toUserMessageRu(res))
+                }
+        }
+    }
+
+    fun refreshUsersOnServers() {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(usersOnServersLoading = true, usersOnServersError = null)
+            val q = _state.value.gameServerSearchQuery
+            adminRepository.listUsersOnServers(
+                serverNumber = _state.value.gameServerFilter,
+                q = q,
+            )
+                .onSuccess { rows ->
+                    _state.value = _state.value.copy(
+                        usersOnServersLoading = false,
+                        usersOnServers = rows,
+                    )
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(
+                        usersOnServersLoading = false,
+                        usersOnServersError = e.toUserMessageRu(res),
+                    )
+                }
+        }
+    }
+
     fun openPlayerTeam(team: PlayerTeamAdminDto) {
+        val tagLabel = com.lastasylum.alliance.ui.util.teamTagWithServerPrefix(
+            team.tag.uppercase(),
+            team.leaderServerNumber,
+        )
         _state.value = _state.value.copy(
-            route = AdminRoute.PlayerTeamDetail(team.id, "[${team.tag}] ${team.displayName}"),
+            route = AdminRoute.PlayerTeamDetail(team.id, "$tagLabel ${team.displayName}"),
             selectedTeam = team,
             teamMembers = emptyList(),
             teamMembersError = null,
@@ -437,6 +534,10 @@ class AdminViewModel(
             AdminRoute.PlayerTeams -> refreshPlayerTeams()
             is AdminRoute.PlayerTeamDetail -> refreshTeamMembers(route.teamId)
             AdminRoute.UsersWithoutTeam -> refreshUsersWithoutTeam()
+            AdminRoute.GameServers -> {
+                refreshGameServers()
+                refreshUsersOnServers()
+            }
             else -> Unit
         }
     }

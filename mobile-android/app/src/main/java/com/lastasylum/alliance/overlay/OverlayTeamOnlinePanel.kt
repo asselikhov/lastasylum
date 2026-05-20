@@ -196,6 +196,7 @@ fun OverlayTeamOnlinePanel(
         } else if (t != null) {
             TeamLeaderToolbar(
                 team = t,
+                activeServerNumber = profile?.activeServerNumber,
                 subtitle = stringResource(R.string.overlay_team_online_count, onlineMembers.size),
                 isLeader = isLeader,
                 pendingJoinRequests = pending,

@@ -24,6 +24,7 @@ export type MessageForwardedFrom = {
   senderUsername: string;
   senderRole: PlayerTeamMemberRole;
   senderTeamTag: string | null;
+  senderServerNumber: number | null;
 };
 
 @Schema({ timestamps: true })
@@ -55,6 +56,10 @@ export class Message {
   /** Snapshot of sender team tag at send time (optional for legacy messages). */
   @Prop({ type: String, default: null, trim: true })
   senderTeamTag: string | null;
+
+  /** Game server number at send time (e.g. 109 → `#109` in UI). */
+  @Prop({ type: Number, default: null })
+  senderServerNumber: number | null;
 
   /** May be empty when the message is image-only (`attachments` non-empty). */
   @Prop({ type: String, required: false, trim: true, default: '' })

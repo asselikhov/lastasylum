@@ -238,6 +238,7 @@ data class TeamForumMessageDto(
     val senderUsername: String,
     val senderRole: String = "R1",
     val senderTeamTag: String? = null,
+    val senderServerNumber: Int? = null,
     val text: String,
     val replyToMessageId: String? = null,
     val replyTo: TeamForumReplyPreviewDto? = null,
@@ -260,6 +261,7 @@ data class TeamForumForwardedFromDto(
     val senderUsername: String,
     val senderRole: String = "R1",
     val senderTeamTag: String? = null,
+    val senderServerNumber: Int? = null,
 )
 
 @JsonClass(generateAdapter = true)
@@ -268,6 +270,7 @@ data class TeamForumReplyPreviewDto(
     val senderUsername: String,
     val senderRole: String = "R1",
     val senderTeamTag: String? = null,
+    val senderServerNumber: Int? = null,
     val text: String,
 )
 

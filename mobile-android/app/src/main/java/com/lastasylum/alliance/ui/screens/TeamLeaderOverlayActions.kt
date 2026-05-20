@@ -43,6 +43,7 @@ import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.overlay.OverlayModalScope
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
+import com.lastasylum.alliance.ui.util.teamTagWithServerPrefix
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.launch
 
@@ -63,6 +64,7 @@ private fun isValidTeamTag3to4Letters(raw: String): Boolean {
 @Composable
 fun TeamLeaderToolbar(
     team: TeamDetailDto,
+    activeServerNumber: Int? = null,
     subtitle: String,
     isLeader: Boolean,
     pendingJoinRequests: Int,
@@ -89,7 +91,7 @@ fun TeamLeaderToolbar(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
-                    text = "[${team.tag.uppercase()}]",
+                    text = teamTagWithServerPrefix(team.tag.uppercase(), activeServerNumber),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,

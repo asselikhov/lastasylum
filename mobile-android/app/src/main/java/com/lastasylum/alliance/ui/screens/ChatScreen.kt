@@ -1804,7 +1804,7 @@ private fun ChatComposer(
                                 Text(
                                     text = stringResource(
                                         R.string.chat_replying_to,
-                                        chatSenderDisplayWithTag(reply.senderTeamTag, reply.senderUsername),
+                                        chatSenderDisplayWithTag(reply.senderTeamTag, reply.senderUsername, reply.senderServerNumber),
                                     ),
                                     style = MaterialTheme.typography.labelLarge,
                                     color = MaterialTheme.colorScheme.primary,
@@ -2356,7 +2356,7 @@ private fun ChatBubbleInnerColumn(
         verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
     ) {
         message.forwardedFrom?.let { fwd ->
-            val sender = chatSenderDisplayWithTag(fwd.senderTeamTag, fwd.senderUsername)
+            val sender = chatSenderDisplayWithTag(fwd.senderTeamTag, fwd.senderUsername, fwd.senderServerNumber)
             Text(
                 text = stringResource(R.string.chat_forwarded_from, sender),
                 style = MaterialTheme.typography.labelMedium,
@@ -2373,6 +2373,7 @@ private fun ChatBubbleInnerColumn(
             }
             ChatBubbleAuthorHeader(
                 teamTag = stemTag,
+                serverNumber = message.senderServerNumber,
                 nickname = nickname,
                 nicknameColor = senderAccent,
                 tagBracketColor = tagMuted,
@@ -2412,6 +2413,7 @@ private fun ChatBubbleInnerColumn(
                         text = chatSenderDisplayWithTag(
                             reply.senderTeamTag,
                             reply.senderUsername,
+                            reply.senderServerNumber,
                         ),
                         style = MaterialTheme.typography.labelMedium,
                         color = onBubble.copy(alpha = 0.92f),
@@ -2642,6 +2644,7 @@ private fun ChatFloatingImageAttachmentsBlock(
         if (!isMine && showClusterHeader) {
             ChatBubbleAuthorHeader(
                 teamTag = stemTag,
+                serverNumber = message.senderServerNumber,
                 nickname = nickname,
                 nicknameColor = senderAccent,
                 tagBracketColor = scheme.onSurface.copy(alpha = 0.5f),
@@ -2737,7 +2740,7 @@ private fun ChatAlbumRow(
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
     val swipePx = remember(density) { with(density) { 56.dp.toPx() } }
-    val senderLine = chatSenderDisplayWithTag(message.senderTeamTag, message.senderUsername)
+    val senderLine = chatSenderDisplayWithTag(message.senderTeamTag, message.senderUsername, message.senderServerNumber)
     val bubbleDescription = stringResource(
         R.string.cd_chat_message,
         senderLine,
@@ -2899,7 +2902,7 @@ private fun ChatBubbleRow(
     val swipePx = remember(density) { with(density) { 56.dp.toPx() } }
     val stickerStem = remember(message.text) { ZlobyakaStickerPack.parseStem(message.text) }
     val textPreview = chatMessageSemanticsPreview(message.text)
-    val senderLine = chatSenderDisplayWithTag(message.senderTeamTag, message.senderUsername)
+    val senderLine = chatSenderDisplayWithTag(message.senderTeamTag, message.senderUsername, message.senderServerNumber)
     val bubbleDescription = stringResource(
         R.string.cd_chat_message,
         senderLine,
@@ -3072,6 +3075,7 @@ private fun ChatBubbleRow(
                     if (!isMine && showClusterHeader) {
                         ChatBubbleAuthorHeader(
                             teamTag = stemTag,
+                            serverNumber = message.senderServerNumber,
                             nickname = nickname,
                             nicknameColor = senderAccent,
                             tagBracketColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
@@ -3227,7 +3231,7 @@ private fun ChatMessageActionsSheet(
             val canCopy = chatMessageHasCopyableContent(message)
             MessageSheetPreviewSurface {
                 Text(
-                    text = chatSenderDisplayWithTag(message.senderTeamTag, message.senderUsername),
+                    text = chatSenderDisplayWithTag(message.senderTeamTag, message.senderUsername, message.senderServerNumber),
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                     color = MaterialTheme.colorScheme.onSurface,
                 )

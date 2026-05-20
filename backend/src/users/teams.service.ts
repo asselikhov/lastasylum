@@ -56,6 +56,7 @@ export type PlayerTeamAdminRow = {
   displayName: string;
   leaderUserId: string;
   leaderUsername: string;
+  leaderServerNumber: number | null;
   memberCount: number;
   /** Distinct chat routing keys (allianceName) among members. */
   chatRoutingSummary: string;
@@ -65,6 +66,9 @@ export type AdminTeamMemberRow = TeamMemberRow & {
   email: string;
   membershipStatus: string;
   allianceName: string;
+  serverNumber: number | null;
+  gameNickname: string;
+  accountUsername: string;
 };
 
 export type TeamJoinRequestRow = {
@@ -933,11 +937,13 @@ export class TeamsService {
     const out: PlayerTeamAdminRow[] = [];
     for (const team of teams) {
       await this.migrateLegacyIfNeeded(team);
-      const leader = await this.userModel
-        .findById(team.leaderUserId)
-        .select('username')
-        .lean<{ username?: string }>()
-        .exec();
+      const leader = await this.userModel.findById(team.leaderUserId).exec();
+      const leaderServer = leader
+        ? this.gameIdentities.resolveServerNumberForTeam(
+            leader,
+            team._id.toString(),
+          )
+        : null;
       const memberUsers = await this.userModel
         .find({ playerTeamId: team._id })
         .select('allianceName')
@@ -955,7 +961,13 @@ export class TeamsService {
         tag: team.tag,
         displayName: team.displayName,
         leaderUserId: team.leaderUserId.toString(),
-        leaderUsername: leader?.username?.trim() || '—',
+        leaderUsername: leader
+          ? this.gameIdentities.resolveMemberDisplayNickname(
+              leader,
+              team._id.toString(),
+            )
+          : '—',
+        leaderServerNumber: leaderServer,
         memberCount: team.squadMembers.length,
         chatRoutingSummary: routes.length > 0 ? routes.join(', ') : '—',
       });
@@ -980,24 +992,8 @@ export class TeamsService {
     await this.migrateLegacyIfNeeded(team);
     const users = await this.userModel
       .find({ _id: { $in: team.squadMembers.map((m) => m.userId) } })
-      .select(
-        'username email role telegramUsername presenceStatus lastPresenceAt lastAppActiveAt membershipStatus allianceName',
-      )
-      .lean<
-        Array<{
-          _id: Types.ObjectId;
-          username: string;
-          email: string;
-          role: string;
-          telegramUsername?: string | null;
-          presenceStatus?: string | null;
-          lastPresenceAt?: Date | string | null;
-          lastAppActiveAt?: Date | string | null;
-          membershipStatus?: string;
-          allianceName?: string;
-        }>
-      >()
       .exec();
+    const teamIdStr = team._id.toString();
     const roleByUserId = new Map(
       team.squadMembers.map((m) => [m.userId.toString(), m.role]),
     );
@@ -1008,9 +1004,13 @@ export class TeamsService {
     };
     const members: AdminTeamMemberRow[] = users.map((u) => {
       const uid = u._id.toString();
+      const displayNick = this.gameIdentities.resolveMemberDisplayNickname(
+        u,
+        teamIdStr,
+      );
       return {
         userId: uid,
-        username: u.username,
+        username: displayNick,
         email: u.email,
         isLeader: team.leaderUserId.equals(u._id),
         allianceRole: u.role,
@@ -1021,6 +1021,12 @@ export class TeamsService {
         lastAppActiveAt: toIso(u.lastAppActiveAt),
         membershipStatus: u.membershipStatus ?? 'active',
         allianceName: u.allianceName?.trim() || '—',
+        serverNumber: this.gameIdentities.resolveServerNumberForTeam(
+          u,
+          teamIdStr,
+        ),
+        gameNickname: displayNick,
+        accountUsername: u.username,
       };
     });
     members.sort((a, b) => squadRoleRank(b.teamRole) - squadRoleRank(a.teamRole));

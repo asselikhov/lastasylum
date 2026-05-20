@@ -280,6 +280,8 @@ class ChatSocketManager {
                         senderRole = payload.optString("senderRole"),
                         senderTeamTag = payload.optString("senderTeamTag")
                             .takeIf { it.isNotBlank() },
+                        senderServerNumber = payload.optInt("senderServerNumber")
+                            .takeIf { it > 0 },
                         senderTelegramUsername = payload.optString("senderTelegramUsername")
                             .takeIf { it.isNotBlank() },
                         text = payload.optString("text"),
@@ -410,6 +412,7 @@ private fun JSONObject.toChatReplyPreview(): ChatMessageReplyPreview? {
         senderUsername = optString("senderUsername"),
         senderRole = optString("senderRole"),
         senderTeamTag = optString("senderTeamTag").takeIf { it.isNotBlank() },
+        senderServerNumber = optInt("senderServerNumber").takeIf { it > 0 },
         text = optString("text"),
         createdAt = optString("createdAt").takeIf { it.isNotBlank() },
         deletedAt = optString("deletedAt").takeIf { it.isNotBlank() },
@@ -424,6 +427,7 @@ private fun JSONObject.toForwardedFrom(): ChatForwardedFrom? {
         senderUsername = optString("senderUsername"),
         senderRole = optString("senderRole"),
         senderTeamTag = optString("senderTeamTag").takeIf { it.isNotBlank() },
+        senderServerNumber = optInt("senderServerNumber").takeIf { it > 0 },
     )
 }
 
@@ -453,6 +457,7 @@ private fun JSONObject.toChatMessage(): ChatMessage {
         senderUsername = optString("senderUsername"),
         senderRole = optString("senderRole"),
         senderTeamTag = optString("senderTeamTag").takeIf { it.isNotBlank() },
+        senderServerNumber = optInt("senderServerNumber").takeIf { it > 0 },
         senderTelegramUsername = optString("senderTelegramUsername").takeIf { it.isNotBlank() },
         text = optString("text"),
         editedAt = optString("editedAt").takeIf { it.isNotBlank() },

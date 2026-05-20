@@ -329,6 +329,7 @@ private fun JSONObject.toForumMessageDto(): TeamForumMessageDto? {
         senderUsername = optString("senderUsername"),
         senderRole = optString("senderRole").takeIf { it.isNotBlank() } ?: "R1",
         senderTeamTag = optionalStringField("senderTeamTag"),
+        senderServerNumber = optInt("senderServerNumber").takeIf { it > 0 },
         text = optString("text"),
         replyToMessageId = optionalStringField("replyToMessageId"),
         replyTo = replyToObj?.let { obj ->
@@ -338,6 +339,7 @@ private fun JSONObject.toForumMessageDto(): TeamForumMessageDto? {
                 senderUsername = obj.optString("senderUsername"),
                 senderRole = obj.optString("senderRole").takeIf { it.isNotBlank() } ?: "R1",
                 senderTeamTag = obj.optionalStringField("senderTeamTag"),
+                senderServerNumber = obj.optInt("senderServerNumber").takeIf { it > 0 },
                 text = obj.optString("text"),
             )
         },
@@ -356,6 +358,7 @@ private fun JSONObject.toForumMessageDto(): TeamForumMessageDto? {
                 senderUsername = fwd.optString("senderUsername"),
                 senderRole = fwd.optString("senderRole").takeIf { it.isNotBlank() } ?: "R1",
                 senderTeamTag = fwd.optionalStringField("senderTeamTag"),
+                senderServerNumber = fwd.optInt("senderServerNumber").takeIf { it > 0 },
             )
         },
         createdAt = optString("createdAt"),

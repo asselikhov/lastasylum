@@ -297,7 +297,11 @@ object OverlayChatHistoryPanel {
     ) {
         val t = OverlayChatTime.effectiveInstant(msg, receivedAt)
         val timeStr = if (t == Instant.EPOCH) "—" else OverlayChatTime.formatClock(t)
-        val nick = chatSenderDisplayWithTag(msg.senderTeamTag, msg.senderUsername).trim()
+        val nick = chatSenderDisplayWithTag(
+            msg.senderTeamTag,
+            msg.senderUsername,
+            msg.senderServerNumber,
+        ).trim()
             .ifBlank { "—" }
         val role = msg.senderRole.trim()
         val isSelf = !selfUserId.isNullOrBlank() && msg.senderId == selfUserId

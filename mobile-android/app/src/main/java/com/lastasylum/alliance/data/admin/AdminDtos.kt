@@ -47,14 +47,44 @@ data class PlayerTeamAdminDto(
     val displayName: String,
     val leaderUserId: String,
     val leaderUsername: String,
+    val leaderServerNumber: Int? = null,
     val memberCount: Int = 0,
     val chatRoutingSummary: String = "",
+)
+
+@JsonClass(generateAdapter = true)
+data class AdminServerSummaryDto(
+    val serverNumber: Int,
+    val userCount: Int,
+)
+
+@JsonClass(generateAdapter = true)
+data class AdminUpdateGameIdentityBody(
+    val serverNumber: Int? = null,
+    val gameNickname: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class AdminUserOnServerDto(
+    val userId: String,
+    val identityId: String,
+    val accountUsername: String,
+    val email: String,
+    val serverNumber: Int,
+    val gameNickname: String,
+    val playerTeamId: String? = null,
+    val playerTeamTag: String? = null,
+    val playerTeamDisplayName: String? = null,
+    val isActiveIdentity: Boolean = false,
 )
 
 @JsonClass(generateAdapter = true)
 data class AdminTeamMemberDto(
     val userId: String,
     val username: String,
+    val accountUsername: String,
+    val gameNickname: String,
+    val serverNumber: Int? = null,
     val email: String,
     val isLeader: Boolean = false,
     val allianceRole: String,

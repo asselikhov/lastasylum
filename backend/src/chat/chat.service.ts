@@ -41,6 +41,7 @@ type MessageLean = {
   senderUsername: string;
   senderRole: PlayerTeamMemberRole;
   senderTeamTag?: string | null;
+  senderServerNumber?: number | null;
   text: string;
   editedAt?: Date | null;
   forwardedFrom?:
@@ -50,6 +51,7 @@ type MessageLean = {
         senderUsername: string;
         senderRole: PlayerTeamMemberRole;
         senderTeamTag?: string | null;
+        senderServerNumber?: number | null;
       }
     | null;
   reactions?: { emoji: string; userIds: string[] }[];
@@ -67,6 +69,7 @@ export type ChatMessageReplyPreview = {
   senderUsername: string;
   senderRole: PlayerTeamMemberRole;
   senderTeamTag: string | null;
+  senderServerNumber: number | null;
   text: string;
   createdAt: string | null;
   deletedAt: string | null;
@@ -81,6 +84,7 @@ export type ChatMessageView = {
   senderRole: PlayerTeamMemberRole;
   /** Three-letter team tag: stored on message or resolved from sender profile. */
   senderTeamTag: string | null;
+  senderServerNumber: number | null;
   /** Telegram @handle without @, from sender profile at read time (or at send). */
   senderTelegramUsername: string | null;
   text: string;
@@ -92,6 +96,7 @@ export type ChatMessageView = {
         senderUsername: string;
         senderRole: PlayerTeamMemberRole;
         senderTeamTag: string | null;
+        senderServerNumber: number | null;
       }
     | null;
   reactions: { emoji: string; count: number; reactedByMe: boolean }[];
@@ -210,12 +215,15 @@ export class ChatService {
   ): ChatMessageReplyPreview {
     const senderTeamTag =
       message.senderTeamTag ?? senderTeamTagMap?.get(message.senderId) ?? null;
+    const senderServerNumber =
+      message.senderServerNumber ?? null;
     return {
       _id: this.asIdString(message._id)!,
       senderId: message.senderId,
       senderUsername: message.senderUsername,
       senderRole: message.senderRole,
       senderTeamTag,
+      senderServerNumber,
       text: message.deletedAt ? '' : message.text,
       createdAt: this.toIso(message.createdAt),
       deletedAt: this.toIso(message.deletedAt),
@@ -251,6 +259,8 @@ export class ChatService {
           senderUsername: message.forwardedFrom.senderUsername,
           senderRole: message.forwardedFrom.senderRole,
           senderTeamTag: message.forwardedFrom.senderTeamTag ?? null,
+          senderServerNumber:
+            message.forwardedFrom.senderServerNumber ?? null,
         }
       : null;
     const reactions = (message.reactions ?? [])
@@ -268,6 +278,7 @@ export class ChatService {
       senderUsername: message.senderUsername,
       senderRole: message.senderRole,
       senderTeamTag,
+      senderServerNumber: message.senderServerNumber ?? null,
       senderTelegramUsername: senderTelegramMap?.get(message.senderId) ?? null,
       text: message.deletedAt ? '' : message.text,
       editedAt: this.toIso(message.editedAt),
@@ -452,6 +463,8 @@ export class ChatService {
       senderUsername: this.gameIdentities.resolveSenderUsername(authorUser),
       senderRole: senderSquadRole,
       senderTeamTag: authorUser.teamTag ?? null,
+      senderServerNumber:
+        this.gameIdentities.resolveSenderServerNumber(authorUser),
       replyToMessageId: replyTarget?._id ?? null,
       deletedAt: null,
       deletedByUserId: null,
@@ -594,6 +607,8 @@ export class ChatService {
       senderUsername: this.gameIdentities.resolveSenderUsername(actor),
       senderRole: actorSquadRole,
       senderTeamTag: actor.teamTag ?? null,
+      senderServerNumber:
+        this.gameIdentities.resolveSenderServerNumber(actor),
       replyToMessageId: null,
       deletedAt: null,
       deletedByUserId: null,
@@ -603,6 +618,7 @@ export class ChatService {
         senderUsername: source.senderUsername,
         senderRole: sourceSquadRole,
         senderTeamTag: source.senderTeamTag ?? null,
+        senderServerNumber: source.senderServerNumber ?? null,
       },
       editedAt: null,
       reactions: [],

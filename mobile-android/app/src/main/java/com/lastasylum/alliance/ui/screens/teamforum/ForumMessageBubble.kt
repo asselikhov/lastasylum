@@ -306,6 +306,7 @@ internal fun ForumMessageBubble(
                         if (!isMine && showClusterHeader) {
                             ChatBubbleAuthorHeader(
                                 teamTag = message.senderTeamTag,
+                                serverNumber = message.senderServerNumber,
                                 nickname = nickname.ifBlank { "—" },
                                 nicknameColor = senderAccent,
                                 tagBracketColor = tagBracketMuted,
@@ -316,7 +317,11 @@ internal fun ForumMessageBubble(
                             Text(
                                 text = stringResource(
                                     R.string.chat_forwarded_from,
-                                    chatSenderDisplayWithTag(fwd.senderTeamTag, fwd.senderUsername),
+                                    chatSenderDisplayWithTag(
+                                        fwd.senderTeamTag,
+                                        fwd.senderUsername,
+                                        fwd.senderServerNumber,
+                                    ),
                                 ),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = onBubble.copy(alpha = 0.78f),
@@ -394,7 +399,11 @@ internal fun ForumMessageBubble(
                                 Text(
                                     text = stringResource(
                                         R.string.chat_forwarded_from,
-                                        chatSenderDisplayWithTag(fwd.senderTeamTag, fwd.senderUsername),
+                                        chatSenderDisplayWithTag(
+                                        fwd.senderTeamTag,
+                                        fwd.senderUsername,
+                                        fwd.senderServerNumber,
+                                    ),
                                     ),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = onBubble.copy(alpha = 0.78f),
@@ -405,6 +414,7 @@ internal fun ForumMessageBubble(
                             if (!isMine && showClusterHeader) {
                                 ChatBubbleAuthorHeader(
                                     teamTag = message.senderTeamTag,
+                                    serverNumber = message.senderServerNumber,
                                     nickname = nickname.ifBlank { "—" },
                                     nicknameColor = senderAccent,
                                     tagBracketColor = tagBracketMuted,
@@ -445,6 +455,7 @@ internal fun ForumMessageBubble(
                                                 text = chatSenderDisplayWithTag(
                                                     rp.senderTeamTag,
                                                     rp.senderUsername,
+                                                    rp.senderServerNumber,
                                                 ),
                                                 style = MaterialTheme.typography.labelMedium.copy(
                                                     fontWeight = FontWeight.SemiBold,

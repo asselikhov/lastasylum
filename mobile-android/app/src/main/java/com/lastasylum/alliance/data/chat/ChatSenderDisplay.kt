@@ -1,8 +1,10 @@
 package com.lastasylum.alliance.data.chat
 
-/** Chat line: `[TAG] nickname` when tag is set; otherwise plain nickname. */
-fun chatSenderDisplayWithTag(teamTag: String?, username: String): String {
-    val u = username.trim()
-    val t = teamTag?.trim()?.takeIf { it.isNotEmpty() } ?: return u
-    return "[$t] $u"
-}
+import com.lastasylum.alliance.ui.util.chatSenderDisplayLine
+
+/** Chat line: `#109 [TAG] nickname` when server/tag set. */
+fun chatSenderDisplayWithTag(
+    teamTag: String?,
+    username: String,
+    serverNumber: Int? = null,
+): String = chatSenderDisplayLine(teamTag, username, serverNumber)

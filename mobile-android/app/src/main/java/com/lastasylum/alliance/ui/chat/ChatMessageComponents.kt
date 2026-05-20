@@ -110,6 +110,7 @@ fun ChatBubbleAuthorHeader(
     nicknameColor: Color,
     tagBracketColor: Color,
     senderRole: String,
+    serverNumber: Int? = null,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -121,10 +122,13 @@ fun ChatBubbleAuthorHeader(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            val t = teamTag?.trim()?.takeIf { it.isNotEmpty() }
-            if (t != null) {
+            val prefix = com.lastasylum.alliance.ui.util.teamTagWithServerPrefix(
+                teamTag?.trim().orEmpty(),
+                serverNumber,
+            )
+            if (prefix.isNotEmpty()) {
                 Text(
-                    text = "[$t]",
+                    text = prefix,
                     style = MaterialTheme.typography.labelMedium,
                     color = tagBracketColor,
                     maxLines = 1,

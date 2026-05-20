@@ -289,7 +289,11 @@ private fun OverlayChatStripMessage(
     val hasSticker = !lightStrip && stickerStem != null
     val hasText = msg.text.isNotBlank() && (!hasSticker || lightStrip)
     val displayName = remember(msg.senderTeamTag, msg.senderUsername) {
-        chatSenderDisplayWithTag(msg.senderTeamTag, msg.senderUsername).trim().ifBlank { "—" }
+        chatSenderDisplayWithTag(
+            msg.senderTeamTag,
+            msg.senderUsername,
+            msg.senderServerNumber,
+        ).trim().ifBlank { "—" }
     }
     val avatarUrl = remember(msg.senderTelegramUsername) {
         telegramAvatarUrl(msg.senderTelegramUsername)

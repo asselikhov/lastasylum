@@ -46,4 +46,20 @@ interface AdminApi {
         @Path("allianceCode") allianceCode: String,
         @Body body: PutAllianceStickerAccessBody,
     ): AllianceStickerAccessDto
+
+    @GET("admin/game-servers")
+    suspend fun listGameServers(): List<AdminServerSummaryDto>
+
+    @GET("admin/game-identities/users")
+    suspend fun listUsersOnServers(
+        @Query("serverNumber") serverNumber: Int? = null,
+        @Query("q") q: String? = null,
+    ): List<AdminUserOnServerDto>
+
+    @PATCH("admin/users/{userId}/game-identities/{identityId}")
+    suspend fun updateGameIdentity(
+        @Path("userId") userId: String,
+        @Path("identityId") identityId: String,
+        @Body body: AdminUpdateGameIdentityBody,
+    ): com.lastasylum.alliance.data.users.MyProfileDto
 }

@@ -175,6 +175,7 @@ fun AppNavigation(
     val msgPending = stringResource(R.string.admin_ok_pending)
     val msgRole = stringResource(R.string.admin_ok_role)
     val msgRename = stringResource(R.string.admin_ok_rename)
+    val msgNicknameSaved = stringResource(R.string.admin_game_servers_edit_saved)
     val msgDeleted = stringResource(R.string.admin_ok_deleted)
     val msgRoomCreated = stringResource(R.string.admin_ok_room_created)
     val msgRoomRenamed = stringResource(R.string.admin_ok_room_renamed)
@@ -438,6 +439,17 @@ fun AppNavigation(
                     onClearActionError = adminViewModel::clearActionError,
                     onClearRoomError = adminViewModel::clearRoomError,
                     onDismissSnack = adminViewModel::clearSnack,
+                    onGameServerFilter = adminViewModel::setGameServerFilter,
+                    onGameServerSearchChange = adminViewModel::setGameServerSearch,
+                    onRefreshGameServers = adminViewModel::refreshGameServers,
+                    onUpdateGameIdentity = { userId, identityId, nickname ->
+                        adminViewModel.updateGameIdentityAdmin(
+                            userId,
+                            identityId,
+                            nickname,
+                            msgNicknameSaved,
+                        )
+                    },
                 )
             }
         }

@@ -49,4 +49,35 @@ class AdminRepository(
         body: PutAllianceStickerAccessBody,
     ): Result<AllianceStickerAccessDto> =
         runCatching { adminApi.putStickerAccess(allianceCode, body) }
+
+    suspend fun listGameServers(): Result<List<AdminServerSummaryDto>> =
+        runCatching { adminApi.listGameServers() }
+
+    suspend fun listUsersOnServers(
+        serverNumber: Int? = null,
+        q: String? = null,
+    ): Result<List<AdminUserOnServerDto>> =
+        runCatching {
+            adminApi.listUsersOnServers(
+                serverNumber = serverNumber,
+                q = q?.trim()?.takeIf { it.isNotEmpty() },
+            )
+        }
+
+    suspend fun updateGameIdentity(
+        userId: String,
+        identityId: String,
+        gameNickname: String,
+        serverNumber: Int? = null,
+    ): Result<Unit> =
+        runCatching {
+            adminApi.updateGameIdentity(
+                userId = userId,
+                identityId = identityId,
+                body = AdminUpdateGameIdentityBody(
+                    gameNickname = gameNickname,
+                    serverNumber = serverNumber,
+                ),
+            )
+        }
 }

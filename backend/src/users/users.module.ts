@@ -14,6 +14,7 @@ import {
   TeamJoinRequestSchema,
 } from './schemas/team-join-request.schema';
 import { User, UserSchema } from './schemas/user.schema';
+import { AdminGameIdentitiesController } from './admin-game-identities.controller';
 import { AdminTeamsController } from './admin-teams.controller';
 import { TeamsController } from './teams.controller';
 import { TeamsService } from './teams.service';
@@ -87,6 +88,7 @@ import { StickerAccessService } from './sticker-access.service';
     AdminStickerAccessController,
     TeamsController,
     AdminTeamsController,
+    AdminGameIdentitiesController,
   ],
   providers: [
     UsersService,

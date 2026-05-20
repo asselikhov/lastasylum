@@ -49,6 +49,7 @@ export type TeamForumMessageRow = {
   senderUsername: string;
   senderRole: PlayerTeamMemberRole;
   senderTeamTag: string | null;
+  senderServerNumber: number | null;
   text: string;
   replyToMessageId: string | null;
   replyTo:
@@ -57,6 +58,7 @@ export type TeamForumMessageRow = {
         senderUsername: string;
         senderRole: PlayerTeamMemberRole;
         senderTeamTag: string | null;
+        senderServerNumber: number | null;
         text: string;
       }
     | null;
@@ -74,6 +76,7 @@ export type TeamForumMessageRow = {
         senderUsername: string;
         senderRole: PlayerTeamMemberRole;
         senderTeamTag: string | null;
+        senderServerNumber: number | null;
       }
     | null;
   createdAt: string;
@@ -256,6 +259,7 @@ export class TeamForumService {
     senderUsername: string;
     senderRole: PlayerTeamMemberRole;
     senderTeamTag: string | null;
+    senderServerNumber: number | null;
     text: string;
   } {
     return {
@@ -263,6 +267,7 @@ export class TeamForumService {
       senderUsername: doc.senderUsername,
       senderRole: doc.senderRole ?? PlayerTeamMemberRole.R1,
       senderTeamTag: doc.senderTeamTag ?? null,
+      senderServerNumber: doc.senderServerNumber ?? null,
       text: doc.text,
     };
   }
@@ -296,6 +301,7 @@ export class TeamForumService {
       senderUsername: doc.senderUsername,
       senderRole: doc.senderRole ?? PlayerTeamMemberRole.R1,
       senderTeamTag: doc.senderTeamTag ?? null,
+      senderServerNumber: doc.senderServerNumber ?? null,
       text: doc.deletedAt ? '' : doc.text,
       replyToMessageId: replyId,
       replyTo: reply,
@@ -325,6 +331,8 @@ export class TeamForumService {
             senderUsername: doc.forwardedFrom.senderUsername,
             senderRole: doc.forwardedFrom.senderRole ?? PlayerTeamMemberRole.R1,
             senderTeamTag: doc.forwardedFrom.senderTeamTag ?? null,
+            senderServerNumber:
+              doc.forwardedFrom.senderServerNumber ?? null,
           }
         : null,
       createdAt: doc.createdAt?.toISOString() ?? new Date().toISOString(),
@@ -610,6 +618,8 @@ export class TeamForumService {
     const username = this.gameIdentities.resolveSenderUsername(migrated);
     const senderRole = this.teams.resolveSquadRoleForMember(team, userId);
     const senderTeamTag = senderDoc.teamTag ?? null;
+    const senderServerNumber =
+      this.gameIdentities.resolveSenderServerNumber(migrated);
     if (trimmed) {
       this.assertZlobyakaStickerPayload(trimmed);
       await this.stickerAccess.assertUserMaySendStickerMessage(
@@ -658,6 +668,7 @@ export class TeamForumService {
         senderUsername: username,
         senderRole,
         senderTeamTag,
+        senderServerNumber,
         text: trimmed,
         replyToMessageId: replyTarget?._id ?? null,
         imageFileId: legacyMeta?.fileId ?? null,
@@ -748,6 +759,10 @@ export class TeamForumService {
       ),
       senderRole: actorRole,
       senderTeamTag: actorTeamTag,
+      senderServerNumber:
+        this.gameIdentities.resolveSenderServerNumber(
+          await this.gameIdentities.ensureMigrated(actor),
+        ),
       text: fwdText,
       replyToMessageId: null,
       imageFileId: source.imageFileId ?? null,
@@ -763,6 +778,7 @@ export class TeamForumService {
         senderUsername: source.senderUsername,
         senderRole: sourceRole,
         senderTeamTag: sourceTeamTag,
+        senderServerNumber: source.senderServerNumber ?? null,
       },
     });
 
