@@ -1,6 +1,8 @@
 package com.lastasylum.alliance.overlay
 
+import android.content.Context
 import android.os.Build
+import android.util.DisplayMetrics
 import android.view.WindowManager
 
 /**
@@ -38,19 +40,28 @@ object OverlayWindowLayout {
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
 
     fun applyPopupLayoutCompat(params: WindowManager.LayoutParams) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            params.layoutInDisplayCutoutMode =
-                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            params.setFitInsetsTypes(0)
-        }
+        applyDisplayCutoutCompat(params)
+        applyZeroFitInsets(params)
     }
 
     fun applyHistoryLayoutCompat(params: WindowManager.LayoutParams) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            params.layoutInDisplayCutoutMode =
-                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        applyDisplayCutoutCompat(params)
+    }
+
+    /**
+     * Полноэкранные overlay-окна (чат, скрим команд): на MIUI/HyperOS высота окна иногда
+     * меньше физического экрана — задаём реальную высоту дисплея и отключаем fitInsets.
+     */
+    fun applyFullscreenOverlayWindow(context: Context, params: WindowManager.LayoutParams) {
+        applyHistoryLayoutCompat(params)
+        applyZeroFitInsets(params)
+        params.gravity = android.view.Gravity.TOP or android.view.Gravity.START
+        params.x = 0
+        params.y = 0
+        val h = realDisplayHeightPx(context)
+        if (h > 0) {
+            params.width = WindowManager.LayoutParams.MATCH_PARENT
+            params.height = h
         }
     }
 
@@ -82,5 +93,30 @@ object OverlayWindowLayout {
         val mode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or
             WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
         params.softInputMode = mode
+    }
+
+    private fun applyDisplayCutoutCompat(params: WindowManager.LayoutParams) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            params.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+    }
+
+    private fun applyZeroFitInsets(params: WindowManager.LayoutParams) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            params.setFitInsetsTypes(0)
+            params.setFitInsetsSides(0)
+        }
+    }
+
+    fun realDisplayHeightPx(context: Context): Int {
+        val wm = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return 0
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            return wm.currentWindowMetrics.bounds.height().coerceAtLeast(0)
+        }
+        val dm = DisplayMetrics()
+        @Suppress("DEPRECATION")
+        wm.defaultDisplay?.getRealMetrics(dm)
+        return dm.heightPixels.coerceAtLeast(0)
     }
 }

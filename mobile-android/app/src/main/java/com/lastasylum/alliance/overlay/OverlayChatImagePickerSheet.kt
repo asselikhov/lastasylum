@@ -1,8 +1,6 @@
 package com.lastasylum.alliance.overlay
 
-import android.Manifest
 import android.net.Uri
-import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -72,18 +70,14 @@ fun OverlayChatImagePickerSheet(
     var loading by remember { mutableStateOf(true) }
     var permissionEpoch by remember { mutableIntStateOf(0) }
 
-    val readPermission = remember {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            Manifest.permission.READ_MEDIA_IMAGES
-        } else {
-            Manifest.permission.READ_EXTERNAL_STORAGE
-        }
-    }
+    val readPermissions = remember { OverlayDeviceGallery.requiredReadPermissions() }
 
     val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { granted ->
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+    ) { results ->
+        val granted = results.values.any { it }
         if (granted) {
+            galleryUris = null
             loading = true
             permissionEpoch++
         }
@@ -92,7 +86,7 @@ fun OverlayChatImagePickerSheet(
     LaunchedEffect(loading, permissionEpoch) {
         if (!loading) return@LaunchedEffect
         if (!OverlayDeviceGallery.hasReadPermission(context)) {
-            galleryUris = emptyList()
+            galleryUris = null
             loading = false
             return@LaunchedEffect
         }
@@ -149,7 +143,7 @@ fun OverlayChatImagePickerSheet(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
                         )
-                        Button(onClick = { permissionLauncher.launch(readPermission) }) {
+                        Button(onClick = { permissionLauncher.launch(readPermissions) }) {
                             Text(stringResource(R.string.overlay_chat_gallery_grant_access))
                         }
                     }
@@ -239,7 +233,13 @@ fun OverlayChatImagePickerSheet(
 
             Button(
                 onClick = {
-                    onConfirm(selected.toList())
+                    val picked = selected.toList()
+                    val stable = if (picked.isEmpty()) {
+                        emptyList()
+                    } else {
+                        OverlayPickedImages.copyToCache(context, picked)
+                    }
+                    onConfirm(stable)
                     onDismiss()
                 },
                 enabled = selected.isNotEmpty(),

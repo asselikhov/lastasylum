@@ -54,6 +54,24 @@ private fun overlayQuickReactionCatalog(): List<OverlayQuickReaction> = listOf(
         labelRes = R.string.overlay_reaction_heart_cd,
         tintHex = "#FFFF5252",
     ),
+    OverlayQuickReaction(
+        id = "thumbs",
+        iconRes = R.drawable.ic_overlay_reaction_thumbs,
+        labelRes = R.string.overlay_reaction_thumbs_cd,
+        tintHex = "#FF4FC3F7",
+    ),
+    OverlayQuickReaction(
+        id = "fire",
+        iconRes = R.drawable.ic_overlay_reaction_fire,
+        labelRes = R.string.overlay_reaction_fire_cd,
+        tintHex = "#FFFF9800",
+    ),
+    OverlayQuickReaction(
+        id = "star",
+        iconRes = R.drawable.ic_overlay_reaction_star,
+        labelRes = R.string.overlay_reaction_star_cd,
+        tintHex = "#FFFFD54F",
+    ),
 )
 
 /**
@@ -829,8 +847,7 @@ class OverlayCommandsPopover(
             OverlayWindowLayout.popupWindowFlags(),
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
-            OverlayWindowLayout.applyPopupLayoutCompat(this)
-            gravity = Gravity.TOP or Gravity.START
+            OverlayWindowLayout.applyFullscreenOverlayWindow(context, this)
         }
 
         if (runCatching { windowManager.addView(scrim, params) }.isFailure) return
@@ -1009,8 +1026,7 @@ class OverlayCommandsPopover(
                 WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
-            OverlayWindowLayout.applyPopupLayoutCompat(this)
-            gravity = Gravity.TOP or Gravity.START
+            OverlayWindowLayout.applyFullscreenOverlayWindow(context, this)
             OverlayWindowLayout.applyCoordinateDialogSoftInputMode(this)
         }
 
@@ -1208,8 +1224,7 @@ class OverlayCommandsPopover(
             OverlayWindowLayout.popupWindowFlags(),
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
-            OverlayWindowLayout.applyPopupLayoutCompat(this)
-            gravity = Gravity.TOP or Gravity.START
+            OverlayWindowLayout.applyFullscreenOverlayWindow(context, this)
         }
 
         if (runCatching { windowManager.addView(scrim, params) }.isFailure) {
@@ -1399,8 +1414,7 @@ class OverlayCommandsPopover(
                 WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
-            OverlayWindowLayout.applyPopupLayoutCompat(this)
-            gravity = Gravity.TOP or Gravity.START
+            OverlayWindowLayout.applyFullscreenOverlayWindow(context, this)
         }
 
         if (runCatching { windowManager.addView(root, params) }.isFailure) {

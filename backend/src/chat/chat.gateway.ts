@@ -27,7 +27,7 @@ const WS_MESSAGE_MAX = 8;
 const WS_OVERLAY_REACTION_WINDOW_MS = 10_000;
 const WS_OVERLAY_REACTION_MAX = 15;
 
-const ALLOWED_OVERLAY_REACTIONS = new Set(['heart']);
+const ALLOWED_OVERLAY_REACTIONS = new Set(['heart', 'thumbs', 'fire', 'star']);
 
 type GatewayUser = {
   userId: string;

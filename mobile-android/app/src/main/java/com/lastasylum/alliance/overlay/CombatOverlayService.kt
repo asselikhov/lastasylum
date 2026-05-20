@@ -2832,10 +2832,7 @@ class CombatOverlayService : Service() {
             OverlayWindowLayout.historyPanelWindowFlags(),
             PixelFormat.OPAQUE,
         ).apply {
-            OverlayWindowLayout.applyHistoryLayoutCompat(this)
-            gravity = Gravity.TOP or Gravity.START
-            x = 0
-            y = 0
+            OverlayWindowLayout.applyFullscreenOverlayWindow(this@CombatOverlayService, this)
             OverlayWindowLayout.applyOverlayFullscreenChatSoftInputMode(this)
         }
 

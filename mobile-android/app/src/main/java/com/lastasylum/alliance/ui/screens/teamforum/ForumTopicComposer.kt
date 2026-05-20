@@ -79,6 +79,7 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
 import com.lastasylum.alliance.data.teams.TeamForumMessageDto
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
+import com.lastasylum.alliance.overlay.OverlayChatImagePickerSheet
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.ui.chat.replyPreviewText
 import com.lastasylum.alliance.ui.screens.teamnews.teamNewsAuthedImageRequest
@@ -116,6 +117,7 @@ fun ForumTopicComposer(
 ) {
     var showMediaPanel by remember { mutableStateOf(false) }
     var showAttachMenu by remember { mutableStateOf(false) }
+    var showOverlayGalleryPicker by remember { mutableStateOf(false) }
     val isUploadingAttachment = isUploadingImage || isUploadingFile
     val context = LocalContext.current
     val overlayUi = LocalOverlayUiMode.current
@@ -152,10 +154,43 @@ fun ForumTopicComposer(
         }
     }
 
+    fun openImageAttach() {
+        focusManager.clearFocus()
+        keyboard?.hide()
+        OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
+        if (overlayUi) {
+            showOverlayGalleryPicker = true
+        } else {
+            pickImagesLauncher?.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+            )
+        }
+    }
+
     if (canHandleBack) {
         BackHandler(enabled = showMediaPanel) {
             showMediaPanel = false
         }
+    }
+
+    if (canHandleBack) {
+        BackHandler(enabled = showOverlayGalleryPicker) {
+            showOverlayGalleryPicker = false
+            OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
+        }
+    }
+
+    if (overlayUi && showOverlayGalleryPicker) {
+        OverlayChatImagePickerSheet(
+            maxSelection = 12,
+            onDismiss = {
+                showOverlayGalleryPicker = false
+                OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
+            },
+            onConfirm = { uris ->
+                if (uris.isNotEmpty()) onImageUrisPicked(uris)
+            },
+        )
     }
 
     Column(
@@ -435,14 +470,7 @@ fun ForumTopicComposer(
                                     if (isForumAdmin) {
                                         showAttachMenu = true
                                     } else {
-                                        focusManager.clearFocus()
-                                        keyboard?.hide()
-                                        OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
-                                        pickImagesLauncher?.launch(
-                                            PickVisualMediaRequest(
-                                                ActivityResultContracts.PickVisualMedia.ImageOnly,
-                                            ),
-                                        )
+                                        openImageAttach()
                                     }
                                 },
                                 enabled = !isSending && !isUploadingAttachment,
@@ -470,14 +498,7 @@ fun ForumTopicComposer(
                                     text = { Text(stringResource(R.string.chat_attach_menu_photo)) },
                                     onClick = {
                                         showAttachMenu = false
-                                        focusManager.clearFocus()
-                                        keyboard?.hide()
-                                        OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
-                                        pickImagesLauncher?.launch(
-                                            PickVisualMediaRequest(
-                                                ActivityResultContracts.PickVisualMedia.ImageOnly,
-                                            ),
-                                        )
+                                        openImageAttach()
                                     },
                                 )
                                 DropdownMenuItem(
