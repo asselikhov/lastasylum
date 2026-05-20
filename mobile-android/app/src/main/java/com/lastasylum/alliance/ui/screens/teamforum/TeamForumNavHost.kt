@@ -964,7 +964,6 @@ private fun TeamForumTopicChatRoute(
                         ForumMessageBubble(
                             message = msg,
                             cluster = forumClusterFlags.getOrNull(idx),
-                            messageIndex = idx,
                             isMine = mine,
                             canDelete = canDeleteMsg,
                             inSelectionMode = inSelectionMode,

@@ -312,7 +312,7 @@ fun TeamScreen(
                             )
                         }
                     } else if (teamDetail != null) {
-                        val team = teamDetail!!
+                        val team = teamDetail
                         val myTeamRole = remember(team.id, currentUserId, team.members) {
                             team.members.find { it.userId == currentUserId }?.teamRole ?: "R1"
                         }

@@ -78,7 +78,6 @@ import androidx.compose.ui.platform.LocalDensity
 internal fun ForumMessageBubble(
     message: TeamForumMessageDto,
     cluster: ForumMessageClusterFlags?,
-    messageIndex: Int,
     isMine: Boolean,
     canDelete: Boolean,
     inSelectionMode: Boolean,

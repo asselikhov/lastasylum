@@ -1286,7 +1286,6 @@ private fun ChatMessagesLazyList(
                             val cluster = messageClusterFlags.getOrNull(e.messageIndex)
                             val clusterTop = chatBubbleClusterTopSpacing(timeline, idx, message)
                             ChatBubbleRow(
-                                messageIndex = e.messageIndex,
                                 message = message,
                                 cluster = cluster,
                                 isMine = chatMessageIsOwn(message, state.currentUserId),
@@ -1313,7 +1312,6 @@ private fun ChatMessagesLazyList(
                             val cluster = messageClusterFlags.getOrNull(e.firstMessageIndex)
                             val clusterTop = chatBubbleClusterTopSpacing(timeline, idx, message)
                             ChatAlbumRow(
-                                messageIndex = e.firstMessageIndex,
                                 message = message,
                                 cluster = cluster,
                                 resolvedImageUrls = e.resolvedImageUrls,
@@ -1333,7 +1331,6 @@ private fun ChatMessagesLazyList(
                                 onOpenActions = { id -> onOpenMessageActions(id) },
                                 onToggleSelection = onToggleMessageSelection,
                                 onSwipeReply = onReplyToMessage,
-                                _onJumpToQuotedMessage = jumpToQuotedMessage,
                             )
                         }
                     }
@@ -2742,9 +2739,7 @@ private fun ChatFloatingImageAttachmentsBlock(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-@Suppress("UNUSED_PARAMETER")
 private fun ChatAlbumRow(
-    messageIndex: Int,
     message: ChatMessage,
     cluster: ChatMessageClusterFlags?,
     resolvedImageUrls: List<String>,
@@ -2759,7 +2754,6 @@ private fun ChatAlbumRow(
     onOpenActions: (String) -> Unit,
     onToggleSelection: (String) -> Unit,
     onSwipeReply: (String) -> Unit,
-    _onJumpToQuotedMessage: (String) -> Unit,
 ) {
     val messageId = message._id
     val haptics = LocalHapticFeedback.current
@@ -2905,7 +2899,6 @@ private fun ChatAlbumRow(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ChatBubbleRow(
-    messageIndex: Int,
     message: ChatMessage,
     cluster: ChatMessageClusterFlags?,
     isMine: Boolean,
