@@ -42,6 +42,8 @@ class ChatRepository(
     private var realtimeTypingListener: ((ChatTypingEvent) -> Unit)? = null
     private var realtimeReadListener: ((ChatRoomReadEvent) -> Unit)? = null
     private val overlayMessageListeners = java.util.concurrent.CopyOnWriteArrayList<(ChatMessage) -> Unit>()
+    private val overlayReactionListeners =
+        java.util.concurrent.CopyOnWriteArrayList<(OverlayReactionEvent) -> Unit>()
     private val overlayChatPanelClosedListeners =
         java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
 
@@ -221,6 +223,33 @@ class ChatRepository(
         socketManager.emitTyping(roomId)
     }
 
+    fun emitOverlayReaction(targetUserId: String, reaction: String = "heart") {
+        socketManager.emitOverlayReaction(targetUserId, reaction)
+    }
+
+    fun addOverlayReactionListener(listener: (OverlayReactionEvent) -> Unit) {
+        if (!overlayReactionListeners.contains(listener)) {
+            overlayReactionListeners.add(listener)
+        }
+        socketManager.addOverlayReactionListener(listener)
+        overlayRealtimeRoomIds.clear()
+        overlayRealtimeRoomIds.addAll(realtimeRoomIdsForOverlayBootstrap())
+        ensureRealtimeSocketConnected()
+    }
+
+    fun removeOverlayReactionListener(listener: (OverlayReactionEvent) -> Unit) {
+        overlayReactionListeners.remove(listener)
+        socketManager.removeOverlayReactionListener(listener)
+        if (overlayMessageListeners.isEmpty() && overlayReactionListeners.isEmpty()) {
+            overlayRealtimeRoomIds.clear()
+            if (primaryRealtimeRoomIds.isEmpty()) {
+                socketManager.disconnect()
+            } else {
+                ensureRealtimeSocketConnected()
+            }
+        }
+    }
+
     /** Called after OkHttp refreshes access token so the socket re-authenticates. */
     fun onAccessTokenRefreshed() {
         socketManager.reconnectWithFreshToken()
@@ -256,7 +285,7 @@ class ChatRepository(
     fun removeOverlayMessageListener(listener: (ChatMessage) -> Unit) {
         overlayMessageListeners.remove(listener)
         socketManager.removeMessageListener(listener)
-        if (overlayMessageListeners.isEmpty()) {
+        if (overlayMessageListeners.isEmpty() && overlayReactionListeners.isEmpty()) {
             overlayRealtimeRoomIds.clear()
             if (primaryRealtimeRoomIds.isEmpty()) {
                 socketManager.disconnect()
@@ -271,6 +300,8 @@ class ChatRepository(
         realtimeUiListener = null
         primaryRealtimeRoomIds.clear()
         overlayRealtimeRoomIds.clear()
+        overlayReactionListeners.forEach { socketManager.removeOverlayReactionListener(it) }
+        overlayReactionListeners.clear()
         socketManager.disconnectSocketAndClearListeners()
     }
 }

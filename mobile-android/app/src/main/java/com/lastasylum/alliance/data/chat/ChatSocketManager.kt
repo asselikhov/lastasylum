@@ -22,6 +22,8 @@ class ChatSocketManager {
         CopyOnWriteArrayList<(ChatMessageDeletedEvent) -> Unit>()
     private val typingListeners = CopyOnWriteArrayList<(ChatTypingEvent) -> Unit>()
     private val readListeners = CopyOnWriteArrayList<(ChatRoomReadEvent) -> Unit>()
+    private val overlayReactionListeners =
+        CopyOnWriteArrayList<(OverlayReactionEvent) -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var reconnectAttempt = 0
     private var intentionalDisconnect = false
@@ -83,11 +85,32 @@ class ChatSocketManager {
         readListeners.remove(listener)
     }
 
+    fun addOverlayReactionListener(listener: (OverlayReactionEvent) -> Unit) {
+        if (!overlayReactionListeners.contains(listener)) {
+            overlayReactionListeners.add(listener)
+        }
+    }
+
+    fun removeOverlayReactionListener(listener: (OverlayReactionEvent) -> Unit) {
+        overlayReactionListeners.remove(listener)
+    }
+
     fun clearMessageListeners() {
         messageListeners.clear()
         messageDeletedListeners.clear()
         typingListeners.clear()
         readListeners.clear()
+        overlayReactionListeners.clear()
+    }
+
+    fun emitOverlayReaction(targetUserId: String, reaction: String = "heart") {
+        if (targetUserId.isBlank()) return
+        socket?.emit(
+            "overlay:reaction",
+            JSONObject()
+                .put("targetUserId", targetUserId)
+                .put("reaction", reaction),
+        )
     }
 
     fun connect(
@@ -176,6 +199,7 @@ class ChatSocketManager {
         messageDeletedListeners.clear()
         typingListeners.clear()
         readListeners.clear()
+        overlayReactionListeners.clear()
     }
 
     private fun cancelReconnect() {
@@ -322,6 +346,22 @@ class ChatSocketManager {
                     )
                     if (event.userId.isBlank() || event.messageId.isBlank()) return@on
                     readListeners.forEach { l -> runCatching { l(event) } }
+                }
+                on("overlay:reaction") { args ->
+                    val payload = args.firstOrNull() as? JSONObject ?: return@on
+                    val fromUserId = payload.optString("fromUserId", "")
+                    val fromUsername = payload.optString("fromUsername", "")
+                    val targetUserId = payload.optString("targetUserId", "")
+                    val reaction = payload.optString("reaction", "heart")
+                        .ifBlank { "heart" }
+                    if (fromUserId.isBlank() || targetUserId.isBlank()) return@on
+                    val event = OverlayReactionEvent(
+                        fromUserId = fromUserId,
+                        fromUsername = fromUsername,
+                        reaction = reaction,
+                        targetUserId = targetUserId,
+                    )
+                    overlayReactionListeners.forEach { l -> runCatching { l(event) } }
                 }
                 connect()
             }

@@ -46,6 +46,7 @@ class OverlayCommandsPopover(
     private val scope: CoroutineScope,
     private val dp: (Int) -> Int,
     private val sendCoords: suspend (label: String, x: Int, y: Int, excavation: Boolean) -> Result<ChatMessage>,
+    private val emitOverlayReaction: (targetUserId: String) -> Unit = { },
 ) {
     private var menuScrim: FrameLayout? = null
     private var coordScrim: FrameLayout? = null
@@ -150,6 +151,11 @@ class OverlayCommandsPopover(
             return
         }
         showMenu(windowManager)
+    }
+
+    /** Показать вспышку сердца от сокомандника (пришла по сокету). */
+    fun showIncomingReactionBurst(windowManager: WindowManager, fromUsername: String) {
+        showReactionBurst(windowManager, fromUsername)
     }
 
     private fun overlayWindowType(): Int =
@@ -1209,7 +1215,12 @@ class OverlayCommandsPopover(
                                 listColumn.addView(
                                     memberPickRow(m) {
                                         hideReactionPickOnly()
-                                        showReactionBurst(windowManager, m.username)
+                                        emitOverlayReaction(m.userId)
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(R.string.overlay_reaction_sent, m.username),
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
                                     },
                                 )
                             }
@@ -1220,7 +1231,7 @@ class OverlayCommandsPopover(
         }
     }
 
-    private fun showReactionBurst(windowManager: WindowManager, targetUsername: String) {
+    private fun showReactionBurst(windowManager: WindowManager, subtitleUsername: String) {
         hideReactionBurstOnly()
         acquireGameGateSuppress()
         attachedWindowManager = windowManager
@@ -1237,7 +1248,7 @@ class OverlayCommandsPopover(
             scaleType = ImageView.ScaleType.FIT_CENTER
         }
         val label = labelText(
-            targetUsername,
+            subtitleUsername,
             13f,
             Color.parseColor("#FFF8FAFF"),
             bold = true,

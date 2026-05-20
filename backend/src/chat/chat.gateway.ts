@@ -17,10 +17,17 @@ import { ChatRoomsService } from './chat-rooms.service';
 import { parseAllowedOriginsFromEnv } from '../common/config/allowed-origins';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { ChatService } from './chat.service';
+import { Types } from 'mongoose';
 
 /** Align with HTTP POST /chat/messages throttling (8 sends per 10s window). */
 const WS_MESSAGE_WINDOW_MS = 10_000;
 const WS_MESSAGE_MAX = 8;
+
+/** Quick overlay reaction burst (e.g. heart) — slightly looser cap than chat messages. */
+const WS_OVERLAY_REACTION_WINDOW_MS = 10_000;
+const WS_OVERLAY_REACTION_MAX = 15;
+
+const ALLOWED_OVERLAY_REACTIONS = new Set(['heart']);
 
 type GatewayUser = {
   userId: string;
@@ -51,6 +58,9 @@ export class ChatGateway {
 
   /** userId -> timestamps of message:send (sliding window). */
   private readonly wsMessageSendTimestamps = new Map<string, number[]>();
+
+  /** userId -> timestamps of overlay:reaction (sliding window). */
+  private readonly wsOverlayReactionTimestamps = new Map<string, number[]>();
 
   /** socketId:roomId -> last typing broadcast (ms). */
   private readonly wsTypingLastEmit = new Map<string, number>();
@@ -94,6 +104,9 @@ export class ChatGateway {
       username: payload.username,
       role: payload.role,
     } satisfies GatewayUser;
+
+    /** Personal room for push-style overlay signals (reactions, etc.). */
+    void client.join(`user:${payload.sub}`);
   }
 
   @SubscribeMessage('room:join')
@@ -204,6 +217,72 @@ export class ChatGateway {
     });
   }
 
+  /**
+   * Send a lightweight fullscreen overlay reaction to a teammate (same player team only).
+   * Delivered to the recipient's sockets via room `user:<targetUserId>`.
+   */
+  @SubscribeMessage('overlay:reaction')
+  async sendOverlayReaction(
+    @ConnectedSocket() client: AuthSocket,
+    @MessageBody()
+    body: { targetUserId?: string; reaction?: string },
+  ) {
+    if (!client.data.user) {
+      throw new WsException('Unauthorized socket connection');
+    }
+    const targetUserId =
+      typeof body?.targetUserId === 'string' ? body.targetUserId.trim() : '';
+    if (!targetUserId || !Types.ObjectId.isValid(targetUserId)) {
+      throw new WsException('targetUserId is required');
+    }
+    const rawReaction =
+      typeof body?.reaction === 'string' ? body.reaction.trim() : 'heart';
+    const reaction = ALLOWED_OVERLAY_REACTIONS.has(rawReaction)
+      ? rawReaction
+      : 'heart';
+
+    if (targetUserId === client.data.user.userId) {
+      throw new WsException('Invalid recipient');
+    }
+
+    this.assertWsOverlayReactionRate(client.data.user.userId);
+
+    await this.chatService.assertUserMayUseChat(client.data.user.userId);
+
+    const sender = await this.usersService.findById(client.data.user.userId);
+    const target = await this.usersService.findById(targetUserId);
+    if (!sender || !target) {
+      throw new WsException('User not found');
+    }
+    if (
+      this.usersService.effectiveMembership(sender) !==
+        TeamMembershipStatus.ACTIVE ||
+      this.usersService.effectiveMembership(target) !==
+        TeamMembershipStatus.ACTIVE
+    ) {
+      throw new WsException('Reaction is not available for this account');
+    }
+
+    const senderTeamId = sender.playerTeamId?.toString() ?? null;
+    const targetTeamId = target.playerTeamId?.toString() ?? null;
+    if (
+      !senderTeamId ||
+      !targetTeamId ||
+      senderTeamId !== targetTeamId
+    ) {
+      throw new WsException('Recipient is not in your team');
+    }
+
+    this.server?.to(`user:${targetUserId}`).emit('overlay:reaction', {
+      fromUserId: client.data.user.userId,
+      fromUsername: client.data.user.username,
+      reaction,
+      targetUserId,
+    });
+
+    return { event: 'overlay:reaction:sent', data: { targetUserId, reaction } };
+  }
+
   broadcastNewMessage(roomId: string, message: unknown) {
     this.server?.to(`chat:${roomId}`).emit('message:new', message);
   }
@@ -221,5 +300,16 @@ export class ChatGateway {
     }
     recent.push(now);
     this.wsMessageSendTimestamps.set(userId, recent);
+  }
+
+  private assertWsOverlayReactionRate(userId: string): void {
+    const now = Date.now();
+    const prev = this.wsOverlayReactionTimestamps.get(userId) ?? [];
+    const recent = prev.filter((t) => now - t < WS_OVERLAY_REACTION_WINDOW_MS);
+    if (recent.length >= WS_OVERLAY_REACTION_MAX) {
+      throw new WsException('Too many reactions, try again shortly');
+    }
+    recent.push(now);
+    this.wsOverlayReactionTimestamps.set(userId, recent);
   }
 }

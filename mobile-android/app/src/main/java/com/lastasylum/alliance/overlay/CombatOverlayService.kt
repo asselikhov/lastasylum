@@ -75,6 +75,7 @@ import androidx.compose.ui.unit.dp
 import com.google.android.material.color.MaterialColors
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.OverlayReactionEvent
 import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.data.auth.JwtAccessTokenClaims
@@ -176,6 +177,9 @@ class CombatOverlayService : Service() {
                     repo.sendMessageWithRetries(text, roomId)
                 }
             },
+            emitOverlayReaction = { targetUserId ->
+                AppContainer.from(this@CombatOverlayService).chatRepository.emitOverlayReaction(targetUserId)
+            },
         )
     }
     private val presenceHeartbeat by lazy {
@@ -200,6 +204,7 @@ class CombatOverlayService : Service() {
     private var chatStripParams: WindowManager.LayoutParams? = null
     private val chatStripPreviewFlow = MutableStateFlow<List<ChatMessage>>(emptyList())
     private var overlayMessageListener: ((ChatMessage) -> Unit)? = null
+    private var overlayReactionListener: ((OverlayReactionEvent) -> Unit)? = null
     /** Лента: короткий TTL и мало строк превью — компактная полоса у края. */
     private val stripBuffer = OverlayChatStripBuffer(
         messageTtlSeconds = OverlayChatStripBuffer.DEFAULT_MESSAGE_TTL_SECONDS,
@@ -2345,6 +2350,14 @@ class CombatOverlayService : Service() {
         if (overlayMessageListener != null) return
         registerVoiceMicPermissionReceiver()
         cancelStripTick()
+        val reactionListener: (OverlayReactionEvent) -> Unit = { event ->
+            mainHandler.post {
+                if (!overlaySessionActive) return@post
+                val wm = windowManager ?: getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return@post
+                overlayCommandsPopover.showIncomingReactionBurst(wm, event.fromUsername)
+            }
+        }
+        overlayReactionListener = reactionListener
         val listener: (ChatMessage) -> Unit = listener@{ msg ->
             val raidId = AppContainer.from(this).chatRoomPreferences.getRaidRoomId()
                 ?: return@listener
@@ -2366,6 +2379,7 @@ class CombatOverlayService : Service() {
         overlayMessageListener = listener
         mainHandler.post {
             AppContainer.from(this).chatRepository.addOverlayMessageListener(listener)
+            AppContainer.from(this).chatRepository.addOverlayReactionListener(reactionListener)
             if (!isOverlayHudOnlyMode()) {
                 scheduleStripTick()
             }
@@ -2445,6 +2459,12 @@ class CombatOverlayService : Service() {
             }
         }
         overlayMessageListener = null
+        overlayReactionListener?.let { listener ->
+            runCatching {
+                AppContainer.from(applicationContext).chatRepository.removeOverlayReactionListener(listener)
+            }
+        }
+        overlayReactionListener = null
     }
 
     /** Лента чата и подписки; FAB-панель убрана — управление из угловых HUD. */
