@@ -204,22 +204,27 @@ export class UsersService {
       .exec();
   }
 
+  /** Account login is the email; username is kept in sync for legacy fields. */
   async updateUsername(
     userId: string,
     username: string,
   ): Promise<UserDocument | null> {
-    const trimmed = username.trim();
+    const email = username.trim().toLowerCase();
     const taken = await this.userModel
       .findOne({
-        username: trimmed,
+        email,
         _id: { $ne: userId },
       })
       .exec();
     if (taken) {
-      throw new ConflictException('Username is already taken');
+      throw new ConflictException('Email is already in use');
     }
     return this.userModel
-      .findByIdAndUpdate(userId, { username: trimmed }, { returnDocument: 'after' })
+      .findByIdAndUpdate(
+        userId,
+        { email, username: email },
+        { returnDocument: 'after' },
+      )
       .exec();
   }
 

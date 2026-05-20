@@ -110,9 +110,8 @@ fun SquadRelayApp() {
                                 errorMessage = authState.error,
                                 infoMessage = authState.infoMessage,
                                 onLoginClick = authViewModel::login,
-                                onRegisterClick = { username, serverNumber, gameNickname, email, password ->
+                                onRegisterClick = { serverNumber, gameNickname, email, password ->
                                     authViewModel.register(
-                                        username,
                                         email,
                                         password,
                                         serverNumber,

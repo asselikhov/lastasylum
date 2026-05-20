@@ -254,6 +254,41 @@ export class TeamForumService {
     return null;
   }
 
+  private async applySenderServerNumbersToForumDocs(
+    docs: TeamForumMessageDocument[],
+  ): Promise<void> {
+    const senderIds = [
+      ...new Set(
+        docs.flatMap((d) => {
+          const ids = [d.senderUserId];
+          const fwd = d.forwardedFrom?.senderUserId;
+          if (fwd) ids.push(fwd);
+          return ids;
+        }),
+      ),
+    ];
+    const map =
+      await this.gameIdentities.buildSenderServerNumberMap(senderIds);
+    for (const d of docs) {
+      if (d.senderServerNumber == null || d.senderServerNumber < 1) {
+        const n = map.get(d.senderUserId);
+        if (n != null) {
+          (d as { senderServerNumber: number }).senderServerNumber = n;
+        }
+      }
+      const fwd = d.forwardedFrom;
+      if (
+        fwd &&
+        (fwd.senderServerNumber == null || fwd.senderServerNumber < 1)
+      ) {
+        const n = map.get(fwd.senderUserId);
+        if (n != null) {
+          (fwd as { senderServerNumber: number }).senderServerNumber = n;
+        }
+      }
+    }
+  }
+
   private replyPreview(doc: TeamForumMessageDocument): {
     id: string;
     senderUsername: string;
@@ -393,6 +428,7 @@ export class TeamForumService {
       .sort({ createdAt: 1 })
       .limit(limit)
       .exec();
+    await this.applySenderServerNumbersToForumDocs(docs);
     return docs.map((doc) => this.messageRow(doc, null));
   }
 
@@ -602,6 +638,11 @@ export class TeamForumService {
         d,
       ]),
     );
+    const allDocs = [
+      ...docs,
+      ...(replyDocs as unknown as TeamForumMessageDocument[]),
+    ];
+    await this.applySenderServerNumbersToForumDocs(allDocs);
     return docs
       .map((d) => {
         const rid = this.asIdString(d.replyToMessageId);

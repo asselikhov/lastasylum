@@ -11,17 +11,17 @@ class AuthRepository(
     private val chatRoomPreferences: ChatRoomPreferences,
 ) {
     suspend fun register(
-        username: String,
         email: String,
         password: String,
         serverNumber: Int,
         gameNickname: String,
     ): Result<RegisterResult> {
         return suspendRunCatching {
+            val login = email.trim().lowercase(Locale.ROOT)
             val body = authApi.register(
                 RegisterRequest(
-                    username = username.trim(),
-                    email = email.trim(),
+                    username = login,
+                    email = login,
                     password = password,
                     serverNumber = serverNumber,
                     gameNickname = gameNickname.trim(),

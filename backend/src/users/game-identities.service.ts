@@ -619,25 +619,34 @@ export class GameIdentitiesService {
     return null;
   }
 
+  /** R5 admin / chat enrich: server number per sender when message has no stored value. */
+  async buildSenderServerNumberMap(
+    userIds: string[],
+  ): Promise<Map<string, number | null>> {
+    const unique = [...new Set(userIds.filter(Boolean))];
+    const out = new Map<string, number | null>();
+    if (!unique.length) return out;
+    const users = await this.userModel
+      .find({
+        _id: { $in: unique.map((id) => new Types.ObjectId(id)) },
+      })
+      .exec();
+    for (const user of users) {
+      const migrated = await this.ensureMigrated(user);
+      out.set(
+        migrated._id.toString(),
+        this.resolveSenderServerNumber(migrated),
+      );
+    }
+    return out;
+  }
+
   async listUsersForAdminByServer(opts: {
     serverNumber?: number;
     q?: string;
     withoutTeam?: boolean;
   }): Promise<AdminUserOnServerRow[]> {
-    const filter: Record<string, unknown> = {
-      gameIdentities: { $exists: true, $ne: [] },
-    };
-    const identityMatch: Record<string, unknown> = {};
-    if (opts.serverNumber != null) {
-      identityMatch.serverNumber = opts.serverNumber;
-    }
-    if (opts.withoutTeam) {
-      identityMatch.playerTeamId = null;
-    }
-    if (Object.keys(identityMatch).length > 0) {
-      filter.gameIdentities = { $elemMatch: identityMatch };
-    }
-    const users = await this.userModel.find(filter).exec();
+    const users = await this.userModel.find({}).exec();
     const teamIds = [
       ...new Set(
         users.flatMap((u) =>
@@ -692,7 +701,7 @@ export class GameIdentitiesService {
         const row: AdminUserOnServerRow = {
           userId: migrated._id.toString(),
           identityId: this.identityId(g),
-          accountUsername: migrated.username,
+          accountUsername: migrated.email,
           email: migrated.email,
           serverNumber: g.serverNumber,
           gameNickname: g.gameNickname,

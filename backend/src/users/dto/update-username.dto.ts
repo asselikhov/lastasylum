@@ -1,7 +1,7 @@
-import { IsString, MinLength } from 'class-validator';
+import { IsEmail } from 'class-validator';
 
 export class UpdateUsernameDto {
-  @IsString()
-  @MinLength(3)
+  /** Account login (email); stored as both email and username. */
+  @IsEmail()
   username: string;
 }

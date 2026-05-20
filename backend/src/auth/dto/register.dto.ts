@@ -13,10 +13,11 @@ import {
 import { AllianceRole } from '../../common/enums/alliance-role.enum';
 
 export class RegisterDto {
-  /** Логин аккаунта SquadRelay (уникальный). */
+  /** @deprecated Ignored; login is [email]. Kept for older clients. */
+  @IsOptional()
   @IsString()
   @MinLength(3)
-  username: string;
+  username?: string;
 
   @IsEmail()
   email: string;

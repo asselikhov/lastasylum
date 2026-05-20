@@ -323,9 +323,9 @@ fun ProfileScreen(
                 profile?.let { p ->
                     ProfileStatRowEditable(
                         label = stringResource(R.string.profile_field_account_login),
-                        value = p.username,
+                        value = p.email,
                         editable = true,
-                        onEdit = { openDialog(ProfileEditDialog.AccountLogin, p.username) },
+                        onEdit = { openDialog(ProfileEditDialog.AccountLogin, p.email) },
                     )
                     HorizontalDivider(
                         modifier = Modifier.padding(horizontal = 12.dp),
@@ -478,15 +478,23 @@ fun ProfileScreen(
                             supportingText = {
                                 Text(
                                     if (isAccount) {
-                                        stringResource(R.string.profile_hint_ingame_name)
+                                        stringResource(R.string.profile_hint_account_email)
                                     } else {
                                         stringResource(R.string.auth_game_nickname_helper)
                                     },
                                 )
                             },
                             keyboardOptions = KeyboardOptions(
-                                capitalization = KeyboardCapitalization.Words,
-                                keyboardType = KeyboardType.Text,
+                                capitalization = if (isAccount) {
+                                    KeyboardCapitalization.None
+                                } else {
+                                    KeyboardCapitalization.Words
+                                },
+                                keyboardType = if (isAccount) {
+                                    KeyboardType.Email
+                                } else {
+                                    KeyboardType.Text
+                                },
                             ),
                         )
                         dialogError?.let { e ->
@@ -502,7 +510,11 @@ fun ProfileScreen(
                     Button(
                         onClick = {
                             val trimmed = draft.trim()
-                            if (trimmed.length < if (isAccount) 3 else 2) return@Button
+                            if (isAccount) {
+                                if (!trimmed.contains('@') || trimmed.length < 5) return@Button
+                            } else if (trimmed.length < 2) {
+                                return@Button
+                            }
                             scope.launch {
                                 dialogSaving = true
                                 dialogError = null
@@ -524,8 +536,10 @@ fun ProfileScreen(
                                 dialogSaving = false
                             }
                         },
-                        enabled = !dialogSaving &&
-                            draft.trim().length >= if (isAccount) 3 else 2,
+                        enabled = !dialogSaving && run {
+                            val t = draft.trim()
+                            if (isAccount) t.contains('@') && t.length >= 5 else t.length >= 2
+                        },
                     ) {
                         if (dialogSaving) {
                             CircularProgressIndicator(

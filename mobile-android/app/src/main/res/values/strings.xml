@@ -16,7 +16,7 @@
     <string name="auth_server_number_helper">От 1 до 9999</string>
     <string name="auth_game_nickname">Игровой никнейм</string>
     <string name="auth_game_nickname_helper">2–32 символа; уникален на выбранном сервере</string>
-    <string name="auth_email">Email</string>
+    <string name="auth_email">Email (логин)</string>
     <string name="auth_password">Пароль</string>
     <string name="auth_password_confirm">Повтор пароля</string>
     <string name="auth_button_login">Войти</string>
@@ -207,7 +207,8 @@
     <!-- Profile -->
     <string name="profile_header_title">Профиль</string>
     <string name="profile_section_account">Данные аккаунта</string>
-    <string name="profile_field_account_login">Логин аккаунта</string>
+    <string name="profile_field_account_login">Email (логин)</string>
+    <string name="profile_hint_account_email">Адрес почты для входа в SquadRelay</string>
     <string name="profile_field_ingame_name">Игровой ник (активный)</string>
     <string name="profile_field_server">Сервер</string>
     <string name="profile_server_manage_title">Серверы и никнеймы</string>

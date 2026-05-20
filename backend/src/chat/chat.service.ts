@@ -209,14 +209,26 @@ export class ChatService {
     return date ? date.toISOString() : null;
   }
 
+  private resolveStoredSenderServerNumber(
+    message: MessageLean,
+    senderServerNumberMap?: Map<string, number | null>,
+  ): number | null {
+    const stored = message.senderServerNumber ?? null;
+    if (stored != null && stored >= 1) return stored;
+    return senderServerNumberMap?.get(message.senderId) ?? null;
+  }
+
   private serializeReplyPreview(
     message: MessageLean,
     senderTeamTagMap?: Map<string, string | null>,
+    senderServerNumberMap?: Map<string, number | null>,
   ): ChatMessageReplyPreview {
     const senderTeamTag =
       message.senderTeamTag ?? senderTeamTagMap?.get(message.senderId) ?? null;
-    const senderServerNumber =
-      message.senderServerNumber ?? null;
+    const senderServerNumber = this.resolveStoredSenderServerNumber(
+      message,
+      senderServerNumberMap,
+    );
     return {
       _id: this.asIdString(message._id)!,
       senderId: message.senderId,
@@ -236,6 +248,7 @@ export class ChatService {
     senderTelegramMap?: Map<string, string | null>,
     senderTeamTagMap?: Map<string, string | null>,
     viewerUserId?: string,
+    senderServerNumberMap?: Map<string, number | null>,
   ): ChatMessageView {
     const replyToMessageId = this.asIdString(message.replyToMessageId);
     const replyTarget = replyToMessageId
@@ -260,7 +273,9 @@ export class ChatService {
           senderRole: message.forwardedFrom.senderRole,
           senderTeamTag: message.forwardedFrom.senderTeamTag ?? null,
           senderServerNumber:
-            message.forwardedFrom.senderServerNumber ?? null,
+            message.forwardedFrom.senderServerNumber ??
+            senderServerNumberMap?.get(message.forwardedFrom.senderId) ??
+            null,
         }
       : null;
     const reactions = (message.reactions ?? [])
@@ -278,7 +293,10 @@ export class ChatService {
       senderUsername: message.senderUsername,
       senderRole: message.senderRole,
       senderTeamTag,
-      senderServerNumber: message.senderServerNumber ?? null,
+      senderServerNumber: this.resolveStoredSenderServerNumber(
+        message,
+        senderServerNumberMap,
+      ),
       senderTelegramUsername: senderTelegramMap?.get(message.senderId) ?? null,
       text: message.deletedAt ? '' : message.text,
       editedAt: this.toIso(message.editedAt),
@@ -289,7 +307,11 @@ export class ChatService {
       updatedAt: this.toIso(message.updatedAt),
       replyToMessageId,
       replyTo: replyTarget
-        ? this.serializeReplyPreview(replyTarget, senderTeamTagMap)
+        ? this.serializeReplyPreview(
+            replyTarget,
+            senderTeamTagMap,
+            senderServerNumberMap,
+          )
         : null,
       deletedAt: this.toIso(message.deletedAt),
       deletedByUserId: message.deletedByUserId ?? null,
@@ -345,6 +367,8 @@ export class ChatService {
       await this.usersService.findTelegramUsernamesByIds(senderIds);
     const senderTeamTagMap =
       await this.usersService.findTeamTagsByIds(senderIds);
+    const senderServerNumberMap =
+      await this.gameIdentities.buildSenderServerNumberMap(senderIds);
     const replyMapWithRoles = new Map(
       [...replyMap.entries()].map(([id, doc]) => [
         id,
@@ -358,6 +382,7 @@ export class ChatService {
         senderTelegramMap,
         senderTeamTagMap,
         viewerUserId,
+        senderServerNumberMap,
       ),
     );
   }

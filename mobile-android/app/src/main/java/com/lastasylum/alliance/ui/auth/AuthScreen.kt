@@ -59,7 +59,6 @@ fun AuthScreen(
     infoMessage: String?,
     onLoginClick: (email: String, password: String) -> Unit,
     onRegisterClick: (
-        username: String,
         serverNumber: Int,
         gameNickname: String,
         email: String,
@@ -70,7 +69,6 @@ fun AuthScreen(
     onClearError: () -> Unit,
 ) {
     var mode by remember { mutableStateOf(AuthMode.Login) }
-    var username by remember { mutableStateOf("") }
     var serverNumber by remember { mutableStateOf("") }
     var gameNickname by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
@@ -287,17 +285,6 @@ fun AuthScreen(
                         AuthMode.Login, AuthMode.Register -> {
                             if (mode == AuthMode.Register) {
                                 OutlinedTextField(
-                                    value = username,
-                                    onValueChange = { username = it.trimStart() },
-                                    label = { Text(stringResource(R.string.auth_username)) },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = MaterialTheme.shapes.medium,
-                                    supportingText = {
-                                        Text(stringResource(R.string.auth_username_helper))
-                                    },
-                                )
-                                OutlinedTextField(
                                     value = serverNumber,
                                     onValueChange = { v ->
                                         serverNumber = v.filter { it.isDigit() }.take(4)
@@ -369,10 +356,10 @@ fun AuthScreen(
                             val passwordsMatch = password == passwordConfirm && password.isNotEmpty()
                             val serverNum = serverNumber.toIntOrNull()
                             val canSubmitRegister = !isLoading &&
-                                username.length >= 3 &&
                                 serverNum != null && serverNum in 1..9999 &&
                                 gameNickname.trim().length >= 2 &&
-                                email.isNotBlank() &&
+                                email.contains('@') &&
+                                email.length >= 5 &&
                                 password.length >= 8 &&
                                 passwordsMatch
 
@@ -381,10 +368,9 @@ fun AuthScreen(
                                     when (mode) {
                                         AuthMode.Login -> onLoginClick(email, password)
                                         AuthMode.Register -> onRegisterClick(
-                                            username,
                                             serverNum!!,
                                             gameNickname.trim(),
-                                            email,
+                                            email.trim().lowercase(),
                                             password,
                                         )
                                         else -> Unit

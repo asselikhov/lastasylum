@@ -562,12 +562,7 @@ private fun AdminPlayersContent(
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            row.email,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            stringResource(R.string.admin_game_servers_account, row.accountUsername),
+                            stringResource(R.string.admin_game_servers_account, row.email),
                             style = MaterialTheme.typography.bodySmall,
                         )
                         val team = row.playerTeamTag?.let { tag ->

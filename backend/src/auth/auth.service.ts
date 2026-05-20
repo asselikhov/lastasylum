@@ -34,19 +34,16 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto) {
-    const existingUser = await this.usersService.findByEmail(dto.email);
+    const login = dto.email.toLowerCase().trim();
+    const existingUser = await this.usersService.findByEmail(login);
     if (existingUser) {
       throw new ConflictException('Email is already in use');
-    }
-    const existingUsername = await this.usersService.findByUsername(dto.username);
-    if (existingUsername) {
-      throw new ConflictException('Username is already taken');
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const user = await this.usersService.createUser({
-      username: dto.username,
-      email: dto.email,
+      username: login,
+      email: login,
       passwordHash,
       role: dto.role,
       serverNumber: dto.serverNumber,

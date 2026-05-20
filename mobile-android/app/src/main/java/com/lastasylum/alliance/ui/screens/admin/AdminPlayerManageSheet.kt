@@ -78,12 +78,7 @@ fun AdminPlayerManageSheet(
             fontWeight = FontWeight.SemiBold,
         )
         Text(
-            player.email,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            stringResource(R.string.admin_players_account, player.accountUsername),
+            stringResource(R.string.admin_players_account, player.email),
             style = MaterialTheme.typography.bodySmall,
         )
         Text(

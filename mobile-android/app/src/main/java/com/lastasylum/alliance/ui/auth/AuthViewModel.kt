@@ -85,7 +85,6 @@ class AuthViewModel(
     }
 
     fun register(
-        username: String,
         email: String,
         password: String,
         serverNumber: Int,
@@ -94,7 +93,7 @@ class AuthViewModel(
         cancelAuthBootstrap()
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true, error = null, infoMessage = null)
-            authRepository.register(username, email, password, serverNumber, gameNickname)
+            authRepository.register(email, password, serverNumber, gameNickname)
                 .onSuccess { result ->
                     when (result) {
                         is RegisterResult.LoggedIn -> {
