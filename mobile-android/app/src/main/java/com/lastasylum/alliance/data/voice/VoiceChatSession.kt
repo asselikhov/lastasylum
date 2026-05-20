@@ -94,8 +94,9 @@ class VoiceChatSession(
             baseUrl = BuildConfig.API_BASE_URL,
             roomId = roomId,
             tokenProvider = { tokenStore.getAccessToken() },
+            initialMicOn = micOn,
+            initialSoundOn = soundOn,
         )
-        socketManager.emitState(micOn, soundOn)
         notifyState()
     }
 
@@ -143,8 +144,8 @@ class VoiceChatSession(
     }
 
     fun onAccessTokenRefreshed() {
-        socketManager.reconnectWithFreshToken()
         socketManager.emitState(micOn, soundOn)
+        socketManager.reconnectWithFreshToken()
     }
 
     fun hasRecordAudioPermission(): Boolean =

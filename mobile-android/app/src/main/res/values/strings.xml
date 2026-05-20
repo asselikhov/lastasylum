@@ -570,7 +570,9 @@
     <string name="overlay_reactions_none_ingame">Нет участников в игре в оверлее</string>
     <string name="overlay_reactions_no_team">Нужна команда в SquadRelay</string>
     <string name="overlay_reaction_heart_cd">Сердце</string>
+    <string name="overlay_reactions_animations_hint">Реакции — горизонтальная лента; тап по иконке, затем выберите получателя.</string>
     <string name="overlay_reaction_sent">Реакция отправлена: %s</string>
+    <string name="overlay_reaction_burst_caption">Реакция от</string>
     <string name="overlay_cmd_spinner_by_city">По городу</string>
     <string name="overlay_cmd_spinner_by_player">По игроку</string>
     <string name="overlay_cmd_spinner_reinf_to_city">В город</string>

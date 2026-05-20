@@ -21,6 +21,9 @@ class VoiceSocketManager {
     private var intentionalDisconnect = false
     private var reconnectScheduled = false
     private var frameSeq = 0
+    /** Last toggles — included in voice:join on (re)connect so the server never stays at micOff/soundOff defaults. */
+    private var lastMicOn: Boolean = false
+    private var lastSoundOn: Boolean = true
 
     private val reconnectRunnable = Runnable {
         reconnectScheduled = false
@@ -47,11 +50,19 @@ class VoiceSocketManager {
         peerListeners.remove(listener)
     }
 
-    fun connect(baseUrl: String, roomId: String, tokenProvider: () -> String?) {
+    fun connect(
+        baseUrl: String,
+        roomId: String,
+        tokenProvider: () -> String?,
+        initialMicOn: Boolean = false,
+        initialSoundOn: Boolean = true,
+    ) {
         intentionalDisconnect = false
         cancelReconnect()
         lastBaseUrl = baseUrl.trimEnd('/')
         this.tokenProvider = tokenProvider
+        lastMicOn = initialMicOn
+        lastSoundOn = initialSoundOn
         val rid = roomId.trim()
         if (rid.isEmpty()) return
         val token = tokenProvider() ?: return
@@ -69,6 +80,8 @@ class VoiceSocketManager {
     }
 
     fun emitState(micOn: Boolean, soundOn: Boolean) {
+        lastMicOn = micOn
+        lastSoundOn = soundOn
         val rid = roomId ?: return
         socket?.emit(
             "voice:state",
@@ -122,7 +135,13 @@ class VoiceSocketManager {
             socket = IO.socket("$baseUrl/voice", options).apply {
                 on(Socket.EVENT_CONNECT) {
                     reconnectAttempt = 0
-                    emit("voice:join", JSONObject().put("roomId", roomId))
+                    emit(
+                        "voice:join",
+                        JSONObject()
+                            .put("roomId", roomId)
+                            .put("micOn", lastMicOn)
+                            .put("soundOn", lastSoundOn),
+                    )
                 }
                 on(Socket.EVENT_DISCONNECT) {
                     if (!intentionalDisconnect) scheduleReconnect()

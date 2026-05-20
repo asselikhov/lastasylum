@@ -25,7 +25,9 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.HorizontalScrollView
 import android.widget.Toast
+import androidx.annotation.DrawableRes
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.graphics.drawable.DrawableCompat
 import com.lastasylum.alliance.R
@@ -37,6 +39,23 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+private data class OverlayQuickReaction(
+    val id: String,
+    @DrawableRes val iconRes: Int,
+    val labelRes: Int,
+    val tintHex: String,
+)
+
+/** Расширяемый каталог: новые реакции — новая строка в списке. */
+private fun overlayQuickReactionCatalog(): List<OverlayQuickReaction> = listOf(
+    OverlayQuickReaction(
+        id = "heart",
+        iconRes = R.drawable.ic_overlay_cmd_reaction,
+        labelRes = R.string.overlay_reaction_heart_cd,
+        tintHex = "#FFFF5252",
+    ),
+)
+
 /**
  * Компактное меню быстрых команд: вкладки типов, мелкие чипы варианта, лаконичный ввод координат.
  */
@@ -46,7 +65,7 @@ class OverlayCommandsPopover(
     private val scope: CoroutineScope,
     private val dp: (Int) -> Int,
     private val sendCoords: suspend (label: String, x: Int, y: Int, excavation: Boolean) -> Result<ChatMessage>,
-    private val emitOverlayReaction: (targetUserId: String) -> Unit = { },
+    private val emitOverlayReaction: (targetUserId: String, reactionId: String) -> Unit = { _, _ -> },
 ) {
     private var menuScrim: FrameLayout? = null
     private var coordScrim: FrameLayout? = null
@@ -518,41 +537,89 @@ class OverlayCommandsPopover(
             )
         }
 
-        val heartImg = ImageView(context).apply {
-            setImageDrawable(
-                AppCompatResources.getDrawable(context, R.drawable.ic_overlay_cmd_reaction)?.mutate()?.also { d ->
-                    DrawableCompat.setTint(d, Color.parseColor("#FFFF5252"))
-                },
-            )
-            scaleType = ImageView.ScaleType.CENTER_INSIDE
-            contentDescription = context.getString(R.string.overlay_reaction_heart_cd)
+        val reactionCatalog = overlayQuickReactionCatalog()
+        var reactionPreviewTarget: ImageView? = null
+        val reactionTilesPadding = dp(2)
+        val reactionTileSize = dp(54)
+        val reactionIconInner = dp(30)
+
+        val reactionTilesRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, reactionTilesPadding, 0)
         }
-        val heartHost = FrameLayout(context).apply {
-            val size = dp(76)
-            layoutParams = LinearLayout.LayoutParams(size, size).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
+        for (reaction in reactionCatalog) {
+            val img = ImageView(context).apply {
+                setImageDrawable(
+                    AppCompatResources.getDrawable(context, reaction.iconRes)?.mutate()?.also { d ->
+                        DrawableCompat.setTint(d, Color.parseColor(reaction.tintHex))
+                    },
+                )
+                scaleType = ImageView.ScaleType.CENTER_INSIDE
+                contentDescription = context.getString(reaction.labelRes)
             }
-            background = rippleOn(
-                GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    colors = intArrayOf(
-                        Color.parseColor("#66E91E63"),
-                        Color.parseColor("#44AD1457"),
-                    )
-                    orientation = GradientDrawable.Orientation.TL_BR
-                },
-            )
-            isClickable = true
+            if (reactionPreviewTarget == null) reactionPreviewTarget = img
+            val host = FrameLayout(context).apply {
+                layoutParams = LinearLayout.LayoutParams(reactionTileSize, reactionTileSize).apply {
+                    marginEnd = dp(8)
+                }
+                background = rippleOn(
+                    GradientDrawable().apply {
+                        shape = GradientDrawable.RECTANGLE
+                        cornerRadius = dp(12).toFloat()
+                        setColor(Color.parseColor("#33182533"))
+                        setStroke(dp(1).coerceAtLeast(1), Color.parseColor("#33445566"))
+                    },
+                )
+                isClickable = true
+                addView(
+                    img,
+                    FrameLayout.LayoutParams(reactionIconInner, reactionIconInner, Gravity.CENTER),
+                )
+                setOnClickListener {
+                    val wmUse = attachedWindowManager ?: return@setOnClickListener
+                    stopHeartPreviewPulse()
+                    removeShell(menuScrim)
+                    menuScrim = null
+                    showReactionRecipientPicker(wmUse, reaction.id)
+                }
+            }
+            reactionTilesRow.addView(host)
+        }
+
+        val reactionScroll = HorizontalScrollView(context).apply {
+            isHorizontalScrollBarEnabled = false
+            isNestedScrollingEnabled = true
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
             addView(
-                heartImg,
-                FrameLayout.LayoutParams(dp(46), dp(46), Gravity.CENTER),
+                reactionTilesRow,
+                ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ),
             )
         }
+
+        val reactionHintRow = labelText(
+            context.getString(R.string.overlay_reactions_animations_hint),
+            10.5f,
+            Color.parseColor("#7A90A4B8"),
+        ).apply {
+            setPadding(0, 0, 0, dp(2))
+        }
+
         val reactionRow = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
+            gravity = Gravity.START
             visibility = View.GONE
-            addView(heartHost)
+            addView(reactionHintRow)
+            addView(
+                reactionScroll,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(6) },
+            )
         }
 
         val bodyColumn = LinearLayout(context).apply {
@@ -643,7 +710,7 @@ class OverlayCommandsPopover(
             if (cat.isReactions) {
                 coordsAction.visibility = View.GONE
                 reactionRow.visibility = View.VISIBLE
-                startHeartPreviewPulse(heartImg)
+                reactionPreviewTarget?.let { startHeartPreviewPulse(it) }
             } else {
                 stopHeartPreviewPulse()
                 coordsAction.visibility = View.VISIBLE
@@ -702,14 +769,6 @@ class OverlayCommandsPopover(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = dp(10) },
         )
-
-        heartHost.setOnClickListener {
-            val wmUse = attachedWindowManager ?: return@setOnClickListener
-            stopHeartPreviewPulse()
-            removeShell(menuScrim)
-            menuScrim = null
-            showReactionRecipientPicker(wmUse)
-        }
 
         close.setOnClickListener { hide() }
         coordsAction.setOnClickListener {
@@ -1055,7 +1114,7 @@ class OverlayCommandsPopover(
         return row
     }
 
-    private fun showReactionRecipientPicker(windowManager: WindowManager) {
+    private fun showReactionRecipientPicker(windowManager: WindowManager, reactionId: String) {
         hideReactionPickOnly()
         acquireGameGateSuppress()
         attachedWindowManager = windowManager
@@ -1215,7 +1274,7 @@ class OverlayCommandsPopover(
                                 listColumn.addView(
                                     memberPickRow(m) {
                                         hideReactionPickOnly()
-                                        emitOverlayReaction(m.userId)
+                                        emitOverlayReaction(m.userId, reactionId)
                                         Toast.makeText(
                                             context,
                                             context.getString(R.string.overlay_reaction_sent, m.username),
@@ -1231,13 +1290,23 @@ class OverlayCommandsPopover(
         }
     }
 
+    private fun reactionBurstSenderCardBackground(): GradientDrawable =
+        GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(14).toFloat()
+            setColor(Color.parseColor("#E8141C2A"))
+            setStroke(dp(1).coerceAtLeast(1), Color.parseColor("#4D5C7499"))
+        }
+
     private fun showReactionBurst(windowManager: WindowManager, subtitleUsername: String) {
         hideReactionBurstOnly()
         acquireGameGateSuppress()
         attachedWindowManager = windowManager
 
+        val displayName = subtitleUsername.trim().ifBlank { "—" }
+
         val root = FrameLayout(context).apply {
-            setBackgroundColor(Color.TRANSPARENT)
+            setBackgroundColor(Color.argb(38, 6, 12, 22))
         }
         val heart = ImageView(context).apply {
             setImageDrawable(
@@ -1247,21 +1316,69 @@ class OverlayCommandsPopover(
             )
             scaleType = ImageView.ScaleType.FIT_CENTER
         }
-        val label = labelText(
-            subtitleUsername,
-            13f,
-            Color.parseColor("#FFF8FAFF"),
-            bold = true,
-            paddingH = dp(12),
-            paddingV = dp(4),
-        ).apply {
+        val accentBar = View(context).apply {
+            background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(
+                    Color.parseColor("#00FF5252"),
+                    Color.parseColor("#CCFF5252"),
+                    Color.parseColor("#00FF5252"),
+                ),
+            ).apply {
+                cornerRadius = dp(2).toFloat()
+            }
+        }
+        val caption = TextView(context).apply {
+            text = context.getString(R.string.overlay_reaction_burst_caption)
+            setTextColor(Color.parseColor("#9AB0C8DD"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+            typeface = Typeface.DEFAULT
+            letterSpacing = 0.06f
             gravity = Gravity.CENTER_HORIZONTAL
+        }
+        val nameLabel = TextView(context).apply {
+            text = displayName
+            setTextColor(Color.parseColor("#FFF8FAFF"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER_HORIZONTAL
+            setShadowLayer(dp(1).toFloat(), 0f, 1.2f, Color.parseColor("#58000000"))
+        }
+        val textInner = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(16), dp(12), dp(16), dp(14))
+            addView(accentBar, LinearLayout.LayoutParams(dp(120), dp(3)).apply { bottomMargin = dp(10) })
+            addView(caption)
+            addView(
+                nameLabel,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(4) },
+            )
+        }
+        val textCard = FrameLayout(context).apply {
+            background = reactionBurstSenderCardBackground()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                clipToOutline = true
+                outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
+            }
+            addView(textInner)
         }
         val stack = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             addView(heart, LinearLayout.LayoutParams(dp(120), dp(120)))
-            addView(label)
+            addView(
+                textCard,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply {
+                    topMargin = dp(18)
+                },
+            )
         }
         root.addView(
             stack,
@@ -1297,7 +1414,8 @@ class OverlayCommandsPopover(
         heart.scaleX = 0.25f
         heart.scaleY = 0.25f
         heart.alpha = 0f
-        label.alpha = 0f
+        textCard.alpha = 0f
+        textCard.translationY = dp(8).toFloat()
         heart.post {
             heart.pivotX = heart.width * 0.5f
             heart.pivotY = heart.height * 0.5f
@@ -1310,8 +1428,12 @@ class OverlayCommandsPopover(
                 ObjectAnimator.ofFloat(heart, "alpha", 0f, 1f).setDuration(380),
             )
         }
-        val labelIn = ObjectAnimator.ofFloat(label, "alpha", 0f, 1f).setDuration(360).apply {
-            startDelay = 180
+        val cardIn = AnimatorSet().apply {
+            playTogether(
+                ObjectAnimator.ofFloat(textCard, "alpha", 0f, 1f).setDuration(420),
+                ObjectAnimator.ofFloat(textCard, "translationY", dp(8).toFloat(), 0f).setDuration(520),
+            )
+            startDelay = 200
         }
         enter.addListener(
             object : AnimatorListenerAdapter() {
@@ -1329,7 +1451,7 @@ class OverlayCommandsPopover(
             },
         )
         enter.start()
-        labelIn.start()
+        cardIn.start()
 
         mainHandler.postDelayed(
             {
@@ -1338,7 +1460,8 @@ class OverlayCommandsPopover(
                         ObjectAnimator.ofFloat(heart, "alpha", 1f, 0f).setDuration(400),
                         ObjectAnimator.ofFloat(heart, "scaleX", 1f, 1.35f).setDuration(400),
                         ObjectAnimator.ofFloat(heart, "scaleY", 1f, 1.35f).setDuration(400),
-                        ObjectAnimator.ofFloat(label, "alpha", 1f, 0f).setDuration(360),
+                        ObjectAnimator.ofFloat(textCard, "alpha", 1f, 0f).setDuration(380),
+                        ObjectAnimator.ofFloat(textCard, "translationY", 0f, (-dp(6)).toFloat()).setDuration(380),
                     )
                     addListener(
                         object : AnimatorListenerAdapter() {
@@ -1350,7 +1473,7 @@ class OverlayCommandsPopover(
                 }
                 done.start()
             },
-            2600L,
+            2800L,
         )
     }
 

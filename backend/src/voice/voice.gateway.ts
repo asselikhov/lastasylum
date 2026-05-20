@@ -124,7 +124,8 @@ export class VoiceGateway {
   @SubscribeMessage('voice:join')
   async joinVoice(
     @ConnectedSocket() client: AuthSocket,
-    @MessageBody() payload: { roomId?: string },
+    @MessageBody()
+    payload: { roomId?: string; micOn?: boolean; soundOn?: boolean },
   ) {
     const user = this.requireUser(client);
     const roomId = this.parseRoomId(payload?.roomId);
@@ -140,6 +141,9 @@ export class VoiceGateway {
     }
 
     client.data.voiceRoomId = roomId;
+    /** Apply with join so state is valid before any relay / peer snapshots (avoids race with voice:state). */
+    client.data.micOn = payload?.micOn === true;
+    client.data.soundOn = payload?.soundOn === true;
     void client.join(this.voiceRoomKey(roomId));
 
     const peers = this.collectPeers(roomId, client.id);

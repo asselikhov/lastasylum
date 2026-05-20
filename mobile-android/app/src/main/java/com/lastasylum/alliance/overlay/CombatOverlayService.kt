@@ -177,8 +177,8 @@ class CombatOverlayService : Service() {
                     repo.sendMessageWithRetries(text, roomId)
                 }
             },
-            emitOverlayReaction = { targetUserId ->
-                AppContainer.from(this@CombatOverlayService).chatRepository.emitOverlayReaction(targetUserId)
+            emitOverlayReaction = { targetUserId, reactionId ->
+                AppContainer.from(this@CombatOverlayService).chatRepository.emitOverlayReaction(targetUserId, reactionId)
             },
         )
     }
@@ -2621,6 +2621,7 @@ class CombatOverlayService : Service() {
         hudPane: OverlayHudPane? = null,
     ) {
         overlayChatViewModel?.refreshChatForOverlay()
+        mainHandler.post { flushPendingOverlayPickedImages() }
         if (overlayChatTeamPanelVisible) return
         val initialTab = initialTabIndex.coerceIn(0, 1)
         currentOverlayHudPane = hudPane

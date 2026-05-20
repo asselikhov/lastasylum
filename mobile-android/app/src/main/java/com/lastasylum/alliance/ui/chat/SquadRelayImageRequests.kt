@@ -28,6 +28,7 @@ object SquadRelayImageRequests {
     fun localUriPreview(context: Context, uri: android.net.Uri): ImageRequest =
         ImageRequest.Builder(context.applicationContext)
             .data(uri)
+            .size(CHAT_THUMB_PX, CHAT_THUMB_PX)
             .allowHardware(false)
             .crossfade(false)
             .build()
