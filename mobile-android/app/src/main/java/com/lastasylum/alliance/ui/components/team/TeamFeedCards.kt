@@ -48,6 +48,8 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
+import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamNewsListItemDto
 import com.lastasylum.alliance.data.teams.TeamNewsPollOptionDto
@@ -608,6 +610,7 @@ fun ForumTopicFeedCard(
 ) {
     val accent = forumAccentForIndex(listIndex)
     val scheme = MaterialTheme.colorScheme
+    val creatorAvatarUrl = telegramAvatarUrl(topic.createdByTelegramUsername)
 
     Surface(
         onClick = onClick,
@@ -625,19 +628,27 @@ fun ForumTopicFeedCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Brush.linearGradient(listOf(accent.start, accent.end))),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Forum,
-                    contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.95f),
-                    modifier = Modifier.size(24.dp),
+            if (creatorAvatarUrl != null) {
+                ChatSenderAvatar(
+                    telegramUrl = creatorAvatarUrl,
+                    size = 48.dp,
+                    fallbackName = topic.title,
                 )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Brush.linearGradient(listOf(accent.start, accent.end))),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Forum,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.95f),
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
             }
             Column(
                 modifier = Modifier.weight(1f),

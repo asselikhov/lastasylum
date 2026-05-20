@@ -70,6 +70,7 @@ import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.ui.chat.resolvedChatAttachmentImageUrl
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.roleAccentColor
+import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.platform.LocalDensity
 
@@ -129,6 +130,7 @@ internal fun ForumMessageBubble(
     val messageImageTapLabel = stringResource(R.string.cd_chat_message_image)
     val nickname = message.senderUsername.trim()
     val displayName = nickname.ifBlank { "—" }
+    val telegramUrl = telegramAvatarUrl(message.senderTelegramUsername)
     val tagBracketMuted = (if (isMine) Color.White else scheme.onSurface).copy(alpha = 0.5f)
 
     val timeStr = com.lastasylum.alliance.ui.chat.formatChatTime(message.createdAt)
@@ -239,7 +241,7 @@ internal fun ForumMessageBubble(
             }
             if (!isMine && !deleted) {
                 ChatSenderAvatar(
-                    telegramUrl = null,
+                    telegramUrl = telegramUrl,
                     size = ChatIncomingAvatarSize,
                     modifier = Modifier.padding(end = ChatIncomingAvatarEndPad),
                     fallbackName = displayName,
