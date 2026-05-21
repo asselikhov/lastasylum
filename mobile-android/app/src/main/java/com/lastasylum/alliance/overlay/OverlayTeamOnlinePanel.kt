@@ -85,7 +85,7 @@ fun OverlayTeamOnlinePanel(
     var onlineMembers by remember { mutableStateOf<List<PlayerTeamMemberDto>>(emptyList()) }
     var recentlyActive by remember { mutableStateOf<List<PlayerTeamMemberDto>>(emptyList()) }
 
-    fun applyPresenceReload(forceTeamRefresh: Boolean, showBlockingSpinner: Boolean) {
+    fun applyBootstrap(forceTeamRefresh: Boolean, showBlockingSpinner: Boolean) {
         scope.launch {
             if (showBlockingSpinner || team == null) {
                 loading = true
@@ -98,13 +98,20 @@ fun OverlayTeamOnlinePanel(
                         teamsRepository = teamsRepository,
                         forceRefresh = forceTeamRefresh,
                     ).getOrThrow()
-                    val p = usersRepository.getMyProfile().getOrThrow()
+                    if (forceTeamRefresh) {
+                        OverlayTeamPresenceCache.invalidate()
+                    }
                     val t = OverlayTeamContextCache.loadTeamDetail(
                         teamId = ctx.teamId,
                         teamsRepository = teamsRepository,
                         forceRefresh = forceTeamRefresh,
                     ).getOrThrow()
-                    val presence = teamsRepository.getTeamOverlayPresence(ctx.teamId).getOrThrow()
+                    val presence = OverlayTeamPresenceCache.load(
+                        teamId = ctx.teamId,
+                        teamsRepository = teamsRepository,
+                        forceRefresh = forceTeamRefresh,
+                    ).getOrThrow()
+                    val p = usersRepository.getMyProfile().getOrThrow()
                     PresenceLoadResult(
                         profile = p,
                         team = t,
@@ -122,13 +129,33 @@ fun OverlayTeamOnlinePanel(
                 recentlyActive = result.recentlyActive
             }.onFailure { e ->
                 error = e.toUserMessageRu(res)
-                profile = null
-                team = null
-                teamId = null
-                onlineMembers = emptyList()
-                recentlyActive = emptyList()
+                if (team == null) {
+                    profile = null
+                    teamId = null
+                    onlineMembers = emptyList()
+                    recentlyActive = emptyList()
+                }
             }
             loading = false
+        }
+    }
+
+    fun refreshPresenceOnly() {
+        val tid = teamId?.trim().orEmpty()
+        if (tid.isEmpty()) return
+        scope.launch {
+            val loaded = withContext(Dispatchers.IO) {
+                OverlayTeamPresenceCache.load(
+                    teamId = tid,
+                    teamsRepository = teamsRepository,
+                    forceRefresh = false,
+                )
+            }
+            loaded.onSuccess { presence ->
+                onlineMembers = presence.ingame
+                recentlyActive = presence.recentlyActive
+                error = null
+            }
         }
     }
 
@@ -137,8 +164,9 @@ fun OverlayTeamOnlinePanel(
             { event ->
                 if (!isOverlayIngameNow(event.presenceStatus, event.lastPresenceAt)) {
                     onlineMembers = onlineMembers.filter { it.userId != event.userId }
+                } else {
+                    refreshPresenceOnly()
                 }
-                applyPresenceReload(forceTeamRefresh = false, showBlockingSpinner = false)
             }
         }
 
@@ -159,10 +187,10 @@ fun OverlayTeamOnlinePanel(
     }
 
     LaunchedEffect(Unit) {
-        applyPresenceReload(forceTeamRefresh = true, showBlockingSpinner = true)
+        applyBootstrap(forceTeamRefresh = true, showBlockingSpinner = true)
         while (isActive) {
             delay(OVERLAY_ONLINE_PANEL_POLL_MS)
-            applyPresenceReload(forceTeamRefresh = false, showBlockingSpinner = false)
+            refreshPresenceOnly()
         }
     }
 
@@ -235,7 +263,8 @@ fun OverlayTeamOnlinePanel(
         onInboxFeedbackChange = { leaderUi.inboxFeedback = it },
         onReloadTeam = {
             OverlayTeamContextCache.invalidate()
-            applyPresenceReload(forceTeamRefresh = true, showBlockingSpinner = false)
+            OverlayTeamPresenceCache.invalidate()
+            applyBootstrap(forceTeamRefresh = true, showBlockingSpinner = false)
             onHudRefresh()
         },
         onHudRefresh = onHudRefresh,
@@ -297,7 +326,8 @@ fun OverlayTeamOnlinePanel(
                         }
                     },
                     onRefresh = {
-                        applyPresenceReload(forceTeamRefresh = false, showBlockingSpinner = false)
+                        OverlayTeamPresenceCache.invalidate()
+                        refreshPresenceOnly()
                         onHudRefresh()
                     },
                 )

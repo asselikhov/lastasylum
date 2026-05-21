@@ -2,6 +2,7 @@ package com.lastasylum.alliance.overlay
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -76,6 +78,22 @@ fun OverlayChatImagePickerSheet(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
     ) { _ ->
         if (OverlayDeviceGallery.hasReadPermission(context)) {
+            galleryUris = null
+            loading = true
+            permissionEpoch++
+        }
+    }
+
+    val systemPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = maxSelection),
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            val stable = OverlayPickedImages.copyToCache(context, uris)
+            if (stable.isNotEmpty()) {
+                onConfirm(stable)
+                onDismiss()
+            }
+        } else {
             galleryUris = null
             loading = true
             permissionEpoch++
@@ -159,6 +177,18 @@ fun OverlayChatImagePickerSheet(
                     )
                 }
                 else -> {
+                    OutlinedButton(
+                        onClick = {
+                            systemPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                            )
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                    ) {
+                        Text(stringResource(R.string.overlay_chat_gallery_open_system_picker))
+                    }
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(minSize = 96.dp),
                         modifier = Modifier

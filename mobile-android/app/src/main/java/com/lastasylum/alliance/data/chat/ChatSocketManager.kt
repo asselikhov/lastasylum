@@ -370,6 +370,7 @@ class ChatSocketManager {
                         fromUsername = fromUsername,
                         reaction = reaction,
                         targetUserId = targetUserId,
+                        broadcast = payload.optBoolean("broadcast", false),
                     )
                     overlayReactionListeners.forEach { l -> runCatching { l(event) } }
                 }

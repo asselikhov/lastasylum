@@ -542,6 +542,7 @@
     <!-- Статичный текст FGS: не меняется при входе/выходе из игры (смена текста = всплывашка на OEM). -->
     <string name="overlay_notif_fgs_idle">SquadRelay</string>
     <string name="overlay_notif_permission_required">Нужно разрешение «поверх других приложений»</string>
+    <string name="overlay_restricted_settings_hint">После обновления Android: в карточке приложения SquadRelay откройте меню (⋮) → «Разрешить ограниченные настройки» или «Allow restricted settings», затем снова включите оверлей.</string>
     <string name="overlay_notif_speech_unavailable">Распознавание речи на устройстве недоступно</string>
     <string name="overlay_notif_listening">Слушаю…</string>
     <string name="overlay_notif_recognizing">Распознаю…</string>
@@ -666,6 +667,9 @@
     <string name="overlay_reactions_send_all_subtitle">%1$d в игре с оверлеем</string>
     <string name="overlay_reaction_sent_all">Реакция отправлена %1$d участникам</string>
     <string name="overlay_reaction_burst_caption">Реакция от</string>
+    <string name="overlay_reaction_burst_scope_private">Личная реакция</string>
+    <string name="overlay_reaction_burst_scope_broadcast">Реакция для всех в игре</string>
+    <string name="overlay_chat_gallery_open_system_picker">Выбрать другие фото</string>
     <string name="overlay_cmd_spinner_by_city">По городу</string>
     <string name="overlay_cmd_spinner_by_player">По игроку</string>
     <string name="overlay_cmd_spinner_reinf_to_city">В город</string>

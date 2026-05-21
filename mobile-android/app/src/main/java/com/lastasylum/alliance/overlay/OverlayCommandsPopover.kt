@@ -228,8 +228,9 @@ class OverlayCommandsPopover(
         windowManager: WindowManager,
         fromUsername: String,
         reactionId: String = "heart",
+        broadcast: Boolean = false,
     ) {
-        showReactionBurst(windowManager, fromUsername, reactionId)
+        showReactionBurst(windowManager, fromUsername, reactionId, broadcast)
     }
 
     private fun overlayWindowType(): Int =
@@ -1448,8 +1449,10 @@ class OverlayCommandsPopover(
                         teamsRepository = container.teamsRepository,
                     ).getOrThrow()
                     val self = ctx.currentUserId
-                    container.teamsRepository.getTeamOverlayPresence(ctx.teamId)
-                        .getOrThrow()
+                    OverlayTeamPresenceCache.load(
+                        teamId = ctx.teamId,
+                        teamsRepository = container.teamsRepository,
+                    ).getOrThrow()
                         .ingame
                         .filter { it.userId != self }
                 }
@@ -1528,8 +1531,8 @@ class OverlayCommandsPopover(
         GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = dp(14).toFloat()
-            setColor(Color.parseColor("#E8141C2A"))
-            setStroke(dp(1).coerceAtLeast(1), Color.parseColor("#4D5C7499"))
+            setColor(Color.parseColor("#F0182438"))
+            setStroke(dp(1).coerceAtLeast(1), Color.parseColor("#8A6A8CA8"))
         }
 
     private fun createReactionBurstAnimView(reaction: OverlayQuickReaction): View {
@@ -1564,6 +1567,7 @@ class OverlayCommandsPopover(
         windowManager: WindowManager,
         subtitleUsername: String,
         reactionId: String = "heart",
+        broadcast: Boolean = false,
     ) {
         hideReactionBurstOnly()
         attachedWindowManager = windowManager
@@ -1572,7 +1576,7 @@ class OverlayCommandsPopover(
         val reaction = overlayQuickReactionById(reactionId)
 
         val root = OverlayPassthroughMultitouchFrameLayout(context).apply {
-            setBackgroundColor(Color.argb(38, 6, 12, 22))
+            setBackgroundColor(Color.argb(88, 6, 12, 22))
         }
         val burstAnimSize = when {
             reaction.memeDrawableRes != null -> dp(200)
@@ -1594,12 +1598,24 @@ class OverlayCommandsPopover(
                 cornerRadius = dp(2).toFloat()
             }
         }
+        val scopeLabel = if (broadcast) {
+            context.getString(R.string.overlay_reaction_burst_scope_broadcast)
+        } else {
+            context.getString(R.string.overlay_reaction_burst_scope_private)
+        }
         val caption = TextView(context).apply {
             text = context.getString(R.string.overlay_reaction_burst_caption)
-            setTextColor(Color.parseColor("#9AB0C8DD"))
+            setTextColor(Color.parseColor("#C8D8E8F0"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
             typeface = Typeface.DEFAULT
             letterSpacing = 0.06f
+            gravity = Gravity.CENTER_HORIZONTAL
+        }
+        val scopeView = TextView(context).apply {
+            text = scopeLabel
+            setTextColor(Color.parseColor("#FFE8B86A"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER_HORIZONTAL
         }
         val nameLabel = TextView(context).apply {
@@ -1616,6 +1632,13 @@ class OverlayCommandsPopover(
             setPadding(dp(16), dp(12), dp(16), dp(14))
             addView(accentBar, LinearLayout.LayoutParams(dp(120), dp(3)).apply { bottomMargin = dp(10) })
             addView(caption)
+            addView(
+                scopeView,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(6) },
+            )
             addView(
                 nameLabel,
                 LinearLayout.LayoutParams(

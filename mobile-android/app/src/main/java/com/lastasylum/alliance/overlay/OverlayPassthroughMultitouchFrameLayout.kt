@@ -27,8 +27,12 @@ internal class OverlayPassthroughMultitouchFrameLayout(context: Context) : Frame
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.pointerCount > 1) return false
-        if (!hitInteractiveDescendant(this, event.x, event.y)) return false
-        return super.onTouchEvent(event)
+        val x = event.x
+        val y = event.y
+        if (!hitInteractiveDescendant(this, x, y)) return false
+        super.onTouchEvent(event)
+        // Android 15+: тап в bounds Compose не должен уходить в игру под оверлеем.
+        return true
     }
 
     companion object {
@@ -40,6 +44,7 @@ internal class OverlayPassthroughMultitouchFrameLayout(context: Context) : Frame
             hitInteractiveDescendant(parent, x, y)
 
         fun hitInteractiveDescendant(parent: ViewGroup, x: Float, y: Float): Boolean {
+            if (hitsComposeDescendant(parent, x, y)) return true
             for (i in parent.childCount - 1 downTo 0) {
                 val child = parent.getChildAt(i)
                 if (child.visibility != View.VISIBLE) continue
@@ -52,6 +57,27 @@ internal class OverlayPassthroughMultitouchFrameLayout(context: Context) : Frame
                         if (hitInteractiveDescendant(child, cx, cy)) return true
                     }
                     else -> return true
+                }
+            }
+            return false
+        }
+
+        private fun hitsComposeDescendant(parent: ViewGroup, x: Float, y: Float): Boolean {
+            for (i in parent.childCount - 1 downTo 0) {
+                val child = parent.getChildAt(i)
+                if (child.visibility != View.VISIBLE) continue
+                val cx = x - child.left
+                val cy = y - child.top
+                when (child) {
+                    is ComposeView, is AbstractComposeView -> {
+                        if (cx < 0 || cy < 0) continue
+                        val w = child.width.coerceAtLeast(child.measuredWidth)
+                        val h = child.height.coerceAtLeast(child.measuredHeight)
+                        if (w <= 0 || h <= 0 || (cx < w && cy < h)) return true
+                    }
+                    is ViewGroup -> {
+                        if (hitsComposeDescendant(child, cx, cy)) return true
+                    }
                 }
             }
             return false

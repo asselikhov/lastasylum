@@ -36,7 +36,7 @@ import { UpdatePlayerTeamDisplayNameDto } from './dto/update-player-team-display
 import { UpdateSquadMemberRoleDto } from './dto/update-squad-member-role.dto';
 import { UpdateTeamNewsDto } from './dto/update-team-news.dto';
 import { VoteTeamNewsDto } from './dto/vote-team-news.dto';
-import { Throttle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { TeamForumGateway } from './team-forum.gateway';
 import {
   CreateTeamForumMessageDto,
@@ -224,6 +224,7 @@ export class TeamsController {
     });
   }
 
+  @SkipThrottle()
   @Get(':teamId/ingame-online')
   @Roles(AllianceRole.MEMBER)
   teamIngameOnline(
@@ -520,6 +521,7 @@ export class TeamsController {
     return { ok: true };
   }
 
+  @SkipThrottle()
   @Get(':teamId')
   @Roles(AllianceRole.MEMBER)
   getTeam(@Req() req: { user: RequestUser }, @Param('teamId') teamId: string) {

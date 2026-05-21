@@ -9,7 +9,7 @@ import java.util.Locale
 const val OVERLAY_INGAME_PRESENCE_STALE_MS = 90_000L
 
 /** Как часто обновлять список «Участники онлайн», пока панель открыта. */
-const val OVERLAY_ONLINE_PANEL_POLL_MS = 25_000L
+const val OVERLAY_ONLINE_PANEL_POLL_MS = 60_000L
 
 fun formatPresenceTimestampRu(iso: String?): String {
     if (iso.isNullOrBlank()) return ""

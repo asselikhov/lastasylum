@@ -5,4 +5,6 @@ data class OverlayReactionEvent(
     val fromUsername: String,
     val reaction: String,
     val targetUserId: String,
+    /** True when sent via overlay:reaction:broadcast (all ingame teammates). */
+    val broadcast: Boolean = false,
 )

@@ -1168,7 +1168,10 @@ private fun ChatMessagesLazyList(
         hash
     }
     val timeline = remember(timelineVersion, state.messages) { buildChatTimeline(state.messages) }
-    val messageClusterFlags = remember(state.messages) {
+    val clusterCacheKey = remember(state.messages.size, state.messages.firstOrNull()?._id, state.messages.lastOrNull()?._id) {
+        state.messages.size to (state.messages.lastOrNull()?._id ?: "")
+    }
+    val messageClusterFlags = remember(clusterCacheKey, state.messages) {
         List(state.messages.size) { index ->
             ChatMessageClusterFlags(
                 showHeader = chatMessageShowsClusterHeader(state.messages, index),

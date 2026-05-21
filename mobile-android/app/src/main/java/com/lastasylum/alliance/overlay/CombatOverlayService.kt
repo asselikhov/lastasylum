@@ -971,15 +971,30 @@ class CombatOverlayService : Service() {
 
     private fun syncOverlayHudWindowLayout() {
         val mgr = windowManager ?: systemWindowManager() ?: return
-        fun update(host: FrameLayout?, params: WindowManager.LayoutParams?, gravity: Int) {
+        fun update(
+            host: FrameLayout?,
+            params: WindowManager.LayoutParams?,
+            gravity: Int,
+            xDp: Int,
+        ) {
             if (host == null || params == null || !host.isAttachedToWindow) return
             params.gravity = gravity
-            params.x = dp(OVERLAY_HUD_WINDOW_X_DP)
+            params.x = dp(xDp)
             params.y = dp(OVERLAY_HUD_WINDOW_Y_DP)
             runCatching { mgr.updateViewLayout(host, params) }
         }
-        update(overlayStatusHudHost, overlayStatusHudParams, Gravity.TOP or Gravity.START)
-        update(overlayTopRightHudHost, overlayTopRightHudParams, Gravity.TOP or Gravity.END)
+        update(
+            overlayStatusHudHost,
+            overlayStatusHudParams,
+            Gravity.TOP or Gravity.START,
+            OVERLAY_HUD_LEFT_WINDOW_X_DP,
+        )
+        update(
+            overlayTopRightHudHost,
+            overlayTopRightHudParams,
+            Gravity.TOP or Gravity.END,
+            OVERLAY_HUD_WINDOW_X_DP,
+        )
     }
 
     private fun isOverlayHudOnlyMode(): Boolean =
@@ -1677,7 +1692,7 @@ class CombatOverlayService : Service() {
         }
         overlayStatusHudCompose = compose
 
-        val host = OverlayPassthroughMultitouchFrameLayout(this).apply {
+        val host = OverlayHudRootLayout(this).apply {
             setBackgroundColor(Color.TRANSPARENT)
             clipChildren = false
             clipToPadding = false
@@ -1699,6 +1714,7 @@ class CombatOverlayService : Service() {
             Log.w(TAG, "ensureOverlayStatusHudWindow addView failed", attach.exceptionOrNull())
             return
         }
+        compose.post { compose.requestLayout() }
         overlayStatusHudHost = host
         overlayStatusHudParams = params
     }
@@ -1764,7 +1780,7 @@ class CombatOverlayService : Service() {
         }
         overlayTopRightHudCompose = compose
 
-        val host = OverlayPassthroughMultitouchFrameLayout(this).apply {
+        val host = OverlayHudRootLayout(this).apply {
             setBackgroundColor(Color.TRANSPARENT)
             clipChildren = false
             clipToPadding = false
@@ -1786,6 +1802,7 @@ class CombatOverlayService : Service() {
             Log.w(TAG, "ensureOverlayTopRightHudWindow addView failed", attach.exceptionOrNull())
             return
         }
+        compose.post { compose.requestLayout() }
         overlayTopRightHudHost = host
         overlayTopRightHudParams = params
     }
@@ -2473,6 +2490,7 @@ class CombatOverlayService : Service() {
                     wm,
                     event.fromUsername,
                     event.reaction,
+                    event.broadcast,
                 )
             }
         }

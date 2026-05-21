@@ -1,0 +1,45 @@
+package com.lastasylum.alliance.overlay
+
+import com.lastasylum.alliance.data.teams.TeamOverlayPresenceDto
+import com.lastasylum.alliance.data.teams.TeamsRepository
+
+/** Short TTL cache for overlay presence API (avoids 429 when panel polls / reaction picker opens). */
+internal object OverlayTeamPresenceCache {
+    private const val TTL_MS = 45_000L
+
+    @Volatile
+    private var cachedTeamId: String? = null
+
+    @Volatile
+    private var cachedPresence: TeamOverlayPresenceDto? = null
+
+    @Volatile
+    private var cachedAtMs: Long = 0L
+
+    fun invalidate() {
+        cachedTeamId = null
+        cachedPresence = null
+        cachedAtMs = 0L
+    }
+
+    suspend fun load(
+        teamId: String,
+        teamsRepository: TeamsRepository,
+        forceRefresh: Boolean = false,
+    ): Result<TeamOverlayPresenceDto> = runCatching {
+        val tid = teamId.trim()
+        if (tid.isEmpty()) error("no_team")
+        val now = System.currentTimeMillis()
+        if (!forceRefresh) {
+            val hit = cachedPresence
+            if (hit != null && cachedTeamId == tid && now - cachedAtMs < TTL_MS) {
+                return@runCatching hit
+            }
+        }
+        teamsRepository.getTeamOverlayPresence(tid).getOrThrow().also { presence ->
+            cachedTeamId = tid
+            cachedPresence = presence
+            cachedAtMs = now
+        }
+    }
+}

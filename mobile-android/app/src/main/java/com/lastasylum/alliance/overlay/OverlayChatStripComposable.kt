@@ -19,9 +19,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -97,7 +98,7 @@ fun OverlayChatStrip(
     val dismissRegions = remember { mutableStateMapOf<String, Rect>() }
     val latestMessages by rememberUpdatedState(messages)
     val latestSelfId by rememberUpdatedState(selfUserId)
-    val stripScroll = rememberScrollState()
+    val stripScroll = rememberLazyListState()
     var accentEnterKey by remember { mutableStateOf<String?>(null) }
 
     fun keyOf(msg: ChatMessage): String =
@@ -153,55 +154,47 @@ fun OverlayChatStrip(
     }
 
     val compactStickers = keep.size > 5
+    val stripBurstMode = lightStrip || keep.size > 2
+    val visibleMessages = remember(keep, leaving.toMap()) {
+        keep.filter { leaving[keyOf(it)] != true }
+    }
 
-    Column(
+    LazyColumn(
+        state = stripScroll,
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(max = stripMaxHeight)
-            .verticalScroll(stripScroll),
+            .heightIn(max = stripMaxHeight),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (keep.isNotEmpty()) {
-            OverlayStripBatchHeader(firstMessage = keep.first())
+        if (visibleMessages.isNotEmpty()) {
+            item(key = "strip_hdr") {
+                OverlayStripBatchHeader(firstMessage = visibleMessages.first())
+            }
         }
-        val stripBurstMode = lightStrip || keep.size > 2
-        keep.forEach { msg ->
+        items(visibleMessages, key = { keyOf(it) }) { msg ->
             val key = keyOf(msg)
             val isMine = !latestSelfId.isNullOrBlank() && msg.senderId == latestSelfId
-            val isLeaving = leaving[key] == true
             val fancyEnter = !lightStrip && !stripBurstMode && accentEnterKey != null && key == accentEnterKey
             val enterTransition = if (lightStrip || stripBurstMode) {
-                fadeIn(animationSpec = tween(28))
+                fadeIn(animationSpec = tween(24))
             } else if (fancyEnter) {
-                fadeIn(animationSpec = tween(110)) +
-                    scaleIn(initialScale = 0.96f, animationSpec = tween(170))
+                fadeIn(animationSpec = tween(90)) +
+                    scaleIn(initialScale = 0.97f, animationSpec = tween(120))
             } else {
-                fadeIn(animationSpec = tween(55))
-            }
-            val exitTransition = if (lightStrip) {
-                fadeOut(animationSpec = tween(80))
-            } else {
-                fadeOut(animationSpec = tween(150)) +
-                    slideOutVertically(animationSpec = tween(170)) { it / 4 } +
-                    scaleOut(targetScale = 0.98f, animationSpec = tween(170))
+                fadeIn(animationSpec = tween(40))
             }
             AnimatedVisibility(
-                visible = !isLeaving,
+                visible = true,
                 enter = enterTransition,
-                exit = exitTransition,
             ) {
                 OverlayChatStripMessage(
                     msg = msg,
                     messageKey = key,
                     isMine = isMine,
                     compactStickers = compactStickers,
-                    lightStrip = lightStrip,
+                    lightStrip = lightStrip || stripBurstMode,
                     onDismiss = { onDismissMessage(msg) },
                     onReportDismissBounds = { mk, rect ->
-                        // During AnimatedVisibility exit the row is still composed; positioning callbacks
-                        // would re-register rects after LaunchedEffect cleared them — touches then hit
-                        // "dismiss" zones with no real target and block the game.
-                        if (leaving[mk] == true) return@OverlayChatStripMessage
                         if (latestMessages.none { keyOf(it) == mk }) return@OverlayChatStripMessage
                         val prev = dismissRegions[mk]
                         if (prev != null &&

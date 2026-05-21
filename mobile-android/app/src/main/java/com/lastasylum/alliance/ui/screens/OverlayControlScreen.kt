@@ -264,6 +264,14 @@ fun OverlayControlScreen() {
                         isError = true,
                     )
                 }
+            } else if (overlayEnabled && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                item {
+                    Text(
+                        text = stringResource(R.string.overlay_restricted_settings_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
 
             if (overlayEnabled && !usageOk()) {

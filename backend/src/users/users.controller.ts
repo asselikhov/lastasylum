@@ -12,7 +12,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { DEFAULT_ALLIANCE_ID } from '../common/constants/default-alliance-id';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -54,6 +54,7 @@ export class UsersController {
     private readonly teamPresenceGateway: TeamPresenceGateway,
   ) {}
 
+  @SkipThrottle()
   @Get('me')
   @Roles(AllianceRole.MEMBER)
   async getMyProfile(@Req() req: { user: RequestUser }) {

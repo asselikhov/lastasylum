@@ -220,12 +220,14 @@ export class ChatGateway {
     sender: GatewayUser,
     targetUserId: string,
     reaction: string,
+    broadcast: boolean,
   ) {
     return {
       fromUserId: sender.userId,
       fromUsername: sender.username,
       reaction,
       targetUserId,
+      broadcast,
     };
   }
 
@@ -285,7 +287,12 @@ export class ChatGateway {
       ?.to(`user:${targetUserId}`)
       .emit(
         'overlay:reaction',
-        this.overlayReactionPayload(client.data.user, targetUserId, reaction),
+        this.overlayReactionPayload(
+          client.data.user,
+          targetUserId,
+          reaction,
+          false,
+        ),
       );
 
     return { event: 'overlay:reaction:sent', data: { targetUserId, reaction } };
@@ -337,6 +344,7 @@ export class ChatGateway {
             client.data.user,
             targetUserId,
             reaction,
+            true,
           ),
         );
     }
