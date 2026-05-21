@@ -251,28 +251,7 @@ class OverlayCommandsPopover(
         )
     }
 
-    private fun previewOutgoingReactionBurst(
-        windowManager: WindowManager,
-        reactionId: String,
-        broadcast: Boolean,
-    ) {
-        reactionBurstPresenter.enqueue(
-            windowManager,
-            OverlayReactionBurstRequest(
-                fromDisplayName = context.getString(R.string.overlay_reaction_burst_you),
-                reactionId = reactionId,
-                broadcast = broadcast,
-                outgoingPreview = true,
-            ),
-        )
-    }
-
-    private fun emitReactionIfConnected(
-        block: () -> Unit,
-        reactionId: String,
-        broadcast: Boolean,
-        windowManager: WindowManager,
-    ): Boolean {
+    private fun emitReactionIfConnected(block: () -> Unit): Boolean {
         val connected = AppContainer.from(context).chatRepository.isChatSocketConnected()
         if (!connected) {
             Toast.makeText(
@@ -283,7 +262,6 @@ class OverlayCommandsPopover(
             return false
         }
         block()
-        previewOutgoingReactionBurst(windowManager, reactionId, broadcast)
         return true
     }
 
@@ -650,7 +628,7 @@ class OverlayCommandsPopover(
         var selectedReactionSubcategory = OverlayReactionCategory.ANIMATIONS
         val reactionTileSize = dp(52)
         val reactionIconInner = dp(42)
-        val reactionGridColumns = 4
+        val reactionGridColumns = 5
 
         val reactionTilesGrid = GridLayout(context).apply {
             columnCount = reactionGridColumns
@@ -1630,21 +1608,14 @@ class OverlayCommandsPopover(
                             listColumn.addView(
                                 reactionSendAllRow(members.size) {
                                     hideReactionPickOnly()
-                                    val wm = attachedWindowManager ?: return@reactionSendAllRow
-                                    if (emitReactionIfConnected(
-                                            { emitOverlayReactionBroadcast(reactionId) },
-                                            reactionId,
-                                            broadcast = true,
-                                            wm,
-                                        )
-                                    ) {
+                                    if (emitReactionIfConnected({ emitOverlayReactionBroadcast(reactionId) })) {
                                         Toast.makeText(
                                             context,
                                             context.getString(
                                                 R.string.overlay_reaction_sent_all,
                                                 members.size,
                                             ),
-                                            Toast.LENGTH_SHORT,
+                                            Toast.LENGTH_LONG,
                                         ).show()
                                     }
                                 },
@@ -1653,18 +1624,11 @@ class OverlayCommandsPopover(
                                 listColumn.addView(
                                     memberPickRow(m) {
                                         hideReactionPickOnly()
-                                        val wm = attachedWindowManager ?: return@memberPickRow
-                                        if (emitReactionIfConnected(
-                                                { emitOverlayReaction(m.userId, reactionId) },
-                                                reactionId,
-                                                broadcast = false,
-                                                wm,
-                                            )
-                                        ) {
+                                        if (emitReactionIfConnected({ emitOverlayReaction(m.userId, reactionId) })) {
                                             Toast.makeText(
                                                 context,
                                                 context.getString(R.string.overlay_reaction_sent, m.username),
-                                                Toast.LENGTH_SHORT,
+                                                Toast.LENGTH_LONG,
                                             ).show()
                                         }
                                     },

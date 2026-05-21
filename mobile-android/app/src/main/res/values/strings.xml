@@ -672,12 +672,8 @@
     <string name="overlay_reactions_send_all">Всем</string>
     <string name="overlay_reactions_send_all_subtitle">%1$d в игре с оверлеем</string>
     <string name="overlay_reaction_sent_all">Реакция отправлена %1$d участникам</string>
-    <string name="overlay_reaction_burst_caption">Реакция от</string>
-    <string name="overlay_reaction_burst_scope_private">Личная реакция</string>
-    <string name="overlay_reaction_burst_scope_broadcast">Реакция для всех в игре</string>
-    <string name="overlay_reaction_burst_scope_sent">Отправлено</string>
-    <string name="overlay_reaction_burst_caption_sent">Реакция отправлена</string>
-    <string name="overlay_reaction_burst_you">Вы</string>
+    <string name="overlay_reaction_burst_caption_private">Приватная · Реакция от</string>
+    <string name="overlay_reaction_burst_caption_broadcast">Для всех · Реакция от</string>
     <string name="overlay_reaction_socket_offline">Нет связи с чатом — реакция не отправлена</string>
     <string name="overlay_chat_gallery_open_system_picker">Выбрать фото</string>
     <string name="overlay_chat_gallery_partial_access_hint">Доступ только к ранее выбранным снимкам. Откройте системный выбор фото — так можно добавить новые и изменить набор.</string>

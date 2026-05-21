@@ -35,11 +35,10 @@ internal data class OverlayReactionBurstRequest(
     val fromDisplayName: String,
     val reactionId: String,
     val broadcast: Boolean,
-    val outgoingPreview: Boolean = false,
 )
 
 /**
- * Очередь полноэкранных вспышек реакций: без наложения, плавный enter/exit.
+ * Очередь вспышек реакций по центру экрана: компактное окно, касания проходят в игру.
  */
 internal class OverlayReactionBurstPresenter(
     private val context: Context,
@@ -102,34 +101,22 @@ internal class OverlayReactionBurstPresenter(
         val displayName = request.fromDisplayName.trim().ifBlank { "—" }
         val reactionTitle = context.getString(reaction.labelRes)
 
-        val root = OverlayPassthroughMultitouchFrameLayout(context).apply {
-            setBackgroundColor(Color.TRANSPARENT)
-            isClickable = false
-        }
-        val scrim = View(context).apply {
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(
-                    Color.argb(200, 4, 10, 22),
-                    Color.argb(140, 8, 16, 32),
-                    Color.argb(200, 2, 6, 14),
-                ),
-            )
-        }
-        root.addView(
-            scrim,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT,
-            ),
-        )
-
+        val screenW = context.resources.displayMetrics.widthPixels
+        val maxBurstSide = minOf((screenW * 0.52f).toInt(), dp(280))
         val burstAnimSize = when {
-            reaction.memeDrawableRes != null -> dp(210)
-            reaction.lottieRawRes != null -> dp(172)
+            reaction.memeDrawableRes != null -> maxBurstSide
+            reaction.stickerAssetStem != null -> maxBurstSide
+            reaction.lottieRawRes != null -> minOf(dp(200), maxBurstSide)
             else -> dp(128)
         }
-        val animView = createBurstAnimView(reaction)
+
+        val root = FrameLayout(context).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            isClickable = false
+            clipChildren = false
+            clipToPadding = false
+        }
+        val animView = createBurstAnimView(reaction, burstAnimSize)
         val accent = Color.parseColor(reaction.burstAccentHex)
         val accentSoft = (accent and 0x40FFFFFF.toInt()) or 0x20000000
 
@@ -149,30 +136,18 @@ internal class OverlayReactionBurstPresenter(
             letterSpacing = 0.03f
         }
 
-        val scopeLabel = when {
-            request.outgoingPreview -> context.getString(R.string.overlay_reaction_burst_scope_sent)
-            request.broadcast -> context.getString(R.string.overlay_reaction_burst_scope_broadcast)
-            else -> context.getString(R.string.overlay_reaction_burst_scope_private)
-        }
-        val scopeView = TextView(context).apply {
-            text = scopeLabel
+        val caption = TextView(context).apply {
+            text = if (request.broadcast) {
+                context.getString(R.string.overlay_reaction_burst_caption_broadcast)
+            } else {
+                context.getString(R.string.overlay_reaction_burst_caption_private)
+            }
             setTextColor(
                 if (request.broadcast) Color.parseColor("#FFFFB74D")
                 else Color.parseColor("#FF90CAF9"),
             )
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER_HORIZONTAL
-        }
-
-        val caption = TextView(context).apply {
-            text = if (request.outgoingPreview) {
-                context.getString(R.string.overlay_reaction_burst_caption_sent)
-            } else {
-                context.getString(R.string.overlay_reaction_burst_caption)
-            }
-            setTextColor(Color.parseColor("#B8C8D8E8"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER_HORIZONTAL
         }
 
@@ -213,18 +188,11 @@ internal class OverlayReactionBurstPresenter(
             )
             addView(caption)
             addView(
-                scopeView,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = dp(5) },
-            )
-            addView(
                 nameLabel,
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = dp(3) },
+                ).apply { topMargin = dp(5) },
             )
         }
 
@@ -240,19 +208,18 @@ internal class OverlayReactionBurstPresenter(
                 setColor(Color.parseColor("#F0182438"))
                 setStroke(dp(1).coerceAtLeast(1), cardStroke)
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                clipToOutline = true
-                outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
-            }
+            clipChildren = false
             addView(textInner)
         }
 
         val animHost = FrameLayout(context).apply {
+            clipChildren = false
+            clipToPadding = false
             addView(
                 glowRing,
                 FrameLayout.LayoutParams(
-                    (burstAnimSize * 1.15f).toInt(),
-                    (burstAnimSize * 1.15f).toInt(),
+                    (burstAnimSize * 1.2f).toInt(),
+                    (burstAnimSize * 1.2f).toInt(),
                     Gravity.CENTER,
                 ),
             )
@@ -265,6 +232,8 @@ internal class OverlayReactionBurstPresenter(
         val stack = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
+            clipChildren = false
+            clipToPadding = false
             addView(animHost)
             addView(
                 textCard,
@@ -285,13 +254,14 @@ internal class OverlayReactionBurstPresenter(
         )
 
         val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
             overlayWindowType(context),
             OverlayWindowLayout.reactionBurstWindowFlags(),
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
-            OverlayWindowLayout.applyFullscreenOverlayWindow(context, this)
+            OverlayWindowLayout.applyPopupLayoutCompat(this)
+            gravity = Gravity.CENTER
         }
 
         if (runCatching { windowManager.addView(root, params) }.isFailure) {
@@ -300,13 +270,9 @@ internal class OverlayReactionBurstPresenter(
         }
         burstRoot = root
 
-        val visibleMs = if (request.outgoingPreview) {
-            OUTGOING_BURST_VISIBLE_MS
-        } else {
-            OVERLAY_REACTION_BURST_VISIBLE_MS
-        }
+        val visibleMs = OVERLAY_REACTION_BURST_VISIBLE_MS
 
-        scrim.alpha = 0f
+        stack.alpha = 0f
         animView.scaleX = 0.2f
         animView.scaleY = 0.2f
         animView.alpha = 0f
@@ -324,7 +290,7 @@ internal class OverlayReactionBurstPresenter(
         val overshoot = OvershootInterpolator(1.35f)
         val enter = AnimatorSet().apply {
             playTogether(
-                ObjectAnimator.ofFloat(scrim, "alpha", 0f, 1f).apply { duration = 280 },
+                ObjectAnimator.ofFloat(stack, "alpha", 0f, 1f).apply { duration = 280 },
                 ObjectAnimator.ofFloat(animView, "scaleX", 0.2f, 1.12f, 1f).apply {
                     duration = 780
                     interpolator = overshoot
@@ -375,7 +341,7 @@ internal class OverlayReactionBurstPresenter(
         val hideRunnable = Runnable {
             val exit = AnimatorSet().apply {
                 playTogether(
-                    ObjectAnimator.ofFloat(scrim, "alpha", 1f, 0f).apply { duration = 420 },
+                    ObjectAnimator.ofFloat(stack, "alpha", 1f, 0f).apply { duration = 420 },
                     ObjectAnimator.ofFloat(animView, "alpha", 1f, 0f).apply { duration = 380 },
                     ObjectAnimator.ofFloat(animView, "scaleX", 1f, 1.28f).apply { duration = 380 },
                     ObjectAnimator.ofFloat(animView, "scaleY", 1f, 1.28f).apply { duration = 380 },
@@ -398,7 +364,7 @@ internal class OverlayReactionBurstPresenter(
         mainHandler.postDelayed(hideRunnable, visibleMs)
     }
 
-    private fun createBurstAnimView(reaction: OverlayQuickReaction): View {
+    private fun createBurstAnimView(reaction: OverlayQuickReaction, maxSidePx: Int): View {
         val stickerStem = reaction.stickerAssetStem
         if (stickerStem != null) {
             val bmp = loadStickerReactionBitmap(context, stickerStem)
@@ -406,6 +372,9 @@ internal class OverlayReactionBurstPresenter(
                 return ImageView(context).apply {
                     setImageBitmap(bmp)
                     scaleType = ImageView.ScaleType.FIT_CENTER
+                    adjustViewBounds = true
+                    maxWidth = maxSidePx
+                    maxHeight = maxSidePx
                 }
             }
         }
@@ -413,16 +382,10 @@ internal class OverlayReactionBurstPresenter(
         if (memeRes != null) {
             return ImageView(context).apply {
                 setImageDrawable(AppCompatResources.getDrawable(context, memeRes))
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.RECTANGLE
-                    cornerRadius = dp(14).toFloat()
-                    setColor(Color.parseColor("#22182533"))
-                }
-                clipToOutline = true
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
-                }
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                adjustViewBounds = true
+                maxWidth = maxSidePx
+                maxHeight = maxSidePx
             }
         }
         val lottieRes = reaction.lottieRawRes
@@ -459,7 +422,4 @@ internal class OverlayReactionBurstPresenter(
             WindowManager.LayoutParams.TYPE_PHONE
         }
 
-    companion object {
-        private const val OUTGOING_BURST_VISIBLE_MS = 1_400L
-    }
 }

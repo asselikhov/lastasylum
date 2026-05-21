@@ -19,6 +19,8 @@ import android.view.WindowManager
  * - **Тикер**: окно создаётся только при первом [OverlayTickerWindow.showTicker], чтобы не держать
  *   невидимую полоску на всю ширину экрана между сообщениями.
  * - **Quick commands**: маленькие `WRAP_CONTENT` окна у пузыря, тот же корень для pinch.
+ * - **Вспышка реакции**: `WRAP_CONTENT` по центру, [reactionBurstWindowFlags] (NOT_TOUCHABLE);
+ *   без полноэкранного скрима — касания вне карточки уходят в игру.
  * - **Полноэкранный чат**: свои флаги [historyPanelWindowFlags] (фокус + IME), без NOT_TOUCH_MODAL — окно
  *   должно полностью перехватыть ввод, пока открыт чат.
  */

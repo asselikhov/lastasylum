@@ -56,7 +56,11 @@ internal class OverlayPassthroughMultitouchFrameLayout(context: Context) : Frame
                     is ViewGroup -> {
                         if (hitInteractiveDescendant(child, cx, cy)) return true
                     }
-                    else -> return true
+                    else -> {
+                        if (child.isClickable || child.isFocusable || child.hasOnClickListeners()) {
+                            return true
+                        }
+                    }
                 }
             }
             return false
