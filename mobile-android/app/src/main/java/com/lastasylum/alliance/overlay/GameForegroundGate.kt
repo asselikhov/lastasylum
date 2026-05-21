@@ -143,7 +143,8 @@ object GameForegroundGate {
         return if (allowed.any { token -> cls.contains(token, ignoreCase = true) }) {
             QuickForegroundProbe.IN_TARGET
         } else {
-            QuickForegroundProbe.NOT_IN_TARGET
+            // Не скрываем HUD сразу: на старых ROM className часто неверный/устаревший — решает полная проверка.
+            QuickForegroundProbe.NEED_FULL_HEURISTICS
         }
     }
 
@@ -516,19 +517,14 @@ object GameForegroundGate {
             if (!hasActivityFilter) return true
             val cls = hintedComp.className?.trim().orEmpty()
             // Some ROMs / games do not report activity className reliably via UsageEvents.
-            // When we know the game package is foreground but className is missing, fall back to package-only gating
-            // instead of hiding the overlay everywhere.
             if (cls.isBlank()) return true
-            return allowed.any { token -> cls.contains(token, ignoreCase = true) }
+            if (allowed.any { token -> cls.contains(token, ignoreCase = true) }) return true
+            // className есть, но не совпал с фильтром — не выходим: ниже package/TTF/lastUsed (старые прошивки).
         }
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return false
         val end = System.currentTimeMillis()
-        // With an activity filter, heuristics below can't reliably tell in-game "pages" (only the package),
-        // so we don't use them for restricting to specific screens. The filter is applied only when we have a className
-        // from resume events; otherwise we fall back to package-only gating above.
-        if (hasActivityFilter) {
-            return false
-        }
+        // Activity filter: only when resume already identified the target package with a class name (see above).
+        // Do not block package/TTF heuristics — on many OEMs (especially older) className is often blank.
         // API 28+: события только по пакету игры — на MIUI глобальный queryEvents часто пуст/обрезан.
         // Не применять, если usage уже показывает другое приложение (лаунчер и т.д.) — иначе оверлей
         // остаётся после сворачивания игры.

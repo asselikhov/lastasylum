@@ -169,7 +169,10 @@
     <string name="settings_section_game_filter">Фильтр игры</string>
     <string name="overlay_title">Оверлей</string>
     <string name="overlay_activity_filter_label">Activity фильтр (опционально)</string>
-    <string name="overlay_activity_filter_hint">Через запятую: части имени Activity. Панель только на этих экранах (нужен доступ к статистике использования).</string>
+    <string name="overlay_activity_filter_hint">Через запятую: части имени Activity. Оставьте пустым на старых телефонах и клонах игры — иначе кнопки могут не появиться.</string>
+    <string name="overlay_gate_diagnostics_title">Диагностика оверлея</string>
+    <string name="overlay_gate_diagnostics_hint">Откройте игру, затем обновите. Если «пакет на экране» не совпадает с фильтром — добавьте пакет из «Сведения о приложении».</string>
+    <string name="overlay_gate_diagnostics_refresh">Обновить диагностику</string>
     <string name="overlay_switch_panel">Показывать панель</string>
     <string name="overlay_switch_panel_subtitle">Кнопки только в игре. Сервис SquadRelay работает в фоне (уведомление) — UI можно не открывать. Если кнопки пропали: отключите экономию батареи для SquadRelay и проверьте «Поверх окон» и «Статистику использования».</string>
     <string name="overlay_hud_only_title">Только кнопки HUD</string>

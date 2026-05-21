@@ -46,6 +46,7 @@ import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.GameForegroundGate
 import com.lastasylum.alliance.overlay.OverlayGamePackageSuggestions
+import com.lastasylum.alliance.overlay.OverlayGateDiagnostics
 import com.lastasylum.alliance.overlay.OverlayPermissions
 import com.lastasylum.alliance.push.FcmTokenManager
 import com.lastasylum.alliance.ui.components.SettingsSection
@@ -80,6 +81,15 @@ fun OverlayControlScreen() {
     }
     val undetectedGamePackages = remember(detectedGamePackages) {
         detectedGamePackages.filter { !it.alreadyInFilter }
+    }
+    var gateDiagnostics by remember { mutableStateOf<OverlayGateDiagnostics.Snapshot?>(null) }
+
+    fun refreshGateDiagnostics() {
+        if (!overlayEnabled) {
+            gateDiagnostics = null
+            return
+        }
+        gateDiagnostics = OverlayGateDiagnostics.capture(appContext, prefs)
     }
 
     LaunchedEffect(Unit) {
@@ -118,10 +128,22 @@ fun OverlayControlScreen() {
                 overlayHudOnly = prefs.isOverlayHudOnlyMode()
                 overlayLightStrip = prefs.isOverlayLightStrip()
                 refreshOverlayRuntime()
+                refreshGateDiagnostics()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(overlayEnabled, targetPkg, targetActivities) {
+        if (!overlayEnabled) {
+            gateDiagnostics = null
+            return@LaunchedEffect
+        }
+        while (true) {
+            refreshGateDiagnostics()
+            delay(2_500)
+        }
     }
 
     LaunchedEffect(targetPkg) {
@@ -447,6 +469,48 @@ fun OverlayControlScreen() {
                                 },
                                 textStyle = MaterialTheme.typography.bodyMedium,
                             )
+                        }
+                    }
+                }
+                item {
+                    SettingsPanelCard {
+                        SettingsSection(title = stringResource(R.string.overlay_gate_diagnostics_title)) {
+                            Text(
+                                text = stringResource(R.string.overlay_gate_diagnostics_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(
+                                    horizontal = SquadRelayDimens.listRowHorizontalPadding,
+                                    vertical = 4.dp,
+                                ),
+                            )
+                            gateDiagnostics?.let { snap ->
+                                OverlayGateDiagnostics.summaryLines(snap).forEach { line ->
+                                    Text(
+                                        text = line,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (line.contains("— нет") || line.contains("не в фильтре") ||
+                                            line.contains("не совпадает")
+                                        ) {
+                                            MaterialTheme.colorScheme.error
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface
+                                        },
+                                        modifier = Modifier.padding(
+                                            horizontal = SquadRelayDimens.listRowHorizontalPadding,
+                                            vertical = 2.dp,
+                                        ),
+                                    )
+                                }
+                            }
+                            TextButton(
+                                onClick = { refreshGateDiagnostics() },
+                                modifier = Modifier.padding(
+                                    horizontal = SquadRelayDimens.listRowHorizontalPadding,
+                                ),
+                            ) {
+                                Text(stringResource(R.string.overlay_gate_diagnostics_refresh))
+                            }
                         }
                     }
                 }
