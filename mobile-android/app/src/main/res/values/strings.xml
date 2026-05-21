@@ -178,6 +178,10 @@
     <string name="overlay_light_strip_subtitle">Без превью картинок в сообщениях оверлея.</string>
     <string name="overlay_panel_waiting_for_game">Панель включена, сервис в фоне — ожидание игры.</string>
     <string name="overlay_package_field_label">Пакеты игры (из «Сведения о приложении»)</string>
+    <string name="overlay_game_clone_hint">Копия/клон игры почти всегда имеет другой пакет (applicationId). Добавьте его в список через запятую — иначе оверлей не узнает игру. В двойном профиле (Parallel Space и т.п.) установите SquadRelay в том же профиле и выдайте «Поверх окон» и «Статистику использования» там же.</string>
+    <string name="overlay_game_detected_title">Найдены установленные сборки игры</string>
+    <string name="overlay_game_detected_add">Добавить %1$s</string>
+    <string name="overlay_game_detected_in_filter">Уже в фильтре: %1$s</string>
     <string name="overlay_overlay_must_be_squadrelay">Чтобы кнопки были поверх игры, включите «Поверх других приложений» для «%1$s» (это приложение SquadRelay). Включение только у игры не даёт панель — её рисует SquadRelay.</string>
     <string name="overlay_open_squadrelay_overlay_settings">Настройки SquadRelay</string>
     <string name="overlay_usage_hint_gate">Включите «Данные об использовании» для SquadRelay (полный доступ, не «только при использовании») — иначе кнопки в игре появятся только пока открыт SquadRelay.</string>

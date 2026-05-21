@@ -5,6 +5,8 @@ import android.content.pm.PackageManager
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -43,6 +45,7 @@ import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.GameForegroundGate
+import com.lastasylum.alliance.overlay.OverlayGamePackageSuggestions
 import com.lastasylum.alliance.overlay.OverlayPermissions
 import com.lastasylum.alliance.push.FcmTokenManager
 import com.lastasylum.alliance.ui.components.SettingsSection
@@ -52,6 +55,7 @@ import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun OverlayControlScreen() {
     val context = LocalContext.current
@@ -71,6 +75,12 @@ fun OverlayControlScreen() {
     var overlayLightStrip by remember { mutableStateOf(prefs.isOverlayLightStrip()) }
     var excavationPushEnabled by remember { mutableStateOf(prefs.isExcavationPushEnabled()) }
     var pushRegisteredOnServer by remember { mutableStateOf<Boolean?>(null) }
+    var detectedGamePackages by remember {
+        mutableStateOf<List<OverlayGamePackageSuggestions.DetectedGamePackage>>(emptyList())
+    }
+    val undetectedGamePackages = remember(detectedGamePackages) {
+        detectedGamePackages.filter { !it.alreadyInFilter }
+    }
 
     LaunchedEffect(Unit) {
         appContainer.usersRepository.getMyProfile().getOrNull()?.let { profile ->
@@ -129,6 +139,18 @@ fun OverlayControlScreen() {
         if (trimmed == prefs.getOverlayTargetGameActivityTokens().joinToString(",")) return@LaunchedEffect
         prefs.setOverlayTargetGameActivityTokens(trimmed)
         CombatOverlayService.requestGateRecheckIfRunning(context)
+    }
+
+    LaunchedEffect(targetPkg, overlayEnabled) {
+        if (!overlayEnabled) {
+            detectedGamePackages = emptyList()
+            return@LaunchedEffect
+        }
+        detectedGamePackages = OverlayGamePackageSuggestions.detectInstalled(
+            pm = context.packageManager,
+            squadRelayPackage = context.packageName,
+            configuredCsv = targetPkg,
+        )
     }
 
     Column(
@@ -361,10 +383,54 @@ fun OverlayControlScreen() {
                                     ),
                                 value = targetPkg,
                                 onValueChange = { targetPkg = it },
-                                singleLine = true,
+                                singleLine = false,
+                                minLines = 1,
+                                maxLines = 3,
                                 label = { Text(stringResource(R.string.overlay_package_field_label)) },
+                                supportingText = {
+                                    Text(stringResource(R.string.overlay_game_clone_hint))
+                                },
                                 textStyle = MaterialTheme.typography.bodyMedium,
                             )
+                            if (undetectedGamePackages.isNotEmpty()) {
+                                Text(
+                                    text = stringResource(R.string.overlay_game_detected_title),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    modifier = Modifier.padding(
+                                        horizontal = SquadRelayDimens.listRowHorizontalPadding,
+                                        vertical = 4.dp,
+                                    ),
+                                )
+                                FlowRow(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(
+                                            horizontal = SquadRelayDimens.listRowHorizontalPadding,
+                                            vertical = 4.dp,
+                                        ),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    undetectedGamePackages.forEach { detected ->
+                                        TextButton(
+                                            onClick = {
+                                                targetPkg = OverlayGamePackageSuggestions.appendToCsv(
+                                                    targetPkg,
+                                                    detected.packageName,
+                                                )
+                                            },
+                                        ) {
+                                            Text(
+                                                text = stringResource(
+                                                    R.string.overlay_game_detected_add,
+                                                    detected.label,
+                                                ),
+                                                style = MaterialTheme.typography.labelMedium,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                             OutlinedTextField(
                                 modifier = Modifier
                                     .fillMaxWidth()
