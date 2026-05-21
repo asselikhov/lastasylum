@@ -28,7 +28,11 @@ class ChatRepository(
     ): Result<ChatMessage> = rest.sendMessage(text, roomId, replyToMessageId, attachments, excavationAlert)
 
     suspend fun sendExcavationAlertWithRetries(text: String, roomId: String): Result<ChatMessage> =
-        rest.sendExcavationAlertWithRetries(text, roomId)
+        rest.sendExcavationAlertWithRetries(
+            text,
+            roomId,
+            onHttpSuccess = realtime::dispatchOverlayHttpMessage,
+        )
 
     suspend fun sendMessageWithRetries(
         text: String,
@@ -113,6 +117,9 @@ class ChatRepository(
 
     fun addOverlayMessageListener(listener: (ChatMessage) -> Unit) =
         realtime.addOverlayMessageListener(listener)
+
+    fun refreshOverlayRealtimeSubscriptions() =
+        realtime.refreshOverlayRealtimeSubscriptions()
 
     fun removeOverlayMessageListener(listener: (ChatMessage) -> Unit) =
         realtime.removeOverlayMessageListener(listener)

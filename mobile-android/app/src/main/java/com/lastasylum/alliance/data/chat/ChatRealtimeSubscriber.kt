@@ -113,9 +113,7 @@ class ChatRealtimeSubscriber(
             overlayReactionListeners.add(listener)
         }
         socketManager.addOverlayReactionListener(listener)
-        overlayRealtimeRoomIds.clear()
-        overlayRealtimeRoomIds.addAll(realtimeRoomIdsForOverlayBootstrap())
-        ensureRealtimeSocketConnected()
+        refreshOverlayRealtimeSubscriptions()
     }
 
     fun removeOverlayReactionListener(listener: (OverlayReactionEvent) -> Unit) {
@@ -157,6 +155,14 @@ class ChatRealtimeSubscriber(
             overlayMessageListeners.add(listener)
         }
         socketManager.addMessageListener(listener)
+        refreshOverlayRealtimeSubscriptions()
+    }
+
+    /** Re-join raid/selected rooms when [ChatRaidRoomSync] updates prefs after overlay already started. */
+    fun refreshOverlayRealtimeSubscriptions() {
+        if (overlayMessageListeners.isEmpty() && overlayReactionListeners.isEmpty()) {
+            return
+        }
         overlayRealtimeRoomIds.clear()
         overlayRealtimeRoomIds.addAll(realtimeRoomIdsForOverlayBootstrap())
         ensureRealtimeSocketConnected()

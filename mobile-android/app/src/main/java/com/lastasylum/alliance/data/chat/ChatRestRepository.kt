@@ -43,8 +43,12 @@ class ChatRestRepository(
             )
         }
 
-    suspend fun sendExcavationAlertWithRetries(text: String, roomId: String): Result<ChatMessage> =
-        sendMessageWithRetries(text, roomId, excavationAlert = true)
+    suspend fun sendExcavationAlertWithRetries(
+        text: String,
+        roomId: String,
+        onHttpSuccess: ((ChatMessage) -> Unit)? = null,
+    ): Result<ChatMessage> =
+        sendMessageWithRetries(text, roomId, excavationAlert = true, onHttpSuccess = onHttpSuccess)
 
     suspend fun sendMessageWithRetries(
         text: String,

@@ -169,13 +169,17 @@ class CombatOverlayService : Service() {
                 val roomId = AppContainer.from(this@CombatOverlayService).chatRoomPreferences.getRaidRoomId()
                     ?: return@OverlayCommandsPopover Result.failure(IllegalStateException("no_raid"))
                 val repo = AppContainer.from(this@CombatOverlayService).chatRepository
-                if (excavation) {
+                val result = if (excavation) {
                     val text = getString(R.string.overlay_excavation_message, x, y)
                     repo.sendExcavationAlertWithRetries(text, roomId)
                 } else {
                     val text = "$label X:${x} Y:${y}"
                     repo.sendMessageWithRetries(text, roomId)
                 }
+                result.onSuccess { sent ->
+                    mainHandler.post { applyLocalSentMessageToStrip(sent) }
+                }
+                result
             },
             notifyExcavation = {
                 val roomId = AppContainer.from(this@CombatOverlayService).chatRoomPreferences.getRaidRoomId()
@@ -183,6 +187,11 @@ class CombatOverlayService : Service() {
                 val text = getString(R.string.overlay_excavation_notify_message)
                 AppContainer.from(this@CombatOverlayService).chatRepository
                     .sendExcavationAlertWithRetries(text, roomId)
+                    .also { result ->
+                        result.onSuccess { sent ->
+                            mainHandler.post { applyLocalSentMessageToStrip(sent) }
+                        }
+                    }
             },
             emitOverlayReaction = { targetUserId, reactionId ->
                 AppContainer.from(this@CombatOverlayService).chatRepository.emitOverlayReaction(targetUserId, reactionId)
@@ -1391,6 +1400,7 @@ class CombatOverlayService : Service() {
                         list,
                         container.chatRoomPreferences,
                     )
+                    mainHandler.post { syncOverlayRaidRoomSubscription() }
                 }
                 val refreshNewsForum = force ||
                     now - lastHudRefreshCompletedAtMs >= STATUS_HUD_REFRESH_MS
@@ -2282,9 +2292,16 @@ class CombatOverlayService : Service() {
         processOverlayChatMessage(sent)
     }
 
+    private fun isOverlayRaidRoomMessage(msg: ChatMessage, raidId: String?): Boolean {
+        val raid = raidId?.trim().orEmpty()
+        if (raid.isEmpty()) return false
+        val room = msg.roomId.trim()
+        return room.isEmpty() || room == raid
+    }
+
     private fun processOverlayChatMessage(msg: ChatMessage, refreshStrip: Boolean = true) {
         val raidId = AppContainer.from(this).chatRoomPreferences.getRaidRoomId()
-        if (raidId == null || (msg.roomId.isNotBlank() && msg.roomId != raidId)) {
+        if (!isOverlayRaidRoomMessage(msg, raidId)) {
             return
         }
         Log.d(
@@ -2484,8 +2501,16 @@ class CombatOverlayService : Service() {
         }
     }
 
+    private fun syncOverlayRaidRoomSubscription() {
+        if (overlayMessageListener == null) return
+        AppContainer.from(this).chatRepository.refreshOverlayRealtimeSubscriptions()
+    }
+
     private fun beginOverlayChatSubscription() {
-        if (overlayMessageListener != null) return
+        if (overlayMessageListener != null) {
+            syncOverlayRaidRoomSubscription()
+            return
+        }
         registerVoiceMicPermissionReceiver()
         cancelStripTick()
         val reactionListener: (OverlayReactionEvent) -> Unit = { event ->
@@ -2508,7 +2533,7 @@ class CombatOverlayService : Service() {
         val listener: (ChatMessage) -> Unit = listener@{ msg ->
             val raidId = AppContainer.from(this).chatRoomPreferences.getRaidRoomId()
             val hubId = cachedAllianceHubRoomId
-            val isRaid = !raidId.isNullOrBlank() && msg.roomId == raidId
+            val isRaid = isOverlayRaidRoomMessage(msg, raidId)
             val isHub = !hubId.isNullOrBlank() && msg.roomId == hubId
             if (!isRaid && !isHub) {
                 if (msg.roomId.isNotBlank()) {
@@ -2557,6 +2582,7 @@ class CombatOverlayService : Service() {
                         container.chatRoomPreferences,
                     )
                     cachedAllianceHubRoomId = OverlayGameStatusHudRefresh.allianceHubRoom(list)?.id
+                    mainHandler.post { syncOverlayRaidRoomSubscription() }
                 }
             }
             val raidId = container.chatRoomPreferences.getRaidRoomId()
