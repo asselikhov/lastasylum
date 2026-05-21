@@ -633,7 +633,7 @@ export class TeamsService {
   }
 
   /** Matches Android [OVERLAY_INGAME_PRESENCE_STALE_MS] and UsersService.OVERLAY_INGAME_LIST_STALE_MS. */
-  static readonly OVERLAY_PRESENCE_LIST_STALE_MS = 180_000;
+  static readonly OVERLAY_PRESENCE_LIST_STALE_MS = 90_000;
 
   private isOverlayIngameRow(
     row: TeamMemberRow,

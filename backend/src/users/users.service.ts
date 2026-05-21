@@ -533,9 +533,9 @@ export class UsersService implements OnModuleInit {
 
   /**
    * «Участники онлайн» / broadcast reactions — matches Android
-   * [OVERLAY_INGAME_PRESENCE_STALE_MS] (3× overlay heartbeat 60 s).
+   * [OVERLAY_INGAME_PRESENCE_STALE_MS] (~1.5× overlay heartbeat 60 s).
    */
-  static readonly OVERLAY_INGAME_LIST_STALE_MS = 180_000;
+  static readonly OVERLAY_INGAME_LIST_STALE_MS = 90_000;
 
   /**
    * Teammates currently in game with a fresh overlay heartbeat (excluding sender).

@@ -44,7 +44,7 @@ import com.lastasylum.alliance.ui.screens.TeamLeaderDialogsHost
 import com.lastasylum.alliance.ui.screens.TeamLeaderToolbar
 import com.lastasylum.alliance.ui.screens.rememberTeamLeaderOverlayState
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
-import com.lastasylum.alliance.ui.util.OVERLAY_INGAME_PRESENCE_STALE_MS
+import com.lastasylum.alliance.ui.util.OVERLAY_ONLINE_PANEL_POLL_MS
 import com.lastasylum.alliance.ui.util.formatOverlayPresenceAgeRu
 import com.lastasylum.alliance.ui.util.isOverlayIngameNow
 import com.lastasylum.alliance.ui.util.toUserMessageRu
@@ -134,7 +134,10 @@ fun OverlayTeamOnlinePanel(
 
     val presenceSocketListener: (com.lastasylum.alliance.data.teams.TeamPresenceSocketEvent) -> Unit =
         remember {
-            {
+            { event ->
+                if (!isOverlayIngameNow(event.presenceStatus, event.lastPresenceAt)) {
+                    onlineMembers = onlineMembers.filter { it.userId != event.userId }
+                }
                 applyPresenceReload(forceTeamRefresh = false, showBlockingSpinner = false)
             }
         }
@@ -158,7 +161,7 @@ fun OverlayTeamOnlinePanel(
     LaunchedEffect(Unit) {
         applyPresenceReload(forceTeamRefresh = true, showBlockingSpinner = true)
         while (isActive) {
-            delay(OVERLAY_INGAME_PRESENCE_STALE_MS / 3)
+            delay(OVERLAY_ONLINE_PANEL_POLL_MS)
             applyPresenceReload(forceTeamRefresh = false, showBlockingSpinner = false)
         }
     }
@@ -182,16 +185,20 @@ fun OverlayTeamOnlinePanel(
     val pending = p?.pendingPlayerTeamJoinRequests ?: 0
     val selfLabel = stringResource(R.string.overlay_online_self)
     val ingameItems = remember(onlineMembers, p?.id) {
-        onlineMembers.map { member ->
-            PresenceListItem(
-                member = member,
-                inGameNow = true,
-                key = "ingame:${member.userId}",
-            )
-        }
+        onlineMembers
+            .filter { isOverlayIngameNow(it.presenceStatus, it.lastPresenceAt) }
+            .map { member ->
+                PresenceListItem(
+                    member = member,
+                    inGameNow = true,
+                    key = "ingame:${member.userId}",
+                )
+            }
     }
     val recentItems = remember(recentlyActive, p?.id) {
-        recentlyActive.map { member ->
+        recentlyActive
+            .filter { !isOverlayIngameNow(it.presenceStatus, it.lastPresenceAt) }
+            .map { member ->
             PresenceListItem(
                 member = member,
                 inGameNow = false,

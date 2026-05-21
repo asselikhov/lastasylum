@@ -89,7 +89,6 @@ import com.lastasylum.alliance.ui.screens.TeamMainSection
 import com.lastasylum.alliance.ui.screens.TeamScreen
 import com.lastasylum.alliance.ui.chat.ChatViewModel
 import com.lastasylum.alliance.ui.theme.SquadRelayTheme
-import com.lastasylum.alliance.ui.util.OVERLAY_INGAME_PRESENCE_STALE_MS
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -209,33 +208,35 @@ class CombatOverlayService : Service() {
 
     /**
      * Список «Участники онлайн» — только ingame + свежий lastPresenceAt.
-     * Пинги идут, пока игрок в целевой игре (в т.ч. без действий и при скрытом HUD),
-     * а не пока открыта лента чата.
+     * Пинги идут только пока гейт видит целевую игру; после выхода heartbeat останавливается
+     * сразу, away — после нескольких тиков без игры (без 3‑минутного grace).
      */
-    private fun shouldMaintainOverlayIngamePresence(inGameProbe: Boolean): Boolean {
-        val container = AppContainer.from(this)
-        if (!container.userSettingsPreferences.isOverlayPanelEnabled()) return false
-        if (!container.authRepository.hasSession()) return false
-        if (inGameProbe) return true
-        val lastInGame = lastOverlayInGameAtMs
-        if (lastInGame <= 0L) return false
-        return System.currentTimeMillis() - lastInGame < OVERLAY_INGAME_PRESENCE_STALE_MS
-    }
-
     private fun syncOverlayIngamePresence(inGameProbe: Boolean) {
-        if (shouldMaintainOverlayIngamePresence(inGameProbe)) {
+        val container = AppContainer.from(this)
+        if (!container.userSettingsPreferences.isOverlayPanelEnabled() ||
+            !container.authRepository.hasSession()
+        ) {
+            overlayIngameMissStreak = 0
+            stopOverlayIngamePresence(markAway = false)
+            return
+        }
+        if (inGameProbe) {
+            overlayIngameMissStreak = 0
             val firstStart = !overlayIngamePresenceActive
             overlayIngamePresenceActive = true
             presenceHeartbeat.start()
             if (firstStart) {
                 serviceScope.launch {
                     runCatching {
-                        AppContainer.from(this@CombatOverlayService).usersRepository.updatePresence(
-                            OVERLAY_PRESENCE_INGAME,
-                        )
+                        container.usersRepository.updatePresence(OVERLAY_PRESENCE_INGAME)
                     }
                 }
             }
+            return
+        }
+        presenceHeartbeat.stop()
+        overlayIngameMissStreak++
+        if (overlayIngameMissStreak < OVERLAY_INGAME_AWAY_MISS_STREAK) {
             return
         }
         stopOverlayIngamePresence(markAway = true)
@@ -797,6 +798,7 @@ class CombatOverlayService : Service() {
     private var lastOverlayInGameAtMs: Long = 0L
     /** Heartbeat «ingame» для списка союзников — не привязан к видимости HUD/ленты. */
     private var overlayIngamePresenceActive = false
+    private var overlayIngameMissStreak = 0
     /** Не вызывать [NotificationManager.notify] с тем же текстом подряд (лишние всплытия на части OEM). */
     private var lastForegroundNotificationText: String? = null
     private var lastForegroundMicActive: Boolean = false
@@ -3194,6 +3196,8 @@ class CombatOverlayService : Service() {
         private const val OVERLAY_VOICE_CONNECT_DELAY_MS = 4_000L
         /** Краткий grace при ложном «не в игре» во время чата/пикера; не применяется при явном лаунчере/другом приложении. */
         private const val OVERLAY_INGAME_GRACE_MS = 2_500L
+        /** Gate ticks without in-game probe before POST away (~4–10 s). */
+        private const val OVERLAY_INGAME_AWAY_MISS_STREAK = 3
         private const val OVERLAY_HISTORY_LOAD = 40
         /** 1 тик гейта (~1.2 с) после «в игре» — достаточно, если HUD уже показан при входе. */
         private const val HUD_STABLE_TICKS_BEFORE_ATTACH = 1
