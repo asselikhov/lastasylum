@@ -69,6 +69,7 @@ class OverlayCommandsPopover(
     private val reactionBurstPresenter = OverlayReactionBurstPresenter(context, mainHandler, dp)
     private var heartPreviewAnimator: Animator? = null
     private var reactionPreviewLotties: List<LottieAnimationView> = emptyList()
+    private var reactionPreviewKeepAliveRunnable: Runnable? = null
     private var attachedWindowManager: WindowManager? = null
     private var gameGateSuppressHeld = false
 
@@ -136,7 +137,43 @@ class OverlayCommandsPopover(
         runCatching { wm?.removeView(host) }
     }
 
+    private fun stopReactionPreviewKeepAlive() {
+        reactionPreviewKeepAliveRunnable?.let { mainHandler.removeCallbacks(it) }
+        reactionPreviewKeepAliveRunnable = null
+    }
+
+    private fun configureLoopingLottie(lottie: LottieAnimationView) {
+        lottie.repeatCount = LottieDrawable.INFINITE
+        lottie.repeatMode = LottieDrawable.RESTART
+        lottie.enableMergePathsForKitKatAndAbove(true)
+    }
+
+    /** Lottie в overlay-окнах на части OEM перестаёт крутиться — поднимаем снова, пока меню открыто. */
+    private fun ensureReactionPreviewLottiesPlaying() {
+        reactionPreviewLotties.forEach { lottie ->
+            if (!lottie.isAttachedToWindow) return@forEach
+            configureLoopingLottie(lottie)
+            if (!lottie.isAnimating) {
+                lottie.playAnimation()
+            }
+        }
+    }
+
+    private fun startReactionPreviewKeepAlive() {
+        stopReactionPreviewKeepAlive()
+        val tick = object : Runnable {
+            override fun run() {
+                if (menuScrim == null) return
+                ensureReactionPreviewLottiesPlaying()
+                mainHandler.postDelayed(this, 2_000L)
+            }
+        }
+        reactionPreviewKeepAliveRunnable = tick
+        mainHandler.postDelayed(tick, 2_000L)
+    }
+
     private fun stopHeartPreviewPulse() {
+        stopReactionPreviewKeepAlive()
         heartPreviewAnimator?.cancel()
         heartPreviewAnimator = null
         reactionPreviewLotties.forEach { lottie ->
@@ -180,7 +217,7 @@ class OverlayCommandsPopover(
                 setAnimation(lottieRes)
                 reaction.lottieTintHex?.let { applyLottieReactionTint(this, it) }
                 scaleType = ImageView.ScaleType.CENTER_INSIDE
-                repeatCount = LottieDrawable.INFINITE
+                configureLoopingLottie(this)
             }
         }
         return ImageView(context).apply {
@@ -196,15 +233,16 @@ class OverlayCommandsPopover(
     private fun startReactionStripPreviews() {
         stopHeartPreviewPulse()
         reactionPreviewLotties.forEach { lottie ->
-            lottie.repeatCount = LottieDrawable.INFINITE
+            configureLoopingLottie(lottie)
             lottie.playAnimation()
         }
+        startReactionPreviewKeepAlive()
     }
 
     private fun startHeartPreviewPulse(target: View) {
         stopHeartPreviewPulse()
         if (target is LottieAnimationView) {
-            target.repeatCount = LottieDrawable.INFINITE
+            configureLoopingLottie(target)
             target.playAnimation()
             return
         }
@@ -1479,7 +1517,7 @@ class OverlayCommandsPopover(
         val reactionPreview = createReactionTileIcon(selectedReaction).apply {
             contentDescription = context.getString(R.string.overlay_reactions_recipient_preview_cd)
             if (this is LottieAnimationView) {
-                repeatCount = LottieDrawable.INFINITE
+                configureLoopingLottie(this)
                 playAnimation()
             }
         }
