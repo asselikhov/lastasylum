@@ -19,6 +19,7 @@ import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.data.chat.ChatRoomReadEvent
 import com.lastasylum.alliance.data.chat.ChatTypingEvent
 import com.lastasylum.alliance.data.chat.ChatRoomDto
+import com.lastasylum.alliance.data.chat.ChatRaidRoomSync
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
 import com.lastasylum.alliance.data.users.UsersRepository
 import com.lastasylum.alliance.ui.util.toUserMessageRu
@@ -249,12 +250,7 @@ class ChatViewModel(
         )
 
     private fun syncRaidRoomPreference(rooms: List<ChatRoomDto>) {
-        val raid = rooms.firstOrNull { isAllianceRaidRoom(it) }
-        if (raid != null) {
-            chatRoomPreferences.setRaidRoomId(raid.id)
-        } else {
-            chatRoomPreferences.clearRaidRoomId()
-        }
+        ChatRaidRoomSync.applyRaidRoomPreference(rooms, chatRoomPreferences)
     }
 
     /**

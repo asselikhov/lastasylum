@@ -239,6 +239,9 @@ export class VoiceGateway {
       return Buffer.from(body.buffer, body.byteOffset, body.byteLength);
     }
     if (Array.isArray(body) && body.length > 0) {
+      if (body.every((x) => typeof x === 'number')) {
+        return Buffer.from(body as number[]);
+      }
       return this.coerceBuffer(body[0]);
     }
     throw new WsException('Expected binary voice frame');

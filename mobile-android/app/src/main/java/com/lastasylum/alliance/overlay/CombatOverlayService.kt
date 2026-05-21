@@ -1366,6 +1366,10 @@ class CombatOverlayService : Service() {
                 rooms?.let { list ->
                     cachedAllianceHubRoomId = OverlayGameStatusHudRefresh.allianceHubRoom(list)?.id
                     com.lastasylum.alliance.data.chat.ChatSessionCache.update(list)
+                    com.lastasylum.alliance.data.chat.ChatRaidRoomSync.applyRaidRoomPreference(
+                        list,
+                        container.chatRoomPreferences,
+                    )
                 }
                 val refreshNewsForum = force ||
                     now - lastHudRefreshCompletedAtMs >= STATUS_HUD_REFRESH_MS
@@ -1746,11 +1750,6 @@ class CombatOverlayService : Service() {
                         onOnlineClick = {
                             overlayCommandsPopover.hide()
                             pendingOpenJoinInboxOnParticipants = false
-                            showOverlayHudPane(OverlayHudPane.Participants)
-                        },
-                        onJoinRequestsClick = {
-                            overlayCommandsPopover.hide()
-                            pendingOpenJoinInboxOnParticipants = true
                             showOverlayHudPane(OverlayHudPane.Participants)
                         },
                         onQuickCommandsClick = { openOverlayQuickCommandsFromHud() },
@@ -2511,6 +2510,10 @@ class CombatOverlayService : Service() {
             } else {
                 container.chatRepository.listRooms().getOrNull()?.let { list ->
                     com.lastasylum.alliance.data.chat.ChatSessionCache.update(list)
+                    com.lastasylum.alliance.data.chat.ChatRaidRoomSync.applyRaidRoomPreference(
+                        list,
+                        container.chatRoomPreferences,
+                    )
                     cachedAllianceHubRoomId = OverlayGameStatusHudRefresh.allianceHubRoom(list)?.id
                 }
             }
@@ -3045,12 +3048,32 @@ class CombatOverlayService : Service() {
     }
 
     private fun startOverlayVoiceIfRaidAvailable() {
-        val raidId = AppContainer.from(this).chatRoomPreferences.getRaidRoomId() ?: return
+        val container = AppContainer.from(this)
         val userId = jwtSubFromAccessToken().orEmpty()
         if (userId.isBlank()) return
-        val session = ensureVoiceSession()
-        session.start(raidId, userId)
-        refreshOverlayTopRightHudState()
+        val cachedRaidId = container.chatRoomPreferences.getRaidRoomId()
+        if (cachedRaidId != null) {
+            ensureVoiceSession().start(cachedRaidId, userId)
+            refreshOverlayTopRightHudState()
+            return
+        }
+        serviceScope.launch(Dispatchers.IO) {
+            val rooms = com.lastasylum.alliance.data.chat.ChatSessionCache.getFreshRooms()
+                ?: container.chatRepository.listRooms().getOrNull()
+            rooms?.let { list ->
+                com.lastasylum.alliance.data.chat.ChatSessionCache.update(list)
+                com.lastasylum.alliance.data.chat.ChatRaidRoomSync.applyRaidRoomPreference(
+                    list,
+                    container.chatRoomPreferences,
+                )
+            }
+            val raidId = container.chatRoomPreferences.getRaidRoomId() ?: return@launch
+            mainHandler.post {
+                if (!isServiceInstanceActive) return@post
+                ensureVoiceSession().start(raidId, userId)
+                refreshOverlayTopRightHudState()
+            }
+        }
     }
 
     private fun stopOverlayVoice() {

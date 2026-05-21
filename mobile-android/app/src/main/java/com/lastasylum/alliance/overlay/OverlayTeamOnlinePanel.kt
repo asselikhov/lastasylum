@@ -11,11 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -82,7 +78,6 @@ fun OverlayTeamOnlinePanel(
     val voicePeers by TeamVoicePresenceStore.peers.collectAsState()
 
     var loading by remember { mutableStateOf(true) }
-    var refreshing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var profile by remember { mutableStateOf<MyProfileDto?>(null) }
     var team by remember { mutableStateOf<TeamDetailDto?>(null) }
@@ -94,8 +89,6 @@ fun OverlayTeamOnlinePanel(
         scope.launch {
             if (showBlockingSpinner || team == null) {
                 loading = true
-            } else {
-                refreshing = true
             }
             error = null
             val loaded = withContext(Dispatchers.IO) {
@@ -136,7 +129,6 @@ fun OverlayTeamOnlinePanel(
                 recentlyActive = emptyList()
             }
             loading = false
-            refreshing = false
         }
     }
 
@@ -265,36 +257,6 @@ fun OverlayTeamOnlinePanel(
                 }
             }
             t != null -> {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(
-                            horizontal = SquadRelayDimens.contentPaddingHorizontal,
-                            vertical = 4.dp,
-                        ),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.End,
-                ) {
-                    if (refreshing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                        )
-                    } else {
-                        IconButton(
-                            onClick = {
-                                applyPresenceReload(forceTeamRefresh = false, showBlockingSpinner = false)
-                                onHudRefresh()
-                            },
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Refresh,
-                                contentDescription = stringResource(R.string.overlay_online_refresh_cd),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
                 TeamLeaderToolbar(
                     team = t,
                     activeServerNumber = profile?.activeServerNumber,
@@ -326,6 +288,10 @@ fun OverlayTeamOnlinePanel(
                                 }
                             leaderUi.inboxBusy = false
                         }
+                    },
+                    onRefresh = {
+                        applyPresenceReload(forceTeamRefresh = false, showBlockingSpinner = false)
+                        onHudRefresh()
                     },
                 )
                 if (totalShown == 0) {

@@ -120,7 +120,7 @@ class VoiceAudioPipeline(
 
     fun enqueueRemoteFrame(userId: String, codec: String, payload: ByteArray) {
         if (!soundEnabled) return
-        if (remoteMicOn[userId] == false) return
+        if (remoteMicOn[userId] != true) return
         val pcm = opus.decodeToPcm(codec, payload) ?: return
         if (pcm.size != FRAME_BYTES_PCM) return
         jitter.push(userId, pcm)

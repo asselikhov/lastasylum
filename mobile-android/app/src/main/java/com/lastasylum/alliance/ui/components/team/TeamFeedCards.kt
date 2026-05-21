@@ -325,29 +325,38 @@ fun TeamPollVoteOptionSurface(
 }
 
 @Composable
-private fun AuthorChip(username: String) {
-    val initial = username.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+private fun AuthorChip(username: String, telegramUsername: String? = null) {
+    val avatarUrl = telegramAvatarUrl(telegramUsername)
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(28.dp)
-                .clip(CircleShape)
-                .background(
-                    Brush.linearGradient(
-                        listOf(SquadRelayPrimary.copy(0.85f), SquadRelaySecondary.copy(0.75f)),
-                    ),
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = initial,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
+        if (avatarUrl != null) {
+            ChatSenderAvatar(
+                telegramUrl = avatarUrl,
+                size = 28.dp,
+                fallbackName = username,
             )
+        } else {
+            val initial = username.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.linearGradient(
+                            listOf(SquadRelayPrimary.copy(0.85f), SquadRelaySecondary.copy(0.75f)),
+                        ),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = initial,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                )
+            }
         }
         Text(
             text = username,
@@ -562,7 +571,7 @@ fun TeamNewsFeedCard(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.weight(1f),
                     ) {
-                        AuthorChip(item.authorUsername)
+                        AuthorChip(item.authorUsername, item.authorTelegramUsername)
                         if (!hasHero) {
                             Text(
                                 text = formatTeamFeedDateRu(item.createdAt),

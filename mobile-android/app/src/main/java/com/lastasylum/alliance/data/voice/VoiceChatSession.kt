@@ -52,6 +52,8 @@ class VoiceChatSession(
 
     private val frameListener: (VoiceFrameEvent) -> Unit = listener@{ event ->
         if (event.userId == localUserId) return@listener
+        // Server relays only when peer mic is on; mark active if peer-state not received yet.
+        audioPipeline.setRemotePeerMic(event.userId, true)
         remoteSpeechUntilMs[event.userId] = SystemClock.elapsedRealtime() + speechHoldMs
         scheduleSpeakerCountUpdate()
         audioPipeline.enqueueRemoteFrame(event.userId, event.codec, event.payload)

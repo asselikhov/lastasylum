@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
@@ -74,6 +75,7 @@ fun TeamLeaderToolbar(
     onAddMember: () -> Unit,
     onEditTeam: () -> Unit,
     onOpenInbox: () -> Unit,
+    onRefresh: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -113,6 +115,20 @@ fun TeamLeaderToolbar(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+        if (onRefresh != null) {
+            IconButton(
+                onClick = {
+                    OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
+                    onRefresh()
+                },
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Refresh,
+                    contentDescription = stringResource(R.string.overlay_online_refresh_cd),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         if (isLeader) {
             IconButton(

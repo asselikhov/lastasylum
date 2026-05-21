@@ -26,6 +26,7 @@ export type TeamNewsListRow = {
   excerpt: string;
   authorUserId: string;
   authorUsername: string;
+  authorTelegramUsername: string | null;
   createdAt: string;
   updatedAt: string;
   hasPoll: boolean;
@@ -227,7 +228,10 @@ export class TeamNewsService {
 
   private toListRow(
     doc: TeamNews,
-    nameById: Map<string, string>,
+    profilesById: Map<
+      string,
+      { username: string; telegramUsername: string | null }
+    >,
     viewerUserId: string,
   ): TeamNewsListRow {
     const poll = doc.poll;
@@ -247,13 +251,15 @@ export class TeamNewsService {
       !!poll && bodyTrim.length === 0 && doc.imageAttachments.length === 0;
     const created = (doc as unknown as { createdAt?: Date }).createdAt;
     const updated = (doc as unknown as { updatedAt?: Date }).updatedAt;
+    const authorProfile = profilesById.get(doc.authorUserId);
     return {
       id: this.idString((doc as unknown as { _id: unknown })._id),
       teamId: teamIdStr,
       title: doc.title,
       excerpt,
       authorUserId: doc.authorUserId,
-      authorUsername: nameById.get(doc.authorUserId) ?? '?',
+      authorUsername: authorProfile?.username ?? '?',
+      authorTelegramUsername: authorProfile?.telegramUsername ?? null,
       createdAt: created?.toISOString() ?? new Date(0).toISOString(),
       updatedAt: updated?.toISOString() ?? new Date(0).toISOString(),
       hasPoll: !!poll,
@@ -283,8 +289,8 @@ export class TeamNewsService {
       >()
       .exec();
     const authorIds = rows.map((r) => r.authorUserId);
-    const names = await this.usernamesFor(authorIds);
-    const items = rows.map((r) => this.toListRow(r, names, ''));
+    const profiles = await this.userProfilesFor(authorIds);
+    const items = rows.map((r) => this.toListRow(r, profiles, ''));
     return { items, nextCursor: null };
   }
 
@@ -337,8 +343,8 @@ export class TeamNewsService {
     const hasMore = rows.length > lim;
     const page = hasMore ? rows.slice(0, lim) : rows;
     const authorIds = page.map((r) => r.authorUserId);
-    const names = await this.usernamesFor(authorIds);
-    const items = page.map((r) => this.toListRow(r, names, userId));
+    const profiles = await this.userProfilesFor(authorIds);
+    const items = page.map((r) => this.toListRow(r, profiles, userId));
     const nextCursor =
       hasMore && page.length > 0
         ? page[page.length - 1]._id.toString()
@@ -374,10 +380,7 @@ export class TeamNewsService {
       doc.authorUserId,
       ...pollVoterIds,
     ]);
-    const names = new Map(
-      [...profiles.entries()].map(([id, p]) => [id, p.username]),
-    );
-    const base = this.toListRow(doc, names, userId);
+    const base = this.toListRow(doc, profiles, userId);
     const teamIdStr = this.idString(doc.teamId);
     const images = doc.imageAttachments.map(
       (a) =>

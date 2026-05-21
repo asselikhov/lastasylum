@@ -21,6 +21,8 @@ class VoiceSocketManager {
     private var intentionalDisconnect = false
     private var reconnectScheduled = false
     private var frameSeq = 0
+    @Volatile
+    private var voiceJoined = false
     /** Last toggles — included in voice:join on (re)connect so the server never stays at micOff/soundOff defaults. */
     private var lastMicOn: Boolean = false
     private var lastSoundOn: Boolean = true
@@ -93,7 +95,7 @@ class VoiceSocketManager {
     }
 
     fun emitFrame(codec: String, payload: ByteArray) {
-        if (roomId == null) return
+        if (roomId == null || !voiceJoined) return
         val codecByte = when (codec) {
             VoiceOpusCodec.CODEC_OPUS -> VoiceWire.CODEC_OPUS
             else -> return
@@ -135,6 +137,7 @@ class VoiceSocketManager {
             socket = IO.socket("$baseUrl/voice", options).apply {
                 on(Socket.EVENT_CONNECT) {
                     reconnectAttempt = 0
+                    voiceJoined = false
                     emit(
                         "voice:join",
                         JSONObject()
@@ -144,12 +147,15 @@ class VoiceSocketManager {
                     )
                 }
                 on(Socket.EVENT_DISCONNECT) {
+                    voiceJoined = false
                     if (!intentionalDisconnect) scheduleReconnect()
                 }
                 on(Socket.EVENT_CONNECT_ERROR) {
                     if (!intentionalDisconnect) scheduleReconnect()
                 }
                 on("voice:joined") { args ->
+                    voiceJoined = true
+                    emitState(lastMicOn, lastSoundOn)
                     val payload = args.firstOrNull() as? JSONObject ?: return@on
                     val peers = payload.optJSONArray("peers") ?: return@on
                     for (i in 0 until peers.length()) {
@@ -199,6 +205,7 @@ class VoiceSocketManager {
 
     private fun disconnectSocket() {
         disconnectSocketOnly()
+        voiceJoined = false
         roomId = null
         lastBaseUrl = null
         tokenProvider = null
