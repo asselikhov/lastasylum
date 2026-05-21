@@ -660,6 +660,12 @@
     <string name="overlay_reactions_pick_hint">Тап по реакции — затем выберите получателя.</string>
     <string name="overlay_reactions_sub_animations">Анимации</string>
     <string name="overlay_reactions_sub_memes">Мэмы</string>
+    <string name="overlay_reactions_sub_stickers">Стикеры</string>
+    <string name="overlay_reactions_sub_favorites">Избранное</string>
+    <string name="overlay_reactions_favorites_empty">Нажмите ☆ на реакции, чтобы добавить в избранное</string>
+    <string name="overlay_reaction_sticker_cd">Стикер</string>
+    <string name="chat_composer_paste_cd">Вставить из буфера</string>
+    <string name="chat_composer_paste_empty">Буфер обмена пуст</string>
     <string name="overlay_reaction_meme_cd">Мем</string>
     <string name="overlay_reactions_recipient_preview_cd">Выбранная реакция</string>
     <string name="overlay_reaction_sent">Реакция отправлена: %s</string>
@@ -669,7 +675,13 @@
     <string name="overlay_reaction_burst_caption">Реакция от</string>
     <string name="overlay_reaction_burst_scope_private">Личная реакция</string>
     <string name="overlay_reaction_burst_scope_broadcast">Реакция для всех в игре</string>
-    <string name="overlay_chat_gallery_open_system_picker">Выбрать другие фото</string>
+    <string name="overlay_reaction_burst_scope_sent">Отправлено</string>
+    <string name="overlay_reaction_burst_caption_sent">Реакция отправлена</string>
+    <string name="overlay_reaction_burst_you">Вы</string>
+    <string name="overlay_reaction_socket_offline">Нет связи с чатом — реакция не отправлена</string>
+    <string name="overlay_chat_gallery_open_system_picker">Выбрать фото</string>
+    <string name="overlay_chat_gallery_partial_access_hint">Доступ только к ранее выбранным снимкам. Откройте системный выбор фото — так можно добавить новые и изменить набор.</string>
+    <string name="overlay_reactions_stickers_empty">Стикеры скоро появятся. Нажмите ☆, чтобы сохранить в избранное.</string>
     <string name="overlay_cmd_spinner_by_city">По городу</string>
     <string name="overlay_cmd_spinner_by_player">По игроку</string>
     <string name="overlay_cmd_spinner_reinf_to_city">В город</string>

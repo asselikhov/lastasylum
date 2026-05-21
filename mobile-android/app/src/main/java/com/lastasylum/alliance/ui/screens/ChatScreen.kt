@@ -92,6 +92,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -207,6 +209,7 @@ import com.lastasylum.alliance.ui.util.appendTextToDraft
 import com.lastasylum.alliance.ui.util.chatMessageHasPasteableText
 import com.lastasylum.alliance.ui.util.chatMessageTextForComposer
 import com.lastasylum.alliance.ui.util.copyChatMessageToClipboard
+import com.lastasylum.alliance.ui.util.readClipboardPlainText
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -457,7 +460,7 @@ fun ChatScreen(
     onDraftChange: (String) -> Unit,
     onSendDraft: () -> Unit,
     onSendStickerPayload: (String) -> Unit,
-    onPickImages: (List<Uri>) -> Unit,
+    onPickImages: (List<Uri>, append: Boolean) -> Unit,
     onRemovePickedImage: (Uri) -> Unit,
     onClearPickedImages: () -> Unit,
     onReplyToMessage: (String) -> Unit,
@@ -729,6 +732,7 @@ fun ChatScreen(
                 otherReadUptoMessageId = otherReadUptoMessageId,
                 listState = listState,
                 jumpToQuotedMessage = jumpToQuotedMessage,
+                onToggleReaction = onToggleReaction,
                 onOpenMessageActions = onOpenMessageActions,
                 onReplyToMessage = onReplyToMessage,
                 onClearError = onClearError,
@@ -823,9 +827,9 @@ fun ChatScreen(
                                 onSendStickerPayload(payload)
                             }
                         },
-                        onPickImages = { uris ->
+                        onPickImages = { uris, append ->
                             if (!globalComposerLocked && !state.isSending) {
-                                onPickImages(uris)
+                                onPickImages(uris, append)
                             }
                         },
                         onRemovePickedImage = onRemovePickedImage,
@@ -894,7 +898,10 @@ fun ChatScreen(
                     onDismissMessageActions()
                 },
                 onReact = { emoji ->
-                    message._id?.let { onToggleReaction(it, emoji) }
+                    message._id?.let { id ->
+                        onToggleReaction(id, emoji)
+                        onDismissMessageActions()
+                    }
                 },
                 onEdit = { showEdit = true },
                 onDelete = {
@@ -1147,6 +1154,7 @@ private fun ChatMessagesLazyList(
     otherReadUptoMessageId: String?,
     listState: LazyListState,
     jumpToQuotedMessage: (String) -> Unit,
+    onToggleReaction: (String, String) -> Unit,
     onOpenMessageActions: (String) -> Unit,
     onReplyToMessage: (String) -> Unit,
     onClearError: () -> Unit,
@@ -1306,6 +1314,7 @@ private fun ChatMessagesLazyList(
                                 isSelected = message._id != null && message._id in selectedMessageIds,
                                 otherReadUptoMessageId = otherReadUptoMessageId,
                                 overlayUi = overlayUi,
+                                onToggleReaction = onToggleReaction,
                                 onOpenActions = { id -> onOpenMessageActions(id) },
                                 onToggleSelection = onToggleMessageSelection,
                                 onSwipeReply = onReplyToMessage,
@@ -1468,7 +1477,7 @@ private fun ChatComposer(
     onDraftChange: (String) -> Unit,
     onSendDraft: () -> Unit,
     onSendStickerPayload: (String) -> Unit,
-    onPickImages: (List<Uri>) -> Unit,
+    onPickImages: (List<Uri>, append: Boolean) -> Unit,
     onRemovePickedImage: (Uri) -> Unit,
     onClearPickedImages: () -> Unit,
     onClearReply: () -> Unit,
@@ -1493,7 +1502,7 @@ private fun ChatComposer(
                     OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
                 }
                 if (!readOnly && uris.isNotEmpty()) {
-                    onPickImages(uris)
+                    onPickImages(uris, pickedImageUris.isNotEmpty())
                     if (overlayUi) {
                         Toast.makeText(
                             context,
@@ -1535,7 +1544,7 @@ private fun ChatComposer(
             },
             onConfirm = { uris ->
                 if (!readOnly && uris.isNotEmpty()) {
-                    onPickImages(uris)
+                    onPickImages(uris, false)
                     Toast.makeText(
                         context,
                         context.getString(R.string.chat_attachments_added, uris.size),
@@ -1902,12 +1911,11 @@ private fun ChatComposer(
                                     tint = MaterialTheme.colorScheme.primary,
                                 )
                             }
-                            BasicTextField(
+                            TextField(
                                 value = draft,
                                 onValueChange = { if (!readOnly) onDraftChange(it) },
                                 modifier = Modifier
                                     .weight(1f)
-                                    .padding(vertical = 10.dp, horizontal = 6.dp)
                                     .focusRequester(focusRequester)
                                     .onFocusChanged { fc ->
                                         if (!readOnly && fc.isFocused && showMediaPanel) {
@@ -1916,32 +1924,60 @@ private fun ChatComposer(
                                         }
                                     },
                                 readOnly = readOnly,
-                                textStyle = MaterialTheme.typography.bodyMedium.copy(
-                                    color = MaterialTheme.colorScheme.onSurface,
+                                textStyle = MaterialTheme.typography.bodyMedium,
+                                placeholder = {
+                                    Text(
+                                        text = if (pickedImageUris.isNotEmpty()) {
+                                            stringResource(R.string.chat_caption_hint)
+                                        } else {
+                                            stringResource(R.string.chat_message_hint)
+                                        },
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                },
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent,
+                                    disabledContainerColor = Color.Transparent,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent,
+                                    disabledIndicatorColor = Color.Transparent,
                                 ),
-                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                                 keyboardOptions = KeyboardOptions(
                                     capitalization = KeyboardCapitalization.Sentences,
                                     keyboardType = KeyboardType.Text,
                                 ),
                                 maxLines = 6,
-                                decorationBox = { inner ->
-                                    Box {
-                                        if (draft.isBlank()) {
-                                            Text(
-                                                text = if (pickedImageUris.isNotEmpty()) {
-                                                    stringResource(R.string.chat_caption_hint)
-                                                } else {
-                                                    stringResource(R.string.chat_message_hint)
-                                                },
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
-                                        inner()
-                                    }
-                                },
                             )
+                            if (!readOnly) {
+                                IconButton(
+                                    onClick = {
+                                        val clip = readClipboardPlainText(context)
+                                        if (clip.isNullOrBlank()) {
+                                            Toast.makeText(
+                                                context,
+                                                context.getString(R.string.chat_composer_paste_empty),
+                                                Toast.LENGTH_SHORT,
+                                            ).show()
+                                        } else {
+                                            onDraftChange(appendTextToDraft(draft, clip))
+                                            Toast.makeText(
+                                                context,
+                                                context.getString(R.string.chat_pasted_to_input_toast),
+                                                Toast.LENGTH_SHORT,
+                                            ).show()
+                                        }
+                                    },
+                                    modifier = Modifier.size(40.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.ContentPaste,
+                                        contentDescription = stringResource(R.string.chat_composer_paste_cd),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
                             val canSend = sendEnabled &&
                                 !readOnly &&
                                 (
@@ -2353,6 +2389,7 @@ private fun ChatBubbleInnerColumn(
     deleting: Boolean,
     canDelete: Boolean,
     onImageLongPress: () -> Unit,
+    onReactionToggle: ((emoji: String) -> Unit)? = null,
 ) {
     val openRemoteChatImagePreview = LocalOpenRemoteChatImagePreview.current
     val bubblePadH = if (stickerStem != null) 8.dp else 12.dp
@@ -2582,6 +2619,7 @@ private fun ChatBubbleInnerColumn(
         if (message.reactions.isNotEmpty()) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 message.reactions.filter { it.count > 0 }.forEach { r ->
+                    val msgId = message._id
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = if (r.reactedByMe) {
@@ -2591,6 +2629,13 @@ private fun ChatBubbleInnerColumn(
                         },
                         tonalElevation = 0.dp,
                         shadowElevation = 0.dp,
+                        modifier = if (msgId != null && onReactionToggle != null) {
+                            Modifier.clickable {
+                                onReactionToggle.invoke(r.emoji)
+                            }
+                        } else {
+                            Modifier
+                        },
                     ) {
                         Text(
                             text = "${r.emoji} ${r.count}",
@@ -2907,6 +2952,7 @@ private fun ChatBubbleRow(
     isSelected: Boolean,
     overlayUi: Boolean,
     otherReadUptoMessageId: String?,
+    onToggleReaction: (String, String) -> Unit,
     onOpenActions: (String) -> Unit,
     onToggleSelection: (String) -> Unit,
     onSwipeReply: (String) -> Unit,
@@ -3212,6 +3258,9 @@ private fun ChatBubbleRow(
                         deleting = deleting,
                         canDelete = canDelete,
                         onImageLongPress = imageLongPress,
+                        onReactionToggle = messageId?.let { mid ->
+                            { emoji -> onToggleReaction(mid, emoji) }
+                        },
                     )
                 }
             }

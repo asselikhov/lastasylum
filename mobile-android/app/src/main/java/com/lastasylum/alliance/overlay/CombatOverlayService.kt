@@ -476,9 +476,10 @@ class CombatOverlayService : Service() {
         fallbackUris: List<Uri>,
     ) {
         if (resultCode == android.app.Activity.RESULT_OK && fallbackUris.isNotEmpty()) {
+            // Единственный путь: иначе dispatchResult дублирует вложения в ChatViewModel.
             applyOverlayPickedUris(fallbackUris)
+            return
         }
-        // Best-effort для Compose launcher (может не сработать после restore панели).
         overlayChatTeamComposeOwner?.activityResultRegistry?.dispatchResult(
             requestCode,
             resultCode,
@@ -492,7 +493,10 @@ class CombatOverlayService : Service() {
         data: Intent,
         fallbackUri: Uri?,
     ) {
-        fallbackUri?.let { applyOverlayPickedUris(listOf(it)) }
+        if (resultCode == android.app.Activity.RESULT_OK && fallbackUri != null) {
+            applyOverlayPickedUris(listOf(fallbackUri))
+            return
+        }
         overlayChatTeamComposeOwner?.activityResultRegistry?.dispatchResult(
             requestCode,
             resultCode,
@@ -2485,6 +2489,10 @@ class CombatOverlayService : Service() {
         val reactionListener: (OverlayReactionEvent) -> Unit = { event ->
             mainHandler.post {
                 if (!overlaySessionActive) return@post
+                val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
+                if (selfId.isBlank()) return@post
+                if (event.fromUserId == selfId) return@post
+                if (event.targetUserId != selfId) return@post
                 val wm = windowManager ?: getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return@post
                 overlayCommandsPopover.showIncomingReactionBurst(
                     wm,
@@ -2497,19 +2505,31 @@ class CombatOverlayService : Service() {
         overlayReactionListener = reactionListener
         val listener: (ChatMessage) -> Unit = listener@{ msg ->
             val raidId = AppContainer.from(this).chatRoomPreferences.getRaidRoomId()
-                ?: return@listener
-            if (msg.roomId.isNotBlank() && msg.roomId != raidId) {
-                Log.d(
-                    OVERLAY_DIAG_TAG,
-                    "overlayListener skipRoom msgRoom=${msg.roomId} raid=$raidId id=${msg._id}",
-                )
+            val hubId = cachedAllianceHubRoomId
+            val isRaid = !raidId.isNullOrBlank() && msg.roomId == raidId
+            val isHub = !hubId.isNullOrBlank() && msg.roomId == hubId
+            if (!isRaid && !isHub) {
+                if (msg.roomId.isNotBlank()) {
+                    Log.d(
+                        OVERLAY_DIAG_TAG,
+                        "overlayListener skipRoom msgRoom=${msg.roomId} raid=$raidId hub=$hubId id=${msg._id}",
+                    )
+                }
                 return@listener
             }
             mainHandler.post {
-                pendingStripSocketMessages.addLast(msg)
-                if (!stripSocketDrainPosted) {
-                    stripSocketDrainPosted = true
-                    mainHandler.postDelayed(stripSocketDrainRunnable, 48L)
+                if (isRaid) {
+                    pendingStripSocketMessages.addLast(msg)
+                    if (!stripSocketDrainPosted) {
+                        stripSocketDrainPosted = true
+                        mainHandler.postDelayed(stripSocketDrainRunnable, 48L)
+                    }
+                }
+                if (isHub) {
+                    val selfId = jwtSubFromAccessToken()
+                    if (!selfId.isNullOrBlank() && msg.senderId != selfId) {
+                        maybeBumpAllianceHubUnread(msg, hubId!!)
+                    }
                 }
             }
         }
@@ -2691,6 +2711,7 @@ class CombatOverlayService : Service() {
         refreshOverlayChatStripNow()
         mainHandler.removeCallbacks(overlayCloseHudRefreshRunnable)
         mainHandler.postDelayed(overlayCloseHudRefreshRunnable, OVERLAY_CLOSE_HUD_REFRESH_DELAY_MS)
+        refreshOverlayHubUnreadOnly()
     }
 
     private fun hideOverlayIme(view: View) {
@@ -3225,10 +3246,9 @@ class CombatOverlayService : Service() {
         private const val OVERLAY_CLOSE_HUD_REFRESH_DELAY_MS = 80L
         private const val STRIP_ZORDER_MIN_INTERVAL_MS = 30_000L
         private const val STRIP_ZORDER_LIFT_DELAY_MS = 450L
-        /** Отступ правого HUD от края (Gravity.END). */
+        /** Симметричный отступ HUD от края игрового экрана (левый START / правый END). */
         private const val OVERLAY_HUD_WINDOW_X_DP = 10
-        /** Левый HUD: не перекрывать типичную «стрелку назад» в игровом UI (~48dp). */
-        private const val OVERLAY_HUD_LEFT_WINDOW_X_DP = 52
+        private const val OVERLAY_HUD_LEFT_WINDOW_X_DP = OVERLAY_HUD_WINDOW_X_DP
         /** Вертикальный отступ HUD-окон от верхнего края (меньше — выше на экране). */
         private const val OVERLAY_HUD_WINDOW_Y_DP = 2
         /** Минимум между remove/add HUD — иначе кнопки мигают на каждом тике гейта. */

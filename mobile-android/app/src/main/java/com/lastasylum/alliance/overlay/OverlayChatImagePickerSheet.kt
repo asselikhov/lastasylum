@@ -57,7 +57,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * Галерея внутри окна оверлея (поверх чата).
- * Системный Photo Picker рисуется под TYPE_APPLICATION_OVERLAY — здесь MediaStore в Compose.
+ * При частичном доступе (Android 14+) — только системный Photo Picker, без «застывшей» сетки MediaStore.
  */
 @Composable
 fun OverlayChatImagePickerSheet(
@@ -71,6 +71,12 @@ fun OverlayChatImagePickerSheet(
     var selected by remember { mutableStateOf(setOf<Uri>()) }
     var loading by remember { mutableStateOf(true) }
     var permissionEpoch by remember { mutableIntStateOf(0) }
+    val partialAccessOnly = remember(context, permissionEpoch) {
+        OverlayDeviceGallery.hasPartialGalleryAccessOnly(context)
+    }
+    val showEmbeddedGrid = remember(context, permissionEpoch) {
+        OverlayDeviceGallery.hasFullGalleryAccess(context)
+    }
 
     val readPermissions = remember { OverlayDeviceGallery.requiredReadPermissions() }
 
@@ -84,15 +90,22 @@ fun OverlayChatImagePickerSheet(
         }
     }
 
+    fun deliverPicked(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        val stable = OverlayPickedImages.copyToCache(context, uris)
+        if (stable.isNotEmpty()) {
+            onConfirm(stable)
+            onDismiss()
+        }
+    }
+
     val systemPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = maxSelection),
     ) { uris ->
         if (uris.isNotEmpty()) {
-            val stable = OverlayPickedImages.copyToCache(context, uris)
-            if (stable.isNotEmpty()) {
-                onConfirm(stable)
-                onDismiss()
-            }
+            deliverPicked(uris)
+        } else if (partialAccessOnly) {
+            onDismiss()
         } else {
             galleryUris = null
             loading = true
@@ -100,8 +113,13 @@ fun OverlayChatImagePickerSheet(
         }
     }
 
-    LaunchedEffect(loading, permissionEpoch) {
+    LaunchedEffect(loading, permissionEpoch, showEmbeddedGrid) {
         if (!loading) return@LaunchedEffect
+        if (!showEmbeddedGrid) {
+            galleryUris = emptyList()
+            loading = false
+            return@LaunchedEffect
+        }
         if (!OverlayDeviceGallery.hasReadPermission(context)) {
             galleryUris = null
             loading = false
@@ -163,18 +181,45 @@ fun OverlayChatImagePickerSheet(
                         Button(onClick = { permissionLauncher.launch(readPermissions) }) {
                             Text(stringResource(R.string.overlay_chat_gallery_grant_access))
                         }
+                        OutlinedButton(
+                            onClick = {
+                                systemPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                                )
+                            },
+                        ) {
+                            Text(stringResource(R.string.overlay_chat_gallery_open_system_picker))
+                        }
                     }
                 }
-                galleryUris.isNullOrEmpty() -> {
-                    Text(
-                        text = stringResource(R.string.overlay_chat_gallery_empty),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                partialAccessOnly || galleryUris.isNullOrEmpty() -> {
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 32.dp),
-                        textAlign = TextAlign.Center,
-                    )
+                            .padding(vertical = 12.dp, horizontal = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(
+                            text = if (partialAccessOnly) {
+                                stringResource(R.string.overlay_chat_gallery_partial_access_hint)
+                            } else {
+                                stringResource(R.string.overlay_chat_gallery_empty)
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                        )
+                        Button(
+                            onClick = {
+                                systemPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                                )
+                            },
+                        ) {
+                            Text(stringResource(R.string.overlay_chat_gallery_open_system_picker))
+                        }
+                    }
                 }
                 else -> {
                     OutlinedButton(
@@ -260,28 +305,32 @@ fun OverlayChatImagePickerSheet(
                 }
             }
 
-            Button(
-                onClick = {
-                    val picked = selected.toList()
-                    val stable = if (picked.isEmpty()) {
-                        emptyList()
-                    } else {
-                        OverlayPickedImages.copyToCache(context, picked)
-                    }
-                    onConfirm(stable)
-                    onDismiss()
-                },
-                enabled = selected.isNotEmpty(),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-            ) {
-                Text(
-                    stringResource(
-                        R.string.overlay_chat_gallery_add_count,
-                        selected.size,
-                    ),
-                )
+            if (showEmbeddedGrid && !galleryUris.isNullOrEmpty()) {
+                Button(
+                    onClick = {
+                        val picked = selected.toList()
+                        val stable = if (picked.isEmpty()) {
+                            emptyList()
+                        } else {
+                            OverlayPickedImages.copyToCache(context, picked)
+                        }
+                        if (stable.isNotEmpty()) {
+                            onConfirm(stable)
+                            onDismiss()
+                        }
+                    },
+                    enabled = selected.isNotEmpty(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                ) {
+                    Text(
+                        stringResource(
+                            R.string.overlay_chat_gallery_add_count,
+                            selected.size,
+                        ),
+                    )
+                }
             }
         }
     }

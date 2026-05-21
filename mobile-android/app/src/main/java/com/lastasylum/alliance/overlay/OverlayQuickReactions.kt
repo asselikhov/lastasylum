@@ -1,9 +1,12 @@
 package com.lastasylum.alliance.overlay
 
+import android.content.Context
+import android.graphics.BitmapFactory
 import androidx.annotation.DrawableRes
 import androidx.annotation.RawRes
 import androidx.annotation.StringRes
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
 
 /** Время показа входящей реакции на экране (мс). */
 const val OVERLAY_REACTION_BURST_VISIBLE_MS = 5_000L
@@ -11,6 +14,7 @@ const val OVERLAY_REACTION_BURST_VISIBLE_MS = 5_000L
 internal enum class OverlayReactionCategory {
     ANIMATIONS,
     MEMES,
+    STICKERS,
 }
 
 internal data class OverlayQuickReaction(
@@ -20,13 +24,12 @@ internal data class OverlayQuickReaction(
     @StringRes val labelRes: Int,
     val tintHex: String,
     @RawRes val lottieRawRes: Int? = null,
-    /** Если задан — перекрашивает Lottie; null — оригинальные цвета ассета. */
     val lottieTintHex: String? = null,
     @DrawableRes val memeDrawableRes: Int? = null,
+    val stickerAssetStem: String? = null,
     val burstAccentHex: String = "#CCFF5252",
 )
 
-/** Исходники мемов: `mobile-android/Memes/` → `res/drawable-nodpi/overlay_meme_XX.jpg`. */
 private val overlayMemeDrawableIds = intArrayOf(
     R.drawable.overlay_meme_01,
     R.drawable.overlay_meme_02,
@@ -119,9 +122,38 @@ internal fun overlayMemeReactions(): List<OverlayQuickReaction> =
         )
     }
 
+/** Реакции-стикеры (не пак Zlobyaka чата) — контент добавляется отдельно. */
+internal fun overlayStickerReactions(): List<OverlayQuickReaction> = emptyList()
+
+internal fun reactionsInCategory(category: OverlayReactionCategory): List<OverlayQuickReaction> =
+    when (category) {
+        OverlayReactionCategory.ANIMATIONS -> overlayAnimationReactions()
+        OverlayReactionCategory.MEMES -> overlayMemeReactions()
+        OverlayReactionCategory.STICKERS -> overlayStickerReactions()
+    }
+
 internal fun overlayQuickReactionCatalog(): List<OverlayQuickReaction> =
-    overlayAnimationReactions() + overlayMemeReactions()
+    overlayAnimationReactions() + overlayMemeReactions() + overlayStickerReactions()
 
 internal fun overlayQuickReactionById(reactionId: String): OverlayQuickReaction =
     overlayQuickReactionCatalog().find { it.id == reactionId }
         ?: overlayAnimationReactions().first()
+
+/** Избранные этой вкладки первыми, затем остальные. */
+internal fun overlayReactionsForCategory(
+    category: OverlayReactionCategory,
+    favorites: OverlayReactionFavoritesStore,
+): List<OverlayQuickReaction> {
+    val inTab = reactionsInCategory(category)
+    if (inTab.isEmpty()) return emptyList()
+    val favIds = favorites.favoriteIds()
+    val (fav, rest) = inTab.partition { it.id in favIds }
+    return fav.sortedBy { it.id } + rest.sortedBy { it.id }
+}
+
+internal fun loadStickerReactionBitmap(context: Context, stem: String) =
+    runCatching {
+        context.assets.open("stickerpacks/${ZlobyakaStickerPack.PACK_KEY}/$stem.png").use { stream ->
+            BitmapFactory.decodeStream(stream)
+        }
+    }.getOrNull()

@@ -31,6 +31,26 @@ object OverlayDeviceGallery {
                 android.content.pm.PackageManager.PERMISSION_GRANTED
         }
 
+    /** Полный доступ к галерее (не только «выбранные фото» на Android 14+). */
+    fun hasFullGalleryAccess(context: Context): Boolean =
+        if (Build.VERSION.SDK_INT >= 34) {
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.READ_MEDIA_IMAGES,
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        } else {
+            hasReadPermission(context)
+        }
+
+    /** Только частичный доступ Photo Picker — MediaStore показывает лишь ранее выданные снимки. */
+    fun hasPartialGalleryAccessOnly(context: Context): Boolean =
+        Build.VERSION.SDK_INT >= 34 &&
+            !hasFullGalleryAccess(context) &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
     fun loadRecentImageUris(context: Context, limit: Int = DEFAULT_LIMIT): List<Uri> {
         if (!hasReadPermission(context)) return emptyList()
         val appContext = context.applicationContext

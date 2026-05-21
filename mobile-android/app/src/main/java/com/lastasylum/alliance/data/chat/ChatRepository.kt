@@ -105,6 +105,8 @@ class ChatRepository(
     fun removeOverlayReactionListener(listener: (OverlayReactionEvent) -> Unit) =
         realtime.removeOverlayReactionListener(listener)
 
+    fun isChatSocketConnected(): Boolean = realtime.isChatSocketConnected()
+
     fun onAccessTokenRefreshed() = realtime.onAccessTokenRefreshed()
 
     fun disconnectRealtime() = realtime.disconnectRealtime()

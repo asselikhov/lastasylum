@@ -31,7 +31,7 @@ internal fun OverlayHudChatPane(
         onDraftChange = vm::setDraftMessage,
         onSendDraft = vm::sendDraftMessage,
         onSendStickerPayload = vm::sendMessage,
-        onPickImages = vm::onImagesPicked,
+        onPickImages = { uris, append -> vm.onImagesPicked(uris, append) },
         onRemovePickedImage = vm::removePickedImage,
         onClearPickedImages = vm::clearPickedImages,
         onReplyToMessage = vm::beginReplyToMessage,

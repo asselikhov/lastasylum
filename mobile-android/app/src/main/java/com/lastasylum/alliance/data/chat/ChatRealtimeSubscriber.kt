@@ -105,6 +105,9 @@ class ChatRealtimeSubscriber(
         socketManager.emitOverlayReactionBroadcast(reaction)
     }
 
+    fun isChatSocketConnected(): Boolean =
+        socketManager.connectionState.value == ChatConnectionState.Connected
+
     fun addOverlayReactionListener(listener: (OverlayReactionEvent) -> Unit) {
         if (!overlayReactionListeners.contains(listener)) {
             overlayReactionListeners.add(listener)

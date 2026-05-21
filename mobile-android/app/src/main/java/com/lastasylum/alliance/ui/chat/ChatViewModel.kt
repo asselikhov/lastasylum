@@ -854,11 +854,19 @@ class ChatViewModel(
         scheduleTypingEmit()
     }
 
-    fun onImagesPicked(uris: List<Uri>) {
+    /**
+     * @param append false — заменить текущий выбор (галерея / системный пикер);
+     * true — добавить к уже прикреплённым (повторный «+» в композере).
+     */
+    fun onImagesPicked(uris: List<Uri>, append: Boolean = false) {
         if (uris.isEmpty()) return
-        val current = _pickedImageUris.value
-        val merged = (current + uris).distinctBy { it.toString() }
-        _pickedImageUris.value = merged.take(12)
+        val distinct = uris.distinctBy { it.toString() }
+        val next = if (append) {
+            (_pickedImageUris.value + distinct).distinctBy { it.toString() }
+        } else {
+            distinct
+        }
+        _pickedImageUris.value = next.take(12)
     }
 
     fun removePickedImage(uri: Uri) {
@@ -936,6 +944,9 @@ class ChatViewModel(
             repository.toggleReaction(messageId, emoji)
                 .onSuccess { updated ->
                     applyIncomingMessage(updated)
+                    if (_state.value.activeActionMessageId == messageId) {
+                        _state.value = _state.value.copy(activeActionMessageId = null)
+                    }
                 }
                 .onFailure { e ->
                     _state.value = _state.value.copy(error = e.toUserMessageRu(res))

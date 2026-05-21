@@ -23,6 +23,7 @@ import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.GridLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -63,8 +64,7 @@ class OverlayCommandsPopover(
     private var menuScrim: FrameLayout? = null
     private var coordScrim: FrameLayout? = null
     private var reactionPickScrim: FrameLayout? = null
-    private var reactionBurstScrim: FrameLayout? = null
-    private var reactionBurstLottie: LottieAnimationView? = null
+    private val reactionBurstPresenter = OverlayReactionBurstPresenter(context, mainHandler, dp)
     private var heartPreviewAnimator: Animator? = null
     private var reactionPreviewLotties: List<LottieAnimationView> = emptyList()
     private var attachedWindowManager: WindowManager? = null
@@ -74,10 +74,11 @@ class OverlayCommandsPopover(
         menuScrim != null ||
             coordScrim != null ||
             reactionPickScrim != null ||
-            reactionBurstScrim != null
+            reactionBurstPresenter.isActive()
 
     fun hide() {
         stopHeartPreviewPulse()
+        reactionBurstPresenter.clear()
         hideReactionPickOnly()
         hideReactionBurstOnly()
         hideCoordOnly()
@@ -98,10 +99,7 @@ class OverlayCommandsPopover(
     }
 
     private fun hideReactionBurstOnly() {
-        reactionBurstLottie?.cancelAnimation()
-        reactionBurstLottie = null
-        removeShell(reactionBurstScrim)
-        reactionBurstScrim = null
+        reactionBurstPresenter.clear()
         if (!isShowing()) {
             releaseGameGateSuppress()
             OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
@@ -154,7 +152,19 @@ class OverlayCommandsPopover(
         )
     }
 
+    private val reactionFavorites = OverlayReactionFavoritesStore(context)
+
     private fun createReactionTileIcon(reaction: OverlayQuickReaction): View {
+        val stickerStem = reaction.stickerAssetStem
+        if (stickerStem != null) {
+            val bmp = loadStickerReactionBitmap(context, stickerStem)
+            if (bmp != null) {
+                return ImageView(context).apply {
+                    setImageBitmap(bmp)
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                }
+            }
+        }
         val memeRes = reaction.memeDrawableRes
         if (memeRes != null) {
             return ImageView(context).apply {
@@ -230,7 +240,51 @@ class OverlayCommandsPopover(
         reactionId: String = "heart",
         broadcast: Boolean = false,
     ) {
-        showReactionBurst(windowManager, fromUsername, reactionId, broadcast)
+        attachedWindowManager = windowManager
+        reactionBurstPresenter.enqueue(
+            windowManager,
+            OverlayReactionBurstRequest(
+                fromDisplayName = fromUsername,
+                reactionId = reactionId,
+                broadcast = broadcast,
+            ),
+        )
+    }
+
+    private fun previewOutgoingReactionBurst(
+        windowManager: WindowManager,
+        reactionId: String,
+        broadcast: Boolean,
+    ) {
+        reactionBurstPresenter.enqueue(
+            windowManager,
+            OverlayReactionBurstRequest(
+                fromDisplayName = context.getString(R.string.overlay_reaction_burst_you),
+                reactionId = reactionId,
+                broadcast = broadcast,
+                outgoingPreview = true,
+            ),
+        )
+    }
+
+    private fun emitReactionIfConnected(
+        block: () -> Unit,
+        reactionId: String,
+        broadcast: Boolean,
+        windowManager: WindowManager,
+    ): Boolean {
+        val connected = AppContainer.from(context).chatRepository.isChatSocketConnected()
+        if (!connected) {
+            Toast.makeText(
+                context,
+                context.getString(R.string.overlay_reaction_socket_offline),
+                Toast.LENGTH_SHORT,
+            ).show()
+            return false
+        }
+        block()
+        previewOutgoingReactionBurst(windowManager, reactionId, broadcast)
+        return true
     }
 
     private fun overlayWindowType(): Int =
@@ -594,14 +648,12 @@ class OverlayCommandsPopover(
         }
 
         var selectedReactionSubcategory = OverlayReactionCategory.ANIMATIONS
-        val reactionTilesPadding = dp(2)
-        val reactionTileSize = dp(54)
-        val reactionIconInner = dp(46)
+        val reactionTileSize = dp(52)
+        val reactionIconInner = dp(42)
+        val reactionGridColumns = 4
 
-        val reactionTilesRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, reactionTilesPadding, 0)
+        val reactionTilesGrid = GridLayout(context).apply {
+            columnCount = reactionGridColumns
         }
 
         fun reactionSubChipBackground(selected: Boolean): GradientDrawable =
@@ -625,35 +677,87 @@ class OverlayCommandsPopover(
             context.getString(R.string.overlay_reactions_sub_memes),
             selected = false,
         )
-        val reactionSubTabsRow = LinearLayout(context).apply {
+        val reactionSubStickerChip = choiceChip(
+            context.getString(R.string.overlay_reactions_sub_stickers),
+            selected = false,
+        )
+        val reactionSubTabsInner = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, dp(6))
         }
+        val reactionSubTabsRow = HorizontalScrollView(context).apply {
+            isHorizontalScrollBarEnabled = false
+            isFillViewport = false
+            addView(
+                reactionSubTabsInner,
+                ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+        }
+
+        val reactionTabEmpty = labelText(
+            context.getString(R.string.overlay_reactions_stickers_empty),
+            11f,
+            Color.parseColor("#7A90A4B8"),
+        ).apply { visibility = View.GONE }
 
         fun refreshReactionSubTabs() {
-            val animSel = selectedReactionSubcategory == OverlayReactionCategory.ANIMATIONS
-            reactionSubAnimChip.background = reactionSubChipBackground(animSel)
-            reactionSubAnimChip.setTextColor(Color.parseColor(if (animSel) "#FFE8F4FF" else "#9AB0C4D8"))
-            reactionSubAnimChip.typeface = if (animSel) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
-            reactionSubMemeChip.background = reactionSubChipBackground(!animSel)
-            reactionSubMemeChip.setTextColor(Color.parseColor(if (!animSel) "#FFE8F4FF" else "#9AB0C4D8"))
-            reactionSubMemeChip.typeface = if (!animSel) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+            data class Tab(val cat: OverlayReactionCategory, val chip: TextView)
+            val tabs = listOf(
+                Tab(OverlayReactionCategory.ANIMATIONS, reactionSubAnimChip),
+                Tab(OverlayReactionCategory.MEMES, reactionSubMemeChip),
+                Tab(OverlayReactionCategory.STICKERS, reactionSubStickerChip),
+            )
+            tabs.forEach { (cat, chip) ->
+                val sel = selectedReactionSubcategory == cat
+                chip.background = reactionSubChipBackground(sel)
+                chip.setTextColor(Color.parseColor(if (sel) "#FFE8F4FF" else "#9AB0C4D8"))
+                chip.typeface = if (sel) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+            }
         }
 
-        fun rebuildReactionTiles() {
-            reactionTilesRow.removeAllViews()
+        lateinit var rebuildReactionTiles: () -> Unit
+
+        fun attachFavoriteStar(host: FrameLayout, reactionId: String) {
+            val star = TextView(context).apply {
+                text = if (reactionFavorites.isFavorite(reactionId)) "★" else "☆"
+                setTextColor(Color.parseColor("#FFFFB74D"))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                setPadding(dp(3), 0, dp(3), 0)
+                isClickable = true
+                setOnClickListener {
+                    reactionFavorites.toggleFavorite(reactionId)
+                    text = if (reactionFavorites.isFavorite(reactionId)) "★" else "☆"
+                    rebuildReactionTiles()
+                }
+            }
+            host.addView(
+                star,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.TOP or Gravity.END,
+                ),
+            )
+        }
+
+        rebuildReactionTiles = fun() {
+            reactionTilesGrid.removeAllViews()
             val previewBuilder = mutableListOf<LottieAnimationView>()
-            val items = overlayQuickReactionCatalog().filter { it.category == selectedReactionSubcategory }
-            for (reaction in items) {
+            val items = overlayReactionsForCategory(
+                selectedReactionSubcategory,
+                reactionFavorites,
+            )
+            reactionTabEmpty.visibility =
+                if (items.isEmpty()) View.VISIBLE else View.GONE
+            items.forEachIndexed { index, reaction ->
                 val icon = createReactionTileIcon(reaction).apply {
                     contentDescription = context.getString(reaction.labelRes)
                 }
                 if (icon is LottieAnimationView) previewBuilder.add(icon)
                 val host = FrameLayout(context).apply {
-                    layoutParams = LinearLayout.LayoutParams(reactionTileSize, reactionTileSize).apply {
-                        marginEnd = dp(8)
-                    }
                     background = rippleOn(
                         GradientDrawable().apply {
                             shape = GradientDrawable.RECTANGLE
@@ -667,6 +771,7 @@ class OverlayCommandsPopover(
                         icon,
                         FrameLayout.LayoutParams(reactionIconInner, reactionIconInner, Gravity.CENTER),
                     )
+                    attachFavoriteStar(this, reaction.id)
                     setOnClickListener {
                         val wmUse = attachedWindowManager ?: return@setOnClickListener
                         stopHeartPreviewPulse()
@@ -675,7 +780,16 @@ class OverlayCommandsPopover(
                         showReactionRecipientPicker(wmUse, reaction.id)
                     }
                 }
-                reactionTilesRow.addView(host)
+                val col = index % reactionGridColumns
+                val row = index / reactionGridColumns
+                val cell = GridLayout.LayoutParams().apply {
+                    width = reactionTileSize
+                    height = reactionTileSize
+                    columnSpec = GridLayout.spec(col)
+                    rowSpec = GridLayout.spec(row)
+                    setMargins(dp(3), dp(3), dp(3), dp(3))
+                }
+                reactionTilesGrid.addView(host, cell)
             }
             reactionPreviewLotties = previewBuilder
             if (categories[selectedCategoryIndex].isReactions) {
@@ -683,37 +797,51 @@ class OverlayCommandsPopover(
             }
         }
 
-        reactionSubAnimChip.setOnClickListener {
-            if (selectedReactionSubcategory == OverlayReactionCategory.ANIMATIONS) return@setOnClickListener
-            selectedReactionSubcategory = OverlayReactionCategory.ANIMATIONS
+        fun selectReactionSubcategory(cat: OverlayReactionCategory) {
+            if (selectedReactionSubcategory == cat) return
+            selectedReactionSubcategory = cat
             refreshReactionSubTabs()
             rebuildReactionTiles()
         }
-        reactionSubMemeChip.setOnClickListener {
-            if (selectedReactionSubcategory == OverlayReactionCategory.MEMES) return@setOnClickListener
-            selectedReactionSubcategory = OverlayReactionCategory.MEMES
-            refreshReactionSubTabs()
-            rebuildReactionTiles()
-        }
-        reactionSubTabsRow.addView(
+
+        reactionSubAnimChip.setOnClickListener { selectReactionSubcategory(OverlayReactionCategory.ANIMATIONS) }
+        reactionSubMemeChip.setOnClickListener { selectReactionSubcategory(OverlayReactionCategory.MEMES) }
+        reactionSubStickerChip.setOnClickListener { selectReactionSubcategory(OverlayReactionCategory.STICKERS) }
+
+        listOf(
             reactionSubAnimChip,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { marginEnd = dp(8) },
-        )
-        reactionSubTabsRow.addView(reactionSubMemeChip)
+            reactionSubMemeChip,
+            reactionSubStickerChip,
+        ).forEach { chip ->
+            reactionSubTabsInner.addView(
+                chip,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { marginEnd = dp(6) },
+            )
+        }
 
         rebuildReactionTiles()
 
-        val reactionScroll = HorizontalScrollView(context).apply {
-            isHorizontalScrollBarEnabled = false
-            isNestedScrollingEnabled = true
+        val reactionGridScroll = ScrollView(context).apply {
+            isFillViewport = false
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            val wrap = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(reactionTabEmpty)
+                addView(
+                    reactionTilesGrid,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ),
+                )
+            }
             addView(
-                reactionTilesRow,
+                wrap,
                 ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT,
                 ),
             )
@@ -732,12 +860,18 @@ class OverlayCommandsPopover(
             gravity = Gravity.START
             visibility = View.GONE
             addView(reactionHintRow)
-            addView(reactionSubTabsRow)
             addView(
-                reactionScroll,
+                reactionSubTabsRow,
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+            addView(
+                reactionGridScroll,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dp(220),
                 ).apply { topMargin = dp(6) },
             )
         }
@@ -1496,27 +1630,43 @@ class OverlayCommandsPopover(
                             listColumn.addView(
                                 reactionSendAllRow(members.size) {
                                     hideReactionPickOnly()
-                                    emitOverlayReactionBroadcast(reactionId)
-                                    Toast.makeText(
-                                        context,
-                                        context.getString(
-                                            R.string.overlay_reaction_sent_all,
-                                            members.size,
-                                        ),
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
+                                    val wm = attachedWindowManager ?: return@reactionSendAllRow
+                                    if (emitReactionIfConnected(
+                                            { emitOverlayReactionBroadcast(reactionId) },
+                                            reactionId,
+                                            broadcast = true,
+                                            wm,
+                                        )
+                                    ) {
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(
+                                                R.string.overlay_reaction_sent_all,
+                                                members.size,
+                                            ),
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
                                 },
                             )
                             members.forEach { m ->
                                 listColumn.addView(
                                     memberPickRow(m) {
                                         hideReactionPickOnly()
-                                        emitOverlayReaction(m.userId, reactionId)
-                                        Toast.makeText(
-                                            context,
-                                            context.getString(R.string.overlay_reaction_sent, m.username),
-                                            Toast.LENGTH_SHORT,
-                                        ).show()
+                                        val wm = attachedWindowManager ?: return@memberPickRow
+                                        if (emitReactionIfConnected(
+                                                { emitOverlayReaction(m.userId, reactionId) },
+                                                reactionId,
+                                                broadcast = false,
+                                                wm,
+                                            )
+                                        ) {
+                                            Toast.makeText(
+                                                context,
+                                                context.getString(R.string.overlay_reaction_sent, m.username),
+                                                Toast.LENGTH_SHORT,
+                                            ).show()
+                                        }
                                     },
                                 )
                             }
@@ -1525,239 +1675,6 @@ class OverlayCommandsPopover(
                 )
             }
         }
-    }
-
-    private fun reactionBurstSenderCardBackground(): GradientDrawable =
-        GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = dp(14).toFloat()
-            setColor(Color.parseColor("#F0182438"))
-            setStroke(dp(1).coerceAtLeast(1), Color.parseColor("#8A6A8CA8"))
-        }
-
-    private fun createReactionBurstAnimView(reaction: OverlayQuickReaction): View {
-        val memeRes = reaction.memeDrawableRes
-        if (memeRes != null) {
-            return ImageView(context).apply {
-                setImageDrawable(AppCompatResources.getDrawable(context, memeRes))
-                scaleType = ImageView.ScaleType.FIT_CENTER
-            }
-        }
-        val lottieRes = reaction.lottieRawRes
-        if (lottieRes != null) {
-            return LottieAnimationView(context).apply {
-                setAnimation(lottieRes)
-                reaction.lottieTintHex?.let { applyLottieReactionTint(this, it) }
-                scaleType = ImageView.ScaleType.FIT_CENTER
-                repeatCount = LottieDrawable.INFINITE
-                playAnimation()
-            }.also { reactionBurstLottie = it }
-        }
-        return ImageView(context).apply {
-            setImageDrawable(
-                AppCompatResources.getDrawable(context, reaction.iconRes)?.mutate()?.also { d ->
-                    DrawableCompat.setTint(d, Color.parseColor(reaction.tintHex))
-                },
-            )
-            scaleType = ImageView.ScaleType.FIT_CENTER
-        }
-    }
-
-    private fun showReactionBurst(
-        windowManager: WindowManager,
-        subtitleUsername: String,
-        reactionId: String = "heart",
-        broadcast: Boolean = false,
-    ) {
-        hideReactionBurstOnly()
-        attachedWindowManager = windowManager
-
-        val displayName = subtitleUsername.trim().ifBlank { "—" }
-        val reaction = overlayQuickReactionById(reactionId)
-
-        val root = OverlayPassthroughMultitouchFrameLayout(context).apply {
-            setBackgroundColor(Color.argb(88, 6, 12, 22))
-        }
-        val burstAnimSize = when {
-            reaction.memeDrawableRes != null -> dp(200)
-            reaction.lottieRawRes != null -> dp(160)
-            else -> dp(120)
-        }
-        val heart = createReactionBurstAnimView(reaction)
-        val accentOpaque = Color.parseColor(reaction.burstAccentHex)
-        val accentTransparent = accentOpaque and 0x00FFFFFF
-        val accentBar = View(context).apply {
-            background = GradientDrawable(
-                GradientDrawable.Orientation.LEFT_RIGHT,
-                intArrayOf(
-                    accentTransparent,
-                    accentOpaque,
-                    accentTransparent,
-                ),
-            ).apply {
-                cornerRadius = dp(2).toFloat()
-            }
-        }
-        val scopeLabel = if (broadcast) {
-            context.getString(R.string.overlay_reaction_burst_scope_broadcast)
-        } else {
-            context.getString(R.string.overlay_reaction_burst_scope_private)
-        }
-        val caption = TextView(context).apply {
-            text = context.getString(R.string.overlay_reaction_burst_caption)
-            setTextColor(Color.parseColor("#C8D8E8F0"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
-            typeface = Typeface.DEFAULT
-            letterSpacing = 0.06f
-            gravity = Gravity.CENTER_HORIZONTAL
-        }
-        val scopeView = TextView(context).apply {
-            text = scopeLabel
-            setTextColor(Color.parseColor("#FFE8B86A"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER_HORIZONTAL
-        }
-        val nameLabel = TextView(context).apply {
-            text = displayName
-            setTextColor(Color.parseColor("#FFF8FAFF"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER_HORIZONTAL
-            setShadowLayer(dp(1).toFloat(), 0f, 1.2f, Color.parseColor("#58000000"))
-        }
-        val textInner = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(16), dp(12), dp(16), dp(14))
-            addView(accentBar, LinearLayout.LayoutParams(dp(120), dp(3)).apply { bottomMargin = dp(10) })
-            addView(caption)
-            addView(
-                scopeView,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = dp(6) },
-            )
-            addView(
-                nameLabel,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = dp(4) },
-            )
-        }
-        val textCard = FrameLayout(context).apply {
-            background = reactionBurstSenderCardBackground()
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                clipToOutline = true
-                outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
-            }
-            addView(textInner)
-        }
-        val stack = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            addView(heart, LinearLayout.LayoutParams(burstAnimSize, burstAnimSize))
-            addView(
-                textCard,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply {
-                    topMargin = dp(18)
-                },
-            )
-        }
-        root.addView(
-            stack,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.CENTER,
-            ),
-        )
-
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
-            overlayWindowType(),
-            OverlayWindowLayout.reactionBurstWindowFlags(),
-            android.graphics.PixelFormat.TRANSLUCENT,
-        ).apply {
-            OverlayWindowLayout.applyFullscreenOverlayWindow(context, this)
-        }
-
-        if (runCatching { windowManager.addView(root, params) }.isFailure) {
-            attachedWindowManager = null
-            return
-        }
-        reactionBurstScrim = root
-
-        heart.scaleX = 0.25f
-        heart.scaleY = 0.25f
-        heart.alpha = 0f
-        textCard.alpha = 0f
-        textCard.translationY = dp(8).toFloat()
-        heart.post {
-            heart.pivotX = heart.width * 0.5f
-            heart.pivotY = heart.height * 0.5f
-        }
-
-        val enter = AnimatorSet().apply {
-            playTogether(
-                ObjectAnimator.ofFloat(heart, "scaleX", 0.25f, 1.18f, 1f).setDuration(720),
-                ObjectAnimator.ofFloat(heart, "scaleY", 0.25f, 1.18f, 1f).setDuration(720),
-                ObjectAnimator.ofFloat(heart, "alpha", 0f, 1f).setDuration(380),
-            )
-        }
-        val cardIn = AnimatorSet().apply {
-            playTogether(
-                ObjectAnimator.ofFloat(textCard, "alpha", 0f, 1f).setDuration(420),
-                ObjectAnimator.ofFloat(textCard, "translationY", dp(8).toFloat(), 0f).setDuration(520),
-            )
-            startDelay = 200
-        }
-        enter.addListener(
-            object : AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: Animator) {
-                    val beatX = ObjectAnimator.ofFloat(heart, "scaleX", 1f, 1.12f, 1f).apply {
-                        duration = 700
-                        repeatCount = 2
-                    }
-                    val beatY = ObjectAnimator.ofFloat(heart, "scaleY", 1f, 1.12f, 1f).apply {
-                        duration = 700
-                        repeatCount = 2
-                    }
-                    AnimatorSet().apply { playTogether(beatX, beatY) }.start()
-                }
-            },
-        )
-        enter.start()
-        cardIn.start()
-
-        mainHandler.postDelayed(
-            {
-                val done = AnimatorSet().apply {
-                    playTogether(
-                        ObjectAnimator.ofFloat(heart, "alpha", 1f, 0f).setDuration(400),
-                        ObjectAnimator.ofFloat(heart, "scaleX", 1f, 1.35f).setDuration(400),
-                        ObjectAnimator.ofFloat(heart, "scaleY", 1f, 1.35f).setDuration(400),
-                        ObjectAnimator.ofFloat(textCard, "alpha", 1f, 0f).setDuration(380),
-                        ObjectAnimator.ofFloat(textCard, "translationY", 0f, (-dp(6)).toFloat()).setDuration(380),
-                    )
-                    addListener(
-                        object : AnimatorListenerAdapter() {
-                            override fun onAnimationEnd(animation: Animator) {
-                                hideReactionBurstOnly()
-                            }
-                        },
-                    )
-                }
-                done.start()
-            },
-            OVERLAY_REACTION_BURST_VISIBLE_MS,
-        )
     }
 
     private fun hideKeyboard(edit: EditText) {
