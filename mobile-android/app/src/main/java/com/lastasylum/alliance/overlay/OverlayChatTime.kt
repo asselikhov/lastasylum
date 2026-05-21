@@ -1,11 +1,10 @@
 package com.lastasylum.alliance.overlay
 
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.ui.util.APP_DISPLAY_ZONE
+import com.lastasylum.alliance.ui.util.parseIsoInstant
 import java.time.Instant
-import java.time.LocalDateTime
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeParseException
 import java.util.Locale
 
 /** Стабильный ключ для карт «время прихода» без серверного id. */
@@ -17,26 +16,13 @@ fun ChatMessage.stableKey(): String =
             "${senderId}:${createdAt.orEmpty()}:${text.hashCode()}:$att"
         }
 
-/** Разбор ISO-времени сообщений чата и отображение в оверлее. */
+/** Разбор ISO-времени сообщений чата и отображение в оверлее (МСК). */
 object OverlayChatTime {
     private val clockFormatter: DateTimeFormatter =
-        DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault())
+        DateTimeFormatter.ofPattern("HH:mm", Locale.forLanguageTag("ru"))
+            .withZone(APP_DISPLAY_ZONE)
 
-    fun parseInstant(createdAt: String?): Instant? {
-        if (createdAt.isNullOrBlank()) return null
-        val s = createdAt.trim()
-        return try {
-            Instant.parse(s)
-        } catch (_: DateTimeParseException) {
-            try {
-                LocalDateTime.parse(s, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-                    .atZone(ZoneId.systemDefault())
-                    .toInstant()
-            } catch (_: DateTimeParseException) {
-                null
-            }
-        }
-    }
+    fun parseInstant(createdAt: String?): Instant? = parseIsoInstant(createdAt)
 
     /**
      * Время для сортировки и TTL ленты: [max] серверного [ChatMessage.createdAt]
@@ -51,6 +37,5 @@ object OverlayChatTime {
         return maxOf(server, client)
     }
 
-    fun formatClock(instant: Instant): String =
-        clockFormatter.withZone(ZoneId.systemDefault()).format(instant)
+    fun formatClock(instant: Instant): String = clockFormatter.format(instant)
 }

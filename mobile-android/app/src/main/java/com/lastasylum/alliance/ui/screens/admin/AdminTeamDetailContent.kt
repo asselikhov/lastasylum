@@ -44,6 +44,8 @@ import com.lastasylum.alliance.ui.admin.toAdminPlayerRow
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.util.chatSenderDisplayLine
+import com.lastasylum.alliance.ui.util.formatIsoDateShortRu
+import com.lastasylum.alliance.ui.util.formatIsoDateTimeRu
 import com.lastasylum.alliance.ui.util.formatServerLabel
 import com.lastasylum.alliance.ui.util.teamTagWithServerPrefix
 
@@ -260,7 +262,7 @@ private fun AdminTeamNewsTab(state: AdminUiState) {
                     Text(item.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                     Text(item.excerpt, style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
                     Text(
-                        "${item.authorUsername} · ${item.createdAt.take(10)}",
+                        "${item.authorUsername} · ${formatIsoDateShortRu(item.createdAt)}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -371,7 +373,11 @@ private fun AdminChatMessageCard(message: ChatMessage) {
                 Text(message.text, style = MaterialTheme.typography.bodyMedium)
             }
             message.createdAt?.let {
-                Text(it.take(19).replace('T', ' '), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    formatIsoDateTimeRu(it),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
@@ -412,7 +418,7 @@ private fun AdminForumMessageCard(message: TeamForumMessageDto) {
                 Text(message.text, style = MaterialTheme.typography.bodyMedium)
             }
             Text(
-                message.createdAt.take(19).replace('T', ' '),
+                formatIsoDateTimeRu(message.createdAt),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

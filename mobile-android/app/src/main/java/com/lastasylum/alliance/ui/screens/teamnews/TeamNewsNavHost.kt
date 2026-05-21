@@ -108,17 +108,13 @@ import com.lastasylum.alliance.overlay.OverlayGameStatusHudRefresh
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import com.lastasylum.alliance.ui.components.team.TeamNewsFeedCard
-import com.lastasylum.alliance.ui.components.team.formatTeamFeedDateRu
+import com.lastasylum.alliance.ui.util.formatTeamFeedDateRu
 import com.lastasylum.alliance.ui.components.team.TeamPollPreviewBlock
 import com.lastasylum.alliance.ui.components.team.TeamPollQuestionHeader
 import com.lastasylum.alliance.ui.components.team.TeamPollVoteOptionSurface
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import kotlinx.coroutines.launch
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-
 private object TeamNewsRoutes {
     const val LIST = "news_list"
     const val CREATE = "news_create"

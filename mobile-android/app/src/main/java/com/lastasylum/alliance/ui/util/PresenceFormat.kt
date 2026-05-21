@@ -1,9 +1,7 @@
 package com.lastasylum.alliance.ui.util
 
+import java.time.Duration
 import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 /** Окно свежести пинга оверлея (~1.5× heartbeat оверлея 60 с). */
 const val OVERLAY_INGAME_PRESENCE_STALE_MS = 90_000L
@@ -11,22 +9,13 @@ const val OVERLAY_INGAME_PRESENCE_STALE_MS = 90_000L
 /** Как часто обновлять список «Участники онлайн», пока панель открыта. */
 const val OVERLAY_ONLINE_PANEL_POLL_MS = 60_000L
 
-fun formatPresenceTimestampRu(iso: String?): String {
-    if (iso.isNullOrBlank()) return ""
-    return runCatching {
-        val z = java.time.ZonedDateTime.ofInstant(Instant.parse(iso.trim()), ZoneId.systemDefault())
-        z.format(DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale("ru")))
-    }.getOrDefault("")
-}
-
-/** Онлайн в игре = активный оверлей (status ingame + свежий lastPresenceAt). */
 /** Короткая подпись свежести пинга для списка «Участники онлайн». */
 fun formatOverlayPresenceAgeRu(lastOverlayPresenceAt: String?): String {
     val iso = lastOverlayPresenceAt?.trim().orEmpty()
     if (iso.isEmpty()) return ""
     return runCatching {
-        val instant = Instant.parse(iso)
-        val mins = java.time.Duration.between(instant, Instant.now()).toMinutes().coerceAtLeast(0)
+        val instant = parseIsoInstant(iso) ?: return ""
+        val mins = Duration.between(instant, Instant.now()).toMinutes().coerceAtLeast(0)
         when {
             mins < 1 -> "только что"
             mins < 60 -> "$mins мин назад"
@@ -48,7 +37,7 @@ fun isOverlayIngameNow(
     val iso = lastOverlayPresenceAt?.trim().orEmpty()
     if (iso.isEmpty()) return false
     return runCatching {
-        val instant = Instant.parse(iso)
-        java.time.Duration.between(instant, Instant.now()).toMillis() <= staleMs
+        val instant = parseIsoInstant(iso) ?: return false
+        Duration.between(instant, Instant.now()).toMillis() <= staleMs
     }.getOrDefault(false)
 }

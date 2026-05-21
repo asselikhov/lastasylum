@@ -158,22 +158,13 @@ import java.io.InputStream
 import java.util.UUID
 import android.content.ContentResolver
 import android.os.ParcelFileDescriptor
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
+import com.lastasylum.alliance.ui.util.formatForumTopicTimeRu
 import java.util.Locale
 
 private object ForumRoutes {
     const val LIST = "forum_list"
     fun topic(id: String) = "forum_topic/$id"
 }
-
-private fun formatForumTime(iso: String): String =
-    runCatching {
-        val instant = Instant.parse(iso)
-        val fmt = DateTimeFormatter.ofPattern("d MMM, HH:mm", java.util.Locale("ru"))
-        fmt.format(instant.atZone(ZoneId.systemDefault()))
-    }.getOrElse { iso }
 
 @Composable
 fun TeamForumNavHost(
@@ -391,7 +382,7 @@ private fun TeamForumListRoute(
                             ForumTopicFeedCard(
                                 topic = t,
                                 listIndex = index,
-                                messageMeta = t.lastMessageAt?.let { formatForumTime(it) } ?: "—",
+                                messageMeta = t.lastMessageAt?.let { formatForumTopicTimeRu(it) } ?: "—",
                                 onClick = {
                                     onOpenTopic(t)
                                 },

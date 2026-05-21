@@ -41,8 +41,8 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.ui.components.BrandLogo
 import com.lastasylum.alliance.ui.components.PrimaryPanel
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
-import java.text.SimpleDateFormat
-import java.util.Date
+import com.lastasylum.alliance.ui.util.formatIsoDateTimeRu
+import java.time.Instant
 import java.util.Locale
 
 private enum class AuthMode {
@@ -80,8 +80,7 @@ fun AuthScreen(
 
     val scroll = rememberScrollState()
     val buildTimeStr = remember {
-        SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-            .format(Date(BuildConfig.BUILD_TIME_MS))
+        formatIsoDateTimeRu(Instant.ofEpochMilli(BuildConfig.BUILD_TIME_MS).toString())
     }
 
     Surface(

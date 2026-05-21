@@ -60,17 +60,8 @@ import com.lastasylum.alliance.ui.theme.SquadRelayAtmosphericSky
 import com.lastasylum.alliance.ui.theme.SquadRelayPrimary
 import com.lastasylum.alliance.ui.theme.SquadRelaySecondary
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
+import com.lastasylum.alliance.ui.util.formatTeamFeedDateRu
 import kotlin.math.roundToInt
-
-fun formatTeamFeedDateRu(iso: String): String =
-    runCatching {
-        val z = java.time.ZonedDateTime.ofInstant(Instant.parse(iso.trim()), ZoneId.systemDefault())
-        z.format(DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale("ru")))
-    }.getOrElse { iso }
 
 private val cardShape = RoundedCornerShape(22.dp)
 private val innerShape = RoundedCornerShape(16.dp)

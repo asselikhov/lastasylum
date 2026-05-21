@@ -19,8 +19,8 @@ import android.view.WindowManager
  * - **Тикер**: окно создаётся только при первом [OverlayTickerWindow.showTicker], чтобы не держать
  *   невидимую полоску на всю ширину экрана между сообщениями.
  * - **Quick commands**: маленькие `WRAP_CONTENT` окна у пузыря, тот же корень для pinch.
- * - **Вспышка реакции**: `WRAP_CONTENT` по центру, [reactionBurstWindowFlags] (NOT_TOUCHABLE);
- *   без полноэкранного скрима — касания вне карточки уходят в игру.
+ * - **Вспышка реакции**: `WRAP_CONTENT` по центру, [reactionBurstWindowFlags] (только NOT_TOUCHABLE);
+ *   корень [OverlayPassthroughMultitouchFrameLayout] — без NOT_TOUCH_MODAL, чтобы не блокировать игру.
  * - **Полноэкранный чат**: свои флаги [historyPanelWindowFlags] (фокус + IME), без NOT_TOUCH_MODAL — окно
  *   должно полностью перехватыть ввод, пока открыт чат.
  */
@@ -39,10 +39,14 @@ object OverlayWindowLayout {
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
 
     /**
-     * Вспышка входящей реакции: только анимация, касания проходят в игру.
+     * Вспышка входящей реакции: без NOT_TOUCH_MODAL — иначе большое WRAP_CONTENT-окно
+     * перехватывает жесты в игре (камера, тапы). Только NOT_TOUCHABLE.
      */
     fun reactionBurstWindowFlags(): Int =
-        popupWindowFlags() or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
 
     /** Полноэкранная панель истории: без NOT_FOCUSABLE — нужны поле ввода и IME. */
     fun historyPanelWindowFlags(): Int =
