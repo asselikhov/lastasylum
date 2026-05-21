@@ -15,7 +15,7 @@ import android.util.DisplayMetrics
  *
  * **Фон:** без Drawable у текстов и карточек; только тени.
  *
- * **FPS:** Lottie один проход (repeatCount=0), без бесконечного цикла на 10 с; лёгкий enter/exit.
+ * **Анимация:** Lottie в цикле + keep-alive (как в меню реакций), без fade alpha на контенте.
  */
 internal object OverlayReactionBurstLayout {
     private const val WIDTH_FRACTION = 0.56f

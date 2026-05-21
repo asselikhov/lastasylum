@@ -54,10 +54,12 @@ internal class OverlayReactionBurstPresenter(
     private var attachedWindowManager: WindowManager? = null
     private var hideBurstRunnable: Runnable? = null
     private var activeEnterAnimator: Animator? = null
+    private var burstLottieKeepAliveRunnable: Runnable? = null
 
     fun isActive(): Boolean = showing || queue.isNotEmpty() || burstRoot != null
 
     fun clear() {
+        stopBurstLottieKeepAlive()
         hideBurstRunnable?.let { mainHandler.removeCallbacks(it) }
         hideBurstRunnable = null
         activeEnterAnimator?.cancel()
@@ -83,7 +85,43 @@ internal class OverlayReactionBurstPresenter(
         }
     }
 
+    private fun stopBurstLottieKeepAlive() {
+        burstLottieKeepAliveRunnable?.let { mainHandler.removeCallbacks(it) }
+        burstLottieKeepAliveRunnable = null
+    }
+
+    private fun configureBurstLottie(lottie: LottieAnimationView) {
+        lottie.repeatCount = LottieDrawable.INFINITE
+        lottie.repeatMode = LottieDrawable.RESTART
+        lottie.enableMergePathsForKitKatAndAbove(true)
+        lottie.alpha = 1f
+    }
+
+    /** На части OEM Lottie в overlay замирает — перезапускаем, пока видна вспышка. */
+    private fun ensureBurstLottiePlaying() {
+        val lottie = burstLottie ?: return
+        if (!lottie.isAttachedToWindow) return
+        configureBurstLottie(lottie)
+        if (!lottie.isAnimating) {
+            lottie.playAnimation()
+        }
+    }
+
+    private fun startBurstLottieKeepAlive() {
+        stopBurstLottieKeepAlive()
+        val tick = object : Runnable {
+            override fun run() {
+                if (burstRoot == null) return
+                ensureBurstLottiePlaying()
+                mainHandler.postDelayed(this, 2_000L)
+            }
+        }
+        burstLottieKeepAliveRunnable = tick
+        mainHandler.postDelayed(tick, 2_000L)
+    }
+
     private fun hideBurstImmediate() {
+        stopBurstLottieKeepAlive()
         activeEnterAnimator?.cancel()
         activeEnterAnimator = null
         burstLottie?.cancelAnimation()
@@ -236,10 +274,10 @@ internal class OverlayReactionBurstPresenter(
         }
         burstRoot = root
 
-        animView.alpha = 0f
+        animView.alpha = 1f
         animView.scaleX = 0.4f
         animView.scaleY = 0.4f
-        textBlock.alpha = 0f
+        textBlock.alpha = 1f
         textBlock.translationY = dp(6).toFloat()
 
         animView.post {
@@ -251,9 +289,6 @@ internal class OverlayReactionBurstPresenter(
         val ease = DecelerateInterpolator()
         val enter = AnimatorSet().apply {
             playTogether(
-                ObjectAnimator.ofFloat(animView, "alpha", 0f, 1f).apply {
-                    duration = 280
-                },
                 ObjectAnimator.ofFloat(animView, "scaleX", 0.4f, 1.06f, 1f).apply {
                     duration = 520
                     interpolator = pop
@@ -262,29 +297,39 @@ internal class OverlayReactionBurstPresenter(
                     duration = 520
                     interpolator = pop
                 },
-                ObjectAnimator.ofFloat(textBlock, "alpha", 0f, 1f).apply {
-                    duration = 360
-                    startDelay = 120
-                },
                 ObjectAnimator.ofFloat(textBlock, "translationY", dp(6).toFloat(), 0f).apply {
                     duration = 400
                     startDelay = 120
                     interpolator = ease
                 },
             )
+            addListener(
+                object : AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(animation: Animator) {
+                        animView.alpha = 1f
+                        textBlock.alpha = 1f
+                        ensureBurstLottiePlaying()
+                        startBurstLottieKeepAlive()
+                    }
+                },
+            )
         }
         activeEnterAnimator = enter
         enter.start()
+        if (burstLottie != null) {
+            ensureBurstLottiePlaying()
+            startBurstLottieKeepAlive()
+        }
 
         val hideRunnable = Runnable {
+            stopBurstLottieKeepAlive()
             activeEnterAnimator?.cancel()
             activeEnterAnimator = null
             AnimatorSet().apply {
                 playTogether(
-                    ObjectAnimator.ofFloat(animView, "alpha", 1f, 0f).apply { duration = 280 },
                     ObjectAnimator.ofFloat(animView, "scaleX", 1f, 1.08f).apply { duration = 280 },
                     ObjectAnimator.ofFloat(animView, "scaleY", 1f, 1.08f).apply { duration = 280 },
-                    ObjectAnimator.ofFloat(textBlock, "alpha", 1f, 0f).apply { duration = 260 },
+                    ObjectAnimator.ofFloat(textBlock, "translationY", 0f, dp(8).toFloat()).apply { duration = 260 },
                 )
                 addListener(
                     object : AnimatorListenerAdapter() {
@@ -330,8 +375,8 @@ internal class OverlayReactionBurstPresenter(
                     )
                 }
                 scaleType = ImageView.ScaleType.FIT_CENTER
-                setRenderMode(RenderMode.AUTOMATIC)
-                repeatCount = 0
+                setRenderMode(RenderMode.HARDWARE)
+                configureBurstLottie(this)
                 playAnimation()
                 maxWidth = maxSidePx
                 maxHeight = maxSidePx
@@ -350,6 +395,7 @@ internal class OverlayReactionBurstPresenter(
         ImageView(context).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             adjustViewBounds = true
+            alpha = 1f
             maxWidth = maxSidePx
             maxHeight = maxSidePx
         }

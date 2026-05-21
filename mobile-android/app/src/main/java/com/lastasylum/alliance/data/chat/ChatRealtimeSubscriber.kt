@@ -1,5 +1,7 @@
 package com.lastasylum.alliance.data.chat
 
+import android.os.Handler
+import android.os.Looper
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.data.auth.TokenStore
 
@@ -22,6 +24,7 @@ class ChatRealtimeSubscriber(
         java.util.concurrent.CopyOnWriteArrayList<(OverlayReactionEvent) -> Unit>()
     private val overlayChatPanelClosedListeners =
         java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private fun realtimeRoomIdsForPrimary(primaryRoomId: String): List<String> {
         val raid = chatRoomPreferences.getRaidRoomId()
@@ -210,6 +213,10 @@ class ChatRealtimeSubscriber(
     fun overlayMessageListenerCount(): Int = overlayMessageListeners.size
 
     fun dispatchOverlayHttpMessage(message: ChatMessage) {
-        overlayMessageListeners.forEach { l -> runCatching { l(message) } }
+        val listeners = overlayMessageListeners.toList()
+        if (listeners.isEmpty()) return
+        mainHandler.post {
+            listeners.forEach { l -> runCatching { l(message) } }
+        }
     }
 }

@@ -250,7 +250,7 @@ class ChatViewModel(
         )
 
     private fun syncRaidRoomPreference(rooms: List<ChatRoomDto>) {
-        ChatRaidRoomSync.applyRaidRoomPreference(rooms, chatRoomPreferences)
+        repository.applyRaidRoomFromRooms(rooms)
     }
 
     /**

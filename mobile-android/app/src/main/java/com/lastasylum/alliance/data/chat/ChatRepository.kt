@@ -6,7 +6,7 @@ class ChatRepository(
     chatApi: ChatApi,
     tokenStore: com.lastasylum.alliance.data.auth.TokenStore,
     socketManager: ChatSocketManager,
-    chatRoomPreferences: ChatRoomPreferences,
+    private val chatRoomPreferences: ChatRoomPreferences,
 ) {
     private val rest = ChatRestRepository(chatApi, chatRoomPreferences)
     private val realtime = ChatRealtimeSubscriber(socketManager, tokenStore, chatRoomPreferences)
@@ -120,6 +120,27 @@ class ChatRepository(
 
     fun refreshOverlayRealtimeSubscriptions() =
         realtime.refreshOverlayRealtimeSubscriptions()
+
+    /** Сохранить id комнаты «Рейд» и переподписать сокет оверлея. */
+    fun applyRaidRoomFromRooms(rooms: List<ChatRoomDto>) {
+        ChatRaidRoomSync.applyRaidRoomPreference(rooms, chatRoomPreferences)
+        refreshOverlayRealtimeSubscriptions()
+    }
+
+    /** Id комнаты «Рейд» для ленты оверлея; при необходимости подгружает список комнат. */
+    suspend fun ensureRaidRoomId(): String? {
+        chatRoomPreferences.getRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+        val rooms = ChatSessionCache.getFreshRooms()
+            ?: listRooms().getOrNull()
+            ?: return null
+        applyRaidRoomFromRooms(rooms)
+        return chatRoomPreferences.getRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
+    fun dispatchOverlayHttpMessage(message: ChatMessage) =
+        realtime.dispatchOverlayHttpMessage(message)
+
+    fun overlayMessageListenerCount(): Int = realtime.overlayMessageListenerCount()
 
     fun removeOverlayMessageListener(listener: (ChatMessage) -> Unit) =
         realtime.removeOverlayMessageListener(listener)

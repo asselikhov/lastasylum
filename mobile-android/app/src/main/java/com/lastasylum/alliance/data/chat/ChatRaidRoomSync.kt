@@ -11,7 +11,8 @@ object ChatRaidRoomSync {
         if (room.allianceId.isNullOrBlank() || !room.allianceId.startsWith("pt:")) {
             return false
         }
-        return room.sortOrder == 2 || room.title.trim() == RAID_ROOM_TITLE
+        return room.sortOrder == 2 ||
+            room.title.trim().equals(RAID_ROOM_TITLE, ignoreCase = true)
     }
 
     fun applyRaidRoomPreference(rooms: List<ChatRoomDto>, preferences: ChatRoomPreferences) {
