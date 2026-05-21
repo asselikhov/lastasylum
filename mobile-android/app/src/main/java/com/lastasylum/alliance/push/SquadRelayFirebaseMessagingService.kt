@@ -33,14 +33,15 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
             if (!prefs.isExcavationPushEnabled()) {
                 return
             }
-            if (CombatOverlayService.overlayVisible.value) {
+            // В игре с HUD/лентой сообщение приходит по сокету; push только вне боя.
+            if (CombatOverlayService.inGameOverlayUiActive.value) {
                 return
             }
-            val title = message.notification?.title
-                ?: message.data["title"]
+            val title = message.data["title"]
+                ?: message.notification?.title
                 ?: getString(com.lastasylum.alliance.R.string.excavation_push_default_title)
-            val body = message.notification?.body
-                ?: message.data["body"]
+            val body = message.data["body"]
+                ?: message.notification?.body
                 ?: message.data["senderName"]
                 ?: ""
             ExcavationPushNotifications.show(

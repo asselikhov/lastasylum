@@ -64,6 +64,8 @@ class OverlayCommandsPopover(
     private var menuScrim: FrameLayout? = null
     private var coordScrim: FrameLayout? = null
     private var reactionPickScrim: FrameLayout? = null
+    private var reopenMenuOnReactionsTab = false
+    private var reopenReactionSubcategory = OverlayReactionCategory.ANIMATIONS
     private val reactionBurstPresenter = OverlayReactionBurstPresenter(context, mainHandler, dp)
     private var heartPreviewAnimator: Animator? = null
     private var reactionPreviewLotties: List<LottieAnimationView> = emptyList()
@@ -476,6 +478,25 @@ class OverlayCommandsPopover(
             isClickable = true
         }
 
+    private fun iconBackButton(): TextView =
+        TextView(context).apply {
+            text = "←"
+            contentDescription = context.getString(R.string.overlay_reactions_back_cd)
+            setTextColor(Color.parseColor("#99A8B4CC"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            background = rippleOn(
+                roundedRect(fillColor = Color.parseColor("#12000000"), cornerDp = 999),
+            )
+            isClickable = true
+        }
+
+    private fun returnToReactionsList(windowManager: WindowManager) {
+        reopenMenuOnReactionsTab = true
+        hideReactionPickOnly()
+        showMenu(windowManager)
+    }
+
     private fun openCoordsFromMenu(commandLabel: String, excavation: Boolean) {
         val wm = attachedWindowManager ?: return
         hideCoordOnly()
@@ -752,6 +773,7 @@ class OverlayCommandsPopover(
                     attachFavoriteStar(this, reaction.id)
                     setOnClickListener {
                         val wmUse = attachedWindowManager ?: return@setOnClickListener
+                        reopenReactionSubcategory = selectedReactionSubcategory
                         stopHeartPreviewPulse()
                         removeShell(menuScrim)
                         menuScrim = null
@@ -1059,6 +1081,14 @@ class OverlayCommandsPopover(
         }
 
         applyCategory(0)
+        if (reopenMenuOnReactionsTab) {
+            reopenMenuOnReactionsTab = false
+            val reactionsIndex = categories.indexOfFirst { it.isReactions }
+            if (reactionsIndex >= 0) {
+                applyCategory(reactionsIndex)
+                selectReactionSubcategory(reopenReactionSubcategory)
+            }
+        }
 
         val divider = View(context).apply {
             setBackgroundColor(Color.parseColor("#288899AA"))
@@ -1437,6 +1467,7 @@ class OverlayCommandsPopover(
 
         val selectedReaction = overlayQuickReactionById(reactionId)
         val container = AppContainer.from(context)
+        val back = iconBackButton()
         val close = iconCloseButton()
         val title = labelText(
             context.getString(R.string.overlay_reactions_recipient_title),
@@ -1483,9 +1514,12 @@ class OverlayCommandsPopover(
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(14), dp(10), dp(8), dp(6))
+            addView(back)
             addView(
                 title,
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginStart = dp(4)
+                },
             )
             addView(close)
         }
@@ -1551,6 +1585,7 @@ class OverlayCommandsPopover(
             return
         }
         reactionPickScrim = scrim
+        back.setOnClickListener { returnToReactionsList(windowManager) }
         close.setOnClickListener { hideReactionPickOnly() }
 
         scope.launch {
@@ -1570,6 +1605,7 @@ class OverlayCommandsPopover(
                 }
             }
             mainHandler.post {
+                if (reactionPickScrim == null) return@post
                 listColumn.removeAllViews()
                 loading.visibility = View.GONE
                 loadResult.fold(

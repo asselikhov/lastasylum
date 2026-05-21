@@ -140,6 +140,11 @@ fun AppNavigation(
                         CombatOverlayService.ensureRuntimeIfUserEnabled(appContext)
                         activity.lifecycleScope.launch(Dispatchers.IO) {
                             runCatching { FcmTokenManager.registerWithBackend(appContext) }
+                            if (!CombatOverlayService.inGameOverlayUiActive.value) {
+                                runCatching {
+                                    app.usersRepository.updatePresence("away")
+                                }
+                            }
                         }
                     }
                 }
@@ -155,15 +160,14 @@ fun AppNavigation(
         onDispose { activity.lifecycle.removeObserver(observer) }
     }
 
-    val overlayVisible by CombatOverlayService.overlayVisible.collectAsStateWithLifecycle()
-    val overlayServiceRunning by CombatOverlayService.serviceRunning.collectAsStateWithLifecycle()
+    val inGameOverlayUiActive by CombatOverlayService.inGameOverlayUiActive.collectAsStateWithLifecycle()
 
-    LaunchedEffect(userId, overlayVisible, overlayServiceRunning) {
+    LaunchedEffect(userId, inGameOverlayUiActive) {
         if (userId.isBlank()) return@LaunchedEffect
         while (isActive) {
             delay(45_000)
-            // Overlay heartbeat sends "ingame"; do not downgrade while overlay runtime is up.
-            if (overlayVisible || overlayServiceRunning) continue
+            // Пока гейт видит игру — ingame heartbeat в FGS; иначе «online» для push раскопок.
+            if (inGameOverlayUiActive) continue
             runCatching {
                 withContext(Dispatchers.IO) {
                     app.usersRepository.updatePresence("online")

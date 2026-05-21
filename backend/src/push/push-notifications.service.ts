@@ -61,23 +61,19 @@ export class PushNotificationsService implements OnModuleInit {
         ? input.body.trim()
         : 'Союзники отметили координаты раскопок';
     try {
+      // Data-only on Android: система не перехватывает показ в фоне — клиент
+      // всегда получает onMessageReceived и показывает канал excavation_alerts.
       const res = await admin.messaging().sendEachForMulticast({
         tokens: unique,
-        notification: { title, body },
         data: {
           ...input.data,
           type: 'excavation_alert',
           senderName: input.senderName,
+          title,
+          body,
         },
         android: {
           priority: 'high',
-          notification: {
-            channelId: 'excavation_alerts',
-            priority: 'max',
-            defaultSound: true,
-            defaultVibrateTimings: true,
-            visibility: 'public',
-          },
         },
         apns: {
           headers: { 'apns-priority': '10' },

@@ -1853,6 +1853,7 @@ class CombatOverlayService : Service() {
             0
         }
         lastAppliedGateShouldShow = shouldShow
+        _inGameOverlayUiActive.value = shouldShow
         if (!shouldShow) {
             dismissOverlayUiBecauseNotInGame(
                 logWaitingForGame = true,
@@ -1972,6 +1973,7 @@ class CombatOverlayService : Service() {
         isServiceInstanceActive = false
         _serviceRunning.value = false
         _overlayVisible.value = false
+        _inGameOverlayUiActive.value = false
         if (AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled() &&
             AppContainer.from(this).authRepository.hasSession()
         ) {
@@ -3278,11 +3280,14 @@ class CombatOverlayService : Service() {
 
         private val _serviceRunning = MutableStateFlow(false)
         private val _overlayVisible = MutableStateFlow(false)
+        private val _inGameOverlayUiActive = MutableStateFlow(false)
 
         /** Для UI вкладки «Оверлей»: синхронно с жизненным циклом сервиса (без гонки с [isServiceInstanceActive]). */
         val serviceRunning: StateFlow<Boolean> = _serviceRunning.asStateFlow()
         /** True when the overlay windows are attached (panel visible on screen). */
         val overlayVisible: StateFlow<Boolean> = _overlayVisible.asStateFlow()
+        /** True when game gate shows in-game overlay (HUD/лента) — не путать с [overlayVisible]. */
+        val inGameOverlayUiActive: StateFlow<Boolean> = _inGameOverlayUiActive.asStateFlow()
 
         /** Re-layout overlay (e.g. compact mode) while combat service is running. */
         fun requestRebuildOverlayIfRunning(context: Context) {

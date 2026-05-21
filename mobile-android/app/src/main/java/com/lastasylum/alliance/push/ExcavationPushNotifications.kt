@@ -1,14 +1,18 @@
 package com.lastasylum.alliance.push
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import com.lastasylum.alliance.MainActivity
 import com.lastasylum.alliance.R
 
@@ -16,6 +20,7 @@ import com.lastasylum.alliance.R
 object ExcavationPushNotifications {
     const val CHANNEL_ID = "excavation_alerts"
     private const val NOTIFICATION_ID_BASE = 42_001
+    private const val TAG = "ExcavationPush"
 
     fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -65,8 +70,22 @@ object ExcavationPushNotifications {
             .setColor(Color.parseColor("#FF3D5AFE"))
             .setDefaults(NotificationCompat.DEFAULT_ALL)
             .build()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val granted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                Log.w(TAG, "POST_NOTIFICATIONS not granted — excavation push skipped")
+                return
+            }
+        }
         val id = NOTIFICATION_ID_BASE + (roomId?.hashCode()?.and(0x7FFF) ?: 0)
-        NotificationManagerCompat.from(context).notify(id, notification)
+        runCatching {
+            NotificationManagerCompat.from(context).notify(id, notification)
+        }.onFailure { e ->
+            Log.w(TAG, "notify failed", e)
+        }
     }
 
     const val EXTRA_OPEN_CHAT_ROOM_ID = "open_chat_room_id"

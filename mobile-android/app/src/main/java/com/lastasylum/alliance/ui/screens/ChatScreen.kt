@@ -666,48 +666,6 @@ fun ChatScreen(
                 )
             }
 
-            val noTeamRooms = state.rooms.none { room ->
-                !room.allianceId.isNullOrBlank() &&
-                    room.allianceId.startsWith("pt:")
-            }
-            if (noTeamRooms) {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp),
-                    shape = MaterialTheme.shapes.medium,
-                    color = SquadRelaySurfaces.panelColor(0.4f),
-                    border = BorderStroke(
-                        1.dp,
-                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
-                    ),
-                ) {
-                    Text(
-                        text = stringResource(R.string.chat_no_team_only_union),
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
-            if (showGlobalTeamNotice) {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = SquadRelayDimens.itemGap),
-                    shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.88f),
-                ) {
-                    Text(
-                        text = stringResource(R.string.chat_global_team_notice),
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    )
-                }
-            }
-
             ChatTypingBanner(typingPeers = typingPeers)
 
             if (inSelectionMode) {

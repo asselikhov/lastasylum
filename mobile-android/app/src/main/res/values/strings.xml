@@ -647,6 +647,7 @@
     <string name="overlay_cmd_column_reactions">Реакции</string>
     <string name="overlay_reactions_hint">Выберите реакцию — затем сокомандника в игре.</string>
     <string name="overlay_reactions_recipient_title">Кому отправить</string>
+    <string name="overlay_reactions_back_cd">Назад к списку реакций</string>
     <string name="overlay_reactions_loading">Загрузка списка…</string>
     <string name="overlay_reactions_none_ingame">Нет участников в игре в оверлее</string>
     <string name="overlay_reactions_no_team">Нужна команда в SquadRelay</string>
