@@ -57,5 +57,6 @@ internal fun OverlayHudChatPane(
         onEditMessage = vm::editMessage,
         onForwardMessage = vm::forwardMessage,
         onToggleReaction = vm::toggleReaction,
+        onScrollToLatest = vm::scrollToLatestMessages,
     )
 }

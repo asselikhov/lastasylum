@@ -426,6 +426,7 @@ fun AppNavigation(
                     onEditMessage = chatViewModel::editMessage,
                     onForwardMessage = chatViewModel::forwardMessage,
                     onToggleReaction = chatViewModel::toggleReaction,
+                    onScrollToLatest = chatViewModel::scrollToLatestMessages,
                 )
             }
             composable(AppTab.OVERLAY.route) {

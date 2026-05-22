@@ -93,6 +93,10 @@
     <string name="cd_chat_sticker_locked">Стикер заблокирован</string>
     <string name="chat_ok">Понятно</string>
     <string name="chat_empty_state">Пока нет сообщений — напишите первым.</string>
+    <string name="chat_scroll_to_latest_cd">Перейти к новым сообщениям</string>
+    <string name="chat_scroll_to_latest_cd_with_count">Перейти к новым сообщениям (%1$d)</string>
+    <string name="chat_scroll_to_latest_badge">%1$d новых</string>
+    <string name="chat_scroll_to_latest_badge_max">99+ новых</string>
     <string name="chat_no_rooms">Комнаты чата недоступны. Проверьте сеть или попробуйте позже.</string>
     <string name="chat_context_global">Общий канал всех альянсов</string>
     <string name="chat_context_raid">Рейдовый канал</string>

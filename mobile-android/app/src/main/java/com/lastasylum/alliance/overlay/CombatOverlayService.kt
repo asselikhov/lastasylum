@@ -1280,12 +1280,14 @@ class CombatOverlayService : Service() {
                 if (inGame) {
                     lastOverlayInGameAtMs = nowMs
                 }
-                // UI (HUD/лента) только в игре или пока открыт оверлей-чат/системный пикер — без grace после сворачивания.
+                // UI (HUD/лента) в игре, в чате, в системном пикере или пока открыто меню/реакции оверлея.
                 val shouldShowInGameOverlayUi = when {
                     inGame -> true
                     OverlayChatInteractionHold.isOverlaySystemPickerSessionActive() -> true
                     overlayChatTeamPanelVisible ||
                         OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible -> true
+                    overlayCommandsPopover.isShowing() -> true
+                    OverlayChatInteractionHold.isGameForegroundGateSuppressed() -> true
                     else -> false
                 }
                 val stableShowInGameOverlayUi = resolveStableOverlayUiVisible(
@@ -1934,8 +1936,19 @@ class CombatOverlayService : Service() {
     private fun dismissOverlayUiBecauseNotInGame(logWaitingForGame: Boolean) {
         if (OverlayChatInteractionHold.isOverlaySystemPickerSessionActive()) {
             deferredDismissWhenPickerEnds = true
-        } else {
-            deferredDismissWhenPickerEnds = false
+            return
+        }
+        deferredDismissWhenPickerEnds = false
+        if (overlayCommandsPopover.isShowing() ||
+            OverlayChatInteractionHold.isGameForegroundGateSuppressed()
+        ) {
+            if (BuildConfig.DEBUG && logWaitingForGame) {
+                Log.d(
+                    TAG,
+                    "dismissOverlayUiBecauseNotInGame: deferred — popover or modal suppress active",
+                )
+            }
+            return
         }
         gateUiHideStreak = 0
         lastForegroundHintPkg = null

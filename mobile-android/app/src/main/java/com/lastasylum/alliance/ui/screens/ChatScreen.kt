@@ -193,6 +193,7 @@ import com.lastasylum.alliance.ui.components.ChatRoomVisualKind
 import com.lastasylum.alliance.ui.components.ChatRoomsSwitcher
 import com.lastasylum.alliance.ui.chat.ChatViewModel
 import com.lastasylum.alliance.ui.chat.ChatBubbleAuthorHeader
+import com.lastasylum.alliance.ui.chat.ChatScrollToLatestFab
 import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarEndPad
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarSize
@@ -456,6 +457,7 @@ fun ChatScreen(
     onEditMessage: (String, String) -> Unit,
     onForwardMessage: (String) -> Unit,
     onToggleReaction: (String, String) -> Unit,
+    onScrollToLatest: () -> Unit = {},
     /** Overlay panel: hide room bar, rely on cached session + narrow socket subscriptions. */
     compactOverlayMode: Boolean = false,
 ) {
@@ -550,7 +552,41 @@ fun ChatScreen(
     val isNearLatest by remember(listState) {
         derivedStateOf {
             listState.firstVisibleItemIndex <= 1 &&
-                listState.firstVisibleItemScrollOffset < 48
+                listState.firstVisibleItemScrollOffset < 80
+        }
+    }
+
+    var newMessagesWhileScrolledUp by remember { mutableStateOf(0) }
+    var lastCountedNewestKey by remember(state.selectedRoomId) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(state.selectedRoomId) {
+        newMessagesWhileScrolledUp = 0
+        lastCountedNewestKey = state.newestMessageKey
+    }
+
+    LaunchedEffect(isNearLatest) {
+        if (isNearLatest) {
+            newMessagesWhileScrolledUp = 0
+            lastCountedNewestKey = state.newestMessageKey
+        }
+    }
+
+    LaunchedEffect(state.newestMessageKey, isNearLatest) {
+        val key = state.newestMessageKey ?: return@LaunchedEffect
+        if (key == lastCountedNewestKey) return@LaunchedEffect
+        lastCountedNewestKey = key
+        if (!isNearLatest) {
+            newMessagesWhileScrolledUp = (newMessagesWhileScrolledUp + 1).coerceAtMost(999)
+        }
+    }
+
+    val showScrollToLatestFab by remember {
+        derivedStateOf {
+            !isNearLatest &&
+                !inSelectionMode &&
+                state.messages.isNotEmpty() &&
+                !state.isLoading &&
+                state.selectedRoomId != null
         }
     }
 
@@ -585,13 +621,26 @@ fun ChatScreen(
 
     LaunchedEffect(state.scrollToLatestNonce) {
         if (state.scrollToLatestNonce == 0L) return@LaunchedEffect
-        listState.scrollToItem(0)
+        listState.animateScrollToItem(0)
     }
 
     LaunchedEffect(state.newestMessageKey) {
         if (state.newestMessageKey.isNullOrBlank()) return@LaunchedEffect
         if (!isNearLatest) return@LaunchedEffect
-        listState.scrollToItem(0)
+        listState.animateScrollToItem(0)
+    }
+
+    val newestKeyForScroll = rememberUpdatedState(state.newestMessageKey)
+    val scrollToLatest: () -> Unit = remember(scope, listState, onScrollToLatest) {
+        {
+            newMessagesWhileScrolledUp = 0
+            lastCountedNewestKey = newestKeyForScroll.value
+            onScrollToLatest()
+            scope.launch {
+                runCatching { listState.animateScrollToItem(0) }
+                    .onFailure { listState.scrollToItem(0) }
+            }
+        }
     }
 
     val messagesRef = rememberUpdatedState(state.messages)
@@ -664,22 +713,35 @@ fun ChatScreen(
                 )
             }
 
-            ChatMessagesLazyList(
+            Box(
                 modifier = Modifier
                     .weight(1f, fill = true)
                     .fillMaxWidth(),
-                state = state,
-                otherReadUptoMessageId = otherReadUptoMessageId,
-                listState = listState,
-                jumpToQuotedMessage = jumpToQuotedMessage,
-                onToggleReaction = onToggleReaction,
-                onOpenMessageActions = onOpenMessageActions,
-                onReplyToMessage = onReplyToMessage,
-                onClearError = onClearError,
-                inSelectionMode = inSelectionMode,
-                selectedMessageIds = state.selectedMessageIds,
-                onToggleMessageSelection = onToggleMessageSelection,
-            )
+            ) {
+                ChatMessagesLazyList(
+                    modifier = Modifier.fillMaxSize(),
+                    state = state,
+                    otherReadUptoMessageId = otherReadUptoMessageId,
+                    listState = listState,
+                    jumpToQuotedMessage = jumpToQuotedMessage,
+                    onToggleReaction = onToggleReaction,
+                    onOpenMessageActions = onOpenMessageActions,
+                    onReplyToMessage = onReplyToMessage,
+                    onClearError = onClearError,
+                    inSelectionMode = inSelectionMode,
+                    selectedMessageIds = state.selectedMessageIds,
+                    onToggleMessageSelection = onToggleMessageSelection,
+                )
+                ChatScrollToLatestFab(
+                    visible = showScrollToLatestFab,
+                    newMessageCount = newMessagesWhileScrolledUp,
+                    onClick = scrollToLatest,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 4.dp, bottom = 10.dp)
+                        .zIndex(4f),
+                )
+            }
         }
 
         if (state.sendFailure != null || (selectedRoomId != null && state.rooms.isNotEmpty())) {

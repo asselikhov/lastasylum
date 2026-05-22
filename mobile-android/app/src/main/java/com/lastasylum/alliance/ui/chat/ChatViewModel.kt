@@ -1216,6 +1216,18 @@ class ChatViewModel(
         _state.value = _state.value.copy(error = null)
     }
 
+    /** Scroll chat to newest messages and sync read cursor (FAB / return from history). */
+    fun scrollToLatestMessages() {
+        val roomId = _state.value.selectedRoomId ?: return
+        val newestId = _state.value.messages.firstOrNull()?._id
+        _state.value = _state.value.copy(
+            scrollToLatestNonce = _state.value.scrollToLatestNonce + 1L,
+        )
+        if (!newestId.isNullOrBlank()) {
+            viewModelScope.launch { markRoomReadUpTo(roomId, newestId) }
+        }
+    }
+
     private fun ensureChatVoiceRecognizer(): ChatVoiceRecognizer {
         chatVoiceRecognizer?.let { return it }
         val app = getApplication<Application>()

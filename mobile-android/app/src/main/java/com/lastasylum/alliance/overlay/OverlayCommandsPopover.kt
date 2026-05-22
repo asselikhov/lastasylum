@@ -73,12 +73,24 @@ class OverlayCommandsPopover(
     private var attachedWindowManager: WindowManager? = null
     /** Парные acquire/release: меню, picker, координаты, входящий burst. */
     private var gameGateSuppressDepth = 0
+    /** Между сменой scrim (меню → picker) [isShowing] иначе на мгновение false и game gate снимает HUD. */
+    private var surfaceTransitionDepth = 0
 
     fun isShowing(): Boolean =
-        menuScrim != null ||
+        surfaceTransitionDepth > 0 ||
+            menuScrim != null ||
             coordScrim != null ||
             reactionPickScrim != null ||
             reactionBurstPresenter.isActive()
+
+    private inline fun withPopoverSurfaceTransition(block: () -> Unit) {
+        surfaceTransitionDepth++
+        try {
+            block()
+        } finally {
+            surfaceTransitionDepth = (surfaceTransitionDepth - 1).coerceAtLeast(0)
+        }
+    }
 
     fun hide() {
         stopHeartPreviewPulse()
@@ -89,6 +101,7 @@ class OverlayCommandsPopover(
         removeShell(menuScrim)
         menuScrim = null
         attachedWindowManager = null
+        surfaceTransitionDepth = 0
         clearGameGateSuppress()
     }
 
@@ -558,8 +571,11 @@ class OverlayCommandsPopover(
 
     private fun returnToReactionsList(windowManager: WindowManager) {
         reopenMenuOnReactionsTab = true
-        hideReactionPickOnly()
-        showMenu(windowManager)
+        withPopoverSurfaceTransition {
+            removeShell(reactionPickScrim)
+            reactionPickScrim = null
+            showMenu(windowManager)
+        }
     }
 
     private fun openCoordsFromMenu(commandLabel: String, excavation: Boolean) {
@@ -1521,8 +1537,13 @@ class OverlayCommandsPopover(
     }
 
     private fun showReactionRecipientPicker(windowManager: WindowManager, reactionId: String) {
-        removeShell(reactionPickScrim)
-        reactionPickScrim = null
+        withPopoverSurfaceTransition {
+            showReactionRecipientPickerInner(windowManager, reactionId)
+        }
+    }
+
+    private fun showReactionRecipientPickerInner(windowManager: WindowManager, reactionId: String) {
+        val previousPick = reactionPickScrim
         ensurePopoverSuppressHeld()
         attachedWindowManager = windowManager
 
@@ -1651,9 +1672,12 @@ class OverlayCommandsPopover(
             releasePopoverSuppressAfterUiClosed()
             return
         }
+        reactionPickScrim = scrim
         removeShell(menuScrim)
         menuScrim = null
-        reactionPickScrim = scrim
+        if (previousPick != null && previousPick !== scrim) {
+            removeShell(previousPick)
+        }
         back.setOnClickListener { returnToReactionsList(windowManager) }
         close.setOnClickListener { hideReactionPickOnly() }
 
