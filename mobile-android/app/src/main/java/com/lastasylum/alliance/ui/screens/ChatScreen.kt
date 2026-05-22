@@ -192,6 +192,8 @@ import com.lastasylum.alliance.ui.chat.ChatBubbleAuthorHeader
 import com.lastasylum.alliance.ui.chat.ChatMessageTimeOverlayChip
 import com.lastasylum.alliance.ui.chat.ChatMessageTimeWithReadStatus
 import com.lastasylum.alliance.ui.chat.ChatScrollToLatestFab
+import com.lastasylum.alliance.ui.chat.isAtReverseChatBottom
+import com.lastasylum.alliance.ui.chat.scrollTimelineItemToViewportCenter
 import com.lastasylum.alliance.ui.chat.ChatTimelineEntry
 import com.lastasylum.alliance.ui.chat.ChatTypingIndicator
 import com.lastasylum.alliance.ui.chat.buildChatTimeline
@@ -398,10 +400,7 @@ fun ChatScreen(
         }
     }
     val isNearLatest by remember(listState) {
-        derivedStateOf {
-            listState.firstVisibleItemIndex <= 1 &&
-                listState.firstVisibleItemScrollOffset < 80
-        }
+        derivedStateOf { listState.isAtReverseChatBottom() }
     }
 
     var newMessagesWhileScrolledUp by remember { mutableStateOf(0) }
@@ -428,9 +427,15 @@ fun ChatScreen(
         }
     }
 
-    val showScrollToLatestFab by remember {
+    val showScrollToLatestFab by remember(
+        listState,
+        inSelectionMode,
+        state.messages.size,
+        state.isLoading,
+        state.selectedRoomId,
+    ) {
         derivedStateOf {
-            !isNearLatest &&
+            !listState.isAtReverseChatBottom() &&
                 !inSelectionMode &&
                 state.messages.isNotEmpty() &&
                 !state.isLoading &&
@@ -471,10 +476,15 @@ fun ChatScreen(
         val timeline = buildChatTimeline(state.messages)
         val idx = chatTimelineIndexForMessageId(timeline, state.messages, targetId)
         if (idx < 0) return@LaunchedEffect
-        runCatching { listState.animateScrollToItem(idx) }
+        runCatching { listState.scrollTimelineItemToViewportCenter(idx) }
             .onFailure { listState.scrollToItem(idx) }
         onConsumeScrollToMessage()
-        delay(900)
+    }
+
+    LaunchedEffect(state.highlightMessageId) {
+        val highlightId = state.highlightMessageId?.trim().orEmpty()
+        if (highlightId.isEmpty()) return@LaunchedEffect
+        delay(1_200)
         onClearHighlightMessage()
     }
 
@@ -617,8 +627,8 @@ fun ChatScreen(
                     onClick = scrollToLatest,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(end = 4.dp, bottom = 10.dp)
-                        .zIndex(4f),
+                        .padding(end = 8.dp, bottom = 52.dp)
+                        .zIndex(6f),
                 )
             }
         }

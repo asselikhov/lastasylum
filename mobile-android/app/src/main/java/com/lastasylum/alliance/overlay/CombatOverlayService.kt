@@ -707,10 +707,9 @@ class CombatOverlayService : Service() {
                         putExtra(OverlaySystemDialogActivity.EXTRA_CONTENT_MIME, mime)
                     }
                 }
-                val keepChatVisible =
-                    kind == OverlaySystemDialogActivity.KIND_PICK_IMAGES ||
-                        kind == OverlaySystemDialogActivity.KIND_REQUEST_GALLERY_READ
-                suspendOverlayWindowsForSystemActivity(keepOverlayChromeVisible = keepChatVisible)
+                // Пикер/разрешения: полностью убираем overlay-чат, иначе TYPE_APPLICATION_OVERLAY
+                // просвечивает сквозь системную галерею.
+                suspendOverlayWindowsForSystemActivity(keepOverlayChromeVisible = false)
                 mainHandler.post {
                     try {
                         startActivity(i)

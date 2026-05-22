@@ -804,9 +804,29 @@ class ChatViewModel(
     fun jumpToQuotedMessage(messageId: String) {
         val id = messageId.trim()
         if (id.isEmpty()) return
+        if (messageIdIndex.containsKey(id)) {
+            _state.update {
+                it.copy(
+                    scrollToMessageId = id,
+                    highlightMessageId = id,
+                    transientNotice = null,
+                )
+            }
+            return
+        }
+        if (!_state.value.hasMoreOlder) {
+            _state.update {
+                it.copy(
+                    transientNotice = res.getString(R.string.chat_jump_quote_not_found),
+                    scrollToMessageId = null,
+                    highlightMessageId = null,
+                )
+            }
+            return
+        }
         viewModelScope.launch {
             var attempts = 0
-            while (attempts < 48) {
+            while (attempts < 40) {
                 if (messageIdIndex.containsKey(id)) {
                     _state.update {
                         it.copy(
@@ -819,7 +839,7 @@ class ChatViewModel(
                 }
                 if (!_state.value.hasMoreOlder) break
                 if (_state.value.isLoadingOlder) {
-                    delay(120)
+                    delay(40)
                     attempts++
                     continue
                 }

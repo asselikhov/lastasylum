@@ -3,6 +3,7 @@ package com.lastasylum.alliance.overlay
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
@@ -55,6 +56,7 @@ class OverlaySystemDialogActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        applyOpaquePickerWindow()
         pendingRequestCode = intent?.getIntExtra(EXTRA_REQUEST_CODE, -1) ?: -1
         pendingKind = intent?.getStringExtra(EXTRA_KIND)
         if (savedInstanceState?.getBoolean(STATE_LAUNCHED) == true) {
@@ -62,6 +64,14 @@ class OverlaySystemDialogActivity : ComponentActivity() {
             return
         }
         launchPendingKind()
+    }
+
+    private fun applyOpaquePickerWindow() {
+        val opaque = 0xFF10141E.toInt()
+        window.setBackgroundDrawable(ColorDrawable(opaque))
+        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+        window.statusBarColor = opaque
+        window.navigationBarColor = opaque
     }
 
     private fun launchPendingKind() {
