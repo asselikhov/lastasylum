@@ -16,6 +16,7 @@ internal enum class OverlayReactionCategory {
     ANIMATIONS,
     MEMES,
     STICKERS,
+    TEXT,
 }
 
 internal data class OverlayQuickReaction(
@@ -29,6 +30,8 @@ internal data class OverlayQuickReaction(
     @DrawableRes val gifDrawableRes: Int? = null,
     @DrawableRes val memeDrawableRes: Int? = null,
     val stickerAssetStem: String? = null,
+    /** Для [OVERLAY_TEXT_REACTION_PREFIX] — текст вспышки (не в каталоге плиток). */
+    val textPayload: String? = null,
     val burstAccentHex: String = "#CCFF5252",
 )
 
@@ -186,14 +189,26 @@ internal fun reactionsInCategory(
         OverlayReactionCategory.ANIMATIONS -> overlayAnimationReactions()
         OverlayReactionCategory.MEMES -> overlayMemeReactions()
         OverlayReactionCategory.STICKERS -> overlayStickerReactions(context)
+        OverlayReactionCategory.TEXT -> emptyList()
     }
 
 internal fun overlayQuickReactionCatalog(context: Context): List<OverlayQuickReaction> =
     overlayAnimationReactions() + overlayMemeReactions() + overlayStickerReactions(context)
 
-internal fun overlayQuickReactionById(context: Context, reactionId: String): OverlayQuickReaction =
-    overlayQuickReactionCatalog(context).find { it.id == reactionId }
+internal fun overlayQuickReactionById(context: Context, reactionId: String): OverlayQuickReaction {
+    decodeTextReactionId(reactionId)?.let { text ->
+        return OverlayQuickReaction(
+            id = reactionId,
+            category = OverlayReactionCategory.TEXT,
+            labelRes = R.string.overlay_reactions_text_cd,
+            tintHex = "#FFFFF8F0",
+            textPayload = text,
+            burstAccentHex = "#CCFFE082",
+        )
+    }
+    return overlayQuickReactionCatalog(context).find { it.id == reactionId }
         ?: overlayAnimationReactions().first()
+}
 
 /** Избранные этой вкладки первыми, затем остальные. */
 internal fun overlayReactionsForCategory(

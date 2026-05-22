@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.overlay
 
 import android.content.Context
+import java.util.HashSet
 
 /**
  * User-pinned overlay quick reactions (animations, memes, stickers) for the Favorites tab.
@@ -21,7 +22,7 @@ internal class OverlayReactionFavoritesStore(context: Context) {
             cur.add(reactionId)
             true
         }
-        prefs.edit().putStringSet(KEY_IDS, cur).apply()
+        prefs.edit().putStringSet(KEY_IDS, HashSet(cur)).apply()
         return added
     }
 

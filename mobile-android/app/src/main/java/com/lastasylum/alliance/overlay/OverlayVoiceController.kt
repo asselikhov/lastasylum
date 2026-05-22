@@ -4,7 +4,7 @@ import android.os.Build
 import android.os.Handler
 
 /**
- * Overlay raid voice: connect only after explicit user action in the current FGS session.
+ * Overlay raid voice: deferred connect after user arms session or enters game with voice prefs on.
  */
 internal class OverlayVoiceController(
     private val mainHandler: Handler,
@@ -20,7 +20,7 @@ internal class OverlayVoiceController(
     }
 
     fun mayScheduleDeferredConnect(micPref: Boolean, soundPref: Boolean): Boolean =
-        userArmedThisSession && (micPref || soundPref)
+        (micPref || soundPref) && userArmedThisSession
 
     fun isMicSupportedOnDevice(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
 }

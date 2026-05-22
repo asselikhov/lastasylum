@@ -81,6 +81,10 @@ internal class OverlayReactionTilesAdapter(
             onPick = { onPick(reaction) },
             onToggleFavorite = {
                 favorites.toggleFavorite(reaction.id)
+                val pos = holder.adapterPosition
+                if (pos != RecyclerView.NO_POSITION) {
+                    notifyItemChanged(pos)
+                }
                 onFavoritesChanged()
             },
             isFavorite = favorites.isFavorite(reaction.id),

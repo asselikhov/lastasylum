@@ -43,6 +43,15 @@ internal object OverlayReactionBurstLayout {
     /** Отступ подписи отправителя под картинкой мема / Lottie / стикера. */
     const val SENDER_BELOW_ANIM_DP = 8
 
+    /** Текстовая реакция: ширина с отступами от краёв экрана. */
+    const val TEXT_HORIZONTAL_MARGIN_FRACTION = 0.08f
+
+    const val TEXT_LINES_MAX = 5
+
+    const val TEXT_MESSAGE_SP = 26f
+
+    const val TEXT_SENDER_BELOW_MESSAGE_DP = 10
+
     data class Metrics(
         val animSidePx: Int,
         val animPadPx: Int,
@@ -50,6 +59,11 @@ internal object OverlayReactionBurstLayout {
         val screenWidthPx: Int,
         val screenHeightPx: Int,
     )
+
+    fun textMessageMaxWidthPx(metrics: Metrics, minWidthPx: Int): Int {
+        val margin = (metrics.screenWidthPx * TEXT_HORIZONTAL_MARGIN_FRACTION).toInt()
+        return (metrics.screenWidthPx - margin * 2).coerceAtLeast(minWidthPx)
+    }
 
     fun metrics(context: Context, dp: (Int) -> Int): Metrics {
         val dm: DisplayMetrics = context.resources.displayMetrics

@@ -152,6 +152,11 @@ internal class OverlayReactionBurstPresenter(
             return
         }
 
+        decodeTextReactionId(request.reactionId)?.let { message ->
+            showTextBurstNow(request, message, windowManager, onFinished)
+            return
+        }
+
         val reaction = overlayQuickReactionById(context, request.reactionId)
         val displayName = request.fromDisplayName.trim().ifBlank { "—" }
         val broadcast = request.broadcast
@@ -385,6 +390,135 @@ internal class OverlayReactionBurstPresenter(
                     },
                 )
             }.start()
+        }
+        hideBurstRunnable = hideRunnable
+        mainHandler.postDelayed(hideRunnable, OVERLAY_REACTION_BURST_VISIBLE_MS)
+    }
+
+    private fun showTextBurstNow(
+        request: OverlayReactionBurstRequest,
+        message: String,
+        windowManager: WindowManager,
+        onFinished: () -> Unit,
+    ) {
+        val displayName = request.fromDisplayName.trim().ifBlank { "—" }
+        val broadcast = request.broadcast
+        val layout = OverlayReactionBurstLayout.metrics(context, dp)
+        val messageMaxWidth = OverlayReactionBurstLayout.textMessageMaxWidthPx(layout, dp(120))
+
+        val root = OverlayReactionBurstTouchRoot(context).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            clipChildren = false
+            clipToPadding = false
+        }
+
+        val captionText = if (broadcast) {
+            context.getString(R.string.overlay_reaction_burst_caption_broadcast)
+        } else {
+            context.getString(R.string.overlay_reaction_burst_caption_private)
+        }
+        val captionColor = if (broadcast) {
+            Color.parseColor("#FFFFB74D")
+        } else {
+            Color.parseColor("#FF90CAF9")
+        }
+        val senderLineText = context.getString(
+            R.string.overlay_reaction_burst_from_with_caption,
+            displayName,
+            captionText,
+        )
+        val senderLine = OverlayReactionTextBurstUi.createSenderLine(
+            context,
+            SpannableString(senderLineText).apply {
+                val parenStart = senderLineText.indexOf('(')
+                if (parenStart >= 0) {
+                    setSpan(
+                        ForegroundColorSpan(captionColor),
+                        parenStart,
+                        senderLineText.length,
+                        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+                    )
+                }
+            },
+            messageMaxWidth,
+        ).apply {
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#66121824"))
+                cornerRadius = dp(10).toFloat()
+            }
+        }
+
+        val messageView = OverlayReactionTextBurstUi.createMessageTextView(
+            context,
+            message,
+            messageMaxWidth,
+        )
+
+        val contentColumn = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            clipChildren = false
+            clipToPadding = false
+            setBackgroundColor(Color.TRANSPARENT)
+            val hPad = (layout.screenWidthPx * OverlayReactionBurstLayout.TEXT_HORIZONTAL_MARGIN_FRACTION).toInt()
+            setPadding(hPad, 0, hPad, 0)
+            addView(
+                messageView,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+            addView(
+                senderLine,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply {
+                    topMargin = dp(OverlayReactionBurstLayout.TEXT_SENDER_BELOW_MESSAGE_DP)
+                    gravity = Gravity.CENTER_HORIZONTAL
+                },
+            )
+        }
+
+        root.addView(
+            contentColumn,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER,
+            ),
+        )
+
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            overlayWindowType(),
+            OverlayWindowLayout.reactionBurstWindowFlags(),
+            android.graphics.PixelFormat.TRANSLUCENT,
+        ).apply {
+            OverlayWindowLayout.applyPopupLayoutCompat(this)
+            gravity = Gravity.CENTER
+            OverlayWindowLayout.applyReactionBurstWindowTouchPolicy(context, this)
+        }
+
+        if (runCatching { windowManager.addView(root, params) }.isFailure) {
+            onFinished()
+            return
+        }
+        burstRoot = root
+        root.alpha = 1f
+        disableOverlayTouchTarget(root)
+        root.post {
+            OverlayWindowLayout.applyReactionBurstWindowTouchPolicy(context, params)
+            runCatching { windowManager.updateViewLayout(root, params) }
+        }
+
+        OverlayReactionTextBurstUi.playRevealAnimation(messageView, senderLine)
+
+        val hideRunnable = Runnable {
+            hideBurstImmediate()
+            onFinished()
         }
         hideBurstRunnable = hideRunnable
         mainHandler.postDelayed(hideRunnable, OVERLAY_REACTION_BURST_VISIBLE_MS)

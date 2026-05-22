@@ -63,6 +63,11 @@ const ALLOWED_OVERLAY_REACTIONS = new Set<string>([
   ...ALLOWED_OVERLAY_STICKER_REACTIONS,
 ]);
 
+/** Android OverlayTextReaction.kt — prefix + Base64 URL-safe UTF-8 payload. */
+const OVERLAY_TEXT_REACTION_PREFIX = 'text:';
+const OVERLAY_TEXT_REACTION_MAX_CHARS = 200;
+const OVERLAY_TEXT_REACTION_MAX_ENCODED_LEN = 512;
+
 type GatewayUser = {
   userId: string;
   username: string;
@@ -227,7 +232,30 @@ export class ChatGateway {
 
   private normalizeOverlayReaction(raw: unknown): string {
     const r = typeof raw === 'string' ? raw.trim() : '';
+    if (r.startsWith(OVERLAY_TEXT_REACTION_PREFIX)) {
+      return this.normalizeTextOverlayReaction(r) ?? 'heart';
+    }
     return ALLOWED_OVERLAY_REACTIONS.has(r) ? r : 'heart';
+  }
+
+  private normalizeTextOverlayReaction(raw: string): string | null {
+    if (raw.length > OVERLAY_TEXT_REACTION_MAX_ENCODED_LEN) return null;
+    const payload = raw.slice(OVERLAY_TEXT_REACTION_PREFIX.length);
+    if (!payload) return null;
+    try {
+      const decoded = Buffer.from(payload, 'base64url').toString('utf8');
+      const cleaned = decoded
+        .replace(/[\u0000-\u0008\u000e-\u001f]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (!cleaned || cleaned.length > OVERLAY_TEXT_REACTION_MAX_CHARS) {
+        return null;
+      }
+      const reencoded = Buffer.from(cleaned, 'utf8').toString('base64url');
+      return `${OVERLAY_TEXT_REACTION_PREFIX}${reencoded}`;
+    } catch {
+      return null;
+    }
   }
 
   private overlayReactionPayload(

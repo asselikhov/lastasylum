@@ -160,6 +160,6 @@ internal fun FrameLayout.bindOverlayReactionTile(
             Gravity.TOP or Gravity.END,
         ),
     )
-    setOnClickListener { onPick() }
+    icon.setOnClickListener { onPick() }
     tag = icon
 }

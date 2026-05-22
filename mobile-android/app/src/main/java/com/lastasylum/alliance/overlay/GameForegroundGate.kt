@@ -762,8 +762,11 @@ object GameForegroundGate {
      */
     private const val RESUME_VS_RESUME_WINDOW_MS = 5 * 60 * 1000L
 
-    /** Окно [UsageStatsManager.queryEventsForPackage] — только события выбранного пакета. */
-    private const val PACKAGE_ONLY_EVENTS_WINDOW_MS = 8 * 60 * 1000L
+    /**
+     * Окно [UsageStatsManager.queryEventsForPackage]. Длинное окно (минуты) оставляло «в игре»
+     * после сворачивания: последний MOVE_TO_FOREGROUND игры оставался новее PAUSE.
+     */
+    private const val PACKAGE_ONLY_EVENTS_WINDOW_MS = 90_000L
 
     /**
      * Состояние «на экране» по хронологии событий одного пакета ([UsageStatsManager.queryEventsForPackage]).

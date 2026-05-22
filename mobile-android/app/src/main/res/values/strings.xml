@@ -679,8 +679,14 @@
     <string name="overlay_reaction_gif_cd">GIF</string>
     <string name="overlay_reactions_pick_hint">Тап по реакции — затем выберите получателя.</string>
     <string name="overlay_reactions_sub_animations">Анимации</string>
-    <string name="overlay_reactions_sub_memes">Мэмы</string>
+    <string name="overlay_reactions_sub_memes">Мемы</string>
     <string name="overlay_reactions_sub_stickers">Стикеры</string>
+    <string name="overlay_reactions_sub_text">Текст</string>
+    <string name="overlay_reactions_text_hint">Текст реакции (до 5 строк)</string>
+    <string name="overlay_reactions_text_send">Отправить</string>
+    <string name="overlay_reactions_text_empty">Введите текст реакции</string>
+    <string name="overlay_reactions_text_pick_hint">Введите текст и нажмите «Отправить», затем выберите получателя.</string>
+    <string name="overlay_reactions_text_cd">Текстовая реакция</string>
     <string name="overlay_reactions_sub_favorites">Избранное</string>
     <string name="overlay_reactions_favorites_empty">Нажмите ☆ на реакции, чтобы добавить в избранное</string>
     <string name="overlay_reaction_sticker_cd">Стикер</string>

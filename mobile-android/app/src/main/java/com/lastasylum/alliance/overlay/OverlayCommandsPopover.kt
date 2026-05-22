@@ -12,6 +12,7 @@ import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.os.Build
 import android.os.Handler
+import android.text.InputFilter
 import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
@@ -722,6 +723,10 @@ class OverlayCommandsPopover(
             context.getString(R.string.overlay_reactions_sub_stickers),
             selected = false,
         )
+        val reactionSubTextChip = choiceChip(
+            context.getString(R.string.overlay_reactions_sub_text),
+            selected = false,
+        )
         val reactionSubTabsInner = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -750,6 +755,7 @@ class OverlayCommandsPopover(
                 Tab(OverlayReactionCategory.ANIMATIONS, reactionSubAnimChip),
                 Tab(OverlayReactionCategory.MEMES, reactionSubMemeChip),
                 Tab(OverlayReactionCategory.STICKERS, reactionSubStickerChip),
+                Tab(OverlayReactionCategory.TEXT, reactionSubTextChip),
             )
             tabs.forEach { (cat, chip) ->
                 val sel = selectedReactionSubcategory == cat
@@ -772,35 +778,6 @@ class OverlayCommandsPopover(
                 }
             }
         }
-
-        rebuildReactionTiles = fun() {
-            val items = overlayReactionsForCategory(
-                selectedReactionSubcategory,
-                reactionFavorites,
-                context,
-            )
-            reactionTabEmpty.visibility =
-                if (items.isEmpty()) View.VISIBLE else View.GONE
-            reactionTilesAdapter?.submitList(items)
-            if (categories[selectedCategoryIndex].isReactions) {
-                startReactionStripPreviews()
-            }
-        }
-
-        fun selectReactionSubcategory(cat: OverlayReactionCategory) {
-            if (selectedReactionSubcategory == cat) return
-            selectedReactionSubcategory = cat
-            reopenReactionSubcategory = cat
-            if (cat == OverlayReactionCategory.STICKERS) {
-                OverlayReactionBitmapCache.preloadOverlayStickerPack(context)
-            }
-            refreshReactionSubTabs()
-            scheduleReactionTilesRebuild()
-        }
-
-        reactionSubAnimChip.setOnClickListener { selectReactionSubcategory(OverlayReactionCategory.ANIMATIONS) }
-        reactionSubMemeChip.setOnClickListener { selectReactionSubcategory(OverlayReactionCategory.MEMES) }
-        reactionSubStickerChip.setOnClickListener { selectReactionSubcategory(OverlayReactionCategory.STICKERS) }
 
         val reactionTilesRecycler = RecyclerView(context).apply {
             layoutManager = OverlayReactionTilesAdapter.gridLayoutManager(context, reactionGridColumns)
@@ -828,10 +805,68 @@ class OverlayCommandsPopover(
             OverlayReactionTilesAdapter.attachVisiblePreviewLifecycle(reactionTilesRecycler, adapter)
         }
 
+        val reactionTextInput = EditText(context).apply {
+            hint = context.getString(R.string.overlay_reactions_text_hint)
+            setTextColor(Color.parseColor("#FFF4F7FF"))
+            setHintTextColor(Color.parseColor("#7A90A4B8"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setBackgroundColor(Color.parseColor("#22182533"))
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            gravity = Gravity.TOP or Gravity.START
+            inputType = InputType.TYPE_CLASS_TEXT or
+                InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
+                InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            maxLines = OverlayReactionBurstLayout.TEXT_LINES_MAX
+            minLines = 2
+            filters = arrayOf(InputFilter.LengthFilter(OVERLAY_TEXT_REACTION_MAX_CHARS))
+        }
+        val reactionTextSend = choiceChip(
+            context.getString(R.string.overlay_reactions_text_send),
+            selected = true,
+        ).apply {
+            setOnClickListener {
+                val reactionId = encodeTextReactionId(reactionTextInput.text?.toString().orEmpty())
+                if (reactionId == null) {
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.overlay_reactions_text_empty),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    return@setOnClickListener
+                }
+                val wmUse = attachedWindowManager ?: return@setOnClickListener
+                reopenReactionSubcategory = OverlayReactionCategory.TEXT
+                stopHeartPreviewPulse()
+                showReactionRecipientPicker(wmUse, reactionId)
+            }
+        }
+        val reactionTextPanel = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            addView(
+                reactionTextInput,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dp(120),
+                ),
+            )
+            addView(
+                reactionTextSend,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply {
+                    topMargin = dp(8)
+                    gravity = Gravity.END
+                },
+            )
+        }
+
         listOf(
             reactionSubAnimChip,
             reactionSubMemeChip,
             reactionSubStickerChip,
+            reactionSubTextChip,
         ).forEach { chip ->
             reactionSubTabsInner.addView(
                 chip,
@@ -842,14 +877,19 @@ class OverlayCommandsPopover(
             )
         }
 
-        rebuildReactionTiles()
-
         val reactionGridScroll = ScrollView(context).apply {
             isFillViewport = false
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
             val wrap = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 addView(reactionTabEmpty)
+                addView(
+                    reactionTextPanel,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ),
+                )
                 addView(
                     reactionTilesRecycler,
                     LinearLayout.LayoutParams(
@@ -874,6 +914,56 @@ class OverlayCommandsPopover(
         ).apply {
             setPadding(0, 0, 0, dp(2))
         }
+
+        rebuildReactionTiles = fun() {
+            val isTextTab = selectedReactionSubcategory == OverlayReactionCategory.TEXT
+            reactionGridScroll.visibility = if (isTextTab) View.GONE else View.VISIBLE
+            reactionTextPanel.visibility = if (isTextTab) View.VISIBLE else View.GONE
+            reactionHintRow.text = context.getString(
+                if (isTextTab) {
+                    R.string.overlay_reactions_text_pick_hint
+                } else {
+                    R.string.overlay_reactions_pick_hint
+                },
+            )
+            if (isTextTab) {
+                reactionTabEmpty.visibility = View.GONE
+                stopReactionPreviewKeepAlive()
+                return
+            }
+            val items = overlayReactionsForCategory(
+                selectedReactionSubcategory,
+                reactionFavorites,
+                context,
+            )
+            reactionTabEmpty.visibility =
+                if (items.isEmpty()) View.VISIBLE else View.GONE
+            reactionTilesAdapter?.submitList(items)
+            if (categories[selectedCategoryIndex].isReactions) {
+                startReactionStripPreviews()
+            }
+        }
+
+        fun selectReactionSubcategory(cat: OverlayReactionCategory) {
+            if (selectedReactionSubcategory == cat) return
+            selectedReactionSubcategory = cat
+            reopenReactionSubcategory = cat
+            if (cat == OverlayReactionCategory.STICKERS) {
+                OverlayReactionBitmapCache.preloadOverlayStickerPack(context)
+            }
+            if (cat == OverlayReactionCategory.TEXT) {
+                stopReactionPreviewKeepAlive()
+            }
+            refreshReactionSubTabs()
+            scheduleReactionTilesRebuild()
+        }
+
+        reactionSubAnimChip.setOnClickListener { selectReactionSubcategory(OverlayReactionCategory.ANIMATIONS) }
+        reactionSubMemeChip.setOnClickListener { selectReactionSubcategory(OverlayReactionCategory.MEMES) }
+        reactionSubStickerChip.setOnClickListener { selectReactionSubcategory(OverlayReactionCategory.STICKERS) }
+        reactionSubTextChip.setOnClickListener { selectReactionSubcategory(OverlayReactionCategory.TEXT) }
+
+        rebuildReactionTiles()
 
         val reactionRow = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -1502,21 +1592,36 @@ class OverlayCommandsPopover(
             bold = true,
         )
         val reactionPreviewSize = dp(72)
-        val reactionPreview = createOverlayReactionTileIcon(
-            context,
-            selectedReaction,
-            playAnimatedPreview = true,
-        ).apply {
-            contentDescription = context.getString(R.string.overlay_reactions_recipient_preview_cd)
-            when (this) {
-                is LottieAnimationView -> {
-                    configureOverlayReactionLottie(this, playLoop = true)
-                    playAnimation()
-                }
-                else -> {
-                    val anim = drawable
-                    if (anim is android.graphics.drawable.Animatable && !anim.isRunning) {
-                        anim.start()
+        val textPreview = decodeTextReactionId(reactionId)
+        val reactionPreview: View = if (textPreview != null) {
+            TextView(context).apply {
+                text = textPreview
+                contentDescription = context.getString(R.string.overlay_reactions_recipient_preview_cd)
+                setTextColor(Color.parseColor("#FFFFF8F0"))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD)
+                gravity = Gravity.CENTER
+                maxLines = OverlayReactionBurstLayout.TEXT_LINES_MAX
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+            }
+        } else {
+            createOverlayReactionTileIcon(
+                context,
+                selectedReaction,
+                playAnimatedPreview = true,
+            ).apply {
+                contentDescription = context.getString(R.string.overlay_reactions_recipient_preview_cd)
+                when (this) {
+                    is LottieAnimationView -> {
+                        configureOverlayReactionLottie(this, playLoop = true)
+                        playAnimation()
+                    }
+                    else -> {
+                        val anim = drawable
+                        if (anim is android.graphics.drawable.Animatable && !anim.isRunning) {
+                            anim.start()
+                        }
                     }
                 }
             }
@@ -1525,7 +1630,15 @@ class OverlayCommandsPopover(
             setPadding(0, dp(8), 0, dp(4))
             addView(
                 reactionPreview,
-                FrameLayout.LayoutParams(reactionPreviewSize, reactionPreviewSize, Gravity.CENTER),
+                if (textPreview != null) {
+                    FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        Gravity.CENTER,
+                    )
+                } else {
+                    FrameLayout.LayoutParams(reactionPreviewSize, reactionPreviewSize, Gravity.CENTER)
+                },
             )
         }
         val loading = labelText(
