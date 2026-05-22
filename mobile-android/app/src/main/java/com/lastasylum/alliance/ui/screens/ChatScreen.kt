@@ -149,10 +149,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.data.chat.ChatAllianceIds
@@ -244,7 +241,6 @@ import com.lastasylum.alliance.ui.util.readClipboardPlainText
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -1339,7 +1335,7 @@ private fun ChatRoomsBar(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 private fun ChatComposer(
     draft: String,
@@ -1361,15 +1357,8 @@ private fun ChatComposer(
     var showMediaPanel by remember { mutableStateOf(false) }
     var showAttachmentsSheet by remember { mutableStateOf(false) }
     var showComposerPasteMenu by remember { mutableStateOf(false) }
-    var clipboardHasPaste by remember { mutableStateOf(false) }
+    val composerPasteInteraction = remember { MutableInteractionSource() }
     val context = LocalContext.current
-    val density = LocalDensity.current
-    val clipboardManager = remember(context) {
-        context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    }
-    fun refreshClipboardHasPaste() {
-        clipboardHasPaste = !readOnly && readClipboardPlainText(context) != null
-    }
     fun pasteFromClipboard() {
         val clip = readClipboardPlainText(context)
         if (clip.isNullOrBlank()) {
@@ -1383,11 +1372,11 @@ private fun ChatComposer(
         }
         showComposerPasteMenu = false
     }
-    DisposableEffect(clipboardManager, readOnly) {
-        val listener = ClipboardManager.OnPrimaryClipChangedListener { refreshClipboardHasPaste() }
-        clipboardManager.addPrimaryClipChangedListener(listener)
-        refreshClipboardHasPaste()
-        onDispose { clipboardManager.removePrimaryClipChangedListener(listener) }
+    fun onComposerLongPress() {
+        if (readOnly) return
+        if (readClipboardPlainText(context) != null) {
+            showComposerPasteMenu = true
+        }
     }
     val overlayUi = LocalOverlayUiMode.current
     val activityResultOwner = LocalActivityResultRegistryOwner.current
@@ -1427,6 +1416,12 @@ private fun ChatComposer(
     if (canHandleBack) {
         BackHandler(enabled = showAttachmentsSheet) {
             showAttachmentsSheet = false
+        }
+    }
+
+    if (canHandleBack) {
+        BackHandler(enabled = showComposerPasteMenu) {
+            showComposerPasteMenu = false
         }
     }
 
@@ -1733,13 +1728,39 @@ private fun ChatComposer(
                     }
                 }
 
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(0.dp),
                 ) {
+                    AnimatedVisibility(visible = showComposerPasteMenu) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 6.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Surface(
+                                onClick = { pasteFromClipboard() },
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.inverseSurface,
+                                shadowElevation = 4.dp,
+                                tonalElevation = 0.dp,
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.chat_composer_paste_label),
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.inverseOnSurface,
+                                )
+                            }
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(0.dp),
+                    ) {
                     Surface(
                         shape = RoundedCornerShape(28.dp),
                         color = SquadRelaySurfaces.panelColor(),
@@ -1786,37 +1807,7 @@ private fun ChatComposer(
                                     tint = MaterialTheme.colorScheme.primary,
                                 )
                             }
-                            if (clipboardHasPaste) {
-                                IconButton(
-                                    onClick = { pasteFromClipboard() },
-                                    enabled = !readOnly && !isSending,
-                                    modifier = Modifier.size(44.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.ContentPaste,
-                                        contentDescription = stringResource(R.string.chat_composer_paste_cd),
-                                        tint = MaterialTheme.colorScheme.primary,
-                                    )
-                                }
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .then(
-                                        if (readOnly) {
-                                            Modifier
-                                        } else {
-                                            Modifier.pointerInput(Unit) {
-                                                detectTapGestures(
-                                                    onLongPress = {
-                                                        refreshClipboardHasPaste()
-                                                        showComposerPasteMenu = true
-                                                    },
-                                                )
-                                            }
-                                        },
-                                    ),
-                            ) {
+                            Box(modifier = Modifier.weight(1f)) {
                                 TextField(
                                     value = draft,
                                     onValueChange = { if (!readOnly) onDraftChange(it) },
@@ -1825,13 +1816,32 @@ private fun ChatComposer(
                                         .focusRequester(focusRequester)
                                         .onFocusChanged { fc ->
                                             if (!readOnly && fc.isFocused) {
-                                                refreshClipboardHasPaste()
                                                 if (showMediaPanel) {
                                                     showMediaPanel = false
                                                     keyboard?.show()
                                                 }
+                                            } else if (!fc.isFocused) {
+                                                showComposerPasteMenu = false
                                             }
-                                        },
+                                        }
+                                        .then(
+                                            if (readOnly) {
+                                                Modifier
+                                            } else if (overlayUi) {
+                                                Modifier.combinedClickable(
+                                                    interactionSource = composerPasteInteraction,
+                                                    indication = null,
+                                                    onClick = { focusRequester.requestFocus() },
+                                                    onLongClick = { onComposerLongPress() },
+                                                )
+                                            } else {
+                                                Modifier.pointerInput(Unit) {
+                                                    detectTapGestures(
+                                                        onLongPress = { onComposerLongPress() },
+                                                    )
+                                                }
+                                            },
+                                        ),
                                     readOnly = readOnly,
                                     textStyle = MaterialTheme.typography.bodyMedium,
                                     placeholder = {
@@ -1859,31 +1869,6 @@ private fun ChatComposer(
                                     ),
                                     maxLines = 6,
                                 )
-                                if (showComposerPasteMenu) {
-                                    Popup(
-                                        alignment = Alignment.TopCenter,
-                                        offset = IntOffset(0, with(density) { 6.dp.roundToPx() }),
-                                        onDismissRequest = { showComposerPasteMenu = false },
-                                        properties = PopupProperties(focusable = true),
-                                    ) {
-                                        Surface(
-                                            shape = RoundedCornerShape(12.dp),
-                                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                            shadowElevation = 6.dp,
-                                            tonalElevation = 2.dp,
-                                        ) {
-                                            TextButton(onClick = { pasteFromClipboard() }) {
-                                                Icon(
-                                                    imageVector = Icons.Outlined.ContentPaste,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(18.dp),
-                                                )
-                                                Spacer(Modifier.width(8.dp))
-                                                Text(stringResource(R.string.chat_composer_paste_label))
-                                            }
-                                        }
-                                    }
-                                }
                             }
                             val canSend = sendEnabled &&
                                 !readOnly &&
@@ -1954,6 +1939,7 @@ private fun ChatComposer(
                             }
                         }
                     }
+                }
                 }
             }
 

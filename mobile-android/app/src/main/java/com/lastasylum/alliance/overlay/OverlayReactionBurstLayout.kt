@@ -6,8 +6,10 @@ import android.util.DisplayMetrics
 /**
  * Правила вёрстки входящей реакции (аудит: игра / размер / обрезка / фон / FPS).
  *
- * **Игра:** окно только [OverlayWindowLayout.reactionBurstWindowFlags] (NOT_TOUCHABLE, без NOT_TOUCH_MODAL),
- * корень [OverlayPassthroughMultitouchFrameLayout] — жесты уходят в игру.
+ * **Игра:** [OverlayWindowLayout.reactionBurstWindowFlags] + корень [OverlayReactionBurstTouchRoot]
+ * (всегда false в touch dispatch — запас, если OEM игнорирует NOT_TOUCHABLE).
+ *
+ * **Прозрачность:** [CONTENT_ALPHA] на Lottie/GIF/мем/стикер и подпись — лёгкая, как на «прозрачных» прошивках.
  *
  * **Размер:** доля экрана по ширине и высоте, чтобы не перекрывать HUD и не вылезать за safe area.
  *
@@ -15,9 +17,13 @@ import android.util.DisplayMetrics
  *
  * **Фон:** без Drawable у текстов и карточек; только тени.
  *
- * **Анимация:** Lottie в цикле + keep-alive (как в меню реакций), без fade alpha на контенте.
+ * **Анимация:** Lottie в цикле + keep-alive (как в меню реакций).
  */
 internal object OverlayReactionBurstLayout {
+    /** Лёгкая прозрачность контента вспышки на всех устройствах. */
+    const val CONTENT_ALPHA = 0.88f
+
+    const val CAPTION_ALPHA = 0.92f
     private const val WIDTH_FRACTION = 0.56f
     private const val HEIGHT_FRACTION = 0.28f
     private const val MAX_SIDE_DP = 280

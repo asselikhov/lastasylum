@@ -52,7 +52,7 @@ internal class OverlayReactionBurstPresenter(
 ) {
     private val queue = ArrayDeque<Pair<OverlayReactionBurstRequest, () -> Unit>>()
     private var showing = false
-    private var burstRoot: OverlayPassthroughMultitouchFrameLayout? = null
+    private var burstRoot: OverlayReactionBurstTouchRoot? = null
     private var burstLottie: LottieAnimationView? = null
     private var attachedWindowManager: WindowManager? = null
     private var hideBurstRunnable: Runnable? = null
@@ -103,7 +103,8 @@ internal class OverlayReactionBurstPresenter(
         lottie.repeatMode = LottieDrawable.RESTART
         lottie.enableMergePathsForKitKatAndAbove(true)
         lottie.setRenderMode(RenderMode.AUTOMATIC)
-        lottie.alpha = 1f
+        lottie.alpha = OverlayReactionBurstLayout.CONTENT_ALPHA
+        disableOverlayTouchTarget(lottie)
     }
 
     /** На части OEM Lottie в overlay замирает — перезапускаем, пока видна вспышка. */
@@ -157,10 +158,8 @@ internal class OverlayReactionBurstPresenter(
         val layout = OverlayReactionBurstLayout.metrics(context, dp)
         val animSide = OverlayReactionBurstLayout.animSideForReaction(reaction, layout, dp)
 
-        val root = OverlayPassthroughMultitouchFrameLayout(context).apply {
+        val root = OverlayReactionBurstTouchRoot(context).apply {
             setBackgroundColor(Color.TRANSPARENT)
-            isClickable = false
-            isFocusable = false
             clipChildren = false
             clipToPadding = false
         }
@@ -183,6 +182,8 @@ internal class OverlayReactionBurstPresenter(
             captionText,
         )
         val senderLine = TextView(context).apply {
+            disableOverlayTouchTarget(this)
+            alpha = OverlayReactionBurstLayout.CAPTION_ALPHA
             text = SpannableString(senderLineText).apply {
                 val parenStart = senderLineText.indexOf('(')
                 if (parenStart >= 0) {
@@ -290,6 +291,7 @@ internal class OverlayReactionBurstPresenter(
             OverlayWindowLayout.applyPopupLayoutCompat(this)
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             y = dp(OverlayReactionBurstLayout.WINDOW_TOP_Y_DP)
+            flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         }
 
         if (runCatching { windowManager.addView(root, params) }.isFailure) {
@@ -297,11 +299,16 @@ internal class OverlayReactionBurstPresenter(
             return
         }
         burstRoot = root
+        disableOverlayTouchTarget(root)
+        root.post {
+            params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            runCatching { windowManager.updateViewLayout(root, params) }
+        }
 
-        animView.alpha = 1f
+        animView.alpha = OverlayReactionBurstLayout.CONTENT_ALPHA
         animView.scaleX = 0.4f
         animView.scaleY = 0.4f
-        senderLine.alpha = 1f
+        senderLine.alpha = OverlayReactionBurstLayout.CAPTION_ALPHA
         senderLine.translationY = dp(6).toFloat()
 
         animView.post {
@@ -330,8 +337,8 @@ internal class OverlayReactionBurstPresenter(
             addListener(
                 object : AnimatorListenerAdapter() {
                     override fun onAnimationEnd(animation: Animator) {
-                        animView.alpha = 1f
-                        senderLine.alpha = 1f
+                        animView.alpha = OverlayReactionBurstLayout.CONTENT_ALPHA
+                        senderLine.alpha = OverlayReactionBurstLayout.CAPTION_ALPHA
                         ensureBurstLottiePlaying()
                         startBurstLottieKeepAlive()
                     }
@@ -424,7 +431,8 @@ internal class OverlayReactionBurstPresenter(
         ImageView(context).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             adjustViewBounds = true
-            alpha = 1f
+            alpha = OverlayReactionBurstLayout.CONTENT_ALPHA
+            disableOverlayTouchTarget(this)
             maxWidth = maxSidePx
             maxHeight = maxSidePx
         }
