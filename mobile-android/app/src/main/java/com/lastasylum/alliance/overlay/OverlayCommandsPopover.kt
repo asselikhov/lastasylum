@@ -7,8 +7,6 @@ import android.animation.ObjectAnimator
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
-import android.graphics.PorterDuff
-import android.graphics.PorterDuffColorFilter
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
@@ -17,14 +15,15 @@ import android.os.Handler
 import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.GridLayout
 import android.widget.ImageView
+import androidx.recyclerview.widget.RecyclerView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -35,10 +34,6 @@ import androidx.annotation.RawRes
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.graphics.drawable.DrawableCompat
 import com.airbnb.lottie.LottieAnimationView
-import com.airbnb.lottie.LottieDrawable
-import com.airbnb.lottie.LottieProperty
-import com.airbnb.lottie.model.KeyPath
-import com.airbnb.lottie.value.LottieValueCallback
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
@@ -71,7 +66,7 @@ class OverlayCommandsPopover(
     private var reopenReactionSubcategory = OverlayReactionCategory.ANIMATIONS
     private val reactionBurstPresenter = OverlayReactionBurstPresenter(context, mainHandler, dp)
     private var heartPreviewAnimator: Animator? = null
-    private var reactionPreviewLotties: List<LottieAnimationView> = emptyList()
+    private var reactionTilesAdapter: OverlayReactionTilesAdapter? = null
     private var reactionPreviewKeepAliveRunnable: Runnable? = null
     private var attachedWindowManager: WindowManager? = null
     /** Парные acquire/release: меню, picker, координаты, входящий burst. */
@@ -171,23 +166,44 @@ class OverlayCommandsPopover(
         runCatching { wm?.removeView(host) }
     }
 
+    /**
+     * Закрытие по scrim только при отпускании пальца вне [card].
+     * Иначе после пересборки сетки реакций (смена вкладки) UP уходит на scrim → [hide] и game gate снимает HUD.
+     */
+    private fun FrameLayout.setDismissOnOutsideCardTouch(card: View, onDismiss: () -> Unit) {
+        isClickable = true
+        setOnTouchListener { _, event ->
+            if (event.action != MotionEvent.ACTION_UP) return@setOnTouchListener true
+            val cardLoc = IntArray(2)
+            card.getLocationOnScreen(cardLoc)
+            val x = event.rawX
+            val y = event.rawY
+            val left = cardLoc[0].toFloat()
+            val top = cardLoc[1].toFloat()
+            val right = left + card.width
+            val bottom = top + card.height
+            if (x < left || x > right || y < top || y > bottom) {
+                onDismiss()
+            }
+            true
+        }
+    }
+
+    private fun View.consumeTouchesInSubtree() {
+        isClickable = true
+        setOnTouchListener { _, _ -> true }
+    }
+
     private fun stopReactionPreviewKeepAlive() {
         reactionPreviewKeepAliveRunnable?.let { mainHandler.removeCallbacks(it) }
         reactionPreviewKeepAliveRunnable = null
     }
 
-    private fun configureLoopingLottie(lottie: LottieAnimationView) {
-        lottie.repeatCount = LottieDrawable.INFINITE
-        lottie.repeatMode = LottieDrawable.RESTART
-        lottie.enableMergePathsForKitKatAndAbove(true)
-        lottie.setRenderMode(com.airbnb.lottie.RenderMode.SOFTWARE)
-    }
-
     /** Lottie в overlay-окнах на части OEM перестаёт крутиться — поднимаем снова, пока меню открыто. */
     private fun ensureReactionPreviewLottiesPlaying() {
-        reactionPreviewLotties.forEach { lottie ->
+        reactionTilesAdapter?.activePreviewLotties()?.forEach { lottie ->
             if (!lottie.isAttachedToWindow) return@forEach
-            configureLoopingLottie(lottie)
+            configureOverlayReactionLottie(lottie, playLoop = true)
             if (!lottie.isAnimating) {
                 lottie.playAnimation()
             }
@@ -200,90 +216,30 @@ class OverlayCommandsPopover(
             override fun run() {
                 if (menuScrim == null) return
                 ensureReactionPreviewLottiesPlaying()
-                mainHandler.postDelayed(this, 2_000L)
+                mainHandler.postDelayed(this, REACTION_PREVIEW_KEEP_ALIVE_MS)
             }
         }
         reactionPreviewKeepAliveRunnable = tick
-        mainHandler.postDelayed(tick, 2_000L)
+        mainHandler.postDelayed(tick, REACTION_PREVIEW_KEEP_ALIVE_MS)
     }
 
     private fun stopHeartPreviewPulse() {
         stopReactionPreviewKeepAlive()
         heartPreviewAnimator?.cancel()
         heartPreviewAnimator = null
-        reactionPreviewLotties.forEach { lottie ->
-            lottie.cancelAnimation()
-            lottie.progress = 0f
-        }
-    }
-
-    private fun applyLottieReactionTint(view: LottieAnimationView, tintHex: String) {
-        val color = Color.parseColor(tintHex)
-        view.addValueCallback(
-            KeyPath("**"),
-            LottieProperty.COLOR_FILTER,
-            LottieValueCallback(PorterDuffColorFilter(color, PorterDuff.Mode.SRC_ATOP)),
-        )
+        reactionTilesAdapter?.pauseAllPreviews()
     }
 
     private val reactionFavorites = OverlayReactionFavoritesStore(context)
 
-    private fun createReactionTileIcon(reaction: OverlayQuickReaction): View {
-        val stickerStem = reaction.stickerAssetStem
-        if (stickerStem != null) {
-            val bmp = loadStickerReactionBitmap(context, stickerStem)
-            if (bmp != null) {
-                return ImageView(context).apply {
-                    setImageBitmap(bmp)
-                    scaleType = ImageView.ScaleType.FIT_CENTER
-                }
-            }
-        }
-        reaction.gifDrawableRes?.let { gifRes ->
-            return ImageView(context).apply {
-                bindOverlayGif(context, gifRes)
-                scaleType = ImageView.ScaleType.FIT_CENTER
-            }
-        }
-        val memeRes = reaction.memeDrawableRes
-        if (memeRes != null) {
-            return ImageView(context).apply {
-                setImageDrawable(AppCompatResources.getDrawable(context, memeRes))
-                scaleType = ImageView.ScaleType.CENTER_CROP
-            }
-        }
-        val lottieRes = reaction.lottieRawRes
-        if (lottieRes != null) {
-            return LottieAnimationView(context).apply {
-                setAnimation(lottieRes)
-                reaction.lottieTintHex?.let { applyLottieReactionTint(this, it) }
-                scaleType = ImageView.ScaleType.CENTER_INSIDE
-                configureLoopingLottie(this)
-            }
-        }
-        return ImageView(context).apply {
-            setImageDrawable(
-                AppCompatResources.getDrawable(context, reaction.iconRes)?.mutate()?.also { d ->
-                    DrawableCompat.setTint(d, Color.parseColor(reaction.tintHex))
-                },
-            )
-            scaleType = ImageView.ScaleType.CENTER_INSIDE
-        }
-    }
-
     private fun startReactionStripPreviews() {
-        stopHeartPreviewPulse()
-        reactionPreviewLotties.forEach { lottie ->
-            configureLoopingLottie(lottie)
-            lottie.playAnimation()
-        }
         startReactionPreviewKeepAlive()
     }
 
     private fun startHeartPreviewPulse(target: View) {
         stopHeartPreviewPulse()
         if (target is LottieAnimationView) {
-            configureLoopingLottie(target)
+            configureOverlayReactionLottie(target, playLoop = true)
             target.playAnimation()
             return
         }
@@ -739,10 +695,7 @@ class OverlayCommandsPopover(
         val reactionTileSize = dp(52)
         val reactionIconInner = dp(42)
         val reactionGridColumns = 5
-
-        val reactionTilesGrid = GridLayout(context).apply {
-            columnCount = reactionGridColumns
-        }
+        val reactionCellMargin = dp(3)
 
         fun reactionSubChipBackground(selected: Boolean): GradientDrawable =
             GradientDrawable().apply {
@@ -808,77 +761,26 @@ class OverlayCommandsPopover(
 
         lateinit var rebuildReactionTiles: () -> Unit
 
-        fun attachFavoriteStar(host: FrameLayout, reactionId: String) {
-            val star = TextView(context).apply {
-                text = if (reactionFavorites.isFavorite(reactionId)) "★" else "☆"
-                setTextColor(Color.parseColor("#FFFFB74D"))
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-                setPadding(dp(3), 0, dp(3), 0)
-                isClickable = true
-                setOnClickListener {
-                    reactionFavorites.toggleFavorite(reactionId)
-                    text = if (reactionFavorites.isFavorite(reactionId)) "★" else "☆"
+        fun scheduleReactionTilesRebuild() {
+            surfaceTransitionDepth++
+            mainHandler.post {
+                try {
+                    if (menuScrim == null) return@post
                     rebuildReactionTiles()
+                } finally {
+                    surfaceTransitionDepth = (surfaceTransitionDepth - 1).coerceAtLeast(0)
                 }
             }
-            host.addView(
-                star,
-                FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    Gravity.TOP or Gravity.END,
-                ),
-            )
         }
 
         rebuildReactionTiles = fun() {
-            reactionTilesGrid.removeAllViews()
-            val previewBuilder = mutableListOf<LottieAnimationView>()
             val items = overlayReactionsForCategory(
                 selectedReactionSubcategory,
                 reactionFavorites,
             )
             reactionTabEmpty.visibility =
                 if (items.isEmpty()) View.VISIBLE else View.GONE
-            items.forEachIndexed { index, reaction ->
-                val icon = createReactionTileIcon(reaction).apply {
-                    contentDescription = context.getString(reaction.labelRes)
-                }
-                if (icon is LottieAnimationView) previewBuilder.add(icon)
-                val host = FrameLayout(context).apply {
-                    background = rippleOn(
-                        GradientDrawable().apply {
-                            shape = GradientDrawable.RECTANGLE
-                            cornerRadius = dp(12).toFloat()
-                            setColor(Color.parseColor("#33182533"))
-                            setStroke(dp(1).coerceAtLeast(1), Color.parseColor("#33445566"))
-                        },
-                    )
-                    isClickable = true
-                    addView(
-                        icon,
-                        FrameLayout.LayoutParams(reactionIconInner, reactionIconInner, Gravity.CENTER),
-                    )
-                    attachFavoriteStar(this, reaction.id)
-                    setOnClickListener {
-                        val wmUse = attachedWindowManager ?: return@setOnClickListener
-                        reopenReactionSubcategory = selectedReactionSubcategory
-                        stopHeartPreviewPulse()
-                        showReactionRecipientPicker(wmUse, reaction.id)
-                    }
-                }
-                val col = index % reactionGridColumns
-                val row = index / reactionGridColumns
-                val cell = GridLayout.LayoutParams().apply {
-                    width = reactionTileSize
-                    height = reactionTileSize
-                    columnSpec = GridLayout.spec(col)
-                    rowSpec = GridLayout.spec(row)
-                    setMargins(dp(3), dp(3), dp(3), dp(3))
-                }
-                reactionTilesGrid.addView(host, cell)
-            }
-            reactionPreviewLotties = previewBuilder
+            reactionTilesAdapter?.submitList(items)
             if (categories[selectedCategoryIndex].isReactions) {
                 startReactionStripPreviews()
             }
@@ -887,13 +789,37 @@ class OverlayCommandsPopover(
         fun selectReactionSubcategory(cat: OverlayReactionCategory) {
             if (selectedReactionSubcategory == cat) return
             selectedReactionSubcategory = cat
+            reopenReactionSubcategory = cat
             refreshReactionSubTabs()
-            rebuildReactionTiles()
+            scheduleReactionTilesRebuild()
         }
 
         reactionSubAnimChip.setOnClickListener { selectReactionSubcategory(OverlayReactionCategory.ANIMATIONS) }
         reactionSubMemeChip.setOnClickListener { selectReactionSubcategory(OverlayReactionCategory.MEMES) }
         reactionSubStickerChip.setOnClickListener { selectReactionSubcategory(OverlayReactionCategory.STICKERS) }
+
+        val reactionTilesRecycler = RecyclerView(context).apply {
+            layoutManager = OverlayReactionTilesAdapter.gridLayoutManager(context, reactionGridColumns)
+            itemAnimator = null
+            isNestedScrollingEnabled = true
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            setHasFixedSize(false)
+        }
+        reactionTilesAdapter = OverlayReactionTilesAdapter(
+            context = context,
+            tileSizePx = reactionTileSize,
+            iconInnerPx = reactionIconInner,
+            cellMarginPx = reactionCellMargin,
+            favorites = reactionFavorites,
+            onPick = { reaction ->
+                val wmUse = attachedWindowManager ?: return@OverlayReactionTilesAdapter
+                reopenReactionSubcategory = selectedReactionSubcategory
+                stopHeartPreviewPulse()
+                showReactionRecipientPicker(wmUse, reaction.id)
+            },
+            onFavoritesChanged = { scheduleReactionTilesRebuild() },
+        )
+        reactionTilesRecycler.adapter = reactionTilesAdapter
 
         listOf(
             reactionSubAnimChip,
@@ -918,7 +844,7 @@ class OverlayCommandsPopover(
                 orientation = LinearLayout.VERTICAL
                 addView(reactionTabEmpty)
                 addView(
-                    reactionTilesGrid,
+                    reactionTilesRecycler,
                     LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -1200,13 +1126,12 @@ class OverlayCommandsPopover(
             )
             addView(tabsRow)
             addView(bodyColumn)
-            setOnClickListener { }
+            consumeTouchesInSubtree()
         }
 
         val scrim = FrameLayout(context).apply {
             setBackgroundColor(Color.argb(110, 4, 8, 16))
-            isClickable = true
-            setOnClickListener { hide() }
+            setDismissOnOutsideCardTouch(card) { hide() }
         }
 
         scrim.addView(
@@ -1373,13 +1298,12 @@ class OverlayCommandsPopover(
                 },
             )
             addView(body)
-            setOnClickListener { }
+            consumeTouchesInSubtree()
         }
 
         val scrim = FrameLayout(context).apply {
             setBackgroundColor(Color.argb(100, 0, 0, 0))
-            isClickable = true
-            setOnClickListener {
+            setDismissOnOutsideCardTouch(card) {
                 hideKeyboard(editX)
                 hideKeyboard(editY)
                 hideCoordOnly()
@@ -1570,11 +1494,15 @@ class OverlayCommandsPopover(
             bold = true,
         )
         val reactionPreviewSize = dp(72)
-        val reactionPreview = createReactionTileIcon(selectedReaction).apply {
+        val reactionPreview = createOverlayReactionTileIcon(
+            context,
+            selectedReaction,
+            playAnimatedPreview = true,
+        ).apply {
             contentDescription = context.getString(R.string.overlay_reactions_recipient_preview_cd)
             when (this) {
                 is LottieAnimationView -> {
-                    configureLoopingLottie(this)
+                    configureOverlayReactionLottie(this, playLoop = true)
                     playAnimation()
                 }
                 is ImageView -> {
@@ -1654,13 +1582,12 @@ class OverlayCommandsPopover(
                     dp(320),
                 ),
             )
-            setOnClickListener { }
+            consumeTouchesInSubtree()
         }
 
         val scrim = FrameLayout(context).apply {
             setBackgroundColor(Color.argb(110, 4, 8, 16))
-            isClickable = true
-            setOnClickListener { hideReactionPickOnly() }
+            setDismissOnOutsideCardTouch(card) { hideReactionPickOnly() }
         }
         val cardW = minOf(dp(340), context.resources.displayMetrics.widthPixels - dp(16))
         scrim.addView(
@@ -1794,5 +1721,10 @@ class OverlayCommandsPopover(
     private fun showKeyboard(edit: EditText) {
         val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager ?: return
         imm.showSoftInput(edit, InputMethodManager.SHOW_IMPLICIT)
+    }
+
+    private companion object {
+        /** Реже будить Lottie-превью — на главном потоке только до [MAX_REACTION_LOTTIE_PREVIEWS_PLAYING] штук. */
+        const val REACTION_PREVIEW_KEEP_ALIVE_MS = 5_000L
     }
 }

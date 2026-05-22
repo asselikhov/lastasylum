@@ -88,8 +88,9 @@ fun PostAuthLaunchSplash(
         warmup()
         warmupDone = true
         val elapsed = System.currentTimeMillis() - startedAt
-        if (elapsed < LAUNCH_SPLASH_MIN_MS) {
-            delay(LAUNCH_SPLASH_MIN_MS - elapsed)
+        val minMs = if (reduceMotion) 0L else LAUNCH_SPLASH_MIN_MS
+        if (elapsed < minMs) {
+            delay(minMs - elapsed)
         }
     }
 
@@ -181,7 +182,7 @@ private fun LaunchSplashContent(
                     scaleY = pulse
                     alpha = shimmer
                 }
-                .blur(52.dp),
+                .blur(if (reduceMotion) 0.dp else 16.dp),
         ) {
             Canvas(Modifier.fillMaxSize()) {
                 drawCircle(
@@ -254,8 +255,8 @@ private fun LaunchSplashContent(
     }
 }
 
-/** Минимальное время splash, чтобы анимация не мелькала. */
-const val LAUNCH_SPLASH_MIN_MS = 900L
+/** Минимальное время splash, чтобы анимация не мелькала (без reduce motion). */
+const val LAUNCH_SPLASH_MIN_MS = 450L
 
 /** @deprecated Используйте [LAUNCH_SPLASH_MIN_MS]; оставлено для совместимости. */
 const val LAUNCH_SPLASH_MS = LAUNCH_SPLASH_MIN_MS

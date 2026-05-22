@@ -719,7 +719,7 @@ object GameForegroundGate {
 
     /** Кэш RESUME: дольше в стабильной сессии — меньше queryEvents на IO потоке оверлея. */
     private const val FOREGROUND_CACHE_MS = 4_000L
-    private const val FULL_HEURISTIC_CACHE_MS = 3_500L
+    private const val FULL_HEURISTIC_CACHE_MS = 4_500L
 
     private const val OVERLAY_USAGE_ACCESS_CACHE_MS = 5_000L
 

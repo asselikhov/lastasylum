@@ -102,7 +102,7 @@ internal class OverlayReactionBurstPresenter(
         lottie.repeatCount = LottieDrawable.INFINITE
         lottie.repeatMode = LottieDrawable.RESTART
         lottie.enableMergePathsForKitKatAndAbove(true)
-        lottie.setRenderMode(RenderMode.SOFTWARE)
+        lottie.setRenderMode(RenderMode.AUTOMATIC)
         lottie.alpha = 1f
     }
 

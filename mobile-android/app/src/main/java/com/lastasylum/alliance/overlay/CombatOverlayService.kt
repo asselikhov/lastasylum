@@ -76,6 +76,7 @@ import com.google.android.material.color.MaterialColors
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.data.chat.OverlayReactionEvent
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.data.auth.JwtAccessTokenClaims
@@ -764,7 +765,7 @@ class CombatOverlayService : Service() {
         }
         stripBuffer.prune()
         if (before != stripBuffer.visibleForPreview().size) {
-            lastStripRenderSignature = null
+            lastStripRenderSignature = 0
             scheduleRefreshOverlayChatStrip()
         }
         scheduleStripTick()
@@ -784,7 +785,7 @@ class CombatOverlayService : Service() {
 
     /** Throttle для Log при «панель скрыта» — не дёргаем FGS-текст при каждом тике гейта. */
     private var gateNotifyKey: String = ""
-    private var lastStripRenderSignature: String? = null
+    private var lastStripRenderSignature: Int = 0
     private var lastAppliedGateShouldShow: Boolean? = null
     private var stableGatePollTicks = 0
     @Volatile
@@ -1216,13 +1217,16 @@ class CombatOverlayService : Service() {
                         preferredForegroundPackage = lastForegroundHintPkg,
                     )
                 }
-                val forceResumeRefresh = hasUsageAccess && targets.isNotEmpty() && when {
-                    quickProbe == GameForegroundGate.QuickForegroundProbe.NEED_FULL_HEURISTICS -> true
-                    quickProbe == null -> false
-                    !stableInGameUi -> true
-                    stableGatePollTicks % 5 == 0 -> true
-                    else -> false
-                }
+                val popoverUiActive = overlayCommandsPopover.isBlockingGameGateDismiss()
+                val forceResumeRefresh = hasUsageAccess && targets.isNotEmpty() &&
+                    !popoverUiActive &&
+                    when {
+                        quickProbe == GameForegroundGate.QuickForegroundProbe.NEED_FULL_HEURISTICS -> true
+                        quickProbe == null -> false
+                        !stableInGameUi -> true
+                        stableGatePollTicks % 5 == 0 -> true
+                        else -> false
+                    }
                 val resumeComp = if (hasUsageAccess && targets.isNotEmpty()) {
                     runCatching {
                         GameForegroundGate.lastResumedComponent(
@@ -1301,9 +1305,10 @@ class CombatOverlayService : Service() {
                         OverlayChatInteractionHold.isGameForegroundGateSuppressed() -> true
                         else -> false
                     }
+                    val popoverBlocksDismiss = overlayCommandsPopover.isBlockingGameGateDismiss()
                     val stableShowInGameOverlayUi = resolveStableOverlayUiVisible(
                         probeShow = shouldShowInGameOverlayUi,
-                        forceHideNow = conflictingForeground,
+                        forceHideNow = conflictingForeground && !popoverBlocksDismiss,
                     )
                     val diagNowMs = System.currentTimeMillis()
                     if (diagNowMs - lastGateDiagLogMs >= 25_000L) {
@@ -1352,6 +1357,12 @@ class CombatOverlayService : Service() {
     }
 
     private fun nextGameGateDelayMs(): Long {
+        if (overlayCommandsPopover.isBlockingGameGateDismiss() ||
+            overlayChatTeamPanelVisible ||
+            OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible
+        ) {
+            return GAME_GATE_POLL_MODAL_UI_MS
+        }
         if (!isInGameOverlayUiActive()) return GAME_GATE_POLL_IDLE_MS
         if (isOverlayShellActive() &&
             stableGatePollTicks >= GATE_STABLE_TICKS_FOR_SLOW_POLL
@@ -1359,9 +1370,6 @@ class CombatOverlayService : Service() {
             return GAME_GATE_POLL_STABLE_MS
         }
         if (isOverlayShellActive()) return GAME_GATE_POLL_ACTIVE_MS
-        if (overlayChatTeamPanelVisible || OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible) {
-            return GAME_GATE_POLL_ACTIVE_MS
-        }
         return GAME_GATE_POLL_IDLE_MS
     }
 
@@ -1390,7 +1398,11 @@ class CombatOverlayService : Service() {
         hudRefreshJob = serviceScope.launch(Dispatchers.IO) {
             try {
                 val container = AppContainer.from(this@CombatOverlayService)
-                val rooms = runCatching { container.chatRepository.listRooms().getOrNull() }.getOrNull()
+                val cachedRooms = ChatSessionCache.getFreshRooms()
+                val rooms = cachedRooms
+                    ?: runCatching { container.chatRepository.listRooms().getOrNull() }.getOrNull()?.also {
+                        ChatSessionCache.update(it)
+                    }
                 rooms?.let { list ->
                     cachedAllianceHubRoomId = OverlayGameStatusHudRefresh.allianceHubRoom(list)?.id
                     com.lastasylum.alliance.data.chat.ChatSessionCache.update(list)
@@ -1980,7 +1992,7 @@ class CombatOverlayService : Service() {
         OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
         OverlayChatInteractionHold.clearStaleSuppressForGameBackground(
             chatTeamPanelVisible = false,
-            commandsPopoverShowing = false,
+            commandsPopoverShowing = overlayCommandsPopover.isBlockingGameGateDismiss(),
         )
         resumeOverlayWindowsAfterSystemActivity()
         if (overlayChatTeamPanelVisible || OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible) {
@@ -2234,7 +2246,7 @@ class CombatOverlayService : Service() {
         }
         val key = msg._id?.takeIf { it.isNotBlank() } ?: msg.stableKey()
         stripBuffer.removeMessageWithKey(key)
-        lastStripRenderSignature = null
+        lastStripRenderSignature = 0
         // Сразу снимаем зоны крестика, пока Compose не пересчитал ленту — иначе один кадр с «призрачными» rect блокирует игру.
         updateStripDismissScreenRects(emptyList())
         refreshOverlayChatStrip()
@@ -2319,14 +2331,24 @@ class CombatOverlayService : Service() {
 
     private fun refreshOverlayChatStrip() = scheduleRefreshOverlayChatStrip()
 
+    private fun overlayStripPreviewSignature(preview: List<ChatMessage>): Int {
+        var h = 17
+        h = 31 * h + preview.size
+        for (msg in preview) {
+            val key = msg._id?.takeIf { it.isNotBlank() } ?: msg.stableKey()
+            h = 31 * h + key.hashCode()
+            h = 31 * h + msg.text.length
+            h = 31 * h + msg.senderRole.hashCode()
+            h = 31 * h + msg.senderId.hashCode()
+            h = 31 * h + msg.chatImageAttachments().size
+        }
+        return h
+    }
+
     private fun refreshOverlayChatStripNow() {
         stripBuffer.prune()
         val preview = stripBuffer.visibleForPreview()
-        val signature = preview.joinToString(separator = "|") { msg ->
-            val key = msg._id?.takeIf { it.isNotBlank() } ?: msg.stableKey()
-            val imageCount = msg.chatImageAttachments().size
-            "$key:${msg.text.length}:${msg.senderRole}:${msg.senderId}:$imageCount"
-        }
+        val signature = overlayStripPreviewSignature(preview)
         if (signature == lastStripRenderSignature) {
             ensureStripWindowVisibleForRaidTraffic()
             return
@@ -2334,7 +2356,7 @@ class CombatOverlayService : Service() {
         if (BuildConfig.DEBUG) {
             Log.d(
                 OVERLAY_DIAG_TAG,
-                "stripRefresh apply preview=${preview.size} sigLen=${signature.length}",
+                "stripRefresh apply preview=${preview.size} sig=$signature",
             )
         }
         chatStripPreviewFlow.value = preview
@@ -2489,7 +2511,7 @@ class CombatOverlayService : Service() {
         }
         stripBuffer.upsert(normalized)
         stripBuffer.mergeReceiveTimeline(normalized, jwtSubFromAccessToken())
-        lastStripRenderSignature = null
+        lastStripRenderSignature = 0
         if (refreshNow) {
             refreshOverlayChatStripNow()
         } else {
@@ -2539,7 +2561,7 @@ class CombatOverlayService : Service() {
         )
         stripBuffer.clear()
         stripBuffer.upsert(notice)
-        lastStripRenderSignature = null
+        lastStripRenderSignature = 0
         refreshOverlayChatStripNow()
         ensureStripWindowVisibleForRaidTraffic()
     }
@@ -2844,7 +2866,7 @@ class CombatOverlayService : Service() {
             if (!cachedHistory.isNullOrEmpty()) {
                 mainHandler.post {
                     stripBuffer.seedFromHistory(cachedHistory.take(OVERLAY_HISTORY_LOAD))
-                    lastStripRenderSignature = null
+                    lastStripRenderSignature = 0
                     refreshOverlayChatStripNow()
                 }
             }
@@ -2853,7 +2875,7 @@ class CombatOverlayService : Service() {
                     com.lastasylum.alliance.data.chat.ChatSessionCache.updateMessages(raidId, loaded)
                     mainHandler.post {
                         stripBuffer.seedFromHistory(loaded)
-                        lastStripRenderSignature = null
+                        lastStripRenderSignature = 0
                         refreshOverlayChatStripNow()
                     }
                 }
@@ -2882,7 +2904,7 @@ class CombatOverlayService : Service() {
             hideOverlayChatTeamPanel()
         }
         stripBuffer.clear()
-        lastStripRenderSignature = null
+        lastStripRenderSignature = 0
         overlayMessageListener?.let { listener ->
             runCatching {
                 AppContainer.from(applicationContext).chatRepository.removeOverlayMessageListener(listener)
@@ -2970,7 +2992,7 @@ class CombatOverlayService : Service() {
             syncChatStripWindowTouchPassthrough()
             if (clearStrip) {
                 stripBuffer.clear()
-                lastStripRenderSignature = null
+                lastStripRenderSignature = 0
             }
         }
         overlayChatTeamRoot?.let { hideOverlayIme(it) }
@@ -3487,7 +3509,7 @@ class CombatOverlayService : Service() {
         }
         OverlayChatInteractionHold.clearStaleSuppressForGameBackground(
             chatTeamPanelVisible = false,
-            commandsPopoverShowing = false,
+            commandsPopoverShowing = overlayCommandsPopover.isBlockingGameGateDismiss(),
         )
         resumeOverlayWindowsAfterSystemActivity()
         overlayVoiceController.resetSession()
@@ -3522,7 +3544,9 @@ class CombatOverlayService : Service() {
         /** Лента на экране — отзывчивый гейт. */
         private const val GAME_GATE_POLL_ACTIVE_MS = 1_200L
         /** Стабильно «в игре» — реже тяжёлых проверок usage stats. */
-        private const val GAME_GATE_POLL_STABLE_MS = 2_500L
+        private const val GAME_GATE_POLL_STABLE_MS = 3_500L
+        /** Меню команд/реакций или полноэкранный оверлей-чат — редкий опрос usage stats. */
+        private const val GAME_GATE_POLL_MODAL_UI_MS = 5_000L
         /** Недавно были в игре / открыт чат — чаще, чем в простое. */
         private const val GAME_GATE_POLL_WARM_MS = 1_800L
         /** FGS включён, оверлей скрыт: редкий опрос usage stats. */

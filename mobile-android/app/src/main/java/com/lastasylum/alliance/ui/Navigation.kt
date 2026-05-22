@@ -64,6 +64,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.compose.foundation.BorderStroke
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.components.AtmosphericBackground
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
@@ -113,9 +114,9 @@ fun AppNavigation(
         factory = chatViewModelFactory,
     )
     LaunchedEffect(Unit) {
-        val roomsReady = chatViewModel.state.value.rooms.isNotEmpty() &&
-            !chatViewModel.state.value.isRoomsLoading
-        if (!roomsReady) {
+        if (ChatSessionCache.getFreshRooms() != null) return@LaunchedEffect
+        val s = chatViewModel.state.value
+        if (s.rooms.isEmpty() && !s.isRoomsLoading) {
             chatViewModel.refreshChat()
         }
     }
