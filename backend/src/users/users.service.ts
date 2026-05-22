@@ -585,11 +585,7 @@ export class UsersService implements OnModuleInit {
     const staleBefore = new Date(
       Date.now() - UsersService.EXCAVATION_PUSH_INGAME_FRESH_MS,
     );
-    const filter: Record<string, unknown> = {
-      membershipStatus: TeamMembershipStatus.ACTIVE,
-      _id: { $ne: new Types.ObjectId(excludeUserId) },
-      pushFcmTokens: { $exists: true, $ne: [] },
-      excavationPushEnabled: { $ne: false },
+    const presenceEligible = {
       $or: [
         { presenceStatus: { $ne: 'ingame' } },
         { presenceStatus: null },
@@ -597,10 +593,27 @@ export class UsersService implements OnModuleInit {
         { lastPresenceAt: { $lt: staleBefore } },
       ],
     };
+    const filter: Record<string, unknown> = {
+      membershipStatus: TeamMembershipStatus.ACTIVE,
+      _id: { $ne: new Types.ObjectId(excludeUserId) },
+      pushFcmTokens: { $exists: true, $ne: [] },
+      excavationPushEnabled: { $ne: false },
+      ...presenceEligible,
+    };
     if (allianceId.startsWith('pt:')) {
       const teamId = allianceId.slice(3);
       if (!Types.ObjectId.isValid(teamId)) return [];
-      filter.playerTeamId = new Types.ObjectId(teamId);
+      const teamOid = new Types.ObjectId(teamId);
+      filter.$and = [
+        presenceEligible,
+        {
+          $or: [
+            { playerTeamId: teamOid },
+            { 'gameIdentities.playerTeamId': teamOid },
+          ],
+        },
+      ];
+      delete filter.$or;
     } else {
       filter.allianceName = allianceId;
     }

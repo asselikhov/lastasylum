@@ -200,7 +200,7 @@ internal class OverlayReactionBurstPresenter(
             addView(
                 caption,
                 LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    layout.maxTextWidthPx,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                 ),
             )
@@ -222,7 +222,7 @@ internal class OverlayReactionBurstPresenter(
                 FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.WRAP_CONTENT,
                     FrameLayout.LayoutParams.WRAP_CONTENT,
-                    Gravity.CENTER,
+                    Gravity.CENTER_HORIZONTAL,
                 ),
             )
         }
@@ -254,11 +254,17 @@ internal class OverlayReactionBurstPresenter(
             clipToPadding = false
             isClickable = false
             setBackgroundColor(Color.TRANSPARENT)
-            addView(animHost)
+            addView(
+                animHost,
+                LinearLayout.LayoutParams(
+                    layout.maxTextWidthPx,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
             addView(
                 textBlock,
                 LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    layout.maxTextWidthPx,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                 ).apply { topMargin = dp(8) },
             )

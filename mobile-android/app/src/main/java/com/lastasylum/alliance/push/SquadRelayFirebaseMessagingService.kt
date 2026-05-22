@@ -33,8 +33,11 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
             if (!prefs.isExcavationPushEnabled()) {
                 return
             }
-            // В игре с HUD/лентой сообщение приходит по сокету; push только вне боя.
-            if (CombatOverlayService.inGameOverlayUiActive.value) {
+            // В игре с видимым оверлеем — сокет/лента; push показываем вне боя и при скрытом оверлее.
+            val overlayActiveInGame =
+                CombatOverlayService.inGameOverlayUiActive.value &&
+                    CombatOverlayService.overlayVisible.value
+            if (overlayActiveInGame) {
                 return
             }
             val title = message.data["title"]

@@ -1675,6 +1675,7 @@ class CombatOverlayService : Service() {
         if (overlayChatTeamPanelVisible) return
         val manager = windowManager ?: systemWindowManager() ?: return
         if (overlayStatusHudHost != null) return
+        prefetchOverlayRaidRoomForStrip()
 
         val owner = overlayStatusHudComposeOwner
             ?: OverlayChatComposeOwner().also { overlayStatusHudComposeOwner = it }
@@ -2363,15 +2364,17 @@ class CombatOverlayService : Service() {
         return id
     }
 
-    private fun overlayRaidRoomIdsFromCache(): Set<String> {
-        val ids = LinkedHashSet<String>()
-        resolveOverlayRaidRoomId()?.let { ids.add(it) }
-        val rooms = com.lastasylum.alliance.data.chat.ChatSessionCache.getFreshRooms() ?: return ids
-        rooms.filter { com.lastasylum.alliance.data.chat.ChatRaidRoomSync.isAllianceRaidRoom(it) }
-            .mapNotNull { it.id.trim().takeIf { id -> id.isNotEmpty() } }
-            .forEach { ids.add(it) }
-        return ids
+    private fun onOverlayRaidRoomIdResolved(roomId: String) {
+        AppContainer.from(this).chatRoomPreferences.setRaidRoomId(roomId)
+        syncOverlayRaidRoomSubscription()
     }
+
+    private fun shouldIngestForRaidStrip(msg: ChatMessage): Boolean =
+        OverlayRaidStripRouting.acceptsRaidStripMessage(
+            msg,
+            resolveOverlayRaidRoomId(),
+            ::onOverlayRaidRoomIdResolved,
+        )
 
     private fun normalizeStripRaidMessage(msg: ChatMessage, raidId: String?): ChatMessage {
         val raid = raidId?.trim().orEmpty()
@@ -2386,18 +2389,17 @@ class CombatOverlayService : Service() {
             mainHandler.post { ingestOverlayRaidMessage(msg, refreshNow) }
             return
         }
-        val raidId = resolveOverlayRaidRoomId()
-        val raidIds = overlayRaidRoomIdsFromCache()
-        val normalized = normalizeStripRaidMessage(msg, raidId)
-        if (!OverlayStripMessageRouter.isOverlayRaidRoomMessage(normalized, raidId, raidIds)) {
-            if (BuildConfig.DEBUG && normalized.roomId.isNotBlank()) {
+        if (!shouldIngestForRaidStrip(msg)) {
+            if (BuildConfig.DEBUG && msg.roomId.isNotBlank()) {
                 Log.d(
                     OVERLAY_DIAG_TAG,
-                    "stripSkip room=${normalized.roomId} raid=$raidId id=${normalized._id}",
+                    "stripSkip room=${msg.roomId} raid=${resolveOverlayRaidRoomId()} id=${msg._id}",
                 )
             }
             return
         }
+        val raidId = resolveOverlayRaidRoomId()
+        val normalized = normalizeStripRaidMessage(msg, raidId)
         if (BuildConfig.DEBUG) {
             Log.d(
                 OVERLAY_DIAG_TAG,
@@ -2620,6 +2622,20 @@ class CombatOverlayService : Service() {
         AppContainer.from(this).chatRepository.refreshOverlayRealtimeSubscriptions()
     }
 
+    /** Подтянуть id «Рейд» до первого сообщения в ленту (оверлей мог стартовать без вкладки «Чат»). */
+    private fun prefetchOverlayRaidRoomForStrip() {
+        serviceScope.launch {
+            val container = AppContainer.from(this@CombatOverlayService)
+            val cached = com.lastasylum.alliance.data.chat.ChatSessionCache.getFreshRooms()
+            val rooms = cached ?: container.chatRepository.listRooms().getOrNull() ?: return@launch
+            if (cached == null) {
+                com.lastasylum.alliance.data.chat.ChatSessionCache.update(rooms)
+            }
+            container.chatRepository.applyOverlayRoomsFromRooms(rooms)
+            mainHandler.post { syncOverlayRaidRoomSubscription() }
+        }
+    }
+
     private fun beginOverlayChatSubscription() {
         if (overlayMessageListener != null) {
             syncOverlayRaidRoomSubscription()
@@ -2646,28 +2662,21 @@ class CombatOverlayService : Service() {
         overlayReactionListener = reactionListener
         val listener: (ChatMessage) -> Unit = listener@{ msg ->
             mainHandler.post {
-                if (!overlaySessionActive) return@post
-                val raidId = resolveOverlayRaidRoomId()
-                val raidIds = overlayRaidRoomIdsFromCache()
-                val normalized = normalizeStripRaidMessage(msg, raidId)
+                if (!overlaySessionActive && !isInGameOverlayUiActive()) return@post
                 val hubId = cachedAllianceHubRoomId
-                val isRaid = OverlayStripMessageRouter.isOverlayRaidRoomMessage(
-                    normalized,
-                    raidId,
-                    raidIds,
-                )
-                val isHub = !hubId.isNullOrBlank() && normalized.roomId.trim() == hubId.trim()
+                val isHub = !hubId.isNullOrBlank() && msg.roomId.trim() == hubId.trim()
+                val isRaid = shouldIngestForRaidStrip(msg)
                 if (!isRaid && !isHub) {
-                    if (BuildConfig.DEBUG && normalized.roomId.isNotBlank()) {
+                    if (BuildConfig.DEBUG && msg.roomId.isNotBlank()) {
                         Log.d(
                             OVERLAY_DIAG_TAG,
-                            "overlayListener skipRoom msgRoom=${normalized.roomId} raid=$raidId hub=$hubId id=${normalized._id}",
+                            "overlayListener skipRoom msgRoom=${msg.roomId} raid=${resolveOverlayRaidRoomId()} hub=$hubId id=${msg._id}",
                         )
                     }
                     return@post
                 }
                 if (isRaid) {
-                    ingestOverlayRaidMessage(normalized, refreshNow = true)
+                    ingestOverlayRaidMessage(msg, refreshNow = true)
                 } else if (isHub) {
                     routeOverlayHubSideEffects(msg)
                 }

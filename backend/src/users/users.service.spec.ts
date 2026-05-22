@@ -210,9 +210,8 @@ describe('UsersService', () => {
       );
       expect(out).toEqual(['t1']);
       const call = findForAlliance.mock.calls[0][0] as Record<string, unknown>;
-      expect(call.playerTeamId).toBeDefined();
       expect(call.excavationPushEnabled).toEqual({ $ne: false });
-      expect(call.$or).toBeDefined();
+      expect(call.$and).toBeDefined();
     });
   });
 
