@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
@@ -87,16 +88,23 @@ fun ChatMessageBubbleRow(
     }
 }
 
-/** Пузырь на всю доступную ширину; стикеры — по содержимому. */
+/**
+ * Ширина колонки пузыря. Для текста — [widthIn] до [maxBubble], чтобы длинные строки
+ * заполняли каплю; [fillMaxWidth] на Surface внутри даёт Text полную ширину.
+ */
 fun Modifier.chatBubbleWidth(
     maxBubble: Dp,
     expandToMax: Boolean,
     compactMax: Dp = maxBubble,
 ): Modifier = if (expandToMax) {
-    width(maxBubble)
+    widthIn(max = maxBubble)
 } else {
     widthIn(max = compactMax)
 }
+
+/** Surface пузыря растягивается на ширину колонки (иначе сжимается по min intrinsic Text). */
+fun Modifier.chatBubbleSurfaceWidth(expandToMax: Boolean): Modifier =
+    if (expandToMax) fillMaxWidth() else this
 
 fun chatBubbleExpandsToRowWidth(
     floatingSticker: Boolean,

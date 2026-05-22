@@ -314,6 +314,7 @@ internal fun ForumMessageBubble(
                                 nicknameColor = senderAccent,
                                 tagBracketColor = tagBracketMuted,
                                 senderRole = message.senderRole,
+                                isMine = isMine,
                             )
                         }
                         message.forwardedFrom?.let { fwd ->
@@ -422,6 +423,7 @@ internal fun ForumMessageBubble(
                                     nicknameColor = senderAccent,
                                     tagBracketColor = tagBracketMuted,
                                     senderRole = message.senderRole,
+                                    isMine = isMine,
                                 )
                             }
 

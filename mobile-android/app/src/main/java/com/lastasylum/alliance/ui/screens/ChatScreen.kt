@@ -189,6 +189,8 @@ import com.lastasylum.alliance.ui.components.ChatRoomVisualKind
 import com.lastasylum.alliance.ui.components.ChatRoomsSwitcher
 import com.lastasylum.alliance.ui.chat.ChatViewModel
 import com.lastasylum.alliance.ui.chat.ChatBubbleAuthorHeader
+import com.lastasylum.alliance.ui.chat.ChatMessageBodyText
+import com.lastasylum.alliance.ui.chat.chatBubbleSurfaceWidth
 import com.lastasylum.alliance.ui.chat.ChatMessageTimeOverlayChip
 import com.lastasylum.alliance.ui.chat.ChatMessageTimeWithReadStatus
 import com.lastasylum.alliance.ui.chat.ChatScrollToLatestFab
@@ -2262,6 +2264,7 @@ private fun ChatBubbleInnerColumn(
                 nicknameColor = senderAccent,
                 tagBracketColor = tagMuted,
                 senderRole = message.senderRole,
+                isMine = isMine,
             )
         }
 
@@ -2402,55 +2405,22 @@ private fun ChatBubbleInnerColumn(
                         )
                     }
                 }
-            } else if (overlayUi) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Text(
-                        text = message.text,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = onBubble,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    if (timeLabel.isNotBlank() || (isMine && isChainBottom)) {
-                        ChatMessageTimeWithReadStatus(
-                            time = timeLabel,
-                            isMine = isMine,
-                            isChainBottom = isChainBottom,
-                            messageId = message._id,
-                            otherReadUptoMessageId = otherReadUptoMessageId,
-                            timeColor = timeMuted,
-                            modifier = Modifier.align(Alignment.End),
-                        )
-                    }
-                }
             } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.Bottom,
-                ) {
-                    Text(
-                        text = message.text,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = onBubble,
-                        modifier = Modifier
-                            .weight(1f, fill = true)
-                            .fillMaxWidth(),
-                    )
-                    if (timeLabel.isNotBlank() || (isMine && isChainBottom)) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        ChatMessageTimeWithReadStatus(
-                            time = timeLabel,
-                            isMine = isMine,
-                            isChainBottom = isChainBottom,
-                            messageId = message._id,
-                            otherReadUptoMessageId = otherReadUptoMessageId,
-                            timeColor = timeMuted,
-                            modifier = Modifier.padding(bottom = 1.dp),
-                        )
-                    }
-                }
+                ChatMessageBodyText(
+                    text = message.text,
+                    onBubble = onBubble,
+                    timeLabel = timeLabel,
+                    isMine = isMine,
+                    isChainBottom = isChainBottom,
+                    messageId = message._id,
+                    otherReadUptoMessageId = otherReadUptoMessageId,
+                    timeMuted = timeMuted,
+                    textStyle = if (overlayUi) {
+                        MaterialTheme.typography.bodyLarge
+                    } else {
+                        MaterialTheme.typography.bodyMedium
+                    },
+                )
             }
         }
 
@@ -2546,6 +2516,7 @@ private fun ChatFloatingImageAttachmentsBlock(
                 nicknameColor = senderAccent,
                 tagBracketColor = scheme.onSurface.copy(alpha = 0.5f),
                 senderRole = message.senderRole,
+                isMine = isMine,
             )
         }
         Surface(
@@ -3014,6 +2985,7 @@ private fun ChatBubbleRow(
                             nicknameColor = senderAccent,
                             tagBracketColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                             senderRole = message.senderRole,
+                            isMine = isMine,
                         )
                     }
                     Box(
@@ -3109,6 +3081,7 @@ private fun ChatBubbleRow(
                 ) {
                     Surface(
                         modifier = Modifier
+                            .chatBubbleSurfaceWidth(expandToMax = expandBubble)
                             .then(bubbleClickModifier)
                             .then(swipeModifier),
                         shape = bubbleShape,

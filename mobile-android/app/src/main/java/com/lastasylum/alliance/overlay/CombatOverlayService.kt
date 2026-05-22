@@ -1144,7 +1144,11 @@ class CombatOverlayService : Service() {
             OverlayChatInteractionHold.isOverlaySystemPickerSessionActive() ||
             overlayChatTeamPanelVisible ||
             OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible ||
-            overlayCommandsPopover.isShowing() ||
+            overlayCommandsPopover.isBlockingGameGateDismiss() ||
+            OverlayChatInteractionHold.isGameForegroundGateSuppressed()
+
+    private fun isOverlayModalUiBlockingDismiss(): Boolean =
+        overlayCommandsPopover.isBlockingGameGateDismiss() ||
             OverlayChatInteractionHold.isGameForegroundGateSuppressed()
 
     private fun systemWindowManager(): WindowManager? =
@@ -1286,21 +1290,21 @@ class CombatOverlayService : Service() {
                 if (inGame) {
                     lastOverlayInGameAtMs = nowMs
                 }
-                // UI (HUD/лента) в игре, в чате, в системном пикере или пока открыто меню/реакции оверлея.
-                val shouldShowInGameOverlayUi = when {
-                    inGame -> true
-                    OverlayChatInteractionHold.isOverlaySystemPickerSessionActive() -> true
-                    overlayChatTeamPanelVisible ||
-                        OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible -> true
-                    overlayCommandsPopover.isShowing() -> true
-                    OverlayChatInteractionHold.isGameForegroundGateSuppressed() -> true
-                    else -> false
-                }
-                val stableShowInGameOverlayUi = resolveStableOverlayUiVisible(
-                    probeShow = shouldShowInGameOverlayUi,
-                    forceHideNow = conflictingForeground,
-                )
                 mainHandler.post {
+                    // Попап команд/реакций — только на main: иначе на части ROM гонка снимает HUD.
+                    val shouldShowInGameOverlayUi = when {
+                        inGame -> true
+                        OverlayChatInteractionHold.isOverlaySystemPickerSessionActive() -> true
+                        overlayChatTeamPanelVisible ||
+                            OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible -> true
+                        overlayCommandsPopover.isBlockingGameGateDismiss() -> true
+                        OverlayChatInteractionHold.isGameForegroundGateSuppressed() -> true
+                        else -> false
+                    }
+                    val stableShowInGameOverlayUi = resolveStableOverlayUiVisible(
+                        probeShow = shouldShowInGameOverlayUi,
+                        forceHideNow = conflictingForeground,
+                    )
                     val diagNowMs = System.currentTimeMillis()
                     if (diagNowMs - lastGateDiagLogMs >= 25_000L) {
                         lastGateDiagLogMs = diagNowMs
@@ -1881,6 +1885,13 @@ class CombatOverlayService : Service() {
         lastAppliedGateShouldShow = shouldShow
         _inGameOverlayUiActive.value = shouldShow
         if (!shouldShow) {
+            if (isOverlayModalUiBlockingDismiss()) {
+                syncOverlayHudsIfReady()
+                if (isOverlayShellActive() && !isOverlayHudOnlyMode()) {
+                    applyOverlayStripVisibility()
+                }
+                return
+            }
             dismissOverlayUiBecauseNotInGame(
                 logWaitingForGame = true,
             )
@@ -1948,9 +1959,7 @@ class CombatOverlayService : Service() {
             return
         }
         deferredDismissWhenPickerEnds = false
-        if (overlayCommandsPopover.isShowing() ||
-            OverlayChatInteractionHold.isGameForegroundGateSuppressed()
-        ) {
+        if (isOverlayModalUiBlockingDismiss()) {
             if (BuildConfig.DEBUG && logWaitingForGame) {
                 Log.d(
                     TAG,
@@ -3157,11 +3166,22 @@ class CombatOverlayService : Service() {
                                         )
                                     }
                                     OverlayHudPane.Participants -> {
-                                        OverlayHudPanelHeader(
-                                            title = stringResource(R.string.overlay_online_title),
-                                            subtitle = stringResource(R.string.overlay_online_subtitle),
-                                            onClose = { hideOverlayChatTeamPanel() },
-                                        )
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(top = 2.dp, end = 4.dp),
+                                            horizontalArrangement = Arrangement.End,
+                                        ) {
+                                            IconButton(
+                                                onClick = { hideOverlayChatTeamPanel() },
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.Close,
+                                                    contentDescription = getString(R.string.overlay_online_close_cd),
+                                                    tint = MaterialTheme.colorScheme.onSurface,
+                                                )
+                                            }
+                                        }
                                     }
                                     else -> {
                                         Row(

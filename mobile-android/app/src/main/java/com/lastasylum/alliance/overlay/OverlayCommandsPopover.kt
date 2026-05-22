@@ -61,8 +61,11 @@ class OverlayCommandsPopover(
     private val emitOverlayReaction: (targetUserId: String, reactionId: String) -> Unit = { _, _ -> },
     private val emitOverlayReactionBroadcast: (reactionId: String) -> Unit = {},
 ) {
+    @Volatile
     private var menuScrim: FrameLayout? = null
+    @Volatile
     private var coordScrim: FrameLayout? = null
+    @Volatile
     private var reactionPickScrim: FrameLayout? = null
     private var reopenMenuOnReactionsTab = false
     private var reopenReactionSubcategory = OverlayReactionCategory.ANIMATIONS
@@ -74,6 +77,7 @@ class OverlayCommandsPopover(
     /** Парные acquire/release: меню, picker, координаты, входящий burst. */
     private var gameGateSuppressDepth = 0
     /** Между сменой scrim (меню → picker) [isShowing] иначе на мгновение false и game gate снимает HUD. */
+    @Volatile
     private var surfaceTransitionDepth = 0
 
     fun isShowing(): Boolean =
@@ -82,6 +86,9 @@ class OverlayCommandsPopover(
             coordScrim != null ||
             reactionPickScrim != null ||
             reactionBurstPresenter.isActive()
+
+    /** True while меню/реакции/координаты открыты или идёт смена scrim (для game gate на main). */
+    fun isBlockingGameGateDismiss(): Boolean = isShowing()
 
     private inline fun withPopoverSurfaceTransition(block: () -> Unit) {
         surfaceTransitionDepth++
@@ -304,6 +311,7 @@ class OverlayCommandsPopover(
             hide()
             return
         }
+        ensurePopoverSuppressHeld()
         showMenu(windowManager)
     }
 
@@ -587,6 +595,7 @@ class OverlayCommandsPopover(
     }
 
     private fun showMenu(windowManager: WindowManager) {
+        ensurePopoverSuppressHeld()
         val screenW = context.resources.displayMetrics.widthPixels
         val popoverW = minOf(dp(328), screenW - dp(16))
 
@@ -1058,6 +1067,7 @@ class OverlayCommandsPopover(
             }
             rebuildOptionsForCategory(cat)
             if (cat.isReactions) {
+                ensurePopoverSuppressHeld()
                 coordsAction.visibility = View.GONE
                 reactionRow.visibility = View.VISIBLE
                 startReactionStripPreviews()
@@ -1546,6 +1556,8 @@ class OverlayCommandsPopover(
         val previousPick = reactionPickScrim
         ensurePopoverSuppressHeld()
         attachedWindowManager = windowManager
+        // Сначала новый scrim, потом снимаем меню — иначе [isShowing] на мгновение false.
+        val menuToRemove = menuScrim
 
         val selectedReaction = overlayQuickReactionById(reactionId)
         val container = AppContainer.from(context)
@@ -1673,8 +1685,12 @@ class OverlayCommandsPopover(
             return
         }
         reactionPickScrim = scrim
-        removeShell(menuScrim)
-        menuScrim = null
+        if (menuToRemove != null) {
+            removeShell(menuToRemove)
+            if (menuScrim === menuToRemove) {
+                menuScrim = null
+            }
+        }
         if (previousPick != null && previousPick !== scrim) {
             removeShell(previousPick)
         }

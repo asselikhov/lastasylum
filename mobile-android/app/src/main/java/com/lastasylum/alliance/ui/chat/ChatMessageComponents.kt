@@ -9,6 +9,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -45,10 +46,15 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.lastasylum.alliance.ui.util.formatServerLabel
+import com.lastasylum.alliance.ui.theme.ChatTelegramTeamTagBg
+import com.lastasylum.alliance.ui.theme.ChatTelegramTeamTagFg
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.lastasylum.alliance.data.chat.ChatMessage
@@ -105,7 +111,78 @@ fun ChatSenderAvatar(
     }
 }
 
-/** Telegram-like header: `[TAG]` + nickname on the left, role badge on the right. */
+@Composable
+private fun ChatServerNumberBadge(
+    serverNumber: Int,
+    isMine: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val label = formatServerLabel(serverNumber) ?: return
+    val fg = if (isMine) {
+        Color.White.copy(alpha = 0.96f)
+    } else {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.92f)
+    }
+    val bg = if (isMine) {
+        Color.White.copy(alpha = 0.16f)
+    } else {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+    }
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(7.dp),
+        color = bg,
+        border = BorderStroke(1.dp, fg.copy(alpha = 0.28f)),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.4.sp,
+            ),
+            color = fg,
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+        )
+    }
+}
+
+@Composable
+private fun ChatTeamTagBadge(
+    teamTag: String,
+    isMine: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val raw = teamTag.trim().removePrefix("[").removeSuffix("]").trim()
+    if (raw.isEmpty()) return
+    val bg = if (isMine) {
+        ChatTelegramTeamTagBg.copy(alpha = 0.88f)
+    } else {
+        ChatTelegramTeamTagBg
+    }
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(7.dp),
+        color = bg,
+        border = BorderStroke(1.dp, ChatTelegramTeamTagFg.copy(alpha = 0.22f)),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Text(
+            text = "[$raw]",
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+            color = ChatTelegramTeamTagFg,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+        )
+    }
+}
+
+/**
+ * Заголовок входящего пузыря: бейдж сервера, тег команды, ник и роль.
+ */
 @Composable
 fun ChatBubbleAuthorHeader(
     teamTag: String?,
@@ -114,41 +191,80 @@ fun ChatBubbleAuthorHeader(
     tagBracketColor: Color,
     senderRole: String,
     serverNumber: Int? = null,
+    isMine: Boolean = false,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 2.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
             modifier = Modifier.weight(1f),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-            val prefix = com.lastasylum.alliance.ui.util.teamTagWithServerPrefix(
-                teamTag?.trim().orEmpty(),
-                serverNumber,
-            )
-            if (prefix.isNotEmpty()) {
-                Text(
-                    text = prefix,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = tagBracketColor,
-                    maxLines = 1,
-                )
+            val server = serverNumber?.takeIf { it >= 1 }
+            if (server != null) {
+                ChatServerNumberBadge(serverNumber = server, isMine = isMine)
+            }
+            teamTag?.trim()?.takeIf { it.isNotEmpty() }?.let { tag ->
+                ChatTeamTagBadge(teamTag = tag, isMine = isMine)
             }
             Text(
                 text = nickname.trim().ifBlank { "—" },
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.1.sp,
+                ),
                 color = nicknameColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
+                modifier = Modifier.weight(1f, fill = true),
             )
         }
-        Spacer(modifier = Modifier.width(8.dp))
         if (senderRole.isNotBlank()) {
+            Spacer(modifier = Modifier.width(6.dp))
             RoleBadge(role = senderRole)
+        }
+    }
+}
+
+/** Текст сообщения на всю ширину капли; время и галочки — отдельной строкой справа. */
+@Composable
+fun ChatMessageBodyText(
+    text: String,
+    onBubble: Color,
+    timeLabel: String,
+    isMine: Boolean,
+    isChainBottom: Boolean,
+    messageId: String?,
+    otherReadUptoMessageId: String?,
+    timeMuted: Color,
+    textStyle: TextStyle = MaterialTheme.typography.bodyMedium,
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.width(maxWidth)) {
+            Text(
+                text = text,
+                style = textStyle,
+                color = onBubble,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (timeLabel.isNotBlank() || (isMine && isChainBottom)) {
+                ChatMessageTimeWithReadStatus(
+                    time = timeLabel,
+                    isMine = isMine,
+                    isChainBottom = isChainBottom,
+                    messageId = messageId,
+                    otherReadUptoMessageId = otherReadUptoMessageId,
+                    timeColor = timeMuted,
+                    modifier = Modifier
+                        .align(Alignment.End)
+                        .padding(top = 4.dp),
+                )
+            }
         }
     }
 }
