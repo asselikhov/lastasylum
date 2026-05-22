@@ -169,15 +169,18 @@ class CombatOverlayService : Service() {
                 val repo = AppContainer.from(this@CombatOverlayService).chatRepository
                 val roomId = repo.ensureRaidRoomId()
                     ?: return@OverlayCommandsPopover Result.failure(IllegalStateException("no_raid"))
+                val text = if (excavation) {
+                    getString(R.string.overlay_excavation_message, x, y)
+                } else {
+                    "$label X:${x} Y:${y}"
+                }
                 val result = if (excavation) {
-                    val text = getString(R.string.overlay_excavation_message, x, y)
                     repo.sendExcavationAlertWithRetries(text, roomId)
                 } else {
-                    val text = "$label X:${x} Y:${y}"
                     repo.sendMessageWithRetries(text, roomId)
                 }
                 result.onSuccess { sent ->
-                    mainHandler.post { applyLocalSentMessageToStrip(sent) }
+                    mainHandler.post { publishQuickCommandToStrip(sent, roomId, text) }
                 }
                 result
             },
@@ -186,11 +189,10 @@ class CombatOverlayService : Service() {
                 val roomId = repo.ensureRaidRoomId()
                     ?: return@OverlayCommandsPopover Result.failure(IllegalStateException("no_raid"))
                 val text = getString(R.string.overlay_excavation_notify_message)
-                repo
-                    .sendExcavationAlertWithRetries(text, roomId)
+                repo.sendExcavationAlertWithRetries(text, roomId)
                     .also { result ->
                         result.onSuccess { sent ->
-                            mainHandler.post { applyLocalSentMessageToStrip(sent) }
+                            mainHandler.post { publishQuickCommandToStrip(sent, roomId, text) }
                         }
                     }
             },
@@ -1549,6 +1551,7 @@ class CombatOverlayService : Service() {
     private fun syncOverlayHudsIfReady() {
         if (stableGatePollTicks < HUD_STABLE_TICKS_BEFORE_ATTACH) return
         attachOverlayHudWindowsIfNeeded()
+        maybeAutoConnectOverlayVoice()
     }
 
     /** Левый и правый HUD в одном кадре — иначе правый ждёт IO/гейт и появляется позже. */
@@ -1612,18 +1615,25 @@ class CombatOverlayService : Service() {
         val prefs = AppContainer.from(this).userSettingsPreferences
         val micOn = session?.micOn ?: prefs.isOverlayVoiceMicEnabled()
         val soundOn = session?.soundOn ?: prefs.isOverlayVoiceSoundEnabled()
-        val current = overlayTopRightHudFlow.value
-        if (current.micOn == micOn && current.soundOn == soundOn) return
-        overlayTopRightHudFlow.value = current.copy(
+        overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
             micOn = micOn,
             soundOn = soundOn,
         )
     }
 
     private fun toggleOverlayTopRightVoiceExpanded() {
+        val expanding = !overlayTopRightHudFlow.value.voiceExpanded
+        if (expanding) {
+            ensureOverlayVoiceStarted()
+            val session = voiceSession
+            if (session != null && !session.soundOn && !session.micOn) {
+                session.setSoundEnabled(true)
+            }
+        }
         overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
-            voiceExpanded = !overlayTopRightHudFlow.value.voiceExpanded,
+            voiceExpanded = expanding,
         )
+        refreshOverlayTopRightHudState()
     }
 
     private fun collapseOverlayTopRightVoice() {
@@ -1835,10 +1845,19 @@ class CombatOverlayService : Service() {
     private fun scheduleOverlayVoiceConnect() {
         cancelOverlayVoiceConnectScheduled()
         val prefs = AppContainer.from(this).userSettingsPreferences
-        if (!prefs.isOverlayVoiceMicEnabled()) {
+        if (!prefs.isOverlayVoiceMicEnabled() && !prefs.isOverlayVoiceSoundEnabled()) {
             return
         }
         mainHandler.postDelayed(overlayVoiceConnectRunnable, OVERLAY_VOICE_CONNECT_DELAY_MS)
+    }
+
+    /** Подключение к голосовой комнате «Рейд», если игрок ранее пользовался звуком или микрофоном. */
+    private fun maybeAutoConnectOverlayVoice() {
+        if (!isInGameOverlayUiActive()) return
+        val prefs = AppContainer.from(this).userSettingsPreferences
+        if (!prefs.isOverlayVoiceMicEnabled() && !prefs.isOverlayVoiceSoundEnabled()) return
+        if (voiceSession != null) return
+        scheduleOverlayVoiceConnect()
     }
 
     private fun cancelOverlayVoiceConnectScheduled() {
@@ -2305,6 +2324,23 @@ class CombatOverlayService : Service() {
         ensureStripWindowVisibleForRaidTraffic()
     }
 
+    /** Быстрые команды → лента «Рейд»: нормализуем roomId/текст с ответа API. */
+    private fun publishQuickCommandToStrip(sent: ChatMessage, raidRoomId: String, fallbackText: String) {
+        val raid = raidRoomId.trim()
+        val normalized = sent.copy(
+            roomId = sent.roomId.trim().ifBlank { raid },
+            text = sent.text.trim().ifBlank { fallbackText },
+        )
+        applyLocalSentMessageToStrip(normalized)
+        refreshOverlayChatStripNow()
+    }
+
+    private fun resolveOverlayReactionSenderDisplayName(event: OverlayReactionEvent): String {
+        event.fromUsername.trim().takeIf { it.isNotBlank() }?.let { return it }
+        OverlayTeamContextCache.memberUsername(event.fromUserId)?.let { return it }
+        return getString(R.string.overlay_reaction_sender_unknown)
+    }
+
     /** Id «Рейд» из prefs или свежего кэша комнат (если prefs ещё пуст после старта оверлея). */
     private fun resolveOverlayRaidRoomId(): String? {
         val prefs = AppContainer.from(this).chatRoomPreferences
@@ -2328,23 +2364,32 @@ class CombatOverlayService : Service() {
         return room.isEmpty() || room == raid
     }
 
+    private fun normalizeStripRaidMessage(msg: ChatMessage, raidId: String?): ChatMessage {
+        val raid = raidId?.trim().orEmpty()
+        if (raid.isEmpty()) return msg
+        return msg.copy(
+            roomId = msg.roomId.trim().ifBlank { raid },
+        )
+    }
+
     private fun processOverlayChatMessage(msg: ChatMessage, refreshStrip: Boolean = true) {
         val raidId = resolveOverlayRaidRoomId()
-        if (!isOverlayRaidRoomMessage(msg, raidId)) {
-            if (BuildConfig.DEBUG && msg.roomId.isNotBlank()) {
+        val normalized = normalizeStripRaidMessage(msg, raidId)
+        if (!isOverlayRaidRoomMessage(normalized, raidId)) {
+            if (BuildConfig.DEBUG && normalized.roomId.isNotBlank()) {
                 Log.d(
                     OVERLAY_DIAG_TAG,
-                    "stripSkip room=${msg.roomId} raid=$raidId id=${msg._id}",
+                    "stripSkip room=${normalized.roomId} raid=$raidId id=${normalized._id}",
                 )
             }
             return
         }
         Log.d(
             OVERLAY_DIAG_TAG,
-            "processMsg id=${msg._id} room=${msg.roomId} sender=${msg.senderId} textLen=${msg.text.length}",
+            "processMsg id=${normalized._id} room=${normalized.roomId} sender=${normalized.senderId} textLen=${normalized.text.length}",
         )
-        stripBuffer.upsert(msg)
-        stripBuffer.mergeReceiveTimeline(msg, jwtSubFromAccessToken())
+        stripBuffer.upsert(normalized)
+        stripBuffer.mergeReceiveTimeline(normalized, jwtSubFromAccessToken())
         lastStripRenderSignature = null
         if (refreshStrip) {
             refreshOverlayChatStrip()
@@ -2560,7 +2605,7 @@ class CombatOverlayService : Service() {
                 val wm = windowManager ?: getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return@post
                 overlayCommandsPopover.showIncomingReactionBurst(
                     wm,
-                    event.fromUsername,
+                    resolveOverlayReactionSenderDisplayName(event),
                     event.reaction,
                     event.broadcast,
                 )
@@ -3133,7 +3178,8 @@ class CombatOverlayService : Service() {
         val container = AppContainer.from(this)
         return container.newVoiceChatSession(
             onStateChanged = { micOn, soundOn ->
-                overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
+                val cur = overlayTopRightHudFlow.value
+                overlayTopRightHudFlow.value = cur.copy(
                     micOn = micOn,
                     soundOn = soundOn,
                 )

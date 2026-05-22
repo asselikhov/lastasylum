@@ -7,7 +7,7 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class VoiceJitterBuffer(
     private val frameBytes: Int = VoiceAudioPipeline.FRAME_BYTES_PCM,
-    private val minFramesBeforeStart: Int = 4,
+    private val minFramesBeforeStart: Int = 3,
     private val maxFramesPerSpeaker: Int = 8,
 ) {
     private val queues = ConcurrentHashMap<String, ArrayDeque<ByteArray>>()

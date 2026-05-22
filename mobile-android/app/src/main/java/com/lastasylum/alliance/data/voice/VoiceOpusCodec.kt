@@ -156,7 +156,7 @@ class VoiceOpusCodec {
         const val CODEC_OPUS = "opus"
         const val CODEC_PCM = "pcm"
         private const val TAG = "VoiceOpusCodec"
-        private const val ENCODE_TIMEOUT_US = 5_000L
-        private const val DECODE_TIMEOUT_US = 5_000L
+        private const val ENCODE_TIMEOUT_US = 10_000L
+        private const val DECODE_TIMEOUT_US = 10_000L
     }
 }

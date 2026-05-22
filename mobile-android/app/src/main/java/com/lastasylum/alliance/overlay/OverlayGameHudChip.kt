@@ -133,3 +133,52 @@ internal fun OverlayGameHudChipRow(
         content = content,
     )
 }
+
+/** Вертикальный столбец кнопок HUD (голос: Звук над Микрофоном). */
+@Composable
+internal fun OverlayGameHudChipColumn(
+    modifier: Modifier = Modifier,
+    horizontalAlignment: Alignment.Horizontal = Alignment.CenterHorizontally,
+    content: @Composable () -> Unit,
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = horizontalAlignment,
+        verticalArrangement = Arrangement.spacedBy(HudRowSpacing),
+        content = { content() },
+    )
+}
+
+@Composable
+internal fun OverlayGameHudLabeledChip(
+    label: String,
+    tint: Color,
+    contentDescription: String,
+    onClick: () -> Unit,
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .background(HudChipBackground, RoundedCornerShape(HudChipCorner))
+            .clickable(onClick = onClick)
+            .padding(horizontal = HudChipPaddingH + 2.dp, vertical = HudChipPaddingV)
+            .semantics { this.contentDescription = contentDescription },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(HudIconSize),
+        )
+        Text(
+            text = label,
+            color = tint.copy(alpha = 0.92f),
+            fontSize = 8.sp,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+        )
+    }
+}

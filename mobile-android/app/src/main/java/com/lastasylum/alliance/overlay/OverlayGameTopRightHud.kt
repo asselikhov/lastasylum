@@ -63,7 +63,11 @@ fun OverlayGameTopRightHud(
             )
             OverlayGameHudChip(
                 icon = Icons.Outlined.Mic,
-                tint = if (state.micOn || state.soundOn) Color(0xFF7986CB) else Color(0xFF9FA8DA),
+                tint = if (state.voiceExpanded || state.micOn || state.soundOn) {
+                    Color(0xFF7986CB)
+                } else {
+                    Color(0xFF9FA8DA)
+                },
                 contentDescription = stringResource(
                     if (state.voiceExpanded) {
                         R.string.overlay_voice_hub_collapse_cd
@@ -75,16 +79,9 @@ fun OverlayGameTopRightHud(
             )
         }
         if (state.voiceExpanded) {
-            OverlayGameHudChipRow {
-                OverlayGameHudChip(
-                    icon = if (state.micOn) Icons.Outlined.Mic else Icons.Outlined.MicOff,
-                    tint = if (state.micOn) Color(0xFF81C784) else Color(0xFF78909C),
-                    contentDescription = stringResource(
-                        if (state.micOn) R.string.overlay_voice_mic_on_cd else R.string.overlay_voice_mic_off_cd,
-                    ),
-                    onClick = onMicClick,
-                )
-                OverlayGameHudChip(
+            OverlayGameHudChipColumn(horizontalAlignment = Alignment.End) {
+                OverlayGameHudLabeledChip(
+                    label = stringResource(R.string.overlay_voice_sound_label),
                     icon = if (state.soundOn) {
                         Icons.AutoMirrored.Outlined.VolumeUp
                     } else {
@@ -99,6 +96,19 @@ fun OverlayGameTopRightHud(
                         },
                     ),
                     onClick = onSoundClick,
+                )
+                OverlayGameHudLabeledChip(
+                    label = stringResource(R.string.overlay_voice_mic_label),
+                    icon = if (state.micOn) Icons.Outlined.Mic else Icons.Outlined.MicOff,
+                    tint = if (state.micOn) Color(0xFF81C784) else Color(0xFF78909C),
+                    contentDescription = stringResource(
+                        if (state.micOn) {
+                            R.string.overlay_voice_mic_on_cd
+                        } else {
+                            R.string.overlay_voice_mic_off_cd
+                        },
+                    ),
+                    onClick = onMicClick,
                 )
             }
         }

@@ -9,6 +9,7 @@ import android.graphics.Color
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.text.TextUtils
@@ -158,43 +159,41 @@ internal class OverlayReactionBurstPresenter(
 
         val animView = createBurstAnimView(reaction, animSide)
 
+        val captionText = if (broadcast) {
+            context.getString(R.string.overlay_reaction_burst_caption_broadcast)
+        } else {
+            context.getString(R.string.overlay_reaction_burst_caption_private)
+        }
         val caption = TextView(context).apply {
-            text = if (broadcast) {
-                context.getString(R.string.overlay_reaction_burst_caption_broadcast)
-            } else {
-                context.getString(R.string.overlay_reaction_burst_caption_private)
-            }
+            text = captionText
             setTextColor(
                 if (broadcast) Color.parseColor("#FFFFB74D")
                 else Color.parseColor("#FF90CAF9"),
             )
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER_HORIZONTAL
             setBackgroundColor(Color.TRANSPARENT)
-            setShadowLayer(dp(2).toFloat(), 0f, 1f, Color.parseColor("#99000000"))
         }
 
         val senderLine = TextView(context).apply {
             text = context.getString(R.string.overlay_reaction_burst_from, displayName)
             setTextColor(Color.parseColor("#FFFFFFFF"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER_HORIZONTAL
             maxWidth = layout.maxTextWidthPx
             maxLines = 3
             ellipsize = TextUtils.TruncateAt.END
             setBackgroundColor(Color.TRANSPARENT)
-            setShadowLayer(dp(3).toFloat(), 0f, 1.5f, Color.parseColor("#AA000000"))
         }
 
-        val textBlock = LinearLayout(context).apply {
+        val textInner = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             clipChildren = false
             clipToPadding = false
-            setBackgroundColor(Color.TRANSPARENT)
-            setPadding(0, dp(6), 0, 0)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
             addView(
                 caption,
                 LinearLayout.LayoutParams(
@@ -207,7 +206,25 @@ internal class OverlayReactionBurstPresenter(
                 LinearLayout.LayoutParams(
                     layout.maxTextWidthPx,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = dp(6) },
+                ).apply { topMargin = dp(4) },
+            )
+        }
+
+        val textBlock = FrameLayout(context).apply {
+            clipChildren = false
+            clipToPadding = false
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#E6121824"))
+                cornerRadius = dp(14).toFloat()
+            }
+            elevation = 6f
+            addView(
+                textInner,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.CENTER,
+                ),
             )
         }
 
@@ -265,7 +282,8 @@ internal class OverlayReactionBurstPresenter(
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
-            gravity = Gravity.CENTER
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            y = dp(OverlayReactionBurstLayout.WINDOW_TOP_Y_DP)
         }
 
         if (runCatching { windowManager.addView(root, params) }.isFailure) {

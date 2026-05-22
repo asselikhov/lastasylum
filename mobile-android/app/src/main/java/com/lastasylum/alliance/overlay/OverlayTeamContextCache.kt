@@ -39,6 +39,17 @@ internal object OverlayTeamContextCache {
         cachedTeamAtMs = 0L
     }
 
+    /** Ник из кэша состава команды (для подписи входящей реакции без блокирующего API). */
+    fun memberUsername(userId: String): String? {
+        val id = userId.trim()
+        if (id.isEmpty()) return null
+        return cachedTeam?.members
+            ?.firstOrNull { it.userId == id }
+            ?.username
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+    }
+
     suspend fun loadTeamDetail(
         teamId: String,
         teamsRepository: TeamsRepository,

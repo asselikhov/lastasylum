@@ -2,6 +2,7 @@ package com.lastasylum.alliance.data.voice
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -25,8 +26,11 @@ class VoiceChatSession(
     private val onActiveSpeakersChanged: (count: Int) -> Unit = {},
 ) {
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val audioManager =
+        context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private var roomId: String? = null
     private var localUserId: String? = null
+    private var previousAudioMode: Int = AudioManager.MODE_NORMAL
 
     var micOn: Boolean = false
         private set
@@ -92,6 +96,7 @@ class VoiceChatSession(
         socketManager.addPeerListener(peerListener)
         audioPipeline.setSoundEnabled(soundOn)
         applyMicCapture()
+        enterCommunicationAudioMode()
         socketManager.connect(
             baseUrl = BuildConfig.API_BASE_URL,
             roomId = roomId,
@@ -103,6 +108,7 @@ class VoiceChatSession(
     }
 
     fun stop() {
+        leaveCommunicationAudioMode()
         socketManager.removeFrameListener(frameListener)
         socketManager.removePeerListener(peerListener)
         socketManager.disconnect()
@@ -167,6 +173,16 @@ class VoiceChatSession(
     private fun scheduleSpeakerCountUpdate() {
         mainHandler.removeCallbacks(speakerUpdateRunnable)
         mainHandler.post(speakerUpdateRunnable)
+    }
+
+    private fun enterCommunicationAudioMode() {
+        previousAudioMode = audioManager.mode
+        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+        audioManager.isSpeakerphoneOn = true
+    }
+
+    private fun leaveCommunicationAudioMode() {
+        audioManager.mode = previousAudioMode
     }
 
     private fun notifyState() {

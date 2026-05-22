@@ -101,6 +101,7 @@ class VoiceAudioPipeline(
             ensurePlayback()
         } else {
             jitter.clear()
+            stopPlayback()
         }
     }
 
@@ -127,8 +128,20 @@ class VoiceAudioPipeline(
         ensurePlayback()
     }
 
+    private fun stopPlayback() {
+        if (!playRunning.compareAndSet(true, false)) return
+        runCatching { audioTrack?.pause() }
+        runCatching { audioTrack?.flush() }
+        runCatching { audioTrack?.stop() }
+        runCatching { audioTrack?.release() }
+        audioTrack = null
+        playThread?.join(400)
+        playThread = null
+    }
+
     private fun ensurePlayback() {
         if (!soundEnabled) return
+        if (playRunning.get()) return
         if (!playRunning.compareAndSet(false, true)) return
         val minBuf = AudioTrack.getMinBufferSize(
             SAMPLE_RATE_HZ,
@@ -170,10 +183,15 @@ class VoiceAudioPipeline(
         playThread = Thread(
             {
                 val silence = ByteArray(FRAME_BYTES_PCM)
+                var nextFrameAtNs = System.nanoTime()
                 while (playRunning.get()) {
                     val mixed = jitter.pollMixedFrame() ?: silence
                     track.write(mixed, 0, mixed.size)
-                    Thread.sleep(FRAME_MS.toLong())
+                    nextFrameAtNs += FRAME_MS * 1_000_000L
+                    val waitMs = ((nextFrameAtNs - System.nanoTime()) / 1_000_000L).coerceIn(0L, FRAME_MS.toLong())
+                    if (waitMs > 0L) {
+                        Thread.sleep(waitMs)
+                    }
                 }
             },
             "voice-playback",
@@ -185,12 +203,7 @@ class VoiceAudioPipeline(
 
     fun release() {
         stopCapture()
-        playRunning.set(false)
-        runCatching { audioTrack?.stop() }
-        runCatching { audioTrack?.release() }
-        audioTrack = null
-        playThread?.join(300)
-        playThread = null
+        stopPlayback()
         jitter.clear()
         remoteMicOn.clear()
         opus.release()

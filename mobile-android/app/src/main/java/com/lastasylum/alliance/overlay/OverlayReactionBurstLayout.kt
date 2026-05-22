@@ -28,6 +28,9 @@ internal object OverlayReactionBurstLayout {
     /** Запас вокруг анимации под enter scale (~1.06), без раздувания hit-area. */
     private const val SCALE_PAD_DP = 14
 
+    /** Окно вспышки ниже верхней ленты чата, чтобы подпись не уезжала за край экрана. */
+    const val WINDOW_TOP_Y_DP = 72
+
     data class Metrics(
         val animSidePx: Int,
         val animPadPx: Int,
