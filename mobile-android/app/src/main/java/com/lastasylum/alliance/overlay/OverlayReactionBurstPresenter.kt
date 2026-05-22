@@ -50,7 +50,7 @@ internal class OverlayReactionBurstPresenter(
     private val mainHandler: Handler,
     private val dp: (Int) -> Int,
 ) {
-    private val queue = ArrayDeque<OverlayReactionBurstRequest>()
+    private val queue = ArrayDeque<Pair<OverlayReactionBurstRequest, () -> Unit>>()
     private var showing = false
     private var burstRoot: OverlayPassthroughMultitouchFrameLayout? = null
     private var burstLottie: LottieAnimationView? = null
@@ -72,18 +72,23 @@ internal class OverlayReactionBurstPresenter(
         showing = false
     }
 
-    fun enqueue(windowManager: WindowManager, request: OverlayReactionBurstRequest) {
+    fun enqueue(
+        windowManager: WindowManager,
+        request: OverlayReactionBurstRequest,
+        onBurstFinished: () -> Unit = {},
+    ) {
         attachedWindowManager = windowManager
-        queue.addLast(request)
+        queue.addLast(request to onBurstFinished)
         drainQueue()
     }
 
     private fun drainQueue() {
         if (showing || queue.isEmpty()) return
-        val req = queue.removeFirst()
+        val (req, onBurstFinished) = queue.removeFirst()
         showing = true
         showBurstNow(req) {
             showing = false
+            onBurstFinished()
             mainHandler.post { drainQueue() }
         }
     }
@@ -204,7 +209,7 @@ internal class OverlayReactionBurstPresenter(
 
         val senderBelowAnimMargin = dp(OverlayReactionBurstLayout.SENDER_BELOW_ANIM_DP)
 
-        val animHost = FrameLayout(context).apply {
+        val animFrame = FrameLayout(context).apply {
             clipChildren = false
             clipToPadding = false
             setBackgroundColor(Color.TRANSPARENT)
@@ -224,17 +229,28 @@ internal class OverlayReactionBurstPresenter(
             )
         }
 
-        val labelsBlock = FrameLayout(context).apply {
+        val contentColumn = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
             clipChildren = false
             clipToPadding = false
-            elevation = 2f
+            setBackgroundColor(Color.TRANSPARENT)
+            addView(
+                animFrame,
+                LinearLayout.LayoutParams(
+                    layout.maxTextWidthPx,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
             addView(
                 senderLine,
-                FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    Gravity.CENTER_HORIZONTAL,
-                ),
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply {
+                    topMargin = senderBelowAnimMargin
+                    gravity = Gravity.CENTER_HORIZONTAL
+                },
             )
         }
 
@@ -246,18 +262,11 @@ internal class OverlayReactionBurstPresenter(
             isClickable = false
             setBackgroundColor(Color.TRANSPARENT)
             addView(
-                animHost,
+                contentColumn,
                 LinearLayout.LayoutParams(
-                    layout.maxTextWidthPx,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                 ),
-            )
-            addView(
-                labelsBlock,
-                LinearLayout.LayoutParams(
-                    layout.maxTextWidthPx,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = senderBelowAnimMargin },
             )
         }
 
@@ -291,8 +300,8 @@ internal class OverlayReactionBurstPresenter(
         animView.alpha = 1f
         animView.scaleX = 0.4f
         animView.scaleY = 0.4f
-        labelsBlock.alpha = 1f
-        labelsBlock.translationY = dp(6).toFloat()
+        senderLine.alpha = 1f
+        senderLine.translationY = dp(6).toFloat()
 
         animView.post {
             animView.pivotX = animView.width * 0.5f
@@ -311,7 +320,7 @@ internal class OverlayReactionBurstPresenter(
                     duration = 520
                     interpolator = pop
                 },
-                ObjectAnimator.ofFloat(labelsBlock, "translationY", dp(6).toFloat(), 0f).apply {
+                ObjectAnimator.ofFloat(senderLine, "translationY", dp(6).toFloat(), 0f).apply {
                     duration = 400
                     startDelay = 120
                     interpolator = ease
@@ -321,7 +330,7 @@ internal class OverlayReactionBurstPresenter(
                 object : AnimatorListenerAdapter() {
                     override fun onAnimationEnd(animation: Animator) {
                         animView.alpha = 1f
-                        labelsBlock.alpha = 1f
+                        senderLine.alpha = 1f
                         ensureBurstLottiePlaying()
                         startBurstLottieKeepAlive()
                     }
@@ -343,7 +352,7 @@ internal class OverlayReactionBurstPresenter(
                 playTogether(
                     ObjectAnimator.ofFloat(animView, "scaleX", 1f, 1.08f).apply { duration = 280 },
                     ObjectAnimator.ofFloat(animView, "scaleY", 1f, 1.08f).apply { duration = 280 },
-                    ObjectAnimator.ofFloat(labelsBlock, "translationY", 0f, senderBelowAnimMargin.toFloat())
+                    ObjectAnimator.ofFloat(senderLine, "translationY", 0f, senderBelowAnimMargin.toFloat())
                         .apply { duration = 260 },
                 )
                 addListener(

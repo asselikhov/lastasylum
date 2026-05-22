@@ -71,7 +71,8 @@ class OverlayCommandsPopover(
     private var reactionPreviewLotties: List<LottieAnimationView> = emptyList()
     private var reactionPreviewKeepAliveRunnable: Runnable? = null
     private var attachedWindowManager: WindowManager? = null
-    private var gameGateSuppressHeld = false
+    /** Парные acquire/release: меню, picker, координаты, входящий burst. */
+    private var gameGateSuppressDepth = 0
 
     fun isShowing(): Boolean =
         menuScrim != null ||
@@ -88,15 +89,18 @@ class OverlayCommandsPopover(
         removeShell(menuScrim)
         menuScrim = null
         attachedWindowManager = null
-        releaseGameGateSuppress()
+        clearGameGateSuppress()
         OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
     }
 
     private fun hideReactionPickOnly() {
+        val hadPicker = reactionPickScrim != null
         removeShell(reactionPickScrim)
         reactionPickScrim = null
-        if (!isShowing()) {
+        if (hadPicker) {
             releaseGameGateSuppress()
+        }
+        if (!isShowing()) {
             OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
         }
     }
@@ -104,30 +108,37 @@ class OverlayCommandsPopover(
     private fun hideReactionBurstOnly() {
         reactionBurstPresenter.clear()
         if (!isShowing()) {
-            releaseGameGateSuppress()
             OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
         }
     }
 
     private fun hideCoordOnly() {
+        val hadCoord = coordScrim != null
         removeShell(coordScrim)
         coordScrim = null
-        if (!isShowing()) {
+        if (hadCoord) {
             releaseGameGateSuppress()
+        }
+        if (!isShowing()) {
             OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
         }
     }
 
     private fun acquireGameGateSuppress() {
-        if (gameGateSuppressHeld) return
+        gameGateSuppressDepth++
         OverlayChatInteractionHold.acquireGameForegroundSuppress()
-        gameGateSuppressHeld = true
     }
 
     private fun releaseGameGateSuppress() {
-        if (!gameGateSuppressHeld) return
+        if (gameGateSuppressDepth <= 0) return
+        gameGateSuppressDepth--
         OverlayChatInteractionHold.releaseGameForegroundSuppress()
-        gameGateSuppressHeld = false
+    }
+
+    private fun clearGameGateSuppress() {
+        while (gameGateSuppressDepth > 0) {
+            releaseGameGateSuppress()
+        }
     }
 
     private fun removeShell(shell: FrameLayout?) {
@@ -287,6 +298,7 @@ class OverlayCommandsPopover(
         broadcast: Boolean = false,
     ) {
         attachedWindowManager = windowManager
+        acquireGameGateSuppress()
         reactionBurstPresenter.enqueue(
             windowManager,
             OverlayReactionBurstRequest(
@@ -294,7 +306,14 @@ class OverlayCommandsPopover(
                 reactionId = reactionId,
                 broadcast = broadcast,
             ),
-        )
+        ) {
+            if (!reactionBurstPresenter.isActive()) {
+                releaseGameGateSuppress()
+            }
+            if (!isShowing()) {
+                OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
+            }
+        }
     }
 
     private fun emitReactionIfConnected(block: () -> Unit): Boolean {
@@ -1360,8 +1379,9 @@ class OverlayCommandsPopover(
         }
 
         if (runCatching { windowManager.addView(scrim, params) }.isFailure) {
+            releaseGameGateSuppress()
             if (!isShowing()) {
-                releaseGameGateSuppress()
+                OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
             }
             return
         }
@@ -1628,8 +1648,9 @@ class OverlayCommandsPopover(
         }
 
         if (runCatching { windowManager.addView(scrim, params) }.isFailure) {
+            releaseGameGateSuppress()
             if (!isShowing()) {
-                releaseGameGateSuppress()
+                OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
             }
             return
         }
