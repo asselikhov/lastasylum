@@ -34,6 +34,8 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -64,6 +66,7 @@ import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.ContentPaste
+import androidx.compose.material.icons.automirrored.outlined.Forward
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material.icons.outlined.DeleteOutline
@@ -624,7 +627,17 @@ fun ChatScreen(
     val messagesRef = rememberUpdatedState(state.messages)
     val jumpToQuotedMessage = remember(scope, listState) {
         { targetId: String ->
-            val idx = messagesRef.value.indexOfFirst { it._id == targetId }
+            val timeline = buildChatTimeline(messagesRef.value)
+            val idx = timeline.indexOfFirst { entry ->
+                when (entry) {
+                    is ChatTimelineEntry.ChatMessageItem -> entry.message._id == targetId
+                    is ChatTimelineEntry.ChatAlbumItem ->
+                        entry.messageIndices.any { i ->
+                            messagesRef.value.getOrNull(i)?._id == targetId
+                        }
+                    else -> false
+                }
+            }
             if (idx >= 0) {
                 scope.launch {
                     listState.scrollToItem(idx)
@@ -644,9 +657,7 @@ fun ChatScreen(
                     .fillMaxSize()
                     .then(
                         if (overlayUi) {
-                            Modifier
-                                .statusBarsPadding()
-                                .padding(top = SquadRelayDimens.itemGap)
+                            Modifier.padding(top = 2.dp)
                         } else {
                             Modifier.padding(top = SquadRelayDimens.screenTopPadding)
                         },
@@ -663,6 +674,7 @@ fun ChatScreen(
                     rooms = state.rooms,
                     selectedRoomId = selectedRoomId,
                     onSelectRoom = onSelectRoom,
+                    overlayUi = overlayUi,
                 )
             }
 
@@ -775,8 +787,10 @@ fun ChatScreen(
                                     ) &&
                                 !state.isSending
                             ) {
-                                focusManager.clearFocus()
-                                keyboardController?.hide()
+                                if (overlayUi) {
+                                    focusManager.clearFocus(force = true)
+                                    keyboardController?.hide()
+                                }
                                 onSendDraft()
                             }
                         },
@@ -1377,6 +1391,7 @@ private fun ChatRoomsBar(
     rooms: List<com.lastasylum.alliance.data.chat.ChatRoomDto>,
     selectedRoomId: String?,
     onSelectRoom: (String) -> Unit,
+    overlayUi: Boolean = false,
 ) {
     if (rooms.isEmpty()) return
     val roomsKey = remember(rooms) {
@@ -1413,7 +1428,7 @@ private fun ChatRoomsBar(
         tabs = tabs,
         selectedId = selectedRoomId,
         onSelect = onSelectRoom,
-        modifier = Modifier.padding(bottom = 6.dp),
+        modifier = Modifier.padding(bottom = if (overlayUi) 4.dp else 6.dp),
     )
 }
 
@@ -3242,9 +3257,11 @@ private fun ChatMessageActionsSheet(
     onPasteToInput: () -> Unit,
 ) {
     OverlayAwareBottomSheet(onDismissRequest = onDismiss) {
+        val sheetScroll = rememberScrollState()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(sheetScroll)
                 .padding(
                     horizontal = SquadRelayDimens.contentPaddingHorizontal,
                     vertical = SquadRelayDimens.itemGap,
@@ -3304,6 +3321,12 @@ private fun ChatMessageActionsSheet(
                 }
             }
             MessageSheetDividerSpaced()
+            Text(
+                text = stringResource(R.string.chat_sheet_section_actions),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
+            )
             MessageSheetActionRow(
                 icon = Icons.Outlined.ContentCopy,
                 label = stringResource(R.string.chat_action_copy),
@@ -3324,6 +3347,17 @@ private fun ChatMessageActionsSheet(
                 label = stringResource(R.string.chat_action_reply),
                 onClick = onReply,
             )
+            MessageSheetActionRow(
+                icon = Icons.AutoMirrored.Outlined.Forward,
+                label = stringResource(R.string.chat_action_forward),
+                onClick = onForward,
+            )
+            Text(
+                text = stringResource(R.string.chat_sheet_section_reactions),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -3338,11 +3372,14 @@ private fun ChatMessageActionsSheet(
                     }
                 }
             }
-            MessageSheetActionRow(
-                icon = Icons.Outlined.ContentPaste,
-                label = stringResource(R.string.chat_action_forward),
-                onClick = onForward,
-            )
+            if (mayEdit || canDelete) {
+                Text(
+                    text = stringResource(R.string.chat_sheet_section_manage),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
+                )
+            }
             if (mayEdit) {
                 MessageSheetActionRow(
                     icon = Icons.Outlined.Edit,

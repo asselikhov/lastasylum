@@ -166,7 +166,7 @@ private fun OverlayInWindowBottomSheet(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .zIndex(24f),
+            .zIndex(52f),
     ) {
         Box(
             modifier = Modifier

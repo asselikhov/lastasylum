@@ -47,6 +47,16 @@ private val overlayMemeDrawableIds = intArrayOf(
     R.drawable.overlay_meme_13,
     R.drawable.overlay_meme_14,
     R.drawable.overlay_meme_15,
+    R.drawable.overlay_meme_16,
+    R.drawable.overlay_meme_17,
+    R.drawable.overlay_meme_18,
+    R.drawable.overlay_meme_19,
+    R.drawable.overlay_meme_20,
+    R.drawable.overlay_meme_21,
+    R.drawable.overlay_meme_22,
+    R.drawable.overlay_meme_23,
+    R.drawable.overlay_meme_24,
+    R.drawable.overlay_meme_25,
 )
 
 private val overlayStickerAssetStems = arrayOf(

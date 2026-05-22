@@ -1666,9 +1666,6 @@ class CombatOverlayService : Service() {
         if (overlayChatTeamPanelVisible) {
             hideOverlayChatTeamPanelNow(clearStrip = false)
         }
-        if (pane == OverlayHudPane.Chat) {
-            overlayStatusHudFlow.value = overlayStatusHudFlow.value.copy(allianceChatUnread = 0)
-        }
         showOverlayChatTeamPanel(hudPane = pane)
     }
 
@@ -1921,6 +1918,7 @@ class CombatOverlayService : Service() {
                 if (!isInGameOverlayUiActive()) return@post
                 refreshOverlayStatusHudData(force = true)
                 scheduleOverlayStatusHudRefresh()
+                refreshOverlayChatStripNow()
             }
         }
         syncOverlayHudsIfReady()
@@ -2317,16 +2315,28 @@ class CombatOverlayService : Service() {
 
     /** Поднять окно ленты, когда в буфере есть карточки и игрок в матче. */
     private fun ensureStripWindowVisibleForRaidTraffic() {
-        if (!isInGameOverlayUiActive()) return
+        if (!isOverlayChatRoutingActive()) return
         if (isOverlayHudOnlyMode()) return
         if (overlayChatTeamPanelVisible) return
         if (stripBuffer.visibleForPreview().isEmpty() && chatStripPreviewFlow.value.isEmpty()) return
+        if (!isOverlayShellActive()) {
+            ensureOverlayIfPermitted()
+        }
         val wm = windowManager ?: systemWindowManager() ?: return
         runCatching { ensureChatStripWindow(wm) }
         chatStripHost?.visibility = View.VISIBLE
         if (!chatStripZOrderLifted) {
             scheduleStripZOrderLift()
         }
+    }
+
+    /** Маршрутизация raid/hub в ленту и бейдж, пока оверлей включён (в т.ч. краткий grace гейта). */
+    private fun isOverlayChatRoutingActive(): Boolean {
+        if (!AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()) return false
+        if (overlaySessionActive) return true
+        if (isInGameOverlayUiActive()) return true
+        return lastOverlayInGameAtMs > 0L &&
+            System.currentTimeMillis() - lastOverlayInGameAtMs < OVERLAY_INGAME_GRACE_MS
     }
 
     /**
@@ -2406,10 +2416,10 @@ class CombatOverlayService : Service() {
     private fun ingestOverlayRaidMessage(
         msg: ChatMessage,
         refreshNow: Boolean,
-        allowRetryOnSkip: Boolean = true,
+        retryIndex: Int = 0,
     ) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
-            mainHandler.post { ingestOverlayRaidMessage(msg, refreshNow, allowRetryOnSkip) }
+            mainHandler.post { ingestOverlayRaidMessage(msg, refreshNow, retryIndex) }
             return
         }
         val raidId = resolveOverlayRaidRoomId() ?: trustedOverlayRaidRoomId
@@ -2418,14 +2428,14 @@ class CombatOverlayService : Service() {
             if (BuildConfig.DEBUG) {
                 Log.d(
                     OVERLAY_DIAG_TAG,
-                    "stripSkip room=${normalized.roomId} raid=$raidId trusted=$trustedOverlayRaidRoomId id=${normalized._id}",
+                    "stripSkip room=${normalized.roomId} raid=$raidId trusted=$trustedOverlayRaidRoomId id=${normalized._id} retry=$retryIndex",
                 )
             }
-            if (allowRetryOnSkip && normalized.roomId.isNotBlank()) {
+            if (retryIndex < STRIP_INGEST_RETRY_DELAYS_MS.size) {
                 prefetchOverlayRaidRoomForStrip()
                 mainHandler.postDelayed(
-                    { ingestOverlayRaidMessage(msg, refreshNow, allowRetryOnSkip = false) },
-                    120L,
+                    { ingestOverlayRaidMessage(msg, refreshNow, retryIndex + 1) },
+                    STRIP_INGEST_RETRY_DELAYS_MS[retryIndex],
                 )
             }
             return
@@ -2460,6 +2470,7 @@ class CombatOverlayService : Service() {
         }
         val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
         if (selfId.isNotBlank() && msg.senderId.trim() == selfId) return
+        refreshOverlayHubUnreadOnly()
         scheduleDebouncedHubHudRefresh()
     }
 
@@ -2717,14 +2728,14 @@ class CombatOverlayService : Service() {
         overlayReactionListener = reactionListener
         val readListener: (com.lastasylum.alliance.data.chat.ChatRoomReadEvent) -> Unit = readListener@{ event ->
             mainHandler.post {
-                if (!overlaySessionActive && !isInGameOverlayUiActive()) return@post
+                if (!isOverlayChatRoutingActive()) return@post
                 applyOverlayHubReadFromSelf(event)
             }
         }
         overlayReadListener = readListener
         val listener: (ChatMessage) -> Unit = listener@{ msg ->
             mainHandler.post {
-                if (!overlaySessionActive && !isInGameOverlayUiActive()) return@post
+                if (!isOverlayChatRoutingActive()) return@post
                 val hubId = cachedAllianceHubRoomId
                 val isHub = !hubId.isNullOrBlank() && msg.roomId.trim() == hubId.trim()
                 val raidId = resolveOverlayRaidRoomId() ?: trustedOverlayRaidRoomId
@@ -2859,6 +2870,8 @@ class CombatOverlayService : Service() {
         val manager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         windowManager = manager
         overlaySessionActive = true
+        prefetchOverlayRaidRoomForStrip()
+        resolveCachedAllianceHubRoomId()
         if (!isOverlayHudOnlyMode()) {
             ensureChatStripWindow(manager)
             if (chatStripHost == null) {
@@ -3197,7 +3210,10 @@ class CombatOverlayService : Service() {
                                     }
                                     }
                                 }
-                                if (hudPane == null) {
+                                val overlayChatModalOpen = chatState.activeActionMessageId != null ||
+                                    chatState.confirmDeleteMessageId != null ||
+                                    chatState.confirmBulkDelete
+                                if (hudPane == null && !overlayChatModalOpen) {
                                 TabRow(selectedTabIndex = selectedTab) {
                                     Tab(
                                         selected = selectedTab == 0,
@@ -3473,6 +3489,7 @@ class CombatOverlayService : Service() {
         private const val OVERLAY_CLOSE_HUD_REFRESH_DELAY_MS = 80L
         private const val STRIP_ZORDER_MIN_INTERVAL_MS = 30_000L
         private const val STRIP_ZORDER_LIFT_DELAY_MS = 0L
+        private val STRIP_INGEST_RETRY_DELAYS_MS = longArrayOf(120L, 350L, 800L, 1_800L)
         /** Симметричный отступ HUD от края игрового экрана (левый START / правый END). */
         private const val OVERLAY_HUD_WINDOW_X_DP = OverlayHudLayout.WINDOW_X_DP
         private const val OVERLAY_HUD_LEFT_WINDOW_X_DP = OverlayHudLayout.WINDOW_X_DP
