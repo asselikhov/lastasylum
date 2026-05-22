@@ -459,14 +459,11 @@ class ChatViewModel(
         val viewingSelected =
             !selected.isNullOrBlank() && _state.value.messages.isNotEmpty()
         return serverRooms.map { room ->
-            val base = if (viewingSelected && room.id == selected) {
-                room.copy(unreadCount = 0)
-            } else {
-                room
+            val unread = when {
+                viewingSelected && room.id == selected -> 0
+                else -> effectiveUnreadForRoom(room)
             }
-            base.copy(
-                unreadCount = effectiveUnreadForRoom(base),
-            )
+            room.copy(unreadCount = unread)
         }
     }
 

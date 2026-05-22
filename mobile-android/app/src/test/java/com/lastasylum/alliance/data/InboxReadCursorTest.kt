@@ -17,13 +17,25 @@ class InboxReadCursorTest {
     }
 
     @Test
-    fun effectiveUnread_keepsServerCount_whenServerLastReadNotAckedYet() {
+    fun effectiveUnread_zeroesStaleServerCount_whenLocalReadButServerLastMissing() {
         assertEquals(
-            3,
+            0,
             effectiveUnreadCount(
                 serverUnread = 3,
                 lastReadMessageId = null,
                 localLastReadMessageId = "000000000000000000000040",
+            ),
+        )
+    }
+
+    @Test
+    fun effectiveUnread_zeroesStaleServerCount_whenCursorsEqual() {
+        assertEquals(
+            0,
+            effectiveUnreadCount(
+                serverUnread = 2,
+                lastReadMessageId = "000000000000000000000070",
+                localLastReadMessageId = "000000000000000000000070",
             ),
         )
     }
