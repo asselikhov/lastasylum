@@ -196,11 +196,10 @@ fun ChatMessageBodyText(
     textStyle: TextStyle = MaterialTheme.typography.bodyMedium,
     fadeBaseColor: Color = MaterialTheme.colorScheme.surface,
 ) {
-    val scheme = MaterialTheme.colorScheme
     val expandLinkColor = if (isMine) {
-        onBubble.copy(alpha = 0.92f)
+        Color(0xFF8FD3FF)
     } else {
-        scheme.primary.copy(alpha = 0.92f)
+        Color(0xFF5EB3F6)
     }
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.width(maxWidth)) {

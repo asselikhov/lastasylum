@@ -815,6 +815,9 @@ class OverlayCommandsPopover(
             background = fieldBackground()
             setPadding(dp(12), dp(10), dp(12), dp(10))
             gravity = Gravity.TOP or Gravity.START
+            isFocusable = true
+            isFocusableInTouchMode = true
+            showSoftInputOnFocus = true
             inputType = InputType.TYPE_CLASS_TEXT or
                 InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
                 InputType.TYPE_TEXT_FLAG_MULTI_LINE
@@ -973,8 +976,7 @@ class OverlayCommandsPopover(
                 stopReactionPreviewKeepAlive()
                 mainHandler.post {
                     if (menuScrim == null || reactionTextPanel.visibility != View.VISIBLE) return@post
-                    reactionTextInput.requestFocus()
-                    showKeyboard(reactionTextInput)
+                    focusReactionTextInputAndShowKeyboard(reactionTextInput)
                 }
                 return
             }
@@ -1298,11 +1300,11 @@ class OverlayCommandsPopover(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             overlayWindowType(),
-            OverlayWindowLayout.popupWindowFlags(),
+            OverlayWindowLayout.overlayModalWindowFlags(),
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
             OverlayWindowLayout.applyFullscreenOverlayWindow(context, this)
-            OverlayWindowLayout.applyHistoryPanelSoftInputMode(this)
+            OverlayWindowLayout.applyOverlayModalSoftInputMode(this)
         }
 
         if (runCatching { windowManager.addView(scrim, params) }.isFailure) return
@@ -1895,9 +1897,20 @@ class OverlayCommandsPopover(
         imm.hideSoftInputFromWindow(edit.windowToken, 0)
     }
 
+    private fun focusReactionTextInputAndShowKeyboard(edit: EditText) {
+        edit.requestFocus()
+        showKeyboard(edit)
+        edit.postDelayed({ showKeyboard(edit) }, 80L)
+    }
+
     private fun showKeyboard(edit: EditText) {
+        if (!edit.isFocused) edit.requestFocus()
         val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager ?: return
-        imm.showSoftInput(edit, InputMethodManager.SHOW_IMPLICIT)
+        @Suppress("DEPRECATION")
+        if (!imm.showSoftInput(edit, InputMethodManager.SHOW_IMPLICIT)) {
+            @Suppress("DEPRECATION")
+            imm.showSoftInput(edit, InputMethodManager.SHOW_FORCED)
+        }
     }
 
     private companion object {

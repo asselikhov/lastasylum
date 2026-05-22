@@ -31,7 +31,6 @@ internal fun ForumMessageBubble(
     onDownloadForumFile: (TeamForumMessageDto) -> Unit = {},
 ) {
     val chatMessage = remember(message) { message.toDisplayChatMessage(teamId, topicId) }
-    val messageId = message.id
     ChatMessageBubble(
         message = chatMessage,
         cluster = cluster?.toChatClusterFlags(),

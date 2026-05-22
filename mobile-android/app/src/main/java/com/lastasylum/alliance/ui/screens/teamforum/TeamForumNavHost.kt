@@ -2,6 +2,8 @@ package com.lastasylum.alliance.ui.screens.teamforum
 
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -24,18 +26,14 @@ import androidx.compose.foundation.gestures.transformable
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import com.lastasylum.alliance.ui.chat.AttachmentPreviewOverlay
+import com.lastasylum.alliance.ui.chat.ChatComposer
 import com.lastasylum.alliance.ui.chat.capForumMessagesOldestFirst
 import com.lastasylum.alliance.ui.chat.rememberForumMessageClusterFlags
-import com.lastasylum.alliance.ui.chat.ChatBubbleAuthorHeader
-import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarEndPad
-import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarSize
-import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
-import com.lastasylum.alliance.ui.chat.TelegramImageCaptionBar
-import com.lastasylum.alliance.ui.chat.chatBubbleShapeIncoming
-import com.lastasylum.alliance.ui.chat.chatBubbleShapeOutgoing
 import com.lastasylum.alliance.ui.chat.LocalOpenRemoteChatImagePreview
 import com.lastasylum.alliance.ui.chat.MessengerImagesPreviewHost
-import com.lastasylum.alliance.ui.chat.TelegramLikeAttachmentsGrid
+import com.lastasylum.alliance.ui.chat.toDisplayChatMessage
+import com.lastasylum.alliance.ui.chat.queryDisplayName
 import com.lastasylum.alliance.ui.theme.roleAccentColor
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Column
@@ -96,6 +94,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
+import android.widget.Toast
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -146,12 +146,6 @@ import com.lastasylum.alliance.ui.chat.ChatStickerFormat
 import com.lastasylum.alliance.ui.chat.chatDayKey
 import com.lastasylum.alliance.ui.chat.formatChatDaySeparator
 import com.lastasylum.alliance.ui.chat.formatChatTime
-import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingBubble
-import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingOnBubble
-import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingBubble
-import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingOnBubble
-import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMuted
-import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMutedIncoming
 import com.lastasylum.alliance.ui.components.team.ForumTopicFeedCard
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
@@ -596,9 +590,8 @@ private fun TeamForumTopicChatRoute(
     var loadingOlder by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var draft by remember { mutableStateOf("") }
-    var pendingImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
-    var pendingImageUrl by remember { mutableStateOf<String?>(null) }
-    var pendingImageFileIds by remember { mutableStateOf<List<String>>(emptyList()) }
+    var pickedImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var attachmentPreviewStartIndex by remember { mutableStateOf<Int?>(null) }
     var pendingApkFileId by remember { mutableStateOf<String?>(null) }
     var pendingApkLabel by remember { mutableStateOf<String?>(null) }
     var uploadingImage by remember { mutableStateOf(false) }
@@ -632,9 +625,8 @@ private fun TeamForumTopicChatRoute(
     }
 
     fun clearPendingAttachment() {
-        pendingImageUris = emptyList()
-        pendingImageUrl = null
-        pendingImageFileIds = emptyList()
+        pickedImageUris = emptyList()
+        attachmentPreviewStartIndex = null
         pendingApkFileId = null
         pendingApkLabel = null
     }
@@ -693,35 +685,13 @@ private fun TeamForumTopicChatRoute(
         return msg.senderUserId == currentUserId || canModerateMessages
     }
 
-    fun uploadPickedImages(uris: List<Uri>) {
-        if (uris.isEmpty()) return
-        scope.launch {
-            uploadingImage = true
-            error = null
-            val result = uploadForumImagesFromUris(context, res, teamsRepository, teamId, uris)
-            uploadingImage = false
-            result.onSuccess { (ids, preview) ->
-                pendingApkFileId = null
-                pendingApkLabel = null
-                pendingImageFileIds = ids
-                pendingImageUrl = preview
-            }
-            result.onFailure { e ->
-                pendingImageFileIds = emptyList()
-                pendingImageUrl = null
-                error = e.toUserMessageRu(res)
-            }
-        }
-    }
-
     fun uploadPickedApk(uri: Uri, displayName: String) {
         scope.launch {
             uploadingFile = true
             error = null
             pendingApkLabel = displayName.trim().ifBlank { "update.apk" }
-            pendingImageUris = emptyList()
-            pendingImageUrl = null
-            pendingImageFileIds = emptyList()
+            pickedImageUris = emptyList()
+            attachmentPreviewStartIndex = null
             val result = uploadForumApkFromUri(context, res, teamsRepository, teamId, uri, displayName)
             uploadingFile = false
             result.onSuccess { (fileId, label) ->
@@ -735,6 +705,15 @@ private fun TeamForumTopicChatRoute(
             }
         }
     }
+
+    val pickApkLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+        onResult = { uri ->
+            if (uri != null) {
+                uploadPickedApk(uri, queryDisplayName(context, uri))
+            }
+        },
+    )
 
     fun loadForumMessages(before: String?, appendOlder: Boolean) {
         scope.launch {
@@ -1022,38 +1001,49 @@ private fun TeamForumTopicChatRoute(
                 }
             }
         }
-        ForumTopicComposer(
+        val forumReplyChat = remember(replyToMessage, teamId, topicId) {
+            replyToMessage?.toDisplayChatMessage(teamId, topicId)
+        }
+        ChatComposer(
             draft = draft,
-            onDraftChange = { draft = it },
-            replyTo = replyToMessage,
-            onClearReply = { replyToMessage = null },
-            pendingImageUris = pendingImageUris,
-            onClearPendingImage = { clearPendingAttachment() },
-            pendingImageRemotePreviewUrl = pendingImageUrl,
-            postedImageFileIds = pendingImageFileIds,
-            pendingApkLabel = pendingApkLabel,
-            postedApkFileId = pendingApkFileId,
-            isForumAdmin = canModerateMessages,
+            pickedImageUris = pickedImageUris,
+            replyToMessage = forumReplyChat,
             isSending = sending,
-            isUploadingImage = uploadingImage,
-            isUploadingFile = uploadingFile,
             sendEnabled = true,
+            readOnly = uploadingImage || uploadingFile,
             canUseZlobyakaStickers = enabledStickerPackKeys.contains(ZlobyakaStickerPack.PACK_KEY),
-            onSend = {
+            onDraftChange = {
+                draft = it
+                forumSocket.emitTyping()
+            },
+            onSendDraft = {
                 scope.launch {
                     val trimmed = draft.trim()
-                    if (trimmed.isEmpty() && pendingImageFileIds.isEmpty() && pendingApkFileId == null) {
+                    if (trimmed.isEmpty() && pickedImageUris.isEmpty() && pendingApkFileId == null) {
                         return@launch
                     }
-                    if (uploadingImage || uploadingFile) return@launch
+                    if (uploadingImage || uploadingFile || sending) return@launch
                     sending = true
+                    var imageFileIds: List<String>? = null
+                    if (pickedImageUris.isNotEmpty()) {
+                        uploadingImage = true
+                        uploadForumImagesFromUris(context, res, teamsRepository, teamId, pickedImageUris)
+                            .onSuccess { (ids, _) -> imageFileIds = ids.takeIf { it.isNotEmpty() } }
+                            .onFailure { e ->
+                                error = e.toUserMessageRu(res)
+                                sending = false
+                                uploadingImage = false
+                                return@launch
+                            }
+                        uploadingImage = false
+                    }
                     teamsRepository.postForumMessage(
                         teamId,
                         topicId,
                         trimmed,
                         replyToMessageId = replyToMessage?.id,
                         imageFileId = null,
-                        imageFileIds = pendingImageFileIds.takeIf { it.isNotEmpty() },
+                        imageFileIds = imageFileIds,
                         fileFileId = pendingApkFileId,
                     )
                         .onSuccess {
@@ -1084,14 +1074,28 @@ private fun TeamForumTopicChatRoute(
                     replyToMessage = null
                 }
             },
-            onImageUrisPicked = { uris ->
-                val merged = (pendingImageUris + uris).distinct().take(12)
-                pendingImageUris = merged
-                uploadPickedImages(merged)
+            onPickImages = { uris, append ->
+                pickedImageUris = if (append) {
+                    (pickedImageUris + uris).distinctBy { it.toString() }
+                } else {
+                    uris.distinctBy { it.toString() }
+                }.take(12)
             },
-            onPickApk = { uri, name -> uploadPickedApk(uri, name) },
+            onRemovePickedImage = { uri ->
+                pickedImageUris = pickedImageUris.filterNot { it == uri }
+            },
+            onClearPickedImages = { clearPendingAttachment() },
+            onClearReply = { replyToMessage = null },
+            onOpenAttachmentPreview = { idx -> attachmentPreviewStartIndex = idx },
+            pendingApkLabel = pendingApkLabel,
             onClearPendingApk = { clearPendingAttachment() },
-            onTyping = { forumSocket.emitTyping() },
+            isForumAdmin = canModerateMessages,
+            onPickApk = {
+                OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
+                pickApkLauncher.launch("application/*")
+            },
+            hasReadyFileAttachment = !pendingApkFileId.isNullOrBlank(),
+            isUploadingFile = uploadingFile,
         )
     }
 
@@ -1101,6 +1105,46 @@ private fun TeamForumTopicChatRoute(
                 urls = urls,
                 startIndex = start,
                 onDismiss = { remoteImagePreview = null },
+            )
+        }
+    }
+    attachmentPreviewStartIndex?.let { start ->
+        if (pickedImageUris.isNotEmpty()) {
+            AttachmentPreviewOverlay(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(8f),
+                uris = pickedImageUris,
+                startIndex = start,
+                onDismiss = { attachmentPreviewStartIndex = null },
+                onOpenExternal = { uri ->
+                    val viewIntent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, "image/*")
+                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    val resolved = context.packageManager.resolveActivity(
+                        viewIntent,
+                        android.content.pm.PackageManager.MATCH_DEFAULT_ONLY,
+                    )
+                    if (resolved != null) {
+                        context.startActivity(viewIntent)
+                    } else {
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.chat_open_external_failed),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                },
+                onRemove = { uri ->
+                    pickedImageUris = pickedImageUris.filterNot { it == uri }
+                    if (pickedImageUris.size <= 1) {
+                        attachmentPreviewStartIndex = null
+                    } else {
+                        attachmentPreviewStartIndex =
+                            attachmentPreviewStartIndex?.coerceAtMost(pickedImageUris.lastIndex)
+                    }
+                },
             )
         }
     }

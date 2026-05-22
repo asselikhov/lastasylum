@@ -151,6 +151,18 @@ object OverlayWindowLayout {
         params.softInputMode = mode
     }
 
+    /**
+     * Модальное окно с полем ввода (координаты, текст реакции): фокус + IME, касания вне карточки — в игру.
+     */
+    fun overlayModalWindowFlags(): Int =
+        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+
+    fun applyOverlayModalSoftInputMode(params: WindowManager.LayoutParams) {
+        applyCoordinateDialogSoftInputMode(params)
+    }
+
     private fun applyDisplayCutoutCompat(params: WindowManager.LayoutParams) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             params.layoutInDisplayCutoutMode =

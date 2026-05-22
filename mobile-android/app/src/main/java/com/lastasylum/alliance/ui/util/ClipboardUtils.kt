@@ -65,11 +65,25 @@ private fun ClipData.Item.extractPlainText(context: Context): String? {
         }.toString().trim()
         if (plain.isNotEmpty()) return plain
     }
+    uri?.let { uriValue ->
+        readPlainTextFromContentUri(context, uriValue)?.let { return it }
+    }
     return null
+}
+
+private fun readPlainTextFromContentUri(context: Context, uri: android.net.Uri): String? {
+    return runCatching {
+        context.contentResolver.openTypedAssetFileDescriptor(uri, "text/*", null)
+            ?.use { afd ->
+                afd.createInputStream()?.bufferedReader()?.use { it.readText() }?.trim()
+            }
+            ?: context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }?.trim()
+    }.getOrNull()?.takeIf { it.isNotEmpty() }
 }
 
 fun readClipboardPlainText(context: Context): String? {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return null
+    if (!cm.hasPrimaryClip()) return null
     val clip = cm.primaryClip ?: return null
     if (clip.itemCount <= 0) return null
     for (i in 0 until clip.itemCount) {
