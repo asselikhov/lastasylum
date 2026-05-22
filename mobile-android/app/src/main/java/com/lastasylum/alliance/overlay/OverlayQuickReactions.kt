@@ -60,7 +60,7 @@ private val overlayMemeDrawableIds = intArrayOf(
     R.drawable.overlay_meme_25,
 )
 
-private val overlayStickerAssetStems = arrayOf(
+private val overlayStickerAssetStemsFallback = arrayOf(
     "overlay_sticker_01",
     "overlay_sticker_02",
     "overlay_sticker_03",
@@ -162,11 +162,12 @@ internal fun overlayMemeReactions(): List<OverlayQuickReaction> =
         )
     }
 
-internal fun overlayStickerReactions(): List<OverlayQuickReaction> =
-    overlayStickerAssetStems.mapIndexed { index, stem ->
-        val num = index + 1
+internal fun overlayStickerReactions(context: Context): List<OverlayQuickReaction> {
+    val stems = OverlayReactionBitmapCache.listOverlayStickerStems(context)
+        .ifEmpty { overlayStickerAssetStemsFallback.toList() }
+    return stems.mapIndexed { index, stem ->
         OverlayQuickReaction(
-            id = "sticker_%02d".format(num),
+            id = "sticker_%02d".format(index + 1),
             category = OverlayReactionCategory.STICKERS,
             labelRes = R.string.overlay_reaction_sticker_cd,
             tintHex = "#FFE8F0FF",
@@ -174,27 +175,32 @@ internal fun overlayStickerReactions(): List<OverlayQuickReaction> =
             burstAccentHex = "#CC90A4AE",
         )
     }
+}
 
-internal fun reactionsInCategory(category: OverlayReactionCategory): List<OverlayQuickReaction> =
+internal fun reactionsInCategory(
+    category: OverlayReactionCategory,
+    context: Context,
+): List<OverlayQuickReaction> =
     when (category) {
         OverlayReactionCategory.ANIMATIONS -> overlayAnimationReactions()
         OverlayReactionCategory.MEMES -> overlayMemeReactions()
-        OverlayReactionCategory.STICKERS -> overlayStickerReactions()
+        OverlayReactionCategory.STICKERS -> overlayStickerReactions(context)
     }
 
-internal fun overlayQuickReactionCatalog(): List<OverlayQuickReaction> =
-    overlayAnimationReactions() + overlayMemeReactions() + overlayStickerReactions()
+internal fun overlayQuickReactionCatalog(context: Context): List<OverlayQuickReaction> =
+    overlayAnimationReactions() + overlayMemeReactions() + overlayStickerReactions(context)
 
-internal fun overlayQuickReactionById(reactionId: String): OverlayQuickReaction =
-    overlayQuickReactionCatalog().find { it.id == reactionId }
+internal fun overlayQuickReactionById(context: Context, reactionId: String): OverlayQuickReaction =
+    overlayQuickReactionCatalog(context).find { it.id == reactionId }
         ?: overlayAnimationReactions().first()
 
 /** Избранные этой вкладки первыми, затем остальные. */
 internal fun overlayReactionsForCategory(
     category: OverlayReactionCategory,
     favorites: OverlayReactionFavoritesStore,
+    context: Context,
 ): List<OverlayQuickReaction> {
-    val inTab = reactionsInCategory(category)
+    val inTab = reactionsInCategory(category, context)
     if (inTab.isEmpty()) return emptyList()
     val favIds = favorites.favoriteIds()
     val (fav, rest) = inTab.partition { it.id in favIds }

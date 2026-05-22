@@ -17,9 +17,6 @@ import com.airbnb.lottie.model.KeyPath
 import com.airbnb.lottie.value.LottieValueCallback
 import com.lastasylum.alliance.R
 
-internal const val MAX_REACTION_LOTTIE_PREVIEWS_PLAYING = 3
-internal const val MAX_REACTION_GIF_PREVIEWS_PLAYING = 2
-
 internal fun configureOverlayReactionLottie(lottie: LottieAnimationView, playLoop: Boolean) {
     lottie.repeatCount = if (playLoop) LottieDrawable.INFINITE else 0
     lottie.repeatMode = LottieDrawable.RESTART
@@ -44,6 +41,19 @@ internal fun bindOverlayGifPreview(image: ImageView, context: Context, res: Int,
     }
 }
 
+internal fun resumeOverlayReactionTilePreview(icon: ImageView) {
+    when (icon) {
+        is LottieAnimationView -> {
+            configureOverlayReactionLottie(icon, playLoop = true)
+            if (!icon.isAnimating) icon.playAnimation()
+        }
+        else -> {
+            val d = icon.drawable
+            if (d is Animatable && !d.isRunning) d.start()
+        }
+    }
+}
+
 internal fun createOverlayReactionTileIcon(
     context: Context,
     reaction: OverlayQuickReaction,
@@ -53,14 +63,19 @@ internal fun createOverlayReactionTileIcon(
     if (stickerStem != null) {
         return ImageView(context).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
-            setImageDrawable(
-                AppCompatResources.getDrawable(context, R.drawable.ic_overlay_cmd_reaction)?.mutate(),
-            )
-            OverlayReactionBitmapCache.loadAsync(context, stickerStem) { bmp ->
-                if (bmp != null && isAttachedToWindow) {
-                    setImageBitmap(bmp)
+            setTag(R.id.tag_overlay_reaction_stem, stickerStem)
+            OverlayReactionBitmapCache.get(stickerStem)?.let { setImageBitmap(it) }
+                ?: run {
+                    setImageDrawable(null)
+                    OverlayReactionBitmapCache.loadAsync(context, stickerStem) { bmp ->
+                        post {
+                            if (getTag(R.id.tag_overlay_reaction_stem) != stickerStem) return@post
+                            if (bmp != null) {
+                                setImageBitmap(bmp)
+                            }
+                        }
+                    }
                 }
-            }
         }
     }
     reaction.gifDrawableRes?.let { gifRes ->

@@ -53,9 +53,13 @@ fun chatMessageHasPasteableText(message: ChatMessage): Boolean =
 
 fun readClipboardPlainText(context: Context): String? {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return null
+    if (!cm.hasPrimaryClip()) return null
     val clip = cm.primaryClip ?: return null
-    if (clip.itemCount == 0) return null
-    return clip.getItemAt(0).coerceToText(context)?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+    for (i in 0 until clip.itemCount) {
+        val text = clip.getItemAt(i).coerceToText(context)?.toString()?.trim()
+        if (!text.isNullOrEmpty()) return text
+    }
+    return null
 }
 
 fun appendTextToDraft(current: String, addition: String): String {

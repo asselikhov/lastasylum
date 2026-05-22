@@ -149,7 +149,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.data.chat.ChatAllianceIds
@@ -241,6 +244,7 @@ import com.lastasylum.alliance.ui.util.readClipboardPlainText
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -1357,7 +1361,34 @@ private fun ChatComposer(
     var showMediaPanel by remember { mutableStateOf(false) }
     var showAttachmentsSheet by remember { mutableStateOf(false) }
     var showComposerPasteMenu by remember { mutableStateOf(false) }
+    var clipboardHasPaste by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val density = LocalDensity.current
+    val clipboardManager = remember(context) {
+        context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    }
+    fun refreshClipboardHasPaste() {
+        clipboardHasPaste = !readOnly && readClipboardPlainText(context) != null
+    }
+    fun pasteFromClipboard() {
+        val clip = readClipboardPlainText(context)
+        if (clip.isNullOrBlank()) {
+            Toast.makeText(
+                context,
+                context.getString(R.string.chat_composer_paste_empty),
+                Toast.LENGTH_SHORT,
+            ).show()
+        } else {
+            onDraftChange(appendTextToDraft(draft, clip))
+        }
+        showComposerPasteMenu = false
+    }
+    DisposableEffect(clipboardManager, readOnly) {
+        val listener = ClipboardManager.OnPrimaryClipChangedListener { refreshClipboardHasPaste() }
+        clipboardManager.addPrimaryClipChangedListener(listener)
+        refreshClipboardHasPaste()
+        onDispose { clipboardManager.removePrimaryClipChangedListener(listener) }
+    }
     val overlayUi = LocalOverlayUiMode.current
     val activityResultOwner = LocalActivityResultRegistryOwner.current
     val canHandleBack = LocalOnBackPressedDispatcherOwner.current != null
@@ -1755,7 +1786,37 @@ private fun ChatComposer(
                                     tint = MaterialTheme.colorScheme.primary,
                                 )
                             }
-                            Box(modifier = Modifier.weight(1f)) {
+                            if (clipboardHasPaste) {
+                                IconButton(
+                                    onClick = { pasteFromClipboard() },
+                                    enabled = !readOnly && !isSending,
+                                    modifier = Modifier.size(44.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.ContentPaste,
+                                        contentDescription = stringResource(R.string.chat_composer_paste_cd),
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .then(
+                                        if (readOnly) {
+                                            Modifier
+                                        } else {
+                                            Modifier.pointerInput(Unit) {
+                                                detectTapGestures(
+                                                    onLongPress = {
+                                                        refreshClipboardHasPaste()
+                                                        showComposerPasteMenu = true
+                                                    },
+                                                )
+                                            }
+                                        },
+                                    ),
+                            ) {
                                 TextField(
                                     value = draft,
                                     onValueChange = { if (!readOnly) onDraftChange(it) },
@@ -1763,22 +1824,14 @@ private fun ChatComposer(
                                         .fillMaxWidth()
                                         .focusRequester(focusRequester)
                                         .onFocusChanged { fc ->
-                                            if (!readOnly && fc.isFocused && showMediaPanel) {
-                                                showMediaPanel = false
-                                                keyboard?.show()
-                                            }
-                                        }
-                                        .then(
-                                            if (readOnly) {
-                                                Modifier
-                                            } else {
-                                                Modifier.pointerInput(Unit) {
-                                                    detectTapGestures(
-                                                        onLongPress = { showComposerPasteMenu = true },
-                                                    )
+                                            if (!readOnly && fc.isFocused) {
+                                                refreshClipboardHasPaste()
+                                                if (showMediaPanel) {
+                                                    showMediaPanel = false
+                                                    keyboard?.show()
                                                 }
-                                            },
-                                        ),
+                                            }
+                                        },
                                     readOnly = readOnly,
                                     textStyle = MaterialTheme.typography.bodyMedium,
                                     placeholder = {
@@ -1806,28 +1859,30 @@ private fun ChatComposer(
                                     ),
                                     maxLines = 6,
                                 )
-                                DropdownMenu(
-                                    expanded = showComposerPasteMenu,
-                                    onDismissRequest = { showComposerPasteMenu = false },
-                                ) {
-                                    DropdownMenuItem(
-                                        text = {
-                                            Text(stringResource(R.string.chat_composer_paste_label))
-                                        },
-                                        onClick = {
-                                            showComposerPasteMenu = false
-                                            val clip = readClipboardPlainText(context)
-                                            if (clip.isNullOrBlank()) {
-                                                Toast.makeText(
-                                                    context,
-                                                    context.getString(R.string.chat_composer_paste_empty),
-                                                    Toast.LENGTH_SHORT,
-                                                ).show()
-                                            } else {
-                                                onDraftChange(appendTextToDraft(draft, clip))
+                                if (showComposerPasteMenu) {
+                                    Popup(
+                                        alignment = Alignment.TopCenter,
+                                        offset = IntOffset(0, with(density) { 6.dp.roundToPx() }),
+                                        onDismissRequest = { showComposerPasteMenu = false },
+                                        properties = PopupProperties(focusable = true),
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            shadowElevation = 6.dp,
+                                            tonalElevation = 2.dp,
+                                        ) {
+                                            TextButton(onClick = { pasteFromClipboard() }) {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.ContentPaste,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(18.dp),
+                                                )
+                                                Spacer(Modifier.width(8.dp))
+                                                Text(stringResource(R.string.chat_composer_paste_label))
                                             }
-                                        },
-                                    )
+                                        }
+                                    }
                                 }
                             }
                             val canSend = sendEnabled &&

@@ -777,6 +777,7 @@ class OverlayCommandsPopover(
             val items = overlayReactionsForCategory(
                 selectedReactionSubcategory,
                 reactionFavorites,
+                context,
             )
             reactionTabEmpty.visibility =
                 if (items.isEmpty()) View.VISIBLE else View.GONE
@@ -790,6 +791,9 @@ class OverlayCommandsPopover(
             if (selectedReactionSubcategory == cat) return
             selectedReactionSubcategory = cat
             reopenReactionSubcategory = cat
+            if (cat == OverlayReactionCategory.STICKERS) {
+                OverlayReactionBitmapCache.preloadOverlayStickerPack(context)
+            }
             refreshReactionSubTabs()
             scheduleReactionTilesRebuild()
         }
@@ -820,6 +824,9 @@ class OverlayCommandsPopover(
             onFavoritesChanged = { scheduleReactionTilesRebuild() },
         )
         reactionTilesRecycler.adapter = reactionTilesAdapter
+        reactionTilesAdapter?.let { adapter ->
+            OverlayReactionTilesAdapter.attachVisiblePreviewLifecycle(reactionTilesRecycler, adapter)
+        }
 
         listOf(
             reactionSubAnimChip,
@@ -994,6 +1001,7 @@ class OverlayCommandsPopover(
             rebuildOptionsForCategory(cat)
             if (cat.isReactions) {
                 ensurePopoverSuppressHeld()
+                OverlayReactionBitmapCache.preloadOverlayStickerPack(context)
                 coordsAction.visibility = View.GONE
                 reactionRow.visibility = View.VISIBLE
                 startReactionStripPreviews()
@@ -1483,7 +1491,7 @@ class OverlayCommandsPopover(
         // Сначала новый scrim, потом снимаем меню — иначе [isShowing] на мгновение false.
         val menuToRemove = menuScrim
 
-        val selectedReaction = overlayQuickReactionById(reactionId)
+        val selectedReaction = overlayQuickReactionById(context, reactionId)
         val container = AppContainer.from(context)
         val back = iconBackButton()
         val close = iconCloseButton()

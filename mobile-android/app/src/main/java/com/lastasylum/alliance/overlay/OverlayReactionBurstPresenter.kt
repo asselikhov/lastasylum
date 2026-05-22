@@ -151,7 +151,7 @@ internal class OverlayReactionBurstPresenter(
             return
         }
 
-        val reaction = overlayQuickReactionById(request.reactionId)
+        val reaction = overlayQuickReactionById(context, request.reactionId)
         val displayName = request.fromDisplayName.trim().ifBlank { "—" }
         val broadcast = request.broadcast
         val layout = OverlayReactionBurstLayout.metrics(context, dp)

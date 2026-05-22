@@ -3,7 +3,7 @@ package com.lastasylum.alliance.overlay
 import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
-import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.recyclerview.widget.DiffUtil
@@ -48,6 +48,20 @@ internal class OverlayReactionTilesAdapter(
         activeLotties.clear()
     }
 
+    fun onTileAttachedToWindow(tileHost: View) {
+        val icon = (tileHost as? FrameLayout)?.tag as? android.widget.ImageView ?: return
+        resumeOverlayReactionTilePreview(icon)
+        if (icon is LottieAnimationView && !activeLotties.contains(icon)) {
+            activeLotties.add(icon)
+        }
+    }
+
+    fun onTileDetachedFromWindow(tileHost: View) {
+        val icon = (tileHost as? FrameLayout)?.tag as? android.widget.ImageView ?: return
+        stopOverlayReactionTileAnimation(icon)
+        if (icon is LottieAnimationView) activeLotties.remove(icon)
+    }
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
         val host = FrameLayout(parent.context)
         val lp = RecyclerView.LayoutParams(tileSizePx, tileSizePx)
@@ -58,13 +72,12 @@ internal class OverlayReactionTilesAdapter(
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
         val reaction = items[position]
-        val playLottie = reaction.lottieRawRes != null && position < MAX_REACTION_LOTTIE_PREVIEWS_PLAYING
-        val playGif = reaction.gifDrawableRes != null && position < MAX_REACTION_GIF_PREVIEWS_PLAYING
-        val playAnimated = playLottie || playGif
+        val playLottie = reaction.lottieRawRes != null
+        val playGif = reaction.gifDrawableRes != null
         holder.host.bindOverlayReactionTile(
             reaction = reaction,
             iconInnerPx = iconInnerPx,
-            playAnimatedPreview = playAnimated,
+            playAnimatedPreview = playLottie || playGif,
             onPick = { onPick(reaction) },
             onToggleFavorite = {
                 favorites.toggleFavorite(reaction.id)
@@ -77,12 +90,13 @@ internal class OverlayReactionTilesAdapter(
         if (icon is LottieAnimationView && playLottie) {
             if (!activeLotties.contains(icon)) activeLotties.add(icon)
         }
+        if (holder.host.isAttachedToWindow) {
+            onTileAttachedToWindow(holder.host)
+        }
     }
 
     override fun onViewRecycled(holder: Holder) {
-        val icon = holder.host.tag as? android.widget.ImageView ?: return
-        stopOverlayReactionTileAnimation(icon)
-        if (icon is LottieAnimationView) activeLotties.remove(icon)
+        onTileDetachedFromWindow(holder.host)
         holder.host.tag = null
         holder.host.removeAllViews()
     }
@@ -105,5 +119,19 @@ internal class OverlayReactionTilesAdapter(
     companion object {
         fun gridLayoutManager(context: Context, spanCount: Int): GridLayoutManager =
             GridLayoutManager(context, spanCount)
+
+        fun attachVisiblePreviewLifecycle(recycler: RecyclerView, adapter: OverlayReactionTilesAdapter) {
+            recycler.addOnChildAttachStateChangeListener(
+                object : RecyclerView.OnChildAttachStateChangeListener {
+                    override fun onChildViewAttachedToWindow(view: View) {
+                        adapter.onTileAttachedToWindow(view)
+                    }
+
+                    override fun onChildViewDetachedFromWindow(view: View) {
+                        adapter.onTileDetachedFromWindow(view)
+                    }
+                },
+            )
+        }
     }
 }

@@ -48,14 +48,47 @@ internal object OverlayReactionBitmapCache {
         inFlight.clear()
     }
 
+    /** Прогрев стикеров вкладки «Стикеры» до отрисовки сетки. */
+    fun preloadOverlayStickerPack(context: Context) {
+        val app = context.applicationContext
+        scope.launch {
+            listOverlayStickerStems(app).forEach { stem ->
+                if (cache.get(stem) == null) {
+                    decodeSticker(app, stem)?.let { cache.put(stem, it) }
+                }
+            }
+        }
+    }
+
+    internal fun listOverlayStickerStems(context: Context): List<String> =
+        runCatching {
+            context.assets.list("stickerpacks/$OVERLAY_REACTION_STICKER_PACK")
+                ?.filter { name ->
+                    name.endsWith(".png", ignoreCase = true) ||
+                        name.endsWith(".webp", ignoreCase = true)
+                }
+                ?.map { name ->
+                    name.substringBeforeLast('.')
+                }
+                ?.sorted()
+                ?: emptyList()
+        }.getOrElse { emptyList() }
+
     private fun decodeSticker(context: Context, stem: String): Bitmap? = runCatching {
         val pack = if (stem.startsWith("overlay_sticker_")) {
             OVERLAY_REACTION_STICKER_PACK
         } else {
             "zlobyaka"
         }
-        context.assets.open("stickerpacks/$pack/$stem.png").use { stream ->
-            BitmapFactory.decodeStream(stream)
+        val base = "stickerpacks/$pack/$stem"
+        for (ext in listOf(".png", ".webp")) {
+            val bmp = runCatching {
+                context.assets.open(base + ext).use { stream ->
+                    BitmapFactory.decodeStream(stream)
+                }
+            }.getOrNull()
+            if (bmp != null) return@runCatching bmp
         }
+        null
     }.getOrNull()
 }
