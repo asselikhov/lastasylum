@@ -28,14 +28,19 @@ internal object OverlayRaidStripRouting {
         msg: ChatMessage,
         prefsRaidId: String?,
         onRaidRoomIdResolved: ((String) -> Unit)? = null,
+        trustedRaidRoomIds: Set<String> = emptySet(),
     ): Boolean {
         val room = msg.roomId.trim()
-        val raidIds = overlayRaidRoomIdsFromCache(prefsRaidId)
+        val raidIds = overlayRaidRoomIdsFromCache(prefsRaidId) + trustedRaidRoomIds
         if (OverlayStripMessageRouter.isOverlayRaidRoomMessage(msg, prefsRaidId, raidIds)) {
             if (room.isNotEmpty()) onRaidRoomIdResolved?.invoke(room)
             return true
         }
         if (room.isEmpty()) return false
+        if (room in trustedRaidRoomIds) {
+            onRaidRoomIdResolved?.invoke(room)
+            return true
+        }
         val rooms = ChatSessionCache.getFreshRooms() ?: return false
         val dto = rooms.firstOrNull { it.id.trim() == room } ?: return false
         if (!ChatRaidRoomSync.isAllianceRaidRoom(dto)) return false

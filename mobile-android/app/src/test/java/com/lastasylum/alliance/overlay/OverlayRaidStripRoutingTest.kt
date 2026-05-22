@@ -36,6 +36,18 @@ class OverlayRaidStripRoutingTest {
     }
 
     @Test
+    fun acceptsRaid_whenTrustedRoomIdMatches() {
+        val msg = message(roomId = "raid-trusted")
+        assertTrue(
+            OverlayRaidStripRouting.acceptsRaidStripMessage(
+                msg,
+                prefsRaidId = null,
+                trustedRaidRoomIds = setOf("raid-trusted"),
+            ),
+        )
+    }
+
+    @Test
     fun invokesCallback_whenResolvedFromRoomList() {
         ChatSessionCache.update(
             listOf(

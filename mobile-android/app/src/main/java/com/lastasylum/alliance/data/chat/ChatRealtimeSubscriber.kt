@@ -212,7 +212,6 @@ class ChatRealtimeSubscriber(
 
     fun dispatchOverlayHttpMessage(message: ChatMessage) {
         val listeners = overlayMessageListeners.toList()
-        if (listeners.isEmpty()) return
         mainHandler.post {
             listeners.forEach { l -> runCatching { l(message) } }
         }
