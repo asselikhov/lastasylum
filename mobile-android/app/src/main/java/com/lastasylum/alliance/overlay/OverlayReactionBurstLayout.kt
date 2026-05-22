@@ -31,6 +31,9 @@ internal object OverlayReactionBurstLayout {
     /** Окно вспышки ниже верхней ленты чата, чтобы подпись не уезжала за край экрана. */
     const val WINDOW_TOP_Y_DP = 72
 
+    /** Отступ подписи отправителя под картинкой мема / Lottie / стикера. */
+    const val SENDER_BELOW_ANIM_DP = 8
+
     data class Metrics(
         val animSidePx: Int,
         val animPadPx: Int,

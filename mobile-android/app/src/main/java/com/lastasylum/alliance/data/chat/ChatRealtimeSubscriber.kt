@@ -24,6 +24,8 @@ class ChatRealtimeSubscriber(
         java.util.concurrent.CopyOnWriteArrayList<(OverlayReactionEvent) -> Unit>()
     private val overlayChatPanelClosedListeners =
         java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
+    private val overlayReadListeners =
+        java.util.concurrent.CopyOnWriteArrayList<(ChatRoomReadEvent) -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private fun realtimeRoomIdsForPrimary(primaryRoomId: String): List<String> {
@@ -120,7 +122,7 @@ class ChatRealtimeSubscriber(
     fun removeOverlayReactionListener(listener: (OverlayReactionEvent) -> Unit) {
         overlayReactionListeners.remove(listener)
         socketManager.removeOverlayReactionListener(listener)
-        if (overlayMessageListeners.isEmpty() && overlayReactionListeners.isEmpty()) {
+        if (overlayRealtimeListenersEmpty()) {
             overlayRealtimeRoomIds.clear()
             if (primaryRealtimeRoomIds.isEmpty()) {
                 socketManager.disconnect()
@@ -151,6 +153,32 @@ class ChatRealtimeSubscriber(
         }
     }
 
+    fun addOverlayReadListener(listener: (ChatRoomReadEvent) -> Unit) {
+        if (!overlayReadListeners.contains(listener)) {
+            overlayReadListeners.add(listener)
+        }
+        socketManager.addReadListener(listener)
+        refreshOverlayRealtimeSubscriptions()
+    }
+
+    fun removeOverlayReadListener(listener: (ChatRoomReadEvent) -> Unit) {
+        overlayReadListeners.remove(listener)
+        socketManager.removeReadListener(listener)
+        if (overlayRealtimeListenersEmpty()) {
+            overlayRealtimeRoomIds.clear()
+            if (primaryRealtimeRoomIds.isEmpty()) {
+                socketManager.disconnect()
+            } else {
+                ensureRealtimeSocketConnected()
+            }
+        }
+    }
+
+    private fun overlayRealtimeListenersEmpty(): Boolean =
+        overlayMessageListeners.isEmpty() &&
+            overlayReactionListeners.isEmpty() &&
+            overlayReadListeners.isEmpty()
+
     fun addOverlayMessageListener(listener: (ChatMessage) -> Unit) {
         if (!overlayMessageListeners.contains(listener)) {
             overlayMessageListeners.add(listener)
@@ -161,7 +189,7 @@ class ChatRealtimeSubscriber(
 
     /** Re-join raid/hub/selected rooms when overlay room prefs update after FGS already started. */
     fun refreshOverlayRealtimeSubscriptions() {
-        if (overlayMessageListeners.isEmpty() && overlayReactionListeners.isEmpty()) {
+        if (overlayRealtimeListenersEmpty()) {
             return
         }
         overlayRealtimeRoomIds.clear()
@@ -172,7 +200,7 @@ class ChatRealtimeSubscriber(
     fun removeOverlayMessageListener(listener: (ChatMessage) -> Unit) {
         overlayMessageListeners.remove(listener)
         socketManager.removeMessageListener(listener)
-        if (overlayMessageListeners.isEmpty() && overlayReactionListeners.isEmpty()) {
+        if (overlayRealtimeListenersEmpty()) {
             overlayRealtimeRoomIds.clear()
             if (primaryRealtimeRoomIds.isEmpty()) {
                 socketManager.disconnect()
@@ -205,6 +233,8 @@ class ChatRealtimeSubscriber(
         overlayRealtimeRoomIds.clear()
         overlayReactionListeners.forEach { socketManager.removeOverlayReactionListener(it) }
         overlayReactionListeners.clear()
+        overlayReadListeners.forEach { socketManager.removeReadListener(it) }
+        overlayReadListeners.clear()
         socketManager.disconnectSocketAndClearListeners()
     }
 

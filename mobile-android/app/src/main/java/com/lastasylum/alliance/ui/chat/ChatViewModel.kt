@@ -493,11 +493,6 @@ class ChatViewModel(
         if (lastRead != null && !isObjectIdNewer(messageId, lastRead)) {
             return false
         }
-        val roomUnread = _state.value.rooms.find { it.id == roomId }?.unreadCount ?: 0
-        if (lastRead == null && roomUnread == 0) {
-            mergeReadCursor(roomId, messageId)
-            return false
-        }
         return true
     }
 

@@ -12,7 +12,9 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
+import android.text.SpannableString
 import android.text.TextUtils
+import android.text.style.ForegroundColorSpan
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -164,20 +166,28 @@ internal class OverlayReactionBurstPresenter(
         } else {
             context.getString(R.string.overlay_reaction_burst_caption_private)
         }
-        val caption = TextView(context).apply {
-            text = captionText
-            setTextColor(
-                if (broadcast) Color.parseColor("#FFFFB74D")
-                else Color.parseColor("#FF90CAF9"),
-            )
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER_HORIZONTAL
-            setBackgroundColor(Color.TRANSPARENT)
+        val captionColor = if (broadcast) {
+            Color.parseColor("#FFFFB74D")
+        } else {
+            Color.parseColor("#FF90CAF9")
         }
-
+        val senderLineText = context.getString(
+            R.string.overlay_reaction_burst_from_with_caption,
+            displayName,
+            captionText,
+        )
         val senderLine = TextView(context).apply {
-            text = context.getString(R.string.overlay_reaction_burst_from, displayName)
+            text = SpannableString(senderLineText).apply {
+                val parenStart = senderLineText.indexOf('(')
+                if (parenStart >= 0) {
+                    setSpan(
+                        ForegroundColorSpan(captionColor),
+                        parenStart,
+                        senderLineText.length,
+                        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+                    )
+                }
+            }
             setTextColor(Color.parseColor("#F2FFFFFF"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
             typeface = Typeface.DEFAULT_BOLD
@@ -192,40 +202,7 @@ internal class OverlayReactionBurstPresenter(
             }
         }
 
-        val textInner = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            clipChildren = false
-            clipToPadding = false
-            addView(
-                caption,
-                LinearLayout.LayoutParams(
-                    layout.maxTextWidthPx,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ),
-            )
-            addView(
-                senderLine,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = dp(4) },
-            )
-        }
-
-        val textBlock = FrameLayout(context).apply {
-            clipChildren = false
-            clipToPadding = false
-            elevation = 2f
-            addView(
-                textInner,
-                FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    Gravity.CENTER_HORIZONTAL,
-                ),
-            )
-        }
+        val senderBelowAnimMargin = dp(OverlayReactionBurstLayout.SENDER_BELOW_ANIM_DP)
 
         val animHost = FrameLayout(context).apply {
             clipChildren = false
@@ -247,6 +224,20 @@ internal class OverlayReactionBurstPresenter(
             )
         }
 
+        val labelsBlock = FrameLayout(context).apply {
+            clipChildren = false
+            clipToPadding = false
+            elevation = 2f
+            addView(
+                senderLine,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.CENTER_HORIZONTAL,
+                ),
+            )
+        }
+
         val stack = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
@@ -262,11 +253,11 @@ internal class OverlayReactionBurstPresenter(
                 ),
             )
             addView(
-                textBlock,
+                labelsBlock,
                 LinearLayout.LayoutParams(
                     layout.maxTextWidthPx,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = dp(8) },
+                ).apply { topMargin = senderBelowAnimMargin },
             )
         }
 
@@ -300,8 +291,8 @@ internal class OverlayReactionBurstPresenter(
         animView.alpha = 1f
         animView.scaleX = 0.4f
         animView.scaleY = 0.4f
-        textBlock.alpha = 1f
-        textBlock.translationY = dp(6).toFloat()
+        labelsBlock.alpha = 1f
+        labelsBlock.translationY = dp(6).toFloat()
 
         animView.post {
             animView.pivotX = animView.width * 0.5f
@@ -320,7 +311,7 @@ internal class OverlayReactionBurstPresenter(
                     duration = 520
                     interpolator = pop
                 },
-                ObjectAnimator.ofFloat(textBlock, "translationY", dp(6).toFloat(), 0f).apply {
+                ObjectAnimator.ofFloat(labelsBlock, "translationY", dp(6).toFloat(), 0f).apply {
                     duration = 400
                     startDelay = 120
                     interpolator = ease
@@ -330,7 +321,7 @@ internal class OverlayReactionBurstPresenter(
                 object : AnimatorListenerAdapter() {
                     override fun onAnimationEnd(animation: Animator) {
                         animView.alpha = 1f
-                        textBlock.alpha = 1f
+                        labelsBlock.alpha = 1f
                         ensureBurstLottiePlaying()
                         startBurstLottieKeepAlive()
                     }
@@ -352,7 +343,8 @@ internal class OverlayReactionBurstPresenter(
                 playTogether(
                     ObjectAnimator.ofFloat(animView, "scaleX", 1f, 1.08f).apply { duration = 280 },
                     ObjectAnimator.ofFloat(animView, "scaleY", 1f, 1.08f).apply { duration = 280 },
-                    ObjectAnimator.ofFloat(textBlock, "translationY", 0f, dp(8).toFloat()).apply { duration = 260 },
+                    ObjectAnimator.ofFloat(labelsBlock, "translationY", 0f, senderBelowAnimMargin.toFloat())
+                        .apply { duration = 260 },
                 )
                 addListener(
                     object : AnimatorListenerAdapter() {

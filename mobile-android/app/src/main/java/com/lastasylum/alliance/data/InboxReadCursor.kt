@@ -12,7 +12,9 @@ fun isObjectIdNewer(candidate: String, baseline: String?): Boolean {
 }
 
 /**
- * Suppresses stale server unread counts when local read cursor is at/ past server [lastReadMessageId].
+ * Per-user unread badge: trusts [serverUnread] unless this device already read at/ past
+ * the server-acknowledged cursor ([lastReadMessageId]). Other members' read receipts must
+ * not affect this count.
  */
 fun effectiveUnreadCount(
     serverUnread: Int,
@@ -22,10 +24,10 @@ fun effectiveUnreadCount(
     if (serverUnread <= 0) return 0
     val localLast = localLastReadMessageId?.trim().orEmpty()
     val serverLast = lastReadMessageId?.trim().orEmpty()
-    if (localLast.isNotBlank()) {
-        if (serverLast.isBlank()) return 0
-        if (!isObjectIdNewer(serverLast, localLast)) return 0
-        if (isObjectIdNewer(localLast, serverLast)) return 0
+    if (localLast.isNotBlank() && serverLast.isNotBlank()) {
+        if (!isObjectIdNewer(serverLast, localLast)) {
+            return 0
+        }
     }
     return serverUnread
 }

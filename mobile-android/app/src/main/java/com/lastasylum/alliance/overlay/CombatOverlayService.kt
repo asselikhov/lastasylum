@@ -263,6 +263,7 @@ class CombatOverlayService : Service() {
     private var chatStripParams: WindowManager.LayoutParams? = null
     private val chatStripPreviewFlow = MutableStateFlow<List<ChatMessage>>(emptyList())
     private var overlayMessageListener: ((ChatMessage) -> Unit)? = null
+    private var overlayReadListener: ((com.lastasylum.alliance.data.chat.ChatRoomReadEvent) -> Unit)? = null
     private var overlayReactionListener: ((OverlayReactionEvent) -> Unit)? = null
     /** Лента: короткий TTL и мало строк превью — компактная полоса у края. */
     private val stripBuffer = OverlayChatStripBuffer(
@@ -1468,8 +1469,9 @@ class CombatOverlayService : Service() {
             val localRead = container.chatRoomPreferences.loadAllLastReadMessageIds()
             val unread = OverlayGameStatusHudRefresh.allianceHubUnread(rooms, localRead)
             mainHandler.post {
+                val current = overlayStatusHudFlow.value.allianceChatUnread
                 overlayStatusHudFlow.value = overlayStatusHudFlow.value.copy(
-                    allianceChatUnread = unread,
+                    allianceChatUnread = maxOf(unread, current).takeIf { unread > 0 } ?: unread,
                 )
             }
         }
@@ -1520,6 +1522,18 @@ class CombatOverlayService : Service() {
         if (!shouldBumpHubUnreadForMessage(msg, hubId)) return
         bumpAllianceHubUnreadLocally()
         scheduleDebouncedHubHudRefresh()
+    }
+
+    /** Only this user's read cursor clears the hub badge — not other members' room:read events. */
+    private fun applyOverlayHubReadFromSelf(event: com.lastasylum.alliance.data.chat.ChatRoomReadEvent) {
+        val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
+        if (selfId.isBlank() || event.userId.trim() != selfId) return
+        val hubId = cachedAllianceHubRoomId?.trim().orEmpty()
+        if (hubId.isBlank() || event.roomId.trim() != hubId) return
+        val messageId = event.messageId.trim()
+        if (messageId.isBlank()) return
+        AppContainer.from(this).chatRoomPreferences.setLastReadMessageId(hubId, messageId)
+        overlayStatusHudFlow.value = overlayStatusHudFlow.value.copy(allianceChatUnread = 0)
     }
 
     private fun logOverlayRuntimeSnapshot() {
@@ -2672,14 +2686,16 @@ class CombatOverlayService : Service() {
 
     private fun registerOverlayChatListenersOnMain(
         listener: (ChatMessage) -> Unit,
+        readListener: (com.lastasylum.alliance.data.chat.ChatRoomReadEvent) -> Unit,
         reactionListener: (OverlayReactionEvent) -> Unit,
     ) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
-            mainHandler.post { registerOverlayChatListenersOnMain(listener, reactionListener) }
+            mainHandler.post { registerOverlayChatListenersOnMain(listener, readListener, reactionListener) }
             return
         }
         val repo = AppContainer.from(this).chatRepository
         repo.addOverlayMessageListener(listener)
+        repo.addOverlayReadListener(readListener)
         repo.addOverlayReactionListener(reactionListener)
         AppContainer.from(this).chatRoomPreferences.getRaidRoomId()
             ?.let { rememberOverlayRaidRoomId(it) }
@@ -2714,6 +2730,13 @@ class CombatOverlayService : Service() {
             }
         }
         overlayReactionListener = reactionListener
+        val readListener: (com.lastasylum.alliance.data.chat.ChatRoomReadEvent) -> Unit = readListener@{ event ->
+            mainHandler.post {
+                if (!overlaySessionActive && !isInGameOverlayUiActive()) return@post
+                applyOverlayHubReadFromSelf(event)
+            }
+        }
+        overlayReadListener = readListener
         val listener: (ChatMessage) -> Unit = listener@{ msg ->
             mainHandler.post {
                 if (!overlaySessionActive && !isInGameOverlayUiActive()) return@post
@@ -2739,7 +2762,7 @@ class CombatOverlayService : Service() {
             }
         }
         overlayMessageListener = listener
-        registerOverlayChatListenersOnMain(listener, reactionListener)
+        registerOverlayChatListenersOnMain(listener, readListener, reactionListener)
         serviceScope.launch {
             val container = AppContainer.from(this@CombatOverlayService)
             val cachedRooms = com.lastasylum.alliance.data.chat.ChatSessionCache.getFreshRooms()
@@ -2828,6 +2851,12 @@ class CombatOverlayService : Service() {
             }
         }
         overlayMessageListener = null
+        overlayReadListener?.let { listener ->
+            runCatching {
+                AppContainer.from(applicationContext).chatRepository.removeOverlayReadListener(listener)
+            }
+        }
+        overlayReadListener = null
         overlayReactionListener?.let { listener ->
             runCatching {
                 AppContainer.from(applicationContext).chatRepository.removeOverlayReactionListener(listener)
