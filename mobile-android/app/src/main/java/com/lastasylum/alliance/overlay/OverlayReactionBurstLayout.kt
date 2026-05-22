@@ -2,14 +2,17 @@ package com.lastasylum.alliance.overlay
 
 import android.content.Context
 import android.util.DisplayMetrics
+import android.widget.LinearLayout
+import android.widget.TextView
+import com.airbnb.lottie.LottieAnimationView
 
 /**
  * Правила вёрстки входящей реакции (аудит: игра / размер / обрезка / фон / FPS).
  *
- * **Игра:** [OverlayWindowLayout.reactionBurstWindowFlags] + корень [OverlayReactionBurstTouchRoot]
- * (всегда false в touch dispatch — запас, если OEM игнорирует NOT_TOUCHABLE).
+ * **Игра:** [OverlayWindowLayout.applyReactionBurstWindowTouchPolicy] (alpha **окна** ≤ 0.8 на Android 12+)
+ * + [OverlayReactionBurstTouchRoot] (без input channel на API 33+).
  *
- * **Прозрачность:** [CONTENT_ALPHA] на Lottie/GIF/мем/стикер и подпись — лёгкая, как на «прозрачных» прошивках.
+ * **Прозрачность:** задаётся alpha окна ([OverlayWindowLayout.reactionBurstWindowAlpha]), не только View.alpha.
  *
  * **Размер:** доля экрана по ширине и высоте, чтобы не перекрывать HUD и не вылезать за safe area.
  *
@@ -20,10 +23,10 @@ import android.util.DisplayMetrics
  * **Анимация:** Lottie в цикле + keep-alive (как в меню реакций).
  */
 internal object OverlayReactionBurstLayout {
-    /** Лёгкая прозрачность контента вспышки на всех устройствах. */
-    const val CONTENT_ALPHA = 0.88f
+    /** Контент рисуется непрозрачным; лёгкая прозрачность — через LayoutParams.alpha окна. */
+    const val CONTENT_ALPHA = 1f
 
-    const val CAPTION_ALPHA = 0.92f
+    const val CAPTION_ALPHA = 1f
     private const val WIDTH_FRACTION = 0.56f
     private const val HEIGHT_FRACTION = 0.28f
     private const val MAX_SIDE_DP = 280
@@ -75,5 +78,44 @@ internal object OverlayReactionBurstLayout {
             return metrics.animSidePx
         }
         return minOf(metrics.animSidePx, dp(136))
+    }
+
+    /**
+     * Lottie рисуется в квадрате [maxSide×maxSide] с letterbox; мемы/стикеры — по [adjustViewBounds].
+     * Подтягиваем подпись к видимому низу анимации, не меняя размер Lottie.
+     */
+    fun applyCaptionMarginTightBelowLottie(
+        lottie: LottieAnimationView,
+        senderLine: TextView,
+        baseMarginPx: Int,
+    ) {
+        val comp = lottie.composition ?: return
+        val bounds = comp.bounds
+        val boundsW = bounds.width()
+        val boundsH = bounds.height()
+        if (boundsW <= 0f || boundsH <= 0f) return
+        val viewW = lottie.width
+        val viewH = lottie.height
+        if (viewW <= 0 || viewH <= 0) return
+        val scale = minOf(viewW / boundsW, viewH / boundsH)
+        val drawnH = boundsH * scale
+        val letterboxBottomPx = ((viewH - drawnH) / 2f).toInt().coerceAtLeast(0)
+        val lp = senderLine.layoutParams as? LinearLayout.LayoutParams ?: return
+        lp.topMargin = (baseMarginPx - letterboxBottomPx).coerceAtLeast(0)
+        senderLine.layoutParams = lp
+    }
+
+    fun scheduleCaptionMarginTightBelowLottie(
+        lottie: LottieAnimationView,
+        senderLine: TextView,
+        baseMarginPx: Int,
+    ) {
+        val apply = {
+            lottie.post {
+                applyCaptionMarginTightBelowLottie(lottie, senderLine, baseMarginPx)
+            }
+        }
+        lottie.addLottieOnCompositionLoadedListener { apply() }
+        apply()
     }
 }

@@ -113,9 +113,10 @@ private fun overlayLottieAnimationReactions(): List<OverlayQuickReaction> = list
         id = "plane_heart",
         category = OverlayReactionCategory.ANIMATIONS,
         labelRes = R.string.overlay_reaction_plane_heart_cd,
-        tintHex = "#FFFF5252",
+        tintHex = "#FF00FF88",
         lottieRawRes = R.raw.overlay_reaction_plane_heart,
-        burstAccentHex = "#CCFF5252",
+        lottieTintHex = "#FF00FF88",
+        burstAccentHex = "#CC00FF88",
     ),
     OverlayQuickReaction(
         id = "cat_love",

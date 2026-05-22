@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.overlay
 
 import android.content.Context
+import android.hardware.input.InputManager
 import android.os.Build
 import android.util.DisplayMetrics
 import android.view.WindowManager
@@ -19,8 +20,8 @@ import android.view.WindowManager
  * - **Тикер**: окно создаётся только при первом [OverlayTickerWindow.showTicker], чтобы не держать
  *   невидимую полоску на всю ширину экрана между сообщениями.
  * - **Quick commands**: маленькие `WRAP_CONTENT` окна у пузыря, тот же корень для pinch.
- * - **Вспышка реакции**: `WRAP_CONTENT` по центру, [reactionBurstWindowFlags] (только NOT_TOUCHABLE);
- *   корень [OverlayPassthroughMultitouchFrameLayout] — без NOT_TOUCH_MODAL, чтобы не блокировать игру.
+ * - **Вспышка реакции**: [reactionBurstWindowFlags] + [applyReactionBurstWindowTouchPolicy]
+ *   (alpha окна ≤ порога Android 12 для pass-through, без NOT_TOUCH_MODAL).
  * - **Полноэкранный чат**: свои флаги [historyPanelWindowFlags] (фокус + IME), без NOT_TOUCH_MODAL — окно
  *   должно полностью перехватыть ввод, пока открыт чат.
  */
@@ -47,6 +48,47 @@ object OverlayWindowLayout {
             WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+
+    /**
+     * Альфа **окна** (LayoutParams.alpha), не View: на Android 12+ иначе блокируются «untrusted» pass-through
+     * касания при [FLAG_NOT_TOUCHABLE], если непрозрачность > [InputManager.getMaximumObscuringOpacityForTouch]
+     * (обычно 0.8). View.alpha на Lottie/GIF не учитывается системой.
+     */
+    fun reactionBurstWindowAlpha(context: Context): Float {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return 1f
+        }
+        val cap = (context.getSystemService(Context.INPUT_SERVICE) as? InputManager)
+            ?.maximumObscuringOpacityForTouch
+            ?: 0.8f
+        return (cap - 0.03f).coerceIn(0.55f, cap)
+    }
+
+    /**
+     * Пропуск тапов/свайпов камеры в игру под вспышкой реакции на всех прошивках.
+     */
+    fun applyReactionBurstWindowTouchPolicy(context: Context, params: WindowManager.LayoutParams) {
+        params.flags = params.flags or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        params.alpha = reactionBurstWindowAlpha(context)
+        applyReactionBurstNoInputChannel(params)
+    }
+
+    /**
+     * Без input channel окно не участвует в hit-test (API 33+). На старых API — только alpha + флаги.
+     */
+    private fun applyReactionBurstNoInputChannel(params: WindowManager.LayoutParams) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        runCatching {
+            val layoutParamsClass = WindowManager.LayoutParams::class.java
+            val featureField = layoutParamsClass.getField("INPUT_FEATURE_NO_INPUT_CHANNEL")
+            val featureNoChannel = featureField.getInt(null)
+            val inputFeaturesField = layoutParamsClass.getField("inputFeatures")
+            val current = inputFeaturesField.getInt(params)
+            inputFeaturesField.setInt(params, current or featureNoChannel)
+        }
+    }
 
     /** Полноэкранная панель истории: без NOT_FOCUSABLE — нужны поле ввода и IME. */
     fun historyPanelWindowFlags(): Int =

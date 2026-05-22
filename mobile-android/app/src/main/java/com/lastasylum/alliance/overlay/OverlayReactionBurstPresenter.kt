@@ -291,7 +291,7 @@ internal class OverlayReactionBurstPresenter(
             OverlayWindowLayout.applyPopupLayoutCompat(this)
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             y = dp(OverlayReactionBurstLayout.WINDOW_TOP_Y_DP)
-            flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            OverlayWindowLayout.applyReactionBurstWindowTouchPolicy(context, this)
         }
 
         if (runCatching { windowManager.addView(root, params) }.isFailure) {
@@ -299,9 +299,10 @@ internal class OverlayReactionBurstPresenter(
             return
         }
         burstRoot = root
+        root.alpha = 1f
         disableOverlayTouchTarget(root)
         root.post {
-            params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            OverlayWindowLayout.applyReactionBurstWindowTouchPolicy(context, params)
             runCatching { windowManager.updateViewLayout(root, params) }
         }
 
@@ -341,6 +342,13 @@ internal class OverlayReactionBurstPresenter(
                         senderLine.alpha = OverlayReactionBurstLayout.CAPTION_ALPHA
                         ensureBurstLottiePlaying()
                         startBurstLottieKeepAlive()
+                        burstLottie?.let { lottie ->
+                            OverlayReactionBurstLayout.scheduleCaptionMarginTightBelowLottie(
+                                lottie = lottie,
+                                senderLine = senderLine,
+                                baseMarginPx = senderBelowAnimMargin,
+                            )
+                        }
                     }
                 },
             )
@@ -350,6 +358,11 @@ internal class OverlayReactionBurstPresenter(
         if (burstLottie != null) {
             ensureBurstLottiePlaying()
             startBurstLottieKeepAlive()
+            OverlayReactionBurstLayout.scheduleCaptionMarginTightBelowLottie(
+                lottie = burstLottie!!,
+                senderLine = senderLine,
+                baseMarginPx = senderBelowAnimMargin,
+            )
         }
 
         val hideRunnable = Runnable {

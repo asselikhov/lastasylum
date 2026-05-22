@@ -8,8 +8,8 @@ import android.widget.FrameLayout
 
 /**
  * Корень окна входящей реакции: никогда не обрабатывает касания.
- * На части OEM [WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE] для overlay игнорируется —
- * возврат false из [dispatchTouchEvent] пропускает жесты в игру под окном.
+ * Дополнение к [OverlayWindowLayout.applyReactionBurstWindowTouchPolicy]: alpha окна ≤ 0.8 (Android 12+)
+ * и [INPUT_FEATURE_NO_INPUT_CHANNEL]. Если событие всё же пришло — не обрабатываем.
  */
 internal class OverlayReactionBurstTouchRoot(context: Context) : FrameLayout(context) {
 
