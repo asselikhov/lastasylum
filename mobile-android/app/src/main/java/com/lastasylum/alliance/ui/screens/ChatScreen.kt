@@ -194,6 +194,7 @@ import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarEndPad
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarSize
 import com.lastasylum.alliance.ui.chat.ChatMessageBubbleRow
+import com.lastasylum.alliance.ui.chat.ChatMessageReactionsRow
 import com.lastasylum.alliance.ui.chat.chatBubbleExpandsToRowWidth
 import com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthCap
 import com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthFraction
@@ -284,6 +285,11 @@ private data class ChatMessageClusterFlags(
     val showHeader: Boolean,
     val isChainBottom: Boolean,
     val tightInnerTop: Boolean,
+)
+
+private data class ChatMessagesListDerived(
+    val timeline: List<ChatTimelineEntry>,
+    val clusterFlags: List<ChatMessageClusterFlags>,
 )
 
 /**
@@ -1147,30 +1153,21 @@ private fun ChatMessagesLazyList(
 ) {
     val overlayUi = LocalOverlayUiMode.current
     val minSystemViewport = (LocalConfiguration.current.screenHeightDp * 0.55f).dp.coerceAtLeast(280.dp)
-    val timelineVersion = remember(state.messages) {
-        var hash = state.messages.size
-        state.messages.firstOrNull()?._id?.let { hash = hash * 31 + it.hashCode() }
-        state.messages.lastOrNull()?._id?.let { hash = hash * 31 + it.hashCode() }
-        state.messages.take(8).forEach { m ->
-            hash = hash * 31 + (m._id?.hashCode() ?: 0)
-            hash = hash * 31 + m.reactions.size
-            hash = hash * 31 + m.text.length
-        }
-        hash
+    val messages = state.messages
+    val listDerived = remember(messages) {
+        ChatMessagesListDerived(
+            timeline = buildChatTimeline(messages),
+            clusterFlags = List(messages.size) { index ->
+                ChatMessageClusterFlags(
+                    showHeader = chatMessageShowsClusterHeader(messages, index),
+                    isChainBottom = chatMessageIsClusterChainBottom(messages, index),
+                    tightInnerTop = chatMessageClusterTightInnerTop(messages, index),
+                )
+            },
+        )
     }
-    val timeline = remember(timelineVersion, state.messages) { buildChatTimeline(state.messages) }
-    val clusterCacheKey = remember(state.messages.size, state.messages.firstOrNull()?._id, state.messages.lastOrNull()?._id) {
-        state.messages.size to (state.messages.lastOrNull()?._id ?: "")
-    }
-    val messageClusterFlags = remember(clusterCacheKey, state.messages) {
-        List(state.messages.size) { index ->
-            ChatMessageClusterFlags(
-                showHeader = chatMessageShowsClusterHeader(state.messages, index),
-                isChainBottom = chatMessageIsClusterChainBottom(state.messages, index),
-                tightInnerTop = chatMessageClusterTightInnerTop(state.messages, index),
-            )
-        }
-    }
+    val timeline = listDerived.timeline
+    val messageClusterFlags = listDerived.clusterFlags
     LazyColumn(
         state = listState,
         modifier = modifier,
@@ -1325,6 +1322,7 @@ private fun ChatMessagesLazyList(
                                 inSelectionMode = inSelectionMode,
                                 isSelected = message._id != null && message._id in selectedMessageIds,
                                 overlayUi = overlayUi,
+                                onToggleReaction = onToggleReaction,
                                 onOpenActions = { id -> onOpenMessageActions(id) },
                                 onToggleSelection = onToggleMessageSelection,
                                 onSwipeReply = onReplyToMessage,
@@ -2374,7 +2372,6 @@ private fun ChatBubbleInnerColumn(
     deleting: Boolean,
     canDelete: Boolean,
     onImageLongPress: () -> Unit,
-    onReactionToggle: ((emoji: String) -> Unit)? = null,
 ) {
     val openRemoteChatImagePreview = LocalOpenRemoteChatImagePreview.current
     val bubblePadH = when {
@@ -2634,42 +2631,6 @@ private fun ChatBubbleInnerColumn(
             }
         }
 
-        if (message.reactions.isNotEmpty()) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                message.reactions.filter { it.count > 0 }.forEach { r ->
-                    val msgId = message._id
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (r.reactedByMe) {
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.75f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-                        },
-                        tonalElevation = 0.dp,
-                        shadowElevation = 0.dp,
-                        modifier = if (msgId != null && onReactionToggle != null) {
-                            Modifier.clickable {
-                                onReactionToggle.invoke(r.emoji)
-                            }
-                        } else {
-                            Modifier
-                        },
-                    ) {
-                        Text(
-                            text = "${r.emoji} ${r.count}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (r.reactedByMe) {
-                                MaterialTheme.colorScheme.onPrimaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        )
-                    }
-                }
-            }
-        }
-
         if (deleting && canDelete) {
             Text(
                 text = stringResource(R.string.chat_deleting_progress),
@@ -2812,6 +2773,7 @@ private fun ChatAlbumRow(
     inSelectionMode: Boolean,
     isSelected: Boolean,
     overlayUi: Boolean,
+    onToggleReaction: (String, String) -> Unit,
     onOpenActions: (String) -> Unit,
     onToggleSelection: (String) -> Unit,
     onSwipeReply: (String) -> Unit,
@@ -2821,6 +2783,9 @@ private fun ChatAlbumRow(
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
     val swipePx = remember(density) { with(density) { 56.dp.toPx() } }
+    val onReactionChip: ((String) -> Unit)? = messageId?.let { mid ->
+        { emoji -> onToggleReaction(mid, emoji) }
+    }
     val senderLine = chatSenderDisplayWithTag(message.senderTeamTag, message.senderUsername, message.senderServerNumber)
     val bubbleDescription = stringResource(
         R.string.cd_chat_message,
@@ -2959,6 +2924,11 @@ private fun ChatAlbumRow(
             deleting = deleting,
             canDelete = canDelete,
             onImageLongPress = imageLongPress,
+        )
+        ChatMessageReactionsRow(
+            reactions = message.reactions,
+            onReactionToggle = onReactionChip,
+            modifier = Modifier.padding(top = 4.dp),
         )
     }
 }
@@ -3174,6 +3144,9 @@ private fun ChatBubbleRow(
     ) { maxBubble ->
         val floatStickerMax = minOf(maxBubble, 240.dp)
         val stickerInBubbleMax = minOf(maxBubble, 280.dp)
+        val onReactionChip: ((String) -> Unit)? = messageId?.let { mid ->
+            { emoji -> onToggleReaction(mid, emoji) }
+        }
         when {
             floatingSticker -> {
                 val floatMod = Modifier
@@ -3245,6 +3218,11 @@ private fun ChatBubbleRow(
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
+                    ChatMessageReactionsRow(
+                        reactions = message.reactions,
+                        onReactionToggle = onReactionChip,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
                 }
             }
 
@@ -3266,51 +3244,62 @@ private fun ChatBubbleRow(
                     canDelete = canDelete,
                     onImageLongPress = imageLongPress,
                 )
+                ChatMessageReactionsRow(
+                    reactions = message.reactions,
+                    onReactionToggle = onReactionChip,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
             }
 
             else -> {
-                Surface(
-                    modifier = Modifier
-                        .chatBubbleWidth(
-                            maxBubble = maxBubble,
-                            expandToMax = expandBubble,
-                            compactMax = if (stickerStem != null) {
-                                stickerInBubbleMax
-                            } else {
-                                maxBubble
-                            },
-                        )
-                        .then(bubbleClickModifier),
-                    shape = bubbleShape,
-                    color = bubbleBg,
-                    tonalElevation = 0.dp,
-                    shadowElevation = if (overlayUi) 5.dp else if (isMine) 4.dp else 3.dp,
-                    border = bubbleBorder,
-                ) {
-                    ChatBubbleInnerColumn(
-                        message = message,
-                        isMine = isMine,
-                        showClusterHeader = showClusterHeader,
-                        tightClusterTop = tightClusterTop,
-                        stickerStem = stickerStem,
-                        senderAccent = senderAccent,
-                        stemTag = stemTag,
-                        nickname = nickname,
-                        onBubble = onBubble,
-                        timeMuted = timeMuted,
-                        formattedTime = bubbleTime,
-                        overlayUi = overlayUi,
-                        swipeModifier = swipeModifier,
-                        bubbleContext = bubbleContext,
-                        replyQuoteInteraction = replyQuoteInteraction,
-                        quotedJumpLabel = quotedJumpLabel,
-                        onJumpToQuotedMessage = onJumpToQuotedMessage,
-                        deleting = deleting,
-                        canDelete = canDelete,
-                        onImageLongPress = imageLongPress,
-                        onReactionToggle = messageId?.let { mid ->
-                            { emoji -> onToggleReaction(mid, emoji) }
+                Column(
+                    modifier = Modifier.chatBubbleWidth(
+                        maxBubble = maxBubble,
+                        expandToMax = expandBubble,
+                        compactMax = if (stickerStem != null) {
+                            stickerInBubbleMax
+                        } else {
+                            maxBubble
                         },
+                    ),
+                ) {
+                    Surface(
+                        modifier = Modifier
+                            .then(bubbleClickModifier)
+                            .then(swipeModifier),
+                        shape = bubbleShape,
+                        color = bubbleBg,
+                        tonalElevation = 0.dp,
+                        shadowElevation = if (overlayUi) 2.dp else if (isMine) 4.dp else 3.dp,
+                        border = bubbleBorder,
+                    ) {
+                        ChatBubbleInnerColumn(
+                            message = message,
+                            isMine = isMine,
+                            showClusterHeader = showClusterHeader,
+                            tightClusterTop = tightClusterTop,
+                            stickerStem = stickerStem,
+                            senderAccent = senderAccent,
+                            stemTag = stemTag,
+                            nickname = nickname,
+                            onBubble = onBubble,
+                            timeMuted = timeMuted,
+                            formattedTime = bubbleTime,
+                            overlayUi = overlayUi,
+                            swipeModifier = Modifier,
+                            bubbleContext = bubbleContext,
+                            replyQuoteInteraction = replyQuoteInteraction,
+                            quotedJumpLabel = quotedJumpLabel,
+                            onJumpToQuotedMessage = onJumpToQuotedMessage,
+                            deleting = deleting,
+                            canDelete = canDelete,
+                            onImageLongPress = imageLongPress,
+                        )
+                    }
+                    ChatMessageReactionsRow(
+                        reactions = message.reactions,
+                        onReactionToggle = onReactionChip,
+                        modifier = Modifier.padding(top = 4.dp),
                     )
                 }
             }

@@ -5,6 +5,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.res.stringResource
 import com.lastasylum.alliance.R
 import androidx.compose.ui.Alignment
@@ -50,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.ChatReaction
 import com.lastasylum.alliance.data.chat.chatImageAttachments
 import com.lastasylum.alliance.data.chat.hasVisibleText
 import com.lastasylum.alliance.di.AppContainer
@@ -457,6 +460,53 @@ fun ChatBubbleAttachmentsWithCaption(
                 onBubble = onBubble,
                 timeMuted = timeMuted,
             )
+        }
+    }
+}
+
+@Composable
+fun ChatMessageReactionsRow(
+    reactions: List<ChatReaction>,
+    onReactionToggle: ((emoji: String) -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    val visible = reactions.filter { it.count > 0 }
+    if (visible.isEmpty()) return
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        visible.forEach { r ->
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = if (r.reactedByMe) {
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.75f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                },
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp,
+                modifier = if (onReactionToggle != null) {
+                    Modifier.clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { onReactionToggle(r.emoji) },
+                    )
+                } else {
+                    Modifier
+                },
+            ) {
+                Text(
+                    text = "${r.emoji} ${r.count}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (r.reactedByMe) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+            }
         }
     }
 }

@@ -13,6 +13,7 @@ import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatMessageDeletedEvent
+import com.lastasylum.alliance.data.chat.ChatReaction
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatRepository
 import com.lastasylum.alliance.data.chat.ChatSessionCache
@@ -932,6 +933,15 @@ class ChatViewModel(
 
     fun toggleReaction(messageId: String, emoji: String) {
         if (messageId.isBlank() || emoji.isBlank()) return
+        val previousMessages = _state.value.messages
+        val optimistic = applyOptimisticReactionToggle(
+            messages = previousMessages,
+            messageId = messageId,
+            emoji = emoji,
+        )
+        if (optimistic !== previousMessages) {
+            _state.value = _state.value.copy(messages = optimistic)
+        }
         viewModelScope.launch {
             repository.toggleReaction(messageId, emoji)
                 .onSuccess { updated ->
@@ -941,7 +951,10 @@ class ChatViewModel(
                     }
                 }
                 .onFailure { e ->
-                    _state.value = _state.value.copy(error = e.toUserMessageRu(res))
+                    _state.value = _state.value.copy(
+                        messages = previousMessages,
+                        error = e.toUserMessageRu(res),
+                    )
                 }
         }
     }
@@ -1243,6 +1256,44 @@ class ChatViewModel(
         repository.disconnectRealtime()
         super.onCleared()
     }
+}
+
+/** Telegram-like instant feedback before REST round-trip. */
+private fun applyOptimisticReactionToggle(
+    messages: List<ChatMessage>,
+    messageId: String,
+    emoji: String,
+): List<ChatMessage> {
+    val index = messages.indexOfFirst { it._id == messageId }
+    if (index < 0) return messages
+    val message = messages[index]
+    val reactions = message.reactions.toMutableList()
+    val at = reactions.indexOfFirst { it.emoji == emoji }
+    if (at >= 0) {
+        val row = reactions[at]
+        if (row.reactedByMe) {
+            val nextCount = row.count - 1
+            if (nextCount <= 0) {
+                reactions.removeAt(at)
+            } else {
+                reactions[at] = row.copy(count = nextCount, reactedByMe = false)
+            }
+        } else {
+            reactions[at] = row.copy(count = row.count + 1, reactedByMe = true)
+        }
+    } else {
+        reactions.add(
+            ChatReaction(
+                emoji = emoji,
+                count = 1,
+                reactedByMe = true,
+            ),
+        )
+    }
+    if (reactions == message.reactions) return messages
+    val updated = messages.toMutableList()
+    updated[index] = message.copy(reactions = reactions)
+    return updated
 }
 
 private fun ByteArray.hasPrefix(prefix: ByteArray): Boolean {

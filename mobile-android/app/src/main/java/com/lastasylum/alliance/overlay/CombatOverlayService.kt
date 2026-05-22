@@ -3011,11 +3011,18 @@ class CombatOverlayService : Service() {
 
     private fun rebalanceOverlayChatStripZOrder() = requestChatStripZOrderLift()
 
+    private fun activeOverlayChatSessionViewModel(): ChatViewModel? =
+        activityScopedChatViewModel ?: overlayChatViewModel
+
+    private fun refreshOverlayChatSession() {
+        activeOverlayChatSessionViewModel()?.refreshChatForOverlay()
+    }
+
     private fun showOverlayChatTeamPanel(
         initialTabIndex: Int = 0,
         hudPane: OverlayHudPane? = null,
     ) {
-        overlayChatViewModel?.refreshChatForOverlay()
+        refreshOverlayChatSession()
         mainHandler.post { flushPendingOverlayPickedImages() }
         if (overlayChatTeamPanelVisible) return
         val initialTab = initialTabIndex.coerceIn(0, 1)
@@ -3076,6 +3083,7 @@ class CombatOverlayService : Service() {
                         }
                 }
                 LaunchedEffect(vm) {
+                    vm.refreshChatForOverlay()
                     flushPendingOverlayPickedImages()
                 }
                 val chatState by vm.state.collectAsStateWithLifecycle(owner)
