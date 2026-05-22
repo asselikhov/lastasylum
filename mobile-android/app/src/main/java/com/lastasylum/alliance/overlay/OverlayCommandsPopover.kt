@@ -206,7 +206,7 @@ class OverlayCommandsPopover(
         }
         reaction.gifDrawableRes?.let { gifRes ->
             return ImageView(context).apply {
-                bindOverlayGif(gifRes)
+                bindOverlayGif(context, gifRes)
                 scaleType = ImageView.ScaleType.FIT_CENTER
             }
         }
@@ -818,8 +818,6 @@ class OverlayCommandsPopover(
                         val wmUse = attachedWindowManager ?: return@setOnClickListener
                         reopenReactionSubcategory = selectedReactionSubcategory
                         stopHeartPreviewPulse()
-                        removeShell(menuScrim)
-                        menuScrim = null
                         showReactionRecipientPicker(wmUse, reaction.id)
                     }
                 }
@@ -1521,9 +1519,17 @@ class OverlayCommandsPopover(
         val reactionPreviewSize = dp(72)
         val reactionPreview = createReactionTileIcon(selectedReaction).apply {
             contentDescription = context.getString(R.string.overlay_reactions_recipient_preview_cd)
-            if (this is LottieAnimationView) {
-                configureLoopingLottie(this)
-                playAnimation()
+            when (this) {
+                is LottieAnimationView -> {
+                    configureLoopingLottie(this)
+                    playAnimation()
+                }
+                is ImageView -> {
+                    val anim = drawable
+                    if (anim is android.graphics.drawable.Animatable && !anim.isRunning) {
+                        anim.start()
+                    }
+                }
             }
         }
         val reactionPreviewRow = FrameLayout(context).apply {
@@ -1627,6 +1633,8 @@ class OverlayCommandsPopover(
             }
             return
         }
+        removeShell(menuScrim)
+        menuScrim = null
         reactionPickScrim = scrim
         back.setOnClickListener { returnToReactionsList(windowManager) }
         close.setOnClickListener { hideReactionPickOnly() }
