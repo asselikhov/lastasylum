@@ -298,6 +298,16 @@ export class ChatService {
     return date ? date.toISOString() : null;
   }
 
+  /** Telegram-style: omit edited marker unless text was changed after send. */
+  private effectiveEditedAtIso(message: MessageLean): string | null {
+    const edited = message.editedAt;
+    if (!edited) return null;
+    const created = message.createdAt;
+    if (!created) return this.toIso(edited);
+    if (edited.getTime() - created.getTime() < 2_000) return null;
+    return this.toIso(edited);
+  }
+
   private resolveStoredSenderServerNumber(
     message: MessageLean,
     senderServerNumberMap?: Map<string, number | null>,
@@ -388,7 +398,7 @@ export class ChatService {
       ),
       senderTelegramUsername: senderTelegramMap?.get(message.senderId) ?? null,
       text: message.deletedAt ? '' : message.text,
-      editedAt: this.toIso(message.editedAt),
+      editedAt: this.effectiveEditedAtIso(message),
       forwardedFrom: message.deletedAt ? null : forwardedFrom,
       reactions: message.deletedAt ? [] : reactions,
       attachments,
@@ -572,6 +582,8 @@ export class ChatService {
       replyToMessageId: replyTarget?._id ?? null,
       deletedAt: null,
       deletedByUserId: null,
+      editedAt: null,
+      reactions: [],
     });
     return this.viewMessageForUser(
       created.toObject<MessageLean>(),

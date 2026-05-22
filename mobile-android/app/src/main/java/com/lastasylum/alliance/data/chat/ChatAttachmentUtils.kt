@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.data.chat
 
+import com.lastasylum.alliance.ui.chat.chatMessageShowsEditedLabel
 import org.json.JSONObject
 
 fun isChatImageKind(kind: String): Boolean = kind.equals("image", ignoreCase = true)
@@ -16,9 +17,17 @@ fun ChatMessage.hasVisibleText(): Boolean = text.trim().isNotBlank()
 
 /** Socket/API updates without attachments must not wipe images already shown from REST. */
 fun ChatMessage.mergePreservingAttachments(existing: ChatMessage): ChatMessage {
-    if (attachments.isNotEmpty()) return this
-    if (existing.attachments.isEmpty()) return this
-    return copy(attachments = existing.attachments)
+    val merged = when {
+        attachments.isNotEmpty() -> this
+        existing.attachments.isEmpty() -> this
+        else -> copy(attachments = existing.attachments)
+    }
+    val editedAt = if (chatMessageShowsEditedLabel(merged)) {
+        merged.editedAt
+    } else {
+        null
+    }
+    return merged.copy(editedAt = editedAt)
 }
 
 internal fun JSONObject.parseChatAttachments(): List<ChatAttachment> {

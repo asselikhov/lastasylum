@@ -134,10 +134,15 @@ internal fun ForumMessageBubble(
     val tagBracketMuted = (if (isMine) Color.White else scheme.onSurface).copy(alpha = 0.5f)
 
     val timeStr = com.lastasylum.alliance.ui.chat.formatChatTime(message.createdAt)
-    val timeLabel = remember(timeStr, message.editedAt) {
+    val timeLabel = remember(timeStr, message.editedAt, message.createdAt) {
         if (timeStr.isBlank()) {
             ""
-        } else if (!message.editedAt.isNullOrBlank()) {
+        } else if (
+            com.lastasylum.alliance.ui.chat.chatMessageShowsEditedLabel(
+                message.editedAt,
+                message.createdAt,
+            )
+        ) {
             "$timeStr · ${ctx.getString(R.string.chat_edited)}"
         } else {
             timeStr

@@ -17,7 +17,12 @@ import androidx.compose.ui.unit.dp
 /** Доля ширины строки под пузырь (как в мессенджерах: не на весь экран, но широко). */
 const val ChatBubbleMaxWidthFraction = 0.88f
 
+/** Оверлей-чат: шире пузырь под текст на всю «каплю». */
+const val ChatOverlayBubbleMaxWidthFraction = 0.94f
+
 val ChatBubbleMaxWidthCap = 360.dp
+
+val ChatOverlayBubbleMaxWidthCap = 400.dp
 
 private val SelectionCheckboxReserve = 52.dp
 
@@ -34,6 +39,8 @@ fun ChatMessageBubbleRow(
     showIncomingAvatar: Boolean,
     leadingAvatar: @Composable () -> Unit,
     selectionControl: @Composable RowScope.() -> Unit,
+    bubbleWidthFraction: Float = ChatBubbleMaxWidthFraction,
+    bubbleWidthCap: Dp = ChatBubbleMaxWidthCap,
     bubble: @Composable (maxBubbleWidth: Dp) -> Unit,
 ) {
     BoxWithConstraints(
@@ -50,8 +57,8 @@ fun ChatMessageBubbleRow(
                 0.dp
             }
         val maxBubble = minOf(
-            (maxWidth - checkboxReserve - avatarReserve) * ChatBubbleMaxWidthFraction,
-            ChatBubbleMaxWidthCap,
+            (maxWidth - checkboxReserve - avatarReserve) * bubbleWidthFraction,
+            bubbleWidthCap,
         )
         Row(
             modifier = Modifier.fillMaxWidth(),

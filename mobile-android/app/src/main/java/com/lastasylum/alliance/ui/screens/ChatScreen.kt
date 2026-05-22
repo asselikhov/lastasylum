@@ -195,11 +195,22 @@ import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarEndPad
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarSize
 import com.lastasylum.alliance.ui.chat.ChatMessageBubbleRow
 import com.lastasylum.alliance.ui.chat.chatBubbleExpandsToRowWidth
+import com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthCap
+import com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthFraction
+import com.lastasylum.alliance.ui.chat.ChatOverlayBubbleMaxWidthCap
+import com.lastasylum.alliance.ui.chat.ChatOverlayBubbleMaxWidthFraction
 import com.lastasylum.alliance.ui.chat.chatBubbleWidth
+import com.lastasylum.alliance.ui.chat.chatMessageShowsEditedLabel
 import com.lastasylum.alliance.ui.chat.chatBubbleShapeIncoming
 import com.lastasylum.alliance.ui.chat.chatBubbleShapeOutgoing
 import com.lastasylum.alliance.ui.chat.TelegramImageCaptionBar
 import com.lastasylum.alliance.ui.chat.TelegramLikeAttachmentsGrid
+import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingBubble
+import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingOnBubble
+import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingBubble
+import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingOnBubble
+import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMuted
+import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMutedIncoming
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.theme.roleAccentColor
@@ -2354,6 +2365,7 @@ private fun ChatBubbleInnerColumn(
     onBubble: Color,
     timeMuted: Color,
     formattedTime: String,
+    overlayUi: Boolean,
     swipeModifier: Modifier,
     bubbleContext: Context,
     replyQuoteInteraction: MutableInteractionSource,
@@ -2365,18 +2377,31 @@ private fun ChatBubbleInnerColumn(
     onReactionToggle: ((emoji: String) -> Unit)? = null,
 ) {
     val openRemoteChatImagePreview = LocalOpenRemoteChatImagePreview.current
-    val bubblePadH = if (stickerStem != null) 8.dp else 12.dp
-    val bubblePadBottom = if (stickerStem != null) 8.dp else 10.dp
+    val bubblePadH = when {
+        stickerStem != null -> 8.dp
+        overlayUi -> 14.dp
+        else -> 12.dp
+    }
+    val bubblePadBottom = when {
+        stickerStem != null -> 8.dp
+        overlayUi -> 11.dp
+        else -> 10.dp
+    }
     val bubblePadTop = when {
         tightClusterTop -> if (stickerStem != null) 5.dp else 6.dp
         stickerStem != null -> 8.dp
+        overlayUi -> 11.dp
         else -> 10.dp
     }
     val messageImageTapLabel = stringResource(R.string.cd_chat_message_image)
-    val timeLabel = remember(formattedTime, message.editedAt) {
+    val timeLabel = remember(formattedTime, message.editedAt, message.createdAt) {
         if (formattedTime.isBlank()) "" else {
-            val edited = !message.editedAt.isNullOrBlank()
-            if (edited) "$formattedTime · ${bubbleContext.getString(R.string.chat_edited)}" else formattedTime
+            val editedSuffix = if (chatMessageShowsEditedLabel(message)) {
+                " · ${bubbleContext.getString(R.string.chat_edited)}"
+            } else {
+                ""
+            }
+            formattedTime + editedSuffix
         }
     }
     Column(
@@ -2547,6 +2572,26 @@ private fun ChatBubbleInnerColumn(
                             captionBarBg = captionBarBg,
                             onBubble = onBubble,
                             timeMuted = timeMuted,
+                        )
+                    }
+                }
+            } else if (overlayUi) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = message.text,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = onBubble,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (timeLabel.isNotBlank()) {
+                        Text(
+                            text = timeLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = timeMuted,
+                            modifier = Modifier.align(Alignment.End),
                         )
                     }
                 }
@@ -2867,6 +2912,12 @@ private fun ChatAlbumRow(
         clusterTopSpacing = clusterTopSpacing,
         inSelectionMode = inSelectionMode,
         canDelete = canDelete,
+        bubbleWidthFraction = if (overlayUi) {
+            ChatOverlayBubbleMaxWidthFraction
+        } else {
+            ChatBubbleMaxWidthFraction
+        },
+        bubbleWidthCap = if (overlayUi) ChatOverlayBubbleMaxWidthCap else ChatBubbleMaxWidthCap,
         showIncomingAvatar = !isMine,
         leadingAvatar = {
             ChatSenderAvatar(
@@ -2963,16 +3014,32 @@ private fun ChatBubbleRow(
         message.replyTo == null
     val senderAccent = roleAccentColor(message.senderRole)
     val scheme = MaterialTheme.colorScheme
-    val bubbleBg = if (isMine) {
-        lerp(scheme.primary, scheme.surface, 0.28f).copy(alpha = 0.82f)
-    } else {
-        scheme.surface.copy(alpha = 0.52f)
+    val bubbleBg = when {
+        overlayUi && isMine -> ChatTelegramOutgoingBubble
+        overlayUi -> ChatTelegramIncomingBubble
+        isMine -> lerp(scheme.primary, scheme.surface, 0.28f).copy(alpha = 0.82f)
+        else -> scheme.surface.copy(alpha = 0.52f)
     }
-    val onBubble = if (isMine) Color.White else scheme.onSurface
-    val timeMuted = if (isMine) Color.White.copy(alpha = 0.72f) else scheme.onSurfaceVariant.copy(alpha = 0.88f)
+    val onBubble = when {
+        overlayUi && isMine -> ChatTelegramOutgoingOnBubble
+        overlayUi -> ChatTelegramIncomingOnBubble
+        isMine -> Color.White
+        else -> scheme.onSurface
+    }
+    val timeMuted = when {
+        overlayUi && isMine -> ChatTelegramTimeMuted
+        overlayUi -> ChatTelegramTimeMutedIncoming
+        isMine -> Color.White.copy(alpha = 0.72f)
+        else -> scheme.onSurfaceVariant.copy(alpha = 0.88f)
+    }
     val bubbleBorder = BorderStroke(
         1.dp,
-        if (isMine) Color.White.copy(alpha = 0.14f) else scheme.outline.copy(alpha = 0.2f),
+        when {
+            overlayUi && isMine -> Color.White.copy(alpha = 0.1f)
+            overlayUi -> Color.White.copy(alpha = 0.06f)
+            isMine -> Color.White.copy(alpha = 0.14f)
+            else -> scheme.outline.copy(alpha = 0.2f)
+        },
     )
     val stemTag = message.senderTeamTag?.trim()?.takeIf { it.isNotEmpty() }
     val displayName = message.senderUsername.trim().ifBlank { senderLine }
@@ -3061,11 +3128,14 @@ private fun ChatBubbleRow(
         )
     }
 
-    val expandBubble = chatBubbleExpandsToRowWidth(
-        floatingSticker = floatingSticker,
-        floatingImages = floatingImages,
-        stickerStem = stickerStem,
-    )
+    val expandBubble = when {
+        overlayUi && stickerStem == null && !floatingSticker && !floatingImages -> true
+        else -> chatBubbleExpandsToRowWidth(
+            floatingSticker = floatingSticker,
+            floatingImages = floatingImages,
+            stickerStem = stickerStem,
+        )
+    }
     val bubbleTime = if (isMine) formattedTimeUi else formattedTime
 
     ChatMessageBubbleRow(
@@ -3073,6 +3143,12 @@ private fun ChatBubbleRow(
         clusterTopSpacing = clusterTopSpacing,
         inSelectionMode = inSelectionMode,
         canDelete = canDelete,
+        bubbleWidthFraction = if (overlayUi) {
+            ChatOverlayBubbleMaxWidthFraction
+        } else {
+            ChatBubbleMaxWidthFraction
+        },
+        bubbleWidthCap = if (overlayUi) ChatOverlayBubbleMaxWidthCap else ChatBubbleMaxWidthCap,
         showIncomingAvatar = !isMine,
         leadingAvatar = {
             ChatSenderAvatar(
@@ -3208,7 +3284,7 @@ private fun ChatBubbleRow(
                     shape = bubbleShape,
                     color = bubbleBg,
                     tonalElevation = 0.dp,
-                    shadowElevation = if (isMine) 4.dp else 3.dp,
+                    shadowElevation = if (overlayUi) 5.dp else if (isMine) 4.dp else 3.dp,
                     border = bubbleBorder,
                 ) {
                     ChatBubbleInnerColumn(
@@ -3223,6 +3299,7 @@ private fun ChatBubbleRow(
                         onBubble = onBubble,
                         timeMuted = timeMuted,
                         formattedTime = bubbleTime,
+                        overlayUi = overlayUi,
                         swipeModifier = swipeModifier,
                         bubbleContext = bubbleContext,
                         replyQuoteInteraction = replyQuoteInteraction,
