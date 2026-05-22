@@ -1404,7 +1404,7 @@ private fun ChatRoomsBar(
                 icon = icon,
                 accent = accent,
                 accentEnd = accentEnd,
-                unreadCount = room.unreadCount,
+                unreadCount = room.unreadCount.coerceAtLeast(0),
                 iconGlyph = if (kind == ChatRoomVisualKind.Server) "#" else null,
             )
         }

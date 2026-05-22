@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -14,6 +15,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -71,22 +73,28 @@ fun ChatRoomsSwitcher(
     if (tabs.isEmpty()) return
     val trackShape = RoundedCornerShape(11.dp)
     val scrollState = rememberScrollState()
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(trackShape)
-            .background(SquadRelaySurfaces.subtleColor(alpha = 0.32f))
-            .horizontalScroll(scrollState)
-            .padding(3.dp),
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = trackShape,
+        color = SquadRelaySurfaces.subtleColor(alpha = 0.32f),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
     ) {
-        tabs.forEach { tab ->
-            ChatRoomChip(
-                tab = tab,
-                selected = tab.id == selectedId,
-                onClick = { onSelect(tab.id) },
-            )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(scrollState)
+                .padding(start = 3.dp, end = 3.dp, top = 5.dp, bottom = 3.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            tabs.forEach { tab ->
+                ChatRoomChip(
+                    tab = tab,
+                    selected = tab.id == selectedId,
+                    onClick = { onSelect(tab.id) },
+                )
+            }
         }
     }
 }
@@ -134,29 +142,41 @@ private fun ChatRoomChip(
         label = "chatRoomChipLabel",
     )
     val interaction = remember(tab.id) { MutableInteractionSource() }
-    Surface(
+    val showUnread = tab.unreadCount > 0
+    Row(
         modifier = modifier
             .width(IntrinsicSize.Min)
             .widthIn(min = 52.dp)
             .clip(chipShape)
+            .border(
+                width = if (selected) 1.dp else 0.5.dp,
+                color = borderColor,
+                shape = chipShape,
+            )
+            .background(containerColor)
             .clickable(
                 interactionSource = interaction,
                 indication = ripple(bounded = true, color = tab.accent.copy(alpha = 0.35f)),
                 onClick = onClick,
+            )
+            .padding(
+                start = 10.dp,
+                end = 10.dp,
+                top = if (showUnread) 9.dp else 7.dp,
+                bottom = 7.dp,
             ),
-        shape = chipShape,
-        color = containerColor,
-        border = BorderStroke(if (selected) 1.dp else 0.5.dp, borderColor),
-        shadowElevation = 0.dp,
-        tonalElevation = 0.dp,
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
+        Box(
+            modifier = Modifier
+                .padding(top = if (showUnread) 2.dp else 0.dp)
+                .height(24.dp)
+                .widthIn(min = 24.dp),
         ) {
             Box(
                 modifier = Modifier
+                    .align(Alignment.Center)
                     .height(24.dp)
                     .widthIn(min = 24.dp)
                     .clip(RoundedCornerShape(7.dp))
@@ -187,31 +207,58 @@ private fun ChatRoomChip(
                         tint = iconTint,
                     )
                 }
-                if (tab.unreadCount > 0) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .size(7.dp)
-                            .background(
-                                if (selected) tab.accent else Color(0xFFEF4444),
-                                CircleShape,
-                            ),
-                    )
-                }
             }
-            Text(
-                text = tab.label,
-                modifier = Modifier.padding(start = 5.dp),
-                softWrap = false,
-                maxLines = 1,
-                style = MaterialTheme.typography.labelMedium.copy(
-                    fontSize = 12.sp,
-                    letterSpacing = 0.sp,
-                ),
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                color = labelColor,
-            )
+            if (showUnread) {
+                ChatRoomUnreadBadge(
+                    count = tab.unreadCount,
+                    selected = selected,
+                    accent = tab.accent,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 5.dp, y = (-5).dp),
+                )
+            }
         }
+        Text(
+            text = tab.label,
+            modifier = Modifier.padding(start = 5.dp),
+            softWrap = false,
+            maxLines = 1,
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontSize = 12.sp,
+                letterSpacing = 0.sp,
+            ),
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            color = labelColor,
+        )
+    }
+}
+
+@Composable
+private fun ChatRoomUnreadBadge(
+    count: Int,
+    selected: Boolean,
+    accent: Color,
+    modifier: Modifier = Modifier,
+) {
+    if (count <= 0) return
+    val badgeColor = if (selected) accent else Color(0xFFEF4444)
+    val textColor = if (selected) Color.White else Color.White
+    Surface(
+        modifier = modifier,
+        shape = CircleShape,
+        color = badgeColor,
+        shadowElevation = 1.dp,
+        tonalElevation = 0.dp,
+    ) {
+        Text(
+            text = if (count > 99) "99+" else count.toString(),
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+            fontWeight = FontWeight.Bold,
+            color = textColor,
+            maxLines = 1,
+        )
     }
 }
 
