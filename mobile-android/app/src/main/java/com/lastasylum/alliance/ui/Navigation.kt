@@ -25,6 +25,8 @@ import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -227,6 +229,10 @@ fun AppNavigation(
     val msgDeleted = stringResource(R.string.admin_ok_deleted)
     val msgOverlaySaved = stringResource(R.string.admin_ok_overlay)
     val msgStickerSaved = stringResource(R.string.admin_sticker_saved)
+    val chatState by chatViewModel.state.collectAsStateWithLifecycle()
+    val chatTabUnreadTotal = remember(chatState.rooms) {
+        chatState.rooms.sumOf { it.unreadCount.coerceAtLeast(0) }.coerceAtMost(99)
+    }
     Scaffold(
         modifier = modifier,
         containerColor = Color.Transparent,
@@ -293,12 +299,28 @@ fun AppNavigation(
                                     verticalArrangement = Arrangement.Center,
                                 ) {
                                     when (tab) {
-                                        AppTab.CHAT -> Icon(
-                                            imageVector = Icons.Outlined.ChatBubbleOutline,
-                                            contentDescription = label,
-                                            tint = tint,
-                                            modifier = Modifier.size(22.dp),
-                                        )
+                                        AppTab.CHAT -> BadgedBox(
+                                            badge = {
+                                                if (chatTabUnreadTotal > 0) {
+                                                    Badge {
+                                                        Text(
+                                                            text = if (chatTabUnreadTotal >= 99) {
+                                                                "99+"
+                                                            } else {
+                                                                chatTabUnreadTotal.toString()
+                                                            },
+                                                        )
+                                                    }
+                                                }
+                                            },
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.ChatBubbleOutline,
+                                                contentDescription = label,
+                                                tint = tint,
+                                                modifier = Modifier.size(22.dp),
+                                            )
+                                        }
 
                                         AppTab.OVERLAY -> Icon(
                                             imageVector = Icons.Outlined.Settings,

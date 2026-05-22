@@ -75,7 +75,9 @@ import androidx.compose.ui.unit.dp
 import com.google.android.material.color.MaterialColors
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
 import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.data.chat.OverlayReactionEvent
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
@@ -897,6 +899,7 @@ class CombatOverlayService : Service() {
         promoteOverlayForeground(notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         Log.i(TAG, "onCreate: startForeground OK")
         isServiceInstanceActive = true
+        runningInstance = this
         _serviceRunning.value = true
         _overlayVisible.value = false
         OverlayRuntimeScheduler.syncSchedule(this)
@@ -1472,30 +1475,86 @@ class CombatOverlayService : Service() {
         mainHandler.removeCallbacks(overlayCloseHudRefreshRunnable)
     }
 
-    /** Hub «Альянс» badge only — per-user unread from API, not raid/other rooms. */
+    /** Hub «Альянс» badge on mail chip — cache-first, API reconcile. */
     private fun refreshOverlayHubUnreadOnly() {
         if (!isInGameOverlayUiActive()) return
         serviceScope.launch(Dispatchers.IO) {
             val unread = fetchAllianceHubUnreadCount() ?: return@launch
-            mainHandler.post {
-                overlayStatusHudFlow.value = overlayStatusHudFlow.value.copy(
-                    allianceChatUnread = unread,
-                )
-            }
+            mainHandler.post { applyAllianceHubUnreadCount(unread) }
         }
     }
 
-    /** Authoritative hub unread for overlay mail chip (always refreshes rooms from API). */
+    private fun refreshOverlayHubUnreadFromCache() {
+        if (!isInGameOverlayUiActive()) return
+        serviceScope.launch(Dispatchers.IO) {
+            val unread = computeAllianceHubUnreadFromCache() ?: return@launch
+            mainHandler.post { applyAllianceHubUnreadCount(unread) }
+        }
+    }
+
+    private fun computeAllianceHubUnreadFromCache(): Int? {
+        val rooms = ChatSessionCache.getFreshRooms() ?: return null
+        val hub = ChatRoomKindResolver.allianceHubRoom(rooms) ?: return 0
+        cachedAllianceHubRoomId = hub.id
+        val localRead = AppContainer.from(this).chatRoomPreferences.loadAllLastReadMessageIds()
+        return OverlayGameStatusHudRefresh.allianceHubUnread(rooms, localRead)
+    }
+
+    /** Authoritative hub unread for overlay mail chip (cache, then listRooms). */
     private suspend fun fetchAllianceHubUnreadCount(): Int? {
+        computeAllianceHubUnreadFromCache()?.let { return it }
         val container = AppContainer.from(this@CombatOverlayService)
         val rooms = runCatching { container.chatRepository.listRooms().getOrNull() }.getOrNull()
             ?: return null
-        val hub = OverlayGameStatusHudRefresh.allianceHubRoom(rooms) ?: return 0
+        val hub = ChatRoomKindResolver.allianceHubRoom(rooms) ?: return 0
         cachedAllianceHubRoomId = hub.id
-        com.lastasylum.alliance.data.chat.ChatSessionCache.update(rooms)
+        ChatSessionCache.update(rooms)
         container.chatRepository.applyOverlayRoomsFromRooms(rooms)
         val localRead = container.chatRoomPreferences.loadAllLastReadMessageIds()
         return OverlayGameStatusHudRefresh.allianceHubUnread(rooms, localRead)
+    }
+
+    private fun applyAllianceHubUnreadCount(count: Int) {
+        if (!isInGameOverlayUiActive()) return
+        val clamped = count.coerceIn(0, 999)
+        if (overlayStatusHudFlow.value.allianceChatUnread == clamped) return
+        overlayStatusHudFlow.value = overlayStatusHudFlow.value.copy(
+            allianceChatUnread = clamped,
+        )
+    }
+
+    private fun bumpAllianceHubUnreadLocally() {
+        val next = (overlayStatusHudFlow.value.allianceChatUnread + 1).coerceAtMost(999)
+        applyAllianceHubUnreadCount(next)
+    }
+
+    private fun shouldBumpOverlayHubUnread(msg: ChatMessage, hubId: String): Boolean {
+        val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
+        if (selfId.isNotBlank() && msg.senderId.trim() == selfId) return false
+        val messageId = msg._id?.trim().orEmpty()
+        if (messageId.isBlank()) return false
+        val lastRead = AppContainer.from(this).chatRoomPreferences.getLastReadMessageId(hubId)
+        if (!isObjectIdNewer(messageId, lastRead)) return false
+        if (overlayChatTeamPanelVisible) {
+            val vm = activeOverlayChatSessionViewModel()
+            if (vm != null && vm.state.value.selectedRoomId == hubId) {
+                return false
+            }
+        }
+        return true
+    }
+
+    /** Realtime hub traffic for alliance mail badge (not raid strip). */
+    private fun handleOverlayHubMessage(msg: ChatMessage) {
+        val prefs = AppContainer.from(this).chatRoomPreferences
+        val hubId = resolveOverlayHubRoomId()
+        if (!OverlayStripMessageRouter.shouldRouteHubUnread(msg, hubId, prefs.getRaidRoomId())) {
+            return
+        }
+        if (shouldBumpOverlayHubUnread(msg, hubId) && activityScopedChatViewModel == null) {
+            bumpAllianceHubUnreadLocally()
+        }
+        scheduleDebouncedHubHudRefresh()
     }
 
     private fun resolveOverlayHubRoomId(): String {
@@ -1542,7 +1601,10 @@ class CombatOverlayService : Service() {
         val messageId = event.messageId.trim()
         if (messageId.isBlank()) return
         AppContainer.from(this).chatRoomPreferences.setLastReadMessageId(hubId, messageId)
-        overlayStatusHudFlow.value = overlayStatusHudFlow.value.copy(allianceChatUnread = 0)
+        applyAllianceHubUnreadCount(0)
+        activityScopedChatViewModel?.let { vm ->
+            mainHandler.post { vm.syncRoomsFromServer() }
+        }
     }
 
     private fun logOverlayRuntimeSnapshot() {
@@ -2123,6 +2185,9 @@ class CombatOverlayService : Service() {
 
     override fun onDestroy() {
         Log.w(TAG, "onDestroy: overlay service is being destroyed")
+        if (runningInstance === this) {
+            runningInstance = null
+        }
         isServiceInstanceActive = false
         _serviceRunning.value = false
         gateCheckInFlight = false
@@ -2516,19 +2581,6 @@ class CombatOverlayService : Service() {
             scheduleRefreshOverlayChatStrip()
         }
         ensureStripWindowVisibleForRaidTraffic()
-        routeOverlayHubSideEffects(msg)
-    }
-
-    private fun routeOverlayHubSideEffects(msg: ChatMessage) {
-        val prefs = AppContainer.from(this).chatRoomPreferences
-        val hubId = resolveOverlayHubRoomId()
-        if (!OverlayStripMessageRouter.shouldRouteHubUnread(msg, hubId, prefs.getRaidRoomId())) {
-            return
-        }
-        val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
-        if (selfId.isNotBlank() && msg.senderId.trim() == selfId) return
-        refreshOverlayHubUnreadOnly()
-        scheduleDebouncedHubHudRefresh()
     }
 
     private fun setStripPlainMessage(message: String, noticeId: String = OverlayStripNoticeIds.GENERIC) {
@@ -2755,6 +2807,7 @@ class CombatOverlayService : Service() {
             ?: AppContainer.from(this).chatRoomPreferences.getRaidRoomId()
                 ?.let { rememberOverlayRaidRoomId(it) }
         syncOverlayRaidRoomSubscription()
+        refreshOverlayHubUnreadFromCache()
         refreshOverlayHubUnreadOnly()
         if (!isOverlayHudOnlyMode()) {
             scheduleStripTick()
@@ -2765,6 +2818,7 @@ class CombatOverlayService : Service() {
     private fun beginOverlayChatSubscription() {
         if (overlayMessageListener != null) {
             syncOverlayRaidRoomSubscription()
+            refreshOverlayHubUnreadFromCache()
             return
         }
         registerVoiceMicPermissionReceiver()
@@ -2813,7 +2867,7 @@ class CombatOverlayService : Service() {
                 if (isRaid) {
                     ingestOverlayRaidMessage(normalized, refreshNow = true)
                 } else if (isHub) {
-                    routeOverlayHubSideEffects(msg)
+                    handleOverlayHubMessage(msg)
                 }
             }
         }
@@ -3529,10 +3583,21 @@ class CombatOverlayService : Service() {
 
     companion object {
         @Volatile
+        private var runningInstance: CombatOverlayService? = null
+
+        @Volatile
         var activityScopedChatViewModel: ChatViewModel? = null
 
         fun bindActivityChatViewModel(viewModel: ChatViewModel?) {
             activityScopedChatViewModel = viewModel
+        }
+
+        /** Sync alliance hub unread badge on overlay mail chip (room «Альянс» only). */
+        fun notifyAllianceHubUnread(count: Int) {
+            val service = runningInstance ?: return
+            service.mainHandler.post {
+                service.applyAllianceHubUnreadCount(count)
+            }
         }
 
         /** Частый prune ленты относительно TTL ~10 с. */
@@ -3559,7 +3624,7 @@ class CombatOverlayService : Service() {
         private const val HUD_STABLE_TICKS_BEFORE_ATTACH = 1
         private const val GATE_STABLE_TICKS_FOR_SLOW_POLL = 5
         private const val HUD_REFRESH_MIN_INTERVAL_MS = 2_000L
-        private const val HUB_HUD_REFRESH_DEBOUNCE_MS = 4_000L
+        private const val HUB_HUD_REFRESH_DEBOUNCE_MS = 500L
         private const val OVERLAY_CLOSE_HUD_REFRESH_DELAY_MS = 80L
         private const val STRIP_ZORDER_MIN_INTERVAL_MS = 30_000L
         private const val STRIP_ZORDER_LIFT_DELAY_MS = 0L

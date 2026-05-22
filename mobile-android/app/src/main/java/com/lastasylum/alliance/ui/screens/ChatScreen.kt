@@ -1275,18 +1275,12 @@ private fun ChatMessagesLazyList(
 }
 
 private fun com.lastasylum.alliance.data.chat.ChatRoomDto.chatRoomVisualKind(): ChatRoomVisualKind =
-    when {
-        allianceId == ChatAllianceIds.GLOBAL -> ChatRoomVisualKind.GlobalUnion
-        ChatAllianceIds.isServerScope(allianceId) -> ChatRoomVisualKind.Server
-        sortOrder == 2 &&
-            !allianceId.isNullOrBlank() &&
-            allianceId.startsWith("pt:") -> ChatRoomVisualKind.Raid
-        sortOrder == 1 &&
-            !allianceId.isNullOrBlank() &&
-            allianceId.startsWith("pt:") &&
-            allianceId != ChatAllianceIds.GLOBAL &&
-            !ChatAllianceIds.isServerScope(allianceId) -> ChatRoomVisualKind.AllianceHub
-        else -> ChatRoomVisualKind.Other
+    when (com.lastasylum.alliance.data.chat.ChatRoomKindResolver.kindOf(this)) {
+        com.lastasylum.alliance.data.chat.ChatRoomKind.GlobalUnion -> ChatRoomVisualKind.GlobalUnion
+        com.lastasylum.alliance.data.chat.ChatRoomKind.Server -> ChatRoomVisualKind.Server
+        com.lastasylum.alliance.data.chat.ChatRoomKind.Raid -> ChatRoomVisualKind.Raid
+        com.lastasylum.alliance.data.chat.ChatRoomKind.AllianceHub -> ChatRoomVisualKind.AllianceHub
+        com.lastasylum.alliance.data.chat.ChatRoomKind.Other -> ChatRoomVisualKind.Other
     }
 
 @Composable

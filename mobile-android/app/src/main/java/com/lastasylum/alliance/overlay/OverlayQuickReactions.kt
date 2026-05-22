@@ -10,7 +10,7 @@ import com.lastasylum.alliance.R
 internal const val OVERLAY_REACTION_STICKER_PACK = "overlay"
 
 /** Время показа входящей реакции на экране (мс). */
-const val OVERLAY_REACTION_BURST_VISIBLE_MS = 10_000L
+const val OVERLAY_REACTION_BURST_VISIBLE_MS = 5_000L
 
 internal enum class OverlayReactionCategory {
     ANIMATIONS,

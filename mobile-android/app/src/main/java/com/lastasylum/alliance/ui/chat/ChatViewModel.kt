@@ -21,6 +21,10 @@ import com.lastasylum.alliance.data.chat.ChatRoomReadEvent
 import com.lastasylum.alliance.data.chat.ChatTypingEvent
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.chat.ChatRaidRoomSync
+import com.lastasylum.alliance.data.chat.ChatRoomKind
+import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
+import com.lastasylum.alliance.overlay.CombatOverlayService
+import com.lastasylum.alliance.overlay.OverlayGameStatusHudRefresh
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
 import com.lastasylum.alliance.data.users.UsersRepository
 import com.lastasylum.alliance.ui.util.toUserMessageRu
@@ -153,10 +157,19 @@ class ChatViewModel(
         }
     }
 
+    private fun syncOverlayAllianceHubBadge(rooms: List<ChatRoomDto> = _state.value.rooms) {
+        val hub = ChatRoomKindResolver.allianceHubRoom(rooms) ?: return
+        val count = OverlayGameStatusHudRefresh.allianceHubUnread(
+            rooms,
+            chatRoomPreferences.loadAllLastReadMessageIds(),
+        )
+        CombatOverlayService.notifyAllianceHubUnread(count)
+    }
+
     private fun realtimeSubscriptionRoomIds(rooms: List<ChatRoomDto>): List<String> {
         val raid = chatRoomPreferences.getRaidRoomId()
         val selected = _state.value.selectedRoomId
-        val hub = rooms.firstOrNull { isAllianceHubRoom(it) }?.id
+        val hub = ChatRoomKindResolver.allianceHubRoom(rooms)?.id
         return buildList {
             if (!raid.isNullOrBlank()) add(raid)
             if (!hub.isNullOrBlank() && hub !in this) add(hub)
@@ -240,6 +253,7 @@ class ChatViewModel(
                     _state.update { it.copy(rooms = next) }
                     reconcileStaleServerUnread(next)
                     reconfirmReadForVisibleRoom()
+                    syncOverlayAllianceHubBadge(next)
                 }
         }
     }
@@ -264,26 +278,15 @@ class ChatViewModel(
         }
     }
 
-    private fun isAllianceRaidRoom(room: ChatRoomDto): Boolean =
-        room.sortOrder == 2 &&
-            !room.allianceId.isNullOrBlank() &&
-            room.allianceId.startsWith("pt:")
-
-    private fun isAllianceHubRoom(room: ChatRoomDto): Boolean =
-        room.sortOrder == 1 &&
-            !room.allianceId.isNullOrBlank() &&
-            room.allianceId != ChatAllianceIds.GLOBAL &&
-            !ChatAllianceIds.isServerScope(room.allianceId)
-
     private fun sortChatRoomsForDisplay(rooms: List<ChatRoomDto>): List<ChatRoomDto> =
         rooms.sortedWith(
             compareBy<ChatRoomDto> { room ->
-                when {
-                    room.allianceId == ChatAllianceIds.GLOBAL -> 0
-                    ChatAllianceIds.isServerScope(room.allianceId) -> 1
-                    isAllianceHubRoom(room) -> 2
-                    isAllianceRaidRoom(room) -> 3
-                    else -> 4
+                when (ChatRoomKindResolver.kindOf(room)) {
+                    ChatRoomKind.GlobalUnion -> 0
+                    ChatRoomKind.Server -> 1
+                    ChatRoomKind.AllianceHub -> 2
+                    ChatRoomKind.Raid -> 3
+                    ChatRoomKind.Other -> 4
                 }
             }.thenBy { it.sortOrder }.thenBy { it.title },
         )
@@ -324,7 +327,7 @@ class ChatViewModel(
         )
 
     private fun allianceHubRoomId(rooms: List<ChatRoomDto>): String? =
-        rooms.firstOrNull { isAllianceHubRoom(it) }?.id
+        ChatRoomKindResolver.allianceHubRoom(rooms)?.id
 
     private fun globalSendBlocked(
         roomId: String,
@@ -397,6 +400,7 @@ class ChatViewModel(
             return
         }
         syncRaidRoomPreference(rooms)
+        syncOverlayAllianceHubBadge(rooms)
         val hubId = allianceHubRoomId(rooms)
         val stored = chatRoomPreferences.getSelectedRoomId()
         val selected = when {
@@ -557,6 +561,11 @@ class ChatViewModel(
                 },
             )
         }
+        _state.value.rooms.find { it.id == roomId }?.let { room ->
+            if (ChatRoomKindResolver.isAllianceHubRoom(room)) {
+                syncOverlayAllianceHubBadge(_state.value.rooms)
+            }
+        }
     }
 
     private fun scheduleUnreadSyncFromServer() {
@@ -597,11 +606,17 @@ class ChatViewModel(
         _state.update { st ->
             st.copy(rooms = clearUnreadForRoom(st.rooms, roomId))
         }
+        if (ChatRoomKindResolver.allianceHubRoom(_state.value.rooms)?.id == roomId) {
+            CombatOverlayService.notifyAllianceHubUnread(0)
+        }
         repository.markRoomRead(roomId, messageId)
             .onSuccess {
                 mergeReadCursor(roomId, messageId)
                 _state.update { st ->
                     st.copy(rooms = clearUnreadForRoom(st.rooms, roomId))
+                }
+                if (ChatRoomKindResolver.allianceHubRoom(_state.value.rooms)?.id == roomId) {
+                    CombatOverlayService.notifyAllianceHubUnread(0)
                 }
             }
     }
