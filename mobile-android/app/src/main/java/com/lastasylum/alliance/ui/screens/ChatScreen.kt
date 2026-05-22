@@ -164,6 +164,7 @@ import com.lastasylum.alliance.overlay.OverlayAwareBottomSheet
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.data.chat.chatImageAttachments
 import com.lastasylum.alliance.data.chat.hasVisibleText
+import com.lastasylum.alliance.data.chat.isChatImage
 import com.lastasylum.alliance.overlay.OverlayInteractionSuppressEffect
 import com.lastasylum.alliance.overlay.OverlayModalScope
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
@@ -206,7 +207,10 @@ import com.lastasylum.alliance.ui.chat.chatTimelineIndexForMessageId
 import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarEndPad
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarSize
+import com.lastasylum.alliance.ui.chat.ChatFileAttachmentCard
 import com.lastasylum.alliance.ui.chat.ChatMessageBubbleRow
+import com.lastasylum.alliance.ui.chat.ChatMessageClusterFlags
+import com.lastasylum.alliance.ui.chat.LocalOpenRemoteChatImagePreview
 import com.lastasylum.alliance.ui.chat.ChatMessageReactionsRow
 import com.lastasylum.alliance.ui.chat.chatBubbleExpandsToRowWidth
 import com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthCap
@@ -288,19 +292,10 @@ private data class ChatScrollAnchor(
     val timelineSize: Int,
 )
 
-private data class ChatMessageClusterFlags(
-    val showHeader: Boolean,
-    val isChainBottom: Boolean,
-    val tightInnerTop: Boolean,
-)
-
 private data class ChatMessagesListDerived(
     val timeline: List<ChatTimelineEntry>,
     val clusterFlags: List<ChatMessageClusterFlags>,
 )
-
-private val LocalOpenRemoteChatImagePreview =
-    staticCompositionLocalOf<(List<String>, Int) -> Unit> { { _, _ -> } }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1163,7 +1158,7 @@ private fun ChatMessagesLazyList(
                             val message = e.message
                             val cluster = messageClusterFlags.getOrNull(e.messageIndex)
                             val clusterTop = chatBubbleClusterTopSpacing(timeline, idx, message)
-                            ChatBubbleRow(
+                            ChatMessageBubble(
                                 message = message,
                                 cluster = cluster,
                                 isMine = chatMessageIsOwn(message, state.currentUserId),
@@ -2234,6 +2229,9 @@ private fun ChatBubbleInnerColumn(
     deleting: Boolean,
     canDelete: Boolean,
     onImageLongPress: () -> Unit,
+    bubbleBg: Color,
+    onFileDownload: ((ChatMessage) -> Unit)? = null,
+    downloadingFileUrl: String? = null,
 ) {
     val openRemoteChatImagePreview = LocalOpenRemoteChatImagePreview.current
     val bubblePadH = when {
@@ -2362,8 +2360,51 @@ private fun ChatBubbleInnerColumn(
                 )
             }
         } else {
+            val fileAtt = message.attachments.firstOrNull { !it.isChatImage() && it.url.isNotBlank() }
             val imageAttachments = message.chatImageAttachments()
-            if (imageAttachments.isNotEmpty()) {
+            if (fileAtt != null) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ChatFileAttachmentCard(
+                        attachment = fileAtt,
+                        isMine = isMine,
+                        onDownload = { onFileDownload?.invoke(message) },
+                        isDownloading = downloadingFileUrl != null &&
+                            downloadingFileUrl == fileAtt.url.trim(),
+                    )
+                    if (message.hasVisibleText()) {
+                        ChatMessageBodyText(
+                            text = message.text,
+                            onBubble = onBubble,
+                            timeLabel = timeLabel,
+                            isMine = isMine,
+                            isChainBottom = isChainBottom,
+                            messageId = message._id,
+                            otherReadUptoMessageId = otherReadUptoMessageId,
+                            timeMuted = timeMuted,
+                            textStyle = if (overlayUi) {
+                                MaterialTheme.typography.bodyLarge
+                            } else {
+                                MaterialTheme.typography.bodyMedium
+                            },
+                            fadeBaseColor = bubbleBg,
+                        )
+                    } else if (timeLabel.isNotBlank()) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                        ) {
+                            Text(
+                                text = timeLabel,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = timeMuted,
+                            )
+                        }
+                    }
+                }
+            } else if (imageAttachments.isNotEmpty()) {
                 val fullResolvedUrls =
                     imageAttachments.map { resolvedChatAttachmentImageUrl(it.url) }
                 val scheme = MaterialTheme.colorScheme
@@ -2427,6 +2468,7 @@ private fun ChatBubbleInnerColumn(
                             onBubble = onBubble,
                             timeMuted = timeMuted,
                             captionExpandKey = message._id,
+                            fadeBaseColor = captionBarBg,
                         )
                     }
                 }
@@ -2445,6 +2487,7 @@ private fun ChatBubbleInnerColumn(
                     } else {
                         MaterialTheme.typography.bodyMedium
                     },
+                    fadeBaseColor = bubbleBg,
                 )
             }
         }
@@ -2627,7 +2670,7 @@ private fun ChatAlbumRow(
     val layoutDirection = LocalLayoutDirection.current
     val swipePx = remember(density) { with(density) { 56.dp.toPx() } }
     val onReactionChip: ((String) -> Unit)? = messageId?.let { mid ->
-        { emoji -> onToggleReaction(mid, emoji) }
+        onToggleReaction?.let { toggle -> { emoji: String -> toggle(mid, emoji) } }
     }
     val senderLine = chatSenderDisplayWithTag(message.senderTeamTag, message.senderUsername, message.senderServerNumber)
     val bubbleDescription = stringResource(
@@ -2781,7 +2824,7 @@ private fun ChatAlbumRow(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ChatBubbleRow(
+internal fun ChatMessageBubble(
     message: ChatMessage,
     cluster: ChatMessageClusterFlags?,
     isMine: Boolean,
@@ -2793,13 +2836,18 @@ private fun ChatBubbleRow(
     isSelected: Boolean,
     overlayUi: Boolean,
     otherReadUptoMessageId: String?,
-    onToggleReaction: (String, String) -> Unit,
+    onToggleReaction: ((String, String) -> Unit)?,
     onOpenActions: (String) -> Unit,
     onToggleSelection: (String) -> Unit,
     onSwipeReply: (String) -> Unit,
     onJumpToQuotedMessage: (String) -> Unit,
+    onFileDownload: ((ChatMessage) -> Unit)? = null,
+    downloadingFileUrl: String? = null,
+    @androidx.annotation.StringRes deletedPlaceholderRes: Int = R.string.team_forum_message_deleted,
 ) {
     val messageId = message._id
+    val isDeleted = !message.deletedAt.isNullOrBlank() &&
+        !message.deletedAt.equals("null", ignoreCase = true)
     val haptics = LocalHapticFeedback.current
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
@@ -2879,7 +2927,7 @@ private fun ChatBubbleRow(
     val bubbleContext = LocalContext.current
     val formattedTime = formatChatTime(message.createdAt)
 
-    val swipeModifier = if (messageId != null) {
+    val swipeModifier = if (messageId != null && !isDeleted) {
         Modifier.pointerInput(messageId, layoutDirection, swipePx) {
             var accX = 0f
             detectHorizontalDragGestures(
@@ -2989,9 +3037,47 @@ private fun ChatBubbleRow(
         val floatStickerMax = minOf(maxBubble, 240.dp)
         val stickerInBubbleMax = minOf(maxBubble, 280.dp)
         val onReactionChip: ((String) -> Unit)? = messageId?.let { mid ->
-            { emoji -> onToggleReaction(mid, emoji) }
+            onToggleReaction?.let { toggle -> { emoji: String -> toggle(mid, emoji) } }
         }
         when {
+            isDeleted -> {
+                Surface(
+                    modifier = Modifier
+                        .chatBubbleWidth(maxBubble = maxBubble, expandToMax = true)
+                        .then(bubbleClickModifier),
+                    color = bubbleBg,
+                    shape = bubbleShape,
+                    tonalElevation = 0.dp,
+                    shadowElevation = 2.dp,
+                    border = BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = 0.28f)),
+                ) {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                    ) {
+                        Text(
+                            text = stringResource(deletedPlaceholderRes),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = timeMuted,
+                        )
+                        val timeStr = formatChatTime(message.createdAt)
+                        if (timeStr.isNotBlank()) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                            ) {
+                                Text(
+                                    text = timeStr,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = timeMuted,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             floatingSticker -> {
                 val floatMod = Modifier
                     .chatBubbleWidth(
@@ -3056,11 +3142,13 @@ private fun ChatBubbleRow(
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
-                    ChatMessageReactionsRow(
-                        reactions = message.reactions,
-                        onReactionToggle = onReactionChip,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
+                    if (onReactionChip != null) {
+                        ChatMessageReactionsRow(
+                            reactions = message.reactions,
+                            onReactionToggle = onReactionChip,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
                 }
             }
 
@@ -3084,11 +3172,13 @@ private fun ChatBubbleRow(
                     canDelete = canDelete,
                     onImageLongPress = imageLongPress,
                 )
-                ChatMessageReactionsRow(
-                    reactions = message.reactions,
-                    onReactionToggle = onReactionChip,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
+                if (onReactionChip != null) {
+                    ChatMessageReactionsRow(
+                        reactions = message.reactions,
+                        onReactionToggle = onReactionChip,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
             }
 
             else -> {
@@ -3137,13 +3227,18 @@ private fun ChatBubbleRow(
                             deleting = deleting,
                             canDelete = canDelete,
                             onImageLongPress = imageLongPress,
+                            bubbleBg = bubbleBg,
+                            onFileDownload = onFileDownload,
+                            downloadingFileUrl = downloadingFileUrl,
                         )
                     }
-                    ChatMessageReactionsRow(
-                        reactions = message.reactions,
-                        onReactionToggle = onReactionChip,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
+                    if (onReactionChip != null) {
+                        ChatMessageReactionsRow(
+                            reactions = message.reactions,
+                            onReactionToggle = onReactionChip,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
                 }
             }
         }

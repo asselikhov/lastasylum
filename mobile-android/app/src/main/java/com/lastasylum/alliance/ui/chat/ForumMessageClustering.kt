@@ -6,13 +6,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.data.teams.TeamForumMessageDto
 
-data class ForumMessageClusterFlags(
-    val showHeader: Boolean,
-    val isChainBottom: Boolean,
-    val tightInnerTop: Boolean,
-    val topSpacing: Dp,
-)
-
 @Composable
 fun rememberForumMessageClusterFlags(
     messages: List<TeamForumMessageDto>,

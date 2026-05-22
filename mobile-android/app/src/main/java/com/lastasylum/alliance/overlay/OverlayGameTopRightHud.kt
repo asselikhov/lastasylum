@@ -4,6 +4,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MicOff
+import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.runtime.Composable
@@ -62,7 +63,7 @@ fun OverlayGameTopRightHud(
                 onClick = onQuickCommandsClick,
             )
             OverlayGameHudChip(
-                icon = Icons.Outlined.Mic,
+                icon = Icons.Outlined.RecordVoiceOver,
                 tint = if (state.voiceExpanded || state.micOn || state.soundOn) {
                     Color(0xFF7986CB)
                 } else {
@@ -80,14 +81,13 @@ fun OverlayGameTopRightHud(
         }
         if (state.voiceExpanded) {
             OverlayGameHudChipColumn(horizontalAlignment = Alignment.End) {
-                OverlayGameHudLabeledChip(
-                    label = stringResource(R.string.overlay_voice_sound_label),
+                OverlayGameHudChip(
                     icon = if (state.soundOn) {
                         Icons.AutoMirrored.Outlined.VolumeUp
                     } else {
                         Icons.AutoMirrored.Outlined.VolumeOff
                     },
-                    tint = if (state.soundOn) Color(0xFF90CAF9) else Color(0xFF78909C),
+                    tint = if (state.soundOn) HudVoiceActiveGreen else HudVoiceInactiveTint,
                     contentDescription = stringResource(
                         if (state.soundOn) {
                             R.string.overlay_voice_sound_on_cd
@@ -97,10 +97,9 @@ fun OverlayGameTopRightHud(
                     ),
                     onClick = onSoundClick,
                 )
-                OverlayGameHudLabeledChip(
-                    label = stringResource(R.string.overlay_voice_mic_label),
+                OverlayGameHudChip(
                     icon = if (state.micOn) Icons.Outlined.Mic else Icons.Outlined.MicOff,
-                    tint = if (state.micOn) Color(0xFF81C784) else Color(0xFF78909C),
+                    tint = if (state.micOn) HudVoiceActiveGreen else HudVoiceInactiveTint,
                     contentDescription = stringResource(
                         if (state.micOn) {
                             R.string.overlay_voice_mic_on_cd

@@ -158,7 +158,7 @@ class ChatViewModel(
     }
 
     private fun syncOverlayAllianceHubBadge(rooms: List<ChatRoomDto> = _state.value.rooms) {
-        val hub = ChatRoomKindResolver.allianceHubRoom(rooms) ?: return
+        if (ChatRoomKindResolver.allianceHubRoom(rooms) == null) return
         val count = OverlayGameStatusHudRefresh.allianceHubUnread(
             rooms,
             chatRoomPreferences.loadAllLastReadMessageIds(),

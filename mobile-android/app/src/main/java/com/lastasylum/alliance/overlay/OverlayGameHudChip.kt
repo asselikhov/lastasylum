@@ -39,6 +39,11 @@ private val HudBadgeOverflowPaddingTop = 10.dp
 private val HudBadgeOverflowPaddingEnd = 10.dp
 private val HudBadgeColor = Color(0xFFE53935)
 
+/** Включённый микрофон / звук в голосовом HUD. */
+internal val HudVoiceActiveGreen = Color(0xFF66BB6A)
+
+internal val HudVoiceInactiveTint = Color(0xFF78909C)
+
 @Composable
 internal fun OverlayGameHudBar(
     modifier: Modifier = Modifier,
@@ -149,36 +154,3 @@ internal fun OverlayGameHudChipColumn(
     )
 }
 
-@Composable
-internal fun OverlayGameHudLabeledChip(
-    label: String,
-    tint: Color,
-    contentDescription: String,
-    onClick: () -> Unit,
-    icon: ImageVector,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier
-            .background(HudChipBackground, RoundedCornerShape(HudChipCorner))
-            .clickable(onClick = onClick)
-            .padding(horizontal = HudChipPaddingH + 2.dp, vertical = HudChipPaddingV)
-            .semantics { this.contentDescription = contentDescription },
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = tint,
-            modifier = Modifier.size(HudIconSize),
-        )
-        Text(
-            text = label,
-            color = tint.copy(alpha = 0.92f),
-            fontSize = 8.sp,
-            style = MaterialTheme.typography.labelSmall,
-            maxLines = 1,
-        )
-    }
-}

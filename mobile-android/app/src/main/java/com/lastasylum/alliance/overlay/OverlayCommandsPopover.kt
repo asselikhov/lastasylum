@@ -12,8 +12,10 @@ import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.os.Build
 import android.os.Handler
+import android.text.Editable
 import android.text.InputFilter
 import android.text.InputType
+import android.text.TextWatcher
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
@@ -810,55 +812,102 @@ class OverlayCommandsPopover(
             setTextColor(Color.parseColor("#FFF4F7FF"))
             setHintTextColor(Color.parseColor("#7A90A4B8"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            setBackgroundColor(Color.parseColor("#22182533"))
+            background = fieldBackground()
             setPadding(dp(12), dp(10), dp(12), dp(10))
             gravity = Gravity.TOP or Gravity.START
             inputType = InputType.TYPE_CLASS_TEXT or
                 InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
                 InputType.TYPE_TEXT_FLAG_MULTI_LINE
             maxLines = OverlayReactionBurstLayout.TEXT_LINES_MAX
-            minLines = 2
+            minLines = 3
+            isVerticalScrollBarEnabled = true
             filters = arrayOf(InputFilter.LengthFilter(OVERLAY_TEXT_REACTION_MAX_CHARS))
         }
-        val reactionTextSend = choiceChip(
-            context.getString(R.string.overlay_reactions_text_send),
-            selected = true,
-        ).apply {
-            setOnClickListener {
-                val reactionId = encodeTextReactionId(reactionTextInput.text?.toString().orEmpty())
-                if (reactionId == null) {
-                    Toast.makeText(
-                        context,
-                        context.getString(R.string.overlay_reactions_text_empty),
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                    return@setOnClickListener
+        val reactionTextCounter = labelText(
+            context.getString(
+                R.string.overlay_reactions_text_counter,
+                0,
+                OVERLAY_TEXT_REACTION_MAX_CHARS,
+            ),
+            10f,
+            Color.parseColor("#7A90A4B8"),
+        )
+        reactionTextInput.addTextChangedListener(
+            object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+                override fun afterTextChanged(s: Editable?) {
+                    val len = s?.length ?: 0
+                    reactionTextCounter.text = context.getString(
+                        R.string.overlay_reactions_text_counter,
+                        len,
+                        OVERLAY_TEXT_REACTION_MAX_CHARS,
+                    )
+                    reactionTextCounter.setTextColor(
+                        Color.parseColor(
+                            if (len >= OVERLAY_TEXT_REACTION_MAX_CHARS) "#FFFFB74D" else "#7A90A4B8",
+                        ),
+                    )
                 }
-                val wmUse = attachedWindowManager ?: return@setOnClickListener
-                reopenReactionSubcategory = OverlayReactionCategory.TEXT
-                stopHeartPreviewPulse()
-                showReactionRecipientPicker(wmUse, reactionId)
+            },
+        )
+        fun submitTextReaction() {
+            val reactionId = encodeTextReactionId(reactionTextInput.text?.toString().orEmpty())
+            if (reactionId == null) {
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.overlay_reactions_text_empty),
+                    Toast.LENGTH_SHORT,
+                ).show()
+                return
             }
+            val wmUse = attachedWindowManager ?: return
+            hideKeyboard(reactionTextInput)
+            reopenReactionSubcategory = OverlayReactionCategory.TEXT
+            stopHeartPreviewPulse()
+            showReactionRecipientPicker(wmUse, reactionId)
+        }
+        val reactionTextSend = TextView(context).apply {
+            text = context.getString(R.string.overlay_reactions_text_send)
+            setTextColor(Color.parseColor("#FFF8FAFF"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            minHeight = dp(40)
+            setPadding(dp(14), dp(9), dp(14), dp(9))
+            background = primarySendButtonBackground()
+            isClickable = true
+            setOnClickListener { submitTextReaction() }
         }
         val reactionTextPanel = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
+            background = roundedRect(
+                fillColor = Color.parseColor("#181C2438"),
+                strokeColor = Color.parseColor("#334A62AA"),
+                cornerDp = 10,
+            )
+            setPadding(dp(10), dp(10), dp(10), dp(10))
             addView(
                 reactionTextInput,
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
-                    dp(120),
+                    dp(108),
                 ),
+            )
+            addView(
+                reactionTextCounter,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(6) },
             )
             addView(
                 reactionTextSend,
                 LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply {
-                    topMargin = dp(8)
-                    gravity = Gravity.END
-                },
+                ).apply { topMargin = dp(10) },
             )
         }
 
@@ -883,13 +932,6 @@ class OverlayCommandsPopover(
             val wrap = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 addView(reactionTabEmpty)
-                addView(
-                    reactionTextPanel,
-                    LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                    ),
-                )
                 addView(
                     reactionTilesRecycler,
                     LinearLayout.LayoutParams(
@@ -929,8 +971,14 @@ class OverlayCommandsPopover(
             if (isTextTab) {
                 reactionTabEmpty.visibility = View.GONE
                 stopReactionPreviewKeepAlive()
+                mainHandler.post {
+                    if (menuScrim == null || reactionTextPanel.visibility != View.VISIBLE) return@post
+                    reactionTextInput.requestFocus()
+                    showKeyboard(reactionTextInput)
+                }
                 return
             }
+            hideKeyboard(reactionTextInput)
             val items = overlayReactionsForCategory(
                 selectedReactionSubcategory,
                 reactionFavorites,
@@ -976,6 +1024,13 @@ class OverlayCommandsPopover(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                 ),
+            )
+            addView(
+                reactionTextPanel,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(6) },
             )
             addView(
                 reactionGridScroll,
@@ -1247,6 +1302,7 @@ class OverlayCommandsPopover(
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
             OverlayWindowLayout.applyFullscreenOverlayWindow(context, this)
+            OverlayWindowLayout.applyHistoryPanelSoftInputMode(this)
         }
 
         if (runCatching { windowManager.addView(scrim, params) }.isFailure) return

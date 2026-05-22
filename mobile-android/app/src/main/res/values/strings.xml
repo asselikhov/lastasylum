@@ -684,10 +684,11 @@
     <string name="overlay_reactions_sub_memes">Мемы</string>
     <string name="overlay_reactions_sub_stickers">Стикеры</string>
     <string name="overlay_reactions_sub_text">Текст</string>
-    <string name="overlay_reactions_text_hint">Текст реакции (до 5 строк)</string>
-    <string name="overlay_reactions_text_send">Отправить</string>
+    <string name="overlay_reactions_text_hint">Сообщение для вспышки на экране…</string>
+    <string name="overlay_reactions_text_send">Отправить реакцию</string>
     <string name="overlay_reactions_text_empty">Введите текст реакции</string>
-    <string name="overlay_reactions_text_pick_hint">Введите текст и нажмите «Отправить», затем выберите получателя.</string>
+    <string name="overlay_reactions_text_counter">%1$d / %2$d</string>
+    <string name="overlay_reactions_text_pick_hint">Напишите текст ниже и нажмите «Отправить реакцию», затем выберите получателя.</string>
     <string name="overlay_reactions_text_cd">Текстовая реакция</string>
     <string name="overlay_reactions_sub_favorites">Избранное</string>
     <string name="overlay_reactions_favorites_empty">Нажмите ☆ на реакции, чтобы добавить в избранное</string>

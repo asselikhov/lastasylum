@@ -194,6 +194,7 @@ fun ChatMessageBodyText(
     otherReadUptoMessageId: String?,
     timeMuted: Color,
     textStyle: TextStyle = MaterialTheme.typography.bodyMedium,
+    fadeBaseColor: Color = MaterialTheme.colorScheme.surface,
 ) {
     val scheme = MaterialTheme.colorScheme
     val expandLinkColor = if (isMine) {
@@ -209,6 +210,7 @@ fun ChatMessageBodyText(
                 color = onBubble,
                 expandStateKey = messageId,
                 expandLinkColor = expandLinkColor,
+                fadeBaseColor = fadeBaseColor,
             )
             if (timeLabel.isNotBlank() || (isMine && isChainBottom)) {
                 ChatMessageTimeWithReadStatus(
@@ -237,6 +239,7 @@ fun TelegramImageCaptionBar(
     timeMuted: Color,
     captionExpandKey: String? = null,
     expandLinkOnBubble: Boolean = true,
+    fadeBaseColor: Color = captionBarBg,
 ) {
     val scheme = MaterialTheme.colorScheme
     val expandLinkColor = if (expandLinkOnBubble) {
@@ -258,6 +261,7 @@ fun TelegramImageCaptionBar(
             modifier = Modifier.weight(1f),
             expandStateKey = captionExpandKey?.let { "cap_$it" },
             expandLinkColor = expandLinkColor,
+            fadeBaseColor = fadeBaseColor,
         )
         if (formattedTime.isNotBlank()) {
             Spacer(modifier = Modifier.width(8.dp))

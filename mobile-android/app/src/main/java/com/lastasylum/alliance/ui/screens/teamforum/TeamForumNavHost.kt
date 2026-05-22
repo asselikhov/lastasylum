@@ -33,6 +33,7 @@ import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
 import com.lastasylum.alliance.ui.chat.TelegramImageCaptionBar
 import com.lastasylum.alliance.ui.chat.chatBubbleShapeIncoming
 import com.lastasylum.alliance.ui.chat.chatBubbleShapeOutgoing
+import com.lastasylum.alliance.ui.chat.LocalOpenRemoteChatImagePreview
 import com.lastasylum.alliance.ui.chat.MessengerImagesPreviewHost
 import com.lastasylum.alliance.ui.chat.TelegramLikeAttachmentsGrid
 import com.lastasylum.alliance.ui.theme.roleAccentColor
@@ -74,6 +75,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.Checkbox
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -821,6 +823,9 @@ private fun TeamForumTopicChatRoute(
         }
     }
 
+    CompositionLocalProvider(
+        LocalOpenRemoteChatImagePreview provides openImages,
+    ) {
     Box(
         Modifier
             .fillMaxSize()
@@ -960,13 +965,14 @@ private fun TeamForumTopicChatRoute(
                         val canDeleteMsg = canDeleteForumMessage(msg)
                         ForumMessageBubble(
                             message = msg,
+                            teamId = teamId,
+                            topicId = topicId,
                             cluster = forumClusterFlags.getOrNull(idx),
                             isMine = mine,
                             canDelete = canDeleteMsg,
                             inSelectionMode = inSelectionMode,
                             isSelected = isSelected,
                             highlighted = highlightMessageId == msg.id,
-                            onOpenImages = openImages,
                             onJumpToMessage = { targetId ->
                                 val targetIndex = sortedMessages.indexOfFirst { it.id == targetId }
                                 if (targetIndex >= 0) {
@@ -977,9 +983,6 @@ private fun TeamForumTopicChatRoute(
                                         if (highlightMessageId == targetId) highlightMessageId = null
                                     }
                                 }
-                            },
-                            onBeginSelection = {
-                                selectedMessageIds = setOf(msg.id)
                             },
                             onToggleSelection = {
                                 selectedMessageIds =
@@ -1100,6 +1103,7 @@ private fun TeamForumTopicChatRoute(
                 onDismiss = { remoteImagePreview = null },
             )
         }
+    }
     }
     }
 

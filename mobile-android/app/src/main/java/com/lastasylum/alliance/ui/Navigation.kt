@@ -408,7 +408,6 @@ fun AppNavigation(
                         app.chatRepository.removeOverlayChatPanelClosedListener(listener)
                     }
                 }
-                val chatState by chatViewModel.state.collectAsStateWithLifecycle()
                 val draftMessage by chatViewModel.draftMessage.collectAsStateWithLifecycle()
                 val pickedImageUris by chatViewModel.pickedImageUris.collectAsStateWithLifecycle()
                 val typingPeers by chatViewModel.typingPeers.collectAsStateWithLifecycle()
