@@ -61,7 +61,11 @@ internal object OverlayReactionBurstLayout {
 
     fun animSideForReaction(reaction: OverlayQuickReaction, metrics: Metrics, dp: (Int) -> Int): Int {
         if (reaction.lottieRawRes != null) return metrics.animSidePx
-        if (reaction.memeDrawableRes != null || reaction.stickerAssetStem != null) {
+        if (
+            reaction.gifDrawableRes != null ||
+            reaction.memeDrawableRes != null ||
+            reaction.stickerAssetStem != null
+        ) {
             return metrics.animSidePx
         }
         return minOf(metrics.animSidePx, dp(136))

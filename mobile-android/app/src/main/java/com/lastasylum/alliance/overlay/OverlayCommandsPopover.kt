@@ -204,6 +204,12 @@ class OverlayCommandsPopover(
                 }
             }
         }
+        reaction.gifDrawableRes?.let { gifRes ->
+            return ImageView(context).apply {
+                bindOverlayGif(gifRes)
+                scaleType = ImageView.ScaleType.FIT_CENTER
+            }
+        }
         val memeRes = reaction.memeDrawableRes
         if (memeRes != null) {
             return ImageView(context).apply {

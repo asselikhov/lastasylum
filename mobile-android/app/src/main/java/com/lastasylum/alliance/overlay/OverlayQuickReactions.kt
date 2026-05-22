@@ -26,6 +26,7 @@ internal data class OverlayQuickReaction(
     val tintHex: String,
     @RawRes val lottieRawRes: Int? = null,
     val lottieTintHex: String? = null,
+    @DrawableRes val gifDrawableRes: Int? = null,
     @DrawableRes val memeDrawableRes: Int? = null,
     val stickerAssetStem: String? = null,
     val burstAccentHex: String = "#CCFF5252",
@@ -65,7 +66,16 @@ private val overlayStickerAssetStems = arrayOf(
     "overlay_sticker_03",
 )
 
-internal fun overlayAnimationReactions(): List<OverlayQuickReaction> = listOf(
+private val overlayGifDrawableIds = intArrayOf(
+    R.drawable.overlay_reaction_gif_01,
+    R.drawable.overlay_reaction_gif_02,
+    R.drawable.overlay_reaction_gif_03,
+    R.drawable.overlay_reaction_gif_04,
+    R.drawable.overlay_reaction_gif_05,
+    R.drawable.overlay_reaction_gif_06,
+)
+
+private fun overlayLottieAnimationReactions(): List<OverlayQuickReaction> = listOf(
     OverlayQuickReaction(
         id = "heart",
         category = OverlayReactionCategory.ANIMATIONS,
@@ -124,6 +134,20 @@ internal fun overlayAnimationReactions(): List<OverlayQuickReaction> = listOf(
         burstAccentHex = "#CCFFB74D",
     ),
 )
+
+internal fun overlayAnimationReactions(): List<OverlayQuickReaction> =
+    overlayLottieAnimationReactions() +
+        overlayGifDrawableIds.mapIndexed { index, drawableRes ->
+            val num = index + 1
+            OverlayQuickReaction(
+                id = "gif_%02d".format(num),
+                category = OverlayReactionCategory.ANIMATIONS,
+                labelRes = R.string.overlay_reaction_gif_cd,
+                tintHex = "#FFE8F0FF",
+                gifDrawableRes = drawableRes,
+                burstAccentHex = "#CC90A4AE",
+            )
+        }
 
 internal fun overlayMemeReactions(): List<OverlayQuickReaction> =
     overlayMemeDrawableIds.mapIndexed { index, drawableRes ->

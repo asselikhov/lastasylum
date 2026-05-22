@@ -370,6 +370,11 @@ internal class OverlayReactionBurstPresenter(
                 }
             }
         }
+        reaction.gifDrawableRes?.let { gifRes ->
+            return nonClippingImage(maxSidePx).apply {
+                bindOverlayGif(gifRes)
+            }
+        }
         val memeRes = reaction.memeDrawableRes
         if (memeRes != null) {
             return nonClippingImage(maxSidePx).apply {

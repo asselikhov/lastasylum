@@ -671,6 +671,7 @@
     <string name="overlay_reaction_plane_heart_cd">Самолёт с сердцем</string>
     <string name="overlay_reaction_cat_love_cd">Котик — любовь</string>
     <string name="overlay_reaction_cat_playing_cd">Котик играет</string>
+    <string name="overlay_reaction_gif_cd">GIF</string>
     <string name="overlay_reactions_pick_hint">Тап по реакции — затем выберите получателя.</string>
     <string name="overlay_reactions_sub_animations">Анимации</string>
     <string name="overlay_reactions_sub_memes">Мэмы</string>
