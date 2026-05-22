@@ -178,14 +178,18 @@ internal class OverlayReactionBurstPresenter(
 
         val senderLine = TextView(context).apply {
             text = context.getString(R.string.overlay_reaction_burst_from, displayName)
-            setTextColor(Color.parseColor("#FFFFFFFF"))
+            setTextColor(Color.parseColor("#F2FFFFFF"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER_HORIZONTAL
             maxWidth = layout.maxTextWidthPx
             maxLines = 3
             ellipsize = TextUtils.TruncateAt.END
-            setBackgroundColor(Color.TRANSPARENT)
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#66121824"))
+                cornerRadius = dp(10).toFloat()
+            }
         }
 
         val textInner = LinearLayout(context).apply {
@@ -193,18 +197,17 @@ internal class OverlayReactionBurstPresenter(
             gravity = Gravity.CENTER_HORIZONTAL
             clipChildren = false
             clipToPadding = false
-            setPadding(dp(12), dp(10), dp(12), dp(10))
             addView(
                 caption,
                 LinearLayout.LayoutParams(
-                    layout.maxTextWidthPx,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                 ),
             )
             addView(
                 senderLine,
                 LinearLayout.LayoutParams(
-                    layout.maxTextWidthPx,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                 ).apply { topMargin = dp(4) },
             )
@@ -213,11 +216,7 @@ internal class OverlayReactionBurstPresenter(
         val textBlock = FrameLayout(context).apply {
             clipChildren = false
             clipToPadding = false
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#E6121824"))
-                cornerRadius = dp(14).toFloat()
-            }
-            elevation = 6f
+            elevation = 2f
             addView(
                 textInner,
                 FrameLayout.LayoutParams(
@@ -259,7 +258,7 @@ internal class OverlayReactionBurstPresenter(
             addView(
                 textBlock,
                 LinearLayout.LayoutParams(
-                    layout.maxTextWidthPx,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                 ).apply { topMargin = dp(8) },
             )

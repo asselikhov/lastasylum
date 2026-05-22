@@ -160,7 +160,10 @@ class CombatOverlayService : Service() {
                     repo.sendMessageWithRetries(text, roomId)
                 }
                 result.onSuccess { sent ->
-                    mainHandler.post { publishQuickCommandToStrip(sent, roomId, text) }
+                    mainHandler.post {
+                        syncOverlayRaidRoomSubscription()
+                        publishQuickCommandToStrip(sent, roomId, text)
+                    }
                 }
                 result
             },
@@ -172,7 +175,10 @@ class CombatOverlayService : Service() {
                 repo.sendExcavationAlertWithRetries(text, roomId)
                     .also { result ->
                         result.onSuccess { sent ->
-                            mainHandler.post { publishQuickCommandToStrip(sent, roomId, text) }
+                            mainHandler.post {
+                                syncOverlayRaidRoomSubscription()
+                                publishQuickCommandToStrip(sent, roomId, text)
+                            }
                         }
                     }
             },
@@ -761,15 +767,6 @@ class CombatOverlayService : Service() {
     }
 
     private var stripUiCoalescePosted = false
-    private val pendingStripSocketMessages = ArrayDeque<ChatMessage>()
-    private var stripSocketDrainPosted = false
-    private val stripSocketDrainRunnable = Runnable {
-        stripSocketDrainPosted = false
-        while (pendingStripSocketMessages.isNotEmpty()) {
-            processOverlayChatMessage(pendingStripSocketMessages.removeFirst(), refreshStrip = false)
-        }
-        refreshOverlayChatStrip()
-    }
     private var chatStripZOrderLifted = false
     private var stripPassthroughSyncPosted = false
     private val stripPassthroughSyncRunnable = Runnable {
@@ -1630,9 +1627,12 @@ class CombatOverlayService : Service() {
     }
 
     private fun openOverlayQuickCommandsFromHud() {
+        OverlayChatInteractionHold.prepareOverlayModalInteraction(isOverlayUi = true)
         val mgr = windowManager ?: systemWindowManager() ?: return
         overlayCommandsPopover.toggle(mgr)
-        mainHandler.post { repairDetachedOverlayShellIfNeeded() }
+        if (!isOverlayHudOnlyMode() && chatStripHost?.isAttachedToWindow != true) {
+            repairDetachedOverlayShellIfNeeded()
+        }
     }
 
     private fun toggleOverlayVoiceMicFromHud() {
@@ -1661,6 +1661,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun showOverlayHudPane(pane: OverlayHudPane) {
+        OverlayChatInteractionHold.prepareOverlayModalInteraction(isOverlayUi = true)
         if (overlayChatTeamPanelVisible && currentOverlayHudPane == pane) return
         if (overlayChatTeamPanelVisible) {
             hideOverlayChatTeamPanelNow(clearStrip = false)
@@ -1960,7 +1961,6 @@ class CombatOverlayService : Service() {
                 "overlayGate: ${getString(R.string.overlay_notif_waiting_for_game)}"
             }
             logGateStateThrottled(content)
-            gameGateCoordinator.onWaitingForGame()
         }
         if (isOverlayShellActive()) {
             removeOverlayControl(force = true)
@@ -2245,7 +2245,7 @@ class CombatOverlayService : Service() {
     private fun scheduleSyncChatStripWindowTouchPassthrough() {
         if (!stripPassthroughSyncPosted) {
             stripPassthroughSyncPosted = true
-            mainHandler.postDelayed(stripPassthroughSyncRunnable, 48L)
+            mainHandler.post(stripPassthroughSyncRunnable)
         }
     }
 
@@ -2328,9 +2328,7 @@ class CombatOverlayService : Service() {
      */
     private fun applyLocalSentMessageToStrip(sent: ChatMessage) {
         stripBuffer.markClientSend(sent)
-        lastStripRenderSignature = null
-        processOverlayChatMessage(sent)
-        ensureStripWindowVisibleForRaidTraffic()
+        ingestOverlayRaidMessage(sent, refreshNow = true)
     }
 
     /** Быстрые команды → лента «Рейд»: нормализуем roomId/текст с ответа API. */
@@ -2341,7 +2339,6 @@ class CombatOverlayService : Service() {
             text = sent.text.trim().ifBlank { fallbackText },
         )
         applyLocalSentMessageToStrip(normalized)
-        refreshOverlayChatStripNow()
     }
 
     private fun resolveOverlayReactionSenderDisplayName(event: OverlayReactionEvent): String {
@@ -2366,8 +2363,15 @@ class CombatOverlayService : Service() {
         return id
     }
 
-    private fun isOverlayRaidRoomMessage(msg: ChatMessage, raidId: String?): Boolean =
-        OverlayStripMessageRouter.isOverlayRaidRoomMessage(msg, raidId)
+    private fun overlayRaidRoomIdsFromCache(): Set<String> {
+        val ids = LinkedHashSet<String>()
+        resolveOverlayRaidRoomId()?.let { ids.add(it) }
+        val rooms = com.lastasylum.alliance.data.chat.ChatSessionCache.getFreshRooms() ?: return ids
+        rooms.filter { com.lastasylum.alliance.data.chat.ChatRaidRoomSync.isAllianceRaidRoom(it) }
+            .mapNotNull { it.id.trim().takeIf { id -> id.isNotEmpty() } }
+            .forEach { ids.add(it) }
+        return ids
+    }
 
     private fun normalizeStripRaidMessage(msg: ChatMessage, raidId: String?): ChatMessage {
         val raid = raidId?.trim().orEmpty()
@@ -2377,10 +2381,15 @@ class CombatOverlayService : Service() {
         )
     }
 
-    private fun processOverlayChatMessage(msg: ChatMessage, refreshStrip: Boolean = true) {
+    private fun ingestOverlayRaidMessage(msg: ChatMessage, refreshNow: Boolean) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { ingestOverlayRaidMessage(msg, refreshNow) }
+            return
+        }
         val raidId = resolveOverlayRaidRoomId()
+        val raidIds = overlayRaidRoomIdsFromCache()
         val normalized = normalizeStripRaidMessage(msg, raidId)
-        if (!isOverlayRaidRoomMessage(normalized, raidId)) {
+        if (!OverlayStripMessageRouter.isOverlayRaidRoomMessage(normalized, raidId, raidIds)) {
             if (BuildConfig.DEBUG && normalized.roomId.isNotBlank()) {
                 Log.d(
                     OVERLAY_DIAG_TAG,
@@ -2392,24 +2401,31 @@ class CombatOverlayService : Service() {
         if (BuildConfig.DEBUG) {
             Log.d(
                 OVERLAY_DIAG_TAG,
-                "processMsg id=${normalized._id} room=${normalized.roomId} sender=${normalized.senderId} textLen=${normalized.text.length}",
+                "stripIngest id=${normalized._id} room=${normalized.roomId} sender=${normalized.senderId} textLen=${normalized.text.length}",
             )
         }
         stripBuffer.upsert(normalized)
         stripBuffer.mergeReceiveTimeline(normalized, jwtSubFromAccessToken())
         lastStripRenderSignature = null
-        if (refreshStrip) {
-            refreshOverlayChatStrip()
+        if (refreshNow) {
+            refreshOverlayChatStripNow()
+        } else {
+            scheduleRefreshOverlayChatStrip()
         }
         ensureStripWindowVisibleForRaidTraffic()
-        val hubId = cachedAllianceHubRoomId
-        if (hubId != null && msg.roomId == hubId) {
-            val selfId = jwtSubFromAccessToken()
-            if (!selfId.isNullOrBlank() && msg.senderId != selfId) {
-                maybeBumpAllianceHubUnread(msg, hubId)
-            }
-        } else if (msg.roomId.isNotBlank()) {
-            scheduleDebouncedHubHudRefresh()
+        routeOverlayHubSideEffects(msg)
+    }
+
+    private fun routeOverlayHubSideEffects(msg: ChatMessage) {
+        val hubId = cachedAllianceHubRoomId ?: return
+        val room = msg.roomId.trim()
+        if (room != hubId) {
+            if (room.isNotBlank()) scheduleDebouncedHubHudRefresh()
+            return
+        }
+        val selfId = jwtSubFromAccessToken()
+        if (!selfId.isNullOrBlank() && msg.senderId != selfId) {
+            maybeBumpAllianceHubUnread(msg, hubId)
         }
     }
 
@@ -2417,30 +2433,29 @@ class CombatOverlayService : Service() {
         if (BuildConfig.DEBUG) {
             Log.d(OVERLAY_DIAG_TAG, "stripNotice id=$noticeId textLen=${message.length}")
         }
-        stripBuffer.clear()
-        val signature = "notice:$noticeId:$message"
-        if (signature == lastStripRenderSignature) return
-        chatStripPreviewFlow.value = listOf(
-            ChatMessage(
-                _id = noticeId,
-                allianceId = "",
-                roomId = "",
-                senderId = "",
-                senderUsername = getString(R.string.app_name),
-                senderRole = "",
-                senderTeamTag = null,
-                senderTelegramUsername = null,
-                text = message.trimEnd(),
-                attachments = emptyList(),
-                createdAt = null,
-                updatedAt = null,
-                replyToMessageId = null,
-                replyTo = null,
-                deletedAt = null,
-                deletedByUserId = null,
-            ),
+        val notice = ChatMessage(
+            _id = noticeId,
+            allianceId = "",
+            roomId = "",
+            senderId = "",
+            senderUsername = getString(R.string.app_name),
+            senderRole = "",
+            senderTeamTag = null,
+            senderTelegramUsername = null,
+            text = message.trimEnd(),
+            attachments = emptyList(),
+            createdAt = null,
+            updatedAt = null,
+            replyToMessageId = null,
+            replyTo = null,
+            deletedAt = null,
+            deletedByUserId = null,
         )
-        lastStripRenderSignature = signature
+        stripBuffer.clear()
+        stripBuffer.upsert(notice)
+        lastStripRenderSignature = null
+        refreshOverlayChatStripNow()
+        ensureStripWindowVisibleForRaidTraffic()
     }
 
     private fun accessTokenOrNull(): String? =
@@ -2630,32 +2645,31 @@ class CombatOverlayService : Service() {
         }
         overlayReactionListener = reactionListener
         val listener: (ChatMessage) -> Unit = listener@{ msg ->
-            val raidId = resolveOverlayRaidRoomId()
-            val hubId = cachedAllianceHubRoomId
-            val isRaid = isOverlayRaidRoomMessage(msg, raidId)
-            val isHub = !hubId.isNullOrBlank() && msg.roomId == hubId
-            if (!isRaid && !isHub) {
-                if (BuildConfig.DEBUG && msg.roomId.isNotBlank()) {
-                    Log.d(
-                        OVERLAY_DIAG_TAG,
-                        "overlayListener skipRoom msgRoom=${msg.roomId} raid=$raidId hub=$hubId id=${msg._id}",
-                    )
-                }
-                return@listener
-            }
             mainHandler.post {
-                if (isRaid) {
-                    pendingStripSocketMessages.addLast(msg)
-                    if (!stripSocketDrainPosted) {
-                        stripSocketDrainPosted = true
-                        mainHandler.postDelayed(stripSocketDrainRunnable, 48L)
+                if (!overlaySessionActive) return@post
+                val raidId = resolveOverlayRaidRoomId()
+                val raidIds = overlayRaidRoomIdsFromCache()
+                val normalized = normalizeStripRaidMessage(msg, raidId)
+                val hubId = cachedAllianceHubRoomId
+                val isRaid = OverlayStripMessageRouter.isOverlayRaidRoomMessage(
+                    normalized,
+                    raidId,
+                    raidIds,
+                )
+                val isHub = !hubId.isNullOrBlank() && normalized.roomId.trim() == hubId.trim()
+                if (!isRaid && !isHub) {
+                    if (BuildConfig.DEBUG && normalized.roomId.isNotBlank()) {
+                        Log.d(
+                            OVERLAY_DIAG_TAG,
+                            "overlayListener skipRoom msgRoom=${normalized.roomId} raid=$raidId hub=$hubId id=${normalized._id}",
+                        )
                     }
+                    return@post
                 }
-                if (isHub) {
-                    val selfId = jwtSubFromAccessToken()
-                    if (!selfId.isNullOrBlank() && msg.senderId != selfId) {
-                        maybeBumpAllianceHubUnread(msg, hubId!!)
-                    }
+                if (isRaid) {
+                    ingestOverlayRaidMessage(normalized, refreshNow = true)
+                } else if (isHub) {
+                    routeOverlayHubSideEffects(msg)
                 }
             }
         }
@@ -2885,7 +2899,7 @@ class CombatOverlayService : Service() {
         if (stripZOrderLiftPosted) return
         stripZOrderLiftPosted = true
         mainHandler.removeCallbacks(stripZOrderLiftRunnable)
-        mainHandler.postDelayed(stripZOrderLiftRunnable, STRIP_ZORDER_LIFT_DELAY_MS)
+        mainHandler.post(stripZOrderLiftRunnable)
     }
 
     /** Поднять ленту поверх остальных окон оверлея (дорого: remove/add; не на каждое сообщение). */
@@ -3385,7 +3399,7 @@ class CombatOverlayService : Service() {
         private const val HUB_HUD_REFRESH_DEBOUNCE_MS = 4_000L
         private const val OVERLAY_CLOSE_HUD_REFRESH_DELAY_MS = 80L
         private const val STRIP_ZORDER_MIN_INTERVAL_MS = 30_000L
-        private const val STRIP_ZORDER_LIFT_DELAY_MS = 450L
+        private const val STRIP_ZORDER_LIFT_DELAY_MS = 0L
         /** Симметричный отступ HUD от края игрового экрана (левый START / правый END). */
         private const val OVERLAY_HUD_WINDOW_X_DP = OverlayHudLayout.WINDOW_X_DP
         private const val OVERLAY_HUD_LEFT_WINDOW_X_DP = OverlayHudLayout.WINDOW_X_DP

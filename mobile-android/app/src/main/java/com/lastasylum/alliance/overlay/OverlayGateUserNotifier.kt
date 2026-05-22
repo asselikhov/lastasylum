@@ -30,6 +30,7 @@ internal class OverlayGateUserNotifier(
     }
 
     fun maybeToast(reason: BlockReason, openOverlaySettings: (() -> Unit)? = null) {
+        if (reason == BlockReason.WAITING_FOR_GAME) return
         val now = System.currentTimeMillis()
         if (reason == lastToastReason && now - lastToastAtMs < TOAST_MIN_INTERVAL_MS) return
         lastToastReason = reason

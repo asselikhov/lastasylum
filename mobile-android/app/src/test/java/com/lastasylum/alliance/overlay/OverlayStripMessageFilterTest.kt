@@ -15,6 +15,19 @@ class OverlayStripMessageFilterTest {
     }
 
     @Test
+    fun raidMessage_matchesCachedRaidIdWhenPrefsStale() {
+        val msg = message(roomId = "raid-cache")
+        assertFalse(OverlayStripMessageRouter.isOverlayRaidRoomMessage(msg, "raid-prefs"))
+        assertTrue(
+            OverlayStripMessageRouter.isOverlayRaidRoomMessage(
+                msg,
+                "raid-prefs",
+                extraRaidRoomIds = setOf("raid-cache"),
+            ),
+        )
+    }
+
+    @Test
     fun hubUnread_onlyForHubNotRaidDuplicate() {
         val hubMsg = message(roomId = "hub1")
         assertTrue(OverlayStripMessageRouter.shouldRouteHubUnread(hubMsg, "hub1", "raid1"))

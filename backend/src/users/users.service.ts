@@ -574,13 +574,16 @@ export class UsersService implements OnModuleInit {
     return rows.map((r) => r._id.toString());
   }
 
+  /** Push: skip only allies with a fresh overlay ingame ping (~1× heartbeat 60 s). */
+  private static readonly EXCAVATION_PUSH_INGAME_FRESH_MS = 62_000;
+
   async collectPushTokensForExcavationAlert(
     allianceId: string,
     excludeUserId: string,
   ): Promise<string[]> {
     if (!Types.ObjectId.isValid(excludeUserId)) return [];
     const staleBefore = new Date(
-      Date.now() - UsersService.OVERLAY_INGAME_STALE_MS,
+      Date.now() - UsersService.EXCAVATION_PUSH_INGAME_FRESH_MS,
     );
     const filter: Record<string, unknown> = {
       membershipStatus: TeamMembershipStatus.ACTIVE,
