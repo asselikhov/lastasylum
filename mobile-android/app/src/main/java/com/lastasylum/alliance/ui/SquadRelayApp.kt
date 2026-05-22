@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.ui
 
 import android.app.Application
+import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.AlertDialog
@@ -28,13 +29,14 @@ import com.lastasylum.alliance.ui.auth.AuthScreen
 import com.lastasylum.alliance.ui.auth.AuthViewModel
 import com.lastasylum.alliance.ui.auth.AuthViewModelFactory
 import com.lastasylum.alliance.ui.admin.AdminViewModelFactory
-import com.lastasylum.alliance.ui.chat.ChatViewModelFactory
 import com.lastasylum.alliance.ui.components.AtmosphericBackground
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.theme.SquadRelayTheme
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.push.FcmTokenManager
 import com.lastasylum.alliance.push.PushTokenRegistrationEffect
+import com.lastasylum.alliance.ui.chat.ChatViewModel
+import com.lastasylum.alliance.ui.chat.ChatViewModelFactory
 import com.lastasylum.alliance.ui.onboarding.PermissionOnboardingGate
 import com.lastasylum.alliance.update.fetchNewerApkDownloadUrl
 import com.lastasylum.alliance.update.openApkDownload
@@ -45,6 +47,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun SquadRelayApp() {
     val context = LocalContext.current
+    val activity = context as ComponentActivity
     val application = context.applicationContext as Application
     val appContainer = AppContainer.from(context)
     val authViewModel: AuthViewModel = viewModel(
@@ -123,10 +126,31 @@ fun SquadRelayApp() {
                                 onClearError = authViewModel::clearError,
                             )
                         }
-                        !postAuthSplashComplete -> {
-                            PostAuthLaunchSplash(onComplete = { postAuthSplashComplete = true })
-                        }
                         else -> {
+                            val chatViewModel: ChatViewModel = viewModel(
+                                viewModelStoreOwner = activity,
+                                key = "alliance_chat",
+                                factory = ChatViewModelFactory(
+                                    application = application,
+                                    repository = appContainer.chatRepository,
+                                    chatRoomPreferences = appContainer.chatRoomPreferences,
+                                    usersRepository = appContainer.usersRepository,
+                                    currentUserId = authState.user?.id.orEmpty(),
+                                    currentUserRole = authState.user?.role.orEmpty(),
+                                ),
+                            )
+                            if (!postAuthSplashComplete) {
+                                PostAuthLaunchSplash(
+                                    onComplete = { postAuthSplashComplete = true },
+                                    warmup = {
+                                        runAppLaunchWarmup(
+                                            application = application,
+                                            container = appContainer,
+                                            chatViewModel = chatViewModel,
+                                        )
+                                    },
+                                )
+                            } else {
                             Box(Modifier.fillMaxSize()) {
                                 AppNavigation(
                                     userId = authState.user?.id.orEmpty(),
@@ -152,6 +176,7 @@ fun SquadRelayApp() {
                                     enabled = authState.isAuthenticated && postAuthSplashComplete,
                                 )
                                 PermissionOnboardingGate()
+                            }
                             }
                         }
                     }

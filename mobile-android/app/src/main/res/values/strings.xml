@@ -2,7 +2,8 @@
 <resources>
     <string name="app_name">SquadRelay</string>
     <string name="launch_splash_session_subtitle">Проверка сохранённого входа…</string>
-    <string name="launch_splash_welcome_subtitle">Загрузка интерфейса…</string>
+    <string name="launch_splash_welcome_subtitle">Подготовка интерфейса…</string>
+    <string name="launch_splash_preparing">Синхронизация чата и команды…</string>
 
     <!-- Auth -->
     <string name="cd_app_logo">Логотип SquadRelay</string>
@@ -171,10 +172,9 @@
 
     <!-- Overlay screen -->
     <string name="settings_screen_title">Настройки</string>
-    <string name="settings_screen_subtitle">Оверлей, доступы и параметры игры</string>
-    <string name="settings_section_overlay">Оверлей в игре</string>
-    <string name="settings_section_notifications">Уведомления</string>
+    <string name="settings_screen_subtitle">Панель в игре, уведомления и привязка к вашей сборке</string>
     <string name="settings_section_game_filter">Фильтр игры</string>
+    <string name="settings_game_filter_hint">Укажите пакет игры из «Сведения о приложении». У клона или второй копии — свой пакет.</string>
     <string name="overlay_title">Оверлей</string>
     <string name="overlay_activity_filter_label">Activity фильтр (опционально)</string>
     <string name="overlay_activity_filter_hint">Через запятую: части имени Activity. Оставьте пустым на старых телефонах и клонах игры — иначе кнопки могут не появиться.</string>
@@ -182,14 +182,14 @@
     <string name="overlay_gate_diagnostics_hint">Откройте игру, затем обновите. Если «пакет на экране» не совпадает с фильтром — добавьте пакет из «Сведения о приложении».</string>
     <string name="overlay_gate_diagnostics_refresh">Обновить диагностику</string>
     <string name="overlay_switch_panel">Показывать панель</string>
-    <string name="overlay_switch_panel_subtitle">Кнопки только в игре. Сервис SquadRelay работает в фоне (уведомление) — UI можно не открывать. Если кнопки пропали: отключите экономию батареи для SquadRelay и проверьте «Поверх окон» и «Статистику использования».</string>
+    <string name="overlay_switch_panel_subtitle">Кнопки поверх игры, когда вы в бою</string>
     <string name="overlay_hud_only_title">Только кнопки HUD</string>
     <string name="overlay_hud_only_subtitle">Без ленты чата поверх игры — меньше нагрузка на слабых телефонах.</string>
     <string name="overlay_light_strip_title">Лёгкая лента чата</string>
     <string name="overlay_light_strip_subtitle">Без превью картинок в сообщениях оверлея.</string>
     <string name="overlay_panel_waiting_for_game">Панель включена, сервис в фоне — ожидание игры.</string>
-    <string name="overlay_package_field_label">Пакеты игры (из «Сведения о приложении»)</string>
-    <string name="overlay_game_clone_hint">Копия/клон игры почти всегда имеет другой пакет (applicationId). Добавьте его в список через запятую — иначе оверлей не узнает игру. В двойном профиле (Parallel Space и т.п.) установите SquadRelay в том же профиле и выдайте «Поверх окон» и «Статистику использования» там же.</string>
+    <string name="overlay_package_field_label">Пакеты игры</string>
+    <string name="overlay_game_clone_hint">Несколько пакетов — через запятую.</string>
     <string name="overlay_game_detected_title">Найдены установленные сборки игры</string>
     <string name="overlay_game_detected_add">Добавить %1$s</string>
     <string name="overlay_game_detected_in_filter">Уже в фильтре: %1$s</string>
@@ -641,8 +641,8 @@
     <string name="overlay_excavation_message">Раскопки альянса X:%1$d Y:%2$d</string>
     <string name="overlay_excavation_notify_message">Раскопки альянса</string>
     <string name="overlay_cmd_column_excavation">Раскопки</string>
-    <string name="settings_excavation_push_title">Уведомления о раскопках</string>
-    <string name="settings_excavation_push_subtitle">Звуковой push с координатами, когда вы не в игре. Обычный чат альянса вне игры push не присылает.</string>
+    <string name="settings_excavation_push_title">Уведомление о раскопках</string>
+    <string name="settings_excavation_push_subtitle">Push с координатами, когда вы не в игре</string>
     <string name="overlay_switch_panel_offgame_hint">Вне игры оверлей скрыт; остаются только уведомления о раскопках (если включены в настройках).</string>
     <string name="settings_push_not_registered_hint">Сервер не видит этот телефон для push. Разрешите уведомления и нажмите «Повторить» (нужен свежий APK с Firebase).</string>
     <string name="settings_push_register_retry">Повторить регистрацию push</string>

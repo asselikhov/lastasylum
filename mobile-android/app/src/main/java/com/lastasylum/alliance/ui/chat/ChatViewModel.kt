@@ -171,6 +171,11 @@ class ChatViewModel(
         scheduleBootstrap(preferAllianceHubRoom = false, force = true)
     }
 
+    /** Splash: полный bootstrap чата до первого показа вкладок. */
+    suspend fun warmUpForLaunch() {
+        bootstrap(preferAllianceHubRoom = false, force = true)
+    }
+
     /** Оверлей-чат: всегда открывать комнату альянса (sortOrder 1), не последнюю из приложения. */
     fun refreshChatForOverlay() {
         scheduleBootstrap(preferAllianceHubRoom = true, force = false)

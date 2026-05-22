@@ -2252,17 +2252,11 @@ private fun ChatBubbleInnerColumn(
             )
         }
         if (!isMine && showClusterHeader) {
-            val tagMuted = if (isMine) {
-                Color.White.copy(alpha = 0.55f)
-            } else {
-                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-            }
             ChatBubbleAuthorHeader(
                 teamTag = stemTag,
                 serverNumber = message.senderServerNumber,
                 nickname = nickname,
                 nicknameColor = senderAccent,
-                tagBracketColor = tagMuted,
                 senderRole = message.senderRole,
                 isMine = isMine,
             )
@@ -2514,7 +2508,6 @@ private fun ChatFloatingImageAttachmentsBlock(
                 serverNumber = message.senderServerNumber,
                 nickname = nickname,
                 nicknameColor = senderAccent,
-                tagBracketColor = scheme.onSurface.copy(alpha = 0.5f),
                 senderRole = message.senderRole,
                 isMine = isMine,
             )
@@ -2983,7 +2976,6 @@ private fun ChatBubbleRow(
                             serverNumber = message.senderServerNumber,
                             nickname = nickname,
                             nicknameColor = senderAccent,
-                            tagBracketColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                             senderRole = message.senderRole,
                             isMine = isMine,
                         )

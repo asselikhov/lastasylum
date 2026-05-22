@@ -11,6 +11,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.os.bundleOf
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
 
 /**
  * Прозрачный хост для системного пикера/разрешений из оверлея (Service не может быть Activity Result owner).
@@ -69,9 +71,12 @@ class OverlaySystemDialogActivity : ComponentActivity() {
     private fun applyOpaquePickerWindow() {
         val opaque = 0xFF10141E.toInt()
         window.setBackgroundDrawable(ColorDrawable(opaque))
+        WindowCompat.setDecorFitsSystemWindows(window, true)
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
-        window.statusBarColor = opaque
-        window.navigationBarColor = opaque
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
     }
 
     private fun launchPendingKind() {

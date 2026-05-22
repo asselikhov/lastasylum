@@ -131,7 +131,6 @@ internal fun ForumMessageBubble(
     val nickname = message.senderUsername.trim()
     val displayName = nickname.ifBlank { "—" }
     val telegramUrl = telegramAvatarUrl(message.senderTelegramUsername)
-    val tagBracketMuted = (if (isMine) Color.White else scheme.onSurface).copy(alpha = 0.5f)
 
     val timeStr = com.lastasylum.alliance.ui.chat.formatChatTime(message.createdAt)
     val timeLabel = remember(timeStr, message.editedAt, message.createdAt) {
@@ -312,7 +311,6 @@ internal fun ForumMessageBubble(
                                 serverNumber = message.senderServerNumber,
                                 nickname = nickname.ifBlank { "—" },
                                 nicknameColor = senderAccent,
-                                tagBracketColor = tagBracketMuted,
                                 senderRole = message.senderRole,
                                 isMine = isMine,
                             )
@@ -421,7 +419,6 @@ internal fun ForumMessageBubble(
                                     serverNumber = message.senderServerNumber,
                                     nickname = nickname.ifBlank { "—" },
                                     nicknameColor = senderAccent,
-                                    tagBracketColor = tagBracketMuted,
                                     senderRole = message.senderRole,
                                     isMine = isMine,
                                 )

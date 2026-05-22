@@ -111,88 +111,29 @@ fun ChatSenderAvatar(
     }
 }
 
-@Composable
-private fun ChatServerNumberBadge(
-    serverNumber: Int,
-    isMine: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val label = formatServerLabel(serverNumber) ?: return
-    val fg = if (isMine) {
-        Color.White.copy(alpha = 0.96f)
-    } else {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.92f)
-    }
-    val bg = if (isMine) {
-        Color.White.copy(alpha = 0.16f)
-    } else {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-    }
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(7.dp),
-        color = bg,
-        border = BorderStroke(1.dp, fg.copy(alpha = 0.28f)),
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.4.sp,
-            ),
-            color = fg,
-            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
-        )
-    }
-}
-
-@Composable
-private fun ChatTeamTagBadge(
-    teamTag: String,
-    isMine: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val raw = teamTag.trim().removePrefix("[").removeSuffix("]").trim()
-    if (raw.isEmpty()) return
-    val bg = if (isMine) {
-        ChatTelegramTeamTagBg.copy(alpha = 0.88f)
-    } else {
-        ChatTelegramTeamTagBg
-    }
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(7.dp),
-        color = bg,
-        border = BorderStroke(1.dp, ChatTelegramTeamTagFg.copy(alpha = 0.22f)),
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-    ) {
-        Text(
-            text = "[$raw]",
-            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-            color = ChatTelegramTeamTagFg,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
-        )
-    }
-}
-
 /**
- * Заголовок входящего пузыря: бейдж сервера, тег команды, ник и роль.
+ * Заголовок входящего пузыря: сервер, тег, ник (как текст сообщения, жирный) и роль.
  */
 @Composable
 fun ChatBubbleAuthorHeader(
     teamTag: String?,
     nickname: String,
     nicknameColor: Color,
-    tagBracketColor: Color,
     senderRole: String,
     serverNumber: Int? = null,
     isMine: Boolean = false,
 ) {
+    val lineStyle = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+    val serverColor = if (isMine) {
+        Color.White.copy(alpha = 0.88f)
+    } else {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)
+    }
+    val tagColor = if (isMine) {
+        ChatTelegramTeamTagFg.copy(alpha = 0.92f)
+    } else {
+        ChatTelegramTeamTagBg.copy(alpha = 0.95f)
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -203,21 +144,31 @@ fun ChatBubbleAuthorHeader(
         Row(
             modifier = Modifier.weight(1f),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            val server = serverNumber?.takeIf { it >= 1 }
-            if (server != null) {
-                ChatServerNumberBadge(serverNumber = server, isMine = isMine)
+            formatServerLabel(serverNumber)?.let { serverLabel ->
+                Text(
+                    text = serverLabel,
+                    style = lineStyle,
+                    color = serverColor,
+                    maxLines = 1,
+                )
             }
             teamTag?.trim()?.takeIf { it.isNotEmpty() }?.let { tag ->
-                ChatTeamTagBadge(teamTag = tag, isMine = isMine)
+                val raw = tag.removePrefix("[").removeSuffix("]").trim()
+                if (raw.isNotEmpty()) {
+                    Text(
+                        text = "[$raw]",
+                        style = lineStyle,
+                        color = tagColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             Text(
                 text = nickname.trim().ifBlank { "—" },
-                style = MaterialTheme.typography.titleSmall.copy(
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 0.1.sp,
-                ),
+                style = lineStyle,
                 color = nicknameColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

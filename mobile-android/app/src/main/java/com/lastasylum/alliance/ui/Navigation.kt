@@ -113,8 +113,11 @@ fun AppNavigation(
         factory = chatViewModelFactory,
     )
     LaunchedEffect(Unit) {
-        delay(48)
-        chatViewModel.refreshChat()
+        val roomsReady = chatViewModel.state.value.rooms.isNotEmpty() &&
+            !chatViewModel.state.value.isRoomsLoading
+        if (!roomsReady) {
+            chatViewModel.refreshChat()
+        }
     }
 
     DisposableEffect(chatViewModel) {
