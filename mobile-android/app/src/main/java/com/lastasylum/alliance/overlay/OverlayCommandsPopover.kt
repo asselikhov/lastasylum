@@ -591,7 +591,6 @@ class OverlayCommandsPopover(
                 shortLabelRes = R.string.overlay_cmd_tab_reactions,
                 iconRes = R.drawable.ic_overlay_cmd_reaction,
                 accentColor = Color.parseColor("#FFE91E63"),
-                hintRes = R.string.overlay_reactions_hint,
                 isReactions = true,
             ),
         )

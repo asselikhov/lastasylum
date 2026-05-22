@@ -28,6 +28,8 @@ backend/dist/
 backend/coverage/
 
 # --- Android ---
+mobile-android/Memes/
+mobile-android/Stikers/
 mobile-android/la_logo.png
 mobile-android/.gradle/
 mobile-android/**/build/

@@ -652,7 +652,6 @@
     <string name="overlay_cmd_column_storm">Штурм</string>
     <string name="overlay_cmd_column_reinf">Подкрепление</string>
     <string name="overlay_cmd_column_reactions">Реакции</string>
-    <string name="overlay_reactions_hint">Выберите реакцию — затем сокомандника в игре.</string>
     <string name="overlay_reactions_recipient_title">Кому отправить</string>
     <string name="overlay_reactions_back_cd">Назад к списку реакций</string>
     <string name="overlay_reactions_loading">Загрузка списка…</string>
@@ -695,7 +694,7 @@
     <string name="overlay_cmd_spinner_reinf_to_player">Игроку</string>
     <string name="overlay_cmd_column_open_coords">Координаты</string>
     <string name="overlay_cmd_excavation_notify">Оповестить</string>
-    <string name="overlay_cmd_excavation_hint">Push союзникам вне игры (без координат)</string>
+    <string name="overlay_cmd_excavation_hint">Push союзникам вне игры</string>
     <string name="overlay_coord_dialog_subtitle">Введите координаты цели</string>
 
     <!-- API / network (ViewModel) -->

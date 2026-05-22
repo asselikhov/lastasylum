@@ -40,13 +40,19 @@ const ALLOWED_OVERLAY_ANIMATION_REACTIONS = [
 ] as const;
 
 const ALLOWED_OVERLAY_MEME_REACTIONS = Array.from(
-  { length: 16 },
+  { length: 15 },
   (_, i) => `meme_${String(i + 1).padStart(2, '0')}`,
+);
+
+const ALLOWED_OVERLAY_STICKER_REACTIONS = Array.from(
+  { length: 3 },
+  (_, i) => `sticker_${String(i + 1).padStart(2, '0')}`,
 );
 
 const ALLOWED_OVERLAY_REACTIONS = new Set<string>([
   ...ALLOWED_OVERLAY_ANIMATION_REACTIONS,
   ...ALLOWED_OVERLAY_MEME_REACTIONS,
+  ...ALLOWED_OVERLAY_STICKER_REACTIONS,
 ]);
 
 type GatewayUser = {

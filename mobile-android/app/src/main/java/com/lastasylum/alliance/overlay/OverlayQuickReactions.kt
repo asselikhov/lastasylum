@@ -6,7 +6,9 @@ import androidx.annotation.DrawableRes
 import androidx.annotation.RawRes
 import androidx.annotation.StringRes
 import com.lastasylum.alliance.R
-import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
+
+/** Asset pack for overlay-only sticker reactions (not chat Zlobyaka). */
+internal const val OVERLAY_REACTION_STICKER_PACK = "overlay"
 
 /** Время показа входящей реакции на экране (мс). */
 const val OVERLAY_REACTION_BURST_VISIBLE_MS = 10_000L
@@ -46,7 +48,12 @@ private val overlayMemeDrawableIds = intArrayOf(
     R.drawable.overlay_meme_13,
     R.drawable.overlay_meme_14,
     R.drawable.overlay_meme_15,
-    R.drawable.overlay_meme_16,
+)
+
+private val overlayStickerAssetStems = arrayOf(
+    "overlay_sticker_01",
+    "overlay_sticker_02",
+    "overlay_sticker_03",
 )
 
 internal fun overlayAnimationReactions(): List<OverlayQuickReaction> = listOf(
@@ -122,8 +129,18 @@ internal fun overlayMemeReactions(): List<OverlayQuickReaction> =
         )
     }
 
-/** Реакции-стикеры (не пак Zlobyaka чата) — контент добавляется отдельно. */
-internal fun overlayStickerReactions(): List<OverlayQuickReaction> = emptyList()
+internal fun overlayStickerReactions(): List<OverlayQuickReaction> =
+    overlayStickerAssetStems.mapIndexed { index, stem ->
+        val num = index + 1
+        OverlayQuickReaction(
+            id = "sticker_%02d".format(num),
+            category = OverlayReactionCategory.STICKERS,
+            labelRes = R.string.overlay_reaction_sticker_cd,
+            tintHex = "#FFE8F0FF",
+            stickerAssetStem = stem,
+            burstAccentHex = "#CC90A4AE",
+        )
+    }
 
 internal fun reactionsInCategory(category: OverlayReactionCategory): List<OverlayQuickReaction> =
     when (category) {
@@ -153,7 +170,12 @@ internal fun overlayReactionsForCategory(
 
 internal fun loadStickerReactionBitmap(context: Context, stem: String) =
     runCatching {
-        context.assets.open("stickerpacks/${ZlobyakaStickerPack.PACK_KEY}/$stem.png").use { stream ->
+        val pack = if (stem.startsWith("overlay_sticker_")) {
+            OVERLAY_REACTION_STICKER_PACK
+        } else {
+            "zlobyaka"
+        }
+        context.assets.open("stickerpacks/$pack/$stem.png").use { stream ->
             BitmapFactory.decodeStream(stream)
         }
     }.getOrNull()
