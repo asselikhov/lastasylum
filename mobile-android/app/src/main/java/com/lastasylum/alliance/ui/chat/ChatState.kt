@@ -44,6 +44,12 @@ data class ChatState(
     val newestMessageKey: String? = null,
     /** Increments after a successful own send so the list scrolls to the latest message. */
     val scrollToLatestNonce: Long = 0L,
+    /** Scroll list to this message id (quote jump); consumed by [ChatScreen]. */
+    val scrollToMessageId: String? = null,
+    /** Brief highlight after jumping to a quoted message. */
+    val highlightMessageId: String? = null,
+    /** One-shot toast/snackbar text (e.g. quote not found). */
+    val transientNotice: String? = null,
     val sendFailure: ChatSendFailure? = null,
     /** Wire keys for sticker packs the user may send (e.g. zlobyaka). */
     val enabledStickerPackKeys: Set<String> = emptySet(),

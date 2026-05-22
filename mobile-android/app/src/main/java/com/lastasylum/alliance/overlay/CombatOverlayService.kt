@@ -707,7 +707,10 @@ class CombatOverlayService : Service() {
                         putExtra(OverlaySystemDialogActivity.EXTRA_CONTENT_MIME, mime)
                     }
                 }
-                suspendOverlayWindowsForSystemActivity(keepOverlayChromeVisible = false)
+                val keepChatVisible =
+                    kind == OverlaySystemDialogActivity.KIND_PICK_IMAGES ||
+                        kind == OverlaySystemDialogActivity.KIND_REQUEST_GALLERY_READ
+                suspendOverlayWindowsForSystemActivity(keepOverlayChromeVisible = keepChatVisible)
                 mainHandler.post {
                     try {
                         startActivity(i)
@@ -791,6 +794,9 @@ class CombatOverlayService : Service() {
     private var lastForegroundHintPkg: String? = null
     @Volatile
     private var lastOverlayInGameAtMs: Long = 0L
+    /** Последний результат foreground-пробы «в игре» (не путать с UI-гейтом при открытом чате). */
+    @Volatile
+    private var overlayInGameProbeActive: Boolean = false
     /** Heartbeat «ingame» для списка союзников — не привязан к видимости HUD/ленты. */
     private var overlayIngamePresenceActive = false
     private var overlayIngameMissStreak = 0
@@ -1277,6 +1283,7 @@ class CombatOverlayService : Service() {
                     true
                 }
                 val nowMs = System.currentTimeMillis()
+                overlayInGameProbeActive = inGame
                 if (inGame) {
                     lastOverlayInGameAtMs = nowMs
                 }
@@ -1927,6 +1934,9 @@ class CombatOverlayService : Service() {
         if (shouldShow && wasInGame) {
             scheduleOverlayStatusHudRefresh()
         }
+        if (isOverlayShellActive() && !isOverlayHudOnlyMode()) {
+            applyOverlayStripVisibility()
+        }
     }
 
     /**
@@ -2326,10 +2336,19 @@ class CombatOverlayService : Service() {
         ensureStripWindowVisibleForRaidTraffic()
     }
 
+    /** Лента «Рейд» только у игрока в матче с оверлеем (ingame probe + короткий grace). */
+    private fun isOverlayRaidStripEligible(): Boolean {
+        if (!AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()) return false
+        if (isOverlayHudOnlyMode()) return false
+        if (overlayInGameProbeActive) return true
+        val last = lastOverlayInGameAtMs
+        if (last <= 0L) return false
+        return System.currentTimeMillis() - last < OVERLAY_INGAME_GRACE_MS
+    }
+
     /** Поднять окно ленты, когда в буфере есть карточки и игрок в матче. */
     private fun ensureStripWindowVisibleForRaidTraffic() {
-        if (!isOverlayChatRoutingActive()) return
-        if (isOverlayHudOnlyMode()) return
+        if (!isOverlayRaidStripEligible()) return
         if (overlayChatTeamPanelVisible) return
         if (stripBuffer.visibleForPreview().isEmpty() && chatStripPreviewFlow.value.isEmpty()) return
         if (!isOverlayShellActive()) {
@@ -2435,6 +2454,7 @@ class CombatOverlayService : Service() {
             mainHandler.post { ingestOverlayRaidMessage(msg, refreshNow, retryIndex) }
             return
         }
+        if (!isOverlayRaidStripEligible()) return
         val raidId = resolveOverlayRaidRoomId() ?: trustedOverlayRaidRoomId
         val normalized = normalizeStripRaidMessage(msg, raidId)
         if (!shouldIngestForRaidStrip(normalized)) {
@@ -2706,8 +2726,9 @@ class CombatOverlayService : Service() {
         repo.addOverlayMessageListener(listener)
         repo.addOverlayReadListener(readListener)
         repo.addOverlayReactionListener(reactionListener)
-        AppContainer.from(this).chatRoomPreferences.getRaidRoomId()
-            ?.let { rememberOverlayRaidRoomId(it) }
+        resolveOverlayRaidRoomId()?.let { rememberOverlayRaidRoomId(it) }
+            ?: AppContainer.from(this).chatRoomPreferences.getRaidRoomId()
+                ?.let { rememberOverlayRaidRoomId(it) }
         syncOverlayRaidRoomSubscription()
         if (!isOverlayHudOnlyMode()) {
             scheduleStripTick()
@@ -2763,7 +2784,7 @@ class CombatOverlayService : Service() {
                     }
                     return@post
                 }
-                if (isRaid) {
+                if (isRaid && isOverlayRaidStripEligible()) {
                     ingestOverlayRaidMessage(normalized, refreshNow = true)
                 } else if (isHub) {
                     routeOverlayHubSideEffects(msg)
@@ -2907,8 +2928,8 @@ class CombatOverlayService : Service() {
             runCatching { ensureChatStripWindow(wm) }
         }
         if (!isOverlayHudOnlyMode()) {
-            chatStripHost?.visibility =
-                if (overlayChatTeamPanelVisible) View.GONE else View.VISIBLE
+            val showStrip = isOverlayRaidStripEligible() && !overlayChatTeamPanelVisible
+            chatStripHost?.visibility = if (showStrip) View.VISIBLE else View.GONE
         }
         if (rebalanceZOrder) {
             rebalanceOverlayFullscreenZOrder()
@@ -3035,7 +3056,6 @@ class CombatOverlayService : Service() {
         initialTabIndex: Int = 0,
         hudPane: OverlayHudPane? = null,
     ) {
-        refreshOverlayChatSession()
         mainHandler.post { flushPendingOverlayPickedImages() }
         if (overlayChatTeamPanelVisible) return
         val initialTab = initialTabIndex.coerceIn(0, 1)
@@ -3090,10 +3110,7 @@ class CombatOverlayService : Service() {
                             usersRepository = container.usersRepository,
                             currentUserId = userId,
                             currentUserRole = userRole,
-                        ).also {
-                            overlayChatViewModel = it
-                            it.refreshChatForOverlay()
-                        }
+                        ).also { overlayChatViewModel = it }
                 }
                 LaunchedEffect(vm) {
                     vm.refreshChatForOverlay()
@@ -3103,7 +3120,6 @@ class CombatOverlayService : Service() {
                 val draftMessage by vm.draftMessage.collectAsStateWithLifecycle(owner)
                 val pickedImageUris by vm.pickedImageUris.collectAsStateWithLifecycle(owner)
                 val typingPeers by vm.typingPeers.collectAsStateWithLifecycle(owner)
-                val chatVoicePhase by vm.chatVoicePhase.collectAsStateWithLifecycle(owner)
                 val otherReadUptoMessageId by vm.otherReadUptoMessageId.collectAsStateWithLifecycle(owner)
 
                 CompositionLocalProvider(
@@ -3178,7 +3194,6 @@ class CombatOverlayService : Service() {
                                             typingPeers = typingPeers,
                                             draftMessage = draftMessage,
                                             pickedImageUris = pickedImageUris,
-                                            chatVoicePhase = chatVoicePhase,
                                             otherReadUptoMessageId = otherReadUptoMessageId,
                                             vm = vm,
                                         )
@@ -3216,7 +3231,6 @@ class CombatOverlayService : Service() {
                                             typingPeers = typingPeers,
                                             draftMessage = draftMessage,
                                             pickedImageUris = pickedImageUris,
-                                            chatVoicePhase = chatVoicePhase,
                                             otherReadUptoMessageId = otherReadUptoMessageId,
                                             vm = vm,
                                         )

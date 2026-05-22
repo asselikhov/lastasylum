@@ -8,9 +8,6 @@ import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -37,6 +34,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -78,7 +76,6 @@ import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Tag
-import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.Mood
 import androidx.compose.material3.AlertDialog
@@ -164,7 +161,6 @@ import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
 import com.lastasylum.alliance.overlay.OverlayAwareBottomSheet
-import com.lastasylum.alliance.overlay.OverlayChatImagePickerSheet
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.data.chat.chatImageAttachments
 import com.lastasylum.alliance.data.chat.hasVisibleText
@@ -193,7 +189,16 @@ import com.lastasylum.alliance.ui.components.ChatRoomVisualKind
 import com.lastasylum.alliance.ui.components.ChatRoomsSwitcher
 import com.lastasylum.alliance.ui.chat.ChatViewModel
 import com.lastasylum.alliance.ui.chat.ChatBubbleAuthorHeader
+import com.lastasylum.alliance.ui.chat.ChatMessageTimeOverlayChip
+import com.lastasylum.alliance.ui.chat.ChatMessageTimeWithReadStatus
 import com.lastasylum.alliance.ui.chat.ChatScrollToLatestFab
+import com.lastasylum.alliance.ui.chat.ChatTimelineEntry
+import com.lastasylum.alliance.ui.chat.ChatTypingIndicator
+import com.lastasylum.alliance.ui.chat.buildChatTimeline
+import com.lastasylum.alliance.ui.chat.chatBubbleClusterTopSpacing
+import com.lastasylum.alliance.ui.chat.chatMessageIsOwn
+import com.lastasylum.alliance.ui.chat.chatMessageKey
+import com.lastasylum.alliance.ui.chat.chatTimelineIndexForMessageId
 import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarEndPad
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarSize
@@ -237,6 +242,7 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -271,19 +277,11 @@ private data class ChatListLoadSignal(
     val isBusy: Boolean,
 )
 
-private sealed interface ChatTimelineEntry {
-    data class DaySeparator(val label: String) : ChatTimelineEntry
-    data class ChatMessageItem(val message: ChatMessage, val messageIndex: Int) : ChatTimelineEntry
-    data class ChatAlbumItem(
-        /** First (newest) message index of the grouped run (newest-first list). */
-        val firstMessageIndex: Int,
-        /** Message used for metadata/id/time (caption message when present, else the first one). */
-        val representativeMessage: ChatMessage,
-        val messageIndices: List<Int>,
-        val resolvedImageUrls: List<String>,
-        val caption: String?,
-    ) : ChatTimelineEntry
-}
+private data class ChatScrollAnchor(
+    val firstVisibleItemIndex: Int,
+    val firstVisibleItemScrollOffset: Int,
+    val timelineSize: Int,
+)
 
 private data class ChatMessageClusterFlags(
     val showHeader: Boolean,
@@ -296,126 +294,6 @@ private data class ChatMessagesListDerived(
     val clusterFlags: List<ChatMessageClusterFlags>,
 )
 
-/** Tighter vertical gap when the visually older neighbor is the same sender (Telegram stack). */
-private fun chatBubbleClusterTopSpacing(
-    timeline: List<ChatTimelineEntry>,
-    timelineIndex: Int,
-    message: ChatMessage,
-): Dp {
-    val sid = message.senderId.trim()
-    if (sid.isEmpty()) return 10.dp
-    var i = timelineIndex + 1
-    while (i < timeline.size) {
-        val e = timeline[i]
-        if (e is ChatTimelineEntry.DaySeparator) return 14.dp
-        val o = when (e) {
-            is ChatTimelineEntry.ChatMessageItem -> e.message
-            is ChatTimelineEntry.ChatAlbumItem -> e.representativeMessage
-            else -> null
-        }
-        if (o != null) {
-            val same = o.senderId.trim() == sid && o.senderId.trim().isNotEmpty()
-            return if (same) 3.dp else 14.dp
-        }
-        i++
-    }
-    return 10.dp
-}
-
-/** Own message only when both IDs are non-blank and equal (avoids treating every message as own). */
-private fun chatMessageIsOwn(message: ChatMessage, currentUserId: String): Boolean {
-    val sid = message.senderId.trim()
-    val cid = currentUserId.trim()
-    if (sid.isEmpty() || cid.isEmpty()) return false
-    return sid == cid
-}
-
-private fun buildChatTimeline(messages: List<ChatMessage>): List<ChatTimelineEntry> {
-    if (messages.isEmpty()) return emptyList()
-    val out = ArrayList<ChatTimelineEntry>(messages.size + 8)
-    fun isAlbumCandidate(m: ChatMessage): Boolean {
-        if (m.replyTo != null) return false
-        val hasImages = m.attachments.any { it.kind == "image" && it.url.isNotBlank() }
-        return hasImages && ZlobyakaStickerPack.parseStem(m.text) == null
-    }
-    fun tsMillis(createdAt: String?): Long {
-        if (createdAt.isNullOrBlank()) return -1L
-        return runCatching { java.time.Instant.parse(createdAt.trim()).toEpochMilli() }.getOrDefault(-1L)
-    }
-    val albumWindowMs = 3L * 60L * 1000L // Telegram-ish grouping window for consecutive media
-
-    var i = 0
-    while (i < messages.size) {
-        if (i > 0) {
-            val newer = messages[i - 1]
-            val older = messages[i]
-            val d0 = chatDayKey(newer.createdAt)
-            val d1 = chatDayKey(older.createdAt)
-            if (d0 != null && d1 != null && d0 != d1) {
-                val label = formatChatDaySeparator(older.createdAt)
-                if (label.isNotBlank()) out.add(ChatTimelineEntry.DaySeparator(label))
-            }
-        }
-
-        val m = messages[i]
-        if (isAlbumCandidate(m)) {
-            val sid = m.senderId.trim()
-            val day = chatDayKey(m.createdAt)
-            val baseTs = tsMillis(m.createdAt)
-            val indices = ArrayList<Int>(4)
-            val urls = ArrayList<String>(8)
-            var caption: String? = null
-            var repIndex = i
-            var j = i
-            while (j < messages.size && indices.size < 10) {
-                val mm = messages[j]
-                if (!isAlbumCandidate(mm)) break
-                if (mm.senderId.trim() != sid || sid.isBlank()) break
-                if (day != null && chatDayKey(mm.createdAt) != day) break
-                val tsm = tsMillis(mm.createdAt)
-                if (baseTs > 0 && tsm > 0 && kotlin.math.abs(tsm - baseTs) > albumWindowMs) break
-                val t = mm.text.trimEnd()
-                if (t.isNotBlank()) {
-                    if (caption == null) {
-                        caption = t
-                        repIndex = j
-                    } else {
-                        // Telegram-like: one caption per album group.
-                        break
-                    }
-                }
-                indices.add(j)
-                mm.attachments
-                    .filter { it.kind == "image" && it.url.isNotBlank() }
-                    .forEach { urls.add(resolvedChatAttachmentImageUrl(it.url)) }
-                // only group consecutive messages
-                j++
-                if (j < messages.size) {
-                    val next = messages[j]
-                    if (next.senderId.trim() != sid) break
-                }
-            }
-            if (indices.size >= 2 && urls.isNotEmpty()) {
-                out.add(
-                    ChatTimelineEntry.ChatAlbumItem(
-                        firstMessageIndex = i,
-                        representativeMessage = messages[repIndex],
-                        messageIndices = indices,
-                        resolvedImageUrls = urls,
-                        caption = caption,
-                    ),
-                )
-                i += indices.size
-                continue
-            }
-        }
-
-        out.add(ChatTimelineEntry.ChatMessageItem(m, i))
-        i++
-    }
-    return out
-}
-
 private val LocalOpenRemoteChatImagePreview =
     staticCompositionLocalOf<(List<String>, Int) -> Unit> { { _, _ -> } }
 
@@ -426,7 +304,6 @@ fun ChatScreen(
     typingPeers: Map<String, String>,
     draftMessage: String,
     pickedImageUris: List<Uri>,
-    chatVoicePhase: ChatVoicePhase = ChatVoicePhase.Idle,
     otherReadUptoMessageId: String? = null,
     onSelectRoom: (String) -> Unit,
     onClearError: () -> Unit,
@@ -452,49 +329,20 @@ fun ChatScreen(
     onConfirmDeleteSelectedMessages: () -> Unit,
     onRetrySendFailure: () -> Unit,
     onDismissSendFailure: () -> Unit,
-    onChatVoiceHoldStart: () -> Unit,
-    onChatVoiceHoldEnd: () -> Unit,
     onEditMessage: (String, String) -> Unit,
     onForwardMessage: (String) -> Unit,
     onToggleReaction: (String, String) -> Unit,
     onScrollToLatest: () -> Unit = {},
+    onJumpToQuotedMessage: (String) -> Unit = {},
+    onConsumeScrollToMessage: () -> Unit = {},
+    onClearHighlightMessage: () -> Unit = {},
+    onConsumeTransientNotice: () -> Unit = {},
     /** Overlay panel: hide room bar, rely on cached session + narrow socket subscriptions. */
     compactOverlayMode: Boolean = false,
 ) {
     val context = LocalContext.current
     val overlayUi = LocalOverlayUiMode.current
-    val activityResultOwner = LocalActivityResultRegistryOwner.current
     val canHandleBack = LocalOnBackPressedDispatcherOwner.current != null
-    var hasMicPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.RECORD_AUDIO,
-            ) == PackageManager.PERMISSION_GRANTED,
-        )
-    }
-    val micPermissionLauncher = if (activityResultOwner != null) {
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.RequestPermission(),
-        ) { granted ->
-            hasMicPermission = granted
-        }
-    } else {
-        null
-    }
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                hasMicPermission = ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.RECORD_AUDIO,
-                ) == PackageManager.PERMISSION_GRANTED
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
 
     val listState = remember(state.selectedRoomId) {
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
@@ -590,6 +438,53 @@ fun ChatScreen(
         }
     }
 
+    var pendingScrollAnchor by remember(state.selectedRoomId) {
+        mutableStateOf<ChatScrollAnchor?>(null)
+    }
+
+    LaunchedEffect(state.isLoadingOlder) {
+        if (state.isLoadingOlder && pendingScrollAnchor == null) {
+            pendingScrollAnchor = ChatScrollAnchor(
+                firstVisibleItemIndex = listState.firstVisibleItemIndex,
+                firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
+                timelineSize = buildChatTimeline(state.messages).size,
+            )
+        }
+    }
+
+    LaunchedEffect(state.isLoadingOlder, state.messages) {
+        if (state.isLoadingOlder) return@LaunchedEffect
+        val anchor = pendingScrollAnchor ?: return@LaunchedEffect
+        pendingScrollAnchor = null
+        val delta = buildChatTimeline(state.messages).size - anchor.timelineSize
+        if (delta > 0) {
+            listState.scrollToItem(
+                anchor.firstVisibleItemIndex + delta,
+                anchor.firstVisibleItemScrollOffset,
+            )
+        }
+    }
+
+    LaunchedEffect(state.scrollToMessageId, state.messages.size) {
+        val targetId = state.scrollToMessageId?.trim().orEmpty()
+        if (targetId.isEmpty()) return@LaunchedEffect
+        val timeline = buildChatTimeline(state.messages)
+        val idx = chatTimelineIndexForMessageId(timeline, state.messages, targetId)
+        if (idx < 0) return@LaunchedEffect
+        runCatching { listState.animateScrollToItem(idx) }
+            .onFailure { listState.scrollToItem(idx) }
+        onConsumeScrollToMessage()
+        delay(900)
+        onClearHighlightMessage()
+    }
+
+    LaunchedEffect(state.transientNotice) {
+        val notice = state.transientNotice?.trim().orEmpty()
+        if (notice.isEmpty()) return@LaunchedEffect
+        Toast.makeText(context, notice, Toast.LENGTH_SHORT).show()
+        onConsumeTransientNotice()
+    }
+
     val listStateRef = rememberUpdatedState(listState)
     val hasMoreOlderRef = rememberUpdatedState(state.hasMoreOlder)
     val isLoadingOlderRef = rememberUpdatedState(state.isLoadingOlder)
@@ -643,28 +538,6 @@ fun ChatScreen(
         }
     }
 
-    val messagesRef = rememberUpdatedState(state.messages)
-    val jumpToQuotedMessage = remember(scope, listState) {
-        { targetId: String ->
-            val timeline = buildChatTimeline(messagesRef.value)
-            val idx = timeline.indexOfFirst { entry ->
-                when (entry) {
-                    is ChatTimelineEntry.ChatMessageItem -> entry.message._id == targetId
-                    is ChatTimelineEntry.ChatAlbumItem ->
-                        entry.messageIndices.any { i ->
-                            messagesRef.value.getOrNull(i)?._id == targetId
-                        }
-                    else -> false
-                }
-            }
-            if (idx >= 0) {
-                scope.launch {
-                    listState.scrollToItem(idx)
-                }
-            }
-        }
-    }
-
     CompositionLocalProvider(
         LocalOpenRemoteChatImagePreview provides { urls, idx ->
             remoteChatImagePreview = urls to idx
@@ -697,8 +570,6 @@ fun ChatScreen(
                 )
             }
 
-            ChatTypingBanner(typingPeers = typingPeers)
-
             if (inSelectionMode) {
                 ChatSelectionToolbar(
                     selectedCount = state.selectedMessageIds.size,
@@ -723,7 +594,8 @@ fun ChatScreen(
                     state = state,
                     otherReadUptoMessageId = otherReadUptoMessageId,
                     listState = listState,
-                    jumpToQuotedMessage = jumpToQuotedMessage,
+                    jumpToQuotedMessage = onJumpToQuotedMessage,
+                    highlightMessageId = state.highlightMessageId,
                     onToggleReaction = onToggleReaction,
                     onOpenMessageActions = onOpenMessageActions,
                     onReplyToMessage = onReplyToMessage,
@@ -731,6 +603,13 @@ fun ChatScreen(
                     inSelectionMode = inSelectionMode,
                     selectedMessageIds = state.selectedMessageIds,
                     onToggleMessageSelection = onToggleMessageSelection,
+                )
+                ChatTypingIndicator(
+                    typingPeers = typingPeers,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = 4.dp, bottom = 10.dp)
+                        .zIndex(3f),
                 )
                 ChatScrollToLatestFab(
                     visible = showScrollToLatestFab,
@@ -798,18 +677,11 @@ fun ChatScreen(
                         pickedImageUris = pickedImageUris,
                         replyToMessage = state.replyToMessage,
                         isSending = state.isSending,
-                        chatVoicePhase = chatVoicePhase,
                         sendEnabled = !globalComposerLocked,
                         readOnly = globalComposerLocked,
                         canUseZlobyakaStickers = state.enabledStickerPackKeys.contains(
                             ZlobyakaStickerPack.PACK_KEY,
                         ),
-                        hasMicPermission = hasMicPermission,
-                        onRequestMicPermission = {
-                            micPermissionLauncher?.launch(Manifest.permission.RECORD_AUDIO)
-                        },
-                        onChatVoiceHoldStart = onChatVoiceHoldStart,
-                        onChatVoiceHoldEnd = onChatVoiceHoldEnd,
                         onDraftChange = onDraftChange,
                         onSendDraft = {
                             if (!globalComposerLocked &&
@@ -1136,28 +1008,13 @@ private fun ChatDayDivider(label: String) {
 }
 
 @Composable
-private fun ChatTypingBanner(typingPeers: Map<String, String>) {
-    if (typingPeers.isEmpty()) return
-    val names = typingPeers.values.distinct().sorted()
-    Text(
-        text = if (names.size == 1) {
-            stringResource(R.string.chat_typing_one, names.first())
-        } else {
-            stringResource(R.string.chat_typing_many, names.joinToString(", "))
-        },
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(bottom = SquadRelayDimens.itemGap),
-    )
-}
-
-@Composable
 private fun ChatMessagesLazyList(
     modifier: Modifier = Modifier,
     state: ChatState,
     otherReadUptoMessageId: String?,
     listState: LazyListState,
     jumpToQuotedMessage: (String) -> Unit,
+    highlightMessageId: String?,
     onToggleReaction: (String, String) -> Unit,
     onOpenMessageActions: (String) -> Unit,
     onReplyToMessage: (String) -> Unit,
@@ -1297,6 +1154,8 @@ private fun ChatMessagesLazyList(
                                 message = message,
                                 cluster = cluster,
                                 isMine = chatMessageIsOwn(message, state.currentUserId),
+                                highlighted = highlightMessageId != null &&
+                                    highlightMessageId == message._id,
                                 clusterTopSpacing = clusterTop,
                                 canDelete = canDeleteChatMessage(
                                     message = message,
@@ -1326,7 +1185,15 @@ private fun ChatMessagesLazyList(
                                 resolvedImageUrls = e.resolvedImageUrls,
                                 caption = e.caption,
                                 isMine = chatMessageIsOwn(message, state.currentUserId),
+                                highlighted = highlightMessageId != null &&
+                                    (
+                                        highlightMessageId == message._id ||
+                                            e.messageIndices.any { i ->
+                                                messages.getOrNull(i)?._id == highlightMessageId
+                                            }
+                                        ),
                                 clusterTopSpacing = clusterTop,
+                                otherReadUptoMessageId = otherReadUptoMessageId,
                                 canDelete = canDeleteChatMessage(
                                     message = message,
                                     currentUserId = state.currentUserId,
@@ -1463,14 +1330,9 @@ private fun ChatComposer(
     pickedImageUris: List<Uri>,
     replyToMessage: ChatMessage?,
     isSending: Boolean,
-    chatVoicePhase: ChatVoicePhase,
     sendEnabled: Boolean = true,
     readOnly: Boolean = false,
     canUseZlobyakaStickers: Boolean = false,
-    hasMicPermission: Boolean,
-    onRequestMicPermission: () -> Unit,
-    onChatVoiceHoldStart: () -> Unit,
-    onChatVoiceHoldEnd: () -> Unit,
     onDraftChange: (String) -> Unit,
     onSendDraft: () -> Unit,
     onSendStickerPayload: (String) -> Unit,
@@ -1482,7 +1344,7 @@ private fun ChatComposer(
 ) {
     var showMediaPanel by remember { mutableStateOf(false) }
     var showAttachmentsSheet by remember { mutableStateOf(false) }
-    var showOverlayImagePicker by remember { mutableStateOf(false) }
+    var showComposerPasteMenu by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val overlayUi = LocalOverlayUiMode.current
     val activityResultOwner = LocalActivityResultRegistryOwner.current
@@ -1523,33 +1385,6 @@ private fun ChatComposer(
         BackHandler(enabled = showAttachmentsSheet) {
             showAttachmentsSheet = false
         }
-    }
-
-    if (canHandleBack) {
-        BackHandler(enabled = showOverlayImagePicker) {
-            showOverlayImagePicker = false
-            OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
-        }
-    }
-
-    if (overlayUi && showOverlayImagePicker) {
-        OverlayChatImagePickerSheet(
-            maxSelection = 12,
-            onDismiss = {
-                showOverlayImagePicker = false
-                OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
-            },
-            onConfirm = { uris ->
-                if (!readOnly && uris.isNotEmpty()) {
-                    onPickImages(uris, false)
-                    Toast.makeText(
-                        context,
-                        context.getString(R.string.chat_attachments_added, uris.size),
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                }
-            },
-        )
     }
 
     if (showAttachmentsSheet) {
@@ -1908,70 +1743,78 @@ private fun ChatComposer(
                                     tint = MaterialTheme.colorScheme.primary,
                                 )
                             }
-                            TextField(
-                                value = draft,
-                                onValueChange = { if (!readOnly) onDraftChange(it) },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .focusRequester(focusRequester)
-                                    .onFocusChanged { fc ->
-                                        if (!readOnly && fc.isFocused && showMediaPanel) {
-                                            showMediaPanel = false
-                                            keyboard?.show()
+                            Box(modifier = Modifier.weight(1f)) {
+                                TextField(
+                                    value = draft,
+                                    onValueChange = { if (!readOnly) onDraftChange(it) },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .focusRequester(focusRequester)
+                                        .onFocusChanged { fc ->
+                                            if (!readOnly && fc.isFocused && showMediaPanel) {
+                                                showMediaPanel = false
+                                                keyboard?.show()
+                                            }
                                         }
+                                        .then(
+                                            if (readOnly) {
+                                                Modifier
+                                            } else {
+                                                Modifier.pointerInput(Unit) {
+                                                    detectTapGestures(
+                                                        onLongPress = { showComposerPasteMenu = true },
+                                                    )
+                                                }
+                                            },
+                                        ),
+                                    readOnly = readOnly,
+                                    textStyle = MaterialTheme.typography.bodyMedium,
+                                    placeholder = {
+                                        Text(
+                                            text = if (pickedImageUris.isNotEmpty()) {
+                                                stringResource(R.string.chat_caption_hint)
+                                            } else {
+                                                stringResource(R.string.chat_message_hint)
+                                            },
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
                                     },
-                                readOnly = readOnly,
-                                textStyle = MaterialTheme.typography.bodyMedium,
-                                placeholder = {
-                                    Text(
-                                        text = if (pickedImageUris.isNotEmpty()) {
-                                            stringResource(R.string.chat_caption_hint)
-                                        } else {
-                                            stringResource(R.string.chat_message_hint)
-                                        },
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                },
-                                colors = TextFieldDefaults.colors(
-                                    focusedContainerColor = Color.Transparent,
-                                    unfocusedContainerColor = Color.Transparent,
-                                    disabledContainerColor = Color.Transparent,
-                                    focusedIndicatorColor = Color.Transparent,
-                                    unfocusedIndicatorColor = Color.Transparent,
-                                    disabledIndicatorColor = Color.Transparent,
-                                ),
-                                keyboardOptions = KeyboardOptions(
-                                    capitalization = KeyboardCapitalization.Sentences,
-                                    keyboardType = KeyboardType.Text,
-                                ),
-                                maxLines = 6,
-                            )
-                            if (!readOnly) {
-                                IconButton(
-                                    onClick = {
-                                        val clip = readClipboardPlainText(context)
-                                        if (clip.isNullOrBlank()) {
-                                            Toast.makeText(
-                                                context,
-                                                context.getString(R.string.chat_composer_paste_empty),
-                                                Toast.LENGTH_SHORT,
-                                            ).show()
-                                        } else {
-                                            onDraftChange(appendTextToDraft(draft, clip))
-                                            Toast.makeText(
-                                                context,
-                                                context.getString(R.string.chat_pasted_to_input_toast),
-                                                Toast.LENGTH_SHORT,
-                                            ).show()
-                                        }
-                                    },
-                                    modifier = Modifier.size(40.dp),
+                                    colors = TextFieldDefaults.colors(
+                                        focusedContainerColor = Color.Transparent,
+                                        unfocusedContainerColor = Color.Transparent,
+                                        disabledContainerColor = Color.Transparent,
+                                        focusedIndicatorColor = Color.Transparent,
+                                        unfocusedIndicatorColor = Color.Transparent,
+                                        disabledIndicatorColor = Color.Transparent,
+                                    ),
+                                    keyboardOptions = KeyboardOptions(
+                                        capitalization = KeyboardCapitalization.Sentences,
+                                        keyboardType = KeyboardType.Text,
+                                    ),
+                                    maxLines = 6,
+                                )
+                                DropdownMenu(
+                                    expanded = showComposerPasteMenu,
+                                    onDismissRequest = { showComposerPasteMenu = false },
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.ContentPaste,
-                                        contentDescription = stringResource(R.string.chat_composer_paste_cd),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(stringResource(R.string.chat_composer_paste_label))
+                                        },
+                                        onClick = {
+                                            showComposerPasteMenu = false
+                                            val clip = readClipboardPlainText(context)
+                                            if (clip.isNullOrBlank()) {
+                                                Toast.makeText(
+                                                    context,
+                                                    context.getString(R.string.chat_composer_paste_empty),
+                                                    Toast.LENGTH_SHORT,
+                                                ).show()
+                                            } else {
+                                                onDraftChange(appendTextToDraft(draft, clip))
+                                            }
+                                        },
                                     )
                                 }
                             }
@@ -1991,8 +1834,6 @@ private fun ChatComposer(
                                     keyboard?.hide()
                                     if (overlayUi) {
                                         OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
-                                        showOverlayImagePicker = true
-                                        return@IconButton
                                     }
                                     val launcher = pickImagesLauncher
                                     if (launcher == null) {
@@ -2020,44 +1861,6 @@ private fun ChatComposer(
                                     } else {
                                         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
                                     },
-                                )
-                            }
-
-                            val voiceMicTint = when {
-                                readOnly || isSending ->
-                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
-                                chatVoicePhase == ChatVoicePhase.Listening ||
-                                    chatVoicePhase == ChatVoicePhase.Sending ->
-                                    MaterialTheme.colorScheme.primary
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .pointerInput(readOnly, isSending, hasMicPermission) {
-                                        awaitEachGesture {
-                                            awaitFirstDown(requireUnconsumed = false)
-                                            if (readOnly || isSending) return@awaitEachGesture
-                                            if (!hasMicPermission) {
-                                                onRequestMicPermission()
-                                                return@awaitEachGesture
-                                            }
-                                            try {
-                                                focusManager.clearFocus()
-                                                keyboard?.hide()
-                                                onChatVoiceHoldStart()
-                                                waitForUpOrCancellation()
-                                            } finally {
-                                                onChatVoiceHoldEnd()
-                                            }
-                                        }
-                                    },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Mic,
-                                    contentDescription = stringResource(R.string.chat_voice_mic_cd),
-                                    tint = voiceMicTint,
                                 )
                             }
 
@@ -2369,6 +2172,8 @@ private fun AttachmentPreviewOverlay(
 private fun ChatBubbleInnerColumn(
     message: ChatMessage,
     isMine: Boolean,
+    isChainBottom: Boolean,
+    otherReadUptoMessageId: String?,
     showClusterHeader: Boolean,
     tightClusterTop: Boolean,
     stickerStem: String?,
@@ -2598,11 +2403,14 @@ private fun ChatBubbleInnerColumn(
                         color = onBubble,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    if (timeLabel.isNotBlank()) {
-                        Text(
-                            text = timeLabel,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = timeMuted,
+                    if (timeLabel.isNotBlank() || (isMine && isChainBottom)) {
+                        ChatMessageTimeWithReadStatus(
+                            time = timeLabel,
+                            isMine = isMine,
+                            isChainBottom = isChainBottom,
+                            messageId = message._id,
+                            otherReadUptoMessageId = otherReadUptoMessageId,
+                            timeColor = timeMuted,
                             modifier = Modifier.align(Alignment.End),
                         )
                     }
@@ -2620,12 +2428,15 @@ private fun ChatBubbleInnerColumn(
                             .weight(1f, fill = true)
                             .fillMaxWidth(),
                     )
-                    if (timeLabel.isNotBlank()) {
+                    if (timeLabel.isNotBlank() || (isMine && isChainBottom)) {
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = timeLabel,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = timeMuted,
+                        ChatMessageTimeWithReadStatus(
+                            time = timeLabel,
+                            isMine = isMine,
+                            isChainBottom = isChainBottom,
+                            messageId = message._id,
+                            otherReadUptoMessageId = otherReadUptoMessageId,
+                            timeColor = timeMuted,
                             modifier = Modifier.padding(bottom = 1.dp),
                         )
                     }
@@ -2633,15 +2444,18 @@ private fun ChatBubbleInnerColumn(
             }
         }
 
-        if (stickerStem != null && timeLabel.isNotBlank()) {
+        if (stickerStem != null && (timeLabel.isNotBlank() || (isMine && isChainBottom))) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
             ) {
-                Text(
-                    text = timeLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = timeMuted,
+                ChatMessageTimeWithReadStatus(
+                    time = timeLabel,
+                    isMine = isMine,
+                    isChainBottom = isChainBottom,
+                    messageId = message._id,
+                    otherReadUptoMessageId = otherReadUptoMessageId,
+                    timeColor = timeMuted,
                 )
             }
         }
@@ -2670,6 +2484,8 @@ private fun ChatFloatingImageAttachmentsBlock(
     senderAccent: Color,
     message: ChatMessage,
     isChainBottom: Boolean,
+    otherReadUptoMessageId: String?,
+    highlighted: Boolean = false,
     formattedTime: String,
     caption: String? = null,
     captionBarBg: Color = Color.Transparent,
@@ -2699,8 +2515,18 @@ private fun ChatFloatingImageAttachmentsBlock(
     }
     val frameBorder = BorderStroke(
         1.dp,
-        if (isMine) Color.White.copy(alpha = 0.12f) else scheme.outline.copy(alpha = 0.2f),
+        when {
+            highlighted -> scheme.primary.copy(alpha = 0.55f)
+            isMine -> Color.White.copy(alpha = 0.12f)
+            else -> scheme.outline.copy(alpha = 0.2f)
+        },
     )
+    val albumSurfaceColor = scheme.surface.copy(alpha = if (isMine) 0.22f else 0.38f)
+    val albumBg = if (highlighted) {
+        lerp(albumSurfaceColor, scheme.primary.copy(alpha = 0.32f), 0.45f)
+    } else {
+        albumSurfaceColor
+    }
     Column(modifier = floatMod) {
         if (!isMine && showClusterHeader) {
             ChatBubbleAuthorHeader(
@@ -2717,7 +2543,7 @@ private fun ChatFloatingImageAttachmentsBlock(
                 .fillMaxWidth()
                 .padding(top = if (!isMine && showClusterHeader) 2.dp else 0.dp),
             shape = clipShape,
-            color = scheme.surface.copy(alpha = if (isMine) 0.22f else 0.38f),
+            color = albumBg,
             tonalElevation = 0.dp,
             shadowElevation = 4.dp,
             border = frameBorder,
@@ -2734,23 +2560,17 @@ private fun ChatFloatingImageAttachmentsBlock(
                         bottomRound = !hasCaption,
                         onLongPress = onImageLongPress,
                     )
-                    if (!hasCaption && formattedTime.isNotBlank()) {
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = Color.Black.copy(alpha = 0.45f),
-                            tonalElevation = 0.dp,
-                            shadowElevation = 0.dp,
+                    if (!hasCaption && (formattedTime.isNotBlank() || (isMine && isChainBottom))) {
+                        ChatMessageTimeOverlayChip(
+                            time = formattedTime,
+                            isMine = isMine,
+                            isChainBottom = isChainBottom,
+                            messageId = message._id,
+                            otherReadUptoMessageId = otherReadUptoMessageId,
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
                                 .padding(6.dp),
-                        ) {
-                            Text(
-                                text = formattedTime,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                            )
-                        }
+                        )
                     }
                 }
                 if (hasCaption) {
@@ -2782,6 +2602,8 @@ private fun ChatAlbumRow(
     resolvedImageUrls: List<String>,
     caption: String?,
     isMine: Boolean,
+    highlighted: Boolean = false,
+    otherReadUptoMessageId: String?,
     clusterTopSpacing: Dp,
     canDelete: Boolean,
     deleting: Boolean,
@@ -2930,6 +2752,8 @@ private fun ChatAlbumRow(
             senderAccent = senderAccent,
             message = message,
             isChainBottom = isChainBottom,
+            otherReadUptoMessageId = otherReadUptoMessageId,
+            highlighted = highlighted,
             formattedTime = formattedTime,
             caption = caption,
             captionBarBg = captionBarBg,
@@ -2955,6 +2779,7 @@ private fun ChatBubbleRow(
     message: ChatMessage,
     cluster: ChatMessageClusterFlags?,
     isMine: Boolean,
+    highlighted: Boolean = false,
     clusterTopSpacing: Dp,
     canDelete: Boolean,
     deleting: Boolean,
@@ -3000,11 +2825,17 @@ private fun ChatBubbleRow(
         message.replyTo == null
     val senderAccent = roleAccentColor(message.senderRole)
     val scheme = MaterialTheme.colorScheme
-    val bubbleBg = when {
+    val baseBubbleBg = when {
         overlayUi && isMine -> ChatTelegramOutgoingBubble
         overlayUi -> ChatTelegramIncomingBubble
         isMine -> lerp(scheme.primary, scheme.surface, 0.28f).copy(alpha = 0.82f)
         else -> scheme.surface.copy(alpha = 0.52f)
+    }
+    val highlightTint = scheme.primary.copy(alpha = 0.35f)
+    val bubbleBg = if (highlighted) {
+        lerp(baseBubbleBg, highlightTint, 0.55f)
+    } else {
+        baseBubbleBg
     }
     val onBubble = when {
         overlayUi && isMine -> ChatTelegramOutgoingOnBubble
@@ -3021,6 +2852,7 @@ private fun ChatBubbleRow(
     val bubbleBorder = BorderStroke(
         1.dp,
         when {
+            highlighted -> scheme.primary.copy(alpha = 0.55f)
             overlayUi && isMine -> Color.White.copy(alpha = 0.1f)
             overlayUi -> Color.White.copy(alpha = 0.06f)
             isMine -> Color.White.copy(alpha = 0.14f)
@@ -3040,15 +2872,6 @@ private fun ChatBubbleRow(
     }
     val bubbleContext = LocalContext.current
     val formattedTime = formatChatTime(message.createdAt)
-    val readDouble = isMine &&
-        !message._id.isNullOrBlank() &&
-        !otherReadUptoMessageId.isNullOrBlank() &&
-        otherReadUptoMessageId >= message._id
-    val formattedTimeUi = if (isMine && formattedTime.isNotBlank()) {
-        if (readDouble) "$formattedTime ✓✓" else "$formattedTime ✓"
-    } else {
-        formattedTime
-    }
 
     val swipeModifier = if (messageId != null) {
         Modifier.pointerInput(messageId, layoutDirection, swipePx) {
@@ -3122,8 +2945,6 @@ private fun ChatBubbleRow(
             stickerStem = stickerStem,
         )
     }
-    val bubbleTime = if (isMine) formattedTimeUi else formattedTime
-
     ChatMessageBubbleRow(
         isMine = isMine,
         clusterTopSpacing = clusterTopSpacing,
@@ -3209,23 +3030,17 @@ private fun ChatBubbleRow(
                                 ),
                             contentScale = ContentScale.Fit,
                         )
-                        if (bubbleTime.isNotBlank()) {
-                            Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = Color.Black.copy(alpha = 0.45f),
-                                tonalElevation = 0.dp,
-                                shadowElevation = 0.dp,
+                        if (formattedTime.isNotBlank() || (isMine && isChainBottom)) {
+                            ChatMessageTimeOverlayChip(
+                                time = formattedTime,
+                                isMine = isMine,
+                                isChainBottom = isChainBottom,
+                                messageId = message._id,
+                                otherReadUptoMessageId = otherReadUptoMessageId,
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
                                     .padding(6.dp),
-                            ) {
-                                Text(
-                                    text = bubbleTime,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                                )
-                            }
+                            )
                         }
                     }
                     if (deleting && canDelete) {
@@ -3254,7 +3069,9 @@ private fun ChatBubbleRow(
                     senderAccent = senderAccent,
                     message = message,
                     isChainBottom = isChainBottom,
-                    formattedTime = bubbleTime,
+                    otherReadUptoMessageId = otherReadUptoMessageId,
+                    highlighted = highlighted,
+                    formattedTime = formattedTime,
                     bubbleClickModifier = bubbleClickModifier,
                     swipeModifier = swipeModifier,
                     deleting = deleting,
@@ -3293,6 +3110,8 @@ private fun ChatBubbleRow(
                         ChatBubbleInnerColumn(
                             message = message,
                             isMine = isMine,
+                            isChainBottom = isChainBottom,
+                            otherReadUptoMessageId = otherReadUptoMessageId,
                             showClusterHeader = showClusterHeader,
                             tightClusterTop = tightClusterTop,
                             stickerStem = stickerStem,
@@ -3301,7 +3120,7 @@ private fun ChatBubbleRow(
                             nickname = nickname,
                             onBubble = onBubble,
                             timeMuted = timeMuted,
-                            formattedTime = bubbleTime,
+                            formattedTime = formattedTime,
                             overlayUi = overlayUi,
                             swipeModifier = Modifier,
                             bubbleContext = bubbleContext,
@@ -3487,11 +3306,6 @@ private fun ChatMessageActionsSheet(
             Spacer(Modifier.height(8.dp))
         }
     }
-}
-
-private fun chatMessageKey(message: ChatMessage): String {
-    return message._id
-        ?: "${message.senderId}_${message.createdAt}_${message.text.hashCode()}"
 }
 
 private fun handleChatMessageLongPress(

@@ -4,7 +4,6 @@ import android.net.Uri
 import androidx.compose.runtime.Composable
 import com.lastasylum.alliance.ui.chat.ChatState
 import com.lastasylum.alliance.ui.chat.ChatViewModel
-import com.lastasylum.alliance.ui.chat.ChatVoicePhase
 import com.lastasylum.alliance.ui.screens.ChatScreen
 
 @Composable
@@ -13,7 +12,6 @@ internal fun OverlayHudChatPane(
     typingPeers: Map<String, String>,
     draftMessage: String,
     pickedImageUris: List<Uri>,
-    chatVoicePhase: ChatVoicePhase,
     otherReadUptoMessageId: String?,
     vm: ChatViewModel,
 ) {
@@ -22,7 +20,6 @@ internal fun OverlayHudChatPane(
         typingPeers = typingPeers,
         draftMessage = draftMessage,
         pickedImageUris = pickedImageUris,
-        chatVoicePhase = chatVoicePhase,
         otherReadUptoMessageId = otherReadUptoMessageId,
         compactOverlayMode = false,
         onSelectRoom = vm::selectRoom,
@@ -52,11 +49,13 @@ internal fun OverlayHudChatPane(
         onConfirmDeleteSelectedMessages = vm::confirmDeleteSelectedMessages,
         onRetrySendFailure = vm::retrySendFailure,
         onDismissSendFailure = vm::dismissSendFailure,
-        onChatVoiceHoldStart = vm::startChatVoiceInput,
-        onChatVoiceHoldEnd = vm::stopChatVoiceInput,
         onEditMessage = vm::editMessage,
         onForwardMessage = vm::forwardMessage,
         onToggleReaction = vm::toggleReaction,
         onScrollToLatest = vm::scrollToLatestMessages,
+        onJumpToQuotedMessage = vm::jumpToQuotedMessage,
+        onConsumeScrollToMessage = vm::consumeScrollToMessage,
+        onClearHighlightMessage = vm::clearHighlightMessage,
+        onConsumeTransientNotice = vm::consumeTransientNotice,
     )
 }

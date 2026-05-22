@@ -386,14 +386,12 @@ fun AppNavigation(
                 val draftMessage by chatViewModel.draftMessage.collectAsStateWithLifecycle()
                 val pickedImageUris by chatViewModel.pickedImageUris.collectAsStateWithLifecycle()
                 val typingPeers by chatViewModel.typingPeers.collectAsStateWithLifecycle()
-                val chatVoicePhase by chatViewModel.chatVoicePhase.collectAsStateWithLifecycle()
                 val otherReadUptoMessageId by chatViewModel.otherReadUptoMessageId.collectAsStateWithLifecycle()
                 ChatScreen(
                     state = chatState,
                     typingPeers = typingPeers,
                     draftMessage = draftMessage,
                     pickedImageUris = pickedImageUris,
-                    chatVoicePhase = chatVoicePhase,
                     otherReadUptoMessageId = otherReadUptoMessageId,
                     onSelectRoom = chatViewModel::selectRoom,
                     onClearError = chatViewModel::clearError,
@@ -421,12 +419,14 @@ fun AppNavigation(
                     onConfirmDeleteSelectedMessages = chatViewModel::confirmDeleteSelectedMessages,
                     onRetrySendFailure = chatViewModel::retrySendFailure,
                     onDismissSendFailure = chatViewModel::dismissSendFailure,
-                    onChatVoiceHoldStart = chatViewModel::startChatVoiceInput,
-                    onChatVoiceHoldEnd = chatViewModel::stopChatVoiceInput,
                     onEditMessage = chatViewModel::editMessage,
                     onForwardMessage = chatViewModel::forwardMessage,
                     onToggleReaction = chatViewModel::toggleReaction,
                     onScrollToLatest = chatViewModel::scrollToLatestMessages,
+                    onJumpToQuotedMessage = chatViewModel::jumpToQuotedMessage,
+                    onConsumeScrollToMessage = chatViewModel::consumeScrollToMessage,
+                    onClearHighlightMessage = chatViewModel::clearHighlightMessage,
+                    onConsumeTransientNotice = chatViewModel::consumeTransientNotice,
                 )
             }
             composable(AppTab.OVERLAY.route) {

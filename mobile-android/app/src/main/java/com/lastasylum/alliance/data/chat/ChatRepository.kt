@@ -153,6 +153,12 @@ class ChatRepository(
     fun dispatchOverlayHttpMessage(message: ChatMessage) =
         realtime.dispatchOverlayHttpMessage(message)
 
+    /** Raid-room traffic for in-game overlay strip (HTTP echo when socket already handled). */
+    fun notifyOverlayRaidStripMessage(message: ChatMessage) {
+        if (message.roomId.trim().isEmpty()) return
+        realtime.dispatchOverlayHttpMessage(message)
+    }
+
     fun overlayMessageListenerCount(): Int = realtime.overlayMessageListenerCount()
 
     fun removeOverlayMessageListener(listener: (ChatMessage) -> Unit) =

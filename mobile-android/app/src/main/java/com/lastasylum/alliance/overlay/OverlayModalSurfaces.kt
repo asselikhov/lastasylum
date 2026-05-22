@@ -128,7 +128,7 @@ fun OverlayInWindowGalleryPicker(
         Box(
             modifier = Modifier
                 .matchParentSize()
-                .background(Color.Black.copy(alpha = 0.52f))
+                .background(Color.Black.copy(alpha = 0.22f))
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,

@@ -148,6 +148,7 @@
     <string name="chat_send_failed_retry">Повторить</string>
     <string name="chat_send_failed_dismiss">Скрыть</string>
     <string name="chat_quoted_jump_cd">Перейти к цитируемому сообщению</string>
+    <string name="chat_jump_quote_not_found">Сообщение не найдено в загруженной истории</string>
     <string name="chat_selection_count">Выбрано: %1$d</string>
     <string name="chat_selection_clear_cd">Снять выделение</string>
     <string name="chat_selection_delete_cd">Удалить выбранные</string>
@@ -684,6 +685,7 @@
     <string name="overlay_reactions_favorites_empty">Нажмите ☆ на реакции, чтобы добавить в избранное</string>
     <string name="overlay_reaction_sticker_cd">Стикер</string>
     <string name="chat_composer_paste_cd">Вставить из буфера</string>
+    <string name="chat_composer_paste_label">Вставить</string>
     <string name="chat_composer_paste_empty">Буфер обмена пуст</string>
     <string name="overlay_reaction_meme_cd">Мем</string>
     <string name="overlay_reactions_recipient_preview_cd">Выбранная реакция</string>
