@@ -569,7 +569,11 @@
     <string name="overlay_toggle_hide">Скрыть</string>
     <string name="overlay_toggle_show">Показать</string>
     <string name="overlay_strip_no_room">Откройте вкладку «Чат» — лента синхронизируется с комнатой «Рейд».</string>
-    <string name="overlay_strip_no_raid">Откройте вкладку «Чат» один раз — комната «Рейд» подключится к ленте в игре.</string>
+    <string name="overlay_strip_no_raid">Нажмите, чтобы открыть чат и подключить комнату «Рейд» к ленте в игре.</string>
+    <string name="overlay_gate_no_usage_access">Оверлей скрыт: включите доступ к статистике использования в настройках SquadRelay.</string>
+    <string name="overlay_gate_no_draw_overlay">Оверлей скрыт: разрешите отображение поверх других приложений.</string>
+    <string name="overlay_gate_waiting_for_game">Ожидание игры на экране…</string>
+    <string name="overlay_voice_mic_unsupported">Голосовой микрофон доступен с Android 10 (API 29)</string>
     <string name="overlay_strip_messages_since">С %1$s</string>
     <string name="overlay_strip_live_now">Сейчас</string>
     <string name="overlay_strip_history_failed">Не удалось загрузить историю чата.</string>

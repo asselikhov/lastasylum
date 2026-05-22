@@ -1,7 +1,6 @@
 package com.lastasylum.alliance.overlay
 
 import android.content.Context
-import android.graphics.BitmapFactory
 import androidx.annotation.DrawableRes
 import androidx.annotation.RawRes
 import androidx.annotation.StringRes
@@ -168,14 +167,5 @@ internal fun overlayReactionsForCategory(
     return fav.sortedBy { it.id } + rest.sortedBy { it.id }
 }
 
-internal fun loadStickerReactionBitmap(context: Context, stem: String) =
-    runCatching {
-        val pack = if (stem.startsWith("overlay_sticker_")) {
-            OVERLAY_REACTION_STICKER_PACK
-        } else {
-            "zlobyaka"
-        }
-        context.assets.open("stickerpacks/$pack/$stem.png").use { stream ->
-            BitmapFactory.decodeStream(stream)
-        }
-    }.getOrNull()
+internal fun loadStickerReactionBitmap(context: Context, stem: String): android.graphics.Bitmap? =
+    OverlayReactionBitmapCache.loadSync(context, stem)

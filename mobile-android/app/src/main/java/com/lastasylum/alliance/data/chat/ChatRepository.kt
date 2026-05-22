@@ -121,11 +121,15 @@ class ChatRepository(
     fun refreshOverlayRealtimeSubscriptions() =
         realtime.refreshOverlayRealtimeSubscriptions()
 
-    /** Сохранить id комнаты «Рейд» и переподписать сокет оверлея. */
-    fun applyRaidRoomFromRooms(rooms: List<ChatRoomDto>) {
+    /** Сохранить id комнат «Рейд» и hub «Альянс», переподписать сокет оверлея. */
+    fun applyOverlayRoomsFromRooms(rooms: List<ChatRoomDto>) {
         ChatRaidRoomSync.applyRaidRoomPreference(rooms, chatRoomPreferences)
+        ChatHubRoomSync.applyHubRoomPreference(rooms, chatRoomPreferences)
         refreshOverlayRealtimeSubscriptions()
     }
+
+    /** @see applyOverlayRoomsFromRooms */
+    fun applyRaidRoomFromRooms(rooms: List<ChatRoomDto>) = applyOverlayRoomsFromRooms(rooms)
 
     /** Id комнаты «Рейд» для ленты оверлея; при необходимости подгружает список комнат. */
     suspend fun ensureRaidRoomId(): String? {
@@ -133,9 +137,12 @@ class ChatRepository(
         val rooms = ChatSessionCache.getFreshRooms()
             ?: listRooms().getOrNull()
             ?: return null
-        applyRaidRoomFromRooms(rooms)
+        applyOverlayRoomsFromRooms(rooms)
         return chatRoomPreferences.getRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }
     }
+
+    fun hubRoomIdFromPrefs(): String? =
+        chatRoomPreferences.getHubRoomId()?.trim()?.takeIf { it.isNotEmpty() }
 
     fun dispatchOverlayHttpMessage(message: ChatMessage) =
         realtime.dispatchOverlayHttpMessage(message)

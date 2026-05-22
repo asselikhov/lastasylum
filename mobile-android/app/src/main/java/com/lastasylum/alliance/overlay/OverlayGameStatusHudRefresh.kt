@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.overlay
 
 import com.lastasylum.alliance.data.chat.ChatAllianceIds
+import com.lastasylum.alliance.data.chat.ChatHubRoomSync
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.effectiveUnreadCount
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
@@ -121,13 +122,7 @@ internal object OverlayGameStatusHudRefresh {
     ).coerceAtLeast(0)
 
     fun allianceHubRoom(rooms: List<ChatRoomDto>): ChatRoomDto? =
-        rooms.firstOrNull { room ->
-            room.sortOrder == 1 &&
-                !room.allianceId.isNullOrBlank() &&
-                room.allianceId.startsWith("pt:") &&
-                room.allianceId != ChatAllianceIds.GLOBAL &&
-                !ChatAllianceIds.isServerScope(room.allianceId)
-        }
+        ChatHubRoomSync.allianceHubRoom(rooms)
 
     fun allianceHubUnread(
         rooms: List<ChatRoomDto>,

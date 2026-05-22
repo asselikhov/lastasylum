@@ -34,14 +34,12 @@ class ChatRealtimeSubscriber(
         }
     }
 
-    private fun realtimeRoomIdsForOverlayBootstrap(): List<String> {
-        val raid = chatRoomPreferences.getRaidRoomId()
-        val selected = chatRoomPreferences.getSelectedRoomId()
-        return buildList {
-            if (!raid.isNullOrBlank()) add(raid)
-            if (!selected.isNullOrBlank() && selected !in this) add(selected)
-        }
-    }
+    private fun realtimeRoomIdsForOverlayBootstrap(): List<String> =
+        ChatOverlayRoomIds.forOverlayBootstrap(
+            raidRoomId = chatRoomPreferences.getRaidRoomId(),
+            hubRoomId = chatRoomPreferences.getHubRoomId(),
+            selectedRoomId = chatRoomPreferences.getSelectedRoomId(),
+        )
 
     private fun mergedRealtimeRoomIds(): List<String> =
         (primaryRealtimeRoomIds + overlayRealtimeRoomIds).distinct()
@@ -161,7 +159,7 @@ class ChatRealtimeSubscriber(
         refreshOverlayRealtimeSubscriptions()
     }
 
-    /** Re-join raid/selected rooms when [ChatRaidRoomSync] updates prefs after overlay already started. */
+    /** Re-join raid/hub/selected rooms when overlay room prefs update after FGS already started. */
     fun refreshOverlayRealtimeSubscriptions() {
         if (overlayMessageListeners.isEmpty() && overlayReactionListeners.isEmpty()) {
             return

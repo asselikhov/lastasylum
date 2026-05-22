@@ -279,4 +279,26 @@ class GameForegroundGateTest {
             ),
         )
     }
+
+    @Test
+    fun conflictingForegroundHint_whenChromeInForeground() {
+        assertTrue(
+            GameForegroundGate.isConflictingForegroundHint(
+                lastForegroundPackageHint = "com.android.chrome",
+                targetPackages = setOf("com.phs.global"),
+                alliancePackage = "com.lastasylum.alliance",
+            ),
+        )
+    }
+
+    @Test
+    fun conflictingForegroundHint_falseForTargetGame() {
+        assertFalse(
+            GameForegroundGate.isConflictingForegroundHint(
+                lastForegroundPackageHint = "com.phs.global",
+                targetPackages = setOf("com.phs.global"),
+                alliancePackage = "com.lastasylum.alliance",
+            ),
+        )
+    }
 }

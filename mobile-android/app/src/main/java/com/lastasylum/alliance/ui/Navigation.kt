@@ -67,6 +67,8 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.components.AtmosphericBackground
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
+import android.content.Intent
+import com.lastasylum.alliance.MainActivity
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.push.FcmTokenManager
 import kotlinx.coroutines.Dispatchers
@@ -188,6 +190,27 @@ fun AppNavigation(
                 AppTab.OVERLAY -> overlayTabVisible
                 else -> true
             }
+        }
+    }
+
+    LaunchedEffect(activity.intent, visibleTabs) {
+        val tab = activity.intent?.getStringExtra(MainActivity.EXTRA_START_TAB)?.trim().orEmpty()
+        if (tab.isEmpty()) return@LaunchedEffect
+        activity.intent = Intent(activity.intent).apply {
+            removeExtra(MainActivity.EXTRA_START_TAB)
+        }
+        val route = when (tab) {
+            AppTab.CHAT.route, "chat" -> AppTab.CHAT.route
+            AppTab.OVERLAY.route, "overlay" -> AppTab.OVERLAY.route
+            else -> null
+        } ?: return@LaunchedEffect
+        if (visibleTabs.none { it.route == route }) return@LaunchedEffect
+        navController.navigate(route) {
+            popUpTo(navController.graph.startDestinationId) {
+                saveState = true
+            }
+            launchSingleTop = true
+            restoreState = true
         }
     }
 

@@ -1,6 +1,7 @@
 package com.lastasylum.alliance
 
 import android.graphics.Color
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -11,6 +12,11 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.lastasylum.alliance.ui.SquadRelayApp
 
 class MainActivity : ComponentActivity() {
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         @Suppress("DEPRECATION")
@@ -29,6 +35,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             SquadRelayApp()
         }
+    }
+
+    companion object {
+        const val EXTRA_START_TAB = "com.lastasylum.alliance.extra.START_TAB"
     }
 
     private fun hideSystemUi() {

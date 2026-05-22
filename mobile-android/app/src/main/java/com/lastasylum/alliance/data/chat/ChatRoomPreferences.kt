@@ -24,6 +24,17 @@ class ChatRoomPreferences(context: Context) {
         prefs.edit().remove(KEY_RAID_ROOM).apply()
     }
 
+    /** Alliance hub («Альянс») room id for overlay socket + HUD unread. */
+    fun getHubRoomId(): String? = prefs.getString(KEY_HUB_ROOM, null)
+
+    fun setHubRoomId(id: String) {
+        prefs.edit().putString(KEY_HUB_ROOM, id).apply()
+    }
+
+    fun clearHubRoomId() {
+        prefs.edit().remove(KEY_HUB_ROOM).apply()
+    }
+
     fun getLastReadMessageId(roomId: String): String? =
         prefs.getString(lastReadKey(roomId), null)
 
@@ -49,6 +60,7 @@ class ChatRoomPreferences(context: Context) {
         prefs.edit()
             .remove(KEY_SELECTED_ROOM)
             .remove(KEY_RAID_ROOM)
+            .remove(KEY_HUB_ROOM)
             .apply()
         val editor = prefs.edit()
         prefs.all.keys.filter { it is String && it.startsWith(KEY_LAST_READ_PREFIX) }
@@ -62,6 +74,7 @@ class ChatRoomPreferences(context: Context) {
         const val PREFS_NAME = "squadrelay_chat"
         const val KEY_SELECTED_ROOM = "selected_room_id"
         const val KEY_RAID_ROOM = "raid_room_id"
+        const val KEY_HUB_ROOM = "hub_room_id"
         const val KEY_LAST_READ_PREFIX = "last_read_msg_"
     }
 }

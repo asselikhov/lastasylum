@@ -91,6 +91,7 @@ fun OverlayChatStrip(
     lightStrip: Boolean = false,
     onDismissMessage: (ChatMessage) -> Unit = {},
     onDismissRegionsChanged: (List<Rect>) -> Unit = {},
+    onNoticeClick: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val keep = remember { mutableStateListOf<ChatMessage>() }
@@ -193,6 +194,7 @@ fun OverlayChatStrip(
                     isMine = isMine,
                     compactStickers = compactStickers,
                     lightStrip = lightStrip || stripBurstMode,
+                    onNoticeClick = onNoticeClick,
                     onDismiss = { onDismissMessage(msg) },
                     onReportDismissBounds = { mk, rect ->
                         if (latestMessages.none { keyOf(it) == mk }) return@OverlayChatStripMessage
@@ -260,10 +262,14 @@ private fun OverlayChatStripMessage(
     isMine: Boolean,
     compactStickers: Boolean,
     lightStrip: Boolean,
+    onNoticeClick: (String) -> Unit,
     onDismiss: () -> Unit,
     onReportDismissBounds: (String, Rect) -> Unit,
     onClearDismissRegion: (String) -> Unit,
 ) {
+    val noticeId = msg._id
+    val isNotice = OverlayStripNoticeIds.isNotice(noticeId)
+    val noticeClickable = OverlayStripNoticeIds.isClickable(noticeId)
     val bubbleBg = if (isMine) ChatTelegramOutgoingBubble else ChatTelegramIncomingBubble
     val onBubble = if (isMine) ChatTelegramOutgoingOnBubble else ChatTelegramIncomingOnBubble
     val timeMuted = if (isMine) ChatTelegramTimeMuted else ChatTelegramTimeMutedIncoming
@@ -313,7 +319,20 @@ private fun OverlayChatStripMessage(
         border = BorderStroke(1.dp, border),
         tonalElevation = 0.dp,
         shadowElevation = if (lightStrip) 0.dp else 3.dp,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (isNotice && noticeClickable && noticeId != null) {
+                    Modifier.clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        role = Role.Button,
+                        onClick = { onNoticeClick(noticeId) },
+                    )
+                } else {
+                    Modifier
+                },
+            ),
     ) {
         Box(
             modifier = Modifier

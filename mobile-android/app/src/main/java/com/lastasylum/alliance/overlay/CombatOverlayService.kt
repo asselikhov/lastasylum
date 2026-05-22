@@ -73,6 +73,7 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.google.android.material.color.MaterialColors
+import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.OverlayReactionEvent
@@ -103,7 +104,6 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.lastasylum.alliance.BuildConfig
 import androidx.compose.ui.platform.LocalSavedStateRegistryOwner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -134,31 +134,11 @@ class CombatOverlayService : Service() {
             onTickerWindowAttached = { rebalanceOverlayFullscreenZOrder() },
         )
     }
-    private val speechPipeline by lazy {
-        OverlaySpeechPipeline(
-            context = this,
-            mainHandler = mainHandler,
-            scope = serviceScope,
-            applyBubbleState = { state -> setBubbleUi(state) },
-            notify = { updateNotification(it) },
-            pulseBubbleError = { pulseBubbleError() },
-            onVoiceSent = { text, sent ->
-                applyLocalSentMessageToStrip(sent)
-                updateNotification(getString(R.string.overlay_notif_voice_sent))
-                setBubbleUi(OverlayBubbleUi.BubbleState.IDLE)
-                overlayTicker.showTicker(getString(R.string.overlay_ticker_voice, text))
-            },
-            onVoiceSendFailed = { noRoom ->
-                val msg = if (noRoom) {
-                    getString(R.string.err_chat_no_room)
-                } else {
-                    getString(R.string.overlay_notif_voice_chat_failed)
-                }
-                updateNotification(msg)
-                pulseBubbleError()
-            },
-        )
+    private val gateUserNotifier by lazy { OverlayGateUserNotifier(this, mainHandler) }
+    private val gameGateCoordinator by lazy {
+        OverlayGameGateCoordinator(gateUserNotifier, ::notifyGateBlocked)
     }
+    private val overlayVoiceController = OverlayVoiceController(mainHandler)
     private val overlayCommandsPopover by lazy {
         OverlayCommandsPopover(
             context = this,
@@ -836,6 +816,7 @@ class CombatOverlayService : Service() {
     private var overlaySessionActive: Boolean = false
 
     private var cachedAllianceHubRoomId: String? = null
+    private var lastGateBlockReason: OverlayGateUserNotifier.BlockReason? = null
 
     private var hubHudRefreshPosted: Boolean = false
 
@@ -1045,7 +1026,7 @@ class CombatOverlayService : Service() {
             Log.w(TAG, "repairDetachedOverlayShellIfNeeded: re-attaching chat strip")
             runCatching { mgr.addView(host, params) }
                 .onSuccess {
-                    rebalanceOverlayHudZOrder(force = chatStripZOrderLifted)
+                    scheduleStripZOrderLift()
                     return
                 }
                 .onFailure { e ->
@@ -1399,7 +1380,7 @@ class CombatOverlayService : Service() {
                 rooms?.let { list ->
                     cachedAllianceHubRoomId = OverlayGameStatusHudRefresh.allianceHubRoom(list)?.id
                     com.lastasylum.alliance.data.chat.ChatSessionCache.update(list)
-                    container.chatRepository.applyRaidRoomFromRooms(list)
+                    container.chatRepository.applyOverlayRoomsFromRooms(list)
                     mainHandler.post { syncOverlayRaidRoomSubscription() }
                 }
                 val refreshNewsForum = force ||
@@ -1493,11 +1474,19 @@ class CombatOverlayService : Service() {
 
     private fun resolveCachedAllianceHubRoomId() {
         if (!cachedAllianceHubRoomId.isNullOrBlank()) return
+        AppContainer.from(this).chatRepository.hubRoomIdFromPrefs()?.let { id ->
+            cachedAllianceHubRoomId = id
+            return
+        }
         serviceScope.launch(Dispatchers.IO) {
+            val container = AppContainer.from(this@CombatOverlayService)
             val rooms = com.lastasylum.alliance.data.chat.ChatSessionCache.getFreshRooms()
-                ?: AppContainer.from(this@CombatOverlayService).chatRepository.listRooms().getOrNull()
+                ?: container.chatRepository.listRooms().getOrNull()
                 ?: return@launch
-            cachedAllianceHubRoomId = OverlayGameStatusHudRefresh.allianceHubRoom(rooms)?.id
+            container.chatRepository.applyOverlayRoomsFromRooms(rooms)
+            cachedAllianceHubRoomId = container.chatRepository.hubRoomIdFromPrefs()
+                ?: OverlayGameStatusHudRefresh.allianceHubRoom(rooms)?.id
+            mainHandler.post { syncOverlayRaidRoomSubscription() }
         }
     }
 
@@ -1551,7 +1540,6 @@ class CombatOverlayService : Service() {
     private fun syncOverlayHudsIfReady() {
         if (stableGatePollTicks < HUD_STABLE_TICKS_BEFORE_ATTACH) return
         attachOverlayHudWindowsIfNeeded()
-        maybeAutoConnectOverlayVoice()
     }
 
     /** Левый и правый HUD в одном кадре — иначе правый ждёт IO/гейт и появляется позже. */
@@ -1648,19 +1636,28 @@ class CombatOverlayService : Service() {
     }
 
     private fun toggleOverlayVoiceMicFromHud() {
+        if (!overlayVoiceController.isMicSupportedOnDevice()) {
+            Toast.makeText(this, R.string.overlay_voice_mic_unsupported, Toast.LENGTH_SHORT).show()
+            return
+        }
         ensureOverlayVoiceStarted()
         val session = ensureVoiceSession()
         if (!session.micOn && !session.hasRecordAudioPermission()) {
             pendingVoiceMicEnable = true
             requestOverlayVoiceMicPermission()
         } else {
-            session.toggleMic()
+            val ok = session.toggleMic()
+            if (!ok) {
+                Toast.makeText(this, R.string.overlay_voice_mic_unsupported, Toast.LENGTH_SHORT).show()
+            }
         }
+        refreshOverlayTopRightHudState()
     }
 
     private fun toggleOverlayVoiceSoundFromHud() {
         ensureOverlayVoiceStarted()
         ensureVoiceSession().toggleSound()
+        refreshOverlayTopRightHudState()
     }
 
     private fun showOverlayHudPane(pane: OverlayHudPane) {
@@ -1694,9 +1691,7 @@ class CombatOverlayService : Service() {
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
-            gravity = Gravity.TOP or Gravity.START
-            x = dp(OVERLAY_HUD_LEFT_WINDOW_X_DP)
-            y = dp(OVERLAY_HUD_WINDOW_Y_DP)
+            OverlayHudLayout.applyStatusHudPosition(this) { dp(it) }
         }
 
         val compose = ComposeView(this).apply {
@@ -1776,9 +1771,7 @@ class CombatOverlayService : Service() {
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
-            gravity = Gravity.TOP or Gravity.END
-            x = dp(OVERLAY_HUD_WINDOW_X_DP)
-            y = dp(OVERLAY_HUD_WINDOW_Y_DP)
+            OverlayHudLayout.applyTopRightHudPosition(this) { dp(it) }
         }
 
         val compose = ComposeView(this).apply {
@@ -1845,19 +1838,14 @@ class CombatOverlayService : Service() {
     private fun scheduleOverlayVoiceConnect() {
         cancelOverlayVoiceConnectScheduled()
         val prefs = AppContainer.from(this).userSettingsPreferences
-        if (!prefs.isOverlayVoiceMicEnabled() && !prefs.isOverlayVoiceSoundEnabled()) {
+        if (!overlayVoiceController.mayScheduleDeferredConnect(
+                prefs.isOverlayVoiceMicEnabled(),
+                prefs.isOverlayVoiceSoundEnabled(),
+            )
+        ) {
             return
         }
         mainHandler.postDelayed(overlayVoiceConnectRunnable, OVERLAY_VOICE_CONNECT_DELAY_MS)
-    }
-
-    /** Подключение к голосовой комнате «Рейд», если игрок ранее пользовался звуком или микрофоном. */
-    private fun maybeAutoConnectOverlayVoice() {
-        if (!isInGameOverlayUiActive()) return
-        val prefs = AppContainer.from(this).userSettingsPreferences
-        if (!prefs.isOverlayVoiceMicEnabled() && !prefs.isOverlayVoiceSoundEnabled()) return
-        if (voiceSession != null) return
-        scheduleOverlayVoiceConnect()
     }
 
     private fun cancelOverlayVoiceConnectScheduled() {
@@ -1865,6 +1853,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun ensureOverlayVoiceStarted() {
+        overlayVoiceController.armFromUserAction()
         cancelOverlayVoiceConnectScheduled()
         startOverlayVoiceIfRaidAvailable()
     }
@@ -1902,6 +1891,7 @@ class CombatOverlayService : Service() {
             logGateStateThrottled(
                 "overlayGate: нет доступа к статистике использования — панель скрыта",
             )
+            gameGateCoordinator.onMissingUsageAccess()
             if (isOverlayShellActive()) {
                 removeOverlayControl(force = true)
             }
@@ -1910,11 +1900,13 @@ class CombatOverlayService : Service() {
         gateNotifyKey = ""
         if (!canDrawOverlaysNow()) {
             logGateStateThrottled("overlayGate: нет разрешения «поверх других приложений»")
+            gameGateCoordinator.onMissingDrawOverlay()
             if (isOverlayShellActive()) {
                 removeOverlayControl(force = true)
             }
             return
         }
+        lastGateBlockReason = null
         promoteOverlayForeground()
         ensureOverlayIfPermitted()
         if (shouldShow && !wasInGame) {
@@ -1968,6 +1960,7 @@ class CombatOverlayService : Service() {
                 "overlayGate: ${getString(R.string.overlay_notif_waiting_for_game)}"
             }
             logGateStateThrottled(content)
+            gameGateCoordinator.onWaitingForGame()
         }
         if (isOverlayShellActive()) {
             removeOverlayControl(force = true)
@@ -1982,6 +1975,25 @@ class CombatOverlayService : Service() {
 
     private fun canDrawOverlaysNow(): Boolean {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)
+    }
+
+    private fun notifyGateBlocked(reason: OverlayGateUserNotifier.BlockReason) {
+        lastGateBlockReason = reason
+        gateUserNotifier.maybeToast(reason) {
+            OverlayMainActivityLaunch.launchOverlaySettingsTab(this)
+        }
+        val text = gateUserNotifier.notificationText(reason)
+        if (text != lastForegroundNotificationText) {
+            promoteOverlayForeground(
+                OverlayForegroundNotifications.build(
+                    this,
+                    text,
+                    AppContainer.from(this).userSettingsPreferences.isQuietMode(),
+                ),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+            )
+            lastForegroundNotificationText = text
+        }
     }
 
     /**
@@ -2075,7 +2087,8 @@ class CombatOverlayService : Service() {
         cancelOverlayVoiceConnectScheduled()
         lastForegroundNotificationText = null
         lastForegroundMicActive = false
-        speechPipeline.destroy()
+        overlayVoiceController.resetSession()
+        OverlayReactionBitmapCache.clear()
         stopOverlayVoice()
         overlayTicker.hideTicker()
         runCatching { hideOverlayChatTeamPanel() }
@@ -2097,10 +2110,6 @@ class CombatOverlayService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
-
-    private fun setBubbleUi(@Suppress("UNUSED_PARAMETER") state: OverlayBubbleUi.BubbleState) = Unit
-
-    private fun pulseBubbleError() = Unit
 
     private fun foregroundNotificationIdleText(): String =
         getString(R.string.overlay_notif_fgs_idle)
@@ -2357,12 +2366,8 @@ class CombatOverlayService : Service() {
         return id
     }
 
-    private fun isOverlayRaidRoomMessage(msg: ChatMessage, raidId: String?): Boolean {
-        val raid = raidId?.trim().orEmpty()
-        if (raid.isEmpty()) return false
-        val room = msg.roomId.trim()
-        return room.isEmpty() || room == raid
-    }
+    private fun isOverlayRaidRoomMessage(msg: ChatMessage, raidId: String?): Boolean =
+        OverlayStripMessageRouter.isOverlayRaidRoomMessage(msg, raidId)
 
     private fun normalizeStripRaidMessage(msg: ChatMessage, raidId: String?): ChatMessage {
         val raid = raidId?.trim().orEmpty()
@@ -2384,10 +2389,12 @@ class CombatOverlayService : Service() {
             }
             return
         }
-        Log.d(
-            OVERLAY_DIAG_TAG,
-            "processMsg id=${normalized._id} room=${normalized.roomId} sender=${normalized.senderId} textLen=${normalized.text.length}",
-        )
+        if (BuildConfig.DEBUG) {
+            Log.d(
+                OVERLAY_DIAG_TAG,
+                "processMsg id=${normalized._id} room=${normalized.roomId} sender=${normalized.senderId} textLen=${normalized.text.length}",
+            )
+        }
         stripBuffer.upsert(normalized)
         stripBuffer.mergeReceiveTimeline(normalized, jwtSubFromAccessToken())
         lastStripRenderSignature = null
@@ -2406,14 +2413,16 @@ class CombatOverlayService : Service() {
         }
     }
 
-    private fun setStripPlainMessage(message: String) {
-        Log.d(OVERLAY_DIAG_TAG, "stripNotice textLen=${message.length}")
+    private fun setStripPlainMessage(message: String, noticeId: String = OverlayStripNoticeIds.GENERIC) {
+        if (BuildConfig.DEBUG) {
+            Log.d(OVERLAY_DIAG_TAG, "stripNotice id=$noticeId textLen=${message.length}")
+        }
         stripBuffer.clear()
-        val signature = "notice:$message"
+        val signature = "notice:$noticeId:$message"
         if (signature == lastStripRenderSignature) return
         chatStripPreviewFlow.value = listOf(
             ChatMessage(
-                _id = "notice",
+                _id = noticeId,
                 allianceId = "",
                 roomId = "",
                 senderId = "",
@@ -2505,6 +2514,12 @@ class CombatOverlayService : Service() {
                         selfUserId = selfId,
                         lightStrip = isOverlayLightStripMode(),
                         onDismissMessage = { m -> dismissStripMessage(m) },
+                        onNoticeClick = { noticeId ->
+                            when (noticeId) {
+                                OverlayStripNoticeIds.NO_RAID ->
+                                    OverlayMainActivityLaunch.launchChatTab(this@CombatOverlayService)
+                            }
+                        },
                         onDismissRegionsChanged = { updateStripDismissScreenRects(it) },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -2551,7 +2566,9 @@ class CombatOverlayService : Service() {
             Log.e(TAG, "WindowManager.addView(chatStrip) failed", attach.exceptionOrNull())
             return
         }
-        Log.d(OVERLAY_DIAG_TAG, "chatStripWindow attached stripOwner=${overlayStripComposeOwner != null}")
+        if (BuildConfig.DEBUG) {
+            Log.d(OVERLAY_DIAG_TAG, "chatStripWindow attached stripOwner=${overlayStripComposeOwner != null}")
+        }
         chatStripHost = host
         chatStripParams = params
         chatStripClipRoot = clipRoot
@@ -2618,7 +2635,7 @@ class CombatOverlayService : Service() {
             val isRaid = isOverlayRaidRoomMessage(msg, raidId)
             val isHub = !hubId.isNullOrBlank() && msg.roomId == hubId
             if (!isRaid && !isHub) {
-                if (msg.roomId.isNotBlank()) {
+                if (BuildConfig.DEBUG && msg.roomId.isNotBlank()) {
                     Log.d(
                         OVERLAY_DIAG_TAG,
                         "overlayListener skipRoom msgRoom=${msg.roomId} raid=$raidId hub=$hubId id=${msg._id}",
@@ -2655,19 +2672,36 @@ class CombatOverlayService : Service() {
             val container = AppContainer.from(this@CombatOverlayService)
             val cachedRooms = com.lastasylum.alliance.data.chat.ChatSessionCache.getFreshRooms()
             if (cachedRooms != null) {
-                cachedAllianceHubRoomId = OverlayGameStatusHudRefresh.allianceHubRoom(cachedRooms)?.id
+                container.chatRepository.applyOverlayRoomsFromRooms(cachedRooms)
+                cachedAllianceHubRoomId = container.chatRepository.hubRoomIdFromPrefs()
+                    ?: OverlayGameStatusHudRefresh.allianceHubRoom(cachedRooms)?.id
             } else {
                 container.chatRepository.listRooms().getOrNull()?.let { list ->
                     com.lastasylum.alliance.data.chat.ChatSessionCache.update(list)
-                    container.chatRepository.applyRaidRoomFromRooms(list)
-                    cachedAllianceHubRoomId = OverlayGameStatusHudRefresh.allianceHubRoom(list)?.id
+                    container.chatRepository.applyOverlayRoomsFromRooms(list)
+                    cachedAllianceHubRoomId = container.chatRepository.hubRoomIdFromPrefs()
+                        ?: OverlayGameStatusHudRefresh.allianceHubRoom(list)?.id
                     mainHandler.post { syncOverlayRaidRoomSubscription() }
                 }
             }
-            val raidId = container.chatRepository.ensureRaidRoomId()
+            var raidId = container.chatRepository.ensureRaidRoomId()
+            if (raidId == null) {
+                kotlinx.coroutines.delay(450)
+                container.chatRepository.listRooms().getOrNull()?.let { list ->
+                    com.lastasylum.alliance.data.chat.ChatSessionCache.update(list)
+                    container.chatRepository.applyOverlayRoomsFromRooms(list)
+                    cachedAllianceHubRoomId = container.chatRepository.hubRoomIdFromPrefs()
+                        ?: OverlayGameStatusHudRefresh.allianceHubRoom(list)?.id
+                    mainHandler.post { syncOverlayRaidRoomSubscription() }
+                }
+                raidId = container.chatRepository.ensureRaidRoomId()
+            }
             if (raidId == null) {
                 mainHandler.post {
-                    setStripPlainMessage(getString(R.string.overlay_strip_no_raid))
+                    setStripPlainMessage(
+                        getString(R.string.overlay_strip_no_raid),
+                        OverlayStripNoticeIds.NO_RAID,
+                    )
                 }
                 return@launch
             }
@@ -2692,7 +2726,10 @@ class CombatOverlayService : Service() {
                 .onFailure {
                     if (cachedHistory.isNullOrEmpty()) {
                         mainHandler.post {
-                            setStripPlainMessage(getString(R.string.overlay_strip_history_failed))
+                            setStripPlainMessage(
+                                getString(R.string.overlay_strip_history_failed),
+                                OverlayStripNoticeIds.HISTORY_FAILED,
+                            )
                         }
                     }
                 }
@@ -3209,7 +3246,7 @@ class CombatOverlayService : Service() {
                 ?: container.chatRepository.listRooms().getOrNull()
             rooms?.let { list ->
                 com.lastasylum.alliance.data.chat.ChatSessionCache.update(list)
-                container.chatRepository.applyRaidRoomFromRooms(list)
+                container.chatRepository.applyOverlayRoomsFromRooms(list)
             }
             val raidId = container.chatRepository.ensureRaidRoomId() ?: return@launch
             mainHandler.post {
@@ -3296,7 +3333,7 @@ class CombatOverlayService : Service() {
             commandsPopoverShowing = false,
         )
         resumeOverlayWindowsAfterSystemActivity()
-        speechPipeline.cancelActiveSession()
+        overlayVoiceController.resetSession()
         endOverlayChatSubscription()
         overlayTicker.hideTicker()
         overlayCommandsPopover.hide()
@@ -3350,10 +3387,10 @@ class CombatOverlayService : Service() {
         private const val STRIP_ZORDER_MIN_INTERVAL_MS = 30_000L
         private const val STRIP_ZORDER_LIFT_DELAY_MS = 450L
         /** Симметричный отступ HUD от края игрового экрана (левый START / правый END). */
-        private const val OVERLAY_HUD_WINDOW_X_DP = 10
-        private const val OVERLAY_HUD_LEFT_WINDOW_X_DP = OVERLAY_HUD_WINDOW_X_DP
+        private const val OVERLAY_HUD_WINDOW_X_DP = OverlayHudLayout.WINDOW_X_DP
+        private const val OVERLAY_HUD_LEFT_WINDOW_X_DP = OverlayHudLayout.WINDOW_X_DP
         /** Вертикальный отступ HUD-окон от верхнего края (меньше — выше на экране). */
-        private const val OVERLAY_HUD_WINDOW_Y_DP = 2
+        private const val OVERLAY_HUD_WINDOW_Y_DP = OverlayHudLayout.WINDOW_Y_DP
         /** Минимум между remove/add HUD — иначе кнопки мигают на каждом тике гейта. */
         private const val HUD_ZORDER_REBALANCE_MIN_MS = 60_000L
         private const val GATE_HIDE_UI_HYSTERESIS_TICKS = 2
