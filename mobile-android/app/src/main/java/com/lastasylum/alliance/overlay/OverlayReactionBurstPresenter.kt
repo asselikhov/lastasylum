@@ -102,6 +102,7 @@ internal class OverlayReactionBurstPresenter(
         lottie.repeatCount = LottieDrawable.INFINITE
         lottie.repeatMode = LottieDrawable.RESTART
         lottie.enableMergePathsForKitKatAndAbove(true)
+        lottie.setRenderMode(RenderMode.SOFTWARE)
         lottie.alpha = 1f
     }
 
@@ -404,7 +405,6 @@ internal class OverlayReactionBurstPresenter(
                     )
                 }
                 scaleType = ImageView.ScaleType.FIT_CENTER
-                setRenderMode(RenderMode.HARDWARE)
                 configureBurstLottie(this)
                 playAnimation()
                 maxWidth = maxSidePx

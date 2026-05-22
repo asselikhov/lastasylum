@@ -45,8 +45,7 @@ object OverlayWindowLayout {
     fun reactionBurstWindowFlags(): Int =
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
             WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
 
     /** Полноэкранная панель истории: без NOT_FOCUSABLE — нужны поле ввода и IME. */
     fun historyPanelWindowFlags(): Int =

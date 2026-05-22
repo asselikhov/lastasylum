@@ -90,37 +90,40 @@ class OverlayCommandsPopover(
         menuScrim = null
         attachedWindowManager = null
         clearGameGateSuppress()
-        OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
     }
 
     private fun hideReactionPickOnly() {
-        val hadPicker = reactionPickScrim != null
         removeShell(reactionPickScrim)
         reactionPickScrim = null
-        if (hadPicker) {
-            releaseGameGateSuppress()
-        }
-        if (!isShowing()) {
-            OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
-        }
+        releasePopoverSuppressAfterUiClosed()
     }
 
     private fun hideReactionBurstOnly() {
         reactionBurstPresenter.clear()
-        if (!isShowing()) {
-            OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
-        }
+        releasePopoverSuppressAfterUiClosed()
     }
 
     private fun hideCoordOnly() {
-        val hadCoord = coordScrim != null
         removeShell(coordScrim)
         coordScrim = null
-        if (hadCoord) {
-            releaseGameGateSuppress()
+        releasePopoverSuppressAfterUiClosed()
+    }
+
+    /** Держим suppress, пока открыто любое окно команд/реакций (иначе game gate снимает FAB на части ROM). */
+    private fun ensurePopoverSuppressHeld() {
+        if (gameGateSuppressDepth == 0) {
+            acquireGameGateSuppress()
         }
+    }
+
+    /**
+     * Сбрасываем suppress только когда UI попапа полностью закрыт.
+     * Не вызываем [OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction] — он снимает
+     * счётчик Hold без [gameGateSuppressDepth] и даёт ложный tick game gate.
+     */
+    private fun releasePopoverSuppressAfterUiClosed() {
         if (!isShowing()) {
-            OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
+            clearGameGateSuppress()
         }
     }
 
@@ -157,6 +160,7 @@ class OverlayCommandsPopover(
         lottie.repeatCount = LottieDrawable.INFINITE
         lottie.repeatMode = LottieDrawable.RESTART
         lottie.enableMergePathsForKitKatAndAbove(true)
+        lottie.setRenderMode(com.airbnb.lottie.RenderMode.SOFTWARE)
     }
 
     /** Lottie в overlay-окнах на части OEM перестаёт крутиться — поднимаем снова, пока меню открыто. */
@@ -310,9 +314,7 @@ class OverlayCommandsPopover(
             if (!reactionBurstPresenter.isActive()) {
                 releaseGameGateSuppress()
             }
-            if (!isShowing()) {
-                OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
-            }
+            releasePopoverSuppressAfterUiClosed()
         }
     }
 
@@ -1200,7 +1202,7 @@ class OverlayCommandsPopover(
 
         if (runCatching { windowManager.addView(scrim, params) }.isFailure) return
 
-        acquireGameGateSuppress()
+        ensurePopoverSuppressHeld()
         menuScrim = scrim
         attachedWindowManager = windowManager
     }
@@ -1210,7 +1212,7 @@ class OverlayCommandsPopover(
         commandLabel: String,
         excavation: Boolean,
     ) {
-        acquireGameGateSuppress()
+        ensurePopoverSuppressHeld()
 
         val close = iconCloseButton()
         val title = labelText(commandLabel, 14f, Color.parseColor("#FFF4F7FF"), bold = true)
@@ -1379,10 +1381,7 @@ class OverlayCommandsPopover(
         }
 
         if (runCatching { windowManager.addView(scrim, params) }.isFailure) {
-            releaseGameGateSuppress()
-            if (!isShowing()) {
-                OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
-            }
+            releasePopoverSuppressAfterUiClosed()
             return
         }
 
@@ -1522,8 +1521,9 @@ class OverlayCommandsPopover(
     }
 
     private fun showReactionRecipientPicker(windowManager: WindowManager, reactionId: String) {
-        hideReactionPickOnly()
-        acquireGameGateSuppress()
+        removeShell(reactionPickScrim)
+        reactionPickScrim = null
+        ensurePopoverSuppressHeld()
         attachedWindowManager = windowManager
 
         val selectedReaction = overlayQuickReactionById(reactionId)
@@ -1648,10 +1648,7 @@ class OverlayCommandsPopover(
         }
 
         if (runCatching { windowManager.addView(scrim, params) }.isFailure) {
-            releaseGameGateSuppress()
-            if (!isShowing()) {
-                OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
-            }
+            releasePopoverSuppressAfterUiClosed()
             return
         }
         removeShell(menuScrim)
