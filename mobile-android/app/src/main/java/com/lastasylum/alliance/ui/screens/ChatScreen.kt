@@ -180,6 +180,9 @@ import com.lastasylum.alliance.ui.chat.replyPreviewText
 import com.lastasylum.alliance.ui.chat.canDeleteChatMessage
 import com.lastasylum.alliance.ui.chat.RoleBadge
 import com.lastasylum.alliance.ui.chat.chatDayKey
+import com.lastasylum.alliance.ui.chat.chatMessageClusterTightInnerTopNewestFirst
+import com.lastasylum.alliance.ui.chat.chatMessageIsClusterChainBottomNewestFirst
+import com.lastasylum.alliance.ui.chat.chatMessageShowsClusterHeaderNewestFirst
 import com.lastasylum.alliance.ui.chat.formatChatDaySeparator
 import com.lastasylum.alliance.ui.chat.formatChatTime
 import com.lastasylum.alliance.ui.chat.ChatBubbleAttachmentsWithCaption
@@ -291,56 +294,6 @@ private data class ChatMessagesListDerived(
     val timeline: List<ChatTimelineEntry>,
     val clusterFlags: List<ChatMessageClusterFlags>,
 )
-
-/**
- * Newest-first list: true when this bubble sits at the **visual bottom** of a same-sender streak
- * (newer neighbor in list is missing or another user / another day) — Telegram "tail" corner.
- */
-private fun chatMessageIsClusterChainBottom(messages: List<ChatMessage>, messageIndex: Int): Boolean {
-    if (messages.isEmpty() || messageIndex !in messages.indices) return true
-    if (messageIndex == 0) return true
-    val m = messages[messageIndex]
-    val newer = messages[messageIndex - 1]
-    val sid = m.senderId.trim()
-    val nid = newer.senderId.trim()
-    if (sid.isEmpty() || nid.isEmpty() || sid != nid) return true
-    val d0 = chatDayKey(m.createdAt)
-    val d1 = chatDayKey(newer.createdAt)
-    if (d0 != null && d1 != null && d0 != d1) return true
-    return false
-}
-
-/** Same streak as the visually newer message (tighter inner top padding). */
-private fun chatMessageClusterTightInnerTop(messages: List<ChatMessage>, messageIndex: Int): Boolean {
-    if (messageIndex <= 0 || messageIndex !in messages.indices) return false
-    val m = messages[messageIndex]
-    val newer = messages[messageIndex - 1]
-    val sid = m.senderId.trim()
-    val nid = newer.senderId.trim()
-    if (sid.isEmpty() || nid.isEmpty() || sid != nid) return false
-    val d0 = chatDayKey(m.createdAt)
-    val d1 = chatDayKey(newer.createdAt)
-    return d0 == null || d1 == null || d0 == d1
-}
-
-/**
- * Telegram-style: show `[TAG] nick` + role row only on the oldest message of a same-sender run
- * (newest-first list). Avatar column is always shown for incoming messages — otherwise at the bottom
- * of the chat every bubble looks like a "continuation" and the photo never appears in view.
- */
-private fun chatMessageShowsClusterHeader(messages: List<ChatMessage>, messageIndex: Int): Boolean {
-    if (messages.isEmpty() || messageIndex !in messages.indices) return true
-    if (messageIndex == messages.lastIndex) return true
-    val m = messages[messageIndex]
-    val older = messages[messageIndex + 1]
-    val sid = m.senderId.trim()
-    val oid = older.senderId.trim()
-    if (sid.isEmpty() || oid.isEmpty() || sid != oid) return true
-    val d0 = chatDayKey(m.createdAt)
-    val d1 = chatDayKey(older.createdAt)
-    if (d0 != null && d1 != null && d0 != d1) return true
-    return false
-}
 
 /** Tighter vertical gap when the visually older neighbor is the same sender (Telegram stack). */
 private fun chatBubbleClusterTopSpacing(
@@ -1159,9 +1112,9 @@ private fun ChatMessagesLazyList(
             timeline = buildChatTimeline(messages),
             clusterFlags = List(messages.size) { index ->
                 ChatMessageClusterFlags(
-                    showHeader = chatMessageShowsClusterHeader(messages, index),
-                    isChainBottom = chatMessageIsClusterChainBottom(messages, index),
-                    tightInnerTop = chatMessageClusterTightInnerTop(messages, index),
+                    showHeader = chatMessageShowsClusterHeaderNewestFirst(messages, index),
+                    isChainBottom = chatMessageIsClusterChainBottomNewestFirst(messages, index),
+                    tightInnerTop = chatMessageClusterTightInnerTopNewestFirst(messages, index),
                 )
             },
         )
@@ -2883,7 +2836,8 @@ private fun ChatAlbumRow(
             ChatBubbleMaxWidthFraction
         },
         bubbleWidthCap = if (overlayUi) ChatOverlayBubbleMaxWidthCap else ChatBubbleMaxWidthCap,
-        showIncomingAvatar = !isMine,
+        showIncomingAvatar = !isMine && isChainBottom,
+        reserveIncomingAvatarSpace = !isMine && !isChainBottom,
         leadingAvatar = {
             ChatSenderAvatar(
                 telegramUrl = telegramUrl,
@@ -3119,7 +3073,8 @@ private fun ChatBubbleRow(
             ChatBubbleMaxWidthFraction
         },
         bubbleWidthCap = if (overlayUi) ChatOverlayBubbleMaxWidthCap else ChatBubbleMaxWidthCap,
-        showIncomingAvatar = !isMine,
+        showIncomingAvatar = !isMine && isChainBottom,
+        reserveIncomingAvatarSpace = !isMine && !isChainBottom,
         leadingAvatar = {
             ChatSenderAvatar(
                 telegramUrl = telegramUrl,
@@ -3424,15 +3379,16 @@ private fun ChatMessageActionsSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
             )
-            Row(
+            val quickReactions = listOf("👍", "❤️", "😂", "🔥", "🎉", "👏")
+            LazyRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                listOf("👍", "❤️", "😂").forEach { e ->
+                items(quickReactions) { e ->
                     OutlinedButton(
                         onClick = { onReact(e) },
-                        modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.widthIn(min = 48.dp),
                     ) {
                         Text(e, style = MaterialTheme.typography.titleMedium)
                     }

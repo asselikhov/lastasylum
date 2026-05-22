@@ -71,7 +71,7 @@ class VoiceAudioPipeline(
                     if (read < frame.size) continue
                     val speaking = vad.isSpeechEnergy(frame)
                     onLocalSpeechActivity(speaking)
-                    if (!vad.shouldTransmit(frame)) continue
+                    // Mic toggle is the uplink gate; VAD is UI-only (AGC/quiet mics were dropping all speech).
                     val encoded = opus.encodePcmFrame(frame) ?: continue
                     onEncodedFrame(encoded)
                 }
@@ -123,8 +123,7 @@ class VoiceAudioPipeline(
         if (!soundEnabled) return
         if (remoteMicOn[userId] != true) return
         val pcm = opus.decodeToPcm(codec, payload) ?: return
-        if (pcm.size != FRAME_BYTES_PCM) return
-        jitter.push(userId, pcm)
+        jitter.push(userId, normalizePlayFrame(pcm))
         ensurePlayback()
     }
 
@@ -215,5 +214,13 @@ class VoiceAudioPipeline(
         const val FRAME_SAMPLES = SAMPLE_RATE_HZ * FRAME_MS / 1000
         const val FRAME_BYTES_PCM = FRAME_SAMPLES * 2
         private const val TAG = "VoiceAudioPipeline"
+
+        /** Pad/truncate decoder output to one 20 ms playout frame. */
+        fun normalizePlayFrame(pcm: ByteArray, frameBytes: Int = FRAME_BYTES_PCM): ByteArray {
+            if (pcm.size == frameBytes) return pcm
+            val out = ByteArray(frameBytes)
+            System.arraycopy(pcm, 0, out, 0, minOf(pcm.size, frameBytes))
+            return out
+        }
     }
 }

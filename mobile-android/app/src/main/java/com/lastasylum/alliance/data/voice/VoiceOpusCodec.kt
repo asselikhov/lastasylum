@@ -72,26 +72,16 @@ class VoiceOpusCodec {
     fun encodePcmFrame(pcm: ByteArray): EncodedFrame? {
         val enc = encoder ?: return null
         return try {
+            val info = MediaCodec.BufferInfo()
+            drainEncoderOutputs(enc, info)?.let { return it }
+
             val inIndex = enc.dequeueInputBuffer(ENCODE_TIMEOUT_US)
             if (inIndex < 0) return null
             val inBuf = enc.getInputBuffer(inIndex) ?: return null
             inBuf.clear()
             inBuf.put(pcm)
             enc.queueInputBuffer(inIndex, 0, pcm.size, 0, 0)
-
-            val info = MediaCodec.BufferInfo()
-            var outIndex = enc.dequeueOutputBuffer(info, ENCODE_TIMEOUT_US)
-            while (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                outIndex = enc.dequeueOutputBuffer(info, ENCODE_TIMEOUT_US)
-            }
-            if (outIndex < 0) return null
-            val outBuf = enc.getOutputBuffer(outIndex) ?: return null
-            val bytes = ByteArray(info.size)
-            outBuf.position(info.offset)
-            outBuf.limit(info.offset + info.size)
-            outBuf.get(bytes)
-            enc.releaseOutputBuffer(outIndex, false)
-            EncodedFrame(codec = CODEC_OPUS, payload = bytes)
+            drainEncoderOutputs(enc, info)
         } catch (e: Throwable) {
             Log.w(TAG, "encode failed", e)
             null
@@ -104,26 +94,81 @@ class VoiceOpusCodec {
         if (!ensureDecoder()) return null
         val dec = decoder ?: return null
         return try {
+            val info = MediaCodec.BufferInfo()
+            drainDecoderOutputs(dec, info)?.let { return it }
+
             val inIndex = dec.dequeueInputBuffer(DECODE_TIMEOUT_US)
             if (inIndex < 0) return null
             val inBuf = dec.getInputBuffer(inIndex) ?: return null
             inBuf.clear()
             inBuf.put(payload)
             dec.queueInputBuffer(inIndex, 0, payload.size, 0, 0)
-
-            val info = MediaCodec.BufferInfo()
-            val outIndex = dec.dequeueOutputBuffer(info, DECODE_TIMEOUT_US)
-            if (outIndex < 0) return null
-            val outBuf = dec.getOutputBuffer(outIndex) ?: return null
-            val pcm = ByteArray(info.size)
-            outBuf.position(info.offset)
-            outBuf.limit(info.offset + info.size)
-            outBuf.get(pcm)
-            dec.releaseOutputBuffer(outIndex, false)
-            pcm
+            drainDecoderOutputs(dec, info)
         } catch (e: Throwable) {
             Log.w(TAG, "decode failed", e)
             null
+        }
+    }
+
+    private fun drainEncoderOutputs(
+        enc: MediaCodec,
+        info: MediaCodec.BufferInfo,
+    ): EncodedFrame? {
+        var latest: EncodedFrame? = null
+        while (true) {
+            var outIndex = enc.dequeueOutputBuffer(info, ENCODE_TIMEOUT_US)
+            while (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                outIndex = enc.dequeueOutputBuffer(info, ENCODE_TIMEOUT_US)
+            }
+            when {
+                outIndex == MediaCodec.INFO_TRY_AGAIN_LATER -> return latest
+                outIndex < 0 -> return latest
+                else -> {
+                    try {
+                        if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) continue
+                        if (info.size <= 0) continue
+                        val outBuf = enc.getOutputBuffer(outIndex) ?: continue
+                        val bytes = ByteArray(info.size)
+                        outBuf.position(info.offset)
+                        outBuf.limit(info.offset + info.size)
+                        outBuf.get(bytes)
+                        latest = EncodedFrame(codec = CODEC_OPUS, payload = bytes)
+                    } finally {
+                        enc.releaseOutputBuffer(outIndex, false)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun drainDecoderOutputs(
+        dec: MediaCodec,
+        info: MediaCodec.BufferInfo,
+    ): ByteArray? {
+        var latest: ByteArray? = null
+        while (true) {
+            var outIndex = dec.dequeueOutputBuffer(info, DECODE_TIMEOUT_US)
+            while (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                outIndex = dec.dequeueOutputBuffer(info, DECODE_TIMEOUT_US)
+            }
+            when {
+                outIndex == MediaCodec.INFO_TRY_AGAIN_LATER -> return latest
+                outIndex < 0 -> return latest
+                else -> {
+                    try {
+                        if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) continue
+                        if (info.size <= 0) continue
+                        val outBuf = dec.getOutputBuffer(outIndex) ?: continue
+                        val pcm = ByteArray(info.size)
+                        outBuf.position(info.offset)
+                        outBuf.limit(info.offset + info.size)
+                        outBuf.get(pcm)
+                        latest = pcm
+                    } finally {
+                        dec.releaseOutputBuffer(outIndex, false)
+                    }
+                }
+            }
         }
     }
 

@@ -6,7 +6,7 @@ import kotlin.math.sqrt
  * Simple energy-based VAD with hangover — suppresses uplink during silence.
  */
 class VoiceActivityDetector(
-    private val rmsThreshold: Double = 220.0,
+    private val rmsThreshold: Double = 120.0,
     private val hangoverFrames: Int = 10,
 ) {
     private var hangoverRemaining = 0

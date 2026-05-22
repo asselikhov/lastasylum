@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -67,6 +68,8 @@ import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
 import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
 import com.lastasylum.alliance.ui.chat.RoleBadge
+import com.lastasylum.alliance.ui.chat.chatMessageIsClusterChainBottomOldestFirst
+import com.lastasylum.alliance.ui.chat.chatMessageShowsClusterHeaderOldestFirst
 import com.lastasylum.alliance.ui.chat.TelegramLikeAttachmentsGrid
 import com.lastasylum.alliance.ui.chat.formatChatTime
 import com.lastasylum.alliance.ui.chat.resolvedChatAttachmentImageUrl
@@ -172,9 +175,15 @@ fun OverlayChatStrip(
                 OverlayStripBatchHeader(firstMessage = visibleMessages.first())
             }
         }
-        items(visibleMessages, key = { keyOf(it) }) { msg ->
+        items(
+            count = visibleMessages.size,
+            key = { visibleMessages[it].let { m -> keyOf(m) } },
+        ) { index ->
+            val msg = visibleMessages[index]
             val key = keyOf(msg)
             val isMine = !latestSelfId.isNullOrBlank() && msg.senderId == latestSelfId
+            val isChainBottom = chatMessageIsClusterChainBottomOldestFirst(visibleMessages, index)
+            val showClusterHeader = chatMessageShowsClusterHeaderOldestFirst(visibleMessages, index)
             val fancyEnter = !lightStrip && !stripBurstMode && accentEnterKey != null && key == accentEnterKey
             val enterTransition = if (lightStrip || stripBurstMode) {
                 fadeIn(animationSpec = tween(24))
@@ -192,6 +201,8 @@ fun OverlayChatStrip(
                     msg = msg,
                     messageKey = key,
                     isMine = isMine,
+                    showAvatar = !isMine && isChainBottom,
+                    showSenderHeader = showClusterHeader,
                     compactStickers = compactStickers,
                     lightStrip = lightStrip || stripBurstMode,
                     onNoticeClick = onNoticeClick,
@@ -260,6 +271,8 @@ private fun OverlayChatStripMessage(
     msg: ChatMessage,
     messageKey: String,
     isMine: Boolean,
+    showAvatar: Boolean,
+    showSenderHeader: Boolean,
     compactStickers: Boolean,
     lightStrip: Boolean,
     onNoticeClick: (String) -> Unit,
@@ -307,6 +320,7 @@ private fun OverlayChatStripMessage(
     }
     val stickerCap = if (compactStickers) 72.dp else 96.dp
     val stickerImg = if (compactStickers) 58.dp else 76.dp
+    val avatarSize = if (compactStickers) 28.dp else 30.dp
     val dismissCd = stringResource(R.string.overlay_chat_dismiss_cd)
 
     DisposableEffect(messageKey) {
@@ -353,19 +367,30 @@ private fun OverlayChatStripMessage(
                 Column(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    if (lightStrip) {
-                        OverlayLightStripAvatar(
-                            fallbackName = msg.senderUsername,
-                            size = if (compactStickers) 28.dp else 30.dp,
-                        )
-                    } else {
-                        ChatSenderAvatar(
-                            telegramUrl = avatarUrl,
-                            size = if (compactStickers) 28.dp else 30.dp,
-                            fallbackName = msg.senderUsername,
-                        )
+                    when {
+                        showAvatar && lightStrip -> {
+                            OverlayLightStripAvatar(
+                                fallbackName = msg.senderUsername,
+                                size = avatarSize,
+                            )
+                        }
+                        showAvatar -> {
+                            ChatSenderAvatar(
+                                telegramUrl = avatarUrl,
+                                size = avatarSize,
+                                fallbackName = msg.senderUsername,
+                            )
+                        }
+                        !isMine -> {
+                            Spacer(
+                                modifier = Modifier.size(
+                                    width = avatarSize,
+                                    height = avatarSize,
+                                ),
+                            )
+                        }
                     }
-                    if (time.isNotBlank()) {
+                    if (time.isNotBlank() && showAvatar) {
                         Text(
                             text = time,
                             style = MaterialTheme.typography.labelSmall,
@@ -378,20 +403,24 @@ private fun OverlayChatStripMessage(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(
-                            text = displayName,
-                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                            color = roleAccentColor(role),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                        )
-                        if (role.isNotBlank() && !lightStrip) {
-                            RoleBadge(role = role)
+                    if (showSenderHeader) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                text = displayName,
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                ),
+                                color = roleAccentColor(role),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            if (role.isNotBlank() && !lightStrip) {
+                                RoleBadge(role = role)
+                            }
                         }
                     }
 

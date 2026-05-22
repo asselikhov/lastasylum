@@ -87,24 +87,32 @@ class VoiceChatSession(
     }
 
     fun start(roomId: String, localUserId: String) {
-        if (this.roomId == roomId) return
-        stop()
-        this.roomId = roomId
-        this.localUserId = localUserId
-        micOn = userSettings.isOverlayVoiceMicEnabled()
-        soundOn = userSettings.isOverlayVoiceSoundEnabled()
-        socketManager.addFrameListener(frameListener)
-        socketManager.addPeerListener(peerListener)
-        audioPipeline.setSoundEnabled(soundOn)
+        val rid = roomId.trim()
+        if (rid.isEmpty()) return
+        val sameRoom = this.roomId == rid
+        if (!sameRoom) {
+            stop()
+            this.roomId = rid
+            this.localUserId = localUserId
+            micOn = userSettings.isOverlayVoiceMicEnabled()
+            soundOn = userSettings.isOverlayVoiceSoundEnabled()
+            socketManager.addFrameListener(frameListener)
+            socketManager.addPeerListener(peerListener)
+            audioPipeline.setSoundEnabled(soundOn)
+            enterCommunicationAudioMode()
+            socketManager.connect(
+                baseUrl = BuildConfig.API_BASE_URL,
+                roomId = rid,
+                tokenProvider = { tokenStore.getAccessToken() },
+                initialMicOn = micOn,
+                initialSoundOn = soundOn,
+            )
+        } else {
+            this.localUserId = localUserId
+            socketManager.emitState(micOn, soundOn)
+        }
+        if (micOn) onMicForegroundChanged(true)
         applyMicCapture()
-        enterCommunicationAudioMode()
-        socketManager.connect(
-            baseUrl = BuildConfig.API_BASE_URL,
-            roomId = roomId,
-            tokenProvider = { tokenStore.getAccessToken() },
-            initialMicOn = micOn,
-            initialSoundOn = soundOn,
-        )
         notifyState()
     }
 
@@ -131,9 +139,9 @@ class VoiceChatSession(
         if (enabled && Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
         micOn = enabled
         userSettings.setOverlayVoiceMicEnabled(enabled)
+        onMicForegroundChanged(micOn)
         applyMicCapture()
         socketManager.emitState(micOn, soundOn)
-        onMicForegroundChanged(micOn)
         notifyState()
         return true
     }

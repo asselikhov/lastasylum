@@ -23,6 +23,7 @@ class VoiceSocketManager {
     private var frameSeq = 0
     @Volatile
     private var voiceJoined = false
+    private val pendingUpstreamFrames = ArrayDeque<ByteArray>(8)
     /** Last toggles — included in voice:join on (re)connect so the server never stays at micOff/soundOff defaults. */
     private var lastMicOn: Boolean = false
     private var lastSoundOn: Boolean = true
@@ -95,13 +96,32 @@ class VoiceSocketManager {
     }
 
     fun emitFrame(codec: String, payload: ByteArray) {
-        if (roomId == null || !voiceJoined) return
+        if (roomId == null) return
         val codecByte = when (codec) {
             VoiceOpusCodec.CODEC_OPUS -> VoiceWire.CODEC_OPUS
             else -> return
         }
         val packet = VoiceWire.packUpstream(frameSeq++, codecByte, payload)
+        if (!voiceJoined) {
+            synchronized(pendingUpstreamFrames) {
+                while (pendingUpstreamFrames.size >= 8) pendingUpstreamFrames.removeFirst()
+                pendingUpstreamFrames.addLast(packet)
+            }
+            return
+        }
+        flushPendingUpstreamFrames()
         socket?.emit("voice:frame", packet)
+    }
+
+    private fun flushPendingUpstreamFrames() {
+        val pending = synchronized(pendingUpstreamFrames) {
+            if (pendingUpstreamFrames.isEmpty()) return
+            pendingUpstreamFrames.toList().also { pendingUpstreamFrames.clear() }
+        }
+        val sock = socket ?: return
+        for (packet in pending) {
+            sock.emit("voice:frame", packet)
+        }
     }
 
     fun disconnect() {
@@ -155,6 +175,7 @@ class VoiceSocketManager {
                 }
                 on("voice:joined") { args ->
                     voiceJoined = true
+                    flushPendingUpstreamFrames()
                     emitState(lastMicOn, lastSoundOn)
                     val payload = args.firstOrNull() as? JSONObject ?: return@on
                     val peers = payload.optJSONArray("peers") ?: return@on
@@ -206,6 +227,7 @@ class VoiceSocketManager {
     private fun disconnectSocket() {
         disconnectSocketOnly()
         voiceJoined = false
+        synchronized(pendingUpstreamFrames) { pendingUpstreamFrames.clear() }
         roomId = null
         lastBaseUrl = null
         tokenProvider = null

@@ -37,6 +37,8 @@ fun ChatMessageBubbleRow(
     inSelectionMode: Boolean,
     canDelete: Boolean,
     showIncomingAvatar: Boolean,
+    /** Keeps bubble indent when avatar is hidden mid-stack (Telegram grouping). */
+    reserveIncomingAvatarSpace: Boolean = false,
     leadingAvatar: @Composable () -> Unit,
     selectionControl: @Composable RowScope.() -> Unit,
     bubbleWidthFraction: Float = ChatBubbleMaxWidthFraction,
@@ -51,7 +53,7 @@ fun ChatMessageBubbleRow(
         val checkboxReserve =
             if (inSelectionMode && canDelete) SelectionCheckboxReserve else 0.dp
         val avatarReserve =
-            if (!isMine && showIncomingAvatar) {
+            if (!isMine && (showIncomingAvatar || reserveIncomingAvatarSpace)) {
                 ChatIncomingAvatarSize + ChatIncomingAvatarEndPad
             } else {
                 0.dp
@@ -69,8 +71,15 @@ fun ChatMessageBubbleRow(
                 Spacer(modifier = Modifier.weight(1f, fill = true))
             } else {
                 selectionControl()
-                if (showIncomingAvatar) {
-                    leadingAvatar()
+                when {
+                    showIncomingAvatar -> leadingAvatar()
+                    reserveIncomingAvatarSpace -> {
+                        Spacer(
+                            modifier = Modifier.width(
+                                ChatIncomingAvatarSize + ChatIncomingAvatarEndPad,
+                            ),
+                        )
+                    }
                 }
             }
             bubble(maxBubble)

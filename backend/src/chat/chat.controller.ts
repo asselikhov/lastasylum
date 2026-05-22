@@ -44,15 +44,12 @@ import { CreateChatRoomDto } from './dto/create-chat-room.dto';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { UpdateChatRoomDto } from './dto/update-chat-room.dto';
 import { UploadChatAttachmentDto } from './dto/upload-chat-attachment.dto';
+import { ToggleReactionDto } from './dto/toggle-reaction.dto';
 import type { Response } from 'express';
 import { Types } from 'mongoose';
 
 class EditMessageDto {
   text: string;
-}
-
-class ToggleReactionDto {
-  emoji: string;
 }
 
 class ForwardMessageDto {
