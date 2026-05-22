@@ -195,13 +195,20 @@ fun ChatMessageBodyText(
     timeMuted: Color,
     textStyle: TextStyle = MaterialTheme.typography.bodyMedium,
 ) {
+    val scheme = MaterialTheme.colorScheme
+    val expandLinkColor = if (isMine) {
+        onBubble.copy(alpha = 0.92f)
+    } else {
+        scheme.primary.copy(alpha = 0.92f)
+    }
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.width(maxWidth)) {
-            Text(
+            CollapsibleMessageText(
                 text = text,
                 style = textStyle,
                 color = onBubble,
-                modifier = Modifier.fillMaxWidth(),
+                expandStateKey = messageId,
+                expandLinkColor = expandLinkColor,
             )
             if (timeLabel.isNotBlank() || (isMine && isChainBottom)) {
                 ChatMessageTimeWithReadStatus(
@@ -228,7 +235,15 @@ fun TelegramImageCaptionBar(
     captionBarBg: Color,
     onBubble: Color,
     timeMuted: Color,
+    captionExpandKey: String? = null,
+    expandLinkOnBubble: Boolean = true,
 ) {
+    val scheme = MaterialTheme.colorScheme
+    val expandLinkColor = if (expandLinkOnBubble) {
+        onBubble.copy(alpha = 0.9f)
+    } else {
+        scheme.primary.copy(alpha = 0.9f)
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -236,11 +251,13 @@ fun TelegramImageCaptionBar(
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
-        Text(
+        CollapsibleMessageText(
             text = caption,
             style = MaterialTheme.typography.bodyMedium,
             color = onBubble,
             modifier = Modifier.weight(1f),
+            expandStateKey = captionExpandKey?.let { "cap_$it" },
+            expandLinkColor = expandLinkColor,
         )
         if (formattedTime.isNotBlank()) {
             Spacer(modifier = Modifier.width(8.dp))
@@ -526,6 +543,7 @@ fun ChatBubbleAttachmentsWithCaption(
                 captionBarBg = captionBarBg,
                 onBubble = onBubble,
                 timeMuted = timeMuted,
+                captionExpandKey = message._id,
             )
         }
     }

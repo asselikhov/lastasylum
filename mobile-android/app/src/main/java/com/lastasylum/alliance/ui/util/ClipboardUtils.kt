@@ -3,6 +3,8 @@ package com.lastasylum.alliance.ui.util
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.Build
+import android.text.Html
 import android.widget.Toast
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
@@ -51,13 +53,27 @@ fun chatMessageTextForComposer(message: ChatMessage): String? {
 fun chatMessageHasPasteableText(message: ChatMessage): Boolean =
     chatMessageTextForComposer(message) != null
 
+private fun ClipData.Item.extractPlainText(context: Context): String? {
+    text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+    coerceToText(context)?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+    htmlText?.let { html ->
+        val plain = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            Html.fromHtml(html, Html.FROM_HTML_MODE_COMPACT)
+        } else {
+            @Suppress("DEPRECATION")
+            Html.fromHtml(html)
+        }.toString().trim()
+        if (plain.isNotEmpty()) return plain
+    }
+    return null
+}
+
 fun readClipboardPlainText(context: Context): String? {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return null
-    if (!cm.hasPrimaryClip()) return null
     val clip = cm.primaryClip ?: return null
+    if (clip.itemCount <= 0) return null
     for (i in 0 until clip.itemCount) {
-        val text = clip.getItemAt(i).coerceToText(context)?.toString()?.trim()
-        if (!text.isNullOrEmpty()) return text
+        clip.getItemAt(i).extractPlainText(context)?.let { return it }
     }
     return null
 }

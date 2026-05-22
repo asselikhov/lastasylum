@@ -237,6 +237,7 @@ import com.lastasylum.alliance.ui.util.appendTextToDraft
 import com.lastasylum.alliance.ui.util.chatMessageHasPasteableText
 import com.lastasylum.alliance.ui.util.chatMessageTextForComposer
 import com.lastasylum.alliance.ui.util.copyChatMessageToClipboard
+import com.lastasylum.alliance.ui.util.composerLongPressPaste
 import com.lastasylum.alliance.ui.util.readClipboardPlainText
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import coil.compose.AsyncImage
@@ -1351,7 +1352,6 @@ private fun ChatComposer(
     var showMediaPanel by remember { mutableStateOf(false) }
     var showAttachmentsSheet by remember { mutableStateOf(false) }
     var showComposerPasteMenu by remember { mutableStateOf(false) }
-    val composerPasteInteraction = remember { MutableInteractionSource() }
     val context = LocalContext.current
     fun pasteFromClipboard() {
         val clip = readClipboardPlainText(context)
@@ -1370,6 +1370,12 @@ private fun ChatComposer(
         if (readOnly) return
         if (readClipboardPlainText(context) != null) {
             showComposerPasteMenu = true
+        } else {
+            Toast.makeText(
+                context,
+                context.getString(R.string.chat_composer_paste_empty),
+                Toast.LENGTH_SHORT,
+            ).show()
         }
     }
     val overlayUi = LocalOverlayUiMode.current
@@ -1801,7 +1807,14 @@ private fun ChatComposer(
                                     tint = MaterialTheme.colorScheme.primary,
                                 )
                             }
-                            Box(modifier = Modifier.weight(1f)) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .composerLongPressPaste(
+                                        enabled = !readOnly,
+                                        onLongPress = { onComposerLongPress() },
+                                    ),
+                            ) {
                                 TextField(
                                     value = draft,
                                     onValueChange = { if (!readOnly) onDraftChange(it) },
@@ -1817,25 +1830,7 @@ private fun ChatComposer(
                                             } else if (!fc.isFocused) {
                                                 showComposerPasteMenu = false
                                             }
-                                        }
-                                        .then(
-                                            if (readOnly) {
-                                                Modifier
-                                            } else if (overlayUi) {
-                                                Modifier.combinedClickable(
-                                                    interactionSource = composerPasteInteraction,
-                                                    indication = null,
-                                                    onClick = { focusRequester.requestFocus() },
-                                                    onLongClick = { onComposerLongPress() },
-                                                )
-                                            } else {
-                                                Modifier.pointerInput(Unit) {
-                                                    detectTapGestures(
-                                                        onLongPress = { onComposerLongPress() },
-                                                    )
-                                                }
-                                            },
-                                        ),
+                                        },
                                     readOnly = readOnly,
                                     textStyle = MaterialTheme.typography.bodyMedium,
                                     placeholder = {
@@ -2431,6 +2426,7 @@ private fun ChatBubbleInnerColumn(
                             captionBarBg = captionBarBg,
                             onBubble = onBubble,
                             timeMuted = timeMuted,
+                            captionExpandKey = message._id,
                         )
                     }
                 }
@@ -2589,6 +2585,7 @@ private fun ChatFloatingImageAttachmentsBlock(
                         captionBarBg = captionBarBg,
                         onBubble = onBubble,
                         timeMuted = timeMuted,
+                        captionExpandKey = message._id,
                     )
                 }
             }

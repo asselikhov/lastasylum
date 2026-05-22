@@ -55,6 +55,7 @@ import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
 import com.lastasylum.alliance.data.chat.ChatAttachment
 import com.lastasylum.alliance.data.teams.TeamForumMessageDto
 import com.lastasylum.alliance.ui.chat.ChatBubbleAuthorHeader
+import com.lastasylum.alliance.ui.chat.ChatMessageBodyText
 import com.lastasylum.alliance.ui.chat.ChatFileAttachmentCard
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarEndPad
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarSize
@@ -507,26 +508,16 @@ internal fun ForumMessageBubble(
                                             isDownloading = downloadingForumFileUrl == fileUrl,
                                         )
                                         if (message.text.isNotBlank()) {
-                                            Row(
-                                                Modifier.fillMaxWidth(),
-                                                verticalAlignment = Alignment.Bottom,
-                                            ) {
-                                                Text(
-                                                    text = message.text,
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    color = onBubble,
-                                                    modifier = Modifier.weight(1f),
-                                                )
-                                                if (timeLabel.isNotBlank()) {
-                                                    Spacer(Modifier.width(8.dp))
-                                                    Text(
-                                                        text = timeLabel,
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        color = timeMuted,
-                                                        modifier = Modifier.padding(bottom = 1.dp),
-                                                    )
-                                                }
-                                            }
+                                            ChatMessageBodyText(
+                                                text = message.text,
+                                                onBubble = onBubble,
+                                                timeLabel = timeLabel,
+                                                isMine = isMine,
+                                                isChainBottom = isChainBottom,
+                                                messageId = message.id,
+                                                otherReadUptoMessageId = null,
+                                                timeMuted = timeMuted,
+                                            )
                                         } else if (timeLabel.isNotBlank()) {
                                             Text(
                                                 text = timeLabel,
@@ -577,31 +568,22 @@ internal fun ForumMessageBubble(
                                                 captionBarBg = captionBarBg,
                                                 onBubble = onBubble,
                                                 timeMuted = timeMuted,
+                                                captionExpandKey = message.id,
                                             )
                                         }
                                     }
                                 }
                                 else -> {
-                                    Row(
-                                        Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.Bottom,
-                                    ) {
-                                        Text(
-                                            text = message.text,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = onBubble,
-                                            modifier = Modifier.weight(1f),
-                                        )
-                                        if (timeLabel.isNotBlank()) {
-                                            Spacer(Modifier.width(8.dp))
-                                            Text(
-                                                text = timeLabel,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = timeMuted,
-                                                modifier = Modifier.padding(bottom = 1.dp),
-                                            )
-                                        }
-                                    }
+                                    ChatMessageBodyText(
+                                        text = message.text,
+                                        onBubble = onBubble,
+                                        timeLabel = timeLabel,
+                                        isMine = isMine,
+                                        isChainBottom = isChainBottom,
+                                        messageId = message.id,
+                                        otherReadUptoMessageId = null,
+                                        timeMuted = timeMuted,
+                                    )
                                 }
                             }
                         }
