@@ -1505,7 +1505,7 @@ class OverlayCommandsPopover(
                     configureOverlayReactionLottie(this, playLoop = true)
                     playAnimation()
                 }
-                is ImageView -> {
+                else -> {
                     val anim = drawable
                     if (anim is android.graphics.drawable.Animatable && !anim.isRunning) {
                         anim.start()
