@@ -13,8 +13,9 @@ fun isObjectIdNewer(candidate: String, baseline: String?): Boolean {
 
 /**
  * Per-user unread badge on this device: when the local read cursor is at or past the server cursor,
- * trust that the user already read (including reads in the main app persisted to prefs). Stale
- * [serverUnread] with equal cursors must not resurrect badges after leaving and re-opening chat.
+ * trust that the user already read (including reads persisted locally before server sync). Stale
+ * [serverUnread] with equal cursors, or a missing server cursor with a local one, must not
+ * resurrect badges after update or reinstall.
  */
 fun effectiveUnreadCount(
     serverUnread: Int,
@@ -24,7 +25,8 @@ fun effectiveUnreadCount(
     if (serverUnread <= 0) return 0
     val localLast = localLastReadMessageId?.trim().orEmpty()
     val serverLast = lastReadMessageId?.trim().orEmpty()
-    if (localLast.isNotBlank() && serverLast.isNotBlank()) {
+    if (localLast.isNotBlank()) {
+        if (serverLast.isBlank()) return 0
         if (!isObjectIdNewer(serverLast, localLast)) return 0
     }
     return serverUnread

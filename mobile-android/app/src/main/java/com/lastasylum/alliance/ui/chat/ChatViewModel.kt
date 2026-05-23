@@ -529,7 +529,7 @@ class ChatViewModel(
                     ?: rooms.first().id
         }
         chatRoomPreferences.setSelectedRoomId(selected)
-        viewModelScope.launch { reconcileStaleServerUnread(rooms, roomsRaw) }
+        reconcileStaleServerUnread(rooms, roomsRaw)
         val cachedOverlayMessages = when {
             preferOverlayRaidRoom && raidId != null ->
                 ChatSessionCache.getFreshMessages(raidId)
@@ -717,9 +717,9 @@ class ChatViewModel(
     }
 
     /**
-     * Server unread can lag; re-push read cursor only when API still reports unread
-     * but local cursor proves the room was read. Skips optimistic socket bumps
-     * (displayed > raw API count).
+     * Server unread can lag; re-push read cursor when API still reports unread
+     * but local cursor proves the room was read (including legacy prefs or missing server state).
+     * Skips optimistic socket bumps (displayed > raw API count).
      */
     private suspend fun reconcileStaleServerUnread(
         mergedRooms: List<ChatRoomDto>,
@@ -732,7 +732,9 @@ class ChatViewModel(
             if (room.unreadCount > raw.unreadCount) continue
             val localLast = resolvedLastReadMessageId(room) ?: continue
             val serverLast = raw.lastReadMessageId?.trim().orEmpty()
-            if (serverLast.isBlank() || !isObjectIdNewer(localLast, serverLast)) continue
+            val localAhead =
+                serverLast.isBlank() || isObjectIdNewer(localLast, serverLast)
+            if (!localAhead) continue
             markRoomReadUpTo(room.id, localLast, forceSync = true)
         }
     }

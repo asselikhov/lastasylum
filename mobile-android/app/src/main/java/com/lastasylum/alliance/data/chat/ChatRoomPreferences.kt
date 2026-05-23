@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.data.chat
 
 import android.content.Context
+import com.lastasylum.alliance.data.ReadCursorPrefKeys
 
 /** Persists selected chat room id for the app and overlay (sync read). */
 class ChatRoomPreferences(context: Context) {
@@ -13,7 +14,12 @@ class ChatRoomPreferences(context: Context) {
     /** Scope read cursors to the signed-in user so badges stay per-account on this device. */
     fun bindUser(userId: String) {
         val id = userId.trim()
-        activeUserId = id.takeIf { it.isNotEmpty() }
+        if (id.isEmpty()) {
+            activeUserId = null
+            return
+        }
+        migrateLegacyReadCursors(id)
+        activeUserId = id
     }
 
     fun getSelectedRoomId(): String? = prefs.getString(KEY_SELECTED_ROOM, null)
@@ -84,6 +90,29 @@ class ChatRoomPreferences(context: Context) {
     }
 
     private fun lastReadKey(roomId: String): String = lastReadKeyPrefix() + roomId
+
+    /** Pre-userId keys were `last_read_msg_{roomId}`; move them to `last_read_msg_{userId}:{roomId}`. */
+    private fun migrateLegacyReadCursors(userId: String) {
+        val snapshot = prefs.all
+        if (snapshot.isEmpty()) return
+        val editor = prefs.edit()
+        var changed = false
+        for ((key, value) in snapshot) {
+            if (key !is String || !ReadCursorPrefKeys.isLegacyChatReadKey(key)) continue
+            val roomId = key.removePrefix(KEY_LAST_READ_PREFIX)
+            val messageId = (value as? String)?.trim().orEmpty()
+            if (messageId.isBlank()) continue
+            val scopedKey = ReadCursorPrefKeys.chatReadKey(userId, roomId)
+            val merged = ReadCursorPrefKeys.mergeReadMessageIds(
+                existing = prefs.getString(scopedKey, null),
+                incoming = messageId,
+            )
+            editor.putString(scopedKey, merged)
+            editor.remove(key)
+            changed = true
+        }
+        if (changed) editor.apply()
+    }
 
     private companion object {
         const val PREFS_NAME = "squadrelay_chat"

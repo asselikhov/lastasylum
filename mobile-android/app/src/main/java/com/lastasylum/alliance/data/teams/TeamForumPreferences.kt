@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.data.teams
 
 import android.content.Context
+import com.lastasylum.alliance.data.ReadCursorPrefKeys
 
 /** Persisted forum topic read cursors (per user, team, topic). */
 class TeamForumPreferences(context: Context) {
@@ -12,7 +13,12 @@ class TeamForumPreferences(context: Context) {
 
     fun bindUser(userId: String) {
         val id = userId.trim()
-        activeUserId = id.takeIf { it.isNotEmpty() }
+        if (id.isEmpty()) {
+            activeUserId = null
+            return
+        }
+        migrateLegacyReadCursors(id)
+        activeUserId = id
     }
 
     fun getLastReadMessageId(teamId: String, topicId: String): String? =
@@ -55,6 +61,30 @@ class TeamForumPreferences(context: Context) {
     }
 
     private fun key(teamId: String, topicId: String): String = keyPrefix(teamId) + topicId
+
+    /** Pre-userId keys were `forum_last_read_{teamId}:{topicId}`. */
+    private fun migrateLegacyReadCursors(userId: String) {
+        val snapshot = prefs.all
+        if (snapshot.isEmpty()) return
+        val editor = prefs.edit()
+        var changed = false
+        for ((key, value) in snapshot) {
+            if (key !is String) continue
+            val pair = ReadCursorPrefKeys.parseLegacyForumReadKey(key) ?: continue
+            val (teamId, topicId) = pair
+            val messageId = (value as? String)?.trim().orEmpty()
+            if (messageId.isBlank()) continue
+            val scopedKey = ReadCursorPrefKeys.forumReadKey(userId, teamId, topicId)
+            val merged = ReadCursorPrefKeys.mergeReadMessageIds(
+                existing = prefs.getString(scopedKey, null),
+                incoming = messageId,
+            )
+            editor.putString(scopedKey, merged)
+            editor.remove(key)
+            changed = true
+        }
+        if (changed) editor.apply()
+    }
 
     private companion object {
         const val PREFS_NAME = "squadrelay_team_forum"

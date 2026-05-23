@@ -41,9 +41,9 @@ class InboxReadCursorTest {
     }
 
     @Test
-    fun effectiveUnread_trustsServerWhenServerCursorMissing() {
+    fun effectiveUnread_suppressesWhenLocalCursorPresentButServerMissing() {
         assertEquals(
-            3,
+            0,
             effectiveUnreadCount(
                 serverUnread = 3,
                 lastReadMessageId = null,
