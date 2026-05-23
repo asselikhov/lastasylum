@@ -132,15 +132,14 @@ export class VoiceGateway {
     client.data.micOn = payload?.micOn === true;
     client.data.soundOn = payload?.soundOn === true;
     await client.join(this.voiceRoomKey(roomId));
+    await this.usersService.updatePresence(user.userId, 'ingame');
+    this.setOverlayIngameCached(user.userId, true);
 
     const peers = await this.collectPeers(roomId, client.id);
-    const joinerIngame = await this.overlayIngameNow(user.userId);
-    if (joinerIngame) {
-      client.to(this.voiceRoomKey(roomId)).emit('voice:peer-joined', {
-        roomId,
-        peer: this.peerStateFromClient(client),
-      });
-    }
+    client.to(this.voiceRoomKey(roomId)).emit('voice:peer-joined', {
+      roomId,
+      peer: this.peerStateFromClient(client),
+    });
 
     return {
       event: 'voice:joined',
@@ -182,12 +181,14 @@ export class VoiceGateway {
     client.data.soundOn = body?.soundOn === true;
 
     const peer = this.peerStateFromClient(client);
-    if (await this.overlayIngameNow(user.userId, body?.micOn === true)) {
-      client.to(this.voiceRoomKey(roomId)).emit('voice:peer-state', {
-        roomId,
-        peer,
-      });
+    if (body?.micOn === true || body?.soundOn === true) {
+      await this.usersService.updatePresence(user.userId, 'ingame');
+      this.setOverlayIngameCached(user.userId, true);
     }
+    client.to(this.voiceRoomKey(roomId)).emit('voice:peer-state', {
+      roomId,
+      peer,
+    });
     return { event: 'voice:state-ack', data: peer };
   }
 
@@ -208,10 +209,6 @@ export class VoiceGateway {
     if (!roomId) {
       throw new WsException('Not in a voice room');
     }
-    if (!(await this.overlayIngameNow(user.userId, true))) {
-      return;
-    }
-
     const raw = this.coerceBuffer(body);
     const parsed = parseUpstreamFrame(raw);
     if (!parsed) {
@@ -333,6 +330,16 @@ export class VoiceGateway {
     }
   }
 
+  private setOverlayIngameCached(userId: string, value: boolean): void {
+    const cacheMs = value
+      ? OVERLAY_INGAME_CACHE_MS
+      : OVERLAY_INGAME_NEGATIVE_CACHE_MS;
+    this.overlayIngameCache.set(userId, {
+      until: Date.now() + cacheMs,
+      value,
+    });
+  }
+
   private async overlayIngameNow(
     userId: string,
     bypassCache = false,
@@ -369,8 +376,6 @@ export class VoiceGateway {
         | undefined;
       const peerUser = peerSocket?.data?.user;
       if (!peerUser) continue;
-      if (!(await this.overlayIngameNow(peerUser.userId))) continue;
-      if (!peerSocket.data.micOn) continue;
       peers.push(this.peerStateFromClient(peerSocket));
     }
     return peers;

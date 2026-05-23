@@ -108,6 +108,8 @@ class ChatViewModel(
     private val roomMessageCache = mutableMapOf<String, RoomMessageCache>()
     /** Latest message id we successfully marked read per room (avoids regress + duplicate bumps). */
     private val lastMarkedReadByRoom = mutableMapOf<String, String>()
+    /** Socket can deliver the same message via new + reaction/edited; count unread once per id. */
+    private val unreadBumpedMessageIds = LinkedHashSet<String>()
     private var unreadSyncJob: Job? = null
     private val bootstrapMutex = Mutex()
     private var bootstrapJob: Job? = null
@@ -152,7 +154,7 @@ class ChatViewModel(
             } else if (message.senderId != currentUserId) {
                 val mid = message._id ?: continue
                 if (!shouldTrackUnreadForMessage(roomId, mid)) continue
-                bumpRoomUnreadLocally(roomId)
+                bumpRoomUnreadLocally(roomId, mid)
                 scheduleUnreadSyncFromServer()
             }
         }
@@ -261,7 +263,7 @@ class ChatViewModel(
     }
 
     /** Sync tab badges from API (e.g. after overlay chat or app resume). */
-    fun syncRoomsFromServer() {
+    fun syncRoomsFromServer(reconfirmVisibleRoom: Boolean = true) {
         viewModelScope.launch {
             repository.listRooms()
                 .onSuccess { raw ->
@@ -269,7 +271,9 @@ class ChatViewModel(
                     syncRaidRoomPreference(next)
                     _state.update { it.copy(rooms = next) }
                     reconcileStaleServerUnread(next, raw)
-                    reconfirmReadForVisibleRoom()
+                    if (reconfirmVisibleRoom) {
+                        reconfirmReadForVisibleRoom()
+                    }
                     syncOverlayAllianceHubBadge(next)
                 }
         }
@@ -596,7 +600,12 @@ class ChatViewModel(
         return true
     }
 
-    private fun bumpRoomUnreadLocally(roomId: String) {
+    private fun bumpRoomUnreadLocally(roomId: String, messageId: String) {
+        if (!unreadBumpedMessageIds.add(messageId)) return
+        while (unreadBumpedMessageIds.size > 512) {
+            val oldest = unreadBumpedMessageIds.first()
+            unreadBumpedMessageIds.remove(oldest)
+        }
         _state.update { st ->
             st.copy(
                 rooms = st.rooms.map { room ->
@@ -619,7 +628,7 @@ class ChatViewModel(
         unreadSyncJob?.cancel()
         unreadSyncJob = viewModelScope.launch {
             delay(120)
-            syncRoomsFromServer()
+            syncRoomsFromServer(reconfirmVisibleRoom = false)
         }
     }
 
@@ -641,10 +650,11 @@ class ChatViewModel(
         val rawById = rawServerRooms.associateBy { it.id }
         for (room in mergedRooms) {
             val raw = rawById[room.id] ?: continue
-            if (effectiveUnreadForRoom(raw) > 0) continue
             if (raw.unreadCount <= 0) continue
             if (room.unreadCount > raw.unreadCount) continue
             val localLast = lastMarkedReadByRoom[room.id] ?: continue
+            val serverLast = raw.lastReadMessageId?.trim().orEmpty()
+            if (serverLast.isBlank() || !isObjectIdNewer(localLast, serverLast)) continue
             markRoomReadUpTo(room.id, localLast, forceSync = true)
         }
     }

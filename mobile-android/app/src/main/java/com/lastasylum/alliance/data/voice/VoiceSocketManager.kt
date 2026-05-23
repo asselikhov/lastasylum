@@ -23,6 +23,7 @@ class VoiceSocketManager {
     private var frameSeq = 0
     @Volatile
     private var voiceJoined = false
+    private val joinedCallbacks = CopyOnWriteArrayList<() -> Unit>()
     private val pendingUpstreamFrames = ArrayDeque<ByteArray>(8)
     /** Last toggles — included in voice:join on (re)connect so the server never stays at micOff/soundOff defaults. */
     private var lastMicOn: Boolean = false
@@ -51,6 +52,17 @@ class VoiceSocketManager {
 
     fun removePeerListener(listener: (VoicePeerEvent) -> Unit) {
         peerListeners.remove(listener)
+    }
+
+    fun isVoiceJoined(): Boolean = voiceJoined
+
+    /** Runs after server ack [voice:joined] (socket room is ready for state + frames). */
+    fun whenJoined(block: () -> Unit) {
+        if (voiceJoined) {
+            mainHandler.post(block)
+            return
+        }
+        joinedCallbacks.add(block)
     }
 
     fun connect(
@@ -177,6 +189,12 @@ class VoiceSocketManager {
                     voiceJoined = true
                     flushPendingUpstreamFrames()
                     emitState(lastMicOn, lastSoundOn)
+                    mainHandler.post {
+                        joinedCallbacks.forEach { callback ->
+                            runCatching { callback() }
+                        }
+                        joinedCallbacks.clear()
+                    }
                     val payload = args.firstOrNull() as? JSONObject ?: return@on
                     val peers = payload.optJSONArray("peers") ?: return@on
                     for (i in 0 until peers.length()) {
@@ -227,6 +245,7 @@ class VoiceSocketManager {
     private fun disconnectSocket() {
         disconnectSocketOnly()
         voiceJoined = false
+        joinedCallbacks.clear()
         synchronized(pendingUpstreamFrames) { pendingUpstreamFrames.clear() }
         roomId = null
         lastBaseUrl = null

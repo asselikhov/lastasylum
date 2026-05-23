@@ -140,9 +140,7 @@ class VoiceChatSession(
         micOn = enabled
         userSettings.setOverlayVoiceMicEnabled(enabled)
         onMicForegroundChanged(micOn)
-        applyMicCapture()
-        socketManager.emitState(micOn, soundOn)
-        notifyState()
+        publishVoiceStateToServer()
         return true
     }
 
@@ -150,8 +148,24 @@ class VoiceChatSession(
         soundOn = enabled
         userSettings.setOverlayVoiceSoundEnabled(enabled)
         audioPipeline.setSoundEnabled(soundOn)
-        socketManager.emitState(micOn, soundOn)
-        notifyState()
+        publishVoiceStateToServer()
+    }
+
+    fun whenVoiceReady(block: () -> Unit) {
+        socketManager.whenJoined(block)
+    }
+
+    private fun publishVoiceStateToServer() {
+        val publish = {
+            socketManager.emitState(micOn, soundOn)
+            applyMicCapture()
+            notifyState()
+        }
+        if (socketManager.isVoiceJoined()) {
+            publish()
+        } else {
+            socketManager.whenJoined(publish)
+        }
     }
 
     fun toggleMic(): Boolean = setMicEnabled(!micOn)

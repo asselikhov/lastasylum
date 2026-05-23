@@ -1608,7 +1608,14 @@ class CombatOverlayService : Service() {
         ChatSessionCache.update(updated)
     }
 
-    private fun bumpAllianceHubUnreadLocally() {
+    private val hubUnreadBumpedMessageIds = LinkedHashSet<String>()
+
+    private fun bumpAllianceHubUnreadLocally(messageId: String? = null) {
+        val mid = messageId?.trim().orEmpty()
+        if (mid.isNotEmpty() && !hubUnreadBumpedMessageIds.add(mid)) return
+        while (hubUnreadBumpedMessageIds.size > 512) {
+            hubUnreadBumpedMessageIds.remove(hubUnreadBumpedMessageIds.first())
+        }
         val next = (overlayStatusHudFlow.value.allianceChatUnread + 1).coerceAtMost(999)
         hubUnreadOptimisticFloor = next
         applyAllianceHubUnreadCount(next)
@@ -1639,7 +1646,7 @@ class CombatOverlayService : Service() {
             return
         }
         if (shouldBumpOverlayHubUnread(msg, hubId) && activityScopedChatViewModel == null) {
-            bumpAllianceHubUnreadLocally()
+            bumpAllianceHubUnreadLocally(msg._id)
         }
         scheduleDebouncedHubHudRefresh()
     }
@@ -1808,25 +1815,31 @@ class CombatOverlayService : Service() {
             return
         }
         runOverlayVoiceUserAction { session ->
-            if (!session.micOn && !session.hasRecordAudioPermission()) {
-                pendingVoiceMicEnable = true
-                requestOverlayVoiceMicPermission()
-            } else {
-                val ok = session.toggleMic()
-                if (!ok) {
-                    Toast.makeText(
-                        this@CombatOverlayService,
-                        R.string.overlay_voice_mic_unsupported,
-                        Toast.LENGTH_SHORT,
-                    ).show()
+            session.whenVoiceReady {
+                if (!session.micOn && !session.hasRecordAudioPermission()) {
+                    pendingVoiceMicEnable = true
+                    requestOverlayVoiceMicPermission()
+                } else {
+                    val ok = session.toggleMic()
+                    if (!ok) {
+                        Toast.makeText(
+                            this@CombatOverlayService,
+                            R.string.overlay_voice_mic_unsupported,
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
                 }
+                refreshOverlayTopRightHudState()
             }
         }
     }
 
     private fun toggleOverlayVoiceSoundFromHud() {
         runOverlayVoiceUserAction { session ->
-            session.toggleSound()
+            session.whenVoiceReady {
+                session.toggleSound()
+                refreshOverlayTopRightHudState()
+            }
         }
     }
 
@@ -2847,7 +2860,10 @@ class CombatOverlayService : Service() {
                 val granted = i.getBooleanExtra(OverlaySystemDialogActivity.EXTRA_GRANTED, false)
                 if (granted && pendingVoiceMicEnable) {
                     runOverlayVoiceUserAction { session ->
-                        session.setMicEnabled(true)
+                        session.whenVoiceReady {
+                            session.setMicEnabled(true)
+                            refreshOverlayTopRightHudState()
+                        }
                     }
                 } else if (!granted) {
                     Toast.makeText(
