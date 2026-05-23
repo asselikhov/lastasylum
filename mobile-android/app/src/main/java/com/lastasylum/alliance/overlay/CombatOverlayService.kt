@@ -3303,7 +3303,6 @@ class CombatOverlayService : Service() {
         val compose = ComposeView(this).apply {
             setContent {
                 val container = remember { AppContainer.from(this@CombatOverlayService) }
-                val app = this@CombatOverlayService.applicationContext as android.app.Application
                 val userId = remember { jwtSubFromAccessToken().orEmpty() }
                 val userRole = remember { jwtRoleFromAccessToken() }
                 var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab) }
