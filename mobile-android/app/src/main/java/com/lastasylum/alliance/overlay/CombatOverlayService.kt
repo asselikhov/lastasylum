@@ -75,6 +75,7 @@ import androidx.compose.ui.unit.dp
 import com.google.android.material.color.MaterialColors
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.data.ReadCursorSession
 import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.reconcileDisplayedUnread
 import com.lastasylum.alliance.data.chat.ChatMessage
@@ -223,12 +224,15 @@ class CombatOverlayService : Service() {
             stopOverlayIngamePresence(markAway = false)
             return
         }
-        if (inGameProbe) {
+        val voiceActive = voiceSession?.let { it.micOn || it.soundOn } == true
+        val keepIngamePing =
+            inGameProbe || isInGameOverlayUiActive() || voiceActive
+        if (keepIngamePing) {
             overlayIngameMissStreak = 0
             val firstStart = !overlayIngamePresenceActive
             overlayIngamePresenceActive = true
             presenceHeartbeat.start()
-            if (firstStart) {
+            if (firstStart || voiceActive) {
                 serviceScope.launch {
                     runCatching {
                         container.usersRepository.updatePresence(OVERLAY_PRESENCE_INGAME)
@@ -248,7 +252,7 @@ class CombatOverlayService : Service() {
     private fun stopOverlayIngamePresence(markAway: Boolean) {
         presenceHeartbeat.stop()
         overlayIngamePresenceActive = false
-        if (markAway) {
+        if (markAway && !canUseOverlayVoiceNow()) {
             stopOverlayVoice()
         }
         if (!markAway) return
@@ -3270,6 +3274,13 @@ class CombatOverlayService : Service() {
                 val userRole = remember { jwtRoleFromAccessToken() }
                 var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab) }
                 val vm = remember(userId, userRole) {
+                    if (userId.isNotBlank()) {
+                        ReadCursorSession.bind(
+                            container.chatRoomPreferences,
+                            container.teamForumPreferences,
+                            userId,
+                        )
+                    }
                     activityScopedChatViewModel
                         ?: overlayChatViewModel
                         ?: ChatViewModel(
@@ -3676,9 +3687,13 @@ class CombatOverlayService : Service() {
             service.mainHandler.post {
                 if (count <= 0) {
                     service.hubUnreadOptimisticFloor = 0
+                } else {
+                    service.hubUnreadOptimisticFloor = maxOf(service.hubUnreadOptimisticFloor, count)
                 }
-                service.applyAllianceHubUnreadCount(count)
-                service.patchHubUnreadInSessionCache(count)
+                service.applyAllianceHubUnreadReconciled(count)
+                service.patchHubUnreadInSessionCache(
+                    service.overlayStatusHudFlow.value.allianceChatUnread,
+                )
             }
         }
 

@@ -131,7 +131,7 @@ export class VoiceGateway {
     /** Apply with join so state is valid before any relay / peer snapshots (avoids race with voice:state). */
     client.data.micOn = payload?.micOn === true;
     client.data.soundOn = payload?.soundOn === true;
-    void client.join(this.voiceRoomKey(roomId));
+    await client.join(this.voiceRoomKey(roomId));
 
     const peers = await this.collectPeers(roomId, client.id);
     const joinerIngame = await this.overlayIngameNow(user.userId);
@@ -182,7 +182,7 @@ export class VoiceGateway {
     client.data.soundOn = body?.soundOn === true;
 
     const peer = this.peerStateFromClient(client);
-    if (await this.overlayIngameNow(user.userId)) {
+    if (await this.overlayIngameNow(user.userId, body?.micOn === true)) {
       client.to(this.voiceRoomKey(roomId)).emit('voice:peer-state', {
         roomId,
         peer,
@@ -208,7 +208,7 @@ export class VoiceGateway {
     if (!roomId) {
       throw new WsException('Not in a voice room');
     }
-    if (!(await this.overlayIngameNow(user.userId))) {
+    if (!(await this.overlayIngameNow(user.userId, true))) {
       return;
     }
 
@@ -333,11 +333,16 @@ export class VoiceGateway {
     }
   }
 
-  private async overlayIngameNow(userId: string): Promise<boolean> {
+  private async overlayIngameNow(
+    userId: string,
+    bypassCache = false,
+  ): Promise<boolean> {
     const now = Date.now();
-    const cached = this.overlayIngameCache.get(userId);
-    if (cached && cached.until > now) {
-      return cached.value;
+    if (!bypassCache) {
+      const cached = this.overlayIngameCache.get(userId);
+      if (cached && cached.until > now) {
+        return cached.value;
+      }
     }
     const value = await this.usersService.isOverlayIngameNow(userId);
     const cacheMs = value

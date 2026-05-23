@@ -159,12 +159,8 @@ class ChatViewModel(
     }
 
     private fun syncOverlayAllianceHubBadge(rooms: List<ChatRoomDto> = _state.value.rooms) {
-        if (ChatRoomKindResolver.allianceHubRoom(rooms) == null) return
-        val count = OverlayGameStatusHudRefresh.allianceHubUnread(
-            rooms,
-            chatRoomPreferences.loadAllLastReadMessageIds(),
-        )
-        CombatOverlayService.notifyAllianceHubUnread(count)
+        val hub = ChatRoomKindResolver.allianceHubRoom(rooms) ?: return
+        CombatOverlayService.notifyAllianceHubUnread(hub.unreadCount.coerceIn(0, 99))
     }
 
     private fun realtimeSubscriptionRoomIds(rooms: List<ChatRoomDto>): List<String> {
@@ -190,9 +186,9 @@ class ChatViewModel(
         bootstrap(preferAllianceHubRoom = true, force = true)
     }
 
-    /** Оверлей-чат: открывать комнату «Рейд», не hub и не последнюю вкладку из приложения. */
+    /** Оверлей-чат: по умолчанию комната «Альянс» (hub), как вкладка чата в приложении. */
     fun refreshChatForOverlay() {
-        scheduleBootstrap(preferOverlayRaidRoom = true, force = false)
+        scheduleBootstrap(preferAllianceHubRoom = true, force = false)
     }
 
     private fun scheduleBootstrap(
@@ -272,7 +268,7 @@ class ChatViewModel(
                     val next = applyRoomsFromServer(raw)
                     syncRaidRoomPreference(next)
                     _state.update { it.copy(rooms = next) }
-                    reconcileStaleServerUnread(next)
+                    reconcileStaleServerUnread(next, raw)
                     reconfirmReadForVisibleRoom()
                     syncOverlayAllianceHubBadge(next)
                 }
@@ -457,7 +453,7 @@ class ChatViewModel(
                     ?: rooms.first().id
         }
         chatRoomPreferences.setSelectedRoomId(selected)
-        viewModelScope.launch { reconcileStaleServerUnread(rooms) }
+        viewModelScope.launch { reconcileStaleServerUnread(rooms, roomsRaw) }
         val cachedOverlayMessages = when {
             preferOverlayRaidRoom && raidId != null ->
                 ChatSessionCache.getFreshMessages(raidId)
@@ -606,7 +602,7 @@ class ChatViewModel(
                 rooms = st.rooms.map { room ->
                     if (room.id != roomId) room
                     else room.copy(
-                        unreadCount = (effectiveUnreadForRoom(room) + 1).coerceAtMost(999),
+                        unreadCount = (room.unreadCount + 1).coerceAtMost(999),
                     )
                 },
             )
@@ -633,11 +629,21 @@ class ChatViewModel(
         markRoomReadUpTo(roomId, newestId)
     }
 
-    /** Server unread can lag; re-push persisted read cursor for rooms that still show a badge. */
-    private suspend fun reconcileStaleServerUnread(rooms: List<ChatRoomDto>) {
-        for (room in rooms) {
-            if (effectiveUnreadForRoom(room) > 0) continue
-            if (room.unreadCount <= 0) continue
+    /**
+     * Server unread can lag; re-push read cursor only when API still reports unread
+     * but local cursor proves the room was read. Skips optimistic socket bumps
+     * (displayed > raw API count).
+     */
+    private suspend fun reconcileStaleServerUnread(
+        mergedRooms: List<ChatRoomDto>,
+        rawServerRooms: List<ChatRoomDto>,
+    ) {
+        val rawById = rawServerRooms.associateBy { it.id }
+        for (room in mergedRooms) {
+            val raw = rawById[room.id] ?: continue
+            if (effectiveUnreadForRoom(raw) > 0) continue
+            if (raw.unreadCount <= 0) continue
+            if (room.unreadCount > raw.unreadCount) continue
             val localLast = lastMarkedReadByRoom[room.id] ?: continue
             markRoomReadUpTo(room.id, localLast, forceSync = true)
         }
