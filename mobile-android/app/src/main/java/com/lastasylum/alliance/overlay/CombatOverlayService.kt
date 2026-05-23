@@ -335,6 +335,8 @@ class CombatOverlayService : Service() {
     @Volatile
     private var pendingOpenJoinInboxOnParticipants = false
     private var overlayChatTeamComposeOwner: OverlayChatComposeOwner? = null
+    /** When activity VM is gone (game-only FGS), overlay chat uses this until panel closes. */
+    private var overlayFallbackChatViewModel: ChatViewModel? = null
     /** URIs from picker if result arrived while Compose owner was torn down. */
     private var pendingOverlayPickedImageUris: List<Uri>? = null
     private var deferredHideOverlayChatTeamPanel = false
@@ -3241,15 +3243,42 @@ class CombatOverlayService : Service() {
     private fun activeOverlayChatSessionViewModel(): ChatViewModel? =
         resolveChatViewModel()
 
+    private fun ensureOverlayFallbackChatViewModel(
+        userId: String,
+        userRole: String,
+    ): ChatViewModel {
+        overlayFallbackChatViewModel?.let { return it }
+        resolveChatViewModel()?.let { return it }
+        val container = AppContainer.from(this)
+        ReadCursorSession.bind(
+            container.chatRoomPreferences,
+            container.teamForumPreferences,
+            userId,
+        )
+        return ChatViewModel(
+            application = application,
+            repository = container.chatRepository,
+            chatRoomPreferences = container.chatRoomPreferences,
+            usersRepository = container.usersRepository,
+            currentUserId = userId,
+            currentUserRole = userRole,
+        ).also { overlayFallbackChatViewModel = it }
+    }
+
     private fun finalizeOverlayChatSessionAfterClose() {
         val vm = resolveChatViewModel()
+        val clearFallback = vm != null && vm === overlayFallbackChatViewModel
         serviceScope.launch {
             vm?.awaitPendingMarkRead()
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 vm?.syncReadStateFromPreferences()
+                activityScopedChatViewModel?.syncRoomsFromServer()
                 runCatching {
                     AppContainer.from(this@CombatOverlayService).chatRepository
                         .notifyOverlayChatPanelClosed()
+                }
+                if (clearFallback) {
+                    overlayFallbackChatViewModel = null
                 }
             }
         }
@@ -3320,19 +3349,43 @@ class CombatOverlayService : Service() {
                         },
                     )
                 }
-                LaunchedEffect(userId) {
-                    if (vm != null) return@LaunchedEffect
-                    repeat(25) {
+                LaunchedEffect(userId, userRole) {
+                    if (userId.isBlank()) return@LaunchedEffect
+                    repeat(30) {
+                        resolveChatViewModel()?.let { found ->
+                            vm = found
+                            return@LaunchedEffect
+                        }
                         kotlinx.coroutines.delay(80)
-                        vm = resolveChatViewModel()
-                        if (vm != null) return@repeat
                     }
+                    vm = ensureOverlayFallbackChatViewModel(userId, userRole)
                 }
                 LaunchedEffect(vm) {
                     vm?.refreshChatForOverlay()
                     flushPendingOverlayPickedImages()
                 }
                 val chatVm = vm
+                if (userId.isBlank()) {
+                    SquadRelayTheme {
+                        Surface(
+                            modifier = Modifier.fillMaxSize(),
+                            color = MaterialTheme.colorScheme.surface,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(24.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = getString(R.string.overlay_chat_session_unavailable),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                        }
+                    }
+                    return@setContent
+                }
                 if (chatVm == null) {
                     SquadRelayTheme {
                         Surface(
@@ -3734,9 +3787,11 @@ class CombatOverlayService : Service() {
             activityScopedChatViewModel = viewModel
         }
 
-        /** Single chat session: activity ViewModel store, else registry from [SquadRelayApp]. */
+        /** Activity VM, then app registry, then overlay fallback when game runs without activity UI. */
         fun resolveChatViewModel(): ChatViewModel? =
-            activityScopedChatViewModel ?: ChatViewModelRegistry.shared
+            activityScopedChatViewModel
+                ?: ChatViewModelRegistry.shared
+                ?: runningInstance?.overlayFallbackChatViewModel
 
         /** Sync alliance hub unread badge on overlay mail chip (room «Альянс» only). */
         fun notifyAllianceHubUnread(count: Int) {
