@@ -32,3 +32,13 @@ fun effectiveUnreadCount(
     }
     return serverUnread
 }
+
+/**
+ * Keeps an optimistic on-device bump until [serverUnread] catches up (socket often arrives
+ * before [listRooms] reflects the new message).
+ */
+fun reconcileDisplayedUnread(serverUnread: Int, previouslyDisplayed: Int): Int {
+    val server = serverUnread.coerceAtLeast(0)
+    val previous = previouslyDisplayed.coerceAtLeast(0)
+    return if (server >= previous) server else previous
+}

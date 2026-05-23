@@ -147,6 +147,15 @@ class ChatRepository(
         return chatRoomPreferences.getRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }
     }
 
+    /** Id hub «Альянс» команды — общий голосовой канал для всех участников player team. */
+    suspend fun ensureTeamVoiceRoomId(): String? {
+        ChatTeamVoiceRoom.roomFromPrefs(chatRoomPreferences)?.let { return it }
+        val rooms = ChatSessionCache.getFreshRooms()
+            ?: listRooms().getOrNull()
+            ?: return null
+        return ChatTeamVoiceRoom.syncFromRooms(rooms, chatRoomPreferences)
+    }
+
     fun hubRoomIdFromPrefs(): String? =
         chatRoomPreferences.getHubRoomId()?.trim()?.takeIf { it.isNotEmpty() }
 

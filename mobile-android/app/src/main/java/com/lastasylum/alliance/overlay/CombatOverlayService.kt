@@ -76,6 +76,7 @@ import com.google.android.material.color.MaterialColors
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.isObjectIdNewer
+import com.lastasylum.alliance.data.reconcileDisplayedUnread
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
 import com.lastasylum.alliance.data.chat.ChatSessionCache
@@ -263,14 +264,42 @@ class CombatOverlayService : Service() {
     private fun canUseOverlayVoiceNow(): Boolean =
         isInGameOverlayUiActive() || overlayInGameProbeActive
 
-    /** Свежий ingame-пинг перед голосом, чтобы сервер ретранслировал кадры. */
-    private fun pingOverlayIngamePresenceForVoice() {
+    /**
+     * Голос на сервере ретранслируется только при свежем presence «ingame».
+     * Сначала дожидаемся HTTP-пинга и проверки player team, затем подключаем голос.
+     */
+    private fun postOverlayVoiceAfterIngamePing(block: () -> Unit) {
         if (!canUseOverlayVoiceNow()) return
         val container = AppContainer.from(this)
         if (!container.authRepository.hasSession()) return
-        serviceScope.launch {
+        serviceScope.launch(Dispatchers.IO) {
+            val profile = runCatching { container.usersRepository.getMyProfile().getOrNull() }
+                .getOrNull()
+            val hasTeam = !profile?.playerTeamId.isNullOrBlank()
             runCatching {
                 container.usersRepository.updatePresence(OVERLAY_PRESENCE_INGAME)
+            }
+            mainHandler.post {
+                if (!canUseOverlayVoiceNow()) return@post
+                if (!hasTeam) {
+                    Toast.makeText(
+                        this@CombatOverlayService,
+                        R.string.overlay_voice_no_team,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    return@post
+                }
+                block()
+            }
+        }
+    }
+
+    private fun runOverlayVoiceUserAction(afterStart: (VoiceChatSession) -> Unit) {
+        postOverlayVoiceAfterIngamePing {
+            overlayVoiceController.armFromUserAction()
+            startOverlayTeamVoiceIfAvailable { session ->
+                afterStart(session)
+                refreshOverlayTopRightHudState()
             }
         }
     }
@@ -849,6 +878,10 @@ class CombatOverlayService : Service() {
 
     private var hubHudRefreshPosted: Boolean = false
 
+    /** Optimistic hub badge from socket before [listRooms] / cache catch up. */
+    @Volatile
+    private var hubUnreadOptimisticFloor: Int = 0
+
     private val hubHudRefreshRunnable = Runnable {
         hubHudRefreshPosted = false
         refreshOverlayHubUnreadOnly()
@@ -887,10 +920,6 @@ class CombatOverlayService : Service() {
 
     private val gameGateRunnable = Runnable {
         runCatching { tickGameGate() }
-    }
-
-    private val overlayVoiceConnectRunnable = Runnable {
-        startOverlayVoiceIfRaidAvailable()
     }
 
     override fun onCreate() {
@@ -1502,7 +1531,7 @@ class CombatOverlayService : Service() {
         if (!isInGameOverlayUiActive()) return
         serviceScope.launch(Dispatchers.IO) {
             val unread = fetchAllianceHubUnreadCount() ?: return@launch
-            mainHandler.post { applyAllianceHubUnreadCount(unread) }
+            mainHandler.post { applyAllianceHubUnreadReconciled(unread) }
         }
     }
 
@@ -1510,7 +1539,7 @@ class CombatOverlayService : Service() {
         if (!isInGameOverlayUiActive()) return
         serviceScope.launch(Dispatchers.IO) {
             val unread = computeAllianceHubUnreadFromCache() ?: return@launch
-            mainHandler.post { applyAllianceHubUnreadCount(unread) }
+            mainHandler.post { applyAllianceHubUnreadReconciled(unread) }
         }
     }
 
@@ -1524,16 +1553,27 @@ class CombatOverlayService : Service() {
 
     /** Authoritative hub unread for overlay mail chip (cache, then listRooms). */
     private suspend fun fetchAllianceHubUnreadCount(): Int? {
-        computeAllianceHubUnreadFromCache()?.let { return it }
         val container = AppContainer.from(this@CombatOverlayService)
-        val rooms = runCatching { container.chatRepository.listRooms().getOrNull() }.getOrNull()
-            ?: return null
+        val localRead = container.chatRoomPreferences.loadAllLastReadMessageIds()
+        val cachedRooms = ChatSessionCache.getFreshRooms()
+        val cachedCount = cachedRooms?.let { rooms ->
+            val hub = ChatRoomKindResolver.allianceHubRoom(rooms) ?: return@let null
+            cachedAllianceHubRoomId = hub.id
+            OverlayGameStatusHudRefresh.allianceHubUnread(rooms, localRead)
+        }
+        val rooms = cachedRooms
+            ?: runCatching { container.chatRepository.listRooms().getOrNull() }.getOrNull()
+            ?: return cachedCount
         val hub = ChatRoomKindResolver.allianceHubRoom(rooms) ?: return 0
         cachedAllianceHubRoomId = hub.id
         ChatSessionCache.update(rooms)
         container.chatRepository.applyOverlayRoomsFromRooms(rooms)
-        val localRead = container.chatRoomPreferences.loadAllLastReadMessageIds()
-        return OverlayGameStatusHudRefresh.allianceHubUnread(rooms, localRead)
+        val networkCount = OverlayGameStatusHudRefresh.allianceHubUnread(rooms, localRead)
+        return when {
+            cachedCount == null -> networkCount
+            networkCount >= cachedCount -> networkCount
+            else -> cachedCount
+        }
     }
 
     private fun applyAllianceHubUnreadCount(count: Int) {
@@ -1545,9 +1585,30 @@ class CombatOverlayService : Service() {
         )
     }
 
+    private fun applyAllianceHubUnreadReconciled(serverCount: Int) {
+        val displayed = overlayStatusHudFlow.value.allianceChatUnread
+        val merged = reconcileDisplayedUnread(serverCount, maxOf(displayed, hubUnreadOptimisticFloor))
+        if (merged >= hubUnreadOptimisticFloor || serverCount >= hubUnreadOptimisticFloor) {
+            hubUnreadOptimisticFloor = 0
+        }
+        applyAllianceHubUnreadCount(merged)
+    }
+
+    private fun patchHubUnreadInSessionCache(unread: Int) {
+        val rooms = ChatSessionCache.getFreshRooms() ?: return
+        val hub = ChatRoomKindResolver.allianceHubRoom(rooms) ?: return
+        val clamped = unread.coerceIn(0, 999)
+        val updated = rooms.map { room ->
+            if (room.id == hub.id) room.copy(unreadCount = clamped) else room
+        }
+        ChatSessionCache.update(updated)
+    }
+
     private fun bumpAllianceHubUnreadLocally() {
         val next = (overlayStatusHudFlow.value.allianceChatUnread + 1).coerceAtMost(999)
+        hubUnreadOptimisticFloor = next
         applyAllianceHubUnreadCount(next)
+        patchHubUnreadInSessionCache(next)
     }
 
     private fun shouldBumpOverlayHubUnread(msg: ChatMessage, hubId: String): Boolean {
@@ -1623,7 +1684,9 @@ class CombatOverlayService : Service() {
         val messageId = event.messageId.trim()
         if (messageId.isBlank()) return
         AppContainer.from(this).chatRoomPreferences.setLastReadMessageId(hubId, messageId)
+        hubUnreadOptimisticFloor = 0
         applyAllianceHubUnreadCount(0)
+        patchHubUnreadInSessionCache(0)
         activityScopedChatViewModel?.let { vm ->
             mainHandler.post { vm.syncRoomsFromServer() }
         }
@@ -1711,33 +1774,18 @@ class CombatOverlayService : Service() {
 
     private fun refreshOverlayTopRightHudState() {
         val session = voiceSession
-        val prefs = AppContainer.from(this).userSettingsPreferences
-        val micOn = session?.micOn ?: prefs.isOverlayVoiceMicEnabled()
-        val soundOn = session?.soundOn ?: prefs.isOverlayVoiceSoundEnabled()
         overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
-            micOn = micOn,
-            soundOn = soundOn,
+            micOn = session?.micOn ?: false,
+            soundOn = session?.soundOn ?: false,
         )
     }
 
     private fun toggleOverlayTopRightVoiceExpanded() {
         val expanding = !overlayTopRightHudFlow.value.voiceExpanded
-        if (expanding) {
-            ensureOverlayVoiceStarted()
-            val session = voiceSession
-            if (session != null && !session.soundOn && !session.micOn) {
-                session.setSoundEnabled(true)
-            }
-        }
         overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
             voiceExpanded = expanding,
         )
         refreshOverlayTopRightHudState()
-    }
-
-    private fun collapseOverlayTopRightVoice() {
-        if (!overlayTopRightHudFlow.value.voiceExpanded) return
-        overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(voiceExpanded = false)
     }
 
     private fun openOverlayQuickCommandsFromHud() {
@@ -1755,24 +1803,27 @@ class CombatOverlayService : Service() {
             Toast.makeText(this, R.string.overlay_voice_mic_unsupported, Toast.LENGTH_SHORT).show()
             return
         }
-        ensureOverlayVoiceStarted()
-        val session = ensureVoiceSession()
-        if (!session.micOn && !session.hasRecordAudioPermission()) {
-            pendingVoiceMicEnable = true
-            requestOverlayVoiceMicPermission()
-        } else {
-            val ok = session.toggleMic()
-            if (!ok) {
-                Toast.makeText(this, R.string.overlay_voice_mic_unsupported, Toast.LENGTH_SHORT).show()
+        runOverlayVoiceUserAction { session ->
+            if (!session.micOn && !session.hasRecordAudioPermission()) {
+                pendingVoiceMicEnable = true
+                requestOverlayVoiceMicPermission()
+            } else {
+                val ok = session.toggleMic()
+                if (!ok) {
+                    Toast.makeText(
+                        this@CombatOverlayService,
+                        R.string.overlay_voice_mic_unsupported,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
             }
         }
-        refreshOverlayTopRightHudState()
     }
 
     private fun toggleOverlayVoiceSoundFromHud() {
-        ensureOverlayVoiceStarted()
-        ensureVoiceSession().toggleSound()
-        refreshOverlayTopRightHudState()
+        runOverlayVoiceUserAction { session ->
+            session.toggleSound()
+        }
     }
 
     private fun showOverlayHudPane(pane: OverlayHudPane) {
@@ -1952,37 +2003,18 @@ class CombatOverlayService : Service() {
         }
     }
 
-    private fun scheduleOverlayVoiceConnect() {
-        cancelOverlayVoiceConnectScheduled()
+    /** Микрофон и звук выключены до явного нажатия «Микрофон» / «Звук» в HUD. */
+    private fun resetOverlayVoiceForGameEntry() {
         val prefs = AppContainer.from(this).userSettingsPreferences
-        if (!overlayVoiceController.mayScheduleDeferredConnect(
-                prefs.isOverlayVoiceMicEnabled(),
-                prefs.isOverlayVoiceSoundEnabled(),
-            )
-        ) {
-            return
-        }
-        mainHandler.postDelayed(overlayVoiceConnectRunnable, OVERLAY_VOICE_CONNECT_DELAY_MS)
-    }
-
-    /** Подключить голос в рейде, если микрофон/звук уже включены в настройках при входе в игру. */
-    private fun maybeScheduleOverlayVoiceOnGameEnter() {
-        val prefs = AppContainer.from(this).userSettingsPreferences
-        if (!prefs.isOverlayVoiceMicEnabled() && !prefs.isOverlayVoiceSoundEnabled()) return
-        overlayVoiceController.armFromUserAction()
-        scheduleOverlayVoiceConnect()
-    }
-
-    private fun cancelOverlayVoiceConnectScheduled() {
-        mainHandler.removeCallbacks(overlayVoiceConnectRunnable)
-    }
-
-    private fun ensureOverlayVoiceStarted() {
-        if (!canUseOverlayVoiceNow()) return
-        overlayVoiceController.armFromUserAction()
-        cancelOverlayVoiceConnectScheduled()
-        pingOverlayIngamePresenceForVoice()
-        startOverlayVoiceIfRaidAvailable()
+        prefs.setOverlayVoiceMicEnabled(false)
+        prefs.setOverlayVoiceSoundEnabled(false)
+        overlayVoiceController.resetSession()
+        stopOverlayVoice()
+        overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
+            micOn = false,
+            soundOn = false,
+            voiceExpanded = false,
+        )
     }
 
     private fun applyGameGateState(
@@ -2045,8 +2077,9 @@ class CombatOverlayService : Service() {
         ensureOverlayIfPermitted()
         if (shouldShow && !wasInGame) {
             stableGatePollTicks = HUD_STABLE_TICKS_BEFORE_ATTACH
+            resetOverlayVoiceForGameEntry()
+            ensureOverlayRaidRealtimeIfNeeded()
             attachOverlayHudWindowsIfNeeded()
-            maybeScheduleOverlayVoiceOnGameEnter()
             mainHandler.post {
                 if (!isInGameOverlayUiActive()) return@post
                 refreshOverlayStatusHudData(force = true)
@@ -2142,7 +2175,6 @@ class CombatOverlayService : Service() {
         gateCheckInFlight = false
         mainHandler.removeCallbacks(gameGateRunnable)
         stopOverlayIngamePresence(markAway = true)
-        cancelOverlayVoiceConnectScheduled()
         runCatching { hideOverlayChatTeamPanel() }
         runCatching { overlayTicker.hideTicker() }
         runCatching { removeOverlayControl(force = true) }
@@ -2225,7 +2257,6 @@ class CombatOverlayService : Service() {
         _serviceRunning.value = false
         gateCheckInFlight = false
         mainHandler.removeCallbacks(gameGateRunnable)
-        cancelOverlayVoiceConnectScheduled()
         lastForegroundNotificationText = null
         lastForegroundMicActive = false
         overlayVoiceController.resetSession()
@@ -2811,8 +2842,9 @@ class CombatOverlayService : Service() {
             mainHandler.post {
                 val granted = i.getBooleanExtra(OverlaySystemDialogActivity.EXTRA_GRANTED, false)
                 if (granted && pendingVoiceMicEnable) {
-                    ensureVoiceSession().setMicEnabled(true)
-                    refreshOverlayTopRightHudState()
+                    runOverlayVoiceUserAction { session ->
+                        session.setMicEnabled(true)
+                    }
                 } else if (!granted) {
                     Toast.makeText(
                         this@CombatOverlayService,
@@ -3001,7 +3033,6 @@ class CombatOverlayService : Service() {
     private fun endOverlayChatSubscription() {
         mainHandler.removeCallbacks(stripZOrderLiftRunnable)
         stripZOrderLiftPosted = false
-        cancelOverlayVoiceConnectScheduled()
         stopOverlayVoice()
         unregisterVoiceMicPermissionReceiver()
         cancelStripTick()
@@ -3518,31 +3549,13 @@ class CombatOverlayService : Service() {
         }
     }
 
-    private fun startOverlayVoiceIfRaidAvailable() {
+    private fun startOverlayTeamVoiceIfAvailable(onReady: (VoiceChatSession) -> Unit) {
         if (!canUseOverlayVoiceNow()) return
-        val container = AppContainer.from(this)
         val userId = jwtSubFromAccessToken().orEmpty()
         if (userId.isBlank()) return
-        val cachedRaidId = container.chatRoomPreferences.getRaidRoomId()
-        if (cachedRaidId != null) {
-            ensureVoiceSession().start(cachedRaidId, userId)
-            refreshOverlayTopRightHudState()
-            return
-        }
-        serviceScope.launch(Dispatchers.IO) {
-            val rooms = com.lastasylum.alliance.data.chat.ChatSessionCache.getFreshRooms()
-                ?: container.chatRepository.listRooms().getOrNull()
-            rooms?.let { list ->
-                com.lastasylum.alliance.data.chat.ChatSessionCache.update(list)
-                container.chatRepository.applyOverlayRoomsFromRooms(list)
-            }
-            val raidId = container.chatRepository.ensureRaidRoomId() ?: return@launch
-            mainHandler.post {
-                if (!isServiceInstanceActive || !canUseOverlayVoiceNow()) return@post
-                ensureVoiceSession().start(raidId, userId)
-                refreshOverlayTopRightHudState()
-            }
-        }
+        val session = ensureVoiceSession()
+        session.start(com.lastasylum.alliance.data.chat.ChatTeamVoiceRoom.SOCKET_ROOM_ID, userId)
+        onReady(session)
     }
 
     private fun stopOverlayVoice() {
@@ -3661,7 +3674,11 @@ class CombatOverlayService : Service() {
         fun notifyAllianceHubUnread(count: Int) {
             val service = runningInstance ?: return
             service.mainHandler.post {
+                if (count <= 0) {
+                    service.hubUnreadOptimisticFloor = 0
+                }
                 service.applyAllianceHubUnreadCount(count)
+                service.patchHubUnreadInSessionCache(count)
             }
         }
 
@@ -3678,8 +3695,6 @@ class CombatOverlayService : Service() {
         /** FGS включён, оверлей скрыт: редкий опрос usage stats. */
         private const val GAME_GATE_POLL_IDLE_MS = 2_000L
         private const val STATUS_HUD_REFRESH_MS = 60_000L
-        /** Голос: отложенный connect, если mic/sound были включены в прошлой сессии. */
-        private const val OVERLAY_VOICE_CONNECT_DELAY_MS = 4_000L
         /** Краткий grace при ложном «не в игре» во время чата/пикера; не применяется при явном лаунчере/другом приложении. */
         private const val OVERLAY_INGAME_GRACE_MS = 2_500L
         /** Gate ticks without in-game probe before POST away (~4–10 s). */

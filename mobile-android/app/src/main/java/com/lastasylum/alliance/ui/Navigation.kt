@@ -66,6 +66,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.compose.foundation.BorderStroke
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
 import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.components.AtmosphericBackground
@@ -231,7 +232,10 @@ fun AppNavigation(
     val msgStickerSaved = stringResource(R.string.admin_sticker_saved)
     val chatState by chatViewModel.state.collectAsStateWithLifecycle()
     val chatTabUnreadTotal = remember(chatState.rooms) {
-        chatState.rooms.sumOf { it.unreadCount.coerceAtLeast(0) }.coerceAtMost(99)
+        ChatRoomKindResolver.allianceHubRoom(chatState.rooms)
+            ?.unreadCount
+            ?.coerceIn(0, 99)
+            ?: 0
     }
     Scaffold(
         modifier = modifier,

@@ -15,7 +15,7 @@ import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Orchestrates raid voice room: binary socket relay, VAD uplink, jitter playback.
+ * Orchestrates team voice (alliance hub room): binary socket relay, VAD uplink, jitter playback.
  */
 class VoiceChatSession(
     private val context: Context,
@@ -94,8 +94,8 @@ class VoiceChatSession(
             stop()
             this.roomId = rid
             this.localUserId = localUserId
-            micOn = userSettings.isOverlayVoiceMicEnabled()
-            soundOn = userSettings.isOverlayVoiceSoundEnabled()
+            micOn = false
+            soundOn = false
             socketManager.addFrameListener(frameListener)
             socketManager.addPeerListener(peerListener)
             audioPipeline.setSoundEnabled(soundOn)

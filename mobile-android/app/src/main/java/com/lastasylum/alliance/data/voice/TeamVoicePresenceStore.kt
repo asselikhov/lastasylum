@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
-/** Live mic/sound flags for raid voice peers (overlay session or roster observer). */
+/** Live mic/sound flags for team voice peers (overlay session or roster observer). */
 object TeamVoicePresenceStore {
     private val _peers = MutableStateFlow<Map<String, VoicePeerState>>(emptyMap())
     val peers: StateFlow<Map<String, VoicePeerState>> = _peers.asStateFlow()

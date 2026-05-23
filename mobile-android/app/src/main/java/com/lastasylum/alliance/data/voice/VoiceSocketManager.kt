@@ -26,7 +26,7 @@ class VoiceSocketManager {
     private val pendingUpstreamFrames = ArrayDeque<ByteArray>(8)
     /** Last toggles — included in voice:join on (re)connect so the server never stays at micOff/soundOff defaults. */
     private var lastMicOn: Boolean = false
-    private var lastSoundOn: Boolean = true
+    private var lastSoundOn: Boolean = false
 
     private val reconnectRunnable = Runnable {
         reconnectScheduled = false
@@ -58,7 +58,7 @@ class VoiceSocketManager {
         roomId: String,
         tokenProvider: () -> String?,
         initialMicOn: Boolean = false,
-        initialSoundOn: Boolean = true,
+        initialSoundOn: Boolean = false,
     ) {
         intentionalDisconnect = false
         cancelReconnect()

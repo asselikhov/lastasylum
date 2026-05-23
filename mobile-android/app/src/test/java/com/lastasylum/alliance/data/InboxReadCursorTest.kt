@@ -63,4 +63,11 @@ class InboxReadCursorTest {
             ),
         )
     }
+
+    @Test
+    fun reconcileDisplayedUnread_keepsOptimisticBumpUntilServerCatchedUp() {
+        assertEquals(1, reconcileDisplayedUnread(serverUnread = 0, previouslyDisplayed = 1))
+        assertEquals(2, reconcileDisplayedUnread(serverUnread = 2, previouslyDisplayed = 1))
+        assertEquals(0, reconcileDisplayedUnread(serverUnread = 0, previouslyDisplayed = 0))
+    }
 }

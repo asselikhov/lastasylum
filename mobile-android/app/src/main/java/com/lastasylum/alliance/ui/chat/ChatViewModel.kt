@@ -9,6 +9,7 @@ import android.os.ParcelFileDescriptor
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lastasylum.alliance.data.effectiveUnreadCount
+import com.lastasylum.alliance.data.reconcileDisplayedUnread
 import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatMessage
@@ -181,12 +182,12 @@ class ChatViewModel(
     }
 
     fun refreshChat() {
-        scheduleBootstrap(preferAllianceHubRoom = false, force = true)
+        scheduleBootstrap(preferAllianceHubRoom = true, force = true)
     }
 
     /** Splash: полный bootstrap чата до первого показа вкладок. */
     suspend fun warmUpForLaunch() {
-        bootstrap(preferAllianceHubRoom = false, force = true)
+        bootstrap(preferAllianceHubRoom = true, force = true)
     }
 
     /** Оверлей-чат: открывать комнату «Рейд», не hub и не последнюю вкладку из приложения. */
@@ -278,9 +279,18 @@ class ChatViewModel(
         }
     }
 
+    /** При входе на вкладку «Чат» — комната «Альянс», если доступна. */
+    fun ensureAllianceHubRoomSelected() {
+        val hubId = allianceHubRoomId(_state.value.rooms) ?: return
+        if (_state.value.selectedRoomId == hubId) return
+        if (_state.value.rooms.isEmpty()) return
+        selectRoom(hubId)
+    }
+
     /** Returning to the Chat tab: re-mark visible room and refresh badges without stale server counts. */
     fun onChatTabResumed() {
         viewModelScope.launch {
+            ensureAllianceHubRoomSelected()
             val roomId = _state.value.selectedRoomId
             val newestId = _state.value.messages.firstOrNull()?._id
             if (!roomId.isNullOrBlank() && !newestId.isNullOrBlank()) {
@@ -439,14 +449,11 @@ class ChatViewModel(
         syncOverlayAllianceHubBadge(rooms)
         val hubId = allianceHubRoomId(rooms)
         val raidId = allianceRaidRoomId(rooms)
-        val stored = chatRoomPreferences.getSelectedRoomId()
         val selected = when {
             preferOverlayRaidRoom && raidId != null -> raidId
-            preferAllianceHubRoom && hubId != null -> hubId
+            hubId != null -> hubId
             else ->
-                rooms.find { it.id == stored }?.id
-                    ?: hubId
-                    ?: rooms.minByOrNull { it.sortOrder }?.id
+                rooms.minByOrNull { it.sortOrder }?.id
                     ?: rooms.first().id
         }
         chatRoomPreferences.setSelectedRoomId(selected)
@@ -555,11 +562,14 @@ class ChatViewModel(
         val selected = _state.value.selectedRoomId
         val viewingSelected =
             !selected.isNullOrBlank() && _state.value.messages.isNotEmpty()
+        val previousById = _state.value.rooms.associateBy { it.id }
         return serverRooms.map { room ->
-            val unread = when {
+            val previousUnread = previousById[room.id]?.unreadCount ?: 0
+            val serverUnread = when {
                 viewingSelected && room.id == selected -> 0
                 else -> effectiveUnreadForRoom(room)
             }
+            val unread = reconcileDisplayedUnread(serverUnread, previousUnread)
             room.copy(unreadCount = unread)
         }
     }
@@ -601,6 +611,7 @@ class ChatViewModel(
                 },
             )
         }
+        ChatSessionCache.update(_state.value.rooms)
         _state.value.rooms.find { it.id == roomId }?.let { room ->
             if (ChatRoomKindResolver.isAllianceHubRoom(room)) {
                 syncOverlayAllianceHubBadge(_state.value.rooms)

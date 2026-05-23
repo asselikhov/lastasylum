@@ -586,6 +586,7 @@
     <string name="overlay_gate_no_draw_overlay">Оверлей скрыт: разрешите отображение поверх других приложений.</string>
     <string name="overlay_gate_waiting_for_game">Ожидание игры на экране…</string>
     <string name="overlay_voice_mic_unsupported">Голосовой микрофон доступен с Android 10 (API 29)</string>
+    <string name="overlay_voice_no_team">Голосовая связь доступна участникам команды (вступите в команду в приложении)</string>
     <string name="overlay_strip_messages_since">С %1$s</string>
     <string name="overlay_strip_live_now">Сейчас</string>
     <string name="overlay_strip_history_failed">Не удалось загрузить историю чата.</string>

@@ -117,7 +117,7 @@ class UserSettingsPreferences(context: Context) {
 
     /** Слышать голос союзников в рейде (оверлей). */
     fun isOverlayVoiceSoundEnabled(): Boolean =
-        prefs.getBoolean(KEY_OVERLAY_VOICE_SOUND, true)
+        prefs.getBoolean(KEY_OVERLAY_VOICE_SOUND, false)
 
     fun setOverlayVoiceSoundEnabled(value: Boolean) {
         prefs.edit().putBoolean(KEY_OVERLAY_VOICE_SOUND, value).apply()

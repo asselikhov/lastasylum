@@ -8,7 +8,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.remember
 
 /**
- * Voice peer badges in roster reflect overlay raid voice only (in-game with overlay).
+ * Voice peer badges reflect overlay team voice (in-game with overlay).
  * No passive socket join from the team screen.
  */
 @Composable

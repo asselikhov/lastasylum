@@ -25,10 +25,15 @@ import {
   VOICE_CODEC_PCM,
 } from './voice-wire.util';
 
+/** Android overlay joins with this sentinel; server maps to the player team's hub room. */
+export const TEAM_VOICE_ROOM_AUTO = 'team';
+
 const FRAME_WINDOW_MS = 1_000;
 const MAX_FRAMES_PER_WINDOW = 55;
 /** Align with overlay presence heartbeat (~60s) and Android stale window (90s). */
 const OVERLAY_INGAME_CACHE_MS = 30_000;
+/** Do not cache «not ingame» long — voice may start right after a fresh client ping. */
+const OVERLAY_INGAME_NEGATIVE_CACHE_MS = 2_000;
 
 type GatewayUser = {
   userId: string;
@@ -110,7 +115,7 @@ export class VoiceGateway {
     payload: { roomId?: string; micOn?: boolean; soundOn?: boolean },
   ) {
     const user = this.requireUser(client);
-    const roomId = this.parseRoomId(payload?.roomId);
+    const roomId = await this.resolveVoiceRoomId(user.userId, payload?.roomId);
     await this.assertMayUseVoiceRoom(user.userId, roomId);
 
     const prevRoom = client.data.voiceRoomId;
@@ -167,7 +172,7 @@ export class VoiceGateway {
     body: { roomId?: string; micOn?: boolean; soundOn?: boolean },
   ) {
     const user = this.requireUser(client);
-    const roomId = this.parseRoomId(body?.roomId);
+    const roomId = await this.resolveVoiceRoomId(user.userId, body?.roomId);
     await this.assertMayUseVoiceRoom(user.userId, roomId);
     if (client.data.voiceRoomId !== roomId) {
       throw new WsException('Join voice room before updating state');
@@ -280,7 +285,31 @@ export class VoiceGateway {
     if (!roomId) {
       throw new WsException('roomId is required');
     }
+    if (roomId === TEAM_VOICE_ROOM_AUTO) {
+      throw new WsException('Resolve team voice room before join');
+    }
     return roomId;
+  }
+
+  private async resolveVoiceRoomId(
+    userId: string,
+    requested?: string,
+  ): Promise<string> {
+    const trimmed = typeof requested === 'string' ? requested.trim() : '';
+    if (!trimmed || trimmed === TEAM_VOICE_ROOM_AUTO) {
+      const user = await this.usersService.findById(userId);
+      if (!user) {
+        throw new WsException('User not found');
+      }
+      try {
+        return await this.chatRoomsService.findTeamVoiceRoomIdForUser(user);
+      } catch {
+        throw new WsException(
+          'Voice is only available for members of a player team',
+        );
+      }
+    }
+    return this.parseRoomId(trimmed);
   }
 
   private async assertMayUseVoiceRoom(
@@ -311,8 +340,11 @@ export class VoiceGateway {
       return cached.value;
     }
     const value = await this.usersService.isOverlayIngameNow(userId);
+    const cacheMs = value
+      ? OVERLAY_INGAME_CACHE_MS
+      : OVERLAY_INGAME_NEGATIVE_CACHE_MS;
     this.overlayIngameCache.set(userId, {
-      until: now + OVERLAY_INGAME_CACHE_MS,
+      until: now + cacheMs,
       value,
     });
     return value;

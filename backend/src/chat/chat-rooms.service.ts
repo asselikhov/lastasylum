@@ -307,6 +307,30 @@ export class ChatRoomsService {
     }
   }
 
+  /**
+   * Overlay team voice: hub room for the user's player team (`pt:<teamId>`).
+   * Clients may pass the sentinel `team` on the voice socket instead of a Mongo room id.
+   */
+  async findTeamVoiceRoomIdForUser(
+    user: Pick<User, 'playerTeamId'>,
+  ): Promise<string> {
+    const teamId = user.playerTeamId?.toString().trim() ?? '';
+    if (!teamId || !Types.ObjectId.isValid(teamId)) {
+      throw new NotFoundException('Player team required for voice');
+    }
+    const allianceId = playerTeamChatAllianceId(teamId);
+    await this.ensureAllianceChatRoomsForScope(allianceId);
+    const hub = await this.roomModel
+      .findOne({ allianceId, sortOrder: 1, archivedAt: null })
+      .select('_id')
+      .lean<{ _id: Types.ObjectId }>()
+      .exec();
+    if (!hub?._id) {
+      throw new NotFoundException('Team voice channel is not available');
+    }
+    return hub._id.toString();
+  }
+
   /** Team hub (sortOrder 1): fixed title «Альянс». */
   async ensureAllianceHubRoom(allianceId: string): Promise<void> {
     const displayTitle = ALLIANCE_HUB_ROOM_TITLE;
