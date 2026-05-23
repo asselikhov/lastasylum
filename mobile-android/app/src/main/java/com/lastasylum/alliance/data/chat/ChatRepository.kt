@@ -93,7 +93,15 @@ class ChatRepository(
         onDeleteMessage: (ChatMessageDeletedEvent) -> Unit = {},
         onTyping: (ChatTypingEvent) -> Unit = {},
         onRead: (ChatRoomReadEvent) -> Unit = {},
-    ) = realtime.connectRealtimeRooms(roomIds, onMessage, onDeleteMessage, onTyping, onRead)
+        onRoomUnread: (ChatRoomUnreadEvent) -> Unit = {},
+    ) = realtime.connectRealtimeRooms(
+        roomIds,
+        onMessage,
+        onDeleteMessage,
+        onTyping,
+        onRead,
+        onRoomUnread,
+    )
 
     fun emitTypingPing(roomId: String) = realtime.emitTypingPing(roomId)
 

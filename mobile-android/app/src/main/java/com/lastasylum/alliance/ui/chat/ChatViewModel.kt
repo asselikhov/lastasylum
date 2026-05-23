@@ -19,6 +19,7 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatRepository
 import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.data.chat.ChatRoomReadEvent
+import com.lastasylum.alliance.data.chat.ChatRoomUnreadEvent
 import com.lastasylum.alliance.data.chat.ChatTypingEvent
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.chat.ChatRaidRoomSync
@@ -31,8 +32,10 @@ import com.lastasylum.alliance.data.users.UsersRepository
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -112,6 +115,7 @@ class ChatViewModel(
     private val unreadBumpedMessageIds = LinkedHashSet<String>()
     /** Realtime before listRooms — applied after [applyRoomsFromServer]. */
     private val pendingUnreadBumps = ArrayDeque<Pair<String, String>>()
+    private val markReadInFlight = CopyOnWriteArrayList<Job>()
     private var unreadSyncJob: Job? = null
     private val bootstrapMutex = Mutex()
     private var bootstrapJob: Job? = null
@@ -253,6 +257,11 @@ class ChatViewModel(
         _state.update { it.copy(rooms = adjusted) }
         ChatSessionCache.update(adjusted)
         syncOverlayAllianceHubBadge(adjusted)
+    }
+
+    /** Overlay panel closed — wait for in-flight mark-read before releasing shared VM state. */
+    suspend fun awaitPendingMarkRead() {
+        markReadInFlight.toList().joinAll()
     }
 
     private fun scheduleBootstrap(
@@ -737,31 +746,69 @@ class ChatViewModel(
         if (roomId.isBlank() || messageId.isBlank()) return
         val prev = lastMarkedReadByRoom[roomId]
         if (!forceSync && prev != null && !isObjectIdNewer(messageId, prev)) return
-        mergeReadCursor(roomId, messageId)
-        ChatSessionCache.patchRoomRead(roomId, messageId)
+        val job = viewModelScope.launch {
+            mergeReadCursor(roomId, messageId)
+            ChatSessionCache.patchRoomRead(roomId, messageId)
+            _state.update { st ->
+                st.copy(rooms = clearUnreadForRoom(st.rooms, roomId))
+            }
+            ChatSessionCache.update(_state.value.rooms)
+            if (ChatRoomKindResolver.allianceHubRoom(_state.value.rooms)?.id == roomId) {
+                CombatOverlayService.notifyAllianceHubUnread(0)
+            }
+            repository.markRoomRead(roomId, messageId)
+                .onSuccess { response ->
+                    mergeReadCursor(roomId, messageId)
+                    ChatSessionCache.invalidateRooms()
+                    if (response.unreadCount <= 0) {
+                        _state.update { st ->
+                            st.copy(rooms = clearUnreadForRoom(st.rooms, roomId))
+                        }
+                        ChatSessionCache.update(_state.value.rooms)
+                        if (ChatRoomKindResolver.allianceHubRoom(_state.value.rooms)?.id == roomId) {
+                            CombatOverlayService.notifyAllianceHubUnread(0)
+                        }
+                    } else {
+                        scheduleUnreadSyncFromServer()
+                    }
+                }
+        }
+        markReadInFlight.add(job)
+        try {
+            job.join()
+        } finally {
+            markReadInFlight.remove(job)
+        }
+    }
+
+    private fun onRoomUnreadFromServer(event: ChatRoomUnreadEvent) {
+        val roomId = event.roomId.trim()
+        if (roomId.isBlank()) return
+        if (_state.value.rooms.none { it.id == roomId }) {
+            scheduleUnreadSyncFromServer()
+            return
+        }
+        val serverLast = event.lastReadMessageId?.trim().orEmpty()
+        if (serverLast.isNotBlank()) {
+            mergeReadCursor(roomId, serverLast)
+        }
         _state.update { st ->
-            st.copy(rooms = clearUnreadForRoom(st.rooms, roomId))
-        }
-        ChatSessionCache.update(_state.value.rooms)
-        if (ChatRoomKindResolver.allianceHubRoom(_state.value.rooms)?.id == roomId) {
-            CombatOverlayService.notifyAllianceHubUnread(0)
-        }
-        repository.markRoomRead(roomId, messageId)
-            .onSuccess { response ->
-                mergeReadCursor(roomId, messageId)
-                ChatSessionCache.invalidateRooms()
-                if (response.unreadCount <= 0) {
-                    _state.update { st ->
-                        st.copy(rooms = clearUnreadForRoom(st.rooms, roomId))
-                    }
-                    ChatSessionCache.update(_state.value.rooms)
-                    if (ChatRoomKindResolver.allianceHubRoom(_state.value.rooms)?.id == roomId) {
-                        CombatOverlayService.notifyAllianceHubUnread(0)
-                    }
-                } else {
-                    scheduleUnreadSyncFromServer()
+            val rooms = st.rooms.map { room ->
+                if (room.id != roomId) room
+                else {
+                    val merged = room.copy(
+                        unreadCount = event.unreadCount.coerceAtLeast(0),
+                        lastReadMessageId = serverLast.takeIf { s -> s.isNotBlank() }
+                            ?: room.lastReadMessageId,
+                    )
+                    val effective = effectiveUnreadForRoom(merged)
+                    merged.copy(unreadCount = effective)
                 }
             }
+            st.copy(rooms = rooms)
+        }
+        ChatSessionCache.update(_state.value.rooms)
+        syncOverlayAllianceHubBadge()
     }
 
     private fun reconnectRealtimeIfNeeded() {
@@ -774,6 +821,7 @@ class ChatViewModel(
             onDeleteMessage = ::onDeletedMessage,
             onTyping = ::onTypingFromPeer,
             onRead = ::onRoomReadEvent,
+            onRoomUnread = ::onRoomUnreadFromServer,
         )
     }
 
@@ -840,6 +888,7 @@ class ChatViewModel(
             onDeleteMessage = ::onDeletedMessage,
             onTyping = ::onTypingFromPeer,
             onRead = ::onRoomReadEvent,
+            onRoomUnread = ::onRoomUnreadFromServer,
         )
         val cached = roomMessageCache[roomId]
         if (hadCachedMessages && cached != null && cached.messages.isNotEmpty()) {

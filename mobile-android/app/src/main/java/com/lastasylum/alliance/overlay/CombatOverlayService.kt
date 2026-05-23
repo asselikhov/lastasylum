@@ -52,6 +52,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -65,6 +66,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -92,6 +94,7 @@ import com.lastasylum.alliance.overlay.layout.OverlayLayoutDp
 import com.lastasylum.alliance.ui.screens.ChatScreen
 import com.lastasylum.alliance.ui.screens.TeamMainSection
 import com.lastasylum.alliance.ui.screens.TeamScreen
+import com.lastasylum.alliance.di.ChatViewModelRegistry
 import com.lastasylum.alliance.ui.chat.ChatViewModel
 import com.lastasylum.alliance.ui.theme.SquadRelayTheme
 import com.lastasylum.alliance.ui.util.toUserMessageRu
@@ -332,7 +335,6 @@ class CombatOverlayService : Service() {
     @Volatile
     private var pendingOpenJoinInboxOnParticipants = false
     private var overlayChatTeamComposeOwner: OverlayChatComposeOwner? = null
-    private var overlayChatViewModel: ChatViewModel? = null
     /** URIs from picker if result arrived while Compose owner was torn down. */
     private var pendingOverlayPickedImageUris: List<Uri>? = null
     private var deferredHideOverlayChatTeamPanel = false
@@ -508,7 +510,7 @@ class CombatOverlayService : Service() {
      */
     private fun applyOverlayPickedUris(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        val vm = overlayChatViewModel
+        val vm = resolveChatViewModel()
         if (vm != null) {
             vm.onImagesPicked(uris)
             pendingOverlayPickedImageUris = null
@@ -569,7 +571,7 @@ class CombatOverlayService : Service() {
     private fun flushPendingOverlayPickedImages() {
         val pending = pendingOverlayPickedImageUris ?: return
         pendingOverlayPickedImageUris = null
-        overlayChatViewModel?.onImagesPicked(pending)
+        resolveChatViewModel()?.onImagesPicked(pending)
     }
 
     private fun intentForOverlayGalleryPermissionResults(): Intent {
@@ -1646,12 +1648,8 @@ class CombatOverlayService : Service() {
             return
         }
         if (shouldBumpOverlayHubUnread(msg, hubId)) {
-            val activityVm = activityScopedChatViewModel
-            if (activityVm != null) {
-                activityVm.recordRealtimeUnreadHint(msg)
-            } else {
-                bumpAllianceHubUnreadLocally(msg._id)
-            }
+            resolveChatViewModel()?.recordRealtimeUnreadHint(msg)
+                ?: bumpAllianceHubUnreadLocally(msg._id)
         }
         scheduleDebouncedHubHudRefresh()
     }
@@ -3166,12 +3164,9 @@ class CombatOverlayService : Service() {
         }
         overlayChatTeamRoot = null
         overlayChatTeamParams = null
-        overlayChatViewModel?.syncReadStateFromPreferences()
-        activityScopedChatViewModel?.syncReadStateFromPreferences()
-        overlayChatViewModel = null
         pendingOverlayPickedImageUris = null
         deferredHideOverlayChatTeamPanel = false
-        runCatching { AppContainer.from(this).chatRepository.notifyOverlayChatPanelClosed() }
+        finalizeOverlayChatSessionAfterClose()
         runCatching { unregisterReceiver(overlaySystemResultReceiver) }
         overlayChatTeamComposeOwner?.destroy()
         overlayChatTeamComposeOwner = null
@@ -3241,8 +3236,24 @@ class CombatOverlayService : Service() {
 
     private fun rebalanceOverlayChatStripZOrder() = requestChatStripZOrderLift()
 
+    private fun resolveChatViewModel(): ChatViewModel? = Companion.resolveChatViewModel()
+
     private fun activeOverlayChatSessionViewModel(): ChatViewModel? =
-        activityScopedChatViewModel ?: overlayChatViewModel
+        resolveChatViewModel()
+
+    private fun finalizeOverlayChatSessionAfterClose() {
+        val vm = resolveChatViewModel()
+        serviceScope.launch {
+            vm?.awaitPendingMarkRead()
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                vm?.syncReadStateFromPreferences()
+                runCatching {
+                    AppContainer.from(this@CombatOverlayService).chatRepository
+                        .notifyOverlayChatPanelClosed()
+                }
+            }
+        }
+    }
 
     private fun refreshOverlayChatSession() {
         activeOverlayChatSessionViewModel()?.refreshChatForOverlay()
@@ -3296,34 +3307,54 @@ class CombatOverlayService : Service() {
                 val userId = remember { jwtSubFromAccessToken().orEmpty() }
                 val userRole = remember { jwtRoleFromAccessToken() }
                 var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab) }
-                val vm = remember(userId, userRole) {
-                    if (userId.isNotBlank()) {
-                        ReadCursorSession.bind(
-                            container.chatRoomPreferences,
-                            container.teamForumPreferences,
-                            userId,
-                        )
+                var vm by remember(userId, userRole) {
+                    mutableStateOf(
+                        run {
+                            if (userId.isNotBlank()) {
+                                ReadCursorSession.bind(
+                                    container.chatRoomPreferences,
+                                    container.teamForumPreferences,
+                                    userId,
+                                )
+                            }
+                            resolveChatViewModel()
+                        },
+                    )
+                }
+                LaunchedEffect(userId) {
+                    if (vm != null) return@LaunchedEffect
+                    repeat(25) {
+                        kotlinx.coroutines.delay(80)
+                        vm = resolveChatViewModel()
+                        if (vm != null) return@repeat
                     }
-                    activityScopedChatViewModel
-                        ?: overlayChatViewModel
-                        ?: ChatViewModel(
-                            application = app,
-                            repository = container.chatRepository,
-                            chatRoomPreferences = container.chatRoomPreferences,
-                            usersRepository = container.usersRepository,
-                            currentUserId = userId,
-                            currentUserRole = userRole,
-                        ).also { overlayChatViewModel = it }
                 }
                 LaunchedEffect(vm) {
-                    vm.refreshChatForOverlay()
+                    vm?.refreshChatForOverlay()
                     flushPendingOverlayPickedImages()
                 }
-                val chatState by vm.state.collectAsStateWithLifecycle(owner)
-                val draftMessage by vm.draftMessage.collectAsStateWithLifecycle(owner)
-                val pickedImageUris by vm.pickedImageUris.collectAsStateWithLifecycle(owner)
-                val typingPeers by vm.typingPeers.collectAsStateWithLifecycle(owner)
-                val otherReadUptoMessageId by vm.otherReadUptoMessageId.collectAsStateWithLifecycle(owner)
+                val chatVm = vm
+                if (chatVm == null) {
+                    SquadRelayTheme {
+                        Surface(
+                            modifier = Modifier.fillMaxSize(),
+                            color = MaterialTheme.colorScheme.surface,
+                        ) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                CircularProgressIndicator()
+                            }
+                        }
+                    }
+                    return@setContent
+                }
+                val chatState by chatVm.state.collectAsStateWithLifecycle(owner)
+                val draftMessage by chatVm.draftMessage.collectAsStateWithLifecycle(owner)
+                val pickedImageUris by chatVm.pickedImageUris.collectAsStateWithLifecycle(owner)
+                val typingPeers by chatVm.typingPeers.collectAsStateWithLifecycle(owner)
+                val otherReadUptoMessageId by chatVm.otherReadUptoMessageId.collectAsStateWithLifecycle(owner)
 
                 CompositionLocalProvider(
                     LocalActivityResultRegistryOwner provides owner,
@@ -3409,7 +3440,7 @@ class CombatOverlayService : Service() {
                                             draftMessage = draftMessage,
                                             pickedImageUris = pickedImageUris,
                                             otherReadUptoMessageId = otherReadUptoMessageId,
-                                            vm = vm,
+                                            vm = chatVm,
                                         )
                                         OverlayHudPane.News -> {
                                             OverlayTeamNewsPanel(
@@ -3446,7 +3477,7 @@ class CombatOverlayService : Service() {
                                             draftMessage = draftMessage,
                                             pickedImageUris = pickedImageUris,
                                             otherReadUptoMessageId = otherReadUptoMessageId,
-                                            vm = vm,
+                                            vm = chatVm,
                                         )
                                         1 -> {
                                             TeamScreen(
@@ -3703,6 +3734,10 @@ class CombatOverlayService : Service() {
         fun bindActivityChatViewModel(viewModel: ChatViewModel?) {
             activityScopedChatViewModel = viewModel
         }
+
+        /** Single chat session: activity ViewModel store, else registry from [SquadRelayApp]. */
+        fun resolveChatViewModel(): ChatViewModel? =
+            activityScopedChatViewModel ?: ChatViewModelRegistry.shared
 
         /** Sync alliance hub unread badge on overlay mail chip (room «Альянс» only). */
         fun notifyAllianceHubUnread(count: Int) {

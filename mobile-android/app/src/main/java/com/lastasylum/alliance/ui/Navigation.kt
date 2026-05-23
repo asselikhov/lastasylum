@@ -73,6 +73,7 @@ import com.lastasylum.alliance.ui.components.AtmosphericBackground
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import android.content.Intent
 import com.lastasylum.alliance.MainActivity
+import com.lastasylum.alliance.di.ChatViewModelRegistry
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.push.FcmTokenManager
 import kotlinx.coroutines.Dispatchers
@@ -125,8 +126,12 @@ fun AppNavigation(
     }
 
     DisposableEffect(chatViewModel) {
+        ChatViewModelRegistry.bind(chatViewModel)
         CombatOverlayService.bindActivityChatViewModel(chatViewModel)
         onDispose {
+            if (ChatViewModelRegistry.shared === chatViewModel) {
+                ChatViewModelRegistry.bind(null)
+            }
             if (CombatOverlayService.activityScopedChatViewModel === chatViewModel) {
                 CombatOverlayService.bindActivityChatViewModel(null)
             }

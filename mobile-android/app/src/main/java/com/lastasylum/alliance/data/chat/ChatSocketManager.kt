@@ -22,6 +22,7 @@ class ChatSocketManager {
         CopyOnWriteArrayList<(ChatMessageDeletedEvent) -> Unit>()
     private val typingListeners = CopyOnWriteArrayList<(ChatTypingEvent) -> Unit>()
     private val readListeners = CopyOnWriteArrayList<(ChatRoomReadEvent) -> Unit>()
+    private val roomUnreadListeners = CopyOnWriteArrayList<(ChatRoomUnreadEvent) -> Unit>()
     private val overlayReactionListeners =
         CopyOnWriteArrayList<(OverlayReactionEvent) -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -83,6 +84,16 @@ class ChatSocketManager {
 
     fun removeReadListener(listener: (ChatRoomReadEvent) -> Unit) {
         readListeners.remove(listener)
+    }
+
+    fun addRoomUnreadListener(listener: (ChatRoomUnreadEvent) -> Unit) {
+        if (!roomUnreadListeners.contains(listener)) {
+            roomUnreadListeners.add(listener)
+        }
+    }
+
+    fun removeRoomUnreadListener(listener: (ChatRoomUnreadEvent) -> Unit) {
+        roomUnreadListeners.remove(listener)
     }
 
     fun addOverlayReactionListener(listener: (OverlayReactionEvent) -> Unit) {
@@ -356,6 +367,18 @@ class ChatSocketManager {
                     )
                     if (event.userId.isBlank() || event.messageId.isBlank()) return@on
                     readListeners.forEach { l -> runCatching { l(event) } }
+                }
+                on("rooms:unread") { args ->
+                    val payload = args.firstOrNull() as? JSONObject ?: return@on
+                    val rid = payload.optString("roomId", "")
+                    if (rid.isBlank()) return@on
+                    val event = ChatRoomUnreadEvent(
+                        roomId = rid,
+                        unreadCount = payload.optInt("unreadCount", 0).coerceAtLeast(0),
+                        lastReadMessageId = payload.optString("lastReadMessageId")
+                            .takeIf { it.isNotBlank() },
+                    )
+                    roomUnreadListeners.forEach { l -> runCatching { l(event) } }
                 }
                 on("overlay:reaction") { args ->
                     val payload = args.firstOrNull() as? JSONObject ?: return@on

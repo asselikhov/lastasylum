@@ -18,6 +18,7 @@ class ChatRealtimeSubscriber(
     private var realtimeDeleteListener: ((ChatMessageDeletedEvent) -> Unit)? = null
     private var realtimeTypingListener: ((ChatTypingEvent) -> Unit)? = null
     private var realtimeReadListener: ((ChatRoomReadEvent) -> Unit)? = null
+    private var realtimeRoomUnreadListener: ((ChatRoomUnreadEvent) -> Unit)? = null
     private val overlayMessageListeners =
         java.util.concurrent.CopyOnWriteArrayList<(ChatMessage) -> Unit>()
     private val overlayReactionListeners =
@@ -62,6 +63,7 @@ class ChatRealtimeSubscriber(
         onDeleteMessage: (ChatMessageDeletedEvent) -> Unit = {},
         onTyping: (ChatTypingEvent) -> Unit = {},
         onRead: (ChatRoomReadEvent) -> Unit = {},
+        onRoomUnread: (ChatRoomUnreadEvent) -> Unit = {},
     ) {
         connectRealtimeRooms(
             roomIds = realtimeRoomIdsForPrimary(roomId),
@@ -69,6 +71,7 @@ class ChatRealtimeSubscriber(
             onDeleteMessage = onDeleteMessage,
             onTyping = onTyping,
             onRead = onRead,
+            onRoomUnread = onRoomUnread,
         )
     }
 
@@ -78,19 +81,23 @@ class ChatRealtimeSubscriber(
         onDeleteMessage: (ChatMessageDeletedEvent) -> Unit = {},
         onTyping: (ChatTypingEvent) -> Unit = {},
         onRead: (ChatRoomReadEvent) -> Unit = {},
+        onRoomUnread: (ChatRoomUnreadEvent) -> Unit = {},
     ) {
         realtimeUiListener?.let { socketManager.removeMessageListener(it) }
         realtimeDeleteListener?.let { socketManager.removeMessageDeletedListener(it) }
         realtimeTypingListener?.let { socketManager.removeTypingListener(it) }
         realtimeReadListener?.let { socketManager.removeReadListener(it) }
+        realtimeRoomUnreadListener?.let { socketManager.removeRoomUnreadListener(it) }
         realtimeUiListener = onMessage
         realtimeDeleteListener = onDeleteMessage
         realtimeTypingListener = onTyping
         realtimeReadListener = onRead
+        realtimeRoomUnreadListener = onRoomUnread
         socketManager.addMessageListener(onMessage)
         socketManager.addMessageDeletedListener(onDeleteMessage)
         socketManager.addTypingListener(onTyping)
         socketManager.addReadListener(onRead)
+        socketManager.addRoomUnreadListener(onRoomUnread)
         primaryRealtimeRoomIds.clear()
         primaryRealtimeRoomIds.addAll(roomIds.map { it.trim() }.filter { it.isNotEmpty() })
         ensureRealtimeSocketConnected()
@@ -141,10 +148,12 @@ class ChatRealtimeSubscriber(
         realtimeDeleteListener?.let { socketManager.removeMessageDeletedListener(it) }
         realtimeTypingListener?.let { socketManager.removeTypingListener(it) }
         realtimeReadListener?.let { socketManager.removeReadListener(it) }
+        realtimeRoomUnreadListener?.let { socketManager.removeRoomUnreadListener(it) }
         realtimeUiListener = null
         realtimeDeleteListener = null
         realtimeTypingListener = null
         realtimeReadListener = null
+        realtimeRoomUnreadListener = null
         primaryRealtimeRoomIds.clear()
         if (overlayRealtimeRoomIds.isEmpty()) {
             socketManager.disconnect()

@@ -94,6 +94,13 @@ data class MarkRoomReadResponse(
     val unreadCount: Int = 0,
 )
 
+/** Server push after message:new / markRoomRead (personal user socket room). */
+data class ChatRoomUnreadEvent(
+    val roomId: String,
+    val unreadCount: Int = 0,
+    val lastReadMessageId: String? = null,
+)
+
 data class UploadChatAttachmentResponse(
     val fileId: String,
     val url: String,

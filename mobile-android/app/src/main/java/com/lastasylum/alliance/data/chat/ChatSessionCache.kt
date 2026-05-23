@@ -4,7 +4,7 @@ package com.lastasylum.alliance.data.chat
  * Short-lived cache so overlay chat and HUD can avoid duplicate network round-trips.
  */
 object ChatSessionCache {
-    private const val ROOMS_TTL_MS = 90_000L
+    private const val ROOMS_TTL_MS = 45_000L
     private const val MESSAGES_TTL_MS = 45_000L
 
     @Volatile

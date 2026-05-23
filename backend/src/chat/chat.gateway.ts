@@ -180,7 +180,9 @@ export class ChatGateway {
       author: client.data.user,
     });
 
-    this.broadcastNewMessage(payload.roomId.trim(), message);
+    const roomId = payload.roomId.trim();
+    this.broadcastNewMessage(roomId, message);
+    void this.emitUnreadSnapshotsForRoom(roomId, client.data.user.userId);
     return { event: 'message:sent', data: message };
   }
 
@@ -399,6 +401,35 @@ export class ChatGateway {
 
   broadcastNewMessage(roomId: string, message: unknown) {
     this.server?.to(`chat:${roomId}`).emit('message:new', message);
+  }
+
+  /** Per-user unread snapshot (personal `user:` socket room). */
+  async emitUnreadToUser(userId: string, roomId: string): Promise<void> {
+    const uid = userId?.trim();
+    const rid = roomId?.trim();
+    if (!uid || !rid) return;
+    const unreadMap = await this.chatService.countUnreadByRoomIds(uid, [rid]);
+    const lastReadMap =
+      await this.chatService.getLastReadMessageIdsByRoomIds(uid, [rid]);
+    this.server?.to(`user:${uid}`).emit('rooms:unread', {
+      roomId: rid,
+      unreadCount: unreadMap.get(rid) ?? 0,
+      lastReadMessageId: lastReadMap.get(rid) ?? null,
+    });
+  }
+
+  private async emitUnreadSnapshotsForRoom(
+    roomId: string,
+    excludeUserId: string,
+  ): Promise<void> {
+    const adapterRoom = this.server?.adapter.rooms.get(`chat:${roomId}`);
+    if (!adapterRoom) return;
+    for (const socketId of adapterRoom) {
+      const client = this.server.sockets.get(socketId) as AuthSocket | undefined;
+      const userId = client?.data?.user?.userId;
+      if (!userId || userId === excludeUserId) continue;
+      await this.emitUnreadToUser(userId, roomId);
+    }
   }
 
   broadcastMessageDeleted(roomId: string, payload: unknown) {
