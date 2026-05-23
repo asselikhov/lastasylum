@@ -137,6 +137,11 @@ class VoiceChatSession(
     fun setMicEnabled(enabled: Boolean): Boolean {
         if (enabled && !hasRecordAudioPermission()) return false
         if (enabled && Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
+        if (enabled && !soundOn) {
+            soundOn = true
+            userSettings.setOverlayVoiceSoundEnabled(true)
+            audioPipeline.setSoundEnabled(true)
+        }
         micOn = enabled
         userSettings.setOverlayVoiceMicEnabled(enabled)
         onMicForegroundChanged(micOn)
@@ -157,9 +162,10 @@ class VoiceChatSession(
 
     private fun publishVoiceStateToServer() {
         val publish = {
-            socketManager.emitState(micOn, soundOn)
-            applyMicCapture()
-            notifyState()
+            socketManager.emitState(micOn, soundOn) {
+                applyMicCapture()
+                notifyState()
+            }
         }
         if (socketManager.isVoiceJoined()) {
             publish()
@@ -186,7 +192,7 @@ class VoiceChatSession(
         ) == PackageManager.PERMISSION_GRANTED
 
     private fun applyMicCapture() {
-        if (micOn && hasRecordAudioPermission()) {
+        if (micOn && hasRecordAudioPermission() && socketManager.isVoiceJoined()) {
             audioPipeline.startCapture()
         } else {
             audioPipeline.stopCapture()

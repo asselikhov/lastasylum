@@ -30,7 +30,7 @@ class TeamForumPreferences(context: Context) {
     }
 
     fun loadAllLastReadMessageIds(teamId: String): Map<String, String> {
-        if (teamId.isBlank()) return emptyMap()
+        if (teamId.isBlank() || activeUserId.isNullOrBlank()) return emptyMap()
         val prefix = keyPrefix(teamId)
         return prefs.all
             .mapNotNull { (k, v) ->

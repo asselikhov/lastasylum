@@ -12,6 +12,7 @@ import com.lastasylum.alliance.data.auth.RegisterResult
 import com.lastasylum.alliance.data.auth.TokenStore
 import com.lastasylum.alliance.data.teams.TeamForumPreferences
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
+import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.push.FcmTokenManager
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.CancellationException
@@ -29,6 +30,7 @@ class AuthViewModel(
     private val authRepository: AuthRepository,
     private val chatRoomPreferences: ChatRoomPreferences,
     private val teamForumPreferences: TeamForumPreferences,
+    private val userSettingsPreferences: UserSettingsPreferences,
 ) : AndroidViewModel(application) {
     private val _state = MutableStateFlow(AuthState(isCheckingStoredSession = true))
     val state: StateFlow<AuthState> = _state.asStateFlow()
@@ -64,7 +66,12 @@ class AuthViewModel(
     }
 
     private fun bindReadCursors(userId: String) {
-        ReadCursorSession.bind(chatRoomPreferences, teamForumPreferences, userId)
+        ReadCursorSession.bind(
+            chatRoomPreferences,
+            teamForumPreferences,
+            userSettingsPreferences,
+            userId,
+        )
     }
 
     fun login(email: String, password: String) {

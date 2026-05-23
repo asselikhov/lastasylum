@@ -1,8 +1,8 @@
 package com.lastasylum.alliance.data.chat
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.lastasylum.alliance.data.displayedUnreadCount
 import com.lastasylum.alliance.data.effectiveUnreadCount
-import com.lastasylum.alliance.data.reconcileDisplayedUnread
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -14,7 +14,7 @@ import org.junit.runner.RunWith
 class ChatUnreadBadgeInstrumentedTest {
     @Test
     fun tabBadgeTotal_emptyRooms() {
-        assertEquals(0, ChatUnreadCounts.tabBadgeTotal(emptyList(), emptyMap()))
+        assertEquals(0, ChatUnreadCounts.tabBadgeTotal(emptyList()))
     }
 
     @Test
@@ -31,7 +31,13 @@ class ChatUnreadBadgeInstrumentedTest {
 
     @Test
     fun overlayClear_mustNotUseReconcileToKeepStaleBadge() {
-        assertEquals(5, reconcileDisplayedUnread(serverUnread = 0, previouslyDisplayed = 5))
-        assertEquals(0, 0)
+        assertEquals(
+            0,
+            displayedUnreadCount(
+                effectiveUnread = 0,
+                previouslyDisplayed = 5,
+                rawServerUnread = 2,
+            ),
+        )
     }
 }

@@ -137,6 +137,7 @@ fun TeamScreen(
             usersRepository,
             teamsRepository,
             AppContainer.from(context).userSettingsPreferences,
+            AppContainer.from(context).teamForumPreferences,
         ),
     )
     val teamData by teamViewModel.data.collectAsStateWithLifecycle()

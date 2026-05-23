@@ -25,6 +25,11 @@ class VoiceSocketManager {
     @Volatile
     private var voiceJoined = false
     private val joinedCallbacks = CopyOnWriteArrayList<() -> Unit>()
+    private val joinFailedCallbacks = CopyOnWriteArrayList<(String) -> Unit>()
+    private val stateAckCallbacks = CopyOnWriteArrayList<() -> Unit>()
+    private var joinTimeoutRunnable: Runnable? = null
+    @Volatile
+    private var joinFailedListener: ((String) -> Unit)? = null
     private val pendingUpstreamFrames = ArrayDeque<ByteArray>(8)
     /** Last toggles — included in voice:join on (re)connect so the server never stays at micOff/soundOff defaults. */
     private var lastMicOn: Boolean = false
@@ -64,6 +69,19 @@ class VoiceSocketManager {
             return
         }
         joinedCallbacks.add(block)
+        scheduleJoinTimeout()
+    }
+
+    fun setJoinFailedListener(listener: ((String) -> Unit)?) {
+        joinFailedListener = listener
+    }
+
+    fun addJoinFailedListener(listener: (String) -> Unit) {
+        if (!joinFailedCallbacks.contains(listener)) joinFailedCallbacks.add(listener)
+    }
+
+    fun removeJoinFailedListener(listener: (String) -> Unit) {
+        joinFailedCallbacks.remove(listener)
     }
 
     fun connect(
@@ -95,17 +113,28 @@ class VoiceSocketManager {
         openSocket(base, token, rid)
     }
 
-    fun emitState(micOn: Boolean, soundOn: Boolean) {
+    fun emitState(micOn: Boolean, soundOn: Boolean, onAck: (() -> Unit)? = null) {
         lastMicOn = micOn
         lastSoundOn = soundOn
         val rid = roomId ?: return
-        socket?.emit(
-            "voice:state",
-            JSONObject()
-                .put("roomId", rid)
-                .put("micOn", micOn)
-                .put("soundOn", soundOn),
-        )
+        val payload = JSONObject()
+            .put("roomId", rid)
+            .put("micOn", micOn)
+            .put("soundOn", soundOn)
+        val sock = socket ?: return
+        if (onAck != null) {
+            sock.emit(
+                "voice:state",
+                payload,
+                Ack { args ->
+                    if (!isVoiceErrorPayload(args)) {
+                        mainHandler.post { onAck() }
+                    }
+                },
+            )
+        } else {
+            sock.emit("voice:state", payload)
+        }
     }
 
     fun emitFrame(codec: String, payload: ByteArray) {
@@ -203,6 +232,14 @@ class VoiceSocketManager {
                     val peer = payload.optJSONObject("peer")?.toPeerState() ?: return@on
                     dispatchPeer(VoicePeerEvent.State(peer))
                 }
+                on("voice:state-ack") {
+                    mainHandler.post {
+                        stateAckCallbacks.forEach { callback ->
+                            runCatching { callback() }
+                        }
+                        stateAckCallbacks.clear()
+                    }
+                }
                 on("voice:frame") { args ->
                     val bytes = VoiceWire.asByteArray(args.firstOrNull()) ?: return@on
                     val event = VoiceWire.unpackDownstream(bytes) ?: return@on
@@ -232,7 +269,17 @@ class VoiceSocketManager {
     }
 
     private fun onVoiceJoinedPayload(args: Array<out Any>) {
+        if (isVoiceErrorPayload(args)) {
+            failJoin(extractVoiceErrorMessage(args) ?: "Voice join failed")
+            return
+        }
+        val payload = extractVoiceJoinedData(args)
+        if (payload == null || payload.optString("roomId", "").trim().isBlank()) {
+            failJoin("Invalid voice join response")
+            return
+        }
         if (!voiceJoined) {
+            cancelJoinTimeout()
             voiceJoined = true
             flushPendingUpstreamFrames()
             emitState(lastMicOn, lastSoundOn)
@@ -243,12 +290,58 @@ class VoiceSocketManager {
                 joinedCallbacks.clear()
             }
         }
-        val payload = extractVoiceJoinedData(args) ?: return
         val peers = payload.optJSONArray("peers") ?: return
         for (i in 0 until peers.length()) {
             val peer = peers.optJSONObject(i) ?: continue
             dispatchPeer(VoicePeerEvent.Joined(peer.toPeerState()))
         }
+    }
+
+    private fun scheduleJoinTimeout() {
+        cancelJoinTimeout()
+        joinTimeoutRunnable = Runnable {
+            if (!voiceJoined) {
+                failJoin("Voice join timed out")
+            }
+        }
+        mainHandler.postDelayed(joinTimeoutRunnable!!, JOIN_TIMEOUT_MS)
+    }
+
+    private fun cancelJoinTimeout() {
+        joinTimeoutRunnable?.let { mainHandler.removeCallbacks(it) }
+        joinTimeoutRunnable = null
+    }
+
+    private fun failJoin(reason: String) {
+        if (voiceJoined) return
+        cancelJoinTimeout()
+        Log.w(TAG, reason)
+        joinedCallbacks.clear()
+        joinFailedListener?.let { mainHandler.post { it(reason) } }
+        joinFailedCallbacks.forEach { listener ->
+            mainHandler.post { runCatching { listener(reason) } }
+        }
+    }
+
+    private fun isVoiceErrorPayload(args: Array<out Any>): Boolean {
+        val first = args.firstOrNull() ?: return false
+        if (first is JSONObject) {
+            if (first.has("statusCode") || first.has("message")) return true
+            if (first.optString("event") == "exception") return true
+        }
+        return first is String && first.isNotBlank()
+    }
+
+    private fun extractVoiceErrorMessage(args: Array<out Any>): String? {
+        val first = args.firstOrNull() ?: return null
+        when (first) {
+            is JSONObject -> {
+                first.optString("message").trim().takeIf { it.isNotEmpty() }?.let { return it }
+                first.optString("error").trim().takeIf { it.isNotEmpty() }?.let { return it }
+            }
+            is String -> return first.trim().takeIf { it.isNotEmpty() }
+        }
+        return null
     }
 
     /** Nest may deliver join via Socket.IO ack and/or explicit `voice:joined` emit. */
@@ -275,8 +368,10 @@ class VoiceSocketManager {
 
     private fun disconnectSocket() {
         disconnectSocketOnly()
+        cancelJoinTimeout()
         voiceJoined = false
         joinedCallbacks.clear()
+        stateAckCallbacks.clear()
         synchronized(pendingUpstreamFrames) { pendingUpstreamFrames.clear() }
         roomId = null
         lastBaseUrl = null
@@ -293,6 +388,7 @@ class VoiceSocketManager {
 
     companion object {
         private const val TAG = "VoiceSocket"
+        private const val JOIN_TIMEOUT_MS = 15_000L
     }
 }
 

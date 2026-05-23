@@ -322,13 +322,10 @@ private fun TeamForumListRoute(
         }
     }
 
-    LaunchedEffect(teamId) {
+    LaunchedEffect(teamId, refreshNonce) {
         forumPrefs.loadAllLastReadMessageIds(teamId).forEach { (topicId, messageId) ->
             mergeTopicReadCursor(topicId, messageId)
         }
-    }
-
-    LaunchedEffect(teamId, refreshNonce) {
         reload()
     }
 

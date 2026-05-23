@@ -33,11 +33,23 @@ fun effectiveUnreadCount(
 }
 
 /**
- * Keeps an optimistic on-device bump until [serverUnread] catches up (socket often arrives
- * before [listRooms] reflects the new message).
+ * Badge count shown in UI: keep optimistic bump while server count is still zero,
+ * but never resurrect a badge when [rawServerUnread] > 0 and local read cursors
+ * already suppress [effectiveUnread] to zero.
  */
-fun reconcileDisplayedUnread(serverUnread: Int, previouslyDisplayed: Int): Int {
-    val server = serverUnread.coerceAtLeast(0)
+fun displayedUnreadCount(
+    effectiveUnread: Int,
+    previouslyDisplayed: Int,
+    rawServerUnread: Int = 0,
+): Int {
+    val effective = effectiveUnread.coerceAtLeast(0)
     val previous = previouslyDisplayed.coerceAtLeast(0)
-    return if (server >= previous) server else previous
+    val raw = rawServerUnread.coerceAtLeast(0)
+    if (raw > 0 && effective == 0) return 0
+    if (effective == 0) return if (previous > 0) previous else 0
+    return if (effective >= previous) effective else previous
 }
+
+/** @see displayedUnreadCount */
+fun reconcileDisplayedUnread(serverUnread: Int, previouslyDisplayed: Int): Int =
+    displayedUnreadCount(serverUnread, previouslyDisplayed, rawServerUnread = serverUnread)

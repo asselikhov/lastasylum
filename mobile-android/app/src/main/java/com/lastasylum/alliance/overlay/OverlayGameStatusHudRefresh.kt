@@ -3,6 +3,7 @@ package com.lastasylum.alliance.overlay
 import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatHubRoomSync
 import com.lastasylum.alliance.data.chat.ChatRoomDto
+import com.lastasylum.alliance.data.ReadCursorSession
 import com.lastasylum.alliance.data.effectiveUnreadCount
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
@@ -44,6 +45,15 @@ internal object OverlayGameStatusHudRefresh {
         refreshNewsForum: Boolean = true,
     ): OverlayGameStatusHudState {
         val container = AppContainer.from(context)
+        val profileUserId = container.usersRepository.getMyProfile().getOrNull()?.id?.trim().orEmpty()
+        if (profileUserId.isNotEmpty()) {
+            ReadCursorSession.bind(
+                container.chatRoomPreferences,
+                container.teamForumPreferences,
+                container.userSettingsPreferences,
+                profileUserId,
+            )
+        }
         val usersRepository = container.usersRepository
         val chatRepository = container.chatRepository
         val teamsRepository = container.teamsRepository
@@ -81,11 +91,11 @@ internal object OverlayGameStatusHudRefresh {
                     ?: 0
             val forumPrefs = container.teamForumPreferences
             val localRead = forumPrefs.loadAllLastReadMessageIds(teamId)
-            forumUnread = badges?.forumUnread?.coerceAtLeast(0)
-                ?: teamsRepository.listForumTopics(teamId)
-                    .getOrNull()
-                    ?.sumOf { topic -> effectiveForumTopicUnread(topic, localRead[topic.id]) }
-                    ?: 0
+            forumUnread = teamsRepository.listForumTopics(teamId)
+                .getOrNull()
+                ?.sumOf { topic -> effectiveForumTopicUnread(topic, localRead[topic.id]) }
+                ?: badges?.forumUnread?.coerceAtLeast(0)
+                ?: 0
             cachedBadgeTeamId = teamId
             cachedNewsUnread = newsUnread
             cachedForumUnread = forumUnread

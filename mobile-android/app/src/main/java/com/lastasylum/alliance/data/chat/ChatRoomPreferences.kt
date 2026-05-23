@@ -59,6 +59,7 @@ class ChatRoomPreferences(context: Context) {
     }
 
     fun loadAllLastReadMessageIds(): Map<String, String> {
+        if (activeUserId.isNullOrBlank()) return emptyMap()
         val prefix = lastReadKeyPrefix()
         return prefs.all
             .mapNotNull { (key, value) ->

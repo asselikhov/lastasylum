@@ -7,6 +7,9 @@ class UserSettingsPreferences(context: Context) {
     private val prefs =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    @Volatile
+    private var activeUserId: String? = null
+
     /**
      * «Показывать панель»: при включении [CombatOverlayService] работает в фоне и рисует оверлей
      * только когда в foreground целевая игра ([getOverlayTargetGamePackages]).
@@ -139,17 +142,60 @@ class UserSettingsPreferences(context: Context) {
         prefs.edit().putBoolean(KEY_EXCAVATION_PUSH, value).apply()
     }
 
+    fun bindUser(userId: String) {
+        val id = userId.trim()
+        if (id.isEmpty()) {
+            activeUserId = null
+            return
+        }
+        migrateLegacyNewsCursor(id)
+        activeUserId = id
+    }
+
+    fun clearNewsReadCursor() {
+        val editor = prefs.edit()
+        editor.remove(KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT)
+        activeUserId?.trim()?.takeIf { it.isNotEmpty() }?.let { uid ->
+            editor.remove(newsCursorKey(uid))
+        }
+        editor.apply()
+    }
+
     /** ISO-8601: newest team news the user has seen (overlay HUD + news badge). */
     fun getLastSeenTeamNewsCreatedAt(): String? =
-        prefs.getString(KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT, null)?.takeIf { it.isNotBlank() }
+        prefs.getString(newsCursorKey(), null)?.takeIf { it.isNotBlank() }
 
     fun setLastSeenTeamNewsCreatedAt(iso: String?) {
         val edit = prefs.edit()
+        val key = newsCursorKey()
         if (iso.isNullOrBlank()) {
-            edit.remove(KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT)
+            edit.remove(key)
         } else {
-            edit.putString(KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT, iso.trim())
+            edit.putString(key, iso.trim())
         }
+        edit.apply()
+    }
+
+    private fun newsCursorKey(userId: String? = activeUserId): String {
+        val uid = userId?.trim().orEmpty()
+        return if (uid.isBlank()) {
+            KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT
+        } else {
+            "$KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT:$uid"
+        }
+    }
+
+    /** Legacy key was global; move to per-user on first bind after login. */
+    private fun migrateLegacyNewsCursor(userId: String) {
+        val legacy = prefs.getString(KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT, null)?.trim().orEmpty()
+        if (legacy.isBlank()) return
+        val scoped = newsCursorKey(userId)
+        val existing = prefs.getString(scoped, null)?.trim().orEmpty()
+        val edit = prefs.edit()
+        if (existing.isBlank()) {
+            edit.putString(scoped, legacy)
+        }
+        edit.remove(KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT)
         edit.apply()
     }
 

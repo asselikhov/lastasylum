@@ -79,7 +79,7 @@ import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.ReadCursorSession
 import com.lastasylum.alliance.data.isObjectIdNewer
-import com.lastasylum.alliance.data.reconcileDisplayedUnread
+import com.lastasylum.alliance.data.displayedUnreadCount
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
 import com.lastasylum.alliance.data.chat.ChatSessionCache
@@ -909,7 +909,7 @@ class CombatOverlayService : Service() {
     private var deferredDismissWhenPickerEnds: Boolean = false
 
     private val overlayCloseHudRefreshRunnable = Runnable {
-        refreshOverlayStatusHudData()
+        refreshOverlayStatusHudData(force = true)
     }
 
     private var lastStripZOrderLiftMs: Long = 0L
@@ -953,6 +953,7 @@ class CombatOverlayService : Service() {
         lastForegroundNotificationText = foregroundNotificationIdleText()
         promoteOverlayForeground(notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         Log.i(TAG, "onCreate: startForeground OK")
+        bindOverlayReadCursorsIfPossible()
         isServiceInstanceActive = true
         runningInstance = this
         _serviceRunning.value = true
@@ -1436,8 +1437,21 @@ class CombatOverlayService : Service() {
         mainHandler.postDelayed(statusHudRefreshRunnable, STATUS_HUD_REFRESH_MS)
     }
 
+    private fun bindOverlayReadCursorsIfPossible() {
+        val uid = jwtSubFromAccessToken()?.trim().orEmpty()
+        if (uid.isEmpty()) return
+        val container = AppContainer.from(this)
+        ReadCursorSession.bind(
+            container.chatRoomPreferences,
+            container.teamForumPreferences,
+            container.userSettingsPreferences,
+            uid,
+        )
+    }
+
     private fun refreshOverlayStatusHudData(force: Boolean = false) {
         if (!isInGameOverlayUiActive()) return
+        bindOverlayReadCursorsIfPossible()
         val now = System.currentTimeMillis()
         if (!force && now - lastHudRefreshCompletedAtMs < HUD_REFRESH_MIN_INTERVAL_MS) {
             hudRefreshPending = true
@@ -1474,6 +1488,20 @@ class CombatOverlayService : Service() {
                         refreshNewsForum = refreshNewsForum,
                     )
                 }.getOrElse { OverlayGameStatusHudState() }
+                val hubDisplayed = displayedUnreadCount(
+                    effectiveUnread = state.allianceChatUnread,
+                    previouslyDisplayed = maxOf(
+                        overlayStatusHudFlow.value.allianceChatUnread,
+                        hubUnreadOptimisticFloor,
+                    ),
+                    rawServerUnread = state.allianceChatUnread,
+                )
+                if (state.allianceChatUnread <= 0) {
+                    hubUnreadOptimisticFloor = 0
+                } else if (hubDisplayed <= state.allianceChatUnread) {
+                    hubUnreadOptimisticFloor = 0
+                }
+                val mergedState = state.copy(allianceChatUnread = hubDisplayed)
                 val refreshPresenceCounts = force || refreshNewsForum
                 val onlineIngameCount = if (refreshPresenceCounts) {
                     runCatching {
@@ -1492,15 +1520,15 @@ class CombatOverlayService : Service() {
                 } else {
                     overlayTopRightHudFlow.value.teamJoinRequestCount
                 }
-                overlayStatusHudFlow.value = state
+                overlayStatusHudFlow.value = mergedState
                 mainHandler.post {
                     if (!isInGameOverlayUiActive()) return@post
                     val durationMs = android.os.SystemClock.elapsedRealtime() - startedAt
                     OverlayPerfDiag.logHudRefreshDone(
                         durationMs = durationMs,
-                        allianceUnread = state.allianceChatUnread,
-                        forumUnread = state.forumUnread,
-                        newsUnread = state.teamNewsUnread,
+                        allianceUnread = mergedState.allianceChatUnread,
+                        forumUnread = mergedState.forumUnread,
+                        newsUnread = mergedState.teamNewsUnread,
                     )
                     overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
                         onlineIngameCount = onlineIngameCount,
@@ -1577,12 +1605,7 @@ class CombatOverlayService : Service() {
         ChatSessionCache.update(rooms)
         container.chatRepository.applyOverlayRoomsFromRooms(rooms)
         val networkCount = OverlayGameStatusHudRefresh.allianceHubUnread(rooms, localRead)
-        return when {
-            cachedCount == null -> networkCount
-            networkCount >= cachedCount -> networkCount
-            networkCount == 0 -> networkCount
-            else -> cachedCount
-        }
+        return networkCount
     }
 
     private fun applyAllianceHubUnreadCount(count: Int) {
@@ -1595,17 +1618,31 @@ class CombatOverlayService : Service() {
     }
 
     private fun applyAllianceHubUnreadReconciled(serverCount: Int) {
+        if (serverCount <= 0) {
+            hubUnreadOptimisticFloor = 0
+            applyAllianceHubUnreadCount(0)
+            return
+        }
         val displayed = overlayStatusHudFlow.value.allianceChatUnread
-        val merged = reconcileDisplayedUnread(serverCount, maxOf(displayed, hubUnreadOptimisticFloor))
-        if (merged >= hubUnreadOptimisticFloor || serverCount >= hubUnreadOptimisticFloor) {
+        val merged = displayedUnreadCount(
+            effectiveUnread = serverCount,
+            previouslyDisplayed = maxOf(displayed, hubUnreadOptimisticFloor),
+            rawServerUnread = serverCount,
+        )
+        if (merged <= serverCount) {
             hubUnreadOptimisticFloor = 0
         }
         applyAllianceHubUnreadCount(merged)
     }
 
-    private fun patchHubUnreadInSessionCache(unread: Int) {
+    private fun patchHubUnreadInSessionCache(unread: Int, lastReadMessageId: String? = null) {
         val rooms = ChatSessionCache.getFreshRooms() ?: return
         val hub = ChatRoomKindResolver.allianceHubRoom(rooms) ?: return
+        val lastRead = lastReadMessageId?.trim().orEmpty()
+        if (unread <= 0 && lastRead.isNotBlank()) {
+            ChatSessionCache.patchRoomRead(hub.id, lastRead)
+            return
+        }
         val clamped = unread.coerceIn(0, 999)
         val updated = rooms.map { room ->
             if (room.id == hub.id) room.copy(unreadCount = clamped) else room
@@ -1702,7 +1739,7 @@ class CombatOverlayService : Service() {
         AppContainer.from(this).chatRoomPreferences.setLastReadMessageId(hubId, messageId)
         hubUnreadOptimisticFloor = 0
         applyAllianceHubUnreadCount(0)
-        patchHubUnreadInSessionCache(0)
+        patchHubUnreadInSessionCache(0, messageId)
         activityScopedChatViewModel?.let { vm ->
             mainHandler.post { vm.syncRoomsFromServer() }
         }
@@ -3253,6 +3290,7 @@ class CombatOverlayService : Service() {
         ReadCursorSession.bind(
             container.chatRoomPreferences,
             container.teamForumPreferences,
+            container.userSettingsPreferences,
             userId,
         )
         return ChatViewModel(
@@ -3395,12 +3433,20 @@ class CombatOverlayService : Service() {
                                                 OverlayTeamNewsPanel(
                                                     currentUserId = userId,
                                                     teamsRepository = container.teamsRepository,
+                                                    onInboxBadgesChanged = {
+                                                        OverlayGameStatusHudRefresh.invalidateNewsForumCache()
+                                                        refreshOverlayStatusHudData(force = true)
+                                                    },
                                                 )
                                             }
                                             OverlayHudPane.Forum -> {
                                                 OverlayTeamForumPanel(
                                                     currentUserId = userId,
                                                     teamsRepository = container.teamsRepository,
+                                                    onInboxBadgesChanged = {
+                                                        OverlayGameStatusHudRefresh.invalidateNewsForumCache()
+                                                        refreshOverlayStatusHudData(force = true)
+                                                    },
                                                 )
                                             }
                                             OverlayHudPane.Participants -> {
@@ -3435,6 +3481,7 @@ class CombatOverlayService : Service() {
                                         ReadCursorSession.bind(
                                             container.chatRoomPreferences,
                                             container.teamForumPreferences,
+                                            container.userSettingsPreferences,
                                             userId,
                                         )
                                     }
@@ -3661,6 +3708,16 @@ class CombatOverlayService : Service() {
     private fun ensureVoiceSession(): VoiceChatSession {
         voiceSession?.let { return it }
         val container = AppContainer.from(this)
+        container.voiceSocket.setJoinFailedListener {
+            mainHandler.post {
+                Toast.makeText(
+                    this@CombatOverlayService,
+                    R.string.overlay_voice_join_failed,
+                    Toast.LENGTH_SHORT,
+                ).show()
+                refreshOverlayTopRightHudState()
+            }
+        }
         return container.newVoiceChatSession(
             onStateChanged = { micOn, soundOn ->
                 val cur = overlayTopRightHudFlow.value
@@ -3689,6 +3746,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun stopOverlayVoice() {
+        AppContainer.from(this).voiceSocket.setJoinFailedListener(null)
         voiceSession?.stop()
         voiceSession = null
         AppContainer.from(this).overlayVoiceSession = null
@@ -3813,7 +3871,11 @@ class CombatOverlayService : Service() {
                 if (count <= 0) {
                     service.hubUnreadOptimisticFloor = 0
                     service.applyAllianceHubUnreadCount(0)
-                    service.patchHubUnreadInSessionCache(0)
+                    val hubId = AppContainer.from(service).chatRoomPreferences.getHubRoomId()
+                    val lastRead = hubId?.let { id ->
+                        AppContainer.from(service).chatRoomPreferences.getLastReadMessageId(id)
+                    }
+                    service.patchHubUnreadInSessionCache(0, lastRead)
                 } else {
                     service.hubUnreadOptimisticFloor = maxOf(service.hubUnreadOptimisticFloor, count)
                     service.applyAllianceHubUnreadReconciled(count)

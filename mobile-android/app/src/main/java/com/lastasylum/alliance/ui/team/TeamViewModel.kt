@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.teams.TeamDetailDto
+import com.lastasylum.alliance.data.teams.TeamForumPreferences
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.users.MyProfileDto
 import com.lastasylum.alliance.data.users.UsersRepository
@@ -35,6 +36,7 @@ class TeamViewModel(
     private val usersRepository: UsersRepository,
     private val teamsRepository: TeamsRepository,
     private val userSettingsPreferences: UserSettingsPreferences,
+    private val teamForumPreferences: TeamForumPreferences,
 ) : ViewModel() {
     private val _data = MutableStateFlow(TeamScreenData())
     val data: StateFlow<TeamScreenData> = _data.asStateFlow()
@@ -93,17 +95,40 @@ class TeamViewModel(
         }
         viewModelScope.launch {
             val newsAfter = userSettingsPreferences.getLastSeenTeamNewsCreatedAt()
+            val localForumRead = teamForumPreferences.loadAllLastReadMessageIds(teamId)
+            val topics = teamsRepository.listForumTopics(teamId).getOrNull()
+            val forumUnread = topics
+                ?.sumOf { topic ->
+                    OverlayGameStatusHudRefresh.effectiveForumTopicUnread(
+                        topic,
+                        localForumRead[topic.id],
+                    )
+                }
+            val newsFallback = teamsRepository.listTeamNews(teamId, cursor = null, limit = 40)
+                .getOrNull()
+                ?.items
+                ?.let { OverlayGameStatusHudRefresh.countUnreadNews(it, userSettingsPreferences) }
             teamsRepository.getTeamInboxBadges(teamId, newsAfter)
                 .onSuccess { badges ->
                     _data.update {
                         it.copy(
                             sectionBadges = TeamSectionBadges(
                                 newsUnread = badges.newsUnread.coerceAtLeast(0),
-                                forumUnread = badges.forumUnread.coerceAtLeast(0),
+                                forumUnread = forumUnread ?: badges.forumUnread.coerceAtLeast(0),
                             ),
                         )
                     }
                     OverlayGameStatusHudRefresh.invalidateNewsForumCache()
+                }
+                .onFailure {
+                    _data.update {
+                        it.copy(
+                            sectionBadges = TeamSectionBadges(
+                                newsUnread = newsFallback ?: it.sectionBadges.newsUnread,
+                                forumUnread = forumUnread ?: it.sectionBadges.forumUnread,
+                            ),
+                        )
+                    }
                 }
         }
     }
@@ -113,6 +138,7 @@ class TeamViewModelFactory(
     private val usersRepository: UsersRepository,
     private val teamsRepository: TeamsRepository,
     private val userSettingsPreferences: UserSettingsPreferences,
+    private val teamForumPreferences: TeamForumPreferences,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -121,6 +147,7 @@ class TeamViewModelFactory(
                 usersRepository,
                 teamsRepository,
                 userSettingsPreferences,
+                teamForumPreferences,
             ) as T
         }
         error("Unsupported ViewModel: ${modelClass.name}")

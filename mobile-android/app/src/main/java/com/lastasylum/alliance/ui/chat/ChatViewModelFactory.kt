@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import com.lastasylum.alliance.data.ReadCursorSession
 import com.lastasylum.alliance.data.chat.ChatRepository
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
+import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.teams.TeamForumPreferences
 import com.lastasylum.alliance.data.users.UsersRepository
 
@@ -14,6 +15,7 @@ class ChatViewModelFactory(
     private val repository: ChatRepository,
     private val chatRoomPreferences: ChatRoomPreferences,
     private val teamForumPreferences: TeamForumPreferences,
+    private val userSettingsPreferences: UserSettingsPreferences,
     private val usersRepository: UsersRepository,
     private val currentUserId: String,
     private val currentUserRole: String,
@@ -21,7 +23,12 @@ class ChatViewModelFactory(
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(ChatViewModel::class.java)) {
-            ReadCursorSession.bind(chatRoomPreferences, teamForumPreferences, currentUserId)
+            ReadCursorSession.bind(
+                chatRoomPreferences,
+                teamForumPreferences,
+                userSettingsPreferences,
+                currentUserId,
+            )
             return ChatViewModel(
                 application,
                 repository,

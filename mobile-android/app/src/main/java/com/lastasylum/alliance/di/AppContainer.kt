@@ -85,6 +85,7 @@ class AppContainer private constructor(context: Context) {
             tokenStore = tokenStore,
             chatRoomPreferences = chatRoomPreferences,
             teamForumPreferences = teamForumPreferences,
+            userSettingsPreferences = userSettingsPreferences,
         )
     }
 

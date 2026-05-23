@@ -91,6 +91,7 @@ fun OverlayTeamNewsPanel(
     currentUserId: String,
     teamsRepository: TeamsRepository,
     modifier: Modifier = Modifier,
+    onInboxBadgesChanged: () -> Unit = {},
 ) {
     OverlayTeamHudScaffold(modifier = modifier) { ctx ->
         Box(Modifier.fillMaxSize()) {
@@ -101,6 +102,7 @@ fun OverlayTeamNewsPanel(
                 canPublishNews = ctx.canPublishNews,
                 teamsRepository = teamsRepository,
                 modifier = Modifier.fillMaxSize(),
+                onInboxBadgesChanged = onInboxBadgesChanged,
             )
         }
     }
@@ -111,6 +113,7 @@ fun OverlayTeamForumPanel(
     currentUserId: String,
     teamsRepository: TeamsRepository,
     modifier: Modifier = Modifier,
+    onInboxBadgesChanged: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val app = remember { AppContainer.from(context.applicationContext) }
@@ -126,6 +129,7 @@ fun OverlayTeamForumPanel(
                 tokenStore = app.tokenStore,
                 enabledStickerPackKeys = ctx.enabledStickerPackKeys,
                 modifier = Modifier.fillMaxSize(),
+                onInboxBadgesChanged = onInboxBadgesChanged,
             )
         }
     }

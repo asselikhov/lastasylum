@@ -8,8 +8,8 @@ import android.os.Looper
 import android.os.ParcelFileDescriptor
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.lastasylum.alliance.data.displayedUnreadCount
 import com.lastasylum.alliance.data.effectiveUnreadCount
-import com.lastasylum.alliance.data.reconcileDisplayedUnread
 import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatMessage
@@ -210,8 +210,7 @@ class ChatViewModel(
     }
 
     private fun syncOverlayAllianceHubBadge(rooms: List<ChatRoomDto> = _state.value.rooms) {
-        val localRead = chatRoomPreferences.loadAllLastReadMessageIds()
-        val count = ChatUnreadCounts.allianceHubUnread(rooms, localRead)
+        val count = ChatUnreadCounts.allianceHubDisplayUnread(rooms)
         CombatOverlayService.notifyAllianceHubUnread(count)
     }
 
@@ -253,6 +252,7 @@ class ChatViewModel(
         val rooms = _state.value.rooms
         if (rooms.isEmpty()) return
         val adjusted = mergeRoomsUnreadFromServer(rooms)
+        syncTabUnreadBadge(adjusted)
         _state.update { it.copy(rooms = adjusted) }
         ChatSessionCache.update(adjusted)
         syncOverlayAllianceHubBadge(adjusted)
@@ -340,6 +340,7 @@ class ChatViewModel(
                     val next = applyRoomsFromServer(raw)
                     syncRaidRoomPreference(next)
                     _state.update { it.copy(rooms = next) }
+                    syncTabUnreadBadge(next)
                     reconcileStaleServerUnread(next, raw)
                     if (reconfirmVisibleRoom) {
                         reconfirmReadForVisibleRoom()
@@ -631,6 +632,7 @@ class ChatViewModel(
         ChatSessionCache.update(merged)
         flushPendingUnreadBumps()
         syncOverlayAllianceHubBadge(merged)
+        syncTabUnreadBadge(merged)
         return merged
     }
 
@@ -645,8 +647,19 @@ class ChatViewModel(
                 viewingSelected && room.id == selected -> 0
                 else -> effectiveUnreadForRoom(room)
             }
-            val unread = reconcileDisplayedUnread(serverUnread, previousUnread)
+            val unread = displayedUnreadCount(
+                effectiveUnread = serverUnread,
+                previouslyDisplayed = previousUnread,
+                rawServerUnread = room.unreadCount,
+            )
             room.copy(unreadCount = unread)
+        }
+    }
+
+    private fun syncTabUnreadBadge(rooms: List<ChatRoomDto> = _state.value.rooms) {
+        val badge = ChatUnreadCounts.tabBadgeTotal(rooms)
+        if (_state.value.tabUnreadBadge != badge) {
+            _state.update { it.copy(tabUnreadBadge = badge) }
         }
     }
 
@@ -695,6 +708,7 @@ class ChatViewModel(
             )
         }
         ChatSessionCache.update(_state.value.rooms)
+        syncTabUnreadBadge()
         _state.value.rooms.find { it.id == roomId }?.let { room ->
             if (ChatRoomKindResolver.isAllianceHubRoom(room)) {
                 syncOverlayAllianceHubBadge(_state.value.rooms)
@@ -729,7 +743,12 @@ class ChatViewModel(
         for (room in mergedRooms) {
             val raw = rawById[room.id] ?: continue
             if (raw.unreadCount <= 0) continue
-            if (room.unreadCount > raw.unreadCount) continue
+            val effectiveRaw = effectiveUnreadCount(
+                serverUnread = raw.unreadCount,
+                lastReadMessageId = raw.lastReadMessageId,
+                localLastReadMessageId = resolvedLastReadMessageId(room),
+            )
+            if (effectiveRaw > 0 && room.unreadCount > raw.unreadCount) continue
             val localLast = resolvedLastReadMessageId(room) ?: continue
             val serverLast = raw.lastReadMessageId?.trim().orEmpty()
             val localAhead =
@@ -753,6 +772,7 @@ class ChatViewModel(
             _state.update { st ->
                 st.copy(rooms = clearUnreadForRoom(st.rooms, roomId))
             }
+            syncTabUnreadBadge()
             ChatSessionCache.update(_state.value.rooms)
             if (ChatRoomKindResolver.allianceHubRoom(_state.value.rooms)?.id == roomId) {
                 CombatOverlayService.notifyAllianceHubUnread(0)
@@ -760,11 +780,12 @@ class ChatViewModel(
             repository.markRoomRead(roomId, messageId)
                 .onSuccess { response ->
                     mergeReadCursor(roomId, messageId)
-                    ChatSessionCache.invalidateRooms()
+                    ChatSessionCache.patchRoomRead(roomId, messageId)
                     if (response.unreadCount <= 0) {
                         _state.update { st ->
                             st.copy(rooms = clearUnreadForRoom(st.rooms, roomId))
                         }
+                        syncTabUnreadBadge()
                         ChatSessionCache.update(_state.value.rooms)
                         if (ChatRoomKindResolver.allianceHubRoom(_state.value.rooms)?.id == roomId) {
                             CombatOverlayService.notifyAllianceHubUnread(0)
@@ -803,12 +824,19 @@ class ChatViewModel(
                             ?: room.lastReadMessageId,
                     )
                     val effective = effectiveUnreadForRoom(merged)
-                    merged.copy(unreadCount = effective)
+                    merged.copy(
+                        unreadCount = displayedUnreadCount(
+                            effectiveUnread = effective,
+                            previouslyDisplayed = room.unreadCount,
+                            rawServerUnread = event.unreadCount,
+                        ),
+                    )
                 }
             }
             st.copy(rooms = rooms)
         }
         ChatSessionCache.update(_state.value.rooms)
+        syncTabUnreadBadge()
         syncOverlayAllianceHubBadge()
     }
 

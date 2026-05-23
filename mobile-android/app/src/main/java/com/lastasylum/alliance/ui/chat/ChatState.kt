@@ -21,6 +21,8 @@ data class ChatState(
     /** Full team name + tag set in profile — required to post in «Межсерв». */
     val hasTeamProfileForGlobalChat: Boolean = false,
     val rooms: List<ChatRoomDto> = emptyList(),
+    /** Bottom nav «Чат» badge; recomputed when rooms or read cursors change. */
+    val tabUnreadBadge: Int = 0,
     val selectedRoomId: String? = null,
     val messages: List<ChatMessage> = emptyList(),
     val error: String? = null,
