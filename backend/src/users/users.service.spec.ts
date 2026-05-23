@@ -169,6 +169,47 @@ describe('UsersService', () => {
     });
   });
 
+  describe('isOverlayIngameNow', () => {
+    it('returns false for invalid user id', async () => {
+      await expect(usersService.isOverlayIngameNow('not-an-id')).resolves.toBe(
+        false,
+      );
+    });
+
+    it('returns true when ingame ping is fresh', async () => {
+      execFindByIdLean.mockResolvedValue({
+        presenceStatus: 'ingame',
+        lastPresenceAt: new Date(),
+        membershipStatus: TeamMembershipStatus.ACTIVE,
+      });
+      await expect(
+        usersService.isOverlayIngameNow('507f1f77bcf86cd799439011'),
+      ).resolves.toBe(true);
+    });
+
+    it('returns false when ingame ping is stale', async () => {
+      execFindByIdLean.mockResolvedValue({
+        presenceStatus: 'ingame',
+        lastPresenceAt: new Date(Date.now() - 120_000),
+        membershipStatus: TeamMembershipStatus.ACTIVE,
+      });
+      await expect(
+        usersService.isOverlayIngameNow('507f1f77bcf86cd799439011'),
+      ).resolves.toBe(false);
+    });
+
+    it('returns false when status is not ingame', async () => {
+      execFindByIdLean.mockResolvedValue({
+        presenceStatus: 'online',
+        lastPresenceAt: new Date(),
+        membershipStatus: TeamMembershipStatus.ACTIVE,
+      });
+      await expect(
+        usersService.isOverlayIngameNow('507f1f77bcf86cd799439011'),
+      ).resolves.toBe(false);
+    });
+  });
+
   describe('listOverlayIngameTeammateIds', () => {
     it('returns teammate ids with fresh ingame overlay', async () => {
       const teamId = new Types.ObjectId();

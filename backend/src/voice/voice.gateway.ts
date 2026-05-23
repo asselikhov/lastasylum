@@ -27,6 +27,8 @@ import {
 
 const FRAME_WINDOW_MS = 1_000;
 const MAX_FRAMES_PER_WINDOW = 55;
+/** Align with overlay presence heartbeat (~60s) and Android stale window (90s). */
+const OVERLAY_INGAME_CACHE_MS = 30_000;
 
 type GatewayUser = {
   userId: string;
@@ -67,6 +69,10 @@ export class VoiceGateway {
   server: Namespace;
 
   private readonly frameTimestamps = new Map<string, number[]>();
+  private readonly overlayIngameCache = new Map<
+    string,
+    { until: number; value: boolean }
+  >();
 
   constructor(
     private readonly chatService: ChatService,
@@ -122,11 +128,14 @@ export class VoiceGateway {
     client.data.soundOn = payload?.soundOn === true;
     void client.join(this.voiceRoomKey(roomId));
 
-    const peers = this.collectPeers(roomId, client.id);
-    client.to(this.voiceRoomKey(roomId)).emit('voice:peer-joined', {
-      roomId,
-      peer: this.peerStateFromClient(client),
-    });
+    const peers = await this.collectPeers(roomId, client.id);
+    const joinerIngame = await this.overlayIngameNow(user.userId);
+    if (joinerIngame) {
+      client.to(this.voiceRoomKey(roomId)).emit('voice:peer-joined', {
+        roomId,
+        peer: this.peerStateFromClient(client),
+      });
+    }
 
     return {
       event: 'voice:joined',
@@ -168,16 +177,21 @@ export class VoiceGateway {
     client.data.soundOn = body?.soundOn === true;
 
     const peer = this.peerStateFromClient(client);
-    client.to(this.voiceRoomKey(roomId)).emit('voice:peer-state', {
-      roomId,
-      peer,
-    });
+    if (await this.overlayIngameNow(user.userId)) {
+      client.to(this.voiceRoomKey(roomId)).emit('voice:peer-state', {
+        roomId,
+        peer,
+      });
+    }
     return { event: 'voice:state-ack', data: peer };
   }
 
-  /** Binary upstream frame; relay only to listeners with soundOn. */
+  /**
+   * Relay only when sender has mic on and a fresh overlay ingame presence ping.
+   * Deliver to listeners with sound on (they may be outside the game).
+   */
   @SubscribeMessage('voice:frame')
-  relayFrame(
+  async relayFrame(
     @ConnectedSocket() client: AuthSocket,
     @MessageBody() body: Buffer,
   ) {
@@ -188,6 +202,9 @@ export class VoiceGateway {
     const roomId = client.data.voiceRoomId;
     if (!roomId) {
       throw new WsException('Not in a voice room');
+    }
+    if (!(await this.overlayIngameNow(user.userId))) {
+      return;
     }
 
     const raw = this.coerceBuffer(body);
@@ -287,10 +304,24 @@ export class VoiceGateway {
     }
   }
 
-  private collectPeers(
+  private async overlayIngameNow(userId: string): Promise<boolean> {
+    const now = Date.now();
+    const cached = this.overlayIngameCache.get(userId);
+    if (cached && cached.until > now) {
+      return cached.value;
+    }
+    const value = await this.usersService.isOverlayIngameNow(userId);
+    this.overlayIngameCache.set(userId, {
+      until: now + OVERLAY_INGAME_CACHE_MS,
+      value,
+    });
+    return value;
+  }
+
+  private async collectPeers(
     roomId: string,
     exceptSocketId: string,
-  ): VoicePeerState[] {
+  ): Promise<VoicePeerState[]> {
     const room = this.server?.adapter.rooms.get(this.voiceRoomKey(roomId));
     if (!room) return [];
     const peers: VoicePeerState[] = [];
@@ -299,7 +330,10 @@ export class VoiceGateway {
       const peerSocket = this.server.sockets.get(socketId) as
         | AuthSocket
         | undefined;
-      if (!peerSocket?.data?.user) continue;
+      const peerUser = peerSocket?.data?.user;
+      if (!peerUser) continue;
+      if (!(await this.overlayIngameNow(peerUser.userId))) continue;
+      if (!peerSocket.data.micOn) continue;
       peers.push(this.peerStateFromClient(peerSocket));
     }
     return peers;

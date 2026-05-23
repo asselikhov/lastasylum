@@ -537,6 +537,37 @@ export class UsersService implements OnModuleInit {
    */
   static readonly OVERLAY_INGAME_LIST_STALE_MS = 90_000;
 
+  /** Fresh overlay «ingame» ping (same window as list/broadcast). */
+  async isOverlayIngameNow(userId: string): Promise<boolean> {
+    if (!Types.ObjectId.isValid(userId)) {
+      return false;
+    }
+    const staleBefore = new Date(
+      Date.now() - UsersService.OVERLAY_INGAME_LIST_STALE_MS,
+    );
+    const row = await this.userModel
+      .findById(userId)
+      .select('presenceStatus lastPresenceAt membershipStatus')
+      .lean<{
+        presenceStatus?: string | null;
+        lastPresenceAt?: Date | null;
+        membershipStatus?: string;
+      }>()
+      .exec();
+    if (
+      !row ||
+      this.effectiveMembership(row as UserDocument) !==
+        TeamMembershipStatus.ACTIVE
+    ) {
+      return false;
+    }
+    if (row.presenceStatus !== 'ingame') {
+      return false;
+    }
+    const lastAt = row.lastPresenceAt;
+    return lastAt instanceof Date && lastAt.getTime() >= staleBefore.getTime();
+  }
+
   /**
    * Teammates currently in game with a fresh overlay heartbeat (excluding sender).
    */

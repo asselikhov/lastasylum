@@ -164,7 +164,7 @@ class CombatOverlayService : Service() {
                 }
                 result.onSuccess { sent ->
                     mainHandler.post {
-                        syncOverlayRaidRoomSubscription()
+                        ensureOverlayRaidRealtimeIfNeeded()
                         publishQuickCommandToStrip(sent, roomId, text)
                     }
                 }
@@ -180,7 +180,7 @@ class CombatOverlayService : Service() {
                     .also { result ->
                         result.onSuccess { sent ->
                             mainHandler.post {
-                                syncOverlayRaidRoomSubscription()
+                                ensureOverlayRaidRealtimeIfNeeded()
                                 publishQuickCommandToStrip(sent, roomId, text)
                             }
                         }
@@ -247,12 +247,30 @@ class CombatOverlayService : Service() {
     private fun stopOverlayIngamePresence(markAway: Boolean) {
         presenceHeartbeat.stop()
         overlayIngamePresenceActive = false
+        if (markAway) {
+            stopOverlayVoice()
+        }
         if (!markAway) return
         val container = AppContainer.from(this)
         if (!container.authRepository.hasSession()) return
         serviceScope.launch {
             runCatching {
                 container.usersRepository.updatePresence(OVERLAY_PRESENCE_AWAY)
+            }
+        }
+    }
+
+    private fun canUseOverlayVoiceNow(): Boolean =
+        isInGameOverlayUiActive() || overlayInGameProbeActive
+
+    /** Свежий ingame-пинг перед голосом, чтобы сервер ретранслировал кадры. */
+    private fun pingOverlayIngamePresenceForVoice() {
+        if (!canUseOverlayVoiceNow()) return
+        val container = AppContainer.from(this)
+        if (!container.authRepository.hasSession()) return
+        serviceScope.launch {
+            runCatching {
+                container.usersRepository.updatePresence(OVERLAY_PRESENCE_INGAME)
             }
         }
     }
@@ -908,7 +926,10 @@ class CombatOverlayService : Service() {
         val targets = AppContainer.from(this).userSettingsPreferences.getOverlayTargetGamePackages()
         GameForegroundGate.primeTotalTimeForegroundWatch(this, targets)
         registerScreenOnReceiver()
-        mainHandler.post { tickGameGate() }
+        mainHandler.post {
+            ensureOverlayRaidRealtimeIfNeeded()
+            tickGameGate()
+        }
     }
 
     private fun isOverlayShellActive(): Boolean {
@@ -1300,6 +1321,7 @@ class CombatOverlayService : Service() {
                     val shouldShowInGameOverlayUi = when {
                         inGame -> true
                         OverlayChatInteractionHold.isOverlaySystemPickerSessionActive() -> true
+                        overlayCommandsPopover.isBlockingGameGateDismiss() -> true
                         else -> false
                     }
                     val popoverBlocksDismiss = overlayCommandsPopover.isBlockingGameGateDismiss()
@@ -1640,6 +1662,7 @@ class CombatOverlayService : Service() {
         val prefs = AppContainer.from(this).userSettingsPreferences
         if (!prefs.isOverlayPanelEnabled() || !canDrawOverlaysNow()) return
         if (overlayChatTeamPanelVisible) return
+        ensureOverlayIfPermitted()
         ensureOverlayStatusHudWindow()
         ensureOverlayTopRightHudWindow()
         overlayStatusHudHost?.visibility = View.VISIBLE
@@ -1719,6 +1742,7 @@ class CombatOverlayService : Service() {
 
     private fun openOverlayQuickCommandsFromHud() {
         OverlayChatInteractionHold.prepareOverlayModalInteraction(isOverlayUi = true)
+        ensureOverlayIfPermitted()
         val mgr = windowManager ?: systemWindowManager() ?: return
         overlayCommandsPopover.toggle(mgr)
         if (!isOverlayHudOnlyMode() && chatStripHost?.isAttachedToWindow != true) {
@@ -1954,8 +1978,10 @@ class CombatOverlayService : Service() {
     }
 
     private fun ensureOverlayVoiceStarted() {
+        if (!canUseOverlayVoiceNow()) return
         overlayVoiceController.armFromUserAction()
         cancelOverlayVoiceConnectScheduled()
+        pingOverlayIngamePresenceForVoice()
         startOverlayVoiceIfRaidAvailable()
     }
 
@@ -1972,6 +1998,13 @@ class CombatOverlayService : Service() {
         lastAppliedGateShouldShow = shouldShow
         _inGameOverlayUiActive.value = shouldShow
         if (!shouldShow) {
+            if (overlayCommandsPopover.isBlockingGameGateDismiss()) {
+                ensureOverlayIfPermitted()
+                if (!isOverlayHudOnlyMode()) {
+                    applyOverlayStripVisibility()
+                }
+                return
+            }
             dismissOverlayUiBecauseNotInGame(
                 logWaitingForGame = true,
             )
@@ -2112,7 +2145,7 @@ class CombatOverlayService : Service() {
         cancelOverlayVoiceConnectScheduled()
         runCatching { hideOverlayChatTeamPanel() }
         runCatching { overlayTicker.hideTicker() }
-        runCatching { removeOverlayControl() }
+        runCatching { removeOverlayControl(force = true) }
         runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
         isServiceInstanceActive = false
         _serviceRunning.value = false
@@ -2455,9 +2488,28 @@ class CombatOverlayService : Service() {
         }
     }
 
-    /** Маршрутизация raid/hub в ленту и бейдж, пока оверлей включён (в т.ч. краткий grace гейта). */
+    private fun shouldRetainOverlayRaidRealtime(): Boolean {
+        val container = AppContainer.from(this)
+        return container.userSettingsPreferences.isOverlayPanelEnabled() &&
+            container.authRepository.hasSession()
+    }
+
+    /** Подписка на «Рейд»/hub, пока FGS активен и панель включена (не только пока окна на экране). */
+    private fun ensureOverlayRaidRealtimeIfNeeded() {
+        if (!shouldRetainOverlayRaidRealtime()) return
+        if (overlayMessageListener != null) {
+            syncOverlayRaidRoomSubscription()
+            refreshOverlayHubUnreadFromCache()
+            refreshOverlayHubUnreadOnly()
+            return
+        }
+        beginOverlayChatSubscription()
+    }
+
+    /** Маршрутизация raid/hub в ленту, пока слушатель оверлея активен или игрок в матче. */
     private fun isOverlayChatRoutingActive(): Boolean {
         if (!AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()) return false
+        if (overlayMessageListener != null) return true
         if (overlaySessionActive) return true
         if (isInGameOverlayUiActive()) return true
         return lastOverlayInGameAtMs > 0L &&
@@ -2470,7 +2522,10 @@ class CombatOverlayService : Service() {
      */
     private fun applyLocalSentMessageToStrip(sent: ChatMessage) {
         stripBuffer.markClientSend(sent)
-        ingestOverlayRaidMessage(sent, refreshNow = true)
+        ingestOverlayRaidMessage(sent, refreshNow = true, forceIngest = true)
+        if (!isOverlayHudOnlyMode()) {
+            applyOverlayStripVisibility()
+        }
     }
 
     /** Быстрые команды → лента «Рейд»: нормализуем roomId/текст с ответа API. */
@@ -2542,12 +2597,13 @@ class CombatOverlayService : Service() {
         msg: ChatMessage,
         refreshNow: Boolean,
         retryIndex: Int = 0,
+        forceIngest: Boolean = false,
     ) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
-            mainHandler.post { ingestOverlayRaidMessage(msg, refreshNow, retryIndex) }
+            mainHandler.post { ingestOverlayRaidMessage(msg, refreshNow, retryIndex, forceIngest) }
             return
         }
-        if (!isOverlayChatRoutingActive()) return
+        if (!forceIngest && !isOverlayChatRoutingActive()) return
         val raidId = resolveOverlayRaidRoomId() ?: trustedOverlayRaidRoomId
         val normalized = normalizeStripRaidMessage(msg, raidId)
         if (!shouldIngestForRaidStrip(normalized)) {
@@ -2560,7 +2616,7 @@ class CombatOverlayService : Service() {
             if (retryIndex < STRIP_INGEST_RETRY_DELAYS_MS.size) {
                 prefetchOverlayRaidRoomForStrip()
                 mainHandler.postDelayed(
-                    { ingestOverlayRaidMessage(msg, refreshNow, retryIndex + 1) },
+                    { ingestOverlayRaidMessage(msg, refreshNow, retryIndex + 1, forceIngest) },
                     STRIP_INGEST_RETRY_DELAYS_MS[retryIndex],
                 )
             }
@@ -2997,7 +3053,7 @@ class CombatOverlayService : Service() {
         }
         _overlayVisible.value = true
         rebalanceOverlayFullscreenZOrder()
-        mainHandler.post { beginOverlayChatSubscription() }
+        mainHandler.post { ensureOverlayRaidRealtimeIfNeeded() }
     }
 
     private fun applyOverlayStripVisibility(rebalanceZOrder: Boolean = false) {
@@ -3463,6 +3519,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun startOverlayVoiceIfRaidAvailable() {
+        if (!canUseOverlayVoiceNow()) return
         val container = AppContainer.from(this)
         val userId = jwtSubFromAccessToken().orEmpty()
         if (userId.isBlank()) return
@@ -3481,7 +3538,7 @@ class CombatOverlayService : Service() {
             }
             val raidId = container.chatRepository.ensureRaidRoomId() ?: return@launch
             mainHandler.post {
-                if (!isServiceInstanceActive) return@post
+                if (!isServiceInstanceActive || !canUseOverlayVoiceNow()) return@post
                 ensureVoiceSession().start(raidId, userId)
                 refreshOverlayTopRightHudState()
             }
@@ -3565,7 +3622,13 @@ class CombatOverlayService : Service() {
         )
         resumeOverlayWindowsAfterSystemActivity()
         overlayVoiceController.resetSession()
-        endOverlayChatSubscription()
+        val endRealtime = force || !shouldRetainOverlayRaidRealtime()
+        if (endRealtime) {
+            endOverlayChatSubscription()
+        } else {
+            lastStripRenderSignature = 0
+            chatStripPreviewFlow.value = emptyList()
+        }
         overlayTicker.hideTicker()
         overlayCommandsPopover.hide()
         removeOverlayStatusHudWindow()
