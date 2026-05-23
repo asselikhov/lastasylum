@@ -903,7 +903,12 @@ export class ChatService {
     userId: string;
     roomId: string;
     messageId: string;
-  }): Promise<{ roomId: string; userId: string; messageId: string }> {
+  }): Promise<{
+    roomId: string;
+    userId: string;
+    messageId: string;
+    unreadCount: number;
+  }> {
     if (!Types.ObjectId.isValid(input.roomId)) {
       throw new BadRequestException('Invalid room id');
     }

@@ -142,7 +142,7 @@ export class VoiceGateway {
     });
 
     const joinedPayload = { roomId, peers };
-    client.emit('voice:joined', joinedPayload);
+    (client as Socket).emit('voice:joined', joinedPayload);
     return {
       event: 'voice:joined',
       data: joinedPayload,

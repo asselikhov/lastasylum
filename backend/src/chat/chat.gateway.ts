@@ -8,7 +8,7 @@ import {
 } from '@nestjs/websockets';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { Server, Socket } from 'socket.io';
+import { Namespace, Socket } from 'socket.io';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { authenticateSocketConnection } from '../common/socket-auth.util';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
@@ -93,7 +93,7 @@ type AuthSocket = Socket<
 })
 export class ChatGateway {
   @WebSocketServer()
-  server: Server;
+  server: Namespace;
 
   /** userId -> timestamps of message:send (sliding window). */
   private readonly wsMessageSendTimestamps = new Map<string, number[]>();
