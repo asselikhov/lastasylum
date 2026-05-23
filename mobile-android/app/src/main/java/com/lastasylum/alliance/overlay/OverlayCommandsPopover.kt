@@ -821,8 +821,8 @@ class OverlayCommandsPopover(
             inputType = InputType.TYPE_CLASS_TEXT or
                 InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
                 InputType.TYPE_TEXT_FLAG_MULTI_LINE
-            maxLines = OverlayReactionBurstLayout.TEXT_LINES_MAX
-            minLines = 3
+            minLines = 1
+            maxLines = 2
             isVerticalScrollBarEnabled = true
             filters = arrayOf(InputFilter.LengthFilter(OVERLAY_TEXT_REACTION_MAX_CHARS))
         }
@@ -895,7 +895,7 @@ class OverlayCommandsPopover(
                 reactionTextInput,
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
-                    dp(108),
+                    dp(52),
                 ),
             )
             addView(
@@ -903,14 +903,14 @@ class OverlayCommandsPopover(
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = dp(6) },
+                ).apply { topMargin = dp(4) },
             )
             addView(
                 reactionTextSend,
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = dp(10) },
+                ).apply { topMargin = dp(6) },
             )
         }
 
@@ -964,13 +964,10 @@ class OverlayCommandsPopover(
             val isTextTab = selectedReactionSubcategory == OverlayReactionCategory.TEXT
             reactionGridScroll.visibility = if (isTextTab) View.GONE else View.VISIBLE
             reactionTextPanel.visibility = if (isTextTab) View.VISIBLE else View.GONE
-            reactionHintRow.text = context.getString(
-                if (isTextTab) {
-                    R.string.overlay_reactions_text_pick_hint
-                } else {
-                    R.string.overlay_reactions_pick_hint
-                },
-            )
+            reactionHintRow.visibility = if (isTextTab) View.GONE else View.VISIBLE
+            if (!isTextTab) {
+                reactionHintRow.text = context.getString(R.string.overlay_reactions_pick_hint)
+            }
             if (isTextTab) {
                 reactionTabEmpty.visibility = View.GONE
                 stopReactionPreviewKeepAlive()

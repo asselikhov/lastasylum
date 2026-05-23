@@ -189,15 +189,23 @@ class ChatViewModel(
         bootstrap(preferAllianceHubRoom = false, force = true)
     }
 
-    /** Оверлей-чат: всегда открывать комнату альянса (sortOrder 1), не последнюю из приложения. */
+    /** Оверлей-чат: открывать комнату «Рейд», не hub и не последнюю вкладку из приложения. */
     fun refreshChatForOverlay() {
-        scheduleBootstrap(preferAllianceHubRoom = true, force = false)
+        scheduleBootstrap(preferOverlayRaidRoom = true, force = false)
     }
 
-    private fun scheduleBootstrap(preferAllianceHubRoom: Boolean, force: Boolean) {
+    private fun scheduleBootstrap(
+        preferAllianceHubRoom: Boolean = false,
+        preferOverlayRaidRoom: Boolean = false,
+        force: Boolean = false,
+    ) {
         bootstrapJob?.cancel()
         bootstrapJob = viewModelScope.launch {
-            bootstrap(preferAllianceHubRoom = preferAllianceHubRoom, force = force)
+            bootstrap(
+                preferAllianceHubRoom = preferAllianceHubRoom,
+                preferOverlayRaidRoom = preferOverlayRaidRoom,
+                force = force,
+            )
         }
     }
 
@@ -210,9 +218,21 @@ class ChatViewModel(
             _state.value.messages.isNotEmpty()
     }
 
-    private suspend fun resolveRoomsForBootstrap(preferAllianceHubRoom: Boolean): Result<List<ChatRoomDto>> {
+    private fun overlayRaidAlreadyReady(rooms: List<ChatRoomDto>): Boolean {
+        val raidId = allianceRaidRoomId(rooms) ?: return false
+        return !_state.value.isRoomsLoading &&
+            !_state.value.isLoading &&
+            _state.value.error.isNullOrBlank() &&
+            _state.value.selectedRoomId == raidId &&
+            _state.value.messages.isNotEmpty()
+    }
+
+    private suspend fun resolveRoomsForBootstrap(
+        preferAllianceHubRoom: Boolean,
+        preferOverlayRaidRoom: Boolean = false,
+    ): Result<List<ChatRoomDto>> {
         ChatSessionCache.getFreshRooms()?.let { return Result.success(it) }
-        if (preferAllianceHubRoom && _state.value.rooms.isNotEmpty()) {
+        if ((preferAllianceHubRoom || preferOverlayRaidRoom) && _state.value.rooms.isNotEmpty()) {
             return Result.success(_state.value.rooms)
         }
         return repository.listRooms()
@@ -329,6 +349,10 @@ class ChatViewModel(
     private fun allianceHubRoomId(rooms: List<ChatRoomDto>): String? =
         ChatRoomKindResolver.allianceHubRoom(rooms)?.id
 
+    private fun allianceRaidRoomId(rooms: List<ChatRoomDto>): String? =
+        ChatRoomKindResolver.allianceRaidRoom(rooms)?.id
+            ?: chatRoomPreferences.getRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }
+
     private fun globalSendBlocked(
         roomId: String,
         messageText: String,
@@ -350,14 +374,26 @@ class ChatViewModel(
         return true
     }
 
-    private suspend fun bootstrap(preferAllianceHubRoom: Boolean = false, force: Boolean = false) {
+    private suspend fun bootstrap(
+        preferAllianceHubRoom: Boolean = false,
+        preferOverlayRaidRoom: Boolean = false,
+        force: Boolean = false,
+    ) {
         bootstrapMutex.withLock {
-            if (!force && preferAllianceHubRoom && overlayHubAlreadyReady(_state.value.rooms)) {
-                return
+            if (!force) {
+                if (preferOverlayRaidRoom && overlayRaidAlreadyReady(_state.value.rooms)) {
+                    return
+                }
+                if (preferAllianceHubRoom && overlayHubAlreadyReady(_state.value.rooms)) {
+                    return
+                }
             }
         }
         _state.value = _state.value.copy(isRoomsLoading = true, error = null)
-        val roomsResult = resolveRoomsForBootstrap(preferAllianceHubRoom)
+        val roomsResult = resolveRoomsForBootstrap(
+            preferAllianceHubRoom = preferAllianceHubRoom,
+            preferOverlayRaidRoom = preferOverlayRaidRoom,
+        )
         val roomsRaw = roomsResult.getOrElse { e ->
             val fallback = ChatSessionCache.getFreshRooms()
                 ?: _state.value.rooms.takeIf { it.isNotEmpty() }
@@ -402,8 +438,10 @@ class ChatViewModel(
         syncRaidRoomPreference(rooms)
         syncOverlayAllianceHubBadge(rooms)
         val hubId = allianceHubRoomId(rooms)
+        val raidId = allianceRaidRoomId(rooms)
         val stored = chatRoomPreferences.getSelectedRoomId()
         val selected = when {
+            preferOverlayRaidRoom && raidId != null -> raidId
             preferAllianceHubRoom && hubId != null -> hubId
             else ->
                 rooms.find { it.id == stored }?.id
@@ -413,10 +451,12 @@ class ChatViewModel(
         }
         chatRoomPreferences.setSelectedRoomId(selected)
         viewModelScope.launch { reconcileStaleServerUnread(rooms) }
-        val cachedOverlayMessages = if (preferAllianceHubRoom) {
-            ChatSessionCache.getFreshMessages(selected)
-        } else {
-            null
+        val cachedOverlayMessages = when {
+            preferOverlayRaidRoom && raidId != null ->
+                ChatSessionCache.getFreshMessages(raidId)
+            preferAllianceHubRoom ->
+                ChatSessionCache.getFreshMessages(selected)
+            else -> null
         }
         if (!cachedOverlayMessages.isNullOrEmpty()) {
             val capped = capNewestFirst(cachedOverlayMessages, PAGE_SIZE)

@@ -48,7 +48,7 @@ internal object OverlayReactionBurstLayout {
 
     const val TEXT_LINES_MAX = 5
 
-    const val TEXT_MESSAGE_SP = 26f
+    const val TEXT_MESSAGE_SP = 28f
 
     const val TEXT_SENDER_BELOW_MESSAGE_DP = 10
 

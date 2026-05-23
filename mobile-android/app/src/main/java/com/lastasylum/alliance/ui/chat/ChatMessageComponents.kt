@@ -51,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.unit.sp
 import com.lastasylum.alliance.ui.util.formatServerLabel
 import com.lastasylum.alliance.ui.theme.ChatTelegramTeamTagBg
@@ -584,16 +585,32 @@ fun ChatMessageReactionsRow(
                     Modifier
                 },
             ) {
-                Text(
-                    text = "${r.emoji} ${r.count}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (r.reactedByMe) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+                Row(
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                )
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = r.emoji,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = 20.sp,
+                            platformStyle = PlatformTextStyle(includeFontPadding = false),
+                        ),
+                        color = if (r.reactedByMe) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                    Text(
+                        text = " ${r.count}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (r.reactedByMe) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
             }
         }
     }

@@ -50,6 +50,7 @@ import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Mood
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -105,6 +106,7 @@ import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.util.ComposerPasteChipRow
 import com.lastasylum.alliance.ui.util.composerLongPressPaste
+import com.lastasylum.alliance.ui.util.rememberComposerClipboardHasText
 import com.lastasylum.alliance.ui.util.rememberComposerPasteState
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
@@ -142,6 +144,7 @@ internal fun ChatComposer(
         draft = draft,
         onDraftChange = onDraftChange,
     )
+    val clipboardHasText = rememberComposerClipboardHasText()
     val context = LocalContext.current
     val overlayUi = LocalOverlayUiMode.current
     val activityResultOwner = LocalActivityResultRegistryOwner.current
@@ -565,7 +568,11 @@ internal fun ChatComposer(
                         shadowElevation = 4.dp,
                         modifier = Modifier
                             .weight(1f)
-                            .heightIn(min = SquadRelayDimens.composerMinHeight.coerceAtLeast(48.dp)),
+                            .heightIn(min = SquadRelayDimens.composerMinHeight.coerceAtLeast(48.dp))
+                            .composerLongPressPaste(
+                                enabled = !composerLocked,
+                                onLongPress = pasteState.onLongPress,
+                            ),
                     ) {
                         Row(
                             modifier = Modifier
@@ -602,6 +609,21 @@ internal fun ChatComposer(
                                     },
                                     tint = MaterialTheme.colorScheme.primary,
                                 )
+                            }
+                            if (clipboardHasText) {
+                                IconButton(
+                                    onClick = { pasteState.onPaste() },
+                                    enabled = !composerLocked,
+                                    modifier = Modifier.size(40.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.ContentPaste,
+                                        contentDescription = stringResource(
+                                            R.string.chat_composer_paste_label,
+                                        ),
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
                             }
                             Box(
                                 modifier = Modifier

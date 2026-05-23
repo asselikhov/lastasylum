@@ -194,6 +194,7 @@ import com.lastasylum.alliance.ui.chat.ChatMessageBodyText
 import com.lastasylum.alliance.ui.chat.chatBubbleSurfaceWidth
 import com.lastasylum.alliance.ui.chat.ChatMessageTimeOverlayChip
 import com.lastasylum.alliance.ui.chat.ChatMessageTimeWithReadStatus
+import com.lastasylum.alliance.ui.chat.ChatQuickReactions
 import com.lastasylum.alliance.ui.chat.ChatScrollToLatestFab
 import com.lastasylum.alliance.ui.chat.isAtReverseChatBottom
 import com.lastasylum.alliance.ui.chat.scrollTimelineItemToViewportCenter
@@ -2486,7 +2487,7 @@ private fun ChatMessageActionsSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
             )
-            val quickReactions = listOf("рџ‘Ќ", "вќ¤пёЏ", "рџ‚", "рџ”Ґ", "рџЋ‰", "рџ‘Џ")
+            val quickReactions = ChatQuickReactions.defaults
             LazyRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),

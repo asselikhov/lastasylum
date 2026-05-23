@@ -2770,8 +2770,8 @@ class CombatOverlayService : Service() {
     }
 
     private fun syncOverlayRaidRoomSubscription() {
-        if (overlayMessageListener == null) return
         resolveOverlayRaidRoomId()?.let { rememberOverlayRaidRoomId(it) }
+        if (overlayMessageListener == null) return
         AppContainer.from(this).chatRepository.refreshOverlayRealtimeSubscriptions()
     }
 
@@ -2989,14 +2989,11 @@ class CombatOverlayService : Service() {
         if (!isOverlayHudOnlyMode()) {
             ensureChatStripWindow(manager)
             if (chatStripHost == null) {
-                Log.e(TAG, "showOverlayShell: failed to attach chat strip")
-                overlaySessionActive = false
-                windowManager = null
-                _overlayVisible.value = false
-                return
+                Log.e(TAG, "showOverlayShell: failed to attach chat strip; continuing chat subscription")
+            } else {
+                applyOverlayStripVisibility()
+                scheduleStripZOrderLift()
             }
-            applyOverlayStripVisibility()
-            scheduleStripZOrderLift()
         }
         _overlayVisible.value = true
         rebalanceOverlayFullscreenZOrder()
@@ -3008,7 +3005,12 @@ class CombatOverlayService : Service() {
             runCatching { ensureChatStripWindow(wm) }
         }
         if (!isOverlayHudOnlyMode()) {
-            val showStrip = isOverlayRaidStripEligible() && !overlayChatTeamPanelVisible
+            val hasStripContent = chatStripPreviewFlow.value.isNotEmpty() ||
+                stripBuffer.visibleForPreview().isNotEmpty()
+            val showStrip = !overlayChatTeamPanelVisible && (
+                isOverlayRaidStripEligible() ||
+                    (isOverlayChatRoutingActive() && hasStripContent)
+                )
             chatStripHost?.visibility = if (showStrip) View.VISIBLE else View.GONE
         }
         if (rebalanceZOrder) {

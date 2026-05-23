@@ -3,6 +3,7 @@ package com.lastasylum.alliance.ui.chat
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -10,6 +11,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -19,6 +22,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -34,19 +38,16 @@ import com.lastasylum.alliance.R
 /** Сколько строк текста в свёрнутом длинном сообщении (как в Telegram). */
 const val CHAT_MESSAGE_COLLAPSED_MAX_LINES = 15
 
-private val CollapsedFadeHeight = 28.dp
-private val ExpandLinkStyle = TextStyle(
-    fontWeight = FontWeight.Medium,
-)
+private val CollapsedFadeHeight = 44.dp
+private val ExpandLinkStyle = TextStyle(fontWeight = FontWeight.SemiBold)
 
 private val ContentSizeAnim = tween<IntSize>(
-    durationMillis = 220,
+    durationMillis = 240,
     easing = FastOutSlowInEasing,
 )
 
 /**
- * Длинный текст в пузыре: обрезка по [collapsedMaxLines], градиент внизу, «читать далее» /
- * «свернуть» в стиле Telegram (без «…»).
+ * Длинный текст: обрезка, мягкий градиент и отдельная кнопка «читать далее» / «свернуть».
  */
 @Composable
 fun CollapsibleMessageText(
@@ -56,8 +57,7 @@ fun CollapsibleMessageText(
     modifier: Modifier = Modifier,
     collapsedMaxLines: Int = CHAT_MESSAGE_COLLAPSED_MAX_LINES,
     expandStateKey: String? = null,
-    expandLinkColor: Color = color.copy(alpha = 0.88f),
-    /** Цвет фона капли — градиент затухания сливается с ним. */
+    expandLinkColor: Color = color.copy(alpha = 0.92f),
     fadeBaseColor: Color,
 ) {
     if (text.isBlank()) return
@@ -71,14 +71,20 @@ fun CollapsibleMessageText(
             (!expanded && layout.hasVisualOverflow)
     }
 
-    val linkStyle = ExpandLinkStyle.merge(style)
+    val linkStyle = ExpandLinkStyle.merge(style.copy(fontSize = style.fontSize * 0.94f))
     val expandLabel = stringResource(R.string.chat_message_expand)
     val collapseLabel = stringResource(R.string.chat_message_collapse)
+    val pillBg = expandLinkColor.copy(alpha = 0.14f)
+    val pillBorder = expandLinkColor.copy(alpha = 0.38f)
 
     Column(
         modifier = modifier.animateContentSize(animationSpec = ContentSizeAnim),
     ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(4.dp)),
+        ) {
             Text(
                 text = text,
                 style = style,
@@ -92,31 +98,36 @@ fun CollapsibleMessageText(
             if (isLong && !expanded) {
                 Box(
                     modifier = Modifier
-                        .align(Alignment.BottomStart)
+                        .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                         .height(CollapsedFadeHeight)
                         .drawWithContent {
                             drawRect(
                                 brush = Brush.verticalGradient(
                                     0f to fadeBaseColor.copy(alpha = 0f),
-                                    0.35f to fadeBaseColor.copy(alpha = 0.72f),
-                                    0.72f to fadeBaseColor.copy(alpha = 0.96f),
+                                    0.45f to fadeBaseColor.copy(alpha = 0.55f),
+                                    0.78f to fadeBaseColor.copy(alpha = 0.88f),
                                     1f to fadeBaseColor,
                                 ),
                             )
-                        }
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = { expanded = true },
-                        ),
-                    contentAlignment = Alignment.BottomStart,
+                        },
+                )
+                Surface(
+                    onClick = { expanded = true },
+                    shape = RoundedCornerShape(999.dp),
+                    color = pillBg,
+                    border = BorderStroke(1.dp, pillBorder),
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 2.dp),
                 ) {
                     Text(
                         text = expandLabel,
                         style = linkStyle,
                         color = expandLinkColor,
-                        modifier = Modifier.padding(start = 2.dp, bottom = 1.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
                     )
                 }
             }
@@ -128,7 +139,7 @@ fun CollapsibleMessageText(
                 style = linkStyle,
                 color = expandLinkColor,
                 modifier = Modifier
-                    .padding(top = 2.dp)
+                    .padding(top = 6.dp)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,

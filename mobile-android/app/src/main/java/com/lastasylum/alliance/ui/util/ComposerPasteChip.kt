@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,6 +31,7 @@ fun rememberComposerPasteState(
 ): ComposerPasteState {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
+    val currentDraft by rememberUpdatedState(draft)
     val hasClipboard = remember(showMenu) {
         readClipboardPlainText(context) != null
     }
@@ -49,7 +51,7 @@ fun rememberComposerPasteState(
                     Toast.LENGTH_SHORT,
                 ).show()
             } else {
-                onDraftChange(appendTextToDraft(draft, clip))
+                onDraftChange(appendTextToDraft(currentDraft, clip))
             }
             showMenu = false
         },

@@ -4,8 +4,6 @@ import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
 import android.content.Context
 import android.graphics.Color
-import android.graphics.LinearGradient
-import android.graphics.Shader
 import android.graphics.Typeface
 import android.os.Build
 import android.text.TextUtils
@@ -14,83 +12,80 @@ import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.view.animation.OvershootInterpolator
+import android.view.animation.DecelerateInterpolator
+import android.graphics.drawable.GradientDrawable
 
 internal object OverlayReactionTextBurstUi {
 
     fun createMessageTextView(context: Context, message: String, maxWidthPx: Int): TextView {
         val typeface = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            Typeface.create(Typeface.SANS_SERIF, 500, false)
+            Typeface.create(Typeface.SANS_SERIF, 600, false)
         } else {
-            Typeface.create(Typeface.SERIF, Typeface.BOLD)
+            Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
         }
         return TextView(context).apply {
             text = message
             gravity = Gravity.CENTER
             textAlignment = View.TEXT_ALIGNMENT_CENTER
-            setTextColor(Color.parseColor("#FFFFF8F0"))
+            setTextColor(Color.parseColor("#FFFDF8F0"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, OverlayReactionBurstLayout.TEXT_MESSAGE_SP)
             this.typeface = typeface
-            letterSpacing = 0.03f
-            setLineSpacing(0f, 1.12f)
+            letterSpacing = 0.01f
+            setLineSpacing(0f, 1.18f)
             maxLines = OverlayReactionBurstLayout.TEXT_LINES_MAX
             ellipsize = TextUtils.TruncateAt.END
-            setShadowLayer(10f, 0f, 3f, Color.parseColor("#CC1A0A28"))
+            setShadowLayer(14f, 0f, 4f, Color.parseColor("#E6000000"))
             maxWidth = maxWidthPx
-            disableOverlayTouchTarget(this)
-            post {
-                val w = width.toFloat().coerceAtLeast(1f)
-                paint.shader = LinearGradient(
-                    0f,
-                    0f,
-                    w,
-                    0f,
-                    intArrayOf(
-                        Color.parseColor("#FFFFF5E6"),
-                        Color.parseColor("#FFFFE082"),
-                        Color.parseColor("#FFFFF8F0"),
-                    ),
-                    floatArrayOf(0f, 0.5f, 1f),
-                    Shader.TileMode.CLAMP,
+            val padH = (context.resources.displayMetrics.density * 16).toInt()
+            val padV = (context.resources.displayMetrics.density * 14).toInt()
+            setPadding(padH, padV, padH, padV)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#CC0D1524"))
+                cornerRadius = context.resources.displayMetrics.density * 16f
+                setStroke(
+                    (context.resources.displayMetrics.density * 1.2f).toInt().coerceAtLeast(1),
+                    Color.parseColor("#55FFFFFF"),
                 )
-                invalidate()
             }
+            disableOverlayTouchTarget(this)
         }
     }
 
     fun playRevealAnimation(messageView: TextView, senderLine: TextView) {
         messageView.alpha = 0f
-        messageView.scaleX = 0.82f
-        messageView.scaleY = 0.82f
-        messageView.translationY = messageView.resources.displayMetrics.density * 28f
+        messageView.scaleX = 0.96f
+        messageView.scaleY = 0.96f
+        messageView.translationY = messageView.resources.displayMetrics.density * 10f
         senderLine.alpha = 0f
-        senderLine.translationY = senderLine.resources.displayMetrics.density * 12f
-        val pop = OvershootInterpolator(1.08f)
+        senderLine.translationY = senderLine.resources.displayMetrics.density * 6f
+        val ease = DecelerateInterpolator(1.4f)
         AnimatorSet().apply {
             playTogether(
                 ObjectAnimator.ofFloat(messageView, View.ALPHA, 0f, 1f).apply {
+                    duration = 480
+                    interpolator = ease
+                },
+                ObjectAnimator.ofFloat(messageView, View.SCALE_X, 0.96f, 1f).apply {
                     duration = 520
+                    interpolator = ease
                 },
-                ObjectAnimator.ofFloat(messageView, View.SCALE_X, 0.82f, 1.04f, 1f).apply {
-                    duration = 680
-                    interpolator = pop
-                },
-                ObjectAnimator.ofFloat(messageView, View.SCALE_Y, 0.82f, 1.04f, 1f).apply {
-                    duration = 680
-                    interpolator = pop
+                ObjectAnimator.ofFloat(messageView, View.SCALE_Y, 0.96f, 1f).apply {
+                    duration = 520
+                    interpolator = ease
                 },
                 ObjectAnimator.ofFloat(messageView, View.TRANSLATION_Y, messageView.translationY, 0f).apply {
-                    duration = 560
-                    interpolator = pop
+                    duration = 480
+                    interpolator = ease
                 },
                 ObjectAnimator.ofFloat(senderLine, View.ALPHA, 0f, OverlayReactionBurstLayout.CAPTION_ALPHA).apply {
-                    duration = 420
-                    startDelay = 180
+                    duration = 360
+                    startDelay = 140
+                    interpolator = ease
                 },
                 ObjectAnimator.ofFloat(senderLine, View.TRANSLATION_Y, senderLine.translationY, 0f).apply {
-                    duration = 420
-                    startDelay = 180
-                    interpolator = pop
+                    duration = 360
+                    startDelay = 140
+                    interpolator = ease
                 },
             )
             start()
@@ -104,18 +99,19 @@ internal object OverlayReactionTextBurstUi {
     ): TextView =
         TextView(context).apply {
             text = senderLineText
-            setTextColor(Color.parseColor("#F2FFFFFF"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
-            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.parseColor("#F5FFFFFF"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
             gravity = Gravity.CENTER_HORIZONTAL
             maxWidth = maxWidthPx
-            maxLines = 3
+            maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
+            setShadowLayer(8f, 0f, 2f, Color.parseColor("#99000000"))
             setPadding(
                 context.resources.displayMetrics.density.times(10).toInt(),
-                context.resources.displayMetrics.density.times(6).toInt(),
+                context.resources.displayMetrics.density.times(5).toInt(),
                 context.resources.displayMetrics.density.times(10).toInt(),
-                context.resources.displayMetrics.density.times(6).toInt(),
+                context.resources.displayMetrics.density.times(5).toInt(),
             )
             alpha = OverlayReactionBurstLayout.CAPTION_ALPHA
             disableOverlayTouchTarget(this)
