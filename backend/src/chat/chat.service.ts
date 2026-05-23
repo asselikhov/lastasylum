@@ -933,10 +933,14 @@ export class ChatService {
         )
         .exec();
     }
+    const unreadMap = await this.countUnreadByRoomIds(input.userId, [
+      input.roomId,
+    ]);
     return {
       roomId: input.roomId,
       userId: input.userId,
       messageId: lastReadMessageId,
+      unreadCount: unreadMap.get(input.roomId) ?? 0,
     };
   }
 

@@ -1576,6 +1576,7 @@ class CombatOverlayService : Service() {
         return when {
             cachedCount == null -> networkCount
             networkCount >= cachedCount -> networkCount
+            networkCount == 0 -> networkCount
             else -> cachedCount
         }
     }
@@ -1619,7 +1620,6 @@ class CombatOverlayService : Service() {
         val next = (overlayStatusHudFlow.value.allianceChatUnread + 1).coerceAtMost(999)
         hubUnreadOptimisticFloor = next
         applyAllianceHubUnreadCount(next)
-        patchHubUnreadInSessionCache(next)
     }
 
     private fun shouldBumpOverlayHubUnread(msg: ChatMessage, hubId: String): Boolean {
@@ -1645,8 +1645,13 @@ class CombatOverlayService : Service() {
         if (!OverlayStripMessageRouter.shouldRouteHubUnread(msg, hubId, prefs.getRaidRoomId())) {
             return
         }
-        if (shouldBumpOverlayHubUnread(msg, hubId) && activityScopedChatViewModel == null) {
-            bumpAllianceHubUnreadLocally(msg._id)
+        if (shouldBumpOverlayHubUnread(msg, hubId)) {
+            val activityVm = activityScopedChatViewModel
+            if (activityVm != null) {
+                activityVm.recordRealtimeUnreadHint(msg)
+            } else {
+                bumpAllianceHubUnreadLocally(msg._id)
+            }
         }
         scheduleDebouncedHubHudRefresh()
     }
@@ -3161,6 +3166,8 @@ class CombatOverlayService : Service() {
         }
         overlayChatTeamRoot = null
         overlayChatTeamParams = null
+        overlayChatViewModel?.syncReadStateFromPreferences()
+        activityScopedChatViewModel?.syncReadStateFromPreferences()
         overlayChatViewModel = null
         pendingOverlayPickedImageUris = null
         deferredHideOverlayChatTeamPanel = false
@@ -3703,13 +3710,21 @@ class CombatOverlayService : Service() {
             service.mainHandler.post {
                 if (count <= 0) {
                     service.hubUnreadOptimisticFloor = 0
+                    service.applyAllianceHubUnreadCount(0)
+                    service.patchHubUnreadInSessionCache(0)
                 } else {
                     service.hubUnreadOptimisticFloor = maxOf(service.hubUnreadOptimisticFloor, count)
+                    service.applyAllianceHubUnreadReconciled(count)
+                    service.patchHubUnreadInSessionCache(count.coerceIn(0, 999))
                 }
-                service.applyAllianceHubUnreadReconciled(count)
-                service.patchHubUnreadInSessionCache(
-                    service.overlayStatusHudFlow.value.allianceChatUnread,
-                )
+            }
+        }
+
+        /** Optimistic +1 on hub mail chip when realtime arrives before listRooms (no activity VM). */
+        fun bumpAllianceHubUnreadFromRealtime(messageId: String?) {
+            val service = runningInstance ?: return
+            service.mainHandler.post {
+                service.bumpAllianceHubUnreadLocally(messageId)
             }
         }
 

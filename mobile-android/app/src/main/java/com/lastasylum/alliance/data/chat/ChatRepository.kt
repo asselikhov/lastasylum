@@ -76,7 +76,7 @@ class ChatRepository(
     suspend fun forwardMessage(messageId: String, roomId: String): Result<ChatMessage> =
         rest.forwardMessage(messageId, roomId)
 
-    suspend fun markRoomRead(roomId: String, messageId: String): Result<Unit> =
+    suspend fun markRoomRead(roomId: String, messageId: String): Result<MarkRoomReadResponse> =
         rest.markRoomRead(roomId, messageId)
 
     fun connectRealtime(

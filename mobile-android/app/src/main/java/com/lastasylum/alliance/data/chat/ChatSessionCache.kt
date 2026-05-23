@@ -28,8 +28,24 @@ object ChatSessionCache {
         return rooms
     }
 
+    /** Force next bootstrap/HUD path to refetch listRooms. */
+    fun invalidateRooms() {
+        cachedRoomsAtMs = 0L
+    }
+
     fun update(rooms: List<ChatRoomDto>) {
         cachedRooms = rooms
+        cachedRoomsAtMs = System.currentTimeMillis()
+    }
+
+    /** Keep listRooms cache aligned after mark-read so overlay/bootstrap do not resurrect badges. */
+    fun patchRoomRead(roomId: String, lastReadMessageId: String) {
+        if (roomId.isBlank() || lastReadMessageId.isBlank()) return
+        val current = cachedRooms ?: return
+        cachedRooms = current.map { room ->
+            if (room.id != roomId) room
+            else room.copy(unreadCount = 0, lastReadMessageId = lastReadMessageId)
+        }
         cachedRoomsAtMs = System.currentTimeMillis()
     }
 

@@ -89,6 +89,11 @@ data class MarkRoomReadRequest(
     val messageId: String,
 )
 
+data class MarkRoomReadResponse(
+    val success: Boolean = true,
+    val unreadCount: Int = 0,
+)
+
 data class UploadChatAttachmentResponse(
     val fileId: String,
     val url: String,

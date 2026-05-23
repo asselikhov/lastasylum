@@ -110,9 +110,8 @@ class ChatRestRepository(
     suspend fun forwardMessage(messageId: String, roomId: String): Result<ChatMessage> =
         runCatching { chatApi.forwardMessage(messageId, ForwardMessageRequest(roomId = roomId)) }
 
-    suspend fun markRoomRead(roomId: String, messageId: String): Result<Unit> =
+    suspend fun markRoomRead(roomId: String, messageId: String): Result<MarkRoomReadResponse> =
         runCatching {
             chatApi.markRoomRead(roomId, MarkRoomReadRequest(messageId = messageId))
-            Unit
         }
 }

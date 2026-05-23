@@ -456,6 +456,9 @@ export class ChatController {
       messageId,
     });
     this.chatGateway.server?.to(`chat:${result.roomId}`).emit('room:read', result);
-    return { success: true };
+    return {
+      success: true,
+      unreadCount: result.unreadCount ?? 0,
+    };
   }
 }

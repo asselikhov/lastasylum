@@ -29,9 +29,9 @@ class InboxReadCursorTest {
     }
 
     @Test
-    fun effectiveUnread_keepsServerCount_whenCursorsEqualButUnreadPositive() {
+    fun effectiveUnread_suppressesStaleServerCount_whenCursorsEqual() {
         assertEquals(
-            2,
+            0,
             effectiveUnreadCount(
                 serverUnread = 2,
                 lastReadMessageId = "000000000000000000000070",

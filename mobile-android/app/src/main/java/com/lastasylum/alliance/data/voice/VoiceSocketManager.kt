@@ -3,6 +3,7 @@ package com.lastasylum.alliance.data.voice
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import io.socket.client.Ack
 import io.socket.client.IO
 import io.socket.client.Socket
 import java.util.concurrent.CopyOnWriteArrayList
@@ -170,37 +171,21 @@ class VoiceSocketManager {
                 on(Socket.EVENT_CONNECT) {
                     reconnectAttempt = 0
                     voiceJoined = false
-                    emit(
-                        "voice:join",
-                        JSONObject()
-                            .put("roomId", roomId)
-                            .put("micOn", lastMicOn)
-                            .put("soundOn", lastSoundOn),
-                    )
+                    emitVoiceJoin(this, roomId)
                 }
                 on(Socket.EVENT_DISCONNECT) {
                     voiceJoined = false
                     if (!intentionalDisconnect) scheduleReconnect()
                 }
-                on(Socket.EVENT_CONNECT_ERROR) {
+                on(Socket.EVENT_CONNECT_ERROR) { args ->
+                    Log.w(TAG, "Voice connect error: ${args.firstOrNull()}")
                     if (!intentionalDisconnect) scheduleReconnect()
                 }
+                on("exception") { args ->
+                    Log.w(TAG, "Voice server exception: ${args.firstOrNull()}")
+                }
                 on("voice:joined") { args ->
-                    voiceJoined = true
-                    flushPendingUpstreamFrames()
-                    emitState(lastMicOn, lastSoundOn)
-                    mainHandler.post {
-                        joinedCallbacks.forEach { callback ->
-                            runCatching { callback() }
-                        }
-                        joinedCallbacks.clear()
-                    }
-                    val payload = args.firstOrNull() as? JSONObject ?: return@on
-                    val peers = payload.optJSONArray("peers") ?: return@on
-                    for (i in 0 until peers.length()) {
-                        val peer = peers.optJSONObject(i) ?: continue
-                        dispatchPeer(VoicePeerEvent.Joined(peer.toPeerState()))
-                    }
+                    onVoiceJoinedPayload(args)
                 }
                 on("voice:peer-joined") { args ->
                     val payload = args.firstOrNull() as? JSONObject ?: return@on
@@ -230,6 +215,52 @@ class VoiceSocketManager {
             disconnectSocketOnly()
             if (!intentionalDisconnect) scheduleReconnect()
         }
+    }
+
+    private fun emitVoiceJoin(sock: Socket, roomId: String) {
+        val payload = JSONObject()
+            .put("roomId", roomId)
+            .put("micOn", lastMicOn)
+            .put("soundOn", lastSoundOn)
+        sock.emit(
+            "voice:join",
+            payload,
+            Ack { args ->
+                mainHandler.post { onVoiceJoinedPayload(args) }
+            },
+        )
+    }
+
+    private fun onVoiceJoinedPayload(args: Array<out Any>) {
+        if (!voiceJoined) {
+            voiceJoined = true
+            flushPendingUpstreamFrames()
+            emitState(lastMicOn, lastSoundOn)
+            mainHandler.post {
+                joinedCallbacks.forEach { callback ->
+                    runCatching { callback() }
+                }
+                joinedCallbacks.clear()
+            }
+        }
+        val payload = extractVoiceJoinedData(args) ?: return
+        val peers = payload.optJSONArray("peers") ?: return
+        for (i in 0 until peers.length()) {
+            val peer = peers.optJSONObject(i) ?: continue
+            dispatchPeer(VoicePeerEvent.Joined(peer.toPeerState()))
+        }
+    }
+
+    /** Nest may deliver join via Socket.IO ack and/or explicit `voice:joined` emit. */
+    private fun extractVoiceJoinedData(args: Array<out Any>): JSONObject? {
+        val first = args.firstOrNull() ?: return null
+        if (first is JSONObject) {
+            if (first.has("data") && first.optString("event") == "voice:joined") {
+                return first.optJSONObject("data")
+            }
+            return first
+        }
+        return null
     }
 
     private fun dispatchPeer(event: VoicePeerEvent) {

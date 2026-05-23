@@ -70,5 +70,5 @@ interface ChatApi {
     suspend fun markRoomRead(
         @Path("roomId") roomId: String,
         @Body body: MarkRoomReadRequest,
-    )
+    ): MarkRoomReadResponse
 }

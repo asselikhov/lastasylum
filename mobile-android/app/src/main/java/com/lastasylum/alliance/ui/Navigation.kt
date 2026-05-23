@@ -232,10 +232,10 @@ fun AppNavigation(
     val msgStickerSaved = stringResource(R.string.admin_sticker_saved)
     val chatState by chatViewModel.state.collectAsStateWithLifecycle()
     val chatTabUnreadTotal = remember(chatState.rooms) {
-        ChatRoomKindResolver.allianceHubRoom(chatState.rooms)
-            ?.unreadCount
-            ?.coerceIn(0, 99)
-            ?: 0
+        com.lastasylum.alliance.data.chat.ChatUnreadCounts.tabBadgeTotal(
+            chatState.rooms,
+            app.chatRoomPreferences.loadAllLastReadMessageIds(),
+        )
     }
     Scaffold(
         modifier = modifier,

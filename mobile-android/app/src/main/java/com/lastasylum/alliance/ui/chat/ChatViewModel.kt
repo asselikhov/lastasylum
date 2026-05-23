@@ -25,7 +25,7 @@ import com.lastasylum.alliance.data.chat.ChatRaidRoomSync
 import com.lastasylum.alliance.data.chat.ChatRoomKind
 import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
 import com.lastasylum.alliance.overlay.CombatOverlayService
-import com.lastasylum.alliance.overlay.OverlayGameStatusHudRefresh
+import com.lastasylum.alliance.data.chat.ChatUnreadCounts
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
 import com.lastasylum.alliance.data.users.UsersRepository
 import com.lastasylum.alliance.ui.util.toUserMessageRu
@@ -110,6 +110,8 @@ class ChatViewModel(
     private val lastMarkedReadByRoom = mutableMapOf<String, String>()
     /** Socket can deliver the same message via new + reaction/edited; count unread once per id. */
     private val unreadBumpedMessageIds = LinkedHashSet<String>()
+    /** Realtime before listRooms — applied after [applyRoomsFromServer]. */
+    private val pendingUnreadBumps = ArrayDeque<Pair<String, String>>()
     private var unreadSyncJob: Job? = null
     private val bootstrapMutex = Mutex()
     private var bootstrapJob: Job? = null
@@ -145,24 +147,68 @@ class ChatViewModel(
 
     private fun dispatchIncomingBatch(batch: List<ChatMessage>) {
         for (message in batch) {
-            val roomId = message.roomId
-            if (roomId.isBlank()) continue
-            if (_state.value.rooms.none { it.id == roomId }) continue
-            val selected = _state.value.selectedRoomId
-            if (roomId == selected) {
-                applyIncomingMessage(message)
-            } else if (message.senderId != currentUserId) {
-                val mid = message._id ?: continue
-                if (!shouldTrackUnreadForMessage(roomId, mid)) continue
-                bumpRoomUnreadLocally(roomId, mid)
-                scheduleUnreadSyncFromServer()
-            }
+            processRealtimeMessageForUnread(message)
         }
     }
 
+    /** Called from overlay hub socket when activity [ChatViewModel] is bound. */
+    fun recordRealtimeUnreadHint(message: ChatMessage) {
+        processRealtimeMessageForUnread(message)
+    }
+
+    private fun processRealtimeMessageForUnread(message: ChatMessage) {
+        val roomId = message.roomId
+        if (roomId.isBlank()) return
+        val selected = _state.value.selectedRoomId
+        if (roomId == selected) {
+            applyIncomingMessage(message)
+            return
+        }
+        if (message.senderId == currentUserId) return
+        val mid = message._id ?: return
+        if (!shouldTrackUnreadForMessage(roomId, mid)) return
+        if (_state.value.rooms.none { it.id == roomId }) {
+            queuePendingUnreadBump(roomId, mid)
+            notifyOverlayHubIfPending(roomId)
+            scheduleUnreadSyncFromServer()
+            return
+        }
+        bumpRoomUnreadLocally(roomId, mid)
+        scheduleUnreadSyncFromServer()
+    }
+
+    private fun queuePendingUnreadBump(roomId: String, messageId: String) {
+        pendingUnreadBumps.addLast(roomId to messageId)
+        while (pendingUnreadBumps.size > 64) {
+            pendingUnreadBumps.removeFirst()
+        }
+    }
+
+    private fun flushPendingUnreadBumps() {
+        if (pendingUnreadBumps.isEmpty()) return
+        val pending = pendingUnreadBumps.toList()
+        pendingUnreadBumps.clear()
+        val selected = _state.value.selectedRoomId
+        for ((roomId, messageId) in pending) {
+            if (_state.value.rooms.none { it.id == roomId }) continue
+            if (roomId == selected) continue
+            if (!shouldTrackUnreadForMessage(roomId, messageId)) continue
+            bumpRoomUnreadLocally(roomId, messageId)
+        }
+        scheduleUnreadSyncFromServer()
+    }
+
+    private fun notifyOverlayHubIfPending(roomId: String) {
+        val hubId = chatRoomPreferences.getHubRoomId()?.trim().orEmpty()
+        if (hubId.isBlank() || roomId != hubId) return
+        val lastPending = pendingUnreadBumps.lastOrNull()?.second
+        CombatOverlayService.bumpAllianceHubUnreadFromRealtime(lastPending)
+    }
+
     private fun syncOverlayAllianceHubBadge(rooms: List<ChatRoomDto> = _state.value.rooms) {
-        val hub = ChatRoomKindResolver.allianceHubRoom(rooms) ?: return
-        CombatOverlayService.notifyAllianceHubUnread(hub.unreadCount.coerceIn(0, 99))
+        val localRead = chatRoomPreferences.loadAllLastReadMessageIds()
+        val count = ChatUnreadCounts.allianceHubUnread(rooms, localRead)
+        CombatOverlayService.notifyAllianceHubUnread(count)
     }
 
     private fun realtimeSubscriptionRoomIds(rooms: List<ChatRoomDto>): List<String> {
@@ -190,7 +236,23 @@ class ChatViewModel(
 
     /** Оверлей-чат: по умолчанию комната «Альянс» (hub), как вкладка чата в приложении. */
     fun refreshChatForOverlay() {
+        syncReadStateFromPreferences()
+        ChatSessionCache.invalidateRooms()
         scheduleBootstrap(preferAllianceHubRoom = true, force = false)
+    }
+
+    /**
+     * Reload per-room read cursors from SharedPreferences (e.g. user read in the main app)
+     * and recompute tab badges before overlay or tab resume uses cached room lists.
+     */
+    fun syncReadStateFromPreferences() {
+        hydrateReadCursorsFromPreferences()
+        val rooms = _state.value.rooms
+        if (rooms.isEmpty()) return
+        val adjusted = mergeRoomsUnreadFromServer(rooms)
+        _state.update { it.copy(rooms = adjusted) }
+        ChatSessionCache.update(adjusted)
+        syncOverlayAllianceHubBadge(adjusted)
     }
 
     private fun scheduleBootstrap(
@@ -289,6 +351,7 @@ class ChatViewModel(
 
     /** Returning to the Chat tab: re-mark visible room and refresh badges without stale server counts. */
     fun onChatTabResumed() {
+        syncReadStateFromPreferences()
         viewModelScope.launch {
             ensureAllianceHubRoomSelected()
             val roomId = _state.value.selectedRoomId
@@ -302,6 +365,7 @@ class ChatViewModel(
 
     /** Overlay fullscreen chat closed — reclaim socket + refresh server unread counts. */
     fun onOverlayChatPanelClosed() {
+        syncReadStateFromPreferences()
         viewModelScope.launch {
             syncRoomsFromServer()
             reconnectRealtimeIfNeeded()
@@ -552,10 +616,14 @@ class ChatViewModel(
     }
 
     private fun applyRoomsFromServer(serverRooms: List<ChatRoomDto>): List<ChatRoomDto> {
-        ChatSessionCache.update(serverRooms)
+        hydrateReadCursorsFromPreferences()
         val sorted = sortChatRoomsForDisplay(serverRooms)
         hydrateReadCursorsFromRooms(sorted)
-        return mergeRoomsUnreadFromServer(sorted)
+        val merged = mergeRoomsUnreadFromServer(sorted)
+        ChatSessionCache.update(merged)
+        flushPendingUnreadBumps()
+        syncOverlayAllianceHubBadge(merged)
+        return merged
     }
 
     private fun mergeRoomsUnreadFromServer(serverRooms: List<ChatRoomDto>): List<ChatRoomDto> {
@@ -575,14 +643,14 @@ class ChatViewModel(
     }
 
     private fun resolvedLastReadMessageId(room: ChatRoomDto): String? {
-        val local = lastMarkedReadByRoom[room.id]?.trim().orEmpty()
+        val fromMemory = lastMarkedReadByRoom[room.id]?.trim().orEmpty()
+        val fromPrefs = chatRoomPreferences.getLastReadMessageId(room.id)?.trim().orEmpty()
         val server = room.lastReadMessageId?.trim().orEmpty()
-        return when {
-            local.isBlank() -> server.takeIf { it.isNotBlank() }
-            server.isBlank() -> local
-            isObjectIdNewer(local, server) -> local
-            else -> server
-        }
+        return listOf(fromMemory, fromPrefs, server)
+            .filter { it.isNotBlank() }
+            .reduceOrNull { acc, next ->
+                if (isObjectIdNewer(next, acc)) next else acc
+            }
     }
 
     private fun effectiveUnreadForRoom(room: ChatRoomDto): Int =
@@ -593,7 +661,9 @@ class ChatViewModel(
         )
 
     private fun shouldTrackUnreadForMessage(roomId: String, messageId: String): Boolean {
-        val lastRead = lastMarkedReadByRoom[roomId]
+        val room = _state.value.rooms.find { it.id == roomId }
+        val lastRead = room?.let { resolvedLastReadMessageId(it) }
+            ?: chatRoomPreferences.getLastReadMessageId(roomId)
         if (lastRead != null && !isObjectIdNewer(messageId, lastRead)) {
             return false
         }
@@ -652,7 +722,7 @@ class ChatViewModel(
             val raw = rawById[room.id] ?: continue
             if (raw.unreadCount <= 0) continue
             if (room.unreadCount > raw.unreadCount) continue
-            val localLast = lastMarkedReadByRoom[room.id] ?: continue
+            val localLast = resolvedLastReadMessageId(room) ?: continue
             val serverLast = raw.lastReadMessageId?.trim().orEmpty()
             if (serverLast.isBlank() || !isObjectIdNewer(localLast, serverLast)) continue
             markRoomReadUpTo(room.id, localLast, forceSync = true)
@@ -668,20 +738,28 @@ class ChatViewModel(
         val prev = lastMarkedReadByRoom[roomId]
         if (!forceSync && prev != null && !isObjectIdNewer(messageId, prev)) return
         mergeReadCursor(roomId, messageId)
+        ChatSessionCache.patchRoomRead(roomId, messageId)
         _state.update { st ->
             st.copy(rooms = clearUnreadForRoom(st.rooms, roomId))
         }
+        ChatSessionCache.update(_state.value.rooms)
         if (ChatRoomKindResolver.allianceHubRoom(_state.value.rooms)?.id == roomId) {
             CombatOverlayService.notifyAllianceHubUnread(0)
         }
         repository.markRoomRead(roomId, messageId)
-            .onSuccess {
+            .onSuccess { response ->
                 mergeReadCursor(roomId, messageId)
-                _state.update { st ->
-                    st.copy(rooms = clearUnreadForRoom(st.rooms, roomId))
-                }
-                if (ChatRoomKindResolver.allianceHubRoom(_state.value.rooms)?.id == roomId) {
-                    CombatOverlayService.notifyAllianceHubUnread(0)
+                ChatSessionCache.invalidateRooms()
+                if (response.unreadCount <= 0) {
+                    _state.update { st ->
+                        st.copy(rooms = clearUnreadForRoom(st.rooms, roomId))
+                    }
+                    ChatSessionCache.update(_state.value.rooms)
+                    if (ChatRoomKindResolver.allianceHubRoom(_state.value.rooms)?.id == roomId) {
+                        CombatOverlayService.notifyAllianceHubUnread(0)
+                    }
+                } else {
+                    scheduleUnreadSyncFromServer()
                 }
             }
     }

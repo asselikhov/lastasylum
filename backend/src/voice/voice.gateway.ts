@@ -141,9 +141,11 @@ export class VoiceGateway {
       peer: this.peerStateFromClient(client),
     });
 
+    const joinedPayload = { roomId, peers };
+    client.emit('voice:joined', joinedPayload);
     return {
       event: 'voice:joined',
-      data: { roomId, peers },
+      data: joinedPayload,
     };
   }
 
