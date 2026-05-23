@@ -187,7 +187,7 @@ fun OverlayTeamOnlinePanel(
     }
 
     LaunchedEffect(Unit) {
-        applyBootstrap(forceTeamRefresh = true, showBlockingSpinner = true)
+        applyBootstrap(forceTeamRefresh = false, showBlockingSpinner = team == null)
         while (isActive) {
             delay(OVERLAY_ONLINE_PANEL_POLL_MS)
             refreshPresenceOnly()

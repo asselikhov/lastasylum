@@ -3295,6 +3295,7 @@ class CombatOverlayService : Service() {
         mainHandler.post { flushPendingOverlayPickedImages() }
         if (overlayChatTeamPanelVisible) return
         val initialTab = initialTabIndex.coerceIn(0, 1)
+        val overlayPane = hudPane
         currentOverlayHudPane = hudPane
         overlayCommandsPopover.hide()
         OverlayChatInteractionHold.acquireGameForegroundSuppress()
@@ -3334,79 +3335,7 @@ class CombatOverlayService : Service() {
                 val container = remember { AppContainer.from(this@CombatOverlayService) }
                 val userId = remember { jwtSubFromAccessToken().orEmpty() }
                 val userRole = remember { jwtRoleFromAccessToken() }
-                var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab) }
-                var vm by remember(userId, userRole) {
-                    mutableStateOf(
-                        run {
-                            if (userId.isNotBlank()) {
-                                ReadCursorSession.bind(
-                                    container.chatRoomPreferences,
-                                    container.teamForumPreferences,
-                                    userId,
-                                )
-                            }
-                            resolveChatViewModel()
-                        },
-                    )
-                }
-                LaunchedEffect(userId, userRole) {
-                    if (userId.isBlank()) return@LaunchedEffect
-                    repeat(30) {
-                        resolveChatViewModel()?.let { found ->
-                            vm = found
-                            return@LaunchedEffect
-                        }
-                        kotlinx.coroutines.delay(80)
-                    }
-                    vm = ensureOverlayFallbackChatViewModel(userId, userRole)
-                }
-                LaunchedEffect(vm) {
-                    vm?.refreshChatForOverlay()
-                    flushPendingOverlayPickedImages()
-                }
-                val chatVm = vm
-                if (userId.isBlank()) {
-                    SquadRelayTheme {
-                        Surface(
-                            modifier = Modifier.fillMaxSize(),
-                            color = MaterialTheme.colorScheme.surface,
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(24.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = getString(R.string.overlay_chat_session_unavailable),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                            }
-                        }
-                    }
-                    return@setContent
-                }
-                if (chatVm == null) {
-                    SquadRelayTheme {
-                        Surface(
-                            modifier = Modifier.fillMaxSize(),
-                            color = MaterialTheme.colorScheme.surface,
-                        ) {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                CircularProgressIndicator()
-                            }
-                        }
-                    }
-                    return@setContent
-                }
-                val chatState by chatVm.state.collectAsStateWithLifecycle(owner)
-                val draftMessage by chatVm.draftMessage.collectAsStateWithLifecycle(owner)
-                val pickedImageUris by chatVm.pickedImageUris.collectAsStateWithLifecycle(owner)
-                val typingPeers by chatVm.typingPeers.collectAsStateWithLifecycle(owner)
-                val otherReadUptoMessageId by chatVm.otherReadUptoMessageId.collectAsStateWithLifecycle(owner)
+                val needsChatVm = overlayPane == null || overlayPane == OverlayHudPane.Chat
 
                 CompositionLocalProvider(
                     LocalActivityResultRegistryOwner provides owner,
@@ -3416,13 +3345,160 @@ class CombatOverlayService : Service() {
                     LocalOverlayUiMode provides true,
                 ) {
                     SquadRelayTheme {
+                        if (!needsChatVm && overlayPane != null) {
+                            BackHandler { hideOverlayChatTeamPanel() }
+                            Surface(
+                                modifier = Modifier.fillMaxSize(),
+                                color = MaterialTheme.colorScheme.surface,
+                            ) {
+                                Column(Modifier.fillMaxSize()) {
+                                    when (overlayPane) {
+                                        OverlayHudPane.News -> {
+                                            OverlayHudPanelHeader(
+                                                title = stringResource(R.string.team_tab_news),
+                                                onClose = { hideOverlayChatTeamPanel() },
+                                            )
+                                        }
+                                        OverlayHudPane.Forum -> {
+                                            OverlayHudPanelHeader(
+                                                title = stringResource(R.string.team_tab_forum),
+                                                onClose = { hideOverlayChatTeamPanel() },
+                                            )
+                                        }
+                                        OverlayHudPane.Participants -> {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(top = 2.dp, end = 4.dp),
+                                                horizontalArrangement = Arrangement.End,
+                                            ) {
+                                                IconButton(
+                                                    onClick = { hideOverlayChatTeamPanel() },
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Outlined.Close,
+                                                        contentDescription = getString(R.string.overlay_online_close_cd),
+                                                        tint = MaterialTheme.colorScheme.onSurface,
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        else -> Unit
+                                    }
+                                    Box(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .weight(1f),
+                                    ) {
+                                        when (overlayPane) {
+                                            OverlayHudPane.News -> {
+                                                OverlayTeamNewsPanel(
+                                                    currentUserId = userId,
+                                                    teamsRepository = container.teamsRepository,
+                                                )
+                                            }
+                                            OverlayHudPane.Forum -> {
+                                                OverlayTeamForumPanel(
+                                                    currentUserId = userId,
+                                                    teamsRepository = container.teamsRepository,
+                                                )
+                                            }
+                                            OverlayHudPane.Participants -> {
+                                                OverlayTeamOnlinePanel(
+                                                    teamsRepository = container.teamsRepository,
+                                                    usersRepository = container.usersRepository,
+                                                    teamPresenceSocket = container.teamPresenceSocket,
+                                                    tokenProvider = { container.tokenStore.getAccessToken() },
+                                                    openJoinInboxInitially = pendingOpenJoinInboxOnParticipants,
+                                                    onOpenJoinInboxConsumed = {
+                                                        pendingOpenJoinInboxOnParticipants = false
+                                                    },
+                                                    onHudRefresh = {
+                                                        OverlayGameStatusHudRefresh.invalidateNewsForumCache()
+                                                        refreshOverlayStatusHudData(force = true)
+                                                    },
+                                                )
+                                            }
+                                            else -> Unit
+                                        }
+                                    }
+                                }
+                            }
+                            return@SquadRelayTheme
+                        }
+
+                        var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab) }
+                        var vm by remember(userId, userRole) {
+                            mutableStateOf(
+                                run {
+                                    if (userId.isNotBlank()) {
+                                        ReadCursorSession.bind(
+                                            container.chatRoomPreferences,
+                                            container.teamForumPreferences,
+                                            userId,
+                                        )
+                                    }
+                                    resolveChatViewModel()
+                                        ?: userId.takeIf { it.isNotBlank() }?.let { uid ->
+                                            ensureOverlayFallbackChatViewModel(uid, userRole)
+                                        }
+                                },
+                            )
+                        }
+                        LaunchedEffect(userId, userRole) {
+                            resolveChatViewModel()?.let { shared ->
+                                if (vm !== shared) vm = shared
+                            }
+                        }
+                        LaunchedEffect(vm) {
+                            vm?.refreshChatForOverlay()
+                            flushPendingOverlayPickedImages()
+                        }
+                        val chatVm = vm
+                        if (userId.isBlank()) {
+                            Surface(
+                                modifier = Modifier.fillMaxSize(),
+                                color = MaterialTheme.colorScheme.surface,
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(24.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        text = getString(R.string.overlay_chat_session_unavailable),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                    )
+                                }
+                            }
+                            return@SquadRelayTheme
+                        }
+                        if (chatVm == null) {
+                            Surface(
+                                modifier = Modifier.fillMaxSize(),
+                                color = MaterialTheme.colorScheme.surface,
+                            ) {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    CircularProgressIndicator()
+                                }
+                            }
+                            return@SquadRelayTheme
+                        }
+                        val chatState by chatVm.state.collectAsStateWithLifecycle(owner)
+                        val draftMessage by chatVm.draftMessage.collectAsStateWithLifecycle(owner)
+                        val pickedImageUris by chatVm.pickedImageUris.collectAsStateWithLifecycle(owner)
+                        val typingPeers by chatVm.typingPeers.collectAsStateWithLifecycle(owner)
+                        val otherReadUptoMessageId by chatVm.otherReadUptoMessageId.collectAsStateWithLifecycle(owner)
+
                         val blockPanelBack = OverlayChatInteractionHold.blocksFullscreenPanelBack() ||
                             chatState.activeActionMessageId != null ||
                             chatState.confirmDeleteMessageId != null ||
                             chatState.confirmBulkDelete
-                        BackHandler(
-                            enabled = !blockPanelBack,
-                        ) {
+                        BackHandler(enabled = !blockPanelBack) {
                             hideOverlayChatTeamPanel()
                         }
                         Surface(
@@ -3430,54 +3506,18 @@ class CombatOverlayService : Service() {
                             color = MaterialTheme.colorScheme.surface,
                         ) {
                             Column(Modifier.fillMaxSize()) {
-                                when (hudPane) {
-                                    OverlayHudPane.News -> {
-                                        OverlayHudPanelHeader(
-                                            title = stringResource(R.string.team_tab_news),
-                                            onClose = { hideOverlayChatTeamPanel() },
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 2.dp, end = 4.dp),
+                                    horizontalArrangement = Arrangement.End,
+                                ) {
+                                    IconButton(onClick = { hideOverlayChatTeamPanel() }) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Close,
+                                            contentDescription = getString(R.string.overlay_history_close_cd),
+                                            tint = MaterialTheme.colorScheme.onSurface,
                                         )
-                                    }
-                                    OverlayHudPane.Forum -> {
-                                        OverlayHudPanelHeader(
-                                            title = stringResource(R.string.team_tab_forum),
-                                            onClose = { hideOverlayChatTeamPanel() },
-                                        )
-                                    }
-                                    OverlayHudPane.Participants -> {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(top = 2.dp, end = 4.dp),
-                                            horizontalArrangement = Arrangement.End,
-                                        ) {
-                                            IconButton(
-                                                onClick = { hideOverlayChatTeamPanel() },
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Outlined.Close,
-                                                    contentDescription = getString(R.string.overlay_online_close_cd),
-                                                    tint = MaterialTheme.colorScheme.onSurface,
-                                                )
-                                            }
-                                        }
-                                    }
-                                    else -> {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(top = 2.dp, end = 4.dp),
-                                            horizontalArrangement = Arrangement.End,
-                                        ) {
-                                            IconButton(
-                                                onClick = { hideOverlayChatTeamPanel() },
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Outlined.Close,
-                                                    contentDescription = getString(R.string.overlay_history_close_cd),
-                                                    tint = MaterialTheme.colorScheme.onSurface,
-                                                )
-                                            }
-                                        }
                                     }
                                 }
                                 Box(
@@ -3485,7 +3525,7 @@ class CombatOverlayService : Service() {
                                         .fillMaxWidth()
                                         .weight(1f),
                                 ) {
-                                    when (hudPane) {
+                                    when (overlayPane) {
                                         OverlayHudPane.Chat -> OverlayHudChatPane(
                                             chatState = chatState,
                                             typingPeers = typingPeers,
@@ -3494,70 +3534,43 @@ class CombatOverlayService : Service() {
                                             otherReadUptoMessageId = otherReadUptoMessageId,
                                             vm = chatVm,
                                         )
-                                        OverlayHudPane.News -> {
-                                            OverlayTeamNewsPanel(
-                                                currentUserId = userId,
-                                                teamsRepository = container.teamsRepository,
-                                            )
-                                        }
-                                        OverlayHudPane.Forum -> {
-                                            OverlayTeamForumPanel(
-                                                currentUserId = userId,
-                                                teamsRepository = container.teamsRepository,
-                                            )
-                                        }
-                                        OverlayHudPane.Participants -> {
-                                            OverlayTeamOnlinePanel(
-                                                teamsRepository = container.teamsRepository,
-                                                usersRepository = container.usersRepository,
-                                                teamPresenceSocket = container.teamPresenceSocket,
-                                                tokenProvider = { container.tokenStore.getAccessToken() },
-                                                openJoinInboxInitially = pendingOpenJoinInboxOnParticipants,
-                                                onOpenJoinInboxConsumed = {
-                                                    pendingOpenJoinInboxOnParticipants = false
-                                                },
-                                                onHudRefresh = {
-                                                    OverlayGameStatusHudRefresh.invalidateNewsForumCache()
-                                                    refreshOverlayStatusHudData(force = true)
-                                                },
-                                            )
-                                        }
                                         null -> when (selectedTab) {
-                                        0 -> OverlayHudChatPane(
-                                            chatState = chatState,
-                                            typingPeers = typingPeers,
-                                            draftMessage = draftMessage,
-                                            pickedImageUris = pickedImageUris,
-                                            otherReadUptoMessageId = otherReadUptoMessageId,
-                                            vm = chatVm,
-                                        )
-                                        1 -> {
-                                            TeamScreen(
-                                                currentUserId = userId,
-                                                teamsRepository = container.teamsRepository,
-                                                usersRepository = container.usersRepository,
-                                                initialMainSection = TeamMainSection.News,
+                                            0 -> OverlayHudChatPane(
+                                                chatState = chatState,
+                                                typingPeers = typingPeers,
+                                                draftMessage = draftMessage,
+                                                pickedImageUris = pickedImageUris,
+                                                otherReadUptoMessageId = otherReadUptoMessageId,
+                                                vm = chatVm,
                                             )
+                                            1 -> {
+                                                TeamScreen(
+                                                    currentUserId = userId,
+                                                    teamsRepository = container.teamsRepository,
+                                                    usersRepository = container.usersRepository,
+                                                    initialMainSection = TeamMainSection.News,
+                                                )
+                                            }
                                         }
-                                    }
+                                        else -> Unit
                                     }
                                 }
                                 val overlayChatModalOpen = chatState.activeActionMessageId != null ||
                                     chatState.confirmDeleteMessageId != null ||
                                     chatState.confirmBulkDelete
-                                if (hudPane == null && !overlayChatModalOpen) {
-                                TabRow(selectedTabIndex = selectedTab) {
-                                    Tab(
-                                        selected = selectedTab == 0,
-                                        onClick = { selectedTab = 0 },
-                                        text = { Text(stringResource(R.string.tab_chat)) },
-                                    )
-                                    Tab(
-                                        selected = selectedTab == 1,
-                                        onClick = { selectedTab = 1 },
-                                        text = { Text(stringResource(R.string.tab_team)) },
-                                    )
-                                }
+                                if (overlayPane == null && !overlayChatModalOpen) {
+                                    TabRow(selectedTabIndex = selectedTab) {
+                                        Tab(
+                                            selected = selectedTab == 0,
+                                            onClick = { selectedTab = 0 },
+                                            text = { Text(stringResource(R.string.tab_chat)) },
+                                        )
+                                        Tab(
+                                            selected = selectedTab == 1,
+                                            onClick = { selectedTab = 1 },
+                                            text = { Text(stringResource(R.string.tab_team)) },
+                                        )
+                                    }
                                 }
                             }
                         }

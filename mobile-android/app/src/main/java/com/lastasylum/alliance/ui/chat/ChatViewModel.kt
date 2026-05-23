@@ -241,7 +241,6 @@ class ChatViewModel(
     /** Оверлей-чат: по умолчанию комната «Альянс» (hub), как вкладка чата в приложении. */
     fun refreshChatForOverlay() {
         syncReadStateFromPreferences()
-        ChatSessionCache.invalidateRooms()
         scheduleBootstrap(preferAllianceHubRoom = true, force = false)
     }
 
