@@ -48,8 +48,10 @@
 
     <!-- Chat -->
     <string name="chat_message_hint">Сообщение</string>
-    <string name="chat_message_expand">читать далее</string>
-    <string name="chat_message_collapse">свернуть</string>
+    <string name="chat_message_expand">Показать полностью</string>
+    <string name="chat_message_collapse">Свернуть</string>
+    <string name="chat_message_expand_cd">Развернуть длинное сообщение</string>
+    <string name="chat_message_collapse_cd">Свернуть длинное сообщение</string>
     <string name="chat_caption_hint">Добавить подпись…</string>
     <string name="chat_edited">изменено</string>
     <string name="chat_forwarded_from">Переслано от %1$s</string>
