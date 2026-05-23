@@ -627,9 +627,7 @@ class ChatViewModel(
         for (room in rooms) {
             if (effectiveUnreadForRoom(room) > 0) continue
             if (room.unreadCount <= 0) continue
-            val localLast = lastMarkedReadByRoom[room.id]
-                ?: room.lastReadMessageId?.trim().orEmpty().takeIf { it.isNotBlank() }
-                ?: continue
+            val localLast = lastMarkedReadByRoom[room.id] ?: continue
             markRoomReadUpTo(room.id, localLast, forceSync = true)
         }
     }

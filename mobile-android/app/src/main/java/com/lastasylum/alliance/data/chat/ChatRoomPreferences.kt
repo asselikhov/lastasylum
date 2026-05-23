@@ -7,6 +7,15 @@ class ChatRoomPreferences(context: Context) {
     private val prefs =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    @Volatile
+    private var activeUserId: String? = null
+
+    /** Scope read cursors to the signed-in user so badges stay per-account on this device. */
+    fun bindUser(userId: String) {
+        val id = userId.trim()
+        activeUserId = id.takeIf { it.isNotEmpty() }
+    }
+
     fun getSelectedRoomId(): String? = prefs.getString(KEY_SELECTED_ROOM, null)
 
     fun setSelectedRoomId(id: String) {
@@ -44,7 +53,7 @@ class ChatRoomPreferences(context: Context) {
     }
 
     fun loadAllLastReadMessageIds(): Map<String, String> {
-        val prefix = KEY_LAST_READ_PREFIX
+        val prefix = lastReadKeyPrefix()
         return prefs.all
             .mapNotNull { (key, value) ->
                 if (key is String && key.startsWith(prefix) && value is String && value.isNotBlank()) {
@@ -57,6 +66,7 @@ class ChatRoomPreferences(context: Context) {
     }
 
     fun clear() {
+        activeUserId = null
         prefs.edit()
             .remove(KEY_SELECTED_ROOM)
             .remove(KEY_RAID_ROOM)
@@ -68,7 +78,12 @@ class ChatRoomPreferences(context: Context) {
         editor.apply()
     }
 
-    private fun lastReadKey(roomId: String): String = KEY_LAST_READ_PREFIX + roomId
+    private fun lastReadKeyPrefix(): String {
+        val uid = activeUserId?.trim().orEmpty()
+        return if (uid.isBlank()) KEY_LAST_READ_PREFIX else "$KEY_LAST_READ_PREFIX$uid:"
+    }
+
+    private fun lastReadKey(roomId: String): String = lastReadKeyPrefix() + roomId
 
     private companion object {
         const val PREFS_NAME = "squadrelay_chat"

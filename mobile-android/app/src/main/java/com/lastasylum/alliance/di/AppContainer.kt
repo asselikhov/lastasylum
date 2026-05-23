@@ -12,6 +12,7 @@ import com.lastasylum.alliance.data.network.NetworkModule
 import com.lastasylum.alliance.data.network.RealtimeCoordinator
 import com.lastasylum.alliance.data.settings.OnboardingPreferences
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
+import com.lastasylum.alliance.data.teams.TeamForumPreferences
 import com.lastasylum.alliance.data.teams.TeamForumSocketManager
 import com.lastasylum.alliance.data.teams.TeamPresenceSocketManager
 import com.lastasylum.alliance.data.teams.TeamsRepository
@@ -26,6 +27,7 @@ class AppContainer private constructor(context: Context) {
     val tokenStore: TokenStore by lazy { TokenStore(appContext) }
 
     val chatRoomPreferences: ChatRoomPreferences = ChatRoomPreferences(appContext)
+    val teamForumPreferences: TeamForumPreferences = TeamForumPreferences(appContext)
     val userSettingsPreferences: UserSettingsPreferences = UserSettingsPreferences(appContext)
     val onboardingPreferences: OnboardingPreferences = OnboardingPreferences(appContext)
 
@@ -82,6 +84,7 @@ class AppContainer private constructor(context: Context) {
             authorizedAuthApi = authorizedClients.authorizedAuthApi,
             tokenStore = tokenStore,
             chatRoomPreferences = chatRoomPreferences,
+            teamForumPreferences = teamForumPreferences,
         )
     }
 

@@ -7,7 +7,6 @@ import com.lastasylum.alliance.data.effectiveUnreadCount
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
 import com.lastasylum.alliance.data.teams.TeamsRepository
-import com.lastasylum.alliance.data.teams.TeamForumPreferences
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamNewsListItemDto
 import com.lastasylum.alliance.data.users.TeamMemberDto
@@ -80,7 +79,7 @@ internal object OverlayGameStatusHudRefresh {
                     ?.items
                     ?.let { countUnreadNews(it, prefs) }
                     ?: 0
-            val forumPrefs = TeamForumPreferences(context)
+            val forumPrefs = container.teamForumPreferences
             val localRead = forumPrefs.loadAllLastReadMessageIds(teamId)
             forumUnread = badges?.forumUnread?.coerceAtLeast(0)
                 ?: teamsRepository.listForumTopics(teamId)

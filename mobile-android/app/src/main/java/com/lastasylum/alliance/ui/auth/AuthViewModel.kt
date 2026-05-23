@@ -6,9 +6,12 @@ import androidx.lifecycle.AndroidViewModel
 import com.lastasylum.alliance.BuildConfig
 import androidx.lifecycle.viewModelScope
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.data.ReadCursorSession
 import com.lastasylum.alliance.data.auth.AuthRepository
 import com.lastasylum.alliance.data.auth.RegisterResult
 import com.lastasylum.alliance.data.auth.TokenStore
+import com.lastasylum.alliance.data.teams.TeamForumPreferences
+import com.lastasylum.alliance.data.chat.ChatRoomPreferences
 import com.lastasylum.alliance.push.FcmTokenManager
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.CancellationException
@@ -24,6 +27,8 @@ class AuthViewModel(
     application: Application,
     private val tokenStore: TokenStore,
     private val authRepository: AuthRepository,
+    private val chatRoomPreferences: ChatRoomPreferences,
+    private val teamForumPreferences: TeamForumPreferences,
 ) : AndroidViewModel(application) {
     private val _state = MutableStateFlow(AuthState(isCheckingStoredSession = true))
     val state: StateFlow<AuthState> = _state.asStateFlow()
@@ -58,12 +63,17 @@ class AuthViewModel(
         _state.value = _state.value.copy(error = null, infoMessage = null)
     }
 
+    private fun bindReadCursors(userId: String) {
+        ReadCursorSession.bind(chatRoomPreferences, teamForumPreferences, userId)
+    }
+
     fun login(email: String, password: String) {
         cancelAuthBootstrap()
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true, error = null, infoMessage = null)
             authRepository.login(email, password)
                 .onSuccess { user ->
+                    bindReadCursors(user.id)
                     runCatching { FcmTokenManager.registerWithBackend(getApplication()) }
                     _state.value = AuthState(
                         isCheckingStoredSession = false,
@@ -97,6 +107,7 @@ class AuthViewModel(
                 .onSuccess { result ->
                     when (result) {
                         is RegisterResult.LoggedIn -> {
+                            bindReadCursors(result.user.id)
                             runCatching { FcmTokenManager.registerWithBackend(getApplication()) }
                             _state.value = AuthState(
                                 isCheckingStoredSession = false,
@@ -208,6 +219,7 @@ class AuthViewModel(
 
         authRepository.refreshSession()
             .onSuccess { user ->
+                bindReadCursors(user.id)
                 runCatching { FcmTokenManager.registerWithBackend(getApplication()) }
                 _state.value = AuthState(
                     isCheckingStoredSession = false,

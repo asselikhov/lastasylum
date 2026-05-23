@@ -1,6 +1,8 @@
 package com.lastasylum.alliance.data.auth
 
+import com.lastasylum.alliance.data.ReadCursorSession
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
+import com.lastasylum.alliance.data.teams.TeamForumPreferences
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 
@@ -9,6 +11,7 @@ class AuthRepository(
     private val authorizedAuthApi: AuthApi,
     private val tokenStore: TokenStore,
     private val chatRoomPreferences: ChatRoomPreferences,
+    private val teamForumPreferences: TeamForumPreferences,
 ) {
     suspend fun register(
         email: String,
@@ -87,7 +90,7 @@ class AuthRepository(
     suspend fun logout() {
         runCatching { authorizedAuthApi.logout() }
         tokenStore.clearTokens()
-        chatRoomPreferences.clear()
+        ReadCursorSession.clearAll(chatRoomPreferences, teamForumPreferences)
     }
 
     /** [runCatching] не должен превращать отмену корутины в [Result.failure] — иначе «тихий» logout стирает новые токены после входа. */

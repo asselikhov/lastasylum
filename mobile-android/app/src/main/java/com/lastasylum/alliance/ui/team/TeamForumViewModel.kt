@@ -56,9 +56,7 @@ class TeamForumViewModel(
                                 localLastReadMessageId = lastReadByTopic[server.id],
                             ) == 0
                     }.forEach { server ->
-                        val localLast = lastReadByTopic[server.id]
-                            ?: server.lastReadMessageId?.trim().orEmpty().takeIf { it.isNotBlank() }
-                            ?: return@forEach
+                        val localLast = lastReadByTopic[server.id] ?: return@forEach
                         markReadStale(server, localLast)
                     }
                     _state.update { it.copy(topics = withUnread, loading = false) }

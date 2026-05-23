@@ -16,6 +16,8 @@ class AuthViewModelFactory(
                 application = application,
                 tokenStore = appContainer.tokenStore,
                 authRepository = appContainer.authRepository,
+                chatRoomPreferences = appContainer.chatRoomPreferences,
+                teamForumPreferences = appContainer.teamForumPreferences,
             ) as T
         }
         error("Unsupported ViewModel class: ${modelClass.name}")

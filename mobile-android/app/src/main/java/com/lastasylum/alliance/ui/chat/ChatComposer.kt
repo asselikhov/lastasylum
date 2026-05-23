@@ -66,6 +66,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -157,6 +158,7 @@ internal fun ChatComposer(
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 12),
             onResult = { uris ->
+                showOverlayGalleryPicker = false
                 if (overlayUi) {
                     OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
                 }
@@ -194,6 +196,14 @@ internal fun ChatComposer(
         }
     }
 
+    // Оверлей: после системного пикера вложения приходят через applyOverlayPickedUris без onConfirm sheet.
+    LaunchedEffect(pickedImageUris.size, showOverlayGalleryPicker) {
+        if (showOverlayGalleryPicker && pickedImageUris.isNotEmpty()) {
+            showOverlayGalleryPicker = false
+            OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
+        }
+    }
+
     if (overlayUi && showOverlayGalleryPicker) {
         OverlayChatImagePickerSheet(
             maxSelection = 12,
@@ -202,9 +212,11 @@ internal fun ChatComposer(
                 OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
             },
             onConfirm = { uris ->
+                showOverlayGalleryPicker = false
                 if (!composerLocked && uris.isNotEmpty()) {
                     onPickImages(uris, pickedImageUris.isNotEmpty())
                 }
+                OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
             },
         )
     }
@@ -696,24 +708,27 @@ internal fun ChatComposer(
                                 focusManager.clearFocus()
                                 keyboard?.hide()
                                 OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
-                                if (overlayUi) {
-                                    showOverlayGalleryPicker = true
-                                } else {
-                                    val launcher = pickImagesLauncher
-                                    if (launcher == null) {
+                                val launcher = pickImagesLauncher
+                                if (launcher == null) {
+                                    if (overlayUi) {
+                                        showOverlayGalleryPicker = true
+                                    } else {
                                         Toast.makeText(
                                             context,
                                             context.getString(R.string.chat_attachment_read_failed),
                                             Toast.LENGTH_SHORT,
                                         ).show()
-                                    } else {
-                                        launcher.launch(
-                                            PickVisualMediaRequest(
-                                                ActivityResultContracts.PickVisualMedia.ImageOnly,
-                                            ),
+                                        OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(
+                                            overlayUi,
                                         )
                                     }
+                                    return
                                 }
+                                launcher.launch(
+                                    PickVisualMediaRequest(
+                                        ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                    ),
+                                )
                             }
 
                             if (isForumAdmin && onPickApk != null) {
