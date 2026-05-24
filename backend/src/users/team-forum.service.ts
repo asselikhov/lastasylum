@@ -977,7 +977,7 @@ export class TeamForumService {
     if (!trimmed && !hasImage) {
       throw new BadRequestException('Message text is required');
     }
-    this.assertZlobyakaStickerPayload(trimmed);
+    assertStickerPayload(trimmed);
     const editorDoc = await this.userModel.findById(userId).exec();
     if (!editorDoc) {
       throw new ForbiddenException('User not found');
