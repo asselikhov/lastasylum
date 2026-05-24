@@ -1111,8 +1111,16 @@ class CombatOverlayService : Service() {
         AppContainer.from(this).userSettingsPreferences.isOverlayHudOnlyMode()
 
     /** Лента «Рейд» / карточки сообщений — при включённой панели (не режим «только HUD»). */
-    private fun isOverlayChatStripEnabled(): Boolean =
-        AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()
+    private fun isOverlayChatStripEnabled(): Boolean {
+        val prefs = AppContainer.from(this).userSettingsPreferences
+        return prefs.isOverlayPanelEnabled() && !prefs.isOverlayHudOnlyMode()
+    }
+
+    private fun retainWindowManager(manager: WindowManager) {
+        if (windowManager == null) {
+            windowManager = manager
+        }
+    }
 
     private fun isOverlayLightStripMode(): Boolean =
         AppContainer.from(this).userSettingsPreferences.isOverlayLightStrip()
@@ -1276,6 +1284,8 @@ class CombatOverlayService : Service() {
                 _overlayVisible.value = false
                 Log.w(TAG, "ensureOverlayIfPermitted: showOverlayShell failed")
             }
+        } else {
+            ensureOverlayMessageStripIfNeeded()
         }
     }
 
@@ -1975,11 +1985,7 @@ class CombatOverlayService : Service() {
         ensureOverlayIfPermitted()
         ensureOverlayStatusHudWindow()
         ensureOverlayTopRightHudWindow()
-        (windowManager ?: systemWindowManager())?.let { wm ->
-            if (isOverlayChatStripEnabled()) {
-                runCatching { ensureChatStripWindow(wm) }
-            }
-        }
+        ensureOverlayMessageStripIfNeeded()
         if (overlayStatusHudHost?.visibility != View.VISIBLE) {
             overlayStatusHudHost?.visibility = View.VISIBLE
         }
@@ -2175,6 +2181,8 @@ class CombatOverlayService : Service() {
         compose.post { compose.requestLayout() }
         overlayStatusHudHost = host
         overlayStatusHudParams = params
+        retainWindowManager(manager)
+        _overlayVisible.value = true
     }
 
     private fun removeOverlayStatusHudWindow() {
@@ -2261,6 +2269,8 @@ class CombatOverlayService : Service() {
         compose.post { compose.requestLayout() }
         overlayTopRightHudHost = host
         overlayTopRightHudParams = params
+        retainWindowManager(manager)
+        _overlayVisible.value = true
     }
 
     private fun removeOverlayTopRightHudWindow() {
@@ -2953,13 +2963,12 @@ class CombatOverlayService : Service() {
         }
         chatStripPreviewFlow.value = preview
         publishStripAfterLocalRaidSend()
-        if (BuildConfig.DEBUG) {
-            Log.d(
-                OVERLAY_DIAG_TAG,
-                "stripLocalSend preview=${preview.size} room=${normalized.roomId} " +
-                    "textLen=${normalized.text.length} attached=${chatStripHost?.isAttachedToWindow == true}",
-            )
-        }
+        Log.i(
+            TAG,
+            "stripLocalSend preview=${preview.size} room=${normalized.roomId} " +
+                "textLen=${normalized.text.length} stripAttached=${chatStripHost?.isAttachedToWindow == true} " +
+                "stripVisible=${chatStripHost?.visibility == View.VISIBLE}",
+        )
     }
 
     private fun publishStripAfterLocalRaidSend() {
@@ -3119,6 +3128,7 @@ class CombatOverlayService : Service() {
         } else {
             scheduleRefreshOverlayChatStrip()
         }
+        ensureOverlayMessageStripIfNeeded()
         ensureStripWindowVisibleForRaidTraffic()
     }
 
@@ -3280,6 +3290,8 @@ class CombatOverlayService : Service() {
         chatStripHost = host
         chatStripParams = params
         chatStripClipRoot = clipRoot
+        retainWindowManager(manager)
+        _overlayVisible.value = true
         syncChatStripWindowTouchPassthrough()
         scheduleStripZOrderLift()
     }
@@ -3410,6 +3422,7 @@ class CombatOverlayService : Service() {
                 }
                 if (isRaid) {
                     ingestOverlayRaidMessage(normalized, refreshNow = true)
+                    ensureOverlayMessageStripIfNeeded()
                 } else if (isHub) {
                     handleOverlayHubMessage(msg)
                 }
@@ -3518,19 +3531,46 @@ class CombatOverlayService : Service() {
         overlayReactionListener = null
     }
 
+    /**
+     * HUD может быть на экране без ленты (ранний attach только угловых окон).
+     * Лента обязательна для карточек «Рейд» / быстрых команд.
+     */
+    private fun ensureOverlayMessageStripIfNeeded() {
+        if (!isOverlayChatStripEnabled()) return
+        val manager = windowManager ?: systemWindowManager() ?: return
+        retainWindowManager(manager)
+        overlaySessionActive = true
+        if (chatStripHost?.isAttachedToWindow != true) {
+            prefetchOverlayRaidRoomForStrip()
+            resolveCachedAllianceHubRoomId()
+            runCatching { ensureChatStripWindow(manager) }
+            if (chatStripHost == null) {
+                Log.e(TAG, "ensureOverlayMessageStripIfNeeded: chat strip attach failed")
+            } else {
+                Log.i(TAG, "ensureOverlayMessageStripIfNeeded: chat strip attached")
+            }
+        }
+        applyOverlayStripVisibility(rebalanceZOrder = false)
+        _overlayVisible.value = isOverlayShellActive()
+    }
+
     /** Лента чата и подписки; FAB-панель убрана — управление из угловых HUD. */
     private fun showOverlayShell() {
         repairDetachedOverlayShellIfNeeded()
         repairDetachedOverlayChatTeamPanelIfNeeded()
-        if (isOverlayShellActive()) return
-
-        val manager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        windowManager = manager
+        val manager = windowManager ?: systemWindowManager()
+            ?: getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        retainWindowManager(manager)
         overlaySessionActive = true
+        if (isOverlayShellActive()) {
+            ensureOverlayMessageStripIfNeeded()
+            mainHandler.post { ensureOverlayRaidRealtimeIfNeeded() }
+            return
+        }
         prefetchOverlayRaidRoomForStrip()
         resolveCachedAllianceHubRoomId()
         if (isOverlayChatStripEnabled()) {
-            ensureChatStripWindow(manager)
+            runCatching { ensureChatStripWindow(manager) }
             if (chatStripHost == null) {
                 Log.e(TAG, "showOverlayShell: failed to attach chat strip; continuing chat subscription")
             } else {
