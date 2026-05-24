@@ -32,9 +32,23 @@ object ChatUnreadCounts {
         OverlayGameStatusHudRefresh.allianceHubRawUnread(rooms)
 
     /**
+     * True when server still reports hub unread but local read cursor suppresses it
+     * (user read in app / on device).
+     */
+    fun isAllianceHubLocallyReadSuppressed(
+        rooms: List<ChatRoomDto>,
+        localReadByRoom: Map<String, String>,
+    ): Boolean {
+        val hub = OverlayGameStatusHudRefresh.allianceHubRoom(rooms) ?: return false
+        if (hub.unreadCount <= 0) return false
+        return allianceHubUnread(rooms, localReadByRoom) <= 0
+    }
+
+    /**
      * Overlay mail chip: same effective count as app when [localReadByRoom] is current.
-     * When the hub is read locally (effective 0), never resurrect from optimistic floor or
+     * When the hub is read locally, never resurrect from optimistic floor or
      * a previously shown badge — required after reading in the main app before entering the game.
+     * When the server lags (effective 0, raw 0), [optimisticFloor] is honored via [displayedUnreadCount].
      */
     fun overlayAllianceHubBadge(
         rooms: List<ChatRoomDto>,
@@ -42,8 +56,10 @@ object ChatUnreadCounts {
         optimisticFloor: Int = 0,
         previouslyDisplayed: Int = 0,
     ): Int {
+        if (isAllianceHubLocallyReadSuppressed(rooms, localReadByRoom)) {
+            return 0
+        }
         val effective = allianceHubUnread(rooms, localReadByRoom)
-        if (effective <= 0) return 0
         val raw = allianceHubRawUnread(rooms)
         return displayedUnreadCount(
             effectiveUnread = effective,

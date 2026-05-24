@@ -1946,6 +1946,9 @@ class ChatViewModel(
             if (isRaidStripMessage(message)) {
                 CombatOverlayService.extendInGameOverlayUiHold()
                 repository.notifyOverlayRaidStripMessage(message)
+                if (message.senderId.trim() == currentUserId.trim()) {
+                    CombatOverlayService.publishRaidMessageToStripFromApp(message)
+                }
             }
         }
     }

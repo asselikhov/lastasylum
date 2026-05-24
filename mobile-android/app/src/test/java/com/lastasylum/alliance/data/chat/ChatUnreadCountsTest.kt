@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.data.chat
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChatUnreadCountsTest {
@@ -35,6 +36,37 @@ class ChatUnreadCountsTest {
             room(id = "raid", sortOrder = 2, allianceId = "pt:1", unread = 9),
         )
         assertEquals(4, ChatUnreadCounts.allianceHubDisplayUnread(rooms))
+    }
+
+    @Test
+    fun overlayAllianceHubBadge_honorsFloorWhenServerUnreadZero() {
+        val rooms = listOf(
+            room(id = "hub", sortOrder = 1, allianceId = "pt:team1", unread = 0),
+        )
+        assertEquals(
+            4,
+            ChatUnreadCounts.overlayAllianceHubBadge(
+                rooms = rooms,
+                localReadByRoom = emptyMap(),
+                optimisticFloor = 4,
+                previouslyDisplayed = 2,
+            ),
+        )
+    }
+
+    @Test
+    fun isAllianceHubLocallyReadSuppressed_whenLocalCursorAhead() {
+        val rooms = listOf(
+            room(
+                id = "hub",
+                sortOrder = 1,
+                allianceId = "pt:team1",
+                unread = 6,
+                lastRead = "000000000000000000000040",
+            ),
+        )
+        val local = mapOf("hub" to "000000000000000000000090")
+        assertTrue(ChatUnreadCounts.isAllianceHubLocallyReadSuppressed(rooms, local))
     }
 
     @Test

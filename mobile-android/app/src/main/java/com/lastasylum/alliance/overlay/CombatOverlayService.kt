@@ -942,6 +942,17 @@ class CombatOverlayService : Service() {
     /** Подряд тиков гейта «не показывать UI» — скрываем HUD только после N, чтобы не мигать. */
     private var gateUiHideStreak: Int = 0
 
+    /** When gate first went false — hard dismiss only after [GATE_DISMISS_AFTER_MS]. */
+    private var gateSoftHideStartedAtMs: Long = 0L
+
+    /** Keep raid strip visible after local send despite brief gate flap. */
+    @Volatile
+    private var forceShowStripUntilMs: Long = 0L
+
+    /** Forum socket +1 protected from stale API for [FORUM_OPTIMISTIC_BADGE_MS]. */
+    @Volatile
+    private var forumUnreadOptimisticUntilMs: Long = 0L
+
     private var stripZOrderLiftPosted: Boolean = false
 
     private val stripZOrderLiftRunnable = Runnable {
@@ -1551,12 +1562,18 @@ class CombatOverlayService : Service() {
                 }
                 val prevHud = overlayStatusHudFlow.value
                 val useAuthoritativeTeamBadges = force || refreshNewsForum
+                val forumOptimisticActive = System.currentTimeMillis() < forumUnreadOptimisticUntilMs
                 val mergedState = state.copy(
-                    allianceChatUnread = hubDisplayed,
-                    forumUnread = if (useAuthoritativeTeamBadges) {
-                        state.forumUnread
+                    allianceChatUnread = if (useAuthoritativeTeamBadges) {
+                        hubDisplayed
                     } else {
-                        maxOf(state.forumUnread, prevHud.forumUnread)
+                        maxOf(hubDisplayed, prevHud.allianceChatUnread)
+                    },
+                    forumUnread = when {
+                        useAuthoritativeTeamBadges && forumOptimisticActive ->
+                            maxOf(state.forumUnread, prevHud.forumUnread)
+                        useAuthoritativeTeamBadges -> state.forumUnread
+                        else -> maxOf(state.forumUnread, prevHud.forumUnread)
                     },
                     teamNewsUnread = if (useAuthoritativeTeamBadges) {
                         state.teamNewsUnread
@@ -1691,6 +1708,24 @@ class CombatOverlayService : Service() {
     ) {
         val effective = serverEffectiveCount.coerceAtLeast(0)
         if (effective <= 0) {
+            val rooms = ChatSessionCache.getFreshRooms()
+            if (rooms != null) {
+                val localRead = AppContainer.from(this).chatRoomPreferences.loadAllLastReadMessageIds()
+                if (ChatUnreadCounts.isAllianceHubLocallyReadSuppressed(rooms, localRead)) {
+                    hubUnreadOptimisticFloor = 0
+                    applyAllianceHubUnreadCount(0)
+                    patchHubUnreadInSessionCacheAfterLocalRead()
+                    return
+                }
+            }
+            if (hubUnreadOptimisticFloor > 0) {
+                val displayed = maxOf(
+                    hubUnreadOptimisticFloor,
+                    overlayStatusHudFlow.value.allianceChatUnread,
+                ).coerceAtMost(999)
+                applyAllianceHubUnreadCount(displayed)
+                return
+            }
             hubUnreadOptimisticFloor = 0
             applyAllianceHubUnreadCount(0)
             patchHubUnreadInSessionCacheAfterLocalRead()
@@ -1835,7 +1870,12 @@ class CombatOverlayService : Service() {
     private fun scheduleDebouncedHubHudRefresh() {
         hubHudRefreshPosted = true
         mainHandler.removeCallbacks(hubHudRefreshRunnable)
-        mainHandler.postDelayed(hubHudRefreshRunnable, HUB_HUD_REFRESH_DEBOUNCE_MS)
+        val delayMs = if (hubUnreadOptimisticFloor > 0) {
+            HUB_HUD_REFRESH_DEBOUNCE_MS + 1_500L
+        } else {
+            HUB_HUD_REFRESH_DEBOUNCE_MS
+        }
+        mainHandler.postDelayed(hubHudRefreshRunnable, delayMs)
     }
 
     /** Only this user's read cursor clears the hub badge — not other members' room:read events. */
@@ -1882,6 +1922,16 @@ class CombatOverlayService : Service() {
         overlayTopRightHudHost?.visibility = View.GONE
         chatStripHost?.visibility = View.GONE
         overlayTicker.hideTicker()
+    }
+
+    /** Краткий «не в игре» — GONE, окна остаются attached (без removeOverlayControl). */
+    private fun softHideOverlayUiBecauseNotInGame() {
+        overlayCommandsPopover.hide()
+        overlayStatusHudHost?.visibility = View.GONE
+        overlayTopRightHudHost?.visibility = View.GONE
+        chatStripHost?.visibility = View.GONE
+        overlayTicker.hideTicker()
+        ensureOverlayIfPermitted()
     }
 
     /** После паузы или ingest ленты — снова показать HUD/ленту, если гейт «в игре». */
@@ -1936,9 +1986,6 @@ class CombatOverlayService : Service() {
         val show = inGame && allowed && !overlayChatTeamPanelVisible
         if (!show) {
             overlayStatusHudHost?.visibility = View.GONE
-            if (!inGame) {
-                removeOverlayStatusHudWindow()
-            }
             return
         }
         attachOverlayHudWindowsIfNeeded()
@@ -1955,9 +2002,6 @@ class CombatOverlayService : Service() {
         val show = inGame && allowed && !overlayChatTeamPanelVisible
         if (!show) {
             overlayTopRightHudHost?.visibility = View.GONE
-            if (!inGame) {
-                removeOverlayTopRightHudWindow()
-            }
             return
         }
         attachOverlayHudWindowsIfNeeded()
@@ -1983,6 +2027,8 @@ class CombatOverlayService : Service() {
         OverlayChatInteractionHold.prepareOverlayModalInteraction(isOverlayUi = true)
         extendOverlayUiHold(OVERLAY_UI_HOLD_PANEL_TRANSITION_MS)
         ensureOverlayIfPermitted()
+        ensureOverlayRaidRealtimeIfNeeded()
+        prefetchOverlayRaidRoomForStrip()
         val mgr = windowManager ?: systemWindowManager() ?: return
         overlayCommandsPopover.toggle(mgr)
         if (isOverlayChatStripEnabled() && chatStripHost?.isAttachedToWindow != true) {
@@ -2238,22 +2284,38 @@ class CombatOverlayService : Service() {
         _inGameOverlayUiActive.value = shouldShow
         if (!shouldShow) {
             if (isOverlayUiHoldActive()) {
+                gateSoftHideStartedAtMs = 0L
                 ensureOverlayIfPermitted()
                 restoreOverlayInGameWindowVisibility()
                 return
             }
             if (overlayCommandsPopover.isBlockingGameGateDismiss()) {
+                gateSoftHideStartedAtMs = 0L
                 ensureOverlayIfPermitted()
                 if (isOverlayChatStripEnabled()) {
                     applyOverlayStripVisibility()
                 }
                 return
             }
-            dismissOverlayUiBecauseNotInGame(
-                logWaitingForGame = true,
-            )
+            val nowMs = System.currentTimeMillis()
+            if (gateSoftHideStartedAtMs <= 0L) {
+                gateSoftHideStartedAtMs = nowMs
+            }
+            softHideOverlayUiBecauseNotInGame()
+            if (BuildConfig.DEBUG) {
+                Log.d(
+                    OVERLAY_DIAG_TAG,
+                    "overlayGate softHide hideStreak=$gateUiHideStreak hold=${isOverlayUiHoldActive()} " +
+                        "softMs=${nowMs - gateSoftHideStartedAtMs}",
+                )
+            }
+            if (nowMs - gateSoftHideStartedAtMs >= GATE_DISMISS_AFTER_MS) {
+                gateSoftHideStartedAtMs = 0L
+                dismissOverlayUiBecauseNotInGame(logWaitingForGame = true)
+            }
             return
         }
+        gateSoftHideStartedAtMs = 0L
         // SquadRelay на переднем плане при игре в фоне — прячем HUD, но не рвём FGS/сокет/ленту.
         if (lastForegroundHintPkg == packageName &&
             !OverlayChatInteractionHold.isOverlaySystemPickerSessionActive() &&
@@ -2333,6 +2395,7 @@ class CombatOverlayService : Service() {
         }
         deferredDismissWhenPickerEnds = false
         gateUiHideStreak = 0
+        gateSoftHideStartedAtMs = 0L
         lastForegroundHintPkg = null
         GameForegroundGate.invalidateForegroundHintCache()
         cancelOverlayHudRefreshWork()
@@ -2724,11 +2787,15 @@ class CombatOverlayService : Service() {
     private fun isOverlayRaidStripEligible(): Boolean {
         if (!AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()) return false
         if (!isOverlayChatStripEnabled()) return false
+        if (isOverlayUiHoldActive()) return true
         if (isInGameOverlayUiActive()) return true
         val last = lastOverlayInGameAtMs
         if (last <= 0L) return false
         return System.currentTimeMillis() - last < OVERLAY_INGAME_GRACE_MS
     }
+
+    private fun shouldForceShowRaidStrip(): Boolean =
+        System.currentTimeMillis() < forceShowStripUntilMs
 
     /** Поднять окно ленты, когда в буфере есть карточки и игрок в матче. */
     private fun ensureStripWindowVisibleForRaidTraffic() {
@@ -2779,6 +2846,8 @@ class CombatOverlayService : Service() {
                         forumUnread = current + 1,
                     )
                 }
+                forumUnreadOptimisticUntilMs =
+                    System.currentTimeMillis() + FORUM_OPTIMISTIC_BADGE_MS
                 scheduleOverlayStatusHudRefresh()
             }
         }
@@ -2853,19 +2922,29 @@ class CombatOverlayService : Service() {
         lastStripRenderSignature = 0
         val preview = stripBuffer.visibleForPreview()
         chatStripPreviewFlow.value = preview
+        forceShowStripUntilMs = maxOf(
+            forceShowStripUntilMs,
+            System.currentTimeMillis() + FORCE_SHOW_STRIP_AFTER_LOCAL_SEND_MS,
+        )
         publishStripAfterLocalRaidSend()
     }
 
     private fun publishStripAfterLocalRaidSend() {
         if (!isOverlayChatStripEnabled()) return
         extendOverlayUiHold()
+        forceShowStripUntilMs = maxOf(
+            forceShowStripUntilMs,
+            System.currentTimeMillis() + FORCE_SHOW_STRIP_AFTER_LOCAL_SEND_MS,
+        )
         val wm = windowManager ?: systemWindowManager()
         if (wm != null && chatStripHost == null) {
             overlaySessionActive = true
             runCatching { ensureChatStripWindow(wm) }
         }
         chatStripHost?.visibility = View.VISIBLE
-        applyOverlayStripVisibility(rebalanceZOrder = false)
+        if (!overlayChatTeamPanelVisible) {
+            applyOverlayStripVisibility(rebalanceZOrder = false)
+        }
         if (!chatStripZOrderLifted) {
             scheduleStripZOrderLift()
         }
@@ -3444,7 +3523,8 @@ class CombatOverlayService : Service() {
             val hasStripContent = chatStripPreviewFlow.value.isNotEmpty() ||
                 stripBuffer.visibleForPreview().isNotEmpty()
             val showStrip = !overlayChatTeamPanelVisible && (
-                isOverlayRaidStripEligible() ||
+                shouldForceShowRaidStrip() ||
+                    isOverlayRaidStripEligible() ||
                     (isOverlayChatRoutingActive() && hasStripContent)
                 )
             chatStripHost?.visibility = if (showStrip) View.VISIBLE else View.GONE
@@ -3453,7 +3533,7 @@ class CombatOverlayService : Service() {
             rebalanceOverlayFullscreenZOrder()
         }
     }
-    private fun hideOverlayChatTeamPanel(clearStrip: Boolean = true) {
+    private fun hideOverlayChatTeamPanel(clearStrip: Boolean = false) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             mainHandler.post { hideOverlayChatTeamPanel(clearStrip) }
             return
@@ -3466,7 +3546,7 @@ class CombatOverlayService : Service() {
         hideOverlayChatTeamPanelNow(clearStrip)
     }
 
-    private fun hideOverlayChatTeamPanelNow(clearStrip: Boolean = true) {
+    private fun hideOverlayChatTeamPanelNow(clearStrip: Boolean = false) {
         val root = overlayChatTeamRoot
         val hadVisible = overlayChatTeamPanelVisible
         overlayChatTeamPanelVisible = false
@@ -4211,6 +4291,14 @@ class CombatOverlayService : Service() {
             service.mainHandler.post { service.extendOverlayUiHold(durationMs) }
         }
 
+        /** HTTP/VM path: карточка в ленте «Рейд» сразу (в т.ч. при открытой панели чата). */
+        fun publishRaidMessageToStripFromApp(message: ChatMessage) {
+            val service = runningInstance ?: return
+            service.mainHandler.post {
+                service.applyLocalSentMessageToStrip(message)
+            }
+        }
+
         /** Частый prune ленты относительно TTL ~10 с. */
         private const val STRIP_TICK_MS = 2_500L
         /** Лента на экране — отзывчивый гейт. */
@@ -4225,7 +4313,11 @@ class CombatOverlayService : Service() {
         private const val GAME_GATE_POLL_IDLE_MS = 2_000L
         private const val STATUS_HUD_REFRESH_MS = 60_000L
         /** Краткий grace при ложном «не в игре» во время чата/пикера; не применяется при явном лаунчере/другом приложении. */
-        private const val OVERLAY_INGAME_GRACE_MS = 2_500L
+        private const val OVERLAY_INGAME_GRACE_MS = 3_500L
+        /** Sustained «not in game» before tearing down overlay windows. */
+        private const val GATE_DISMISS_AFTER_MS = 10_000L
+        private const val FORUM_OPTIMISTIC_BADGE_MS = 3_000L
+        private const val FORCE_SHOW_STRIP_AFTER_LOCAL_SEND_MS = 4_000L
         /** После отправки в «Рейд» / координат — не снимать HUD на ложном «не в игре». */
         private const val OVERLAY_UI_HOLD_AFTER_RAID_SEND_MS = 3_500L
         private const val OVERLAY_UI_HOLD_PANEL_TRANSITION_MS = 2_500L
@@ -4248,7 +4340,7 @@ class CombatOverlayService : Service() {
         private const val OVERLAY_HUD_WINDOW_Y_DP = OverlayHudLayout.WINDOW_Y_DP
         /** Минимум между remove/add HUD — иначе кнопки мигают на каждом тике гейта. */
         private const val HUD_ZORDER_REBALANCE_MIN_MS = 60_000L
-        private const val GATE_HIDE_UI_HYSTERESIS_TICKS = 2
+        private const val GATE_HIDE_UI_HYSTERESIS_TICKS = 5
         /** Matches backend / user schema: ingame | online | away */
         private const val OVERLAY_PRESENCE_INGAME = "ingame"
         private const val OVERLAY_PRESENCE_AWAY = "away"
