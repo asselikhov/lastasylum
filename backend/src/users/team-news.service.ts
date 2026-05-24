@@ -305,6 +305,7 @@ export class TeamNewsService {
     await this.teams.getTeamIfMemberOrThrow(teamId, userId);
     const filter: Record<string, unknown> = {
       teamId: new Types.ObjectId(teamId),
+      authorUserId: { $ne: userId },
     };
     const trimmed = afterIso?.trim();
     if (trimmed) {

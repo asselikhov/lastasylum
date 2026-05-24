@@ -141,6 +141,12 @@ class ChatRepository(
     fun addOverlayReadListener(listener: (ChatRoomReadEvent) -> Unit) =
         realtime.addOverlayReadListener(listener)
 
+    fun addOverlayRoomUnreadListener(listener: (ChatRoomUnreadEvent) -> Unit) =
+        realtime.addOverlayRoomUnreadListener(listener)
+
+    fun removeOverlayRoomUnreadListener(listener: (ChatRoomUnreadEvent) -> Unit) =
+        realtime.removeOverlayRoomUnreadListener(listener)
+
     fun removeOverlayReadListener(listener: (ChatRoomReadEvent) -> Unit) =
         realtime.removeOverlayReadListener(listener)
 

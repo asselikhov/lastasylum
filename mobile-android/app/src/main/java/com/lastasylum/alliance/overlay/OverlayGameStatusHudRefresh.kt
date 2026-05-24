@@ -9,6 +9,7 @@ import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
+import com.lastasylum.alliance.data.teams.TeamInboxUnread
 import com.lastasylum.alliance.data.teams.TeamNewsListItemDto
 import com.lastasylum.alliance.data.users.TeamMemberDto
 import com.lastasylum.alliance.data.users.UsersRepository
@@ -35,6 +36,10 @@ internal object OverlayGameStatusHudRefresh {
         cachedBadgeAtMs = 0L
     }
 
+    fun invalidateNewsCache() = invalidateNewsForumCache()
+
+    fun invalidateForumCache() = invalidateNewsForumCache()
+
     /**
      * @param preloadedRooms when non-null, skips [ChatRepository.listRooms] inside load.
      * @param refreshNewsForum when false, reuses news/forum counts for [NEWS_FORUM_CACHE_TTL_MS].
@@ -45,7 +50,8 @@ internal object OverlayGameStatusHudRefresh {
         refreshNewsForum: Boolean = true,
     ): OverlayGameStatusHudState {
         val container = AppContainer.from(context)
-        val profileUserId = container.usersRepository.getMyProfile().getOrNull()?.id?.trim().orEmpty()
+        val profile = container.usersRepository.getMyProfile().getOrNull()
+        val profileUserId = profile?.id?.trim().orEmpty()
         if (profileUserId.isNotEmpty()) {
             ReadCursorSession.bind(
                 container.chatRoomPreferences,
@@ -87,13 +93,13 @@ internal object OverlayGameStatusHudRefresh {
                 ?: teamsRepository.listTeamNews(teamId, cursor = null, limit = 40)
                     .getOrNull()
                     ?.items
-                    ?.let { countUnreadNews(it, prefs) }
+                    ?.let { TeamInboxUnread.countUnreadNews(it, prefs, profileUserId) }
                     ?: 0
             val forumPrefs = container.teamForumPreferences
             val localRead = forumPrefs.loadAllLastReadMessageIds(teamId)
             forumUnread = teamsRepository.listForumTopics(teamId)
                 .getOrNull()
-                ?.sumOf { topic -> effectiveForumTopicUnread(topic, localRead[topic.id]) }
+                ?.let { TeamInboxUnread.sumForumUnread(it, localRead) }
                 ?: badges?.forumUnread?.coerceAtLeast(0)
                 ?: 0
             cachedBadgeTeamId = teamId
@@ -176,17 +182,8 @@ internal object OverlayGameStatusHudRefresh {
     fun countUnreadNews(
         items: List<TeamNewsListItemDto>,
         prefs: UserSettingsPreferences,
-    ): Int {
-        val lastSeen = prefs.getLastSeenTeamNewsCreatedAt()
-        val lastSeenInstant = lastSeen?.let { iso ->
-            runCatching { Instant.parse(iso) }.getOrNull()
-        }
-        return items.count { item ->
-            val created = runCatching { Instant.parse(item.createdAt) }.getOrNull()
-                ?: return@count false
-            lastSeenInstant == null || created.isAfter(lastSeenInstant)
-        }
-    }
+        currentUserId: String = "",
+    ): Int = TeamInboxUnread.countUnreadNews(items, prefs, currentUserId)
 
     /** Advance last-seen cursor when the user opens a news post (not on list load alone). */
     fun markTeamNewsSeenAt(createdAt: String?, prefs: UserSettingsPreferences) {
@@ -197,7 +194,7 @@ internal object OverlayGameStatusHudRefresh {
         val prev = prevIso?.let { runCatching { Instant.parse(it) }.getOrNull() }
         if (prev == null || incoming.isAfter(prev)) {
             prefs.setLastSeenTeamNewsCreatedAt(iso)
-            invalidateNewsForumCache()
+            invalidateNewsCache()
         }
     }
 }

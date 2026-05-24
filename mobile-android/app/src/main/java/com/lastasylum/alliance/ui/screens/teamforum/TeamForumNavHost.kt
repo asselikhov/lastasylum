@@ -178,13 +178,13 @@ fun TeamForumNavHost(
     forumTabReselectSignal: Int = 0,
     /** Wire keys of sticker packs the current user may send. */
     enabledStickerPackKeys: Set<String> = emptySet(),
-    onInboxBadgesChanged: () -> Unit = {},
+    onForumInboxChanged: () -> Unit = {},
 ) {
     val nav = rememberNavController()
     val topicTitles = remember { mutableStateMapOf<String, String>() }
     var listRefreshNonce by remember { mutableIntStateOf(0) }
     LaunchedEffect(listRefreshNonce) {
-        if (listRefreshNonce > 0) onInboxBadgesChanged()
+        if (listRefreshNonce > 0) onForumInboxChanged()
     }
     DisposableEffect(teamId) {
         val onTopicActivity: (com.lastasylum.alliance.data.teams.TeamForumTopicActivityEvent) -> Unit =

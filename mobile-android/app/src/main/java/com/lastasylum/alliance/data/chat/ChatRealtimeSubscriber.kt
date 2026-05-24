@@ -28,6 +28,8 @@ class ChatRealtimeSubscriber(
         java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
     private val overlayReadListeners =
         java.util.concurrent.CopyOnWriteArrayList<(ChatRoomReadEvent) -> Unit>()
+    private val overlayRoomUnreadListeners =
+        java.util.concurrent.CopyOnWriteArrayList<(ChatRoomUnreadEvent) -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private fun realtimeRoomIdsForPrimary(primaryRoomId: String): List<String> {
@@ -187,7 +189,29 @@ class ChatRealtimeSubscriber(
     private fun overlayRealtimeListenersEmpty(): Boolean =
         overlayMessageListeners.isEmpty() &&
             overlayReactionListeners.isEmpty() &&
-            overlayReadListeners.isEmpty()
+            overlayReadListeners.isEmpty() &&
+            overlayRoomUnreadListeners.isEmpty()
+
+    fun addOverlayRoomUnreadListener(listener: (ChatRoomUnreadEvent) -> Unit) {
+        if (!overlayRoomUnreadListeners.contains(listener)) {
+            overlayRoomUnreadListeners.add(listener)
+        }
+        socketManager.addRoomUnreadListener(listener)
+        refreshOverlayRealtimeSubscriptions()
+    }
+
+    fun removeOverlayRoomUnreadListener(listener: (ChatRoomUnreadEvent) -> Unit) {
+        overlayRoomUnreadListeners.remove(listener)
+        socketManager.removeRoomUnreadListener(listener)
+        if (overlayRealtimeListenersEmpty()) {
+            overlayRealtimeRoomIds.clear()
+            if (primaryRealtimeRoomIds.isEmpty()) {
+                socketManager.disconnect()
+            } else {
+                ensureRealtimeSocketConnected()
+            }
+        }
+    }
 
     fun addOverlayMessageListener(listener: (ChatMessage) -> Unit) {
         if (!overlayMessageListeners.contains(listener)) {
@@ -245,6 +269,8 @@ class ChatRealtimeSubscriber(
         overlayReactionListeners.clear()
         overlayReadListeners.forEach { socketManager.removeReadListener(it) }
         overlayReadListeners.clear()
+        overlayRoomUnreadListeners.forEach { socketManager.removeRoomUnreadListener(it) }
+        overlayRoomUnreadListeners.clear()
         socketManager.disconnectSocketAndClearListeners()
     }
 

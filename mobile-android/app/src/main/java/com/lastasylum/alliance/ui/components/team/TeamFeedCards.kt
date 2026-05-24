@@ -367,6 +367,7 @@ fun TeamNewsFeedCard(
     onEdit: () -> Unit,
     showEdit: Boolean,
     modifier: Modifier = Modifier,
+    isUnread: Boolean = false,
 ) {
     val scheme = MaterialTheme.colorScheme
     val hasHero = !item.firstImageRelativeUrl.isNullOrBlank()
@@ -380,11 +381,15 @@ fun TeamNewsFeedCard(
         modifier = modifier
             .fillMaxWidth()
             .border(
-                width = 1.dp,
+                width = if (isUnread) 1.5.dp else 1.dp,
                 brush = Brush.linearGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = 0.12f),
-                        SquadRelayPrimary.copy(alpha = 0.22f),
+                        Color.White.copy(alpha = if (isUnread) 0.2f else 0.12f),
+                        if (isUnread) {
+                            Color(0xFFFF5252).copy(alpha = 0.45f)
+                        } else {
+                            SquadRelayPrimary.copy(alpha = 0.22f)
+                        },
                         Color.White.copy(alpha = 0.06f),
                     ),
                 ),
@@ -473,6 +478,20 @@ fun TeamNewsFeedCard(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (isUnread) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Color(0xFFFF5252),
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.team_news_unread_badge),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                    )
+                                }
+                            }
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
                                 color = Color.Black.copy(alpha = 0.38f),
@@ -563,6 +582,20 @@ fun TeamNewsFeedCard(
                         modifier = Modifier.weight(1f),
                     ) {
                         AuthorChip(item.authorUsername, item.authorTelegramUsername)
+                        if (isUnread && !hasHero) {
+                            Surface(
+                                shape = CircleShape,
+                                color = Color(0xFFFF5252),
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.team_news_unread_badge),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                )
+                            }
+                        }
                         if (!hasHero) {
                             Text(
                                 text = formatTeamFeedDateRu(item.createdAt),

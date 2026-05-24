@@ -104,6 +104,7 @@ import com.lastasylum.alliance.data.teams.TeamNewsPollVoteDto
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.teams.UpdateTeamNewsBody
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.data.teams.TeamInboxUnread
 import com.lastasylum.alliance.overlay.OverlayGameStatusHudRefresh
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
@@ -362,7 +363,7 @@ fun TeamNewsNavHost(
     canPublishNews: Boolean,
     teamsRepository: TeamsRepository,
     modifier: Modifier = Modifier,
-    onInboxBadgesChanged: () -> Unit = {},
+    onNewsInboxChanged: () -> Unit = {},
 ) {
     val overlayUi = LocalOverlayUiMode.current
     val nav = rememberNavController()
@@ -401,7 +402,7 @@ fun TeamNewsNavHost(
                 teamsRepository = teamsRepository,
                 onBack = { nav.popBackStack() },
                 onEdit = { nav.navigate(TeamNewsRoutes.edit(it)) },
-                onInboxBadgesChanged = onInboxBadgesChanged,
+                onNewsInboxChanged = onNewsInboxChanged,
             )
         }
         composable(TeamNewsRoutes.CREATE) {
@@ -411,6 +412,7 @@ fun TeamNewsNavHost(
                 teamsRepository = teamsRepository,
                 onBack = { nav.popBackStack() },
                 onDone = { nav.popBackStack() },
+                onNewsInboxChanged = onNewsInboxChanged,
             )
         }
         composable(
@@ -458,6 +460,7 @@ private fun TeamNewsListRoute(
     val res = context.resources
     val overlayUi = LocalOverlayUiMode.current
     val scope = rememberCoroutineScope()
+    val newsPrefs = remember { AppContainer.from(context).userSettingsPreferences }
     var loading by remember { mutableStateOf(true) }
     var newsItems by remember { mutableStateOf<List<TeamNewsListItemDto>>(emptyList()) }
     var newsNextCursor by remember { mutableStateOf<String?>(null) }
@@ -564,6 +567,11 @@ private fun TeamNewsListRoute(
                             ) { item ->
                                 TeamNewsFeedCard(
                                     item = item,
+                                    isUnread = TeamInboxUnread.isNewsItemUnread(
+                                        item,
+                                        newsPrefs,
+                                        currentUserId,
+                                    ),
                                     onClick = { onOpenDetail(item.id) },
                                     onEdit = {
                                         val isAuthor = item.authorUserId == currentUserId
@@ -613,7 +621,7 @@ private fun TeamNewsDetailRoute(
     teamsRepository: TeamsRepository,
     onBack: () -> Unit,
     onEdit: (String) -> Unit,
-    onInboxBadgesChanged: () -> Unit = {},
+    onNewsInboxChanged: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val res = context.resources
@@ -635,7 +643,7 @@ private fun TeamNewsDetailRoute(
                     doc.createdAt,
                     AppContainer.from(context).userSettingsPreferences,
                 )
-                onInboxBadgesChanged()
+                onNewsInboxChanged()
                 loading = false
             }
             .onFailure { e ->
@@ -952,6 +960,7 @@ private fun TeamNewsEditorRoute(
     teamsRepository: TeamsRepository,
     onBack: () -> Unit,
     onDone: () -> Unit,
+    onNewsInboxChanged: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val res = context.resources
@@ -1232,7 +1241,16 @@ private fun TeamNewsEditorRoute(
                                     poll = pollBody,
                                 ),
                             )
-                                .onSuccess { saving = false; onDone() }
+                                .onSuccess { created ->
+                                    val prefs = AppContainer.from(context).userSettingsPreferences
+                                    OverlayGameStatusHudRefresh.markTeamNewsSeenAt(
+                                        created.createdAt,
+                                        prefs,
+                                    )
+                                    onNewsInboxChanged()
+                                    saving = false
+                                    onDone()
+                                }
                                 .onFailure { e ->
                                     err = e.toUserMessageRu(res)
                                     saving = false

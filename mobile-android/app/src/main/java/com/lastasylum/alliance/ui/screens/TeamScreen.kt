@@ -428,7 +428,7 @@ fun TeamScreen(
                                                 canPublishNews = canPublishNews,
                                                 teamsRepository = teamsRepository,
                                                 modifier = Modifier.fillMaxSize(),
-                                                onInboxBadgesChanged = {
+                                                onNewsInboxChanged = {
                                                     teamViewModel.refreshSectionBadges()
                                                 },
                                             )
@@ -450,7 +450,7 @@ fun TeamScreen(
                                                 forumTabReselectSignal = forumTabReselectSignal,
                                                 enabledStickerPackKeys = enabledStickerPackKeys,
                                                 modifier = Modifier.fillMaxSize(),
-                                                onInboxBadgesChanged = {
+                                                onForumInboxChanged = {
                                                     teamViewModel.refreshSectionBadges()
                                                 },
                                             )

@@ -492,6 +492,7 @@
     <string name="overlay_cd_chat_and_team">Чат и команда</string>
     <string name="overlay_team_open_failed">Не удалось открыть «Команда» в оверлее. Проверьте разрешение «Поверх других приложений».</string>
     <string name="team_news_poll_badge">Опрос</string>
+    <string name="team_news_unread_badge">Новое</string>
     <string name="team_news_new">Новая новость</string>
     <string name="team_news_edit">Редактировать</string>
     <string name="team_news_delete">Удалить</string>

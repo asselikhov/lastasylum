@@ -205,6 +205,11 @@ class ChatViewModel(
         processRealtimeMessageForUnread(message)
     }
 
+    /** Overlay FGS: apply server room unread without replacing primary socket listener. */
+    fun applyRoomUnreadFromServer(event: ChatRoomUnreadEvent) {
+        onRoomUnreadFromServer(event)
+    }
+
     private fun processRealtimeMessageForUnread(message: ChatMessage) {
         val roomId = message.roomId
         if (roomId.isBlank()) return
@@ -265,14 +270,7 @@ class ChatViewModel(
     }
 
     private fun syncOverlayAllianceHubBadge(rooms: List<ChatRoomDto> = _state.value.rooms) {
-        val hub = ChatRoomKindResolver.allianceHubRoom(rooms) ?: return
-        val localRead = chatRoomPreferences.loadAllLastReadMessageIds()
-        val displayed = ChatUnreadCounts.overlayAllianceHubBadge(
-            rooms = rooms,
-            localReadByRoom = localRead,
-            optimisticFloor = hub.unreadCount.coerceAtLeast(0),
-            previouslyDisplayed = hub.unreadCount.coerceAtLeast(0),
-        )
+        val displayed = ChatUnreadCounts.allianceHubDisplayUnread(rooms)
         CombatOverlayService.syncHubBadgeFromSharedReadState(displayed)
     }
 
@@ -311,6 +309,9 @@ class ChatViewModel(
                     _state.update { it.copy(rooms = next) }
                     syncTabUnreadBadge(next)
                     syncOverlayAllianceHubBadge(next)
+                    if (overlayChatPanelVisible) {
+                        recomputeRoomUnreadBadges()
+                    }
                 }
         }
     }

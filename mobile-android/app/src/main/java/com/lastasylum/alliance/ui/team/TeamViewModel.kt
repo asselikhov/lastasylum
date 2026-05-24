@@ -8,6 +8,7 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.teams.TeamDetailDto
 import com.lastasylum.alliance.data.teams.TeamForumPreferences
+import com.lastasylum.alliance.data.teams.TeamInboxUnread
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.users.MyProfileDto
 import com.lastasylum.alliance.data.users.UsersRepository
@@ -97,17 +98,14 @@ class TeamViewModel(
             val newsAfter = userSettingsPreferences.getLastSeenTeamNewsCreatedAt()
             val localForumRead = teamForumPreferences.loadAllLastReadMessageIds(teamId)
             val topics = teamsRepository.listForumTopics(teamId).getOrNull()
-            val forumUnread = topics
-                ?.sumOf { topic ->
-                    OverlayGameStatusHudRefresh.effectiveForumTopicUnread(
-                        topic,
-                        localForumRead[topic.id],
-                    )
-                }
+            val profileId = _data.value.profile?.id?.trim().orEmpty()
+            val forumUnread = topics?.let { TeamInboxUnread.sumForumUnread(it, localForumRead) }
             val newsFallback = teamsRepository.listTeamNews(teamId, cursor = null, limit = 40)
                 .getOrNull()
                 ?.items
-                ?.let { OverlayGameStatusHudRefresh.countUnreadNews(it, userSettingsPreferences) }
+                ?.let {
+                    TeamInboxUnread.countUnreadNews(it, userSettingsPreferences, profileId)
+                }
             teamsRepository.getTeamInboxBadges(teamId, newsAfter)
                 .onSuccess { badges ->
                     _data.update {
