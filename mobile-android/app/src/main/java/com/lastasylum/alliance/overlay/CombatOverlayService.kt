@@ -929,10 +929,9 @@ class CombatOverlayService : Service() {
     private var deferredDismissWhenPickerEnds: Boolean = false
 
     private val overlayCloseHudRefreshRunnable = Runnable {
-        if (isInGameOverlayUiActive()) {
-            attachOverlayHudWindowsIfNeeded()
-            refreshOverlayStatusHudData(force = true)
-        }
+        if (!isInGameOverlayUiActive()) return@Runnable
+        restoreOverlayHudChromeAfterPanel()
+        refreshOverlayChatStripNow()
     }
 
     private var lastStripZOrderLiftMs: Long = 0L
@@ -1552,7 +1551,13 @@ class CombatOverlayService : Service() {
                         previouslyDisplayed = overlayStatusHudFlow.value.allianceChatUnread,
                     ).also { merged ->
                         if (merged <= 0) {
-                            hubUnreadOptimisticFloor = 0
+                            val locallyRead = ChatUnreadCounts.isAllianceHubLocallyReadSuppressed(
+                                rooms,
+                                localRead,
+                            )
+                            if (locallyRead) {
+                                hubUnreadOptimisticFloor = 0
+                            }
                         } else if (merged <= state.allianceChatUnread && state.allianceChatUnread > 0) {
                             hubUnreadOptimisticFloor = 0
                         }
@@ -1806,6 +1811,7 @@ class CombatOverlayService : Service() {
         val next = (overlayStatusHudFlow.value.allianceChatUnread + 1).coerceAtMost(999)
         hubUnreadOptimisticFloor = next
         applyAllianceHubUnreadCount(next)
+        scheduleDebouncedHubHudRefresh()
     }
 
     private fun shouldBumpOverlayHubUnread(msg: ChatMessage, hubId: String): Boolean {
@@ -1834,6 +1840,7 @@ class CombatOverlayService : Service() {
         if (shouldBumpOverlayHubUnread(msg, hubId)) {
             resolveChatViewModel()?.recordRealtimeUnreadHint(msg)
                 ?: bumpAllianceHubUnreadLocally(msg._id)
+            return
         }
         scheduleDebouncedHubHudRefresh()
     }
@@ -1968,8 +1975,17 @@ class CombatOverlayService : Service() {
         ensureOverlayIfPermitted()
         ensureOverlayStatusHudWindow()
         ensureOverlayTopRightHudWindow()
-        overlayStatusHudHost?.visibility = View.VISIBLE
-        overlayTopRightHudHost?.visibility = View.VISIBLE
+        (windowManager ?: systemWindowManager())?.let { wm ->
+            if (isOverlayChatStripEnabled()) {
+                runCatching { ensureChatStripWindow(wm) }
+            }
+        }
+        if (overlayStatusHudHost?.visibility != View.VISIBLE) {
+            overlayStatusHudHost?.visibility = View.VISIBLE
+        }
+        if (overlayTopRightHudHost?.visibility != View.VISIBLE) {
+            overlayTopRightHudHost?.visibility = View.VISIBLE
+        }
         syncOverlayHudWindowLayout()
         refreshOverlayTopRightHudState()
         restoreOverlayInGameWindowVisibility()
@@ -2083,8 +2099,12 @@ class CombatOverlayService : Service() {
     /** Показать HUD/ленту после закрытия полноэкранной панели без remove/add окон. */
     private fun restoreOverlayHudChromeAfterPanel() {
         if (!isInGameOverlayUiActive()) return
-        overlayStatusHudHost?.visibility = View.VISIBLE
-        overlayTopRightHudHost?.visibility = View.VISIBLE
+        if (overlayStatusHudHost?.visibility != View.VISIBLE) {
+            overlayStatusHudHost?.visibility = View.VISIBLE
+        }
+        if (overlayTopRightHudHost?.visibility != View.VISIBLE) {
+            overlayTopRightHudHost?.visibility = View.VISIBLE
+        }
         applyOverlayStripVisibility(rebalanceZOrder = false)
     }
 
@@ -2884,6 +2904,7 @@ class CombatOverlayService : Service() {
         if (!AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()) return false
         if (overlayMessageListener != null) return true
         if (overlaySessionActive) return true
+        if (isOverlayUiHoldActive()) return true
         if (isInGameOverlayUiActive()) return true
         return lastOverlayInGameAtMs > 0L &&
             System.currentTimeMillis() - lastOverlayInGameAtMs < OVERLAY_INGAME_GRACE_MS
@@ -2921,12 +2942,24 @@ class CombatOverlayService : Service() {
         stripBuffer.mergeReceiveTimeline(normalized, jwtSubFromAccessToken())
         lastStripRenderSignature = 0
         val preview = stripBuffer.visibleForPreview()
-        chatStripPreviewFlow.value = preview
         forceShowStripUntilMs = maxOf(
             forceShowStripUntilMs,
             System.currentTimeMillis() + FORCE_SHOW_STRIP_AFTER_LOCAL_SEND_MS,
         )
+        ensureOverlayIfPermitted()
+        val wm = windowManager ?: systemWindowManager()
+        if (wm != null && isOverlayChatStripEnabled()) {
+            runCatching { ensureChatStripWindow(wm) }
+        }
+        chatStripPreviewFlow.value = preview
         publishStripAfterLocalRaidSend()
+        if (BuildConfig.DEBUG) {
+            Log.d(
+                OVERLAY_DIAG_TAG,
+                "stripLocalSend preview=${preview.size} room=${normalized.roomId} " +
+                    "textLen=${normalized.text.length} attached=${chatStripHost?.isAttachedToWindow == true}",
+            )
+        }
     }
 
     private fun publishStripAfterLocalRaidSend() {
@@ -2937,17 +2970,12 @@ class CombatOverlayService : Service() {
             System.currentTimeMillis() + FORCE_SHOW_STRIP_AFTER_LOCAL_SEND_MS,
         )
         val wm = windowManager ?: systemWindowManager()
-        if (wm != null && chatStripHost == null) {
+        if (wm != null) {
             overlaySessionActive = true
             runCatching { ensureChatStripWindow(wm) }
         }
         chatStripHost?.visibility = View.VISIBLE
-        if (!overlayChatTeamPanelVisible) {
-            applyOverlayStripVisibility(rebalanceZOrder = false)
-        }
-        if (!chatStripZOrderLifted) {
-            scheduleStripZOrderLift()
-        }
+        applyOverlayStripVisibility(rebalanceZOrder = false)
     }
 
     /** Быстрые команды → лента «Рейд»: нормализуем roomId/текст с ответа API. */
@@ -3584,7 +3612,6 @@ class CombatOverlayService : Service() {
         refreshOverlayChatStripNow()
         mainHandler.removeCallbacks(overlayCloseHudRefreshRunnable)
         mainHandler.postDelayed(overlayCloseHudRefreshRunnable, OVERLAY_CLOSE_HUD_REFRESH_DELAY_MS)
-        refreshOverlayHubUnreadOnly()
     }
 
     private fun hideOverlayIme(view: View) {
@@ -3637,7 +3664,6 @@ class CombatOverlayService : Service() {
             chatStripZOrderLifted = false
             Log.w(TAG, "requestChatStripZOrderLift failed", e)
         }
-        rebalanceOverlayHudZOrder(force = true)
     }
 
     private fun rebalanceOverlayChatStripZOrder() = requestChatStripZOrderLift()
@@ -4250,23 +4276,19 @@ class CombatOverlayService : Service() {
             val service = runningInstance ?: return
             service.mainHandler.post {
                 if (authoritativeEffective != null) {
-                    if (authoritativeEffective <= 0) {
-                        service.hubUnreadOptimisticFloor = 0
-                        service.applyAllianceHubUnreadCount(0)
-                        service.patchHubUnreadInSessionCacheAfterLocalRead()
-                        return@post
-                    }
                     service.serviceScope.launch(Dispatchers.IO) {
                         val raw = ChatSessionCache.getFreshRooms()
                             ?.let { ChatUnreadCounts.allianceHubRawUnread(it) }
-                            ?: 0
+                            ?: authoritativeEffective.coerceAtLeast(0)
                         service.mainHandler.post {
-                            service.hubUnreadOptimisticFloor = maxOf(
-                                service.hubUnreadOptimisticFloor,
-                                authoritativeEffective,
-                            )
+                            if (authoritativeEffective > 0) {
+                                service.hubUnreadOptimisticFloor = maxOf(
+                                    service.hubUnreadOptimisticFloor,
+                                    authoritativeEffective,
+                                )
+                            }
                             service.applyAllianceHubUnreadReconciled(
-                                authoritativeEffective,
+                                authoritativeEffective.coerceAtLeast(0),
                                 raw,
                             )
                         }
