@@ -6,19 +6,33 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.platform.LocalDensity
+import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 
 /**
- * Якорит панель ввода над IME ([adjustNothing]) с небольшим зазором.
- * В основном приложении контент Scaffold уже над [bottomBar] — не добавляем высоту навбара.
+ * Якорит панель ввода над IME ([adjustNothing]) с [SquadRelayDimens.composerBottomGap].
+ * В Scaffold контент уже над [bottomBar]: при IME вычитаем высоту bottomBar из inset,
+ * иначе зазор над клавиатурой ≈ gap + высота навбара.
  */
-fun Modifier.chatComposerDock(@Suppress("UNUSED_PARAMETER") overlayUi: Boolean): Modifier = composed {
-    windowInsetsPadding(WindowInsets.ime)
-        .padding(bottom = SquadRelayDimens.composerBottomGap)
+fun Modifier.chatComposerDock(): Modifier = composed {
+    val density = LocalDensity.current
+    val overlayUi = LocalOverlayUiMode.current
+    val gap = SquadRelayDimens.composerBottomGap
+    val imeBottomPx = WindowInsets.ime.getBottom(density)
+
+    if (overlayUi) {
+        windowInsetsPadding(WindowInsets.ime)
+            .padding(bottom = gap)
+    } else if (imeBottomPx > 0) {
+        val bottomBarPx = with(density) {
+            SquadRelayDimens.bottomNavigationBarBlockHeight.roundToPx()
+        }
+        val effectiveImePx = (imeBottomPx - bottomBarPx).coerceAtLeast(0)
+        padding(
+            bottom = with(density) { effectiveImePx.toDp() } + gap,
+        )
+    } else {
+        padding(bottom = gap)
+    }
 }
-
-/** @deprecated Композер в отдельном слое [chatComposerDock]; отступы не на корневом Box. */
-fun Modifier.chatComposerHostBottomSpacing(): Modifier = Modifier
-
-/** IME/зазор задаёт [chatComposerDock] на хосте экрана. */
-fun Modifier.chatComposerImePadding(overlayUi: Boolean): Modifier = Modifier

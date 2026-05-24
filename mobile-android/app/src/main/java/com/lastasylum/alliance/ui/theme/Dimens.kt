@@ -4,8 +4,10 @@ import androidx.compose.ui.unit.dp
 
 /** 8dp grid: единые отступы по всем экранам. */
 object SquadRelayDimens {
-    /** Совпадает с высотой нижней панели вкладок в [com.lastasylum.alliance.ui.AppNavigation]. */
+    /** Минимальная высота ряда вкладок в [com.lastasylum.alliance.ui.AppNavigation]. */
     val bottomNavigationBarHeight = 56.dp
+    /** Полная высота bottomBar: padding Box (10+10) + Row padding (6+6) + [bottomNavigationBarHeight]. */
+    val bottomNavigationBarBlockHeight = bottomNavigationBarHeight + 32.dp
     val screenPaddingHorizontal = 16.dp
     val screenPaddingVertical = 12.dp
     /** Горизонталь контента внутри вкладок (выравнивание с навбаром). */

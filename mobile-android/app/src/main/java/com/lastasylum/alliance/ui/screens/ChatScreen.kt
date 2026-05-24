@@ -690,7 +690,7 @@ fun ChatScreen(
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .onSizeChanged { size -> composerBlockHeightPx = size.height }
-                    .chatComposerDock(overlayUi = overlayUi),
+                    .chatComposerDock(),
             ) {
                 state.sendFailure?.let { failure ->
                     Surface(

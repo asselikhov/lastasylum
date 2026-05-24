@@ -1056,7 +1056,7 @@ private fun TeamForumTopicChatRoute(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .onSizeChanged { size -> composerBlockHeightPx = size.height }
-                .chatComposerDock(overlayUi = overlayUi),
+                .chatComposerDock(),
         ) {
         ChatComposer(
             draft = draft,
