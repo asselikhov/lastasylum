@@ -57,6 +57,10 @@ private const val INITIAL_PAGE_SIZE = 20
 private const val PAGE_SIZE = 30
 private const val INCOMING_SOCKET_DEBOUNCE_MS = 75L
 private const val PROFILE_GATE_TTL_MS = 5 * 60_000L
+/** Не подгружать старую страницу сразу после первого кадра ленты — иначе второй diff и фриз. */
+private const val PREFETCH_OLDER_DEFER_MS = 2_500L
+/** Отложить reconcile с сервером, если сообщения уже в кэше после splash/bootstrap. */
+private const val BACKGROUND_MESSAGE_REFRESH_DEFER_MS = 1_800L
 
 private data class RoomMessageCache(
     val messages: List<ChatMessage>,
@@ -466,16 +470,25 @@ class ChatViewModel(
         isChatTabActive = true
         syncReadStateFromPreferences()
         viewModelScope.launch {
+            val cachedRooms = ChatSessionCache.getFreshRooms()
+            if (cachedRooms != null && _state.value.rooms.isEmpty()) {
+                val next = applyRoomsFromServer(cachedRooms)
+                _state.update { it.copy(rooms = next) }
+            } else if (cachedRooms == null) {
+                syncRoomsFromServer(reconfirmVisibleRoom = false)
+            } else {
+                recomputeRoomUnreadBadges()
+            }
             val roomId = _state.value.selectedRoomId
             roomMessageCache[roomId]?.let { cached ->
                 _state.update { st ->
                     st.copy(
                         messages = cached.messages,
                         hasMoreOlder = cached.hasMoreOlder,
+                        isLoading = false,
                     )
                 }
             }
-            syncRoomsFromServer(reconfirmVisibleRoom = false)
             if (_state.value.selectedRoomId.isNullOrBlank()) {
                 ensureAllianceHubRoomSelected()
             }
@@ -1132,7 +1145,7 @@ class ChatViewModel(
                     pageSizeForHasMore = INITIAL_PAGE_SIZE,
                 )
                 if (loaded.size >= INITIAL_PAGE_SIZE) {
-                    prefetchOlderMessagesSilent(roomId)
+                    schedulePrefetchOlderMessages(roomId)
                 }
             }
             .onFailure { e ->
@@ -1145,8 +1158,23 @@ class ChatViewModel(
             }
     }
 
-    private fun refreshMessagesInBackground(roomId: String) {
+    private fun schedulePrefetchOlderMessages(roomId: String) {
         viewModelScope.launch {
+            delay(PREFETCH_OLDER_DEFER_MS)
+            if (_state.value.selectedRoomId != roomId) return@launch
+            prefetchOlderMessagesSilent(roomId)
+        }
+    }
+
+    private fun refreshMessagesInBackground(roomId: String) {
+        val deferMs = if (ChatSessionCache.getFreshMessages(roomId) != null) {
+            BACKGROUND_MESSAGE_REFRESH_DEFER_MS
+        } else {
+            0L
+        }
+        viewModelScope.launch {
+            if (deferMs > 0L) delay(deferMs)
+            if (_state.value.selectedRoomId != roomId) return@launch
             repository.loadRecentMessages(roomId, beforeMessageId = null, limit = PAGE_SIZE)
                 .onSuccess { loaded ->
                     if (_state.value.selectedRoomId != roomId || loaded.isEmpty()) return@onSuccess
@@ -1914,6 +1942,7 @@ class ChatViewModel(
         }
         batch.forEach { message ->
             if (isRaidStripMessage(message)) {
+                CombatOverlayService.extendInGameOverlayUiHold()
                 repository.notifyOverlayRaidStripMessage(message)
             }
         }

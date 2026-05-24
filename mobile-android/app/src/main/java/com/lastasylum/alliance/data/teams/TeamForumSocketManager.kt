@@ -26,6 +26,14 @@ data class TeamForumTypingEvent(
     val username: String,
 )
 
+/** New message in any forum topic — for team inbox badges (overlay HUD, topic list). */
+data class TeamForumTopicActivityEvent(
+    val teamId: String,
+    val topicId: String,
+    val messageId: String,
+    val senderUserId: String,
+)
+
 class TeamForumSocketManager {
     private var socket: Socket? = null
     private var subscribedTeamId: String? = null
@@ -37,6 +45,8 @@ class TeamForumSocketManager {
     private val messageDeletedListeners =
         CopyOnWriteArrayList<(TeamForumMessageDeletedEvent) -> Unit>()
     private val typingListeners = CopyOnWriteArrayList<(TeamForumTypingEvent) -> Unit>()
+    private val topicActivityListeners =
+        CopyOnWriteArrayList<(TeamForumTopicActivityEvent) -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var reconnectAttempt = 0
     private var intentionalDisconnect = false
@@ -47,9 +57,8 @@ class TeamForumSocketManager {
         if (intentionalDisconnect) return@Runnable
         val base = lastBaseUrl ?: return@Runnable
         val tid = subscribedTeamId ?: return@Runnable
-        val top = subscribedTopicId ?: return@Runnable
         val token = tokenProvider?.invoke() ?: return@Runnable
-        openSocket(base, token, tid, top)
+        openSocket(base, token, tid, subscribedTopicId)
     }
 
     private val _connectionState = MutableStateFlow(TeamForumSocketState.Disconnected)
@@ -95,17 +104,37 @@ class TeamForumSocketManager {
         typingListeners.remove(listener)
     }
 
+    fun addTopicActivityListener(listener: (TeamForumTopicActivityEvent) -> Unit) {
+        if (!topicActivityListeners.contains(listener)) {
+            topicActivityListeners.add(listener)
+        }
+    }
+
+    fun removeTopicActivityListener(listener: (TeamForumTopicActivityEvent) -> Unit) {
+        topicActivityListeners.remove(listener)
+    }
+
     fun clearListeners() {
         messageListeners.clear()
         messageEditedListeners.clear()
         messageDeletedListeners.clear()
         typingListeners.clear()
+        topicActivityListeners.clear()
+    }
+
+    /** Team-wide inbox (overlay HUD / topic list) without subscribing to a single topic room. */
+    fun connectTeamInbox(
+        baseUrl: String,
+        teamId: String,
+        tokenProvider: () -> String?,
+    ) {
+        connect(baseUrl, teamId, topicId = null, tokenProvider)
     }
 
     fun connect(
         baseUrl: String,
         teamId: String,
-        topicId: String,
+        topicId: String?,
         tokenProvider: () -> String?,
     ) {
         intentionalDisconnect = false
@@ -116,26 +145,27 @@ class TeamForumSocketManager {
             emitState(TeamForumSocketState.Disconnected)
             return
         }
+        val topicKey = topicId?.trim()?.takeIf { it.isNotEmpty() }
         if (socket?.connected() == true &&
             subscribedTeamId == teamId &&
-            subscribedTopicId == topicId
+            subscribedTopicId == topicKey
         ) {
+            emitTeamAndTopicJoin(teamId, topicKey)
             return
         }
         subscribedTeamId = teamId
-        subscribedTopicId = topicId
-        openSocket(lastBaseUrl!!, token, teamId, topicId)
+        subscribedTopicId = topicKey
+        openSocket(lastBaseUrl!!, token, teamId, topicKey)
     }
 
     fun reconnectWithFreshToken() {
         val tid = subscribedTeamId ?: return
-        val top = subscribedTopicId ?: return
         val base = lastBaseUrl ?: return
         val provider = tokenProvider ?: return
         val token = provider() ?: return
         intentionalDisconnect = false
         cancelReconnect()
-        openSocket(base, token, tid, top)
+        openSocket(base, token, tid, subscribedTopicId)
     }
 
     fun emitTyping() {
@@ -183,7 +213,23 @@ class TeamForumSocketManager {
         }
     }
 
-    private fun openSocket(baseUrl: String, accessToken: String, teamId: String, topicId: String) {
+    private fun emitTeamAndTopicJoin(teamId: String, topicId: String?) {
+        val s = socket ?: return
+        if (!s.connected()) return
+        s.emit("team:join", JSONObject().put("teamId", teamId))
+        val top = topicId?.trim()?.takeIf { it.isNotEmpty() } ?: return
+        s.emit(
+            "topic:join",
+            JSONObject().put("teamId", teamId).put("topicId", top),
+        )
+    }
+
+    private fun openSocket(
+        baseUrl: String,
+        accessToken: String,
+        teamId: String,
+        topicId: String?,
+    ) {
         emitState(TeamForumSocketState.Connecting)
         disconnectSocketOnly()
 
@@ -196,10 +242,7 @@ class TeamForumSocketManager {
                 on(Socket.EVENT_CONNECT) {
                     reconnectAttempt = 0
                     emitState(TeamForumSocketState.Connected)
-                    emit(
-                        "topic:join",
-                        JSONObject().put("teamId", teamId).put("topicId", topicId),
-                    )
+                    emitTeamAndTopicJoin(teamId, topicId)
                 }
                 on(Socket.EVENT_DISCONNECT) {
                     if (!intentionalDisconnect) {
@@ -213,10 +256,24 @@ class TeamForumSocketManager {
                         scheduleReconnect()
                     }
                 }
+                on("topic:activity") { args ->
+                    val payload = args.firstOrNull() as? JSONObject ?: return@on
+                    val ev = TeamForumTopicActivityEvent(
+                        teamId = payload.optString("teamId"),
+                        topicId = payload.optString("topicId"),
+                        messageId = payload.optString("messageId"),
+                        senderUserId = payload.optString("senderUserId"),
+                    )
+                    if (ev.teamId != teamId || ev.topicId.isBlank()) return@on
+                    dispatchMain {
+                        topicActivityListeners.forEach { l -> runCatching { l(ev) } }
+                    }
+                }
                 on("message:new") { args ->
                     val payload = args.firstOrNull() as? JSONObject ?: return@on
                     val msg = payload.toForumMessageDto() ?: return@on
-                    if (msg.teamId != teamId || msg.topicId != topicId) return@on
+                    val activeTopic = topicId?.trim()?.takeIf { it.isNotEmpty() } ?: return@on
+                    if (msg.teamId != teamId || msg.topicId != activeTopic) return@on
                     dispatchMain {
                         messageListeners.forEach { l -> runCatching { l(msg) } }
                     }
@@ -224,7 +281,8 @@ class TeamForumSocketManager {
                 on("message:edited") { args ->
                     val payload = args.firstOrNull() as? JSONObject ?: return@on
                     val msg = payload.toForumMessageDto() ?: return@on
-                    if (msg.teamId != teamId || msg.topicId != topicId) return@on
+                    val activeTopic = topicId?.trim()?.takeIf { it.isNotEmpty() } ?: return@on
+                    if (msg.teamId != teamId || msg.topicId != activeTopic) return@on
                     dispatchMain {
                         messageEditedListeners.forEach { l -> runCatching { l(msg) } }
                     }
@@ -239,14 +297,16 @@ class TeamForumSocketManager {
                         deletedByUserId = payload.optString("deletedByUserId")
                             .takeIf { it.isNotBlank() },
                     )
-                    if (event.teamId != teamId || event.topicId != topicId) return@on
+                    val activeTopic = topicId?.trim()?.takeIf { it.isNotEmpty() } ?: return@on
+                    if (event.teamId != teamId || event.topicId != activeTopic) return@on
                     dispatchMain {
                         messageDeletedListeners.forEach { l -> runCatching { l(event) } }
                     }
                 }
                 on("user:typing") { args ->
                     val payload = args.firstOrNull() as? JSONObject ?: return@on
-                    if (payload.optString("topicId") != topicId) return@on
+                    val activeTopic = topicId?.trim()?.takeIf { it.isNotEmpty() } ?: return@on
+                    if (payload.optString("topicId") != activeTopic) return@on
                     val ev = TeamForumTypingEvent(
                         teamId = payload.optString("teamId"),
                         topicId = payload.optString("topicId"),

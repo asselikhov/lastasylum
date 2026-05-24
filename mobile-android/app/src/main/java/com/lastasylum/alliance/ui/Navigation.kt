@@ -215,6 +215,7 @@ fun AppNavigation(
         }
         val route = when (tab) {
             AppTab.CHAT.route, "chat" -> AppTab.CHAT.route
+            AppTab.TEAM.route, "team", "news" -> AppTab.TEAM.route
             AppTab.OVERLAY.route, "overlay" -> AppTab.OVERLAY.route
             else -> null
         } ?: return@LaunchedEffect
@@ -393,7 +394,7 @@ fun AppNavigation(
             AtmosphericBackground(Modifier.fillMaxSize())
             NavHost(
             navController = navController,
-            startDestination = AppTab.CHAT.route,
+            startDestination = AppTab.TEAM.route,
             modifier = Modifier.fillMaxSize(),
             enterTransition = {
                 if (tabMotionDisabled) EnterTransition.None
@@ -414,11 +415,7 @@ fun AppNavigation(
         ) {
             composable(AppTab.CHAT.route) {
                 LaunchedEffect(Unit) {
-                    chatViewModel.refreshTeamProfileGate()
-                }
-                DisposableEffect(Unit) {
-                    chatViewModel.onChatTabResumed()
-                    onDispose { chatViewModel.onChatTabPaused() }
+                    chatViewModel.refreshTeamProfileGateLight()
                 }
                 DisposableEffect(app.chatRepository) {
                     val listener = { chatViewModel.onOverlayChatPanelClosed() }

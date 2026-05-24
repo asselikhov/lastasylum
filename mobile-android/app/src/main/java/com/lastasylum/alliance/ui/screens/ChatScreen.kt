@@ -106,7 +106,6 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -403,9 +402,22 @@ fun ChatScreen(
         }
     }
     val messages = state.messages
-    val listDerived by produceState(ChatMessagesListDerived.Empty, messages) {
-        value = withContext(Dispatchers.Default) {
+    var listDerived by remember(state.selectedRoomId) {
+        mutableStateOf(ChatMessagesListDerived.Empty)
+    }
+    LaunchedEffect(state.selectedRoomId, messages) {
+        if (messages.isEmpty()) {
+            listDerived = ChatMessagesListDerived.Empty
+            return@LaunchedEffect
+        }
+        if (messages.size <= 28 && listDerived.timeline.isEmpty()) {
+            listDerived = buildChatMessagesListDerived(messages)
+        }
+        val built = withContext(Dispatchers.Default) {
             buildChatMessagesListDerived(messages)
+        }
+        if (built != listDerived) {
+            listDerived = built
         }
     }
     val listUiState = remember(

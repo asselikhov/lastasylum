@@ -26,6 +26,7 @@ type GatewayUser = {
 type SocketData = {
   user?: GatewayUser;
   lastForumRoom?: string;
+  lastForumTeamRoom?: string;
 };
 
 type AuthSocket = Socket<
@@ -63,6 +64,38 @@ export class TeamForumGateway {
 
   private roomKey(teamId: string, topicId: string): string {
     return `forum:${teamId}:${topicId}`;
+  }
+
+  private teamInboxRoomKey(teamId: string): string {
+    return `forum-team:${teamId}`;
+  }
+
+  @SubscribeMessage('team:join')
+  async joinTeam(
+    @ConnectedSocket() client: AuthSocket,
+    @MessageBody() payload: { teamId?: string },
+  ) {
+    if (!client.data.user) {
+      throw new WsException('Unauthorized socket connection');
+    }
+    const teamId =
+      typeof payload?.teamId === 'string' ? payload.teamId.trim() : '';
+    if (!teamId) {
+      throw new WsException('teamId is required');
+    }
+    await this.forumService.listTopics(teamId, client.data.user.userId);
+
+    const key = this.teamInboxRoomKey(teamId);
+    if (
+      client.data.lastForumTeamRoom &&
+      client.data.lastForumTeamRoom !== key
+    ) {
+      void client.leave(client.data.lastForumTeamRoom);
+    }
+    void client.join(key);
+    client.data.lastForumTeamRoom = key;
+
+    return { event: 'team:joined', data: { teamId } };
   }
 
   @SubscribeMessage('topic:join')
@@ -179,9 +212,17 @@ export class TeamForumGateway {
   }
 
   broadcastNewMessage(teamId: string, topicId: string, message: TeamForumMessageRow) {
+    const payload = { ...message, teamId, topicId };
     this.server
       ?.to(this.roomKey(teamId, topicId))
-      .emit('message:new', { ...message, teamId, topicId });
+      .emit('message:new', payload);
+    this.server?.to(this.teamInboxRoomKey(teamId)).emit('topic:activity', {
+      teamId,
+      topicId,
+      messageId: message.id,
+      senderUserId: message.senderUserId,
+      createdAt: message.createdAt,
+    });
   }
 
   broadcastMessageDeleted(

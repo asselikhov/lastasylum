@@ -78,6 +78,7 @@ import com.google.android.material.color.MaterialColors
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.ReadCursorSession
+import com.lastasylum.alliance.data.teams.TeamForumTopicActivityEvent
 import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.displayedUnreadCount
 import com.lastasylum.alliance.data.chat.ChatMessage
@@ -321,6 +322,7 @@ class CombatOverlayService : Service() {
     private var chatStripParams: WindowManager.LayoutParams? = null
     private val chatStripPreviewFlow = MutableStateFlow<List<ChatMessage>>(emptyList())
     private var overlayMessageListener: ((ChatMessage) -> Unit)? = null
+    private var overlayForumTopicActivityListener: ((TeamForumTopicActivityEvent) -> Unit)? = null
     private var overlayReadListener: ((com.lastasylum.alliance.data.chat.ChatRoomReadEvent) -> Unit)? = null
     private var overlayReactionListener: ((OverlayReactionEvent) -> Unit)? = null
     /** Лента: короткий TTL и мало строк превью — компактная полоса у края. */
@@ -903,6 +905,10 @@ class CombatOverlayService : Service() {
     @Volatile
     private var hubUnreadOptimisticFloor: Int = 0
 
+    /** After raid send / quick commands — block game-gate dismiss that removes HUD windows. */
+    @Volatile
+    private var overlayUiHoldUntilMs: Long = 0L
+
     private val hubHudRefreshRunnable = Runnable {
         hubHudRefreshPosted = false
         refreshOverlayHubUnreadOnly()
@@ -995,6 +1001,16 @@ class CombatOverlayService : Service() {
     }
 
     private fun isInGameOverlayUiActive(): Boolean = lastAppliedGateShouldShow == true
+
+    private fun extendOverlayUiHold(durationMs: Long = OVERLAY_UI_HOLD_AFTER_RAID_SEND_MS) {
+        overlayUiHoldUntilMs = maxOf(
+            overlayUiHoldUntilMs,
+            System.currentTimeMillis() + durationMs,
+        )
+    }
+
+    private fun isOverlayUiHoldActive(): Boolean =
+        System.currentTimeMillis() < overlayUiHoldUntilMs
 
     /**
      * Сглаживание ложных «не в игре» между тиками usage-stats: показ сразу, скрытие после
@@ -1376,6 +1392,7 @@ class CombatOverlayService : Service() {
                     // Попап команд/реакций — только на main: иначе на части ROM гонка снимает HUD.
                     // HUD только в игре (или при системном пикере). Попап/чат не держат кнопки после minimize.
                     val shouldShowInGameOverlayUi = when {
+                        isOverlayUiHoldActive() -> true
                         inGame -> true
                         OverlayChatInteractionHold.isOverlaySystemPickerSessionActive() -> true
                         overlayCommandsPopover.isBlockingGameGateDismiss() -> true
@@ -1515,19 +1532,23 @@ class CombatOverlayService : Service() {
                     )
                 }.getOrElse { OverlayGameStatusHudState() }
                 val rawHubUnread = rooms?.let { OverlayGameStatusHudRefresh.allianceHubRawUnread(it) } ?: 0
-                val hubDisplayed = displayedUnreadCount(
-                    effectiveUnread = state.allianceChatUnread,
-                    previouslyDisplayed = maxOf(
-                        overlayStatusHudFlow.value.allianceChatUnread,
-                        hubUnreadOptimisticFloor,
-                    ),
-                    rawServerUnread = rawHubUnread,
-                    optimisticFloor = hubUnreadOptimisticFloor,
-                )
-                if (rawHubUnread <= 0 && state.allianceChatUnread <= 0 && hubUnreadOptimisticFloor <= 0) {
+                val hubDisplayed = if (state.allianceChatUnread <= 0) {
                     hubUnreadOptimisticFloor = 0
-                } else if (hubDisplayed <= state.allianceChatUnread && state.allianceChatUnread > 0) {
-                    hubUnreadOptimisticFloor = 0
+                    0
+                } else {
+                    displayedUnreadCount(
+                        effectiveUnread = state.allianceChatUnread,
+                        previouslyDisplayed = maxOf(
+                            overlayStatusHudFlow.value.allianceChatUnread,
+                            hubUnreadOptimisticFloor,
+                        ),
+                        rawServerUnread = rawHubUnread,
+                        optimisticFloor = hubUnreadOptimisticFloor,
+                    ).also { merged ->
+                        if (merged <= state.allianceChatUnread && state.allianceChatUnread > 0) {
+                            hubUnreadOptimisticFloor = 0
+                        }
+                    }
                 }
                 val mergedState = state.copy(allianceChatUnread = hubDisplayed)
                 val refreshPresenceCounts = force || refreshNewsForum
@@ -2157,6 +2178,11 @@ class CombatOverlayService : Service() {
         lastAppliedGateShouldShow = shouldShow
         _inGameOverlayUiActive.value = shouldShow
         if (!shouldShow) {
+            if (isOverlayUiHoldActive()) {
+                ensureOverlayIfPermitted()
+                restoreOverlayInGameWindowVisibility()
+                return
+            }
             if (overlayCommandsPopover.isBlockingGameGateDismiss()) {
                 ensureOverlayIfPermitted()
                 if (isOverlayChatStripEnabled()) {
@@ -2177,7 +2203,11 @@ class CombatOverlayService : Service() {
             !shouldKeepOverlayWindows() &&
             overlayTouchPassthroughSnaps.isEmpty()
         ) {
-            pauseOverlayUiForAllianceAppForeground()
+            if (isOverlayUiHoldActive()) {
+                restoreOverlayInGameWindowVisibility()
+            } else {
+                pauseOverlayUiForAllianceAppForeground()
+            }
             return
         }
         if (!hasUsageAccess) {
@@ -2206,6 +2236,7 @@ class CombatOverlayService : Service() {
             stableGatePollTicks = HUD_STABLE_TICKS_BEFORE_ATTACH
             resetOverlayVoiceForGameEntry()
             ensureOverlayRaidRealtimeIfNeeded()
+            ensureOverlayForumInboxRealtimeIfNeeded()
             OverlayGameStatusHudRefresh.invalidateNewsForumCache()
             lastHudRefreshCompletedAtMs = 0L
             attachOverlayHudWindowsIfNeeded()
@@ -2232,6 +2263,10 @@ class CombatOverlayService : Service() {
      * иначе оставляют оверлей «висеть» после сворачивания или закрытия игры.
      */
     private fun dismissOverlayUiBecauseNotInGame(logWaitingForGame: Boolean) {
+        if (isOverlayUiHoldActive()) {
+            restoreOverlayInGameWindowVisibility()
+            return
+        }
         if (OverlayChatInteractionHold.isOverlaySystemPickerSessionActive()) {
             deferredDismissWhenPickerEnds = true
             return
@@ -2399,6 +2434,7 @@ class CombatOverlayService : Service() {
         removeOverlayControl(force = true)
         removeOverlayStatusHudWindow()
         removeOverlayTopRightHudWindow()
+        teardownOverlayForumInboxRealtime()
         mainHandler.removeCallbacks(statusHudRefreshRunnable)
         mainHandler.removeCallbacks(overlayCloseHudRefreshRunnable)
         statusHudRefreshPosted = false
@@ -2665,6 +2701,7 @@ class CombatOverlayService : Service() {
     /** Подписка на «Рейд»/hub, пока FGS активен и панель включена (не только пока окна на экране). */
     private fun ensureOverlayRaidRealtimeIfNeeded() {
         if (!shouldRetainOverlayRaidRealtime()) return
+        ensureOverlayForumInboxRealtimeIfNeeded()
         if (overlayMessageListener != null) {
             syncOverlayRaidRoomSubscription()
             refreshOverlayHubUnreadFromCache()
@@ -2672,6 +2709,54 @@ class CombatOverlayService : Service() {
             return
         }
         beginOverlayChatSubscription()
+    }
+
+    /** Forum topic inbox for overlay «Форум» badge while in-game (not only inside a topic). */
+    private fun ensureOverlayForumInboxRealtimeIfNeeded() {
+        if (!isInGameOverlayUiActive()) return
+        if (overlayForumTopicActivityListener != null) return
+        val container = AppContainer.from(this)
+        val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
+        val listener: (TeamForumTopicActivityEvent) -> Unit = listener@{ event ->
+            if (selfId.isNotBlank() && event.senderUserId.trim() == selfId) return@listener
+            mainHandler.post {
+                if (!isInGameOverlayUiActive()) return@post
+                OverlayGameStatusHudRefresh.invalidateNewsForumCache()
+                val current = overlayStatusHudFlow.value.forumUnread
+                if (current < 99) {
+                    overlayStatusHudFlow.value = overlayStatusHudFlow.value.copy(
+                        forumUnread = current + 1,
+                    )
+                }
+                refreshOverlayStatusHudData(force = true)
+            }
+        }
+        overlayForumTopicActivityListener = listener
+        container.teamForumSocket.addTopicActivityListener(listener)
+        serviceScope.launch(Dispatchers.IO) {
+            val teamId = container.usersRepository.getMyProfile()
+                .getOrNull()
+                ?.playerTeamId
+                ?.trim()
+                .orEmpty()
+            if (teamId.isEmpty()) return@launch
+            val baseUrl = BuildConfig.API_BASE_URL.trimEnd('/')
+            mainHandler.post {
+                if (!isInGameOverlayUiActive()) return@post
+                container.teamForumSocket.connectTeamInbox(baseUrl, teamId) {
+                    container.tokenStore.getAccessToken()
+                }
+            }
+        }
+    }
+
+    private fun teardownOverlayForumInboxRealtime() {
+        overlayForumTopicActivityListener?.let { listener ->
+            runCatching {
+                AppContainer.from(this).teamForumSocket.removeTopicActivityListener(listener)
+            }
+        }
+        overlayForumTopicActivityListener = null
     }
 
     /** Маршрутизация raid/hub в ленту, пока слушатель оверлея активен или игрок в матче. */
@@ -2688,11 +2773,38 @@ class CombatOverlayService : Service() {
      * Исходящее сообщение по HTTP (текст из истории, голос, быстрые команды): сразу обновить ленту оверлея,
      * как только приходит ответ API (не ждать сокет). Вызывать с главного потока.
      */
-    private fun applyLocalSentMessageToStrip(sent: ChatMessage) {
-        stripBuffer.markClientSend(sent)
-        ingestOverlayRaidMessage(sent, refreshNow = true, forceIngest = true)
+    /**
+     * Локальная отправка (быстрые команды, HTTP-эхо) — пишем в буфер ленты напрямую,
+     * не полагаясь только на [shouldIngestForRaidStrip] и сокет.
+     */
+    private fun applyLocalSentMessageToStrip(
+        sent: ChatMessage,
+        trustedRaidRoomId: String? = null,
+    ) {
+        extendOverlayUiHold()
+        val raid = trustedRaidRoomId?.trim()?.takeIf { it.isNotEmpty() }
+            ?: resolveOverlayRaidRoomId()
+            ?: trustedOverlayRaidRoomId
+        if (raid.isNullOrBlank()) {
+            ingestOverlayRaidMessage(sent, refreshNow = true, forceIngest = true)
+            return
+        }
+        rememberOverlayRaidRoomId(raid)
+        val normalized = sent.copy(
+            roomId = sent.roomId.trim().ifBlank { raid },
+            text = sent.text.trim().ifBlank { sent.text },
+        )
+        stripBuffer.markClientSend(normalized)
+        stripBuffer.upsert(normalized)
+        stripBuffer.mergeReceiveTimeline(normalized, jwtSubFromAccessToken())
+        lastStripRenderSignature = 0
+        refreshOverlayChatStripNow()
         if (isOverlayChatStripEnabled()) {
-            restoreOverlayInGameWindowVisibility()
+            applyOverlayStripVisibility(rebalanceZOrder = false)
+            chatStripHost?.visibility = View.VISIBLE
+            if (!chatStripZOrderLifted) {
+                scheduleStripZOrderLift()
+            }
         }
     }
 
@@ -2703,7 +2815,7 @@ class CombatOverlayService : Service() {
             roomId = sent.roomId.trim().ifBlank { raid },
             text = sent.text.trim().ifBlank { fallbackText },
         )
-        applyLocalSentMessageToStrip(normalized)
+        applyLocalSentMessageToStrip(normalized, trustedRaidRoomId = raid)
     }
 
     private fun resolveOverlayReactionSenderDisplayName(event: OverlayReactionEvent): String {
@@ -2787,6 +2899,23 @@ class CombatOverlayService : Service() {
         val raidId = resolveOverlayRaidRoomId() ?: trustedOverlayRaidRoomId
         val normalized = normalizeStripRaidMessage(msg, raidId)
         if (!shouldIngestForRaidStrip(normalized)) {
+            val forcedRaid = raidId?.trim().orEmpty()
+            if (forceIngest && forcedRaid.isNotEmpty()) {
+                val forced = normalized.copy(
+                    roomId = normalized.roomId.trim().ifBlank { forcedRaid },
+                )
+                rememberOverlayRaidRoomId(forcedRaid)
+                stripBuffer.upsert(forced)
+                stripBuffer.mergeReceiveTimeline(forced, jwtSubFromAccessToken())
+                lastStripRenderSignature = 0
+                if (refreshNow) {
+                    refreshOverlayChatStripNow()
+                } else {
+                    scheduleRefreshOverlayChatStrip()
+                }
+                ensureStripWindowVisibleForRaidTraffic()
+                return
+            }
             if (BuildConfig.DEBUG) {
                 Log.d(
                     OVERLAY_DIAG_TAG,
@@ -3966,9 +4095,7 @@ class CombatOverlayService : Service() {
         fun notifyAllianceHubUnread(count: Int) {
             val service = runningInstance ?: return
             service.mainHandler.post {
-                val rooms = ChatSessionCache.getFreshRooms()
-                val raw = rooms?.let { OverlayGameStatusHudRefresh.allianceHubRawUnread(it) } ?: 0
-                if (count <= 0 && raw <= 0 && service.hubUnreadOptimisticFloor <= 0) {
+                if (count <= 0) {
                     service.hubUnreadOptimisticFloor = 0
                     service.applyAllianceHubUnreadCount(0)
                     val hubId = AppContainer.from(service).chatRoomPreferences.getHubRoomId()
@@ -3976,15 +4103,13 @@ class CombatOverlayService : Service() {
                         AppContainer.from(service).chatRoomPreferences.getLastReadMessageId(id)
                     }
                     service.patchHubUnreadInSessionCache(0, lastRead)
-                } else {
-                    if (count > 0) {
-                        service.hubUnreadOptimisticFloor = maxOf(service.hubUnreadOptimisticFloor, count)
-                        service.applyAllianceHubUnreadReconciled(count, raw)
-                        service.patchHubUnreadInSessionCache(count.coerceIn(0, 999))
-                    } else {
-                        service.applyAllianceHubUnreadReconciled(0, raw)
-                    }
+                    return@post
                 }
+                val rooms = ChatSessionCache.getFreshRooms()
+                val raw = rooms?.let { OverlayGameStatusHudRefresh.allianceHubRawUnread(it) } ?: 0
+                service.hubUnreadOptimisticFloor = maxOf(service.hubUnreadOptimisticFloor, count)
+                service.applyAllianceHubUnreadReconciled(count, raw)
+                service.patchHubUnreadInSessionCache(count.coerceIn(0, 999))
             }
         }
 
@@ -3994,6 +4119,12 @@ class CombatOverlayService : Service() {
             service.mainHandler.post {
                 service.bumpAllianceHubUnreadLocally(messageId)
             }
+        }
+
+        /** Удержать HUD/ленту на экране после отправки в «Рейд» / быстрых команд (IME, game gate). */
+        fun extendInGameOverlayUiHold(durationMs: Long = OVERLAY_UI_HOLD_AFTER_RAID_SEND_MS) {
+            val service = runningInstance ?: return
+            service.mainHandler.post { service.extendOverlayUiHold(durationMs) }
         }
 
         /** Частый prune ленты относительно TTL ~10 с. */
@@ -4011,6 +4142,8 @@ class CombatOverlayService : Service() {
         private const val STATUS_HUD_REFRESH_MS = 60_000L
         /** Краткий grace при ложном «не в игре» во время чата/пикера; не применяется при явном лаунчере/другом приложении. */
         private const val OVERLAY_INGAME_GRACE_MS = 2_500L
+        /** После отправки в «Рейд» / координат — не снимать HUD на ложном «не в игре». */
+        private const val OVERLAY_UI_HOLD_AFTER_RAID_SEND_MS = 3_500L
         /** Gate ticks without in-game probe before POST away (~4–10 s). */
         private const val OVERLAY_INGAME_AWAY_MISS_STREAK = 3
         private const val OVERLAY_HISTORY_LOAD = 40

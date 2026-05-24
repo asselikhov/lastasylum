@@ -186,6 +186,22 @@ fun TeamForumNavHost(
     LaunchedEffect(listRefreshNonce) {
         if (listRefreshNonce > 0) onInboxBadgesChanged()
     }
+    DisposableEffect(teamId) {
+        val onTopicActivity: (com.lastasylum.alliance.data.teams.TeamForumTopicActivityEvent) -> Unit =
+            { event ->
+                if (event.senderUserId.trim() != currentUserId.trim()) {
+                    listRefreshNonce++
+                }
+            }
+        forumSocket.addTopicActivityListener(onTopicActivity)
+        forumSocket.connectTeamInbox(
+            com.lastasylum.alliance.BuildConfig.API_BASE_URL,
+            teamId,
+        ) { tokenStore.getAccessToken() }
+        onDispose {
+            forumSocket.removeTopicActivityListener(onTopicActivity)
+        }
+    }
     LaunchedEffect(forumTabReselectSignal) {
         if (forumTabReselectSignal > 0) {
             nav.popBackStack(ForumRoutes.LIST, inclusive = false)
@@ -807,7 +823,10 @@ private fun TeamForumTopicChatRoute(
             forumSocket.removeMessageEditedListener(onEdited)
             forumSocket.removeMessageDeletedListener(onDeleted)
             forumSocket.removeTypingListener(onTyping)
-            forumSocket.disconnect()
+            forumSocket.connectTeamInbox(
+                BuildConfig.API_BASE_URL,
+                teamId,
+            ) { tokenStore.getAccessToken() }
         }
     }
 

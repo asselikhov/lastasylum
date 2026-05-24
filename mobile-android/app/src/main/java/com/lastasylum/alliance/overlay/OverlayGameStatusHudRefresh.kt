@@ -188,7 +188,7 @@ internal object OverlayGameStatusHudRefresh {
         }
     }
 
-    /** Advance last-seen cursor when the user opens a post (not when merely loading the list). */
+    /** Advance last-seen cursor when the user views news (list or detail). */
     fun markTeamNewsSeenAt(createdAt: String?, prefs: UserSettingsPreferences) {
         val iso = createdAt?.trim().orEmpty()
         if (iso.isBlank()) return

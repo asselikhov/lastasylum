@@ -77,6 +77,7 @@ class OverlayCommandsPopover(
     /** Между сменой scrim (меню → picker) [isShowing] иначе на мгновение false и game gate снимает HUD. */
     @Volatile
     private var surfaceTransitionDepth = 0
+    private var pendingSuppressRelease: Runnable? = null
 
     fun isShowing(): Boolean =
         surfaceTransitionDepth > 0 ||
@@ -140,8 +141,17 @@ class OverlayCommandsPopover(
      * счётчик Hold без [gameGateSuppressDepth] и даёт ложный tick game gate.
      */
     private fun releasePopoverSuppressAfterUiClosed() {
+        pendingSuppressRelease?.let { mainHandler.removeCallbacks(it) }
+        pendingSuppressRelease = null
         if (!isShowing()) {
-            clearGameGateSuppress()
+            val release = Runnable {
+                pendingSuppressRelease = null
+                if (!isShowing()) {
+                    clearGameGateSuppress()
+                }
+            }
+            pendingSuppressRelease = release
+            mainHandler.postDelayed(release, POPOVER_SUPPRESS_RELEASE_DELAY_MS)
         }
     }
 
@@ -1317,6 +1327,7 @@ class OverlayCommandsPopover(
         excavation: Boolean,
     ) {
         ensurePopoverSuppressHeld()
+        CombatOverlayService.extendInGameOverlayUiHold()
 
         val close = iconCloseButton()
         val title = labelText(commandLabel, 14f, Color.parseColor("#FFF4F7FF"), bold = true)
@@ -1520,6 +1531,7 @@ class OverlayCommandsPopover(
                     sendBtn.isEnabled = true
                     cancelBtn.isEnabled = true
                     result.onSuccess {
+                        CombatOverlayService.extendInGameOverlayUiHold()
                         hideCoordOnly()
                     }.onFailure { e ->
                         val msg = when (e.message) {
@@ -1911,6 +1923,8 @@ class OverlayCommandsPopover(
     }
 
     private companion object {
+        /** Delay suppress release after coord dialog closes so game gate does not tear down HUD. */
+        private const val POPOVER_SUPPRESS_RELEASE_DELAY_MS = 500L
         /** Реже будить Lottie-превью — на главном потоке только до [MAX_REACTION_LOTTIE_PREVIEWS_PLAYING] штук. */
         const val REACTION_PREVIEW_KEEP_ALIVE_MS = 5_000L
     }
