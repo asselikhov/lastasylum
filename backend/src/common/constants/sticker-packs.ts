@@ -7,7 +7,7 @@
  * 3. Append key here + stems const on backend + title in `StickerAccessService.catalog()`.
  * 4. Rebuild app (stickers are not loaded from CDN).
  *
- * Manual QA: admin role/user grants; player sees only granted packs in chat/forum/overlay;
+ * Manual QA: role/user grants (including app ADMIN); player sees only granted packs;
  * send forbidden pack → 403; PATCH user grants must not clear role grants.
  */
 export const STICKER_PACK_ZLOBYAKA = 'zlobyaka' as const;

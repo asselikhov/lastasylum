@@ -8,7 +8,6 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
-  isAppAdminRole,
   LEGACY_ALLIANCE_ROLE_MIGRATION,
   normalizeAllianceRole,
 } from '../common/alliance-role.util';
@@ -91,15 +90,7 @@ export class StickerAccessService implements OnModuleInit {
     }));
   }
 
-  /** App admins may use every built-in pack without explicit grants. */
-  private isAllianceAdmin(user: UserDocument): boolean {
-    return isAppAdminRole(user.role);
-  }
-
   async listEnabledPackKeysForUser(user: UserDocument): Promise<string[]> {
-    if (this.isAllianceAdmin(user)) {
-      return [...KNOWN_STICKER_PACK_KEYS];
-    }
     const allianceName = user.allianceName?.trim();
     if (!allianceName) {
       return [];
@@ -134,7 +125,6 @@ export class StickerAccessService implements OnModuleInit {
   ): Promise<void> {
     const packKey = stickerPackKeyFromStickerOnlyMessage(text);
     if (!packKey) return;
-    if (this.isAllianceAdmin(user)) return;
     const allowed = await this.listEnabledPackKeysForUser(user);
     if (!allowed.includes(packKey)) {
       throw new ForbiddenException('STICKER_PACK_LOCKED');

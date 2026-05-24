@@ -83,4 +83,30 @@ describe('StickerAccessService', () => {
     expect(roleGrantModel.deleteMany).not.toHaveBeenCalled();
     expect(view.userGrants.zlobyaka).toEqual([userId]);
   });
+
+  it('listEnabledPackKeysForUser respects grants for app ADMIN (no auto-all packs)', async () => {
+    const adminId = new Types.ObjectId();
+    const roleChain = {
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue([{ packKey: 'chushuy' }]),
+      }),
+    };
+    roleGrantModel.find.mockReturnValue(roleChain);
+    const userChain = {
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue([]),
+      }),
+    };
+    userGrantModel.find.mockReturnValue(userChain);
+
+    const keys = await service.listEnabledPackKeysForUser({
+      _id: adminId,
+      allianceName: 'TestAlliance',
+      role: 'ADMIN',
+    } as never);
+
+    expect(keys).toEqual(['chushuy']);
+  });
 });
