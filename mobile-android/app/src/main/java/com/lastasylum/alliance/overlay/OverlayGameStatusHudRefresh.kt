@@ -145,6 +145,10 @@ internal object OverlayGameStatusHudRefresh {
         ).coerceAtLeast(0)
     }
 
+    /** Server [ChatRoomDto.unreadCount] for hub before local cursor suppression (overlay badge merge). */
+    fun allianceHubRawUnread(rooms: List<ChatRoomDto>): Int =
+        allianceHubRoom(rooms)?.unreadCount?.coerceAtLeast(0) ?: 0
+
     fun filterIngameOverlayMembers(members: List<TeamMemberDto>): List<TeamMemberDto> =
         members.filter { m ->
             m.membershipStatus == "active" &&

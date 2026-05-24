@@ -93,6 +93,20 @@ private val overlayGifDrawableIds = intArrayOf(
     R.drawable.overlay_reaction_gif_21,
     R.drawable.overlay_reaction_gif_22,
     R.drawable.overlay_reaction_gif_23,
+    R.drawable.overlay_reaction_gif_24,
+    R.drawable.overlay_reaction_gif_25,
+    R.drawable.overlay_reaction_gif_26,
+    R.drawable.overlay_reaction_gif_27,
+    R.drawable.overlay_reaction_gif_28,
+    R.drawable.overlay_reaction_gif_29,
+    R.drawable.overlay_reaction_gif_30,
+    R.drawable.overlay_reaction_gif_31,
+    R.drawable.overlay_reaction_gif_32,
+    R.drawable.overlay_reaction_gif_33,
+    R.drawable.overlay_reaction_gif_34,
+    R.drawable.overlay_reaction_gif_35,
+    R.drawable.overlay_reaction_gif_36,
+    R.drawable.overlay_reaction_gif_37,
 )
 
 private val overlayGifReactionById: Map<String, Int> = buildMap {

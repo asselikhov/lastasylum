@@ -178,12 +178,14 @@ fun TeamScreen(
     var mainSectionOrdinal by rememberSaveable {
         mutableIntStateOf(initialMainSection?.ordinal ?: TeamMainSection.News.ordinal)
     }
-    var visitedSectionOrdinals by remember(initialMainSection) {
-        val initial = buildSet {
-            add(TeamMainSection.News.ordinal)
-            initialMainSection?.let { add(it.ordinal) }
-        }
-        mutableStateOf(initial)
+    var visitedSectionOrdinals by remember {
+        mutableStateOf(
+            buildSet {
+                add(TeamMainSection.News.ordinal)
+                add(mainSectionOrdinal)
+                initialMainSection?.let { add(it.ordinal) }
+            },
+        )
     }
     var forumTabReselectSignal by remember { mutableStateOf(0) }
 
@@ -191,6 +193,7 @@ fun TeamScreen(
         if (mainSectionOrdinal !in TeamMainSection.entries.indices) {
             mainSectionOrdinal = TeamMainSection.News.ordinal
         }
+        visitedSectionOrdinals = visitedSectionOrdinals + mainSectionOrdinal
     }
 
     fun reloadProfileAndTeam() {

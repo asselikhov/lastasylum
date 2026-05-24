@@ -41,7 +41,14 @@ describe('UsersService', () => {
       providers: [
         UsersService,
         { provide: AllianceRegistryService, useValue: {} },
-        { provide: TeamsService, useValue: {} },
+        {
+          provide: TeamsService,
+          useValue: {
+            reconcileSquadTeamBindingForUser: jest.fn((id: string) =>
+              findById(id).exec(),
+            ),
+          },
+        },
         { provide: StickerAccessService, useValue: {} },
         { provide: GameIdentitiesService, useValue: {} },
         {

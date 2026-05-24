@@ -308,9 +308,10 @@ class ChatViewModel(
     fun setAppInForeground(inForeground: Boolean) {
         if (appInForeground == inForeground) return
         appInForeground = inForeground
-        if (!inForeground) {
-            recomputeRoomUnreadBadges()
+        if (inForeground) {
+            syncReadStateFromPreferences()
         }
+        recomputeRoomUnreadBadges()
     }
 
     fun setOverlayChatPanelVisible(visible: Boolean) {

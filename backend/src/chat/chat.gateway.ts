@@ -42,7 +42,7 @@ const ALLOWED_OVERLAY_ANIMATION_REACTIONS = [
 
 /** GIF tiles in Android overlay Animations tab (overlay_reaction_gif_01..23). */
 const ALLOWED_OVERLAY_GIF_REACTIONS = Array.from(
-  { length: 23 },
+  { length: 37 },
   (_, i) => `gif_${String(i + 1).padStart(2, '0')}`,
 );
 
