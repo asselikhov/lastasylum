@@ -619,7 +619,6 @@ internal fun ChatComposer(
                                         if (showMediaPanel) {
                                             showMediaPanel = false
                                             focusRequester.requestFocus()
-                                            keyboard?.show()
                                         } else {
                                             focusManager.clearFocus()
                                             keyboard?.hide()
@@ -681,7 +680,6 @@ internal fun ChatComposer(
                                             if (!readOnly && fc.isFocused) {
                                                 if (showMediaPanel) {
                                                     showMediaPanel = false
-                                                    keyboard?.show()
                                                 }
                                             } else if (!fc.isFocused) {
                                                 pasteState.onDismissMenu()

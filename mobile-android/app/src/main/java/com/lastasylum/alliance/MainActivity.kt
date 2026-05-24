@@ -28,9 +28,9 @@ class MainActivity : ComponentActivity() {
             isAppearanceLightNavigationBars = false
         }
         super.onCreate(savedInstanceState)
-        // Edge-to-edge: система не сжимает окно через adjustResize на части устройств — IME задаём в Compose
-        // (см. imePadding у ChatComposer). decorFitsSystemWindows=false + safeDrawing/ime insets — единое поведение.
-        WindowCompat.setDecorFitsSystemWindows(window, false)
+        // adjustResize + decorFitsSystemWindows: окно сжимается вместе с IME (как в Telegram).
+        // Нижняя навигация скрывается при открытой клавиатуре (Navigation.kt).
+        WindowCompat.setDecorFitsSystemWindows(window, true)
         hideSystemUi()
         setContent {
             SquadRelayApp()
@@ -45,7 +45,7 @@ class MainActivity : ComponentActivity() {
         WindowCompat.getInsetsController(window, window.decorView).apply {
             systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            // adjustNothing в манифесте: один источник отступа под IME (chatComposerImePadding), без двойного resize.
+            // adjustResize в манифесте; композер внизу сжатого окна, без Compose imePadding.
             // Hiding legacy three-button navigation strip so more vertical space is available for game/content.
             hide(WindowInsetsCompat.Type.navigationBars())
         }
