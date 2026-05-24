@@ -1521,7 +1521,12 @@ class CombatOverlayService : Service() {
     }
 
     private fun syncOverlayChatPanelVisibilityToViewModel(visible: Boolean) {
-        resolveChatViewModel()?.setOverlayChatPanelVisible(visible)
+        val shared = resolveChatViewModel()
+        shared?.setOverlayChatPanelVisible(visible)
+        val fallback = overlayFallbackChatViewModel
+        if (fallback != null && fallback !== shared) {
+            fallback.setOverlayChatPanelVisible(visible)
+        }
     }
 
     private fun refreshOverlayStatusHudData(force: Boolean = false) {
@@ -4097,11 +4102,6 @@ class CombatOverlayService : Service() {
                                         }
                                 },
                             )
-                        }
-                        LaunchedEffect(userId, userRole) {
-                            resolveChatViewModel()?.let { shared ->
-                                if (vm !== shared) vm = shared
-                            }
                         }
                         LaunchedEffect(vm) {
                             vm?.refreshChatForOverlay()

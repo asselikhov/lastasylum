@@ -31,7 +31,6 @@ import androidx.compose.ui.graphics.lerp
 import com.lastasylum.alliance.ui.chat.AttachmentPreviewOverlay
 import com.lastasylum.alliance.ui.chat.ChatComposer
 import com.lastasylum.alliance.ui.chat.chatComposerDock
-import com.lastasylum.alliance.ui.chat.rememberChatImeContentLift
 import com.lastasylum.alliance.ui.chat.stabilizeComposerImageUris
 import com.lastasylum.alliance.ui.chat.capForumMessagesOldestFirst
 import com.lastasylum.alliance.ui.chat.mergePreservingForumMedia
@@ -154,6 +153,7 @@ import com.lastasylum.alliance.ui.chat.chatDayKey
 import com.lastasylum.alliance.ui.chat.formatChatDaySeparator
 import com.lastasylum.alliance.ui.chat.formatChatTime
 import com.lastasylum.alliance.ui.components.team.ForumTopicFeedCard
+import com.lastasylum.alliance.ui.components.team.ForumTopicGhostIconButton
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import java.io.File
@@ -410,7 +410,7 @@ private fun TeamForumListRoute(
                             top = listTopPad,
                             bottom = 88.dp,
                         ),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.forumTopicListSpacing),
                     ) {
                         itemsIndexed(topics, key = { _, t -> t.id }) { index, t ->
                             ForumTopicFeedCard(
@@ -424,14 +424,12 @@ private fun TeamForumListRoute(
                                 menu = {
                                     if (canManageTopics) {
                                         Box {
-                                            IconButton(onClick = { menuTopic = t }) {
-                                                Icon(
-                                                    Icons.Filled.MoreVert,
-                                                    contentDescription = stringResource(
-                                                        R.string.team_forum_topic_menu_cd,
-                                                    ),
-                                                )
-                                            }
+                                            ForumTopicGhostIconButton(
+                                                onClick = { menuTopic = t },
+                                                contentDescription = stringResource(
+                                                    R.string.team_forum_topic_menu_cd,
+                                                ),
+                                            )
                                             DropdownMenu(
                                                 expanded = menuTopic?.id == t.id,
                                                 onDismissRequest = { menuTopic = null },
@@ -855,12 +853,11 @@ private fun TeamForumTopicChatRoute(
     val composerReserveBottom = with(LocalDensity.current) {
         composerBlockHeightPx.toDp()
     }
-    val imeContentLift = rememberChatImeContentLift()
     Box(Modifier.fillMaxSize()) {
     Column(
         Modifier
             .fillMaxSize()
-            .padding(bottom = composerReserveBottom + imeContentLift),
+            .padding(bottom = composerReserveBottom),
     ) {
         if (overlayUi) {
             Row(

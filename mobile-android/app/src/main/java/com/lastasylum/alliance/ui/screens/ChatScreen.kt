@@ -218,7 +218,6 @@ import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarSize
 import com.lastasylum.alliance.ui.chat.AttachmentPreviewOverlay
 import com.lastasylum.alliance.ui.chat.ChatComposer
 import com.lastasylum.alliance.ui.chat.chatComposerDock
-import com.lastasylum.alliance.ui.chat.rememberChatImeContentLift
 import com.lastasylum.alliance.ui.chat.ChatFileAttachmentCard
 import com.lastasylum.alliance.ui.chat.ChatMessageBubbleRow
 import com.lastasylum.alliance.ui.chat.ChatMessageClusterFlags
@@ -601,12 +600,11 @@ fun ChatScreen(
         val composerReserveBottom = with(LocalDensity.current) {
             composerBlockHeightPx.toDp()
         }
-        val imeContentLift = rememberChatImeContentLift()
         Box(Modifier.fillMaxSize()) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(bottom = composerReserveBottom + imeContentLift)
+                    .padding(bottom = composerReserveBottom)
                     .then(
                         if (overlayUi) {
                             Modifier.padding(top = 2.dp)

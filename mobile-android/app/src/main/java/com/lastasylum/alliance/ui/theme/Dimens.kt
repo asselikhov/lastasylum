@@ -24,6 +24,8 @@ object SquadRelayDimens {
     val headerSubtitleGap = 2.dp
     val listRowHorizontalPadding = 10.dp
     val listRowVerticalPadding = 10.dp
+    /** Расстояние между карточками тем форума в списке. */
+    val forumTopicListSpacing = 12.dp
     val sectionTitlePaddingVertical = 2.dp
     val composerMinHeight = 44.dp
 

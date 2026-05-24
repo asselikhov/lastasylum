@@ -1905,6 +1905,7 @@ class ChatViewModel(
 
     private fun scrubRemovedMessage(state: ChatState, removedId: String): ChatState {
         val nextMessages = scrubMessagesAfterRemove(state.messages, removedId, knownMessageIds)
+        rebuildMessageIdIndex(nextMessages, messageIdIndex)
         return state.copy(messages = nextMessages)
     }
 
@@ -1915,7 +1916,8 @@ class ChatViewModel(
         val cached = roomMessageCache[roomId]
         val existing = cached?.messages ?: emptyList()
         if (existing.any { it._id == mid }) return
-        val update = upsertMessage(existing, message, knownMessageIds, messageIdIndex)
+        val localKnown = existing.mapNotNull { it._id }.toMutableSet()
+        val update = upsertMessage(existing, message, localKnown, idIndex = null)
         roomMessageCache[roomId] = RoomMessageCache(
             messages = capMessagesForMemory(update.messages),
             hasMoreOlder = cached?.hasMoreOlder ?: true,
@@ -1963,6 +1965,13 @@ class ChatViewModel(
         }
         _state.value = syncSelections(nextState)
         val rid = _state.value.selectedRoomId
+        if (!rid.isNullOrBlank()) {
+            roomMessageCache[rid] = RoomMessageCache(
+                messages = cappedMessages,
+                hasMoreOlder = _state.value.hasMoreOlder,
+            )
+            ChatSessionCache.updateMessages(rid, cappedMessages)
+        }
         if (shouldAutoMarkReadSelectedRoom() && !rid.isNullOrBlank()) {
             cappedMessages.firstOrNull()?._id?.let { newestId ->
                 viewModelScope.launch { markRoomReadUpTo(rid, newestId) }

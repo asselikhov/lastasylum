@@ -6,7 +6,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -19,7 +18,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.ModeEditOutline
 import androidx.compose.material.icons.outlined.Poll
 import androidx.compose.material3.Card
@@ -49,7 +47,6 @@ import coil.request.ImageRequest
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
-import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamNewsListItemDto
 import com.lastasylum.alliance.data.teams.TeamNewsPollOptionDto
 import com.lastasylum.alliance.data.teams.TeamNewsPollTallyDto
@@ -64,8 +61,6 @@ import kotlin.math.roundToInt
 
 private val cardShape = RoundedCornerShape(22.dp)
 private val innerShape = RoundedCornerShape(16.dp)
-private val forumTopicCardShape = RoundedCornerShape(18.dp)
-
 private fun glassBorder(alpha: Float = 0.14f) =
     BorderStroke(1.dp, Color.White.copy(alpha = alpha))
 
@@ -620,206 +615,3 @@ fun TeamNewsFeedCard(
     }
 }
 
-private data class ForumAccent(val start: Color, val end: Color)
-
-private fun forumAccentForIndex(index: Int): ForumAccent {
-    val palette = listOf(
-        ForumAccent(SquadRelayPrimary, SquadRelayAtmosphericSky),
-        ForumAccent(SquadRelaySecondary, Color(0xFF818CF8)),
-        ForumAccent(Color(0xFF34D399), SquadRelaySecondary),
-        ForumAccent(Color(0xFFF472B6), SquadRelayPrimary),
-    )
-    return palette[index % palette.size]
-}
-
-@Composable
-private fun ForumTopicAccentRail(
-    accent: ForumAccent,
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier = modifier
-            .width(4.dp)
-            .fillMaxHeight()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        accent.start.copy(alpha = 0.95f),
-                        accent.end.copy(alpha = 0.75f),
-                    ),
-                ),
-            ),
-    )
-}
-
-@Composable
-private fun ForumTopicMetaRow(
-    messageCount: Int,
-    unreadCount: Int,
-    messageMeta: String,
-    accent: ForumAccent,
-    modifier: Modifier = Modifier,
-) {
-    val scheme = MaterialTheme.colorScheme
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        if (messageCount > 0) {
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = accent.start.copy(alpha = 0.14f),
-            ) {
-                Text(
-                    text = stringResource(R.string.team_forum_messages_pill, messageCount),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Medium,
-                    color = accent.start.copy(alpha = 0.95f),
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                )
-            }
-        } else {
-            Text(
-                text = stringResource(R.string.team_forum_no_messages),
-                style = MaterialTheme.typography.labelSmall,
-                color = scheme.onSurfaceVariant.copy(alpha = 0.85f),
-            )
-        }
-        if (unreadCount > 0) {
-            Surface(
-                shape = CircleShape,
-                color = Color(0xFFFF5252),
-            ) {
-                Text(
-                    text = if (unreadCount > 99) "99+" else unreadCount.toString(),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
-                )
-            }
-        }
-        Spacer(modifier = Modifier.weight(1f))
-        Text(
-            text = messageMeta,
-            style = MaterialTheme.typography.labelSmall,
-            color = scheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-@Composable
-fun ForumTopicFeedCard(
-    topic: TeamForumTopicDto,
-    listIndex: Int,
-    messageMeta: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    displayUnreadCount: Int? = null,
-    menu: @Composable () -> Unit = {},
-) {
-    val accent = forumAccentForIndex(listIndex)
-    val unreadCount = displayUnreadCount ?: topic.unreadCount
-    val hasUnread = unreadCount > 0
-    val creatorAvatarUrl = telegramAvatarUrl(topic.createdByTelegramUsername)
-
-    val cardModifier = modifier
-        .fillMaxWidth()
-        .then(
-            if (hasUnread) {
-                Modifier.border(
-                    width = 1.5.dp,
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            accent.start.copy(alpha = 0.55f),
-                            Color(0xFFFF5252).copy(alpha = 0.45f),
-                            accent.end.copy(alpha = 0.35f),
-                        ),
-                    ),
-                    shape = forumTopicCardShape,
-                )
-            } else {
-                Modifier.border(
-                    width = 1.dp,
-                    color = Color.White.copy(alpha = 0.10f),
-                    shape = forumTopicCardShape,
-                )
-            },
-        )
-
-    Surface(
-        onClick = onClick,
-        modifier = cardModifier,
-        shape = forumTopicCardShape,
-        color = SquadRelaySurfaces.panelColor(if (hasUnread) 0.58f else 0.52f),
-        shadowElevation = 0.dp,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(IntrinsicSize.Min),
-        ) {
-            ForumTopicAccentRail(accent)
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 12.dp, vertical = 11.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                if (creatorAvatarUrl != null) {
-                    ChatSenderAvatar(
-                        telegramUrl = creatorAvatarUrl,
-                        size = 40.dp,
-                        fallbackName = topic.title,
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Brush.linearGradient(listOf(accent.start, accent.end))),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Forum,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.95f),
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                }
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(5.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.Top,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Text(
-                            text = topic.title,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            lineHeight = 20.sp,
-                            modifier = Modifier.weight(1f),
-                        )
-                        menu()
-                    }
-                    ForumTopicMetaRow(
-                        messageCount = topic.messageCount,
-                        unreadCount = unreadCount,
-                        messageMeta = messageMeta,
-                        accent = accent,
-                    )
-                }
-            }
-        }
-    }
-}

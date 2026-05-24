@@ -285,6 +285,7 @@ private fun AdminTeamForumTab(
         empty = state.teamForumTopics.isEmpty(),
         emptyText = stringResource(R.string.admin_team_forum_empty),
         error = state.teamForumError,
+        itemSpacing = SquadRelayDimens.forumTopicListSpacing,
     ) {
         itemsIndexed(state.teamForumTopics, key = { _, topic -> topic.id }) { index, topic ->
             val messageMeta = topic.lastMessageAt?.let { formatForumTopicTimeRu(it) }
@@ -305,6 +306,7 @@ private fun TabLoadingList(
     empty: Boolean,
     emptyText: String,
     error: String?,
+    itemSpacing: androidx.compose.ui.unit.Dp = 8.dp,
     content: LazyListScope.() -> Unit,
 ) {
     if (loading && empty) {
@@ -315,7 +317,7 @@ private fun TabLoadingList(
     }
     LazyColumn(
         contentPadding = PaddingValues(horizontal = SquadRelayDimens.contentPaddingHorizontal, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(itemSpacing),
     ) {
         error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
         if (empty) {
