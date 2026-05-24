@@ -378,7 +378,7 @@ class ChatViewModel(
         isChatTabActive = false
     }
 
-    /** Returning to the Chat tab: re-mark visible room and refresh badges without stale server counts. */
+    /** Returning to the Chat tab: refresh badges; read cursor only when room is visible. */
     fun onChatTabResumed() {
         isChatTabActive = true
         syncReadStateFromPreferences()
@@ -393,11 +393,11 @@ class ChatViewModel(
                     )
                 }
             }
+            syncRoomsFromServer(reconfirmVisibleRoom = false)
             val newestId = _state.value.messages.firstOrNull()?._id
             if (!roomId.isNullOrBlank() && !newestId.isNullOrBlank()) {
                 markRoomReadUpTo(roomId, newestId)
             }
-            syncRoomsFromServer(reconfirmVisibleRoom = true)
         }
     }
 
@@ -758,7 +758,7 @@ class ChatViewModel(
     private fun scheduleUnreadSyncFromServer() {
         unreadSyncJob?.cancel()
         unreadSyncJob = viewModelScope.launch {
-            delay(450)
+            delay(200)
             syncRoomsFromServer(reconfirmVisibleRoom = false)
         }
     }
@@ -837,11 +837,7 @@ class ChatViewModel(
                 }
         }
         markReadInFlight.add(job)
-        try {
-            job.join()
-        } finally {
-            markReadInFlight.remove(job)
-        }
+        job.invokeOnCompletion { markReadInFlight.remove(job) }
     }
 
     private fun onRoomUnreadFromServer(event: ChatRoomUnreadEvent) {

@@ -154,7 +154,8 @@ class CombatOverlayService : Service() {
             dp = { dp(it) },
             sendCoords = { label, x, y, excavation ->
                 val repo = AppContainer.from(this@CombatOverlayService).chatRepository
-                val roomId = repo.ensureRaidRoomId()
+                val roomId = resolveOverlayRaidRoomId()
+                    ?: repo.ensureRaidRoomId()?.also { rememberOverlayRaidRoomId(it) }
                     ?: return@OverlayCommandsPopover Result.failure(IllegalStateException("no_raid"))
                 rememberOverlayRaidRoomId(roomId)
                 val text = if (excavation) {
@@ -177,7 +178,8 @@ class CombatOverlayService : Service() {
             },
             notifyExcavation = {
                 val repo = AppContainer.from(this@CombatOverlayService).chatRepository
-                val roomId = repo.ensureRaidRoomId()
+                val roomId = resolveOverlayRaidRoomId()
+                    ?: repo.ensureRaidRoomId()?.also { rememberOverlayRaidRoomId(it) }
                     ?: return@OverlayCommandsPopover Result.failure(IllegalStateException("no_raid"))
                 rememberOverlayRaidRoomId(roomId)
                 val text = getString(R.string.overlay_excavation_notify_message)
@@ -920,7 +922,10 @@ class CombatOverlayService : Service() {
     private var deferredDismissWhenPickerEnds: Boolean = false
 
     private val overlayCloseHudRefreshRunnable = Runnable {
-        refreshOverlayStatusHudData(force = true)
+        if (isInGameOverlayUiActive()) {
+            attachOverlayHudWindowsIfNeeded()
+            refreshOverlayStatusHudData(force = true)
+        }
     }
 
     private var lastStripZOrderLiftMs: Long = 0L
@@ -1779,6 +1784,17 @@ class CombatOverlayService : Service() {
         )
     }
 
+    /**
+     * Пользователь открыл приложение SquadRelay поверх игры — скрываем окна, подписки и FGS сохраняем.
+     */
+    private fun pauseOverlayUiForAllianceAppForeground() {
+        overlayCommandsPopover.hide()
+        overlayStatusHudHost?.visibility = View.GONE
+        overlayTopRightHudHost?.visibility = View.GONE
+        chatStripHost?.visibility = View.GONE
+        overlayTicker.hideTicker()
+    }
+
     private fun syncOverlayHudsIfReady() {
         if (stableGatePollTicks < HUD_STABLE_TICKS_BEFORE_ATTACH) return
         attachOverlayHudWindowsIfNeeded()
@@ -2117,7 +2133,7 @@ class CombatOverlayService : Service() {
             )
             return
         }
-        // Пикер/хост SquadRelay в usage-stats — не закрывать оверлей-чат (см. [OverlayChatInteractionHold]).
+        // SquadRelay на переднем плане при игре в фоне — прячем HUD, но не рвём FGS/сокет/ленту.
         if (lastForegroundHintPkg == packageName &&
             !OverlayChatInteractionHold.isOverlaySystemPickerSessionActive() &&
             !overlayChatTeamPanelVisible &&
@@ -2125,7 +2141,7 @@ class CombatOverlayService : Service() {
             !shouldKeepOverlayWindows() &&
             overlayTouchPassthroughSnaps.isEmpty()
         ) {
-            dismissOverlayUiBecauseNotInGame(logWaitingForGame = false)
+            pauseOverlayUiForAllianceAppForeground()
             return
         }
         if (!hasUsageAccess) {
@@ -2683,13 +2699,25 @@ class CombatOverlayService : Service() {
         syncOverlayRaidRoomSubscription()
     }
 
-    private fun shouldIngestForRaidStrip(msg: ChatMessage): Boolean =
-        OverlayRaidStripRouting.acceptsRaidStripMessage(
-            msg,
-            resolveOverlayRaidRoomId(),
-            ::onOverlayRaidRoomIdResolved,
-            trustedRaidRoomIds = trustedOverlayRaidRoomIds(),
-        )
+    private fun shouldIngestForRaidStrip(msg: ChatMessage): Boolean {
+        if (OverlayRaidStripRouting.acceptsRaidStripMessage(
+                msg,
+                resolveOverlayRaidRoomId(),
+                ::onOverlayRaidRoomIdResolved,
+                trustedRaidRoomIds = trustedOverlayRaidRoomIds(),
+            )
+        ) {
+            return true
+        }
+        val room = msg.roomId.trim()
+        if (room.isEmpty()) return false
+        if (room in trustedOverlayRaidRoomIds()) return true
+        val cached = com.lastasylum.alliance.data.chat.ChatSessionCache.getFreshRooms() ?: return false
+        val dto = cached.firstOrNull { it.id.trim() == room } ?: return false
+        if (!com.lastasylum.alliance.data.chat.ChatRaidRoomSync.isAllianceRaidRoom(dto)) return false
+        onOverlayRaidRoomIdResolved(room)
+        return true
+    }
 
     private fun normalizeStripRaidMessage(msg: ChatMessage, raidId: String?): ChatMessage {
         val raid = raidId?.trim().orEmpty()
@@ -3228,6 +3256,8 @@ class CombatOverlayService : Service() {
         overlayChatTeamComposeOwner = null
         applyOverlayStripVisibility(rebalanceZOrder = false)
         syncOverlayStatusHudVisibility()
+        syncOverlayTopRightHudVisibility()
+        attachOverlayHudWindowsIfNeeded()
         if (chatStripZOrderLifted) {
             rebalanceOverlayHudZOrder(force = true)
         }
