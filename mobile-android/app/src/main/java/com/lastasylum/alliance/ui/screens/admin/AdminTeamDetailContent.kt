@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Edit
@@ -41,9 +42,11 @@ import com.lastasylum.alliance.data.teams.TeamNewsListItemDto
 import com.lastasylum.alliance.ui.admin.AdminTeamDetailTab
 import com.lastasylum.alliance.ui.admin.AdminUiState
 import com.lastasylum.alliance.ui.admin.toAdminPlayerRow
+import com.lastasylum.alliance.ui.components.team.ForumTopicFeedCard
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.util.chatSenderDisplayLine
+import com.lastasylum.alliance.ui.util.formatForumTopicTimeRu
 import com.lastasylum.alliance.ui.util.formatIsoDateShortRu
 import com.lastasylum.alliance.ui.util.formatIsoDateTimeRu
 import com.lastasylum.alliance.ui.util.formatServerLabel
@@ -283,29 +286,15 @@ private fun AdminTeamForumTab(
         emptyText = stringResource(R.string.admin_team_forum_empty),
         error = state.teamForumError,
     ) {
-        items(state.teamForumTopics, key = { it.id }) { topic ->
-            Surface(
+        itemsIndexed(state.teamForumTopics, key = { _, topic -> topic.id }) { index, topic ->
+            val messageMeta = topic.lastMessageAt?.let { formatForumTopicTimeRu(it) }
+                ?: formatForumTopicTimeRu(topic.createdAt)
+            ForumTopicFeedCard(
+                topic = topic,
+                listIndex = index,
+                messageMeta = messageMeta,
                 onClick = { onTopicClick(topic) },
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.medium,
-                color = SquadRelaySurfaces.panelColor(0.38f),
-            ) {
-                androidx.compose.foundation.layout.Row(
-                    Modifier.fillMaxWidth().padding(14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(topic.title, style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            stringResource(R.string.admin_team_forum_messages, topic.messageCount),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null)
-                }
-            }
+            )
         }
     }
 }

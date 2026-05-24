@@ -6,8 +6,8 @@ import androidx.compose.ui.unit.dp
 object SquadRelayDimens {
     /** Минимальная высота ряда вкладок в [com.lastasylum.alliance.ui.AppNavigation]. */
     val bottomNavigationBarHeight = 56.dp
-    /** Полная высота bottomBar: padding Box (10+10) + Row padding (6+6) + [bottomNavigationBarHeight]. */
-    val bottomNavigationBarBlockHeight = bottomNavigationBarHeight + 32.dp
+    /** Радиус панели нижней навигации и кнопок вкладок (одинаковый). */
+    val bottomNavigationBarCornerRadius = 16.dp
     val screenPaddingHorizontal = 16.dp
     val screenPaddingVertical = 12.dp
     /** Горизонталь контента внутри вкладок (выравнивание с навбаром). */

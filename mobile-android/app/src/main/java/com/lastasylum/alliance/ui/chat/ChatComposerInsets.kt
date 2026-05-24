@@ -1,38 +1,40 @@
 package com.lastasylum.alliance.ui.chat
 
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 
 /**
+ * Нижний [androidx.compose.material3.Scaffold] content padding (высота [bottomBar]).
+ * Задаётся в [com.lastasylum.alliance.ui.AppNavigation].
+ */
+val LocalScaffoldContentBottomPadding = androidx.compose.runtime.staticCompositionLocalOf { 0.dp }
+
+/**
  * Якорит панель ввода над IME ([adjustNothing]) с [SquadRelayDimens.composerBottomGap].
- * В Scaffold контент уже над [bottomBar]: при IME вычитаем высоту bottomBar из inset,
- * иначе зазор над клавиатурой ≈ gap + высота навбара.
+ * В приложении: [consumeWindowInsets] для Scaffold + [imePadding], без ручного вычитания высоты навбара.
  */
 fun Modifier.chatComposerDock(): Modifier = composed {
-    val density = LocalDensity.current
     val overlayUi = LocalOverlayUiMode.current
     val gap = SquadRelayDimens.composerBottomGap
-    val imeBottomPx = WindowInsets.ime.getBottom(density)
+    val scaffoldBottom: Dp = LocalScaffoldContentBottomPadding.current
 
     if (overlayUi) {
         windowInsetsPadding(WindowInsets.ime)
             .padding(bottom = gap)
-    } else if (imeBottomPx > 0) {
-        val bottomBarPx = with(density) {
-            SquadRelayDimens.bottomNavigationBarBlockHeight.roundToPx()
-        }
-        val effectiveImePx = (imeBottomPx - bottomBarPx).coerceAtLeast(0)
-        padding(
-            bottom = with(density) { effectiveImePx.toDp() } + gap,
-        )
     } else {
-        padding(bottom = gap)
+        consumeWindowInsets(PaddingValues(bottom = scaffoldBottom))
+            .imePadding()
+            .padding(bottom = gap)
     }
 }

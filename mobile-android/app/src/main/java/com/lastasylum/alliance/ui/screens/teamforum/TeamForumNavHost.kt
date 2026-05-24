@@ -409,13 +409,14 @@ private fun TeamForumListRoute(
                             top = listTopPad,
                             bottom = 88.dp,
                         ),
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         itemsIndexed(topics, key = { _, t -> t.id }) { index, t ->
                             ForumTopicFeedCard(
                                 topic = t,
                                 listIndex = index,
                                 messageMeta = t.lastMessageAt?.let { formatForumTopicTimeRu(it) } ?: "—",
+                                displayUnreadCount = effectiveTopicUnread(t),
                                 onClick = {
                                     onOpenTopic(t)
                                 },

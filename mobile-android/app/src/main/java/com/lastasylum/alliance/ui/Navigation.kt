@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -70,6 +71,7 @@ import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
 import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.components.AtmosphericBackground
+import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import android.content.Intent
 import com.lastasylum.alliance.MainActivity
@@ -86,6 +88,7 @@ import com.lastasylum.alliance.ui.admin.AdminViewModelFactory
 import com.lastasylum.alliance.ui.chat.ChatViewModel
 import com.lastasylum.alliance.ui.chat.ChatViewModelFactory
 import com.lastasylum.alliance.ui.screens.AdminScreen
+import com.lastasylum.alliance.ui.chat.LocalScaffoldContentBottomPadding
 import com.lastasylum.alliance.ui.screens.ChatScreen
 import com.lastasylum.alliance.ui.screens.OverlayControlScreen
 import com.lastasylum.alliance.ui.screens.ProfileScreen
@@ -265,7 +268,7 @@ fun AppNavigation(
             ) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(28.dp),
+                    shape = RoundedCornerShape(SquadRelayDimens.bottomNavigationBarCornerRadius),
                     color = SquadRelaySurfaces.barColor(),
                     tonalElevation = 0.dp,
                     shadowElevation = 4.dp,
@@ -292,7 +295,7 @@ fun AppNavigation(
                                     .weight(1f)
                                     .heightIn(min = 56.dp)
                                     .padding(horizontal = 2.dp)
-                                    .clip(RoundedCornerShape(16.dp))
+                                    .clip(RoundedCornerShape(SquadRelayDimens.bottomNavigationBarCornerRadius))
                                     .background(
                                         if (isSelected) {
                                             MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
@@ -386,6 +389,9 @@ fun AppNavigation(
             }
         },
     ) { contentPadding ->
+        CompositionLocalProvider(
+            LocalScaffoldContentBottomPadding provides contentPadding.calculateBottomPadding(),
+        ) {
         Box(
             modifier = Modifier
                 .padding(contentPadding)
@@ -564,6 +570,7 @@ fun AppNavigation(
                     onLoadMorePlayerTeams = adminViewModel::loadMorePlayerTeams,
                 )
             }
+        }
         }
         }
     }
