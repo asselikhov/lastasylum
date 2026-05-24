@@ -40,9 +40,9 @@ const ALLOWED_OVERLAY_ANIMATION_REACTIONS = [
   'cat_playing',
 ] as const;
 
-/** GIF tiles in Android overlay Animations tab (overlay_reaction_gif_01..12). */
+/** GIF tiles in Android overlay Animations tab (overlay_reaction_gif_01..23). */
 const ALLOWED_OVERLAY_GIF_REACTIONS = Array.from(
-  { length: 12 },
+  { length: 23 },
   (_, i) => `gif_${String(i + 1).padStart(2, '0')}`,
 );
 

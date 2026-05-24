@@ -25,9 +25,12 @@ fun effectiveUnreadCount(
     if (serverUnread <= 0) return 0
     val localLast = localLastReadMessageId?.trim().orEmpty()
     val serverLast = lastReadMessageId?.trim().orEmpty()
-    if (localLast.isNotBlank()) {
-        if (serverLast.isBlank()) return 0
-        if (!isObjectIdNewer(serverLast, localLast)) return 0
+    if (localLast.isNotBlank() && serverLast.isNotBlank() && !isObjectIdNewer(serverLast, localLast)) {
+        return 0
+    }
+    if (localLast.isNotBlank() && serverLast.isBlank()) {
+        // Server reports unread but no cursor yet — show the badge (do not trust local-only read).
+        return serverUnread
     }
     return serverUnread
 }

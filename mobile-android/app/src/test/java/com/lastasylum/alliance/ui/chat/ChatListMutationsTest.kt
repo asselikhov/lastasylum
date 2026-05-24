@@ -65,6 +65,26 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun upsertMessagesBatch_appliesInOrderOnce() {
+        val known = linkedSetOf<String>()
+        val index = mutableMapOf<String, Int>()
+        val current = listOf(msg("1", "a"))
+        val batch = listOf(msg("2", "b"), msg("3", "c"))
+        val r = upsertMessagesBatch(current, batch, known, index)
+        assertEquals(listOf("3", "2", "1"), r.messages.map { it._id })
+        assertEquals("3", r.newestMessageKey)
+    }
+
+    @Test
+    fun chatMessagesListContentEqual_detectsChanges() {
+        val a = listOf(msg("1", "a"), msg("2", "b"))
+        val b = listOf(msg("1", "a"), msg("2", "b"))
+        val c = listOf(msg("1", "a"), msg("2", "c"))
+        assertTrue(chatMessagesListContentEqual(a, b))
+        assertFalse(chatMessagesListContentEqual(a, c))
+    }
+
+    @Test
     fun mergeOlderPage_deduplicatesKnownIds() {
         val known = linkedSetOf("a", "b")
         val current = listOf(msg("a"), msg("b"))

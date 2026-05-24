@@ -27,6 +27,15 @@ internal fun LazyListState.isAtReverseChatBottom(
         firstVisibleItemScrollOffset <= scrollThresholdPx
 }
 
+internal suspend fun LazyListState.scrollReverseChatToLatest(animate: Boolean) {
+    if (animate) {
+        runCatching { animateScrollToItem(0) }
+            .onFailure { scrollToItem(0) }
+    } else {
+        scrollToItem(0)
+    }
+}
+
 internal suspend fun LazyListState.scrollTimelineItemToViewportCenter(index: Int) {
     if (index < 0) return
     scrollToItem(index)

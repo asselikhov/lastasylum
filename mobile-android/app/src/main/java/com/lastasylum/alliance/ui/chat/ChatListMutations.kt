@@ -78,6 +78,39 @@ internal fun upsertMessage(
     )
 }
 
+internal fun chatMessagesListContentEqual(
+    a: List<ChatMessage>,
+    b: List<ChatMessage>,
+): Boolean {
+    if (a === b) return true
+    if (a.size != b.size) return false
+    for (i in a.indices) {
+        if (a[i] != b[i]) return false
+    }
+    return true
+}
+
+internal fun upsertMessagesBatch(
+    current: List<ChatMessage>,
+    incoming: List<ChatMessage>,
+    knownMessageIds: MutableSet<String>,
+    idIndex: MutableMap<String, Int>,
+): MessageUpsertResult {
+    var messages = current
+    var newestMessageKey: String? = null
+    for (message in incoming) {
+        val update = upsertMessage(messages, message, knownMessageIds, idIndex)
+        messages = update.messages
+        if (update.newestMessageKey != null) {
+            newestMessageKey = update.newestMessageKey
+        }
+    }
+    return MessageUpsertResult(
+        messages = capNewestFirst(messages, CHAT_MAX_MESSAGES_IN_MEMORY),
+        newestMessageKey = newestMessageKey,
+    )
+}
+
 internal fun mergeOlderPage(
     current: List<ChatMessage>,
     olderPage: List<ChatMessage>,

@@ -104,13 +104,17 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.zIndex
@@ -177,9 +181,6 @@ import com.lastasylum.alliance.ui.chat.replyPreviewText
 import com.lastasylum.alliance.ui.chat.canDeleteChatMessage
 import com.lastasylum.alliance.ui.chat.RoleBadge
 import com.lastasylum.alliance.ui.chat.chatDayKey
-import com.lastasylum.alliance.ui.chat.chatMessageClusterTightInnerTopNewestFirst
-import com.lastasylum.alliance.ui.chat.chatMessageIsClusterChainBottomNewestFirst
-import com.lastasylum.alliance.ui.chat.chatMessageShowsClusterHeaderNewestFirst
 import com.lastasylum.alliance.ui.chat.formatChatDaySeparator
 import com.lastasylum.alliance.ui.chat.formatChatTime
 import com.lastasylum.alliance.ui.chat.ChatBubbleAttachmentsWithCaption
@@ -197,10 +198,15 @@ import com.lastasylum.alliance.ui.chat.ChatMessageTimeWithReadStatus
 import com.lastasylum.alliance.ui.chat.ChatQuickReactions
 import com.lastasylum.alliance.ui.chat.ChatScrollToLatestFab
 import com.lastasylum.alliance.ui.chat.isAtReverseChatBottom
+import com.lastasylum.alliance.ui.chat.scrollReverseChatToLatest
 import com.lastasylum.alliance.ui.chat.scrollTimelineItemToViewportCenter
+import com.lastasylum.alliance.ui.chat.buildChatMessagesListDerived
+import com.lastasylum.alliance.ui.chat.ChatMessagesListDerived
+import com.lastasylum.alliance.ui.chat.chatTimelineDaySeparatorKey
+import com.lastasylum.alliance.ui.chat.toChatListUiState
+import com.lastasylum.alliance.ui.chat.ChatListUiState
 import com.lastasylum.alliance.ui.chat.ChatTimelineEntry
 import com.lastasylum.alliance.ui.chat.ChatTypingIndicator
-import com.lastasylum.alliance.ui.chat.buildChatTimeline
 import com.lastasylum.alliance.ui.chat.chatBubbleClusterTopSpacing
 import com.lastasylum.alliance.ui.chat.chatMessageIsOwn
 import com.lastasylum.alliance.ui.chat.chatMessageKey
@@ -294,11 +300,6 @@ private data class ChatScrollAnchor(
     val firstVisibleItemIndex: Int,
     val firstVisibleItemScrollOffset: Int,
     val timelineSize: Int,
-)
-
-private data class ChatMessagesListDerived(
-    val timeline: List<ChatTimelineEntry>,
-    val clusterFlags: List<ChatMessageClusterFlags>,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -401,6 +402,26 @@ fun ChatScreen(
             }
         }
     }
+    val messages = state.messages
+    val listDerived by produceState(ChatMessagesListDerived.Empty, messages) {
+        value = withContext(Dispatchers.Default) {
+            buildChatMessagesListDerived(messages)
+        }
+    }
+    val listUiState = remember(
+        state.isRoomsLoading,
+        state.rooms,
+        state.isLoading,
+        state.isLoadingOlder,
+        state.error,
+        state.currentUserId,
+        state.isAppAdmin,
+        state.playerTeamSquadRole,
+        state.deletingMessageId,
+    ) {
+        state.toChatListUiState()
+    }
+
     val isNearLatest by remember(listState) {
         derivedStateOf { listState.isAtReverseChatBottom() }
     }
@@ -448,22 +469,23 @@ fun ChatScreen(
     var pendingScrollAnchor by remember(state.selectedRoomId) {
         mutableStateOf<ChatScrollAnchor?>(null)
     }
+    val timelineSize = listDerived.timeline.size
 
     LaunchedEffect(state.isLoadingOlder) {
         if (state.isLoadingOlder && pendingScrollAnchor == null) {
             pendingScrollAnchor = ChatScrollAnchor(
                 firstVisibleItemIndex = listState.firstVisibleItemIndex,
                 firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
-                timelineSize = buildChatTimeline(state.messages).size,
+                timelineSize = timelineSize,
             )
         }
     }
 
-    LaunchedEffect(state.isLoadingOlder, state.messages) {
+    LaunchedEffect(state.isLoadingOlder, timelineSize) {
         if (state.isLoadingOlder) return@LaunchedEffect
         val anchor = pendingScrollAnchor ?: return@LaunchedEffect
         pendingScrollAnchor = null
-        val delta = buildChatTimeline(state.messages).size - anchor.timelineSize
+        val delta = timelineSize - anchor.timelineSize
         if (delta > 0) {
             listState.scrollToItem(
                 anchor.firstVisibleItemIndex + delta,
@@ -472,11 +494,11 @@ fun ChatScreen(
         }
     }
 
-    LaunchedEffect(state.scrollToMessageId, state.messages.size) {
+    LaunchedEffect(state.scrollToMessageId, timelineSize) {
         val targetId = state.scrollToMessageId?.trim().orEmpty()
         if (targetId.isEmpty()) return@LaunchedEffect
-        val timeline = buildChatTimeline(state.messages)
-        val idx = chatTimelineIndexForMessageId(timeline, state.messages, targetId)
+        val timeline = listDerived.timeline
+        val idx = chatTimelineIndexForMessageId(timeline, messages, targetId)
         if (idx < 0) return@LaunchedEffect
         runCatching { listState.scrollTimelineItemToViewportCenter(idx) }
             .onFailure { listState.scrollToItem(idx) }
@@ -526,15 +548,20 @@ fun ChatScreen(
             }
     }
 
-    LaunchedEffect(state.scrollToLatestNonce) {
-        if (state.scrollToLatestNonce == 0L) return@LaunchedEffect
-        listState.animateScrollToItem(0)
-    }
+    var lastHandledScrollNonce by remember(state.selectedRoomId) { mutableLongStateOf(0L) }
+    var lastAutoScrolledNewestKey by remember(state.selectedRoomId) { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(state.newestMessageKey) {
-        if (state.newestMessageKey.isNullOrBlank()) return@LaunchedEffect
-        if (!isNearLatest) return@LaunchedEffect
-        listState.animateScrollToItem(0)
+    LaunchedEffect(state.scrollToLatestNonce, state.newestMessageKey, isNearLatest) {
+        if (state.scrollToLatestNonce > lastHandledScrollNonce) {
+            lastHandledScrollNonce = state.scrollToLatestNonce
+            listState.scrollReverseChatToLatest(animate = true)
+            return@LaunchedEffect
+        }
+        val key = state.newestMessageKey
+        if (!key.isNullOrBlank() && isNearLatest && key != lastAutoScrolledNewestKey) {
+            lastAutoScrolledNewestKey = key
+            listState.scrollReverseChatToLatest(animate = false)
+        }
     }
 
     val newestKeyForScroll = rememberUpdatedState(state.newestMessageKey)
@@ -544,8 +571,7 @@ fun ChatScreen(
             lastCountedNewestKey = newestKeyForScroll.value
             onScrollToLatest()
             scope.launch {
-                runCatching { listState.animateScrollToItem(0) }
-                    .onFailure { listState.scrollToItem(0) }
+                listState.scrollReverseChatToLatest(animate = true)
             }
         }
     }
@@ -603,7 +629,9 @@ fun ChatScreen(
             ) {
                 ChatMessagesLazyList(
                     modifier = Modifier.fillMaxSize(),
-                    state = state,
+                    messages = messages,
+                    listDerived = listDerived,
+                    listUiState = listUiState,
                     otherReadUptoMessageId = otherReadUptoMessageId,
                     listState = listState,
                     jumpToQuotedMessage = onJumpToQuotedMessage,
@@ -1022,7 +1050,9 @@ private fun ChatDayDivider(label: String) {
 @Composable
 private fun ChatMessagesLazyList(
     modifier: Modifier = Modifier,
-    state: ChatState,
+    messages: List<ChatMessage>,
+    listDerived: ChatMessagesListDerived,
+    listUiState: ChatListUiState,
     otherReadUptoMessageId: String?,
     listState: LazyListState,
     jumpToQuotedMessage: (String) -> Unit,
@@ -1037,19 +1067,6 @@ private fun ChatMessagesLazyList(
 ) {
     val overlayUi = LocalOverlayUiMode.current
     val minSystemViewport = (LocalConfiguration.current.screenHeightDp * 0.55f).dp.coerceAtLeast(280.dp)
-    val messages = state.messages
-    val listDerived = remember(messages) {
-        ChatMessagesListDerived(
-            timeline = buildChatTimeline(messages),
-            clusterFlags = List(messages.size) { index ->
-                ChatMessageClusterFlags(
-                    showHeader = chatMessageShowsClusterHeaderNewestFirst(messages, index),
-                    isChainBottom = chatMessageIsClusterChainBottomNewestFirst(messages, index),
-                    tightInnerTop = chatMessageClusterTightInnerTopNewestFirst(messages, index),
-                )
-            },
-        )
-    }
     val timeline = listDerived.timeline
     val messageClusterFlags = listDerived.clusterFlags
     LazyColumn(
@@ -1063,7 +1080,7 @@ private fun ChatMessagesLazyList(
         ),
     ) {
         when {
-            state.isRoomsLoading && state.rooms.isEmpty() -> {
+            listUiState.isRoomsLoading && listUiState.roomsEmpty -> {
                 item {
                     Box(
                         modifier = Modifier
@@ -1076,7 +1093,7 @@ private fun ChatMessagesLazyList(
                 }
             }
 
-            state.rooms.isEmpty() -> {
+            listUiState.roomsEmpty -> {
                 item {
                     Box(
                         modifier = Modifier
@@ -1089,14 +1106,14 @@ private fun ChatMessagesLazyList(
                             verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
                         ) {
                             Text(
-                                text = state.error?.takeIf { it.isNotBlank() }
+                                text = listUiState.error?.takeIf { it.isNotBlank() }
                                     ?: stringResource(R.string.chat_no_rooms),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 24.dp),
                                 textAlign = TextAlign.Center,
                             )
-                            if (!state.error.isNullOrBlank()) {
+                            if (!listUiState.error.isNullOrBlank()) {
                                 TextButton(onClick = onClearError) {
                                     Text(stringResource(R.string.admin_dismiss_error))
                                 }
@@ -1106,7 +1123,7 @@ private fun ChatMessagesLazyList(
                 }
             }
 
-            state.isLoading -> {
+            listUiState.isLoading -> {
                 item {
                     Box(
                         modifier = Modifier
@@ -1119,7 +1136,7 @@ private fun ChatMessagesLazyList(
                 }
             }
 
-            state.messages.isEmpty() -> {
+            messages.isEmpty() -> {
                 item {
                     Box(
                         modifier = Modifier
@@ -1143,7 +1160,7 @@ private fun ChatMessagesLazyList(
                     count = timeline.size,
                     key = { idx ->
                         when (val e = timeline[idx]) {
-                            is ChatTimelineEntry.DaySeparator -> "day:$idx:${e.label}"
+                            is ChatTimelineEntry.DaySeparator -> chatTimelineDaySeparatorKey(e.label)
                             is ChatTimelineEntry.ChatMessageItem -> chatMessageKey(e.message)
                             is ChatTimelineEntry.ChatAlbumItem -> "album:${chatMessageKey(e.representativeMessage)}:${e.messageIndices.firstOrNull() ?: -1}:${e.messageIndices.lastOrNull() ?: -1}"
                         }
@@ -1165,17 +1182,17 @@ private fun ChatMessagesLazyList(
                             ChatMessageBubble(
                                 message = message,
                                 cluster = cluster,
-                                isMine = chatMessageIsOwn(message, state.currentUserId),
+                                isMine = chatMessageIsOwn(message, listUiState.currentUserId),
                                 highlighted = highlightMessageId != null &&
                                     highlightMessageId == message._id,
                                 clusterTopSpacing = clusterTop,
                                 canDelete = canDeleteChatMessage(
                                     message = message,
-                                    currentUserId = state.currentUserId,
-                                    isAppAdmin = state.isAppAdmin,
-                                    playerTeamSquadRole = state.playerTeamSquadRole,
+                                    currentUserId = listUiState.currentUserId,
+                                    isAppAdmin = listUiState.isAppAdmin,
+                                    playerTeamSquadRole = listUiState.playerTeamSquadRole,
                                 ),
-                                deleting = state.deletingMessageId == message._id,
+                                deleting = listUiState.deletingMessageId == message._id,
                                 inSelectionMode = inSelectionMode,
                                 isSelected = message._id != null && message._id in selectedMessageIds,
                                 otherReadUptoMessageId = otherReadUptoMessageId,
@@ -1196,7 +1213,7 @@ private fun ChatMessagesLazyList(
                                 cluster = cluster,
                                 resolvedImageUrls = e.resolvedImageUrls,
                                 caption = e.caption,
-                                isMine = chatMessageIsOwn(message, state.currentUserId),
+                                isMine = chatMessageIsOwn(message, listUiState.currentUserId),
                                 highlighted = highlightMessageId != null &&
                                     (
                                         highlightMessageId == message._id ||
@@ -1208,11 +1225,11 @@ private fun ChatMessagesLazyList(
                                 otherReadUptoMessageId = otherReadUptoMessageId,
                                 canDelete = canDeleteChatMessage(
                                     message = message,
-                                    currentUserId = state.currentUserId,
-                                    isAppAdmin = state.isAppAdmin,
-                                    playerTeamSquadRole = state.playerTeamSquadRole,
+                                    currentUserId = listUiState.currentUserId,
+                                    isAppAdmin = listUiState.isAppAdmin,
+                                    playerTeamSquadRole = listUiState.playerTeamSquadRole,
                                 ),
-                                deleting = state.deletingMessageId == message._id,
+                                deleting = listUiState.deletingMessageId == message._id,
                                 inSelectionMode = inSelectionMode,
                                 isSelected = message._id != null && message._id in selectedMessageIds,
                                 overlayUi = overlayUi,
@@ -1224,7 +1241,7 @@ private fun ChatMessagesLazyList(
                         }
                     }
                 }
-                if (state.isLoadingOlder) {
+                if (listUiState.isLoadingOlder) {
                     item {
                         Box(
                             modifier = Modifier
@@ -1243,7 +1260,7 @@ private fun ChatMessagesLazyList(
             }
         }
 
-        if (state.rooms.isNotEmpty() && !state.error.isNullOrBlank()) {
+        if (!listUiState.roomsEmpty && !listUiState.error.isNullOrBlank()) {
             item {
                 Surface(
                     shape = MaterialTheme.shapes.medium,
@@ -1259,7 +1276,7 @@ private fun ChatMessagesLazyList(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = state.error.orEmpty(),
+                            text = listUiState.error.orEmpty(),
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.weight(1f),
@@ -1474,7 +1491,7 @@ private fun ChatBubbleInnerColumn(
                     model = ImageRequest.Builder(bubbleContext)
                         .data(ZlobyakaStickerPack.assetUriForStem(stickerStem))
                         .size(384)
-                        .crossfade(true)
+                        .crossfade(false)
                         .build(),
                     contentDescription = stringResource(R.string.cd_chat_sticker),
                     modifier = Modifier
@@ -2232,7 +2249,7 @@ internal fun ChatMessageBubble(
                             model = ImageRequest.Builder(bubbleContext)
                                 .data(ZlobyakaStickerPack.assetUriForStem(stickerStem!!))
                                 .size(384)
-                                .crossfade(true)
+                                .crossfade(false)
                                 .build(),
                             contentDescription = stringResource(R.string.cd_chat_sticker),
                             modifier = Modifier
@@ -2416,7 +2433,7 @@ private fun ChatMessageActionsSheet(
                             model = ImageRequest.Builder(sheetContext)
                                 .data(ZlobyakaStickerPack.assetUriForStem(sheetStickerStem))
                                 .size(200)
-                                .crossfade(true)
+                                .crossfade(false)
                                 .build(),
                             contentDescription = stringResource(R.string.cd_chat_sticker),
                             modifier = Modifier

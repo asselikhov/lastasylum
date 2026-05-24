@@ -149,6 +149,7 @@ fun AppNavigation(
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> {
+                    chatViewModel.setAppInForeground(true)
                     CombatOverlayService.requestGateRecheckIfRunning(appContext)
                     if (userId.isNotBlank()) {
                         CombatOverlayService.ensureRuntimeIfUserEnabled(appContext)
@@ -163,6 +164,7 @@ fun AppNavigation(
                     }
                 }
                 Lifecycle.Event.ON_STOP -> {
+                    chatViewModel.setAppInForeground(false)
                     if (userId.isNotBlank()) {
                         CombatOverlayService.ensureRuntimeIfUserEnabled(appContext)
                     }

@@ -52,8 +52,10 @@ import java.io.InputStream
 import java.util.Locale
 import java.util.UUID
 
+private const val INITIAL_PAGE_SIZE = 20
 private const val PAGE_SIZE = 30
 private const val INCOMING_SOCKET_DEBOUNCE_MS = 75L
+private const val PROFILE_GATE_TTL_MS = 5 * 60_000L
 
 private data class RoomMessageCache(
     val messages: List<ChatMessage>,
@@ -121,8 +123,22 @@ class ChatViewModel(
     private var unreadSyncJob: Job? = null
     /** False when user left the Chat tab — must not auto mark-read or zero selected-room badge. */
     private var isChatTabActive = false
+
+    /** Main activity in foreground — false when user is in-game with app in background. */
+    @Volatile
+    private var appInForeground = true
+
+    /** Fullscreen overlay chat/team panel is open — separate from bottom-nav Chat tab. */
+    @Volatile
+    private var overlayChatPanelVisible = false
     private val bootstrapMutex = Mutex()
     private var bootstrapJob: Job? = null
+
+    @Volatile
+    private var cachedTeamProfileGate: Boolean? = null
+
+    @Volatile
+    private var profileGateLoadedAtMs: Long = 0L
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var chatVoiceRecognizer: ChatVoiceRecognizer? = null
@@ -154,8 +170,20 @@ class ChatViewModel(
     }
 
     private fun dispatchIncomingBatch(batch: List<ChatMessage>) {
+        if (batch.isEmpty()) return
+        val selected = _state.value.selectedRoomId
+        val applyQueue = ArrayList<ChatMessage>(batch.size)
         for (message in batch) {
-            processRealtimeMessageForUnread(message)
+            val roomId = message.roomId.trim()
+            if (roomId.isBlank()) continue
+            if (roomId == selected && isRoomActivelyViewed(roomId)) {
+                applyQueue.add(message)
+            } else {
+                processRealtimeMessageForUnread(message)
+            }
+        }
+        if (applyQueue.isNotEmpty()) {
+            applyIncomingBatch(applyQueue)
         }
     }
 
@@ -169,7 +197,7 @@ class ChatViewModel(
         if (roomId.isBlank()) return
         val selected = _state.value.selectedRoomId
         if (roomId == selected) {
-            if (isChatTabActive) {
+            if (isRoomActivelyViewed(roomId)) {
                 applyIncomingMessage(message)
             } else {
                 stashIncomingMessageForRoom(message)
@@ -256,6 +284,51 @@ class ChatViewModel(
     fun refreshChatForOverlay() {
         syncReadStateFromPreferences()
         scheduleBootstrap(preferAllianceHubRoom = true, force = false)
+        viewModelScope.launch {
+            repository.listRooms()
+                .onSuccess { raw ->
+                    val next = applyRoomsFromServer(raw)
+                    syncRaidRoomPreference(next)
+                    _state.update { it.copy(rooms = next) }
+                    syncTabUnreadBadge(next)
+                    syncOverlayAllianceHubBadge(next)
+                }
+        }
+    }
+
+    fun setAppInForeground(inForeground: Boolean) {
+        if (appInForeground == inForeground) return
+        appInForeground = inForeground
+        if (!inForeground) {
+            recomputeRoomUnreadBadges()
+        }
+    }
+
+    fun setOverlayChatPanelVisible(visible: Boolean) {
+        if (overlayChatPanelVisible == visible) return
+        overlayChatPanelVisible = visible
+        recomputeRoomUnreadBadges()
+    }
+
+    private fun isRoomActivelyViewed(roomId: String): Boolean {
+        if (!appInForeground || _state.value.messages.isEmpty()) return false
+        if (_state.value.selectedRoomId != roomId) return false
+        return isChatTabActive || overlayChatPanelVisible
+    }
+
+    private fun shouldAutoMarkReadSelectedRoom(): Boolean {
+        val roomId = _state.value.selectedRoomId ?: return false
+        return isRoomActivelyViewed(roomId)
+    }
+
+    private fun recomputeRoomUnreadBadges() {
+        val rooms = _state.value.rooms
+        if (rooms.isEmpty()) return
+        val adjusted = mergeRoomsUnreadFromServer(rooms)
+        _state.update { it.copy(rooms = adjusted) }
+        syncTabUnreadBadge(adjusted)
+        ChatSessionCache.update(adjusted)
+        syncOverlayAllianceHubBadge(adjusted)
     }
 
     /**
@@ -438,16 +511,27 @@ class ChatViewModel(
         }
     }
 
-    private suspend fun loadTeamProfileGate(): Boolean {
+    private suspend fun loadTeamProfileGate(forceRefresh: Boolean = false): Boolean {
+        val now = System.currentTimeMillis()
+        if (!forceRefresh) {
+            cachedTeamProfileGate?.let { cached ->
+                if (now - profileGateLoadedAtMs < PROFILE_GATE_TTL_MS) {
+                    return cached
+                }
+            }
+        }
         val p = usersRepository.getMyProfile().getOrNull()
         val keys = p?.enabledStickerPacks?.toSet() ?: emptySet()
         _state.value = _state.value.copy(
             enabledStickerPackKeys = keys,
             playerTeamSquadRole = p?.playerTeamSquadRole,
         )
-        return p?.let {
+        val hasTeam = p?.let {
             !it.teamDisplayName.isNullOrBlank() && !it.teamTag.isNullOrBlank()
         } ?: false
+        cachedTeamProfileGate = hasTeam
+        profileGateLoadedAtMs = now
+        return hasTeam
     }
 
     private fun canModerateChat(message: ChatMessage): Boolean =
@@ -494,9 +578,13 @@ class ChatViewModel(
         bootstrapMutex.withLock {
             if (!force) {
                 if (preferOverlayRaidRoom && overlayRaidAlreadyReady(_state.value.rooms)) {
+                    recomputeRoomUnreadBadges()
+                    viewModelScope.launch { syncRoomsFromServer(reconfirmVisibleRoom = false) }
                     return
                 }
                 if (preferAllianceHubRoom && overlayHubAlreadyReady(_state.value.rooms)) {
+                    recomputeRoomUnreadBadges()
+                    viewModelScope.launch { syncRoomsFromServer(reconfirmVisibleRoom = false) }
                     return
                 }
             }
@@ -592,6 +680,13 @@ class ChatViewModel(
             roomMessageCache[rid]?.messages?.firstOrNull()?._id
         }
         val cached = roomMessageCache[roomId]
+            ?: ChatSessionCache.getFreshMessages(roomId)?.let { sessionMessages ->
+                val capped = capNewestFirst(sessionMessages, CHAT_MAX_MESSAGES_IN_MEMORY)
+                RoomMessageCache(
+                    messages = capped,
+                    hasMoreOlder = sessionMessages.size >= INITIAL_PAGE_SIZE,
+                ).also { roomMessageCache[roomId] = it }
+            }
         knownMessageIds.clear()
         messageIdIndex.clear()
         _draftMessage.value = ""
@@ -666,16 +761,12 @@ class ChatViewModel(
     }
 
     private fun mergeRoomsUnreadFromServer(serverRooms: List<ChatRoomDto>): List<ChatRoomDto> {
-        val selected = _state.value.selectedRoomId
-        val viewingSelected = isChatTabActive &&
-            !selected.isNullOrBlank() &&
-            _state.value.messages.isNotEmpty()
         val previousById = _state.value.rooms.associateBy { it.id }
         return serverRooms.map { room ->
             val previousUnread = previousById[room.id]?.unreadCount ?: 0
             val floor = optimisticUnreadFloorByRoom[room.id] ?: 0
             val serverUnread = when {
-                viewingSelected && room.id == selected -> 0
+                isRoomActivelyViewed(room.id) -> 0
                 else -> effectiveUnreadForRoom(room)
             }
             val unread = displayedUnreadCount(
@@ -975,33 +1066,23 @@ class ChatViewModel(
                 hasMoreOlder = cached.hasMoreOlder,
                 rooms = clearUnreadForRoom(_state.value.rooms, roomId),
             )
-            cached.messages.firstOrNull()?._id?.let { newestId ->
-                markRoomReadUpTo(roomId, newestId)
+            if (shouldAutoMarkReadSelectedRoom()) {
+                cached.messages.firstOrNull()?._id?.let { newestId ->
+                    markRoomReadUpTo(roomId, newestId)
+                }
             }
             refreshMessagesInBackground(roomId)
             return
         }
-        repository.loadRecentMessages(roomId, beforeMessageId = null, limit = PAGE_SIZE)
+        repository.loadRecentMessages(roomId, beforeMessageId = null, limit = INITIAL_PAGE_SIZE)
             .onSuccess { loaded ->
-                ChatSessionCache.updateMessages(roomId, loaded)
-                knownMessageIds.clear()
-                messageIdIndex.clear()
-                knownMessageIds.addAll(loaded.mapNotNull { it._id })
-                val capped = capNewestFirst(loaded, CHAT_MAX_MESSAGES_IN_MEMORY)
-                rebuildMessageIdIndex(capped, messageIdIndex)
-                roomMessageCache[roomId] = RoomMessageCache(
-                    messages = capped,
-                    hasMoreOlder = loaded.size >= PAGE_SIZE,
+                applyLoadedMessagePage(
+                    roomId = roomId,
+                    loaded = loaded,
+                    pageSizeForHasMore = INITIAL_PAGE_SIZE,
                 )
-                _state.value = _state.value.copy(
-                    isLoading = false,
-                    messages = capped,
-                    selectedRoomId = roomId,
-                    hasMoreOlder = loaded.size >= PAGE_SIZE,
-                    rooms = clearUnreadForRoom(_state.value.rooms, roomId),
-                )
-                capped.firstOrNull()?._id?.let { newestId ->
-                    markRoomReadUpTo(roomId, newestId)
+                if (loaded.size >= INITIAL_PAGE_SIZE) {
+                    prefetchOlderMessagesSilent(roomId)
                 }
             }
             .onFailure { e ->
@@ -1020,22 +1101,96 @@ class ChatViewModel(
                 .onSuccess { loaded ->
                     if (_state.value.selectedRoomId != roomId || loaded.isEmpty()) return@onSuccess
                     val capped = capNewestFirst(loaded, CHAT_MAX_MESSAGES_IN_MEMORY)
+                    val hasMoreOlder = loaded.size >= PAGE_SIZE
+                    val current = _state.value.messages
+                    val unchanged = withContext(Dispatchers.Default) {
+                        chatMessagesListContentEqual(current, capped)
+                    }
+                    if (unchanged) {
+                        roomMessageCache[roomId] = RoomMessageCache(
+                            messages = capped,
+                            hasMoreOlder = hasMoreOlder,
+                        )
+                        ChatSessionCache.updateMessages(roomId, loaded)
+                        if (_state.value.hasMoreOlder != hasMoreOlder) {
+                            _state.update { it.copy(hasMoreOlder = hasMoreOlder) }
+                        }
+                        return@onSuccess
+                    }
                     knownMessageIds.clear()
                     messageIdIndex.clear()
                     knownMessageIds.addAll(capped.mapNotNull { it._id })
                     rebuildMessageIdIndex(capped, messageIdIndex)
                     roomMessageCache[roomId] = RoomMessageCache(
                         messages = capped,
-                        hasMoreOlder = loaded.size >= PAGE_SIZE,
+                        hasMoreOlder = hasMoreOlder,
                     )
                     ChatSessionCache.updateMessages(roomId, loaded)
                     _state.update {
                         it.copy(
                             messages = capped,
-                            hasMoreOlder = loaded.size >= PAGE_SIZE,
+                            hasMoreOlder = hasMoreOlder,
                         )
                     }
                 }
+        }
+    }
+
+    private fun applyLoadedMessagePage(
+        roomId: String,
+        loaded: List<ChatMessage>,
+        pageSizeForHasMore: Int,
+    ) {
+        ChatSessionCache.updateMessages(roomId, loaded)
+        knownMessageIds.clear()
+        messageIdIndex.clear()
+        knownMessageIds.addAll(loaded.mapNotNull { it._id })
+        val capped = capNewestFirst(loaded, CHAT_MAX_MESSAGES_IN_MEMORY)
+        rebuildMessageIdIndex(capped, messageIdIndex)
+        val hasMoreOlder = loaded.size >= pageSizeForHasMore
+        roomMessageCache[roomId] = RoomMessageCache(
+            messages = capped,
+            hasMoreOlder = hasMoreOlder,
+        )
+        _state.value = _state.value.copy(
+            isLoading = false,
+            messages = capped,
+            selectedRoomId = roomId,
+            hasMoreOlder = hasMoreOlder,
+            rooms = clearUnreadForRoom(_state.value.rooms, roomId),
+        )
+        if (shouldAutoMarkReadSelectedRoom()) {
+            capped.firstOrNull()?._id?.let { newestId ->
+                viewModelScope.launch { markRoomReadUpTo(roomId, newestId) }
+            }
+        }
+    }
+
+    private fun prefetchOlderMessagesSilent(roomId: String) {
+        viewModelScope.launch {
+            if (_state.value.selectedRoomId != roomId || !_state.value.hasMoreOlder) return@launch
+            if (_state.value.isLoadingOlder || _state.value.isLoading) return@launch
+            val oldestId = _state.value.messages.lastOrNull()?._id ?: return@launch
+            repository.loadRecentMessages(
+                roomId = roomId,
+                beforeMessageId = oldestId,
+                limit = PAGE_SIZE,
+            ).onSuccess { older ->
+                if (_state.value.selectedRoomId != roomId || older.isEmpty()) return@onSuccess
+                val merged = mergeOlderPage(_state.value.messages, older, knownMessageIds)
+                rebuildMessageIdIndex(merged, messageIdIndex)
+                roomMessageCache[roomId] = RoomMessageCache(
+                    messages = merged,
+                    hasMoreOlder = older.size >= PAGE_SIZE,
+                )
+                ChatSessionCache.updateMessages(roomId, merged)
+                _state.update {
+                    it.copy(
+                        messages = merged,
+                        hasMoreOlder = older.size >= PAGE_SIZE,
+                    )
+                }
+            }
         }
     }
 
@@ -1665,21 +1820,31 @@ class ChatViewModel(
         message: ChatMessage,
         clearComposer: Boolean = false,
     ) {
-        val update = upsertMessage(
+        applyIncomingBatch(listOf(message), clearComposer = clearComposer)
+    }
+
+    private fun applyIncomingBatch(
+        batch: List<ChatMessage>,
+        clearComposer: Boolean = false,
+    ) {
+        if (batch.isEmpty()) return
+        val update = upsertMessagesBatch(
             _state.value.messages,
-            message,
+            batch,
             knownMessageIds,
             messageIdIndex,
         )
-        val cappedMessages = capNewestFirst(update.messages, CHAT_MAX_MESSAGES_IN_MEMORY)
+        val cappedMessages = update.messages
         var nextState = _state.value.copy(
             messages = cappedMessages,
             newestMessageKey = update.newestMessageKey ?: _state.value.newestMessageKey,
             isSending = false,
-            deletingMessageId = if (_state.value.deletingMessageId == message._id) null
-            else _state.value.deletingMessageId,
             error = null,
         )
+        val clearedDeletingId = batch.mapNotNull { it._id }.toSet()
+        if (nextState.deletingMessageId in clearedDeletingId) {
+            nextState = nextState.copy(deletingMessageId = null)
+        }
         if (clearComposer) {
             _draftMessage.value = ""
             _pickedImageUris.value = emptyList()
@@ -1691,13 +1856,15 @@ class ChatViewModel(
         }
         _state.value = syncSelections(nextState)
         val rid = _state.value.selectedRoomId
-        if (isChatTabActive && !rid.isNullOrBlank()) {
-            nextState.messages.firstOrNull()?._id?.let { newestId ->
+        if (shouldAutoMarkReadSelectedRoom() && !rid.isNullOrBlank()) {
+            cappedMessages.firstOrNull()?._id?.let { newestId ->
                 viewModelScope.launch { markRoomReadUpTo(rid, newestId) }
             }
         }
-        if (isRaidStripMessage(message)) {
-            repository.notifyOverlayRaidStripMessage(message)
+        batch.forEach { message ->
+            if (isRaidStripMessage(message)) {
+                repository.notifyOverlayRaidStripMessage(message)
+            }
         }
     }
 

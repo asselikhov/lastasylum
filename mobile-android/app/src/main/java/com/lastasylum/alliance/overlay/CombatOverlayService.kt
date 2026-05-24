@@ -1458,15 +1458,22 @@ class CombatOverlayService : Service() {
     }
 
     private fun bindOverlayReadCursorsIfPossible() {
-        val uid = jwtSubFromAccessToken()?.trim().orEmpty()
-        if (uid.isEmpty()) return
-        val container = AppContainer.from(this)
-        ReadCursorSession.bind(
-            container.chatRoomPreferences,
-            container.teamForumPreferences,
-            container.userSettingsPreferences,
-            uid,
-        )
+        serviceScope.launch(Dispatchers.IO) {
+            val container = AppContainer.from(this@CombatOverlayService)
+            val uid = container.usersRepository.getMyProfile().getOrNull()?.id?.trim().orEmpty()
+                .ifEmpty { jwtSubFromAccessToken()?.trim().orEmpty() }
+            if (uid.isEmpty()) return@launch
+            ReadCursorSession.bind(
+                container.chatRoomPreferences,
+                container.teamForumPreferences,
+                container.userSettingsPreferences,
+                uid,
+            )
+        }
+    }
+
+    private fun syncOverlayChatPanelVisibilityToViewModel(visible: Boolean) {
+        resolveChatViewModel()?.setOverlayChatPanelVisible(visible)
     }
 
     private fun refreshOverlayStatusHudData(force: Boolean = false) {
@@ -2170,6 +2177,8 @@ class CombatOverlayService : Service() {
             stableGatePollTicks = HUD_STABLE_TICKS_BEFORE_ATTACH
             resetOverlayVoiceForGameEntry()
             ensureOverlayRaidRealtimeIfNeeded()
+            OverlayGameStatusHudRefresh.invalidateNewsForumCache()
+            lastHudRefreshCompletedAtMs = 0L
             attachOverlayHudWindowsIfNeeded()
             mainHandler.post {
                 if (!isInGameOverlayUiActive()) return@post
@@ -3228,6 +3237,7 @@ class CombatOverlayService : Service() {
         val root = overlayChatTeamRoot
         val hadVisible = overlayChatTeamPanelVisible
         overlayChatTeamPanelVisible = false
+        syncOverlayChatPanelVisibilityToViewModel(false)
         currentOverlayHudPane = null
         OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = false
         OverlayChatInteractionHold.releaseGameForegroundSuppress()
@@ -3746,6 +3756,7 @@ class CombatOverlayService : Service() {
         overlayChatTeamRoot = root
         overlayChatTeamParams = params
         overlayChatTeamPanelVisible = true
+        syncOverlayChatPanelVisibilityToViewModel(true)
         OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = true
         rebalanceOverlayFullscreenZOrder()
         ViewCompat.requestApplyInsets(root)
