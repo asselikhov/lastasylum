@@ -52,7 +52,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -255,12 +254,9 @@ fun AppNavigation(
         modifier = modifier,
         containerColor = Color.Transparent,
         contentColor = MaterialTheme.colorScheme.onBackground,
-        // IME: adjustResize; нижняя навигация скрыта при клавиатуре — композер у края клавиатуры.
+        // IME: adjustResize поднимает content + bottomBar; композер в content над навбаром.
         contentWindowInsets = WindowInsets.safeDrawing.exclude(WindowInsets.ime),
         bottomBar = {
-            val density = LocalDensity.current
-            val imeVisible = WindowInsets.ime.getBottom(density) > 0
-            if (!imeVisible) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -387,7 +383,6 @@ fun AppNavigation(
                         }
                     }
                 }
-            }
             }
         },
     ) { contentPadding ->

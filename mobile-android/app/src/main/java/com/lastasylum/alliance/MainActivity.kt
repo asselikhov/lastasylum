@@ -28,8 +28,7 @@ class MainActivity : ComponentActivity() {
             isAppearanceLightNavigationBars = false
         }
         super.onCreate(savedInstanceState)
-        // adjustResize + decorFitsSystemWindows: окно сжимается вместе с IME (как в Telegram).
-        // Нижняя навигация скрывается при открытой клавиатуре (Navigation.kt).
+        // adjustResize: content и bottomBar поднимаются вместе с IME; навбар всегда под композером.
         WindowCompat.setDecorFitsSystemWindows(window, true)
         hideSystemUi()
         setContent {
