@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.lerp
 import com.lastasylum.alliance.ui.chat.AttachmentPreviewOverlay
 import com.lastasylum.alliance.ui.chat.ChatComposer
 import com.lastasylum.alliance.ui.chat.chatComposerDock
+import com.lastasylum.alliance.ui.chat.rememberChatImeContentLift
 import com.lastasylum.alliance.ui.chat.stabilizeComposerImageUris
 import com.lastasylum.alliance.ui.chat.capForumMessagesOldestFirst
 import com.lastasylum.alliance.ui.chat.mergePreservingForumMedia
@@ -854,11 +855,12 @@ private fun TeamForumTopicChatRoute(
     val composerReserveBottom = with(LocalDensity.current) {
         composerBlockHeightPx.toDp()
     }
+    val imeContentLift = rememberChatImeContentLift()
     Box(Modifier.fillMaxSize()) {
     Column(
         Modifier
             .fillMaxSize()
-            .padding(bottom = composerReserveBottom),
+            .padding(bottom = composerReserveBottom + imeContentLift),
     ) {
         if (overlayUi) {
             Row(

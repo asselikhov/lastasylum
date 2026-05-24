@@ -4244,7 +4244,7 @@ class CombatOverlayService : Service() {
         }
 
         val surfaceArgb = overlayChatTeamSurfaceColor()
-        val keyboardGapPx = (4f * resources.displayMetrics.density).toInt()
+        val keyboardGapPx = (8f * resources.displayMetrics.density).toInt()
         val root = FrameLayout(this).apply {
             setBackgroundColor(surfaceArgb)
             elevation = 48f

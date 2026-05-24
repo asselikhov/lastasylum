@@ -9,9 +9,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -813,11 +812,11 @@ internal fun ChatComposer(
                 }
             }
 
-        // РљРѕСЂРѕС‚РєРёР№ fade Р±РµР· РёР·РјРµРЅРµРЅРёСЏ РІС‹СЃРѕС‚С‹ вЂ” РјРµРЅСЊС€Рµ РєРѕРЅС„Р»РёРєС‚РѕРІ СЃ IME РїСЂРё РєР»Р°РІРёР°С‚СѓСЂРµ.
+        // Без анимации высоты — меньше конфликтов с IME при открытии клавиатуры.
         AnimatedVisibility(
             visible = showMediaPanel,
-            enter = fadeIn(animationSpec = tween(90)),
-            exit = fadeOut(animationSpec = tween(90)),
+            enter = EnterTransition.None,
+            exit = ExitTransition.None,
         ) {
             Column(
                 modifier = Modifier
