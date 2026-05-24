@@ -121,7 +121,8 @@ class VoiceAudioPipeline(
 
     fun enqueueRemoteFrame(userId: String, codec: String, payload: ByteArray) {
         if (!soundEnabled) return
-        if (remoteMicOn[userId] != true) return
+        // Frames are only relayed when the sender has mic on; do not block on stale peer-state.
+        remoteMicOn[userId] = true
         val pcm = opus.decodeToPcm(codec, payload) ?: return
         jitter.push(userId, normalizePlayFrame(pcm))
         ensurePlayback()

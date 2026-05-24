@@ -94,8 +94,10 @@ class VoiceChatSession(
             stop()
             this.roomId = rid
             this.localUserId = localUserId
-            micOn = false
-            soundOn = false
+            soundOn = userSettings.isOverlayVoiceSoundEnabled()
+            micOn = userSettings.isOverlayVoiceMicEnabled() &&
+                hasRecordAudioPermission() &&
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
             socketManager.addFrameListener(frameListener)
             socketManager.addPeerListener(peerListener)
             audioPipeline.setSoundEnabled(soundOn)
@@ -112,8 +114,7 @@ class VoiceChatSession(
             socketManager.emitState(micOn, soundOn)
         }
         if (micOn) onMicForegroundChanged(true)
-        applyMicCapture()
-        notifyState()
+        publishVoiceStateToServer()
     }
 
     fun stop() {

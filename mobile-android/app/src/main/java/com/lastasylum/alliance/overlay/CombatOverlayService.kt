@@ -2126,9 +2126,10 @@ class CombatOverlayService : Service() {
 
     private fun refreshOverlayTopRightHudState() {
         val session = voiceSession
+        val prefs = AppContainer.from(this).userSettingsPreferences
         overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
-            micOn = session?.micOn ?: false,
-            soundOn = session?.soundOn ?: false,
+            micOn = session?.micOn ?: prefs.isOverlayVoiceMicEnabled(),
+            soundOn = session?.soundOn ?: prefs.isOverlayVoiceSoundEnabled(),
         )
     }
 
@@ -2153,19 +2154,32 @@ class CombatOverlayService : Service() {
         }
     }
 
+    private fun overlayVoiceMicDisplayedOn(): Boolean {
+        val session = voiceSession
+        val prefs = AppContainer.from(this).userSettingsPreferences
+        return session?.micOn ?: prefs.isOverlayVoiceMicEnabled()
+    }
+
+    private fun overlayVoiceSoundDisplayedOn(): Boolean {
+        val session = voiceSession
+        val prefs = AppContainer.from(this).userSettingsPreferences
+        return session?.soundOn ?: prefs.isOverlayVoiceSoundEnabled()
+    }
+
     private fun toggleOverlayVoiceMicFromHud() {
         if (!overlayVoiceController.isMicSupportedOnDevice()) {
             Toast.makeText(this, R.string.overlay_voice_mic_unsupported, Toast.LENGTH_SHORT).show()
             return
         }
+        val targetOn = !overlayVoiceMicDisplayedOn()
         runOverlayVoiceUserAction { session ->
             session.whenVoiceReady {
-                if (!session.micOn && !session.hasRecordAudioPermission()) {
+                if (targetOn && !session.hasRecordAudioPermission()) {
                     pendingVoiceMicEnable = true
                     requestOverlayVoiceMicPermission()
                 } else {
-                    val ok = session.toggleMic()
-                    if (!ok) {
+                    val ok = session.setMicEnabled(targetOn)
+                    if (!ok && targetOn) {
                         Toast.makeText(
                             this@CombatOverlayService,
                             R.string.overlay_voice_mic_unsupported,
@@ -2179,9 +2193,10 @@ class CombatOverlayService : Service() {
     }
 
     private fun toggleOverlayVoiceSoundFromHud() {
+        val targetOn = !overlayVoiceSoundDisplayedOn()
         runOverlayVoiceUserAction { session ->
             session.whenVoiceReady {
-                session.toggleSound()
+                session.setSoundEnabled(targetOn)
                 refreshOverlayTopRightHudState()
             }
         }
@@ -2381,18 +2396,14 @@ class CombatOverlayService : Service() {
         }
     }
 
-    /** Микрофон и звук выключены до явного нажатия «Микрофон» / «Звук» в HUD. */
+    /** Новый заход в игру: отключаем сокет, prefs пользователя сохраняем. */
     private fun resetOverlayVoiceForGameEntry() {
-        val prefs = AppContainer.from(this).userSettingsPreferences
-        prefs.setOverlayVoiceMicEnabled(false)
-        prefs.setOverlayVoiceSoundEnabled(false)
         overlayVoiceController.resetSession()
         stopOverlayVoice()
         overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
-            micOn = false,
-            soundOn = false,
             voiceExpanded = false,
         )
+        refreshOverlayTopRightHudState()
     }
 
     private fun applyGameGateState(
