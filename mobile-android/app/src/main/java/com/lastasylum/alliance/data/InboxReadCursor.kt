@@ -29,8 +29,8 @@ fun effectiveUnreadCount(
         return 0
     }
     if (localLast.isNotBlank() && serverLast.isBlank()) {
-        // Server reports unread but no cursor yet — show the badge (do not trust local-only read).
-        return serverUnread
+        // Mark-read persisted locally; stale server unreadCount without lastReadMessageId.
+        return 0
     }
     return serverUnread
 }
@@ -55,10 +55,8 @@ fun displayedUnreadCount(
         return 0
     }
     if (effective == 0) {
-        return maxOf(
-            if (previous > 0) previous else 0,
-            floor,
-        )
+        // Do not resurrect cleared badges from [previouslyDisplayed] when leaving/re-entering chat.
+        return floor
     }
     return maxOf(effective, previous, floor)
 }

@@ -202,12 +202,12 @@ import com.lastasylum.alliance.ui.chat.scrollReverseChatToLatest
 import com.lastasylum.alliance.ui.chat.scrollTimelineItemToViewportCenter
 import com.lastasylum.alliance.ui.chat.buildChatMessagesListDerived
 import com.lastasylum.alliance.ui.chat.ChatMessagesListDerived
+import com.lastasylum.alliance.ui.chat.clusterTopSpacingAt
 import com.lastasylum.alliance.ui.chat.chatTimelineDaySeparatorKey
 import com.lastasylum.alliance.ui.chat.toChatListUiState
 import com.lastasylum.alliance.ui.chat.ChatListUiState
 import com.lastasylum.alliance.ui.chat.ChatTimelineEntry
 import com.lastasylum.alliance.ui.chat.ChatTypingIndicator
-import com.lastasylum.alliance.ui.chat.chatBubbleClusterTopSpacing
 import com.lastasylum.alliance.ui.chat.chatMessageIsOwn
 import com.lastasylum.alliance.ui.chat.chatMessageKey
 import com.lastasylum.alliance.ui.chat.chatTimelineIndexForMessageId
@@ -1178,7 +1178,7 @@ private fun ChatMessagesLazyList(
                         is ChatTimelineEntry.ChatMessageItem -> {
                             val message = e.message
                             val cluster = messageClusterFlags.getOrNull(e.messageIndex)
-                            val clusterTop = chatBubbleClusterTopSpacing(timeline, idx, message)
+                            val clusterTop = clusterTopSpacingAt(listDerived, idx).dp
                             ChatMessageBubble(
                                 message = message,
                                 cluster = cluster,
@@ -1207,7 +1207,7 @@ private fun ChatMessagesLazyList(
                         is ChatTimelineEntry.ChatAlbumItem -> {
                             val message = e.representativeMessage
                             val cluster = messageClusterFlags.getOrNull(e.firstMessageIndex)
-                            val clusterTop = chatBubbleClusterTopSpacing(timeline, idx, message)
+                            val clusterTop = clusterTopSpacingAt(listDerived, idx).dp
                             ChatAlbumRow(
                                 message = message,
                                 cluster = cluster,

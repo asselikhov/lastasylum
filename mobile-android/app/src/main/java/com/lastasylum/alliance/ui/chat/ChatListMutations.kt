@@ -95,6 +95,7 @@ internal fun upsertMessagesBatch(
     incoming: List<ChatMessage>,
     knownMessageIds: MutableSet<String>,
     idIndex: MutableMap<String, Int>,
+    maxMessages: Int = CHAT_MAX_MESSAGES_IN_MEMORY,
 ): MessageUpsertResult {
     var messages = current
     var newestMessageKey: String? = null
@@ -106,7 +107,7 @@ internal fun upsertMessagesBatch(
         }
     }
     return MessageUpsertResult(
-        messages = capNewestFirst(messages, CHAT_MAX_MESSAGES_IN_MEMORY),
+        messages = capNewestFirst(messages, maxMessages),
         newestMessageKey = newestMessageKey,
     )
 }

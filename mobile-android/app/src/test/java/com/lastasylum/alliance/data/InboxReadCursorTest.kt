@@ -41,13 +41,25 @@ class InboxReadCursorTest {
     }
 
     @Test
-    fun effectiveUnread_showsServerCount_whenServerMissingCursorButUnreadPositive() {
+    fun effectiveUnread_suppressesWhenLocalCursorPresentButServerMissing() {
+        assertEquals(
+            0,
+            effectiveUnreadCount(
+                serverUnread = 3,
+                lastReadMessageId = null,
+                localLastReadMessageId = "000000000000000000000040",
+            ),
+        )
+    }
+
+    @Test
+    fun effectiveUnread_showsServerCount_whenServerMissingCursorAndNoLocal() {
         assertEquals(
             3,
             effectiveUnreadCount(
                 serverUnread = 3,
                 lastReadMessageId = null,
-                localLastReadMessageId = "000000000000000000000040",
+                localLastReadMessageId = null,
             ),
         )
     }
@@ -66,9 +78,17 @@ class InboxReadCursorTest {
 
     @Test
     fun displayedUnread_keepsOptimisticBumpUntilServerCatchedUp() {
-        assertEquals(1, displayedUnreadCount(effectiveUnread = 0, previouslyDisplayed = 1))
+        assertEquals(
+            1,
+            displayedUnreadCount(
+                effectiveUnread = 0,
+                previouslyDisplayed = 0,
+                rawServerUnread = 0,
+                optimisticFloor = 1,
+            ),
+        )
         assertEquals(2, displayedUnreadCount(effectiveUnread = 2, previouslyDisplayed = 1))
-        assertEquals(0, displayedUnreadCount(effectiveUnread = 0, previouslyDisplayed = 0))
+        assertEquals(0, displayedUnreadCount(effectiveUnread = 0, previouslyDisplayed = 5))
     }
 
     @Test
@@ -97,7 +117,7 @@ class InboxReadCursorTest {
     }
 
     @Test
-    fun reconcileDisplayedUnread_keepsOptimisticFloorWhenServerZero() {
-        assertEquals(5, reconcileDisplayedUnread(serverUnread = 0, previouslyDisplayed = 5))
+    fun reconcileDisplayedUnread_clearsWhenServerZero() {
+        assertEquals(0, reconcileDisplayedUnread(serverUnread = 0, previouslyDisplayed = 5))
     }
 }
