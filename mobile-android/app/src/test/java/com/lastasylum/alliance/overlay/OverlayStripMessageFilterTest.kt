@@ -7,10 +7,10 @@ import org.junit.Test
 
 class OverlayStripMessageFilterTest {
     @Test
-    fun raidMessage_matchesRaidOrBlankRoom() {
+    fun raidMessage_matchesRaidRoomOnly() {
         val msg = message(roomId = "raid1")
         assertTrue(OverlayStripMessageRouter.isOverlayRaidRoomMessage(msg, "raid1"))
-        assertTrue(OverlayStripMessageRouter.isOverlayRaidRoomMessage(message(roomId = ""), "raid1"))
+        assertFalse(OverlayStripMessageRouter.isOverlayRaidRoomMessage(message(roomId = ""), "raid1"))
         assertFalse(OverlayStripMessageRouter.isOverlayRaidRoomMessage(msg, "other"))
     }
 

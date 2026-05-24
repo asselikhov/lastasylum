@@ -11,7 +11,7 @@ internal object OverlayStripMessageRouter {
     ): Boolean {
         val room = msg.roomId.trim()
         val raidId = raidRoomId?.trim().orEmpty()
-        if (room.isEmpty()) return raidId.isNotEmpty() || extraRaidRoomIds.isNotEmpty()
+        if (room.isEmpty()) return false
         if (raidId.isNotEmpty() && room == raidId) return true
         if (extraRaidRoomIds.isNotEmpty() && room in extraRaidRoomIds) return true
         return false

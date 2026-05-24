@@ -165,11 +165,11 @@ class CombatOverlayService : Service() {
                 } else {
                     "$label X:${x} Y:${y}"
                 }
-                val result = if (excavation) {
-                    repo.sendExcavationAlertWithRetries(text, roomId)
-                } else {
-                    repo.sendMessageWithRetries(text, roomId)
-                }
+                val result = repo.sendOverlayRaidCommandWithRetries(
+                    text = text,
+                    roomId = roomId,
+                    excavationAlert = excavation,
+                )
                 result.onSuccess { sent ->
                     mainHandler.post {
                         ensureOverlayRaidRealtimeIfNeeded()
@@ -185,7 +185,7 @@ class CombatOverlayService : Service() {
                     ?: return@OverlayCommandsPopover Result.failure(IllegalStateException("no_raid"))
                 rememberOverlayRaidRoomId(roomId)
                 val text = getString(R.string.overlay_excavation_notify_message)
-                repo.sendExcavationAlertWithRetries(text, roomId)
+                repo.sendOverlayRaidCommandWithRetries(text, roomId, excavationAlert = true)
                     .also { result ->
                         result.onSuccess { sent ->
                             mainHandler.post {
@@ -932,6 +932,8 @@ class CombatOverlayService : Service() {
         if (!isInGameOverlayUiActive()) return@Runnable
         restoreOverlayHudChromeAfterPanel()
         refreshOverlayChatStripNow()
+        refreshOverlayHubUnreadFromCache()
+        refreshOverlayStatusHudData(force = false)
     }
 
     private var lastStripZOrderLiftMs: Long = 0L
@@ -1518,7 +1520,11 @@ class CombatOverlayService : Service() {
         bindOverlayReadCursorsIfPossible()
         val now = System.currentTimeMillis()
         if (!force && now - lastHudRefreshCompletedAtMs < HUD_REFRESH_MIN_INTERVAL_MS) {
-            hudRefreshPending = true
+            val remaining = HUD_REFRESH_MIN_INTERVAL_MS - (now - lastHudRefreshCompletedAtMs)
+            if (!statusHudRefreshPosted) {
+                statusHudRefreshPosted = true
+                mainHandler.postDelayed(statusHudRefreshRunnable, remaining.coerceAtLeast(50L))
+            }
             return
         }
         if (hudRefreshInFlight) {
@@ -1585,7 +1591,7 @@ class CombatOverlayService : Service() {
                         maxOf(hubDisplayed, prevHud.allianceChatUnread)
                     },
                     forumUnread = when {
-                        useAuthoritativeTeamBadges && forumOptimisticActive ->
+                        forumOptimisticActive ->
                             maxOf(state.forumUnread, prevHud.forumUnread)
                         useAuthoritativeTeamBadges -> state.forumUnread
                         else -> maxOf(state.forumUnread, prevHud.forumUnread)
@@ -1614,9 +1620,9 @@ class CombatOverlayService : Service() {
                 } else {
                     overlayTopRightHudFlow.value.teamJoinRequestCount
                 }
-                overlayStatusHudFlow.value = mergedState
                 mainHandler.post {
                     if (!isInGameOverlayUiActive()) return@post
+                    overlayStatusHudFlow.value = mergedState
                     val durationMs = android.os.SystemClock.elapsedRealtime() - startedAt
                     OverlayPerfDiag.logHudRefreshDone(
                         durationMs = durationMs,
@@ -2784,6 +2790,7 @@ class CombatOverlayService : Service() {
         for (msg in preview) {
             val key = msg._id?.takeIf { it.isNotBlank() } ?: msg.stableKey()
             h = 31 * h + key.hashCode()
+            h = 31 * h + msg.text.hashCode()
             h = 31 * h + msg.text.length
             h = 31 * h + msg.senderRole.hashCode()
             h = 31 * h + msg.senderId.hashCode()
@@ -3588,12 +3595,9 @@ class CombatOverlayService : Service() {
             runCatching { ensureChatStripWindow(wm) }
         }
         if (isOverlayChatStripEnabled()) {
-            val hasStripContent = chatStripPreviewFlow.value.isNotEmpty() ||
-                stripBuffer.visibleForPreview().isNotEmpty()
             val showStrip = !overlayChatTeamPanelVisible && (
                 shouldForceShowRaidStrip() ||
-                    isOverlayRaidStripEligible() ||
-                    (isOverlayChatRoutingActive() && hasStripContent)
+                    isOverlayRaidStripEligible()
                 )
             chatStripHost?.visibility = if (showStrip) View.VISIBLE else View.GONE
         }
@@ -3743,7 +3747,7 @@ class CombatOverlayService : Service() {
             vm?.awaitPendingMarkRead()
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 vm?.syncReadStateFromPreferences()
-                activityScopedChatViewModel?.syncRoomsFromServer()
+                vm?.syncRoomsFromServer(reconfirmVisibleRoom = false)
                 runCatching {
                     AppContainer.from(this@CombatOverlayService).chatRepository
                         .notifyOverlayChatPanelClosed()
@@ -4267,7 +4271,7 @@ class CombatOverlayService : Service() {
             endOverlayChatSubscription()
         } else {
             lastStripRenderSignature = 0
-            chatStripPreviewFlow.value = emptyList()
+            mainHandler.post { refreshOverlayChatStripNow() }
         }
         overlayTicker.hideTicker()
         overlayCommandsPopover.hide()
@@ -4378,7 +4382,7 @@ class CombatOverlayService : Service() {
         private const val OVERLAY_INGAME_GRACE_MS = 3_500L
         /** Sustained «not in game» before tearing down overlay windows. */
         private const val GATE_DISMISS_AFTER_MS = 10_000L
-        private const val FORUM_OPTIMISTIC_BADGE_MS = 3_000L
+        private const val FORUM_OPTIMISTIC_BADGE_MS = 8_000L
         private const val FORCE_SHOW_STRIP_AFTER_LOCAL_SEND_MS = 4_000L
         /** После отправки в «Рейд» / координат — не снимать HUD на ложном «не в игре». */
         private const val OVERLAY_UI_HOLD_AFTER_RAID_SEND_MS = 3_500L

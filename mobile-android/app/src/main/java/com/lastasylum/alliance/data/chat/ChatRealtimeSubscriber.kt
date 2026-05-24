@@ -4,6 +4,7 @@ import android.os.Handler
 import android.os.Looper
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.data.auth.TokenStore
+import com.lastasylum.alliance.overlay.CombatOverlayService
 
 /** Socket.IO subscriptions and overlay listener wiring. */
 class ChatRealtimeSubscriber(
@@ -251,6 +252,10 @@ class ChatRealtimeSubscriber(
 
     fun dispatchOverlayHttpMessage(message: ChatMessage) {
         val listeners = overlayMessageListeners.toList()
+        if (listeners.isEmpty()) {
+            CombatOverlayService.publishRaidMessageToStripFromApp(message)
+            return
+        }
         mainHandler.post {
             listeners.forEach { l -> runCatching { l(message) } }
         }

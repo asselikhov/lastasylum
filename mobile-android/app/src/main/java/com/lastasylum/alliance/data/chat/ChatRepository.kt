@@ -50,6 +50,18 @@ class ChatRepository(
             onHttpSuccess = realtime::dispatchOverlayHttpMessage,
         )
 
+    /** Overlay quick commands: strip is updated locally; skip HTTP echo to avoid duplicate cards. */
+    suspend fun sendOverlayRaidCommandWithRetries(
+        text: String,
+        roomId: String,
+        excavationAlert: Boolean = false,
+    ): Result<ChatMessage> = rest.sendMessageWithRetries(
+        text = text,
+        roomId = roomId,
+        excavationAlert = excavationAlert,
+        onHttpSuccess = null,
+    )
+
     suspend fun uploadImageFile(roomId: String, file: File, mimeType: String): Result<UploadChatAttachmentResponse> =
         rest.uploadImageFile(roomId, file, mimeType)
 
@@ -172,7 +184,6 @@ class ChatRepository(
 
     /** Raid-room traffic for in-game overlay strip (HTTP echo when socket already handled). */
     fun notifyOverlayRaidStripMessage(message: ChatMessage) {
-        if (message.roomId.trim().isEmpty()) return
         realtime.dispatchOverlayHttpMessage(message)
     }
 

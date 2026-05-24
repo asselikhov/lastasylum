@@ -35,6 +35,15 @@ class OverlayChatStripBuffer(
             } else {
                 messages.add(msg)
             }
+            return
+        }
+        val key = msg.stableKey()
+        val i = messages.indexOfFirst {
+            val otherId = it._id?.takeIf { oid -> oid.isNotBlank() }
+            if (otherId != null) false else it.stableKey() == key
+        }
+        if (i >= 0) {
+            messages[i] = msg.mergePreservingAttachments(messages[i])
         } else {
             messages.add(msg)
         }

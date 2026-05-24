@@ -229,7 +229,7 @@ class ChatViewModel(
         if (!shouldTrackUnreadForMessage(roomId, mid)) return
         if (_state.value.rooms.none { it.id == roomId }) {
             queuePendingUnreadBump(roomId, mid)
-            notifyOverlayHubIfPending(roomId)
+            notifyOverlayHubIfPending(roomId, mid)
             scheduleUnreadSyncFromServer()
             return
         }
@@ -258,19 +258,17 @@ class ChatViewModel(
         scheduleUnreadSyncFromServer()
     }
 
-    private fun notifyOverlayHubIfPending(roomId: String) {
+    private fun notifyOverlayHubIfPending(roomId: String, messageId: String) {
         val hubId = chatRoomPreferences.getHubRoomId()?.trim().orEmpty()
         if (hubId.isBlank() || roomId != hubId) return
-        val lastPending = pendingUnreadBumps.lastOrNull()?.second
-        CombatOverlayService.bumpAllianceHubUnreadFromRealtime(lastPending)
+        CombatOverlayService.bumpAllianceHubUnreadFromRealtime(messageId)
     }
 
     private fun syncOverlayAllianceHubBadge(rooms: List<ChatRoomDto> = _state.value.rooms) {
         val hub = ChatRoomKindResolver.allianceHubRoom(rooms) ?: return
         val localRead = chatRoomPreferences.loadAllLastReadMessageIds()
-        val sourceRooms = ChatSessionCache.getFreshRooms() ?: rooms
         val displayed = ChatUnreadCounts.overlayAllianceHubBadge(
-            rooms = sourceRooms,
+            rooms = rooms,
             localReadByRoom = localRead,
             optimisticFloor = hub.unreadCount.coerceAtLeast(0),
             previouslyDisplayed = hub.unreadCount.coerceAtLeast(0),
@@ -329,13 +327,22 @@ class ChatViewModel(
     fun setOverlayChatPanelVisible(visible: Boolean) {
         if (overlayChatPanelVisible == visible) return
         overlayChatPanelVisible = visible
-        recomputeRoomUnreadBadges()
+        if (visible) {
+            recomputeRoomUnreadBadges()
+            return
+        }
+        viewModelScope.launch {
+            awaitPendingMarkRead()
+            recomputeRoomUnreadBadges()
+            syncRoomsFromServer(reconfirmVisibleRoom = false)
+        }
     }
 
     private fun isRoomActivelyViewed(roomId: String): Boolean {
-        if (!appInForeground || _state.value.messages.isEmpty()) return false
         if (_state.value.selectedRoomId != roomId) return false
-        return isChatTabActive || overlayChatPanelVisible
+        if (overlayChatPanelVisible && _state.value.messages.isNotEmpty()) return true
+        if (!appInForeground || _state.value.messages.isEmpty()) return false
+        return isChatTabActive
     }
 
     private fun shouldAutoMarkReadSelectedRoom(): Boolean {
@@ -1951,10 +1958,7 @@ class ChatViewModel(
         batch.forEach { message ->
             if (isRaidStripMessage(message)) {
                 CombatOverlayService.extendInGameOverlayUiHold()
-                repository.notifyOverlayRaidStripMessage(message)
-                if (message.senderId.trim() == currentUserId.trim()) {
-                    CombatOverlayService.publishRaidMessageToStripFromApp(message)
-                }
+                CombatOverlayService.publishRaidMessageToStripFromApp(message)
             }
         }
     }
