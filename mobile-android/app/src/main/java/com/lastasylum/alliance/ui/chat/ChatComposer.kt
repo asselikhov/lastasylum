@@ -337,8 +337,7 @@ internal fun ChatComposer(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = SquadRelayDimens.itemGap)
-            .chatComposerImePadding(overlayUi = overlayUi),
+            .padding(top = SquadRelayDimens.itemGap),
     ) {
         HorizontalDivider(
             modifier = Modifier.padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
@@ -818,7 +817,7 @@ internal fun ChatComposer(
         AnimatedVisibility(
             visible = showMediaPanel,
             enter = fadeIn(animationSpec = tween(90)),
-            exit = fadeOut(animationSpec = tween(70)),
+            exit = fadeOut(animationSpec = tween(90)),
         ) {
             Column(
                 modifier = Modifier

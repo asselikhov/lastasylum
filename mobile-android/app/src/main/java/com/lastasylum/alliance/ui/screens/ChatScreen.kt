@@ -104,6 +104,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -115,6 +116,7 @@ import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Brush
@@ -215,7 +217,7 @@ import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarEndPad
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarSize
 import com.lastasylum.alliance.ui.chat.AttachmentPreviewOverlay
 import com.lastasylum.alliance.ui.chat.ChatComposer
-import com.lastasylum.alliance.ui.chat.chatComposerHostBottomSpacing
+import com.lastasylum.alliance.ui.chat.chatComposerDock
 import com.lastasylum.alliance.ui.chat.ChatFileAttachmentCard
 import com.lastasylum.alliance.ui.chat.ChatMessageBubbleRow
 import com.lastasylum.alliance.ui.chat.ChatMessageClusterFlags
@@ -594,10 +596,15 @@ fun ChatScreen(
             remoteChatImagePreview = urls to idx
         },
     ) {
+        var composerBlockHeightPx by remember { mutableIntStateOf(0) }
+        val composerReserveBottom = with(LocalDensity.current) {
+            composerBlockHeightPx.toDp()
+        }
         Box(Modifier.fillMaxSize()) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .padding(bottom = composerReserveBottom)
                     .then(
                         if (overlayUi) {
                             Modifier.padding(top = 2.dp)
@@ -675,12 +682,15 @@ fun ChatScreen(
                 )
             }
         }
+            }
 
-        if (state.sendFailure != null || (selectedRoomId != null && state.rooms.isNotEmpty())) {
+            if (state.sendFailure != null || (selectedRoomId != null && state.rooms.isNotEmpty())) {
             Column(
                 modifier = Modifier
+                    .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .chatComposerHostBottomSpacing(),
+                    .onSizeChanged { size -> composerBlockHeightPx = size.height }
+                    .chatComposerDock(overlayUi = overlayUi),
             ) {
                 state.sendFailure?.let { failure ->
                     Surface(
@@ -766,7 +776,7 @@ fun ChatScreen(
                 }
             }
         }
-            }
+        }
 
     if (!inSelectionMode) {
         activeActionMessage?.let { message ->
@@ -970,7 +980,6 @@ fun ChatScreen(
                     )
                 }
             }
-        }
     }
 }
 

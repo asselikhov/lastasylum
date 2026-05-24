@@ -28,8 +28,8 @@ class MainActivity : ComponentActivity() {
             isAppearanceLightNavigationBars = false
         }
         super.onCreate(savedInstanceState)
-        // adjustResize: content и bottomBar поднимаются вместе с IME; навбар всегда под композером.
-        WindowCompat.setDecorFitsSystemWindows(window, true)
+        // adjustNothing: IME через WindowInsets; композер — chatComposerDock, навбар не прячем.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         hideSystemUi()
         setContent {
             SquadRelayApp()
@@ -44,7 +44,7 @@ class MainActivity : ComponentActivity() {
         WindowCompat.getInsetsController(window, window.decorView).apply {
             systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            // adjustResize в манифесте; композер внизу сжатого окна, без Compose imePadding.
+            // adjustNothing: без медленного resize при скрытии IME.
             // Hiding legacy three-button navigation strip so more vertical space is available for game/content.
             hide(WindowInsetsCompat.Type.navigationBars())
         }

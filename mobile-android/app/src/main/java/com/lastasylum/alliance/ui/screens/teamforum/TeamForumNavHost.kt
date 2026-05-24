@@ -23,12 +23,14 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import com.lastasylum.alliance.ui.chat.AttachmentPreviewOverlay
 import com.lastasylum.alliance.ui.chat.ChatComposer
-import com.lastasylum.alliance.ui.chat.chatComposerHostBottomSpacing
+import com.lastasylum.alliance.ui.chat.chatComposerDock
 import com.lastasylum.alliance.ui.chat.stabilizeComposerImageUris
 import com.lastasylum.alliance.ui.chat.capForumMessagesOldestFirst
 import com.lastasylum.alliance.ui.chat.mergePreservingForumMedia
@@ -847,13 +849,15 @@ private fun TeamForumTopicChatRoute(
     CompositionLocalProvider(
         LocalOpenRemoteChatImagePreview provides openImages,
     ) {
-    Box(
+    var composerBlockHeightPx by remember { mutableIntStateOf(0) }
+    val composerReserveBottom = with(LocalDensity.current) {
+        composerBlockHeightPx.toDp()
+    }
+    Box(Modifier.fillMaxSize()) {
+    Column(
         Modifier
             .fillMaxSize()
-            .chatComposerHostBottomSpacing(),
-    ) {
-    Column(
-        Modifier.fillMaxSize(),
+            .padding(bottom = composerReserveBottom),
     ) {
         if (overlayUi) {
             Row(
@@ -1043,9 +1047,17 @@ private fun TeamForumTopicChatRoute(
                 }
             }
         }
+    }
         val forumReplyChat = remember(replyToMessage, teamId, topicId) {
             replyToMessage?.toDisplayChatMessage(teamId, topicId)
         }
+        Column(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .onSizeChanged { size -> composerBlockHeightPx = size.height }
+                .chatComposerDock(overlayUi = overlayUi),
+        ) {
         ChatComposer(
             draft = draft,
             pickedImageUris = pickedImageUris,
@@ -1145,6 +1157,7 @@ private fun TeamForumTopicChatRoute(
             hasReadyFileAttachment = !pendingApkFileId.isNullOrBlank(),
             isUploadingFile = uploadingFile,
         )
+        }
     }
 
     remoteImagePreview?.let { (urls, start) ->
@@ -1195,7 +1208,6 @@ private fun TeamForumTopicChatRoute(
                 },
             )
         }
-    }
     }
     }
 
