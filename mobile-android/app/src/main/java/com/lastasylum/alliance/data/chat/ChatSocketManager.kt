@@ -46,6 +46,17 @@ class ChatSocketManager {
     private fun isSubscribedRoom(roomId: String): Boolean =
         roomId.isNotBlank() && subscribedRoomIds.contains(roomId)
 
+    /** Join raid/hub traffic delivered via personal `user:` room before room:join catches up. */
+    private fun opportunisticallyJoinRoom(roomId: String) {
+        val rid = roomId.trim()
+        if (rid.isEmpty() || isSubscribedRoom(rid)) return
+        subscribedRoomIds = (subscribedRoomIds + rid).distinct()
+        socket?.takeIf { it.connected() }?.emit(
+            "room:join",
+            JSONObject().put("roomId", rid),
+        )
+    }
+
     fun addMessageListener(listener: (ChatMessage) -> Unit) {
         if (!messageListeners.contains(listener)) {
             messageListeners.add(listener)
@@ -278,7 +289,9 @@ class ChatSocketManager {
                 on("message:new") { args ->
                     val payload = args.firstOrNull() as? JSONObject ?: return@on
                     val msgRoom = payload.optString("roomId", "")
-                    if (msgRoom.isNotBlank() && !isSubscribedRoom(msgRoom)) return@on
+                    if (msgRoom.isNotBlank() && !isSubscribedRoom(msgRoom)) {
+                        opportunisticallyJoinRoom(msgRoom)
+                    }
                     val message = ChatMessage(
                         _id = payload.optString("_id").takeIf { it.isNotBlank() },
                         allianceId = payload.optString(

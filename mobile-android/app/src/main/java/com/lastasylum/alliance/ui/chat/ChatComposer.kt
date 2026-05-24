@@ -159,7 +159,9 @@ internal fun ChatComposer(
                     OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
                 }
                 if (!readOnly && uris.isNotEmpty()) {
-                    onPickImages(uris, pickedImageUris.isNotEmpty())
+                    val stable = stabilizeComposerImageUris(context, uris)
+                    if (stable.isEmpty()) return@rememberLauncherForActivityResult
+                    onPickImages(stable, pickedImageUris.isNotEmpty())
                     if (overlayUi) {
                         Toast.makeText(
                             context,
@@ -210,7 +212,10 @@ internal fun ChatComposer(
             onConfirm = { uris ->
                 showOverlayGalleryPicker = false
                 if (!composerLocked && uris.isNotEmpty()) {
-                    onPickImages(uris, pickedImageUris.isNotEmpty())
+                    val stable = stabilizeComposerImageUris(context, uris)
+                    if (stable.isNotEmpty()) {
+                        onPickImages(stable, pickedImageUris.isNotEmpty())
+                    }
                 }
                 OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
             },

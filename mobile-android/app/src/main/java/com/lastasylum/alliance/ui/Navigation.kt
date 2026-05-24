@@ -403,7 +403,10 @@ fun AppNavigation(
             composable(AppTab.CHAT.route) {
                 LaunchedEffect(Unit) {
                     chatViewModel.refreshTeamProfileGate()
+                }
+                DisposableEffect(Unit) {
                     chatViewModel.onChatTabResumed()
+                    onDispose { chatViewModel.onChatTabPaused() }
                 }
                 DisposableEffect(app.chatRepository) {
                     val listener = { chatViewModel.onOverlayChatPanelClosed() }

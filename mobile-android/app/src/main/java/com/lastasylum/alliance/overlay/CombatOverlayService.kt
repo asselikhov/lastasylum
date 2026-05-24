@@ -332,6 +332,9 @@ class CombatOverlayService : Service() {
     @Volatile
     private var overlayChatTeamPanelVisible = false
     private var currentOverlayHudPane: OverlayHudPane? = null
+    /** 0 = chat, 1 = team tab in legacy overlay panel ([showOverlayChatTeamPanel] without HUD pane). */
+    @Volatile
+    private var overlayChatTeamTabIndex: Int = 0
     @Volatile
     private var pendingOpenJoinInboxOnParticipants = false
     private var overlayChatTeamComposeOwner: OverlayChatComposeOwner? = null
@@ -527,6 +530,17 @@ class CombatOverlayService : Service() {
         }
     }
 
+    private fun shouldApplyOverlayImagePickToChatViewModel(): Boolean {
+        when (currentOverlayHudPane) {
+            OverlayHudPane.Forum,
+            OverlayHudPane.News,
+            OverlayHudPane.Participants,
+            -> return false
+            OverlayHudPane.Chat -> return true
+            null -> return overlayChatTeamTabIndex == 0
+        }
+    }
+
     private fun deliverOverlayPickImagesResult(
         requestCode: Int,
         resultCode: Int,
@@ -534,8 +548,12 @@ class CombatOverlayService : Service() {
         fallbackUris: List<Uri>,
     ) {
         if (resultCode == android.app.Activity.RESULT_OK && fallbackUris.isNotEmpty()) {
-            // Единственный путь: иначе dispatchResult дублирует вложения в ChatViewModel.
-            applyOverlayPickedUris(fallbackUris)
+            if (shouldApplyOverlayImagePickToChatViewModel()) {
+                // Единственный надёжный путь для оверлей-чата: иначе dispatchResult дублирует вложения.
+                applyOverlayPickedUris(fallbackUris)
+            } else {
+                deliverOverlayActivityResult(requestCode, resultCode, data)
+            }
             return
         }
         overlayChatTeamComposeOwner?.activityResultRegistry?.dispatchResult(
@@ -549,17 +567,10 @@ class CombatOverlayService : Service() {
         requestCode: Int,
         resultCode: Int,
         data: Intent,
-        fallbackUri: Uri?,
+        @Suppress("UNUSED_PARAMETER") fallbackUri: Uri?,
     ) {
-        if (resultCode == android.app.Activity.RESULT_OK && fallbackUri != null) {
-            applyOverlayPickedUris(listOf(fallbackUri))
-            return
-        }
-        overlayChatTeamComposeOwner?.activityResultRegistry?.dispatchResult(
-            requestCode,
-            resultCode,
-            data,
-        )
+        // APK / файлы форума — только через ActivityResultRegistry (не в ChatViewModel).
+        deliverOverlayActivityResult(requestCode, resultCode, data)
     }
 
     private fun stashPendingOverlayPickedImages(uris: List<Uri>) {
@@ -1628,6 +1639,7 @@ class CombatOverlayService : Service() {
             effectiveUnread = serverCount,
             previouslyDisplayed = maxOf(displayed, hubUnreadOptimisticFloor),
             rawServerUnread = serverCount,
+            optimisticFloor = hubUnreadOptimisticFloor,
         )
         if (merged <= serverCount) {
             hubUnreadOptimisticFloor = 0
@@ -2971,6 +2983,7 @@ class CombatOverlayService : Service() {
             refreshOverlayHubUnreadFromCache()
             return
         }
+        prefetchOverlayRaidRoomForStrip()
         registerVoiceMicPermissionReceiver()
         cancelStripTick()
         val reactionListener: (OverlayReactionEvent) -> Unit = { event ->
@@ -3474,6 +3487,9 @@ class CombatOverlayService : Service() {
                         }
 
                         var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab) }
+                        LaunchedEffect(selectedTab) {
+                            overlayChatTeamTabIndex = selectedTab
+                        }
                         var vm by remember(userId, userRole) {
                             mutableStateOf(
                                 run {

@@ -115,8 +115,12 @@ class ChatViewModel(
     private val unreadBumpedMessageIds = LinkedHashSet<String>()
     /** Realtime before listRooms — applied after [applyRoomsFromServer]. */
     private val pendingUnreadBumps = ArrayDeque<Pair<String, String>>()
+    /** Socket bump not yet reflected in listRooms / rooms:unread — do not zero tab badge. */
+    private val optimisticUnreadFloorByRoom = mutableMapOf<String, Int>()
     private val markReadInFlight = CopyOnWriteArrayList<Job>()
     private var unreadSyncJob: Job? = null
+    /** False when user left the Chat tab — must not auto mark-read or zero selected-room badge. */
+    private var isChatTabActive = false
     private val bootstrapMutex = Mutex()
     private var bootstrapJob: Job? = null
 
@@ -165,7 +169,18 @@ class ChatViewModel(
         if (roomId.isBlank()) return
         val selected = _state.value.selectedRoomId
         if (roomId == selected) {
-            applyIncomingMessage(message)
+            if (isChatTabActive) {
+                applyIncomingMessage(message)
+            } else {
+                stashIncomingMessageForRoom(message)
+                if (message.senderId != currentUserId) {
+                    val mid = message._id ?: return
+                    if (shouldTrackUnreadForMessage(roomId, mid)) {
+                        bumpRoomUnreadLocally(roomId, mid)
+                        scheduleUnreadSyncFromServer()
+                    }
+                }
+            }
             return
         }
         if (message.senderId == currentUserId) return
@@ -358,17 +373,31 @@ class ChatViewModel(
         selectRoom(hubId)
     }
 
+    /** User left the Chat tab — stop treating selected room as actively viewed. */
+    fun onChatTabPaused() {
+        isChatTabActive = false
+    }
+
     /** Returning to the Chat tab: re-mark visible room and refresh badges without stale server counts. */
     fun onChatTabResumed() {
+        isChatTabActive = true
         syncReadStateFromPreferences()
         viewModelScope.launch {
             ensureAllianceHubRoomSelected()
             val roomId = _state.value.selectedRoomId
+            roomMessageCache[roomId]?.let { cached ->
+                _state.update { st ->
+                    st.copy(
+                        messages = cached.messages,
+                        hasMoreOlder = cached.hasMoreOlder,
+                    )
+                }
+            }
             val newestId = _state.value.messages.firstOrNull()?._id
             if (!roomId.isNullOrBlank() && !newestId.isNullOrBlank()) {
                 markRoomReadUpTo(roomId, newestId)
             }
-            syncRoomsFromServer()
+            syncRoomsFromServer(reconfirmVisibleRoom = true)
         }
     }
 
@@ -638,11 +667,13 @@ class ChatViewModel(
 
     private fun mergeRoomsUnreadFromServer(serverRooms: List<ChatRoomDto>): List<ChatRoomDto> {
         val selected = _state.value.selectedRoomId
-        val viewingSelected =
-            !selected.isNullOrBlank() && _state.value.messages.isNotEmpty()
+        val viewingSelected = isChatTabActive &&
+            !selected.isNullOrBlank() &&
+            _state.value.messages.isNotEmpty()
         val previousById = _state.value.rooms.associateBy { it.id }
         return serverRooms.map { room ->
             val previousUnread = previousById[room.id]?.unreadCount ?: 0
+            val floor = optimisticUnreadFloorByRoom[room.id] ?: 0
             val serverUnread = when {
                 viewingSelected && room.id == selected -> 0
                 else -> effectiveUnreadForRoom(room)
@@ -651,9 +682,24 @@ class ChatViewModel(
                 effectiveUnread = serverUnread,
                 previouslyDisplayed = previousUnread,
                 rawServerUnread = room.unreadCount,
+                optimisticFloor = floor,
             )
-            room.copy(unreadCount = unread)
+            val merged = room.copy(unreadCount = unread)
+            reconcileOptimisticUnreadFloor(merged)
+            merged
         }
+    }
+
+    private fun reconcileOptimisticUnreadFloor(room: ChatRoomDto) {
+        val floor = optimisticUnreadFloorByRoom[room.id] ?: return
+        if (room.unreadCount >= floor) {
+            optimisticUnreadFloorByRoom.remove(room.id)
+        }
+    }
+
+    private fun clearOptimisticUnreadFloor(roomId: String) {
+        if (roomId.isBlank()) return
+        optimisticUnreadFloorByRoom.remove(roomId)
     }
 
     private fun syncTabUnreadBadge(rooms: List<ChatRoomDto> = _state.value.rooms) {
@@ -697,6 +743,8 @@ class ChatViewModel(
             val oldest = unreadBumpedMessageIds.first()
             unreadBumpedMessageIds.remove(oldest)
         }
+        optimisticUnreadFloorByRoom[roomId] =
+            ((optimisticUnreadFloorByRoom[roomId] ?: 0) + 1).coerceAtMost(999)
         _state.update { st ->
             st.copy(
                 rooms = st.rooms.map { room ->
@@ -719,7 +767,7 @@ class ChatViewModel(
     private fun scheduleUnreadSyncFromServer() {
         unreadSyncJob?.cancel()
         unreadSyncJob = viewModelScope.launch {
-            delay(120)
+            delay(450)
             syncRoomsFromServer(reconfirmVisibleRoom = false)
         }
     }
@@ -742,6 +790,7 @@ class ChatViewModel(
         val rawById = rawServerRooms.associateBy { it.id }
         for (room in mergedRooms) {
             val raw = rawById[room.id] ?: continue
+            if ((optimisticUnreadFloorByRoom[room.id] ?: 0) > 0) continue
             if (raw.unreadCount <= 0) continue
             val effectiveRaw = effectiveUnreadCount(
                 serverUnread = raw.unreadCount,
@@ -766,6 +815,7 @@ class ChatViewModel(
         if (roomId.isBlank() || messageId.isBlank()) return
         val prev = lastMarkedReadByRoom[roomId]
         if (!forceSync && prev != null && !isObjectIdNewer(messageId, prev)) return
+        clearOptimisticUnreadFloor(roomId)
         val job = viewModelScope.launch {
             mergeReadCursor(roomId, messageId)
             ChatSessionCache.patchRoomRead(roomId, messageId)
@@ -824,13 +874,16 @@ class ChatViewModel(
                             ?: room.lastReadMessageId,
                     )
                     val effective = effectiveUnreadForRoom(merged)
-                    merged.copy(
-                        unreadCount = displayedUnreadCount(
-                            effectiveUnread = effective,
-                            previouslyDisplayed = room.unreadCount,
-                            rawServerUnread = event.unreadCount,
-                        ),
+                    val floor = optimisticUnreadFloorByRoom[roomId] ?: 0
+                    val displayed = displayedUnreadCount(
+                        effectiveUnread = effective,
+                        previouslyDisplayed = room.unreadCount,
+                        rawServerUnread = event.unreadCount,
+                        optimisticFloor = floor,
                     )
+                    val withUnread = merged.copy(unreadCount = displayed)
+                    reconcileOptimisticUnreadFloor(withUnread)
+                    withUnread
                 }
             }
             st.copy(rooms = rooms)
@@ -1604,6 +1657,20 @@ class ChatViewModel(
         return state.copy(messages = nextMessages)
     }
 
+    private fun stashIncomingMessageForRoom(message: ChatMessage) {
+        val roomId = message.roomId.trim()
+        if (roomId.isBlank()) return
+        val mid = message._id ?: return
+        val cached = roomMessageCache[roomId]
+        val existing = cached?.messages ?: emptyList()
+        if (existing.any { it._id == mid }) return
+        val update = upsertMessage(existing, message, knownMessageIds, messageIdIndex)
+        roomMessageCache[roomId] = RoomMessageCache(
+            messages = capNewestFirst(update.messages, CHAT_MAX_MESSAGES_IN_MEMORY),
+            hasMoreOlder = cached?.hasMoreOlder ?: true,
+        )
+    }
+
     private fun applyIncomingMessage(
         message: ChatMessage,
         clearComposer: Boolean = false,
@@ -1634,7 +1701,7 @@ class ChatViewModel(
         }
         _state.value = syncSelections(nextState)
         val rid = _state.value.selectedRoomId
-        if (!rid.isNullOrBlank()) {
+        if (isChatTabActive && !rid.isNullOrBlank()) {
             nextState.messages.firstOrNull()?._id?.let { newestId ->
                 viewModelScope.launch { markRoomReadUpTo(rid, newestId) }
             }

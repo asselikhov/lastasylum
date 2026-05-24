@@ -222,7 +222,11 @@ export class ChatController {
       author: req.user,
       attachments: resolvedAttachments,
     });
-    this.chatGateway.broadcastNewMessage(dto.roomId, message);
+    this.chatGateway.broadcastNewMessageWithOverlayFanout(
+      dto.roomId,
+      message,
+      req.user.userId,
+    );
     const authorUser = await this.usersService.findById(req.user.userId);
     const messageId =
       typeof (message as { _id?: unknown })._id === 'string'
@@ -437,7 +441,11 @@ export class ChatController {
       roomId,
       messageId,
     );
-    this.chatGateway.broadcastNewMessage(roomId, forwarded);
+    this.chatGateway.broadcastNewMessageWithOverlayFanout(
+      roomId,
+      forwarded,
+      req.user.userId,
+    );
     return forwarded;
   }
 

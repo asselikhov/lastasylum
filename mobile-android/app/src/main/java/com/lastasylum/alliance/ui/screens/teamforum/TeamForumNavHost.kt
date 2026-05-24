@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import com.lastasylum.alliance.ui.chat.AttachmentPreviewOverlay
 import com.lastasylum.alliance.ui.chat.ChatComposer
+import com.lastasylum.alliance.ui.chat.stabilizeComposerImageUris
 import com.lastasylum.alliance.ui.chat.capForumMessagesOldestFirst
 import com.lastasylum.alliance.ui.chat.mergePreservingForumMedia
 import com.lastasylum.alliance.ui.chat.rememberForumMessageClusterFlags
@@ -1084,10 +1085,12 @@ private fun TeamForumTopicChatRoute(
                 }
             },
             onPickImages = { uris, append ->
+                val stable = stabilizeComposerImageUris(context, uris)
+                if (stable.isEmpty()) return@ChatComposer
                 pickedImageUris = if (append) {
-                    (pickedImageUris + uris).distinctBy { it.toString() }
+                    (pickedImageUris + stable).distinctBy { it.toString() }
                 } else {
-                    uris.distinctBy { it.toString() }
+                    stable.distinctBy { it.toString() }
                 }.take(12)
             },
             onRemovePickedImage = { uri ->

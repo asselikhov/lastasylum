@@ -41,13 +41,23 @@ fun displayedUnreadCount(
     effectiveUnread: Int,
     previouslyDisplayed: Int,
     rawServerUnread: Int = 0,
+    optimisticFloor: Int = 0,
 ): Int {
     val effective = effectiveUnread.coerceAtLeast(0)
     val previous = previouslyDisplayed.coerceAtLeast(0)
     val raw = rawServerUnread.coerceAtLeast(0)
-    if (raw > 0 && effective == 0) return 0
-    if (effective == 0) return if (previous > 0) previous else 0
-    return if (effective >= previous) effective else previous
+    val floor = optimisticFloor.coerceAtLeast(0)
+    if (raw > 0 && effective == 0) {
+        if (floor > 0) return maxOf(floor, previous)
+        return 0
+    }
+    if (effective == 0) {
+        return maxOf(
+            if (previous > 0) previous else 0,
+            floor,
+        )
+    }
+    return maxOf(effective, previous, floor)
 }
 
 /** @see displayedUnreadCount */

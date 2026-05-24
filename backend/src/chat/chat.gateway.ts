@@ -18,6 +18,7 @@ import { ChatRoomsService } from './chat-rooms.service';
 import { parseAllowedOriginsFromEnv } from '../common/config/allowed-origins';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { ChatService } from './chat.service';
+import { ALLIANCE_RAID_ROOM_TITLE } from '../common/constants/chat-room-constants';
 import { Types } from 'mongoose';
 
 /** Align with HTTP POST /chat/messages throttling (8 sends per 10s window). */
@@ -181,7 +182,11 @@ export class ChatGateway {
     });
 
     const roomId = payload.roomId.trim();
-    this.broadcastNewMessage(roomId, message);
+    this.broadcastNewMessageWithOverlayFanout(
+      roomId,
+      message,
+      client.data.user.userId,
+    );
     void this.emitUnreadSnapshotsForRoom(roomId, client.data.user.userId);
     return { event: 'message:sent', data: message };
   }
@@ -401,6 +406,40 @@ export class ChatGateway {
 
   broadcastNewMessage(roomId: string, message: unknown) {
     this.server?.to(`chat:${roomId}`).emit('message:new', message);
+  }
+
+  /**
+   * Raid strip: teammates in-game with a fresh overlay heartbeat may not have joined
+   * `chat:roomId` yet — also push `message:new` on their personal `user:` socket room.
+   */
+  broadcastNewMessageWithOverlayFanout(
+    roomId: string,
+    message: unknown,
+    senderUserId: string,
+  ): void {
+    this.broadcastNewMessage(roomId, message);
+    void this.fanOutRaidMessageToIngameOverlayTeammates(
+      roomId,
+      message,
+      senderUserId,
+    );
+  }
+
+  private async fanOutRaidMessageToIngameOverlayTeammates(
+    roomId: string,
+    message: unknown,
+    senderUserId: string,
+  ): Promise<void> {
+    const rid = roomId?.trim();
+    const uid = senderUserId?.trim();
+    if (!rid || !uid) return;
+    const room = await this.chatRoomsService.findById(rid);
+    if (!room || room.title !== ALLIANCE_RAID_ROOM_TITLE) return;
+    const teammateIds =
+      await this.usersService.listOverlayIngameTeammateIds(uid);
+    for (const teammateId of teammateIds) {
+      this.server?.to(`user:${teammateId}`).emit('message:new', message);
+    }
   }
 
   /** Per-user unread snapshot (personal `user:` socket room). */
