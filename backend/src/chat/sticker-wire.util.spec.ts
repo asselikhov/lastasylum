@@ -9,6 +9,11 @@ describe('sticker-wire.util', () => {
     expect(parsed).toEqual({ packKey: 'chushuy', stem: '0b305b8a' });
   });
 
+  it('parses soidow_cat wire message', () => {
+    const parsed = parseStickerOnlyMessage('[[soidow_cat:00ef3379]]');
+    expect(parsed).toEqual({ packKey: 'soidow_cat', stem: '00ef3379' });
+  });
+
   it('parses zlobyaka wire message', () => {
     const parsed = parseStickerOnlyMessage('[[zlobyaka:1-96632-512b]]');
     expect(parsed).toEqual({ packKey: 'zlobyaka', stem: '1-96632-512b' });

@@ -50,10 +50,12 @@ export type AllianceStickerAccessView = {
 
 const ZLOBYAKA_TITLE = 'Злобяка';
 const CHUSHUY_TITLE = 'Дракончик Чушуй';
+const SOIDOW_CAT_TITLE = 'Soidow cat';
 
 const STICKER_PACK_TITLES: Record<string, string> = {
   zlobyaka: ZLOBYAKA_TITLE,
   chushuy: CHUSHUY_TITLE,
+  soidow_cat: SOIDOW_CAT_TITLE,
 };
 
 @Injectable()

@@ -1,4 +1,5 @@
 import { isChushuyStickerOnlyMessage } from './chushuy-stickers.const';
+import { isSoidowCatStickerOnlyMessage } from './soidow-cat-stickers.const';
 
 /**
  * Stems shipped in the Android app under assets/stickerpacks/zlobyaka/*.png
@@ -26,6 +27,9 @@ export function formatChatPushBody(text: string): string {
   }
   if (isChushuyStickerOnlyMessage(text)) {
     return 'Стикер «Дракончик Чушуй»';
+  }
+  if (isSoidowCatStickerOnlyMessage(text)) {
+    return 'Стикер «Soidow cat»';
   }
   const t = text.trim();
   return t.length > 140 ? `${t.slice(0, 137)}...` : t;

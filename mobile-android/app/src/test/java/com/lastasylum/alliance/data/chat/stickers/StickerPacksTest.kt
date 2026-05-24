@@ -41,4 +41,19 @@ class StickerPacksTest {
         assertEquals(2, packs.size)
         assertEquals(setOf("zlobyaka", "chushuy"), packs.map { it.packKey }.toSet())
     }
+
+    @Test
+    fun parse_soidowCatWire() {
+        val parsed = StickerPacks.parse("[[soidow_cat:00ef3379]]")
+        assertNotNull(parsed)
+        assertEquals("soidow_cat", parsed!!.packKey)
+        assertEquals("00ef3379", parsed.stem)
+    }
+
+    @Test
+    fun enabledPacks_includesSoidowCatWhenGranted() {
+        val packs = StickerPacks.enabledPacks(setOf("soidow_cat"))
+        assertEquals(1, packs.size)
+        assertEquals("soidow_cat", packs.first().packKey)
+    }
 }

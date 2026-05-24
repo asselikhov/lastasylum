@@ -12,10 +12,12 @@
  */
 export const STICKER_PACK_ZLOBYAKA = 'zlobyaka' as const;
 export const STICKER_PACK_CHUSHUY = 'chushuy' as const;
+export const STICKER_PACK_SOIDOW_CAT = 'soidow_cat' as const;
 
 export const KNOWN_STICKER_PACK_KEYS: readonly string[] = [
   STICKER_PACK_ZLOBYAKA,
   STICKER_PACK_CHUSHUY,
+  STICKER_PACK_SOIDOW_CAT,
 ];
 
 export function isKnownStickerPackKey(key: string): boolean {

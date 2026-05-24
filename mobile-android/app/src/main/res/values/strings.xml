@@ -94,6 +94,7 @@
     <string name="chat_copy_apk_placeholder">Вложение APK</string>
     <string name="chat_stickers_pack_zlobyaka">Злобяка</string>
     <string name="chat_stickers_pack_chushuy">Дракончик Чушуй</string>
+    <string name="chat_stickers_pack_soidow_cat">Soidow cat</string>
     <string name="chat_reply_preview_sticker">Стикер «Злобяка»</string>
     <string name="chat_reply_preview_sticker_named">Стикер «%1$s»</string>
     <string name="cd_chat_sticker">Стикер «Злобяка»</string>
