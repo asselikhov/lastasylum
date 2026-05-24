@@ -525,9 +525,17 @@ fun AppNavigation(
                     },
                     onOpenStickerSettings = adminViewModel::openStickerSettings,
                     onCloseStickerSettings = adminViewModel::closeStickerSettings,
+                    onSelectStickerPack = adminViewModel::setStickerSelectedPack,
+                    onStickerMemberSearchChange = adminViewModel::setStickerMemberSearch,
                     onToggleStickerAllianceRole = adminViewModel::toggleStickerAllianceRole,
+                    onToggleStickerUserGrant = adminViewModel::toggleStickerUserGrant,
                     onSaveStickerAccess = { adminViewModel.saveStickerAccess(msgStickerSaved) },
                     onClearStickerAccessError = adminViewModel::clearStickerAccessError,
+                    onOpenPlayerStickerEditor = adminViewModel::openPlayerStickerEditor,
+                    onTogglePlayerStickerPack = adminViewModel::togglePlayerStickerPack,
+                    onSavePlayerStickerAccess = {
+                        adminViewModel.savePlayerStickerAccess(msgStickerSaved)
+                    },
                     onApprove = { id -> adminViewModel.setMembership(id, "active", msgApproved) },
                     onRemoveFromTeam = { id -> adminViewModel.setMembership(id, "removed", msgRemoved) },
                     onRestorePending = { id -> adminViewModel.setMembership(id, "pending", msgPending) },

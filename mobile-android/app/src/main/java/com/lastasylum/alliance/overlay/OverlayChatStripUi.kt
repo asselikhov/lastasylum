@@ -27,7 +27,7 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatAttachment
 import com.lastasylum.alliance.data.chat.chatImageAttachments
 import com.lastasylum.alliance.data.chat.isChatImage
-import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
+import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import kotlin.math.abs
 
@@ -91,6 +91,7 @@ object OverlayChatStripUi {
             titleColor = Color.parseColor("#F4F0FF"),
             senderRole = null,
             stickerStem = null,
+            stickerAssetUri = null,
             bodyText = message.trimEnd(),
             bodyColor = Color.parseColor("#D8D0EC"),
             showDismiss = false,
@@ -110,11 +111,15 @@ object OverlayChatStripUi {
         selfUserId: String?,
         showDismiss: Boolean = true,
     ) {
-        val stickerStem = ZlobyakaStickerPack.parseStem(text)
+        val parsedSticker = StickerPacks.parse(text)
+        val stickerStem = parsedSticker?.stem
         val rawBody = text.trimEnd()
         val hasImage = firstImageAttachment(attachments) != null
         val preview = when {
-            stickerStem != null -> context.getString(R.string.chat_reply_preview_sticker)
+            parsedSticker != null -> {
+                val packTitle = context.getString(parsedSticker.pack.titleRes)
+                context.getString(R.string.chat_reply_preview_sticker_named, packTitle)
+            }
             hasImage && rawBody.isBlank() -> ""
             rawBody.length > STRIP_TEXT_MAX_CHARS -> truncateStripText(rawBody, STRIP_TEXT_MAX_CHARS)
             else -> rawBody
@@ -141,6 +146,7 @@ object OverlayChatStripUi {
             titleColor = titleColor,
             senderRole = senderRole?.trim()?.take(12)?.takeIf { it.isNotBlank() },
             stickerStem = stickerStem,
+            stickerAssetUri = parsedSticker?.pack?.assetUriForStem(stickerStem!!),
             bodyText = preview,
             bodyColor = bodyColor,
             showDismiss = showDismiss,
@@ -162,6 +168,7 @@ object OverlayChatStripUi {
         titleColor: Int,
         senderRole: String?,
         stickerStem: String?,
+        stickerAssetUri: String?,
         bodyText: String,
         bodyColor: Int,
         showDismiss: Boolean = true,
@@ -310,7 +317,7 @@ object OverlayChatStripUi {
                 contentDescription = context.getString(R.string.cd_chat_sticker)
                 Coil.imageLoader(context).enqueue(
                     ImageRequest.Builder(context)
-                        .data(ZlobyakaStickerPack.assetUriForStem(stickerStem))
+                        .data(stickerAssetUri)
                         .size(160)
                         .target(this)
                         .build(),

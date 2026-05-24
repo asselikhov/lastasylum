@@ -80,6 +80,19 @@ class AdminRepository(
     ): Result<AllianceStickerAccessDto> =
         runCatching { adminApi.putStickerAccess(allianceCode, body) }
 
+    suspend fun patchUserStickerAccess(
+        allianceCode: String,
+        userId: String,
+        packKeys: List<String>,
+    ): Result<AllianceStickerAccessDto> =
+        runCatching {
+            adminApi.patchUserStickerAccess(
+                allianceCode,
+                userId,
+                PatchUserStickerAccessBody(packKeys),
+            )
+        }
+
     suspend fun listGameServers(): Result<List<AdminServerSummaryDto>> =
         runCatching { adminApi.listGameServers() }
 

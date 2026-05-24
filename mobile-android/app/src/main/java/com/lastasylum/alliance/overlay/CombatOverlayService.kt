@@ -80,6 +80,7 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.ReadCursorSession
 import com.lastasylum.alliance.data.chat.ChatUnreadCounts
 import com.lastasylum.alliance.data.teams.TeamForumTopicActivityEvent
+import com.lastasylum.alliance.data.teams.TeamInboxUnread
 import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.displayedUnreadCount
 import com.lastasylum.alliance.data.chat.ChatMessage
@@ -1588,25 +1589,30 @@ class CombatOverlayService : Service() {
                     state.allianceChatUnread
                 }
                 val prevHud = overlayStatusHudFlow.value
-                val useAuthoritativeTeamBadges = force || refreshNewsForum
+                val refreshTeamInboxBadges = force || refreshNewsForum
                 val hubBumpGraceActive = hubUnreadOptimisticFloor > 0 &&
                     System.currentTimeMillis() - hubUnreadLastBumpAtMs < HUB_UNREAD_RECONCILE_GRACE_MS
+                val hubMerged = when {
+                    hubBumpGraceActive || shouldDeferHubUnreadReconcile() ->
+                        maxOf(hubDisplayed, prevHud.allianceChatUnread, hubUnreadOptimisticFloor)
+                    rooms != null -> hubDisplayed
+                    else -> maxOf(
+                        hubDisplayed,
+                        prevHud.allianceChatUnread,
+                        hubUnreadOptimisticFloor,
+                    )
+                }
                 val mergedState = state.copy(
-                    allianceChatUnread = when {
-                        hubBumpGraceActive ->
-                            maxOf(hubDisplayed, prevHud.allianceChatUnread, hubUnreadOptimisticFloor)
-                        useAuthoritativeTeamBadges -> hubDisplayed
-                        else -> maxOf(hubDisplayed, prevHud.allianceChatUnread)
-                    },
+                    allianceChatUnread = hubMerged,
                     forumUnread = inboxBadgeCoordinator.mergeHudForum(
                         authoritative = state.forumUnread,
                         prevDisplayed = prevHud.forumUnread,
-                        useAuthoritative = useAuthoritativeTeamBadges,
+                        useAuthoritative = refreshTeamInboxBadges,
                     ),
                     teamNewsUnread = inboxBadgeCoordinator.mergeHudNews(
                         authoritative = state.teamNewsUnread,
                         prevDisplayed = prevHud.teamNewsUnread,
-                        useAuthoritative = useAuthoritativeTeamBadges,
+                        useAuthoritative = refreshTeamInboxBadges,
                     ),
                 )
                 val refreshPresenceCounts = force || refreshNewsForum
@@ -1711,6 +1717,55 @@ class CombatOverlayService : Service() {
                 val merged = inboxBadgeCoordinator.mergeNewsDisplayed(count, prev.teamNewsUnread)
                 overlayStatusHudFlow.value = prev.copy(teamNewsUnread = merged)
                 inboxBadgeCoordinator.cacheNewsForum(teamId, merged, prev.forumUnread)
+            }
+        }
+    }
+
+    /**
+     * Keep HUD chips visible after re-entering the game until the next network refresh completes.
+     * Uses in-memory coordinator cache and local read cursors (no zero flash).
+     */
+    private fun seedOverlayInboxBadgesBeforeRefresh() {
+        bindOverlayReadCursorsIfPossible()
+        serviceScope.launch(Dispatchers.IO) {
+            val container = AppContainer.from(this@CombatOverlayService)
+            val profile = container.usersRepository.getMyProfile().getOrNull() ?: return@launch
+            val teamId = profile.playerTeamId?.trim().orEmpty()
+            if (teamId.isEmpty()) return@launch
+            val userId = profile.id.trim()
+            ReadCursorSession.bind(
+                container.chatRoomPreferences,
+                container.teamForumPreferences,
+                container.userSettingsPreferences,
+                userId,
+            )
+            val prev = overlayStatusHudFlow.value
+            val cachedNews = inboxBadgeCoordinator.readCachedNews(teamId)
+            val cachedForum = inboxBadgeCoordinator.readCachedForum(teamId)
+            val localForumRead = container.teamForumPreferences.loadAllLastReadMessageIds(teamId)
+            val forumFromTopics = container.teamsRepository.listForumTopics(teamId)
+                .getOrNull()
+                ?.let { TeamInboxUnread.sumForumUnread(it, localForumRead) }
+            val hubPair = computeAllianceHubUnreadFromCache()
+            mainHandler.post {
+                if (!isInGameOverlayUiActive()) return@post
+                val forumSeed = maxOf(
+                    prev.forumUnread,
+                    cachedForum ?: 0,
+                    forumFromTopics ?: 0,
+                    inboxBadgeCoordinator.forumOptimisticFloor,
+                )
+                val newsSeed = maxOf(prev.teamNewsUnread, cachedNews ?: 0)
+                val hubSeed = maxOf(
+                    prev.allianceChatUnread,
+                    hubPair?.first ?: 0,
+                    hubUnreadOptimisticFloor,
+                )
+                overlayStatusHudFlow.value = prev.copy(
+                    allianceChatUnread = hubSeed,
+                    teamNewsUnread = newsSeed,
+                    forumUnread = forumSeed,
+                )
             }
         }
     }
@@ -2494,6 +2549,7 @@ class CombatOverlayService : Service() {
             resetOverlayVoiceForGameEntry()
             ensureOverlayRaidRealtimeIfNeeded()
             ensureOverlayForumInboxRealtimeIfNeeded()
+            seedOverlayInboxBadgesBeforeRefresh()
             OverlayGameStatusHudRefresh.invalidateNewsForumCache()
             lastHudRefreshCompletedAtMs = 0L
             syncOverlayHubBadgeFromAppReadState()

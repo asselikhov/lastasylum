@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Put,
   UseGuards,
 } from '@nestjs/common';
@@ -12,7 +13,10 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { RolesGuard } from '../common/guards/roles.guard';
-import { PutAllianceStickerAccessDto } from './dto/sticker-access.dto';
+import {
+  PatchUserStickerAccessDto,
+  PutAllianceStickerAccessDto,
+} from './dto/sticker-access.dto';
 import { StickerAccessService } from './sticker-access.service';
 import { UsersService } from './users.service';
 
@@ -55,5 +59,19 @@ export class AdminStickerAccessController {
     }
 
     return this.stickerAccess.replaceAllianceAccess(allianceCode, dto);
+  }
+
+  @Patch(':allianceCode/users/:userId')
+  @Roles(AllianceRole.ADMIN)
+  async patchUser(
+    @Param('allianceCode') allianceCode: string,
+    @Param('userId') userId: string,
+    @Body() dto: PatchUserStickerAccessDto,
+  ) {
+    return this.stickerAccess.replaceUserPackGrants(
+      allianceCode,
+      userId,
+      dto.packKeys ?? [],
+    );
   }
 }

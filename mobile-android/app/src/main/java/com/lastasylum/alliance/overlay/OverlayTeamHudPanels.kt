@@ -117,7 +117,7 @@ fun OverlayTeamForumPanel(
 ) {
     val context = LocalContext.current
     val app = remember { AppContainer.from(context.applicationContext) }
-    OverlayTeamHudScaffold(modifier = modifier) { ctx ->
+    OverlayTeamHudScaffold(modifier = modifier, forceReload = true) { ctx ->
         Box(Modifier.fillMaxSize()) {
             TeamForumNavHost(
                 teamId = ctx.teamId,

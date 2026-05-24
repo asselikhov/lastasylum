@@ -1,14 +1,17 @@
 package com.lastasylum.alliance.data.chat.stickers
 
 import android.content.Context
+import com.lastasylum.alliance.R
 
 /**
  * Built-in sticker pack shipped under [ASSET_FOLDER] as PNG files (512×512 source).
  * Wire format: whole message body is exactly `[[zlobyaka:<file_stem>]]` (no .png suffix).
  * Allowed stems must match the catalog on the server (`zlobyaka-stickers.const.ts`).
  */
-object ZlobyakaStickerPack {
+object ZlobyakaStickerPack : ChatStickerPack {
     const val PACK_KEY: String = "zlobyaka"
+    override val packKey: String = PACK_KEY
+    override val titleRes: Int = R.string.chat_stickers_pack_zlobyaka
     private const val ASSET_FOLDER: String = "stickerpacks/$PACK_KEY"
     private const val PREFIX: String = "[[${PACK_KEY}:"
     private const val SUFFIX: String = "]]"
@@ -16,13 +19,13 @@ object ZlobyakaStickerPack {
     @Volatile
     private var sortedStemsCache: List<String>? = null
 
-    fun encode(fileStem: String): String {
+    override fun encode(fileStem: String): String {
         val stem = fileStem.trim()
         require(stem.isNotEmpty()) { "empty sticker stem" }
         return "$PREFIX$stem$SUFFIX"
     }
 
-    fun parseStem(text: String): String? {
+    override fun parseStem(text: String): String? {
         val t = text.trim()
         if (!t.startsWith(PREFIX) || !t.endsWith(SUFFIX)) return null
         val stem = t.removePrefix(PREFIX).removeSuffix(SUFFIX).trim()
@@ -33,7 +36,9 @@ object ZlobyakaStickerPack {
 
     fun isPackMessage(text: String): Boolean = parseStem(text) != null
 
-    fun assetUriForStem(stem: String): String = "file:///android_asset/$ASSET_FOLDER/$stem.png"
+    override fun assetUriForStem(stem: String): String = "file:///android_asset/$ASSET_FOLDER/$stem.png"
+
+    override fun listStems(context: Context): List<String> = listSortedStems(context)
 
     fun listSortedStems(context: Context): List<String> {
         sortedStemsCache?.let { return it }

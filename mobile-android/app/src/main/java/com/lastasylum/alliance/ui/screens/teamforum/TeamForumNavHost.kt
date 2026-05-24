@@ -109,6 +109,7 @@ import androidx.navigation.navArgument
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.auth.TokenStore
+import com.lastasylum.alliance.data.ReadCursorSession
 import com.lastasylum.alliance.data.effectiveUnreadCount
 import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.teams.TeamForumMessageDto
@@ -143,7 +144,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
+import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 import com.lastasylum.alliance.ui.chat.ChatStickerFormat
 import com.lastasylum.alliance.ui.chat.chatDayKey
 import com.lastasylum.alliance.ui.chat.formatChatDaySeparator
@@ -215,6 +216,7 @@ fun TeamForumNavHost(
         composable(ForumRoutes.LIST) {
             TeamForumListRoute(
                 teamId = teamId,
+                currentUserId = currentUserId,
                 canManageTopics = canManageTopics,
                 teamsRepository = teamsRepository,
                 topicTitles = topicTitles,
@@ -265,6 +267,7 @@ fun TeamForumNavHost(
 @Composable
 private fun TeamForumListRoute(
     teamId: String,
+    currentUserId: String,
     canManageTopics: Boolean,
     teamsRepository: TeamsRepository,
     topicTitles: MutableMap<String, String>,
@@ -279,7 +282,8 @@ private fun TeamForumListRoute(
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     val topics = remember { mutableStateListOf<TeamForumTopicDto>() }
-    val forumPrefs = remember { AppContainer.from(context).teamForumPreferences }
+    val app = remember { AppContainer.from(context.applicationContext) }
+    val forumPrefs = remember { app.teamForumPreferences }
     val lastReadByTopic = remember { mutableStateMapOf<String, String>() }
     var menuTopic by remember { mutableStateOf<TeamForumTopicDto?>(null) }
     var showCreate by remember { mutableStateOf(false) }
@@ -340,7 +344,16 @@ private fun TeamForumListRoute(
         }
     }
 
-    LaunchedEffect(teamId, refreshNonce) {
+    LaunchedEffect(teamId, refreshNonce, currentUserId) {
+        val uid = currentUserId.trim()
+        if (uid.isNotEmpty()) {
+            ReadCursorSession.bind(
+                app.chatRoomPreferences,
+                forumPrefs,
+                app.userSettingsPreferences,
+                uid,
+            )
+        }
         forumPrefs.loadAllLastReadMessageIds(teamId).forEach { (topicId, messageId) ->
             mergeTopicReadCursor(topicId, messageId)
         }
@@ -1039,7 +1052,7 @@ private fun TeamForumTopicChatRoute(
             isSending = sending,
             sendEnabled = true,
             readOnly = uploadingImage || uploadingFile,
-            canUseZlobyakaStickers = enabledStickerPackKeys.contains(ZlobyakaStickerPack.PACK_KEY),
+            enabledStickerPackKeys = enabledStickerPackKeys,
             onDraftChange = {
                 draft = it
                 forumSocket.emitTyping()
@@ -1553,7 +1566,7 @@ private fun ForumMessageActionsSheet(
     onForward: () -> Unit,
 ) {
     val context = LocalContext.current
-    val stickerStem = remember(message.text) { ZlobyakaStickerPack.parseStem(message.text) }
+    val stickerStem = remember(message.text) { StickerPacks.stemForMessage(message.text) }
     val canCopy = forumMessageHasCopyableContent(message)
     OverlayAwareBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -1580,7 +1593,7 @@ private fun ForumMessageActionsSheet(
                         ) {
                             AsyncImage(
                                 model = ImageRequest.Builder(context)
-                                    .data(ZlobyakaStickerPack.assetUriForStem(stickerStem))
+                                    .data(StickerPacks.assetUriForMessage(message.text))
                                     .size(200)
                                     .crossfade(true)
                                     .build(),

@@ -28,9 +28,9 @@ class MainActivity : ComponentActivity() {
             isAppearanceLightNavigationBars = false
         }
         super.onCreate(savedInstanceState)
-        // Иначе при enableEdgeToEdge контент часто остаётся «на полный экран», а IME только накладывается —
-        // композер оказывается под клавиатурой без покадрового imePadding (который даёт лаги).
-        WindowCompat.setDecorFitsSystemWindows(window, true)
+        // Edge-to-edge: система не сжимает окно через adjustResize на части устройств — IME задаём в Compose
+        // (см. imePadding у ChatComposer). decorFitsSystemWindows=false + safeDrawing/ime insets — единое поведение.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         hideSystemUi()
         setContent {
             SquadRelayApp()
@@ -45,7 +45,7 @@ class MainActivity : ComponentActivity() {
         WindowCompat.getInsetsController(window, window.decorView).apply {
             systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            // Manifest adjustResize + decorFitsSystemWindows(true): система сжимает окно, без тяжёлого ime padding в Compose.
+            // adjustResize остаётся в манифесте; фактический отступ под клавиатуру — imePadding в ChatComposer.
             // Hiding legacy three-button navigation strip so more vertical space is available for game/content.
             hide(WindowInsetsCompat.Type.navigationBars())
         }

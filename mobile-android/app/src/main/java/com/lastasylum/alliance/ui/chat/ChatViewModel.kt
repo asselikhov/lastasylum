@@ -329,6 +329,7 @@ class ChatViewModel(
         if (overlayChatPanelVisible == visible) return
         overlayChatPanelVisible = visible
         if (visible) {
+            refreshStickerPackAccess()
             recomputeRoomUnreadBadges()
             return
         }
@@ -485,6 +486,7 @@ class ChatViewModel(
     fun onChatTabResumed() {
         isChatTabActive = true
         syncReadStateFromPreferences()
+        refreshStickerPackAccess()
         viewModelScope.launch {
             val cachedRooms = ChatSessionCache.getFreshRooms()
             if (cachedRooms != null && _state.value.rooms.isEmpty()) {
@@ -550,6 +552,16 @@ class ChatViewModel(
         viewModelScope.launch {
             val hasTeam = loadTeamProfileGate()
             _state.value = _state.value.copy(hasTeamProfileForGlobalChat = hasTeam)
+        }
+    }
+
+    fun refreshStickerPackAccess() {
+        viewModelScope.launch {
+            val keys = usersRepository.getMyProfile().getOrNull()
+                ?.enabledStickerPacks
+                ?.toSet()
+                ?: emptySet()
+            _state.update { it.copy(enabledStickerPackKeys = keys) }
         }
     }
 

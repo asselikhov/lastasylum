@@ -7,7 +7,9 @@ import com.lastasylum.alliance.data.admin.AdminTeamMemberDto
 import com.lastasylum.alliance.data.admin.AdminUserOnServerDto
 import com.lastasylum.alliance.data.admin.AllianceAdminDto
 import com.lastasylum.alliance.data.admin.PlayerTeamAdminDto
+import com.lastasylum.alliance.data.admin.AllianceStickerAccessDto
 import com.lastasylum.alliance.data.admin.PutAllianceStickerAccessBody
+import com.lastasylum.alliance.data.admin.StickerPackCatalogItemDto
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.admin.AdminRepository
@@ -96,8 +98,16 @@ data class AdminUiState(
     val stickerAllianceCode: String? = null,
     val stickerAccessLoading: Boolean = false,
     val stickerAccessError: String? = null,
-    val stickerRolesZlobyaka: Set<String> = emptySet(),
-    val stickerUsersZlobyaka: Set<String> = emptySet(),
+    val stickerCatalog: List<com.lastasylum.alliance.data.admin.StickerPackCatalogItemDto> = emptyList(),
+    val stickerRoleGrants: Map<String, Set<String>> = emptyMap(),
+    val stickerUserGrants: Map<String, Set<String>> = emptyMap(),
+    val stickerMembers: List<com.lastasylum.alliance.data.admin.StickerAllianceMemberDto> = emptyList(),
+    val stickerSelectedPackKey: String? = null,
+    val stickerMemberSearchQuery: String = "",
+    val playerStickerAllianceCode: String? = null,
+    val playerStickerUserId: String? = null,
+    val playerStickerPackKeys: Set<String> = emptySet(),
+    val playerStickerLoading: Boolean = false,
     val snackMessage: String? = null,
     val actionError: String? = null,
     val gameServers: List<com.lastasylum.alliance.data.admin.AdminServerSummaryDto> = emptyList(),
@@ -659,9 +669,21 @@ class AdminViewModel(
     fun closeStickerSettings() {
         _state.value = _state.value.copy(
             stickerAllianceCode = null,
-            stickerRolesZlobyaka = emptySet(),
-            stickerUsersZlobyaka = emptySet(),
+            stickerCatalog = emptyList(),
+            stickerRoleGrants = emptyMap(),
+            stickerUserGrants = emptyMap(),
+            stickerMembers = emptyList(),
+            stickerSelectedPackKey = null,
+            stickerMemberSearchQuery = "",
         )
+    }
+
+    fun setStickerSelectedPack(packKey: String) {
+        _state.value = _state.value.copy(stickerSelectedPackKey = packKey)
+    }
+
+    fun setStickerMemberSearch(query: String) {
+        _state.value = _state.value.copy(stickerMemberSearchQuery = query)
     }
 
     fun refreshStickerAccess() {
@@ -669,13 +691,69 @@ class AdminViewModel(
         viewModelScope.launch {
             _state.value = _state.value.copy(stickerAccessLoading = true, stickerAccessError = null)
             adminRepository.getStickerAccess(code)
-                .onSuccess { dto ->
+                .onSuccess { dto -> applyStickerAccessDto(dto) }
+                .onFailure { e ->
                     _state.value = _state.value.copy(
                         stickerAccessLoading = false,
-                        stickerRolesZlobyaka = dto.roleGrants["zlobyaka"]
-                            ?.map { com.lastasylum.alliance.data.auth.AccountRoles.normalize(it) }
-                            ?.toSet() ?: emptySet(),
-                        stickerUsersZlobyaka = dto.userGrants["zlobyaka"]?.toSet() ?: emptySet(),
+                        stickerAccessError = e.toUserMessageRu(res),
+                    )
+                }
+        }
+    }
+
+    private fun applyStickerAccessDto(dto: AllianceStickerAccessDto) {
+        val roleGrants = dto.roleGrants.mapValues { (_, roles) ->
+            roles.map { com.lastasylum.alliance.data.auth.AccountRoles.normalize(it) }.toSet()
+        }
+        val userGrants = dto.userGrants.mapValues { (_, ids) -> ids.toSet() }
+        val selected = _state.value.stickerSelectedPackKey
+            ?: dto.catalog.firstOrNull()?.key
+        _state.value = _state.value.copy(
+            stickerAccessLoading = false,
+            stickerCatalog = dto.catalog,
+            stickerRoleGrants = roleGrants,
+            stickerUserGrants = userGrants,
+            stickerMembers = dto.members,
+            stickerSelectedPackKey = selected,
+        )
+    }
+
+    fun toggleStickerAllianceRole(packKey: String, role: String, enabled: Boolean) {
+        val next = _state.value.stickerRoleGrants.toMutableMap()
+        val set = next[packKey]?.toMutableSet() ?: mutableSetOf()
+        if (enabled) set.add(role) else set.remove(role)
+        next[packKey] = set
+        _state.value = _state.value.copy(stickerRoleGrants = next)
+    }
+
+    fun toggleStickerUserGrant(packKey: String, userId: String, enabled: Boolean) {
+        val next = _state.value.stickerUserGrants.toMutableMap()
+        val set = next[packKey]?.toMutableSet() ?: mutableSetOf()
+        if (enabled) set.add(userId) else set.remove(userId)
+        next[packKey] = set
+        _state.value = _state.value.copy(stickerUserGrants = next)
+    }
+
+    fun saveStickerAccess(okMessage: String) {
+        val code = _state.value.stickerAllianceCode ?: return
+        val catalog = _state.value.stickerCatalog
+        viewModelScope.launch {
+            _state.value = _state.value.copy(stickerAccessLoading = true, stickerAccessError = null)
+            val roleGrants = catalog.associate { item ->
+                item.key to (_state.value.stickerRoleGrants[item.key]?.sorted() ?: emptyList())
+            }
+            val userGrants = catalog.associate { item ->
+                item.key to (_state.value.stickerUserGrants[item.key]?.sorted() ?: emptyList())
+            }
+            adminRepository.putStickerAccess(
+                code,
+                PutAllianceStickerAccessBody(roleGrants = roleGrants, userGrants = userGrants),
+            )
+                .onSuccess { dto ->
+                    applyStickerAccessDto(dto)
+                    _state.value = _state.value.copy(
+                        snackMessage = okMessage,
+                        stickerAccessLoading = false,
                     )
                 }
                 .onFailure { e ->
@@ -687,34 +765,79 @@ class AdminViewModel(
         }
     }
 
-    fun toggleStickerAllianceRole(role: String, enabled: Boolean) {
-        val next = _state.value.stickerRolesZlobyaka.toMutableSet()
-        if (enabled) next.add(role) else next.remove(role)
-        _state.value = _state.value.copy(stickerRolesZlobyaka = next)
+    fun clearStickerAccessError() {
+        _state.value = _state.value.copy(stickerAccessError = null)
     }
 
-    fun saveStickerAccess(okMessage: String) {
-        val code = _state.value.stickerAllianceCode ?: return
+    fun openPlayerStickerEditor(allianceCode: String, userId: String) {
+        val code = allianceCode.trim()
+        if (code.isEmpty() || userId.isBlank()) return
+        _state.value = _state.value.copy(
+            playerStickerAllianceCode = code,
+            playerStickerUserId = userId,
+            playerStickerLoading = true,
+        )
         viewModelScope.launch {
-            adminRepository.putStickerAccess(
-                code,
-                PutAllianceStickerAccessBody(
-                    roleGrants = mapOf("zlobyaka" to _state.value.stickerRolesZlobyaka.sorted()),
-                    userGrants = mapOf("zlobyaka" to _state.value.stickerUsersZlobyaka.sorted()),
-                ),
-            )
-                .onSuccess {
-                    _state.value = _state.value.copy(snackMessage = okMessage)
-                    refreshStickerAccess()
+            adminRepository.getStickerAccess(code)
+                .onSuccess { dto ->
+                    val packs = dto.catalog.mapNotNull { item ->
+                        item.key.takeIf { dto.userGrants[item.key]?.contains(userId) == true }
+                    }.toSet()
+                    applyStickerAccessDto(dto)
+                    _state.value = _state.value.copy(
+                        playerStickerPackKeys = packs,
+                        playerStickerLoading = false,
+                    )
                 }
                 .onFailure { e ->
-                    _state.value = _state.value.copy(stickerAccessError = e.toUserMessageRu(res))
+                    _state.value = _state.value.copy(
+                        playerStickerLoading = false,
+                        actionError = e.toUserMessageRu(res),
+                    )
                 }
         }
     }
 
-    fun clearStickerAccessError() {
-        _state.value = _state.value.copy(stickerAccessError = null)
+    fun closePlayerStickerEditor() {
+        _state.value = _state.value.copy(
+            playerStickerAllianceCode = null,
+            playerStickerUserId = null,
+            playerStickerPackKeys = emptySet(),
+            playerStickerLoading = false,
+        )
+    }
+
+    fun togglePlayerStickerPack(packKey: String, enabled: Boolean) {
+        val next = _state.value.playerStickerPackKeys.toMutableSet()
+        if (enabled) next.add(packKey) else next.remove(packKey)
+        _state.value = _state.value.copy(playerStickerPackKeys = next)
+    }
+
+    fun savePlayerStickerAccess(okMessage: String) {
+        val code = _state.value.playerStickerAllianceCode ?: return
+        val userId = _state.value.playerStickerUserId ?: return
+        viewModelScope.launch {
+            _state.value = _state.value.copy(playerStickerLoading = true)
+            adminRepository.patchUserStickerAccess(
+                code,
+                userId,
+                _state.value.playerStickerPackKeys.sorted(),
+            )
+                .onSuccess { dto ->
+                    applyStickerAccessDto(dto)
+                    _state.value = _state.value.copy(
+                        playerStickerLoading = false,
+                        snackMessage = okMessage,
+                    )
+                    closePlayerStickerEditor()
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(
+                        playerStickerLoading = false,
+                        actionError = e.toUserMessageRu(res),
+                    )
+                }
+        }
     }
 
     fun setMembership(userId: String, status: String, okMessage: String) {

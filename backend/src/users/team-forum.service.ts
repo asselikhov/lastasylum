@@ -10,10 +10,7 @@ import {
   isSquadOfficerRole,
   PlayerTeamMemberRole,
 } from '../common/enums/player-team-member-role.enum';
-import {
-  parseZlobyakaStickerStem,
-  ZLOBYAKA_STICKER_STEMS,
-} from '../chat/zlobyaka-stickers.const';
+import { assertStickerPayload } from '../chat/sticker-payload.util';
 import { User, UserDocument } from './schemas/user.schema';
 import {
   TeamForumMessage,
@@ -260,13 +257,6 @@ export class TeamForumService {
     return { topicId, messageId: lastReadMessageId };
   }
 
-  private assertZlobyakaStickerPayload(text: string): void {
-    const stem = parseZlobyakaStickerStem(text);
-    if (!stem) return;
-    if (!ZLOBYAKA_STICKER_STEMS.has(stem)) {
-      throw new BadRequestException('Unknown sticker');
-    }
-  }
 
   private rethrowMongooseValidation(err: unknown): never {
     if (err instanceof mongoose.Error.ValidationError) {
@@ -765,7 +755,7 @@ export class TeamForumService {
     const senderServerNumber =
       this.gameIdentities.resolveSenderServerNumber(migrated);
     if (trimmed) {
-      this.assertZlobyakaStickerPayload(trimmed);
+      assertStickerPayload(trimmed);
       await this.stickerAccess.assertUserMaySendStickerMessage(
         senderDoc as UserDocument,
         trimmed,
@@ -876,7 +866,7 @@ export class TeamForumService {
     const actorTeamTag = actor.teamTag ?? null;
 
     const fwdText = (source.text ?? '').trim();
-    this.assertZlobyakaStickerPayload(fwdText);
+    assertStickerPayload(fwdText);
     await this.stickerAccess.assertUserMaySendStickerMessage(
       actor,
       fwdText,

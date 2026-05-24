@@ -1,3 +1,5 @@
+import { isChushuyStickerOnlyMessage } from './chushuy-stickers.const';
+
 /**
  * Stems shipped in the Android app under assets/stickerpacks/zlobyaka/*.png
  * (must stay in sync with the client pack).
@@ -21,6 +23,9 @@ export function isZlobyakaStickerOnlyMessage(text: string): boolean {
 export function formatChatPushBody(text: string): string {
   if (isZlobyakaStickerOnlyMessage(text)) {
     return 'Стикер «Злобяка»';
+  }
+  if (isChushuyStickerOnlyMessage(text)) {
+    return 'Стикер «Дракончик Чушуй»';
   }
   const t = text.trim();
   return t.length > 140 ? `${t.slice(0, 137)}...` : t;

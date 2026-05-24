@@ -4,10 +4,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -28,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.ui.util.accountRoleLabel
 import com.lastasylum.alliance.data.admin.AdminUserOnServerDto
+import com.lastasylum.alliance.ui.admin.AdminUiState
 import com.lastasylum.alliance.ui.util.formatServerLabel
 import com.lastasylum.alliance.ui.util.teamTagWithServerPrefix
 
@@ -36,6 +42,8 @@ import com.lastasylum.alliance.ui.util.teamTagWithServerPrefix
 fun AdminPlayerManageSheet(
     player: AdminUserOnServerDto,
     currentUserId: String,
+    state: AdminUiState,
+    allianceCode: String?,
     onDismiss: () -> Unit,
     onSaveGameIdentity: (gameNickname: String, serverNumber: Int) -> Unit,
     onApprove: () -> Unit,
@@ -43,6 +51,9 @@ fun AdminPlayerManageSheet(
     onRestorePending: () -> Unit,
     onSetRole: (String) -> Unit,
     onDelete: () -> Unit,
+    onOpenStickerEditor: (allianceCode: String, userId: String) -> Unit,
+    onTogglePlayerStickerPack: (packKey: String, enabled: Boolean) -> Unit,
+    onSavePlayerStickerAccess: () -> Unit,
 ) {
     var nickDraft by remember(player.identityId) { mutableStateOf(player.gameNickname) }
     val needsGameIdentity = player.identityId.isBlank()
@@ -55,6 +66,14 @@ fun AdminPlayerManageSheet(
         nickDraft = player.gameNickname
         serverDraft =
             if (player.serverNumber >= 1) player.serverNumber.toString() else ""
+    }
+
+    val alliance = allianceCode?.trim().orEmpty()
+    val editingThisPlayer = state.playerStickerUserId == player.userId
+    LaunchedEffect(alliance, player.userId) {
+        if (alliance.isNotEmpty()) {
+            onOpenStickerEditor(alliance, player.userId)
+        }
     }
 
     val serverNum = serverDraft.trim().toIntOrNull()
@@ -160,6 +179,51 @@ fun AdminPlayerManageSheet(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(stringResource(R.string.admin_players_save_game))
+        }
+
+        if (alliance.isNotEmpty()) {
+            HorizontalDivider()
+            Text(
+                stringResource(R.string.admin_sticker_player_section),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                stringResource(R.string.admin_sticker_player_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (state.playerStickerLoading && editingThisPlayer) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+            }
+            val catalog = if (editingThisPlayer) state.stickerCatalog else emptyList()
+            catalog.forEach { item ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(
+                        checked = state.playerStickerPackKeys.contains(item.key),
+                        onCheckedChange = { on ->
+                            onTogglePlayerStickerPack(item.key, on)
+                        },
+                        enabled = editingThisPlayer && !state.playerStickerLoading,
+                    )
+                    Text(
+                        item.title.ifBlank { item.key },
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+            if (catalog.isNotEmpty()) {
+                Button(
+                    onClick = onSavePlayerStickerAccess,
+                    enabled = editingThisPlayer && !state.playerStickerLoading,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.admin_sticker_save))
+                }
+            }
         }
 
         HorizontalDivider()

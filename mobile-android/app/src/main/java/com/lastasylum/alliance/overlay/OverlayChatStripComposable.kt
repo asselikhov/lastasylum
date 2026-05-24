@@ -65,7 +65,7 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.chatImageAttachments
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
-import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
+import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
 import com.lastasylum.alliance.ui.chat.RoleBadge
 import com.lastasylum.alliance.ui.chat.chatMessageIsClusterChainBottomOldestFirst
@@ -296,7 +296,7 @@ private fun OverlayChatStripMessage(
     }
     val imageUrls = remember(images) { images.map { resolvedChatAttachmentImageUrl(it.url) } }
     val stickerStem = remember(msg.text, lightStrip) {
-        if (lightStrip) null else ZlobyakaStickerPack.parseStem(msg.text)
+        if (lightStrip) null else StickerPacks.stemForMessage(msg.text)
     }
     val hasSticker = !lightStrip && stickerStem != null
     val hasText = msg.text.isNotBlank() && (!hasSticker || lightStrip)
@@ -443,7 +443,7 @@ private fun OverlayChatStripMessage(
                             ) {
                                 AsyncImage(
                                     model = ImageRequest.Builder(ctx.applicationContext)
-                                        .data(ZlobyakaStickerPack.assetUriForStem(stickerStem))
+                                        .data(StickerPacks.assetUriForMessage(msg.text))
                                         .allowHardware(false)
                                         .crossfade(true)
                                         .size(256)

@@ -93,7 +93,9 @@
     <string name="chat_apk_install_failed">Не удалось открыть установщик APK</string>
     <string name="chat_copy_apk_placeholder">Вложение APK</string>
     <string name="chat_stickers_pack_zlobyaka">Злобяка</string>
+    <string name="chat_stickers_pack_chushuy">Дракончик Чушуй</string>
     <string name="chat_reply_preview_sticker">Стикер «Злобяка»</string>
+    <string name="chat_reply_preview_sticker_named">Стикер «%1$s»</string>
     <string name="cd_chat_sticker">Стикер «Злобяка»</string>
     <string name="cd_chat_sticker_locked">Стикер заблокирован</string>
     <string name="chat_ok">Понятно</string>
@@ -343,8 +345,13 @@
     <string name="admin_copy_team_id">Копировать ID</string>
     <string name="admin_cd_refresh_teams">Обновить список команд</string>
     <string name="admin_ok_overlay">Доступ к оверлею обновлён</string>
-    <string name="admin_sticker_section_title">Стикеры «Злобяка»</string>
-    <string name="admin_sticker_roles_hint">Выберите роли альянса, которым разрешён этот пакет. Дополнительно можно выдать доступ конкретным игрокам ниже.</string>
+    <string name="admin_sticker_section_title">Стикерпаки</string>
+    <string name="admin_sticker_roles_hint">Для каждого пака: роли альянса и/или отдельные игроки. Без выдачи пак не отображается в чате.</string>
+    <string name="admin_sticker_roles_by_rank">По ролям альянса</string>
+    <string name="admin_sticker_users_by_player">По игрокам</string>
+    <string name="admin_sticker_member_search_hint">Поиск по нику</string>
+    <string name="admin_sticker_player_section">Стикерпаки в чате</string>
+    <string name="admin_sticker_player_hint">Паки, доступные этому игроку для отправки в чате и форуме.</string>
     <string name="admin_sticker_user_switch">Персональный доступ к стикерам</string>
     <string name="admin_sticker_save">Сохранить правила стикеров</string>
     <string name="admin_sticker_saved">Правила стикеров сохранены</string>

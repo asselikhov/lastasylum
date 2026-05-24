@@ -18,7 +18,8 @@ import {
   KNOWN_STICKER_PACK_KEYS,
 } from '../common/constants/sticker-packs';
 import { stickerPackKeyFromStickerOnlyMessage } from '../chat/sticker-wire.util';
-import { UserDocument } from './schemas/user.schema';
+import { User, UserDocument } from './schemas/user.schema';
+import { GameIdentitiesService } from './game-identities.service';
 import {
   AllianceStickerRoleGrant,
   AllianceStickerRoleGrantDocument,
@@ -33,13 +34,27 @@ export type StickerPackCatalogEntry = {
   title: string;
 };
 
+export type StickerAllianceMember = {
+  userId: string;
+  username: string;
+  accountRole: AllianceRole;
+  serverNumber: number | null;
+};
+
 export type AllianceStickerAccessView = {
   catalog: StickerPackCatalogEntry[];
   roleGrants: Record<string, AllianceRole[]>;
   userGrants: Record<string, string[]>;
+  members: StickerAllianceMember[];
 };
 
 const ZLOBYAKA_TITLE = 'Злобяка';
+const CHUSHUY_TITLE = 'Дракончик Чушуй';
+
+const STICKER_PACK_TITLES: Record<string, string> = {
+  zlobyaka: ZLOBYAKA_TITLE,
+  chushuy: CHUSHUY_TITLE,
+};
 
 @Injectable()
 export class StickerAccessService implements OnModuleInit {
@@ -50,6 +65,8 @@ export class StickerAccessService implements OnModuleInit {
     private readonly roleGrantModel: Model<AllianceStickerRoleGrantDocument>,
     @InjectModel(AllianceStickerUserGrant.name)
     private readonly userGrantModel: Model<AllianceStickerUserGrantDocument>,
+    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+    private readonly gameIdentities: GameIdentitiesService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -68,7 +85,7 @@ export class StickerAccessService implements OnModuleInit {
   catalog(): StickerPackCatalogEntry[] {
     return KNOWN_STICKER_PACK_KEYS.map((key) => ({
       key,
-      title: key === 'zlobyaka' ? ZLOBYAKA_TITLE : key,
+      title: STICKER_PACK_TITLES[key] ?? key,
     }));
   }
 
@@ -158,11 +175,70 @@ export class StickerAccessService implements OnModuleInit {
       userGrants[k].sort();
     }
 
+    const members = await this.listAllianceMembers(trimmed);
+
     return {
       catalog: this.catalog(),
       roleGrants,
       userGrants,
+      members,
     };
+  }
+
+  private async listAllianceMembers(
+    allianceName: string,
+  ): Promise<StickerAllianceMember[]> {
+    const users = await this.userModel
+      .find({ allianceName })
+      .sort({ membershipStatus: 1, role: 1, username: 1 })
+      .exec();
+    return users.map((u) => {
+      const active = this.gameIdentities.getActiveIdentity(u);
+      return {
+        userId: u._id.toString(),
+        username: u.username,
+        accountRole: normalizeAllianceRole(u.role),
+        serverNumber: active?.serverNumber ?? null,
+      };
+    });
+  }
+
+  async replaceUserPackGrants(
+    allianceName: string,
+    userId: string,
+    packKeys: string[],
+  ): Promise<AllianceStickerAccessView> {
+    const trimmed = allianceName.trim();
+    if (!trimmed) {
+      throw new BadRequestException('allianceName is required');
+    }
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid user id');
+    }
+    const user = await this.userModel.findById(userId).exec();
+    if (!user || user.allianceName.trim() !== trimmed) {
+      throw new BadRequestException(`User ${userId} is not in alliance ${trimmed}`);
+    }
+    const uniqueKeys = [...new Set(packKeys.map((k) => k.trim()).filter(Boolean))];
+    for (const packKey of uniqueKeys) {
+      if (!isKnownStickerPackKey(packKey)) {
+        throw new BadRequestException(`Unknown sticker pack: ${packKey}`);
+      }
+    }
+    const uid = new Types.ObjectId(userId);
+    await this.userGrantModel
+      .deleteMany({ allianceName: trimmed, userId: uid })
+      .exec();
+    if (uniqueKeys.length > 0) {
+      await this.userGrantModel.insertMany(
+        uniqueKeys.map((packKey) => ({
+          allianceName: trimmed,
+          packKey,
+          userId: uid,
+        })),
+      );
+    }
+    return this.getAllianceAccess(trimmed);
   }
 
   async replaceAllianceAccess(

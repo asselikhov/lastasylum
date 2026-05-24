@@ -76,6 +76,7 @@ import com.lastasylum.alliance.ui.admin.AdminTeamDetailTab
 import com.lastasylum.alliance.ui.screens.admin.AdminChatRoomViewerContent
 import com.lastasylum.alliance.ui.screens.admin.AdminForumTopicViewerContent
 import com.lastasylum.alliance.ui.screens.admin.AdminPlayerManageSheet
+import com.lastasylum.alliance.ui.screens.admin.AdminStickerAccessSheet
 import com.lastasylum.alliance.ui.screens.admin.AdminTeamBrandingDialog
 import com.lastasylum.alliance.ui.screens.admin.AdminTeamDetailContent
 import androidx.compose.material.icons.outlined.Edit
@@ -106,9 +107,15 @@ fun AdminScreen(
     onAllianceOverlayChange: (String, Boolean) -> Unit,
     onOpenStickerSettings: (String) -> Unit,
     onCloseStickerSettings: () -> Unit,
-    onToggleStickerAllianceRole: (String, Boolean) -> Unit,
+    onSelectStickerPack: (String) -> Unit,
+    onStickerMemberSearchChange: (String) -> Unit,
+    onToggleStickerAllianceRole: (String, String, Boolean) -> Unit,
+    onToggleStickerUserGrant: (String, String, Boolean) -> Unit,
     onSaveStickerAccess: () -> Unit,
     onClearStickerAccessError: () -> Unit,
+    onOpenPlayerStickerEditor: (String, String) -> Unit,
+    onTogglePlayerStickerPack: (String, Boolean) -> Unit,
+    onSavePlayerStickerAccess: () -> Unit,
     onApprove: (String) -> Unit,
     onRemoveFromTeam: (String) -> Unit,
     onRestorePending: (String) -> Unit,
@@ -123,6 +130,7 @@ fun AdminScreen(
 ) {
     val context = LocalContext.current
     var selectedPlayer by remember { mutableStateOf<AdminUserOnServerDto?>(null) }
+    var selectedPlayerAllianceCode by remember { mutableStateOf<String?>(null) }
     var removeFromTeamUserId by remember { mutableStateOf<String?>(null) }
     var deleteUserId by remember { mutableStateOf<String?>(null) }
     var editTeamTarget by remember { mutableStateOf<PlayerTeamAdminDto?>(null) }
@@ -209,6 +217,7 @@ fun AdminScreen(
                 onEditTeam = { editTeamTarget = state.selectedTeam },
                 onTabChange = onTeamDetailTabChange,
                 onMemberClick = { m ->
+                    selectedPlayerAllianceCode = m.allianceName.trim().takeIf { it.isNotEmpty() }
                     m.toAdminPlayerRow(state.selectedTeam)?.let { selectedPlayer = it }
                 },
                 onChatRoomClick = { room ->
@@ -231,7 +240,11 @@ fun AdminScreen(
                 onSegmentChange = onPlayersSegmentChange,
                 onServerFilter = onPlayersServerFilter,
                 onSearchChange = onPlayersSearchChange,
-                onPlayerClick = { selectedPlayer = it },
+                onPlayerClick = {
+                    selectedPlayerAllianceCode = state.stickerAllianceCode
+                        ?: state.alliances.firstOrNull()?.allianceCode
+                    selectedPlayer = it
+                },
                 onLoadMore = onLoadMorePlayers,
             )
         }
@@ -240,13 +253,28 @@ fun AdminScreen(
     selectedPlayer?.let { player ->
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
-            onDismissRequest = { selectedPlayer = null },
+            onDismissRequest = {
+                selectedPlayer = null
+                selectedPlayerAllianceCode = null
+            },
             sheetState = sheetState,
         ) {
             AdminPlayerManageSheet(
                 player = player,
                 currentUserId = currentUserId,
-                onDismiss = { selectedPlayer = null },
+                state = state,
+                allianceCode = selectedPlayerAllianceCode
+                    ?: state.stickerAllianceCode
+                    ?: state.alliances.firstOrNull()?.allianceCode,
+                onDismiss = {
+                    selectedPlayer = null
+                    selectedPlayerAllianceCode = null
+                },
+                onOpenStickerEditor = { alliance, userId ->
+                    onOpenPlayerStickerEditor(alliance, userId)
+                },
+                onTogglePlayerStickerPack = onTogglePlayerStickerPack,
+                onSavePlayerStickerAccess = onSavePlayerStickerAccess,
                 onSaveGameIdentity = { nick, server ->
                     onUpdateGameIdentity(player.userId, player.identityId, nick, server)
                 },
@@ -275,65 +303,21 @@ fun AdminScreen(
     }
 
     if (state.stickerAllianceCode != null) {
-        AlertDialog(
+        val stickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
             onDismissRequest = onCloseStickerSettings,
-            containerColor = SquadRelaySurfaces.dialogColor(),
-            title = {
-                Text(
-                    stringResource(R.string.admin_sticker_section_title) + " · " + state.stickerAllianceCode,
-                )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        stringResource(R.string.admin_sticker_roles_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (state.stickerAccessLoading) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                    }
-                    state.stickerAccessError?.let { err ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                err,
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.weight(1f),
-                            )
-                            TextButton(onClick = onClearStickerAccessError) {
-                                Text(stringResource(R.string.admin_dismiss_error))
-                            }
-                        }
-                    }
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        com.lastasylum.alliance.data.auth.AccountRoles.ALL.forEach { role ->
-                            FilterChip(
-                                selected = state.stickerRolesZlobyaka.contains(role),
-                                onClick = {
-                                    onToggleStickerAllianceRole(role, !state.stickerRolesZlobyaka.contains(role))
-                                },
-                                label = { Text(com.lastasylum.alliance.ui.util.accountRoleLabel(role)) },
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(onClick = onSaveStickerAccess, enabled = !state.stickerAccessLoading) {
-                    Text(stringResource(R.string.admin_sticker_save))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = onCloseStickerSettings) {
-                    Text(stringResource(R.string.admin_delete_cancel))
-                }
-            },
-        )
+            sheetState = stickerSheetState,
+        ) {
+            AdminStickerAccessSheet(
+                state = state,
+                onSelectPack = onSelectStickerPack,
+                onMemberSearchChange = onStickerMemberSearchChange,
+                onToggleRole = onToggleStickerAllianceRole,
+                onToggleUser = onToggleStickerUserGrant,
+                onSave = onSaveStickerAccess,
+                onDismiss = onCloseStickerSettings,
+            )
+        }
     }
 
     removeFromTeamUserId?.let { userId ->

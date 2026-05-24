@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.ui
 
 import android.app.Application
+import com.lastasylum.alliance.data.chat.stickers.ChushuyStickerPack
 import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.chat.ChatViewModel
@@ -22,7 +23,10 @@ suspend fun runAppLaunchWarmup(
         coroutineScope {
             val chat = async { chatViewModel.warmUpForLaunch() }
             val profile = async { container.usersRepository.getMyProfile() }
-            val stickers = async { ZlobyakaStickerPack.listSortedStems(application) }
+            val stickers = async {
+                ZlobyakaStickerPack.listSortedStems(application)
+                ChushuyStickerPack.listSortedStems(application)
+            }
             val team = async {
                 val teamId = profile.await().getOrNull()?.playerTeamId?.trim().orEmpty()
                 if (teamId.isNotEmpty()) {

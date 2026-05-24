@@ -9,7 +9,7 @@ import android.widget.Toast
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.teams.TeamForumMessageDto
-import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
+import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 
 fun copyPlainTextToClipboard(context: Context, clipLabel: String, text: String) {
     if (text.isBlank()) return
@@ -20,7 +20,7 @@ fun copyPlainTextToClipboard(context: Context, clipLabel: String, text: String) 
 
 fun copyChatMessageToClipboard(context: Context, message: ChatMessage) {
     if (!message.deletedAt.isNullOrBlank()) return
-    val sticker = ZlobyakaStickerPack.parseStem(message.text)
+    val sticker = StickerPacks.stemForMessage(message.text)
     val text = when {
         sticker != null -> context.getString(R.string.chat_copy_sticker_line, sticker)
         message.text.isNotBlank() -> message.text
@@ -37,7 +37,7 @@ fun copyChatMessageToClipboard(context: Context, message: ChatMessage) {
 
 fun chatMessageHasCopyableContent(message: ChatMessage): Boolean {
     if (!message.deletedAt.isNullOrBlank()) return false
-    if (ZlobyakaStickerPack.parseStem(message.text) != null) return true
+    if (StickerPacks.parse(message.text) != null) return true
     if (message.text.isNotBlank()) return true
     if (message.attachments.any { it.kind == "image" && it.url.isNotBlank() }) return true
     return false
@@ -46,7 +46,7 @@ fun chatMessageHasCopyableContent(message: ChatMessage): Boolean {
 /** Текст для вставки в композер (без плейсхолдера «изображение»). */
 fun chatMessageTextForComposer(message: ChatMessage): String? {
     if (!message.deletedAt.isNullOrBlank()) return null
-    if (ZlobyakaStickerPack.parseStem(message.text) != null) return null
+    if (StickerPacks.parse(message.text) != null) return null
     return message.text.trim().takeIf { it.isNotEmpty() }
 }
 
@@ -102,7 +102,7 @@ fun appendTextToDraft(current: String, addition: String): String {
 
 fun forumMessageHasCopyableContent(message: TeamForumMessageDto): Boolean {
     if (!message.deletedAt.isNullOrBlank()) return false
-    if (ZlobyakaStickerPack.parseStem(message.text) != null) return true
+    if (StickerPacks.parse(message.text) != null) return true
     if (message.text.isNotBlank()) return true
     if (message.imageRelativeUrls.isNotEmpty()) return true
     if (!message.imageRelativeUrl.isNullOrBlank()) return true
@@ -111,7 +111,7 @@ fun forumMessageHasCopyableContent(message: TeamForumMessageDto): Boolean {
 
 fun copyForumMessageToClipboard(context: Context, message: TeamForumMessageDto) {
     if (!message.deletedAt.isNullOrBlank()) return
-    val sticker = ZlobyakaStickerPack.parseStem(message.text)
+    val sticker = StickerPacks.stemForMessage(message.text)
     val text = when {
         sticker != null -> context.getString(R.string.chat_copy_sticker_line, sticker)
         message.text.isNotBlank() -> message.text

@@ -27,7 +27,7 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.ui.chat.ChatStickerFormat
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.chatImageAttachments
-import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
+import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import java.time.Instant
 import kotlin.math.abs
@@ -354,7 +354,7 @@ object OverlayChatHistoryPanel {
             addView(roleTv)
         }
 
-        val stickerStem = ZlobyakaStickerPack.parseStem(msg.text)
+        val stickerStem = StickerPacks.stemForMessage(msg.text)
         val body: View = if (stickerStem != null) {
             val side = dp(context, 120f).toInt()
             ImageView(context).apply {
@@ -366,7 +366,7 @@ object OverlayChatHistoryPanel {
                 contentDescription = context.getString(R.string.cd_chat_sticker)
                 Coil.imageLoader(context).enqueue(
                     ImageRequest.Builder(context)
-                        .data(ZlobyakaStickerPack.assetUriForStem(stickerStem))
+                        .data(StickerPacks.assetUriForMessage(msg.text))
                         .size(256)
                         .target(this)
                         .build(),

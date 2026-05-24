@@ -3,7 +3,7 @@ package com.lastasylum.alliance.ui.chat
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.data.chat.ChatMessage
-import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
+import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 
 sealed interface ChatTimelineEntry {
     data class DaySeparator(val label: String) : ChatTimelineEntry
@@ -58,7 +58,7 @@ fun buildChatTimeline(messages: List<ChatMessage>): List<ChatTimelineEntry> {
     fun isAlbumCandidate(m: ChatMessage): Boolean {
         if (m.replyTo != null) return false
         val hasImages = m.attachments.any { it.kind == "image" && it.url.isNotBlank() }
-        return hasImages && ZlobyakaStickerPack.parseStem(m.text) == null
+        return hasImages && StickerPacks.parse(m.text) == null
     }
     fun tsMillis(createdAt: String?): Long {
         if (createdAt.isNullOrBlank()) return -1L

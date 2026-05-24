@@ -159,7 +159,7 @@ import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.chat.ChatAttachment
 import com.lastasylum.alliance.data.chat.ChatMessage
-import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
+import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
@@ -679,7 +679,7 @@ fun ChatScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    // РўРѕР»СЊРєРѕ СЃРёСЃС‚РµРјРЅС‹Р№ resize/pan РѕРєРЅР° вЂ” РЅРµ С‡РёС‚Р°РµРј WindowInsets.ime Р·РґРµСЃСЊ (РёРЅР°С‡Рµ Р»Р°РіРё СЃ LazyColumn+weight).
+                    // IME: ChatComposer.imePadding(); здесь только зазор над нижней навигацией вкладок.
                     .padding(bottom = SquadRelayDimens.chatComposerNavGap),
             ) {
                 state.sendFailure?.let { failure ->
@@ -731,9 +731,7 @@ fun ChatScreen(
                         isSending = state.isSending,
                         sendEnabled = !globalComposerLocked,
                         readOnly = globalComposerLocked,
-                        canUseZlobyakaStickers = state.enabledStickerPackKeys.contains(
-                            ZlobyakaStickerPack.PACK_KEY,
-                        ),
+                        enabledStickerPackKeys = state.enabledStickerPackKeys,
                         onDraftChange = onDraftChange,
                         onSendDraft = {
                             if (!globalComposerLocked &&
@@ -1501,7 +1499,7 @@ private fun ChatBubbleInnerColumn(
             ) {
                 AsyncImage(
                     model = ImageRequest.Builder(bubbleContext)
-                        .data(ZlobyakaStickerPack.assetUriForStem(stickerStem))
+                        .data(StickerPacks.assetUriForMessage(message.text))
                         .size(384)
                         .crossfade(false)
                         .build(),
@@ -2006,7 +2004,7 @@ internal fun ChatMessageBubble(
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
     val swipePx = remember(density) { with(density) { 56.dp.toPx() } }
-    val stickerStem = remember(message.text) { ZlobyakaStickerPack.parseStem(message.text) }
+    val stickerStem = remember(message.text) { StickerPacks.stemForMessage(message.text) }
     val textPreview = chatMessageSemanticsPreview(message.text)
     val senderLine = chatSenderDisplayWithTag(message.senderTeamTag, message.senderUsername, message.senderServerNumber)
     val bubbleDescription = stringResource(
@@ -2259,7 +2257,7 @@ internal fun ChatMessageBubble(
                     ) {
                         AsyncImage(
                             model = ImageRequest.Builder(bubbleContext)
-                                .data(ZlobyakaStickerPack.assetUriForStem(stickerStem!!))
+                                .data(StickerPacks.assetUriForMessage(message.text))
                                 .size(384)
                                 .crossfade(false)
                                 .build(),
@@ -2426,7 +2424,7 @@ private fun ChatMessageActionsSheet(
                 ),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            val sheetStickerStem = remember(message.text) { ZlobyakaStickerPack.parseStem(message.text) }
+            val sheetStickerStem = remember(message.text) { StickerPacks.stemForMessage(message.text) }
             val sheetContext = LocalContext.current
             val canCopy = chatMessageHasCopyableContent(message)
             MessageSheetPreviewSurface {
@@ -2443,7 +2441,7 @@ private fun ChatMessageActionsSheet(
                     ) {
                         AsyncImage(
                             model = ImageRequest.Builder(sheetContext)
-                                .data(ZlobyakaStickerPack.assetUriForStem(sheetStickerStem))
+                                .data(StickerPacks.assetUriForMessage(message.text))
                                 .size(200)
                                 .crossfade(false)
                                 .build(),

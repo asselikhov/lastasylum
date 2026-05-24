@@ -29,10 +29,7 @@ import { StickerAccessService } from '../users/sticker-access.service';
 import { ChatRoomsService } from './chat-rooms.service';
 import { Message, MessageAttachment } from './schemas/message.schema';
 import { ChatRoomReadState } from './schemas/chat-room-read-state.schema';
-import {
-  parseZlobyakaStickerStem,
-  ZLOBYAKA_STICKER_STEMS,
-} from './zlobyaka-stickers.const';
+import { assertStickerPayload } from './sticker-payload.util';
 
 type MessageAuthor = {
   userId: string;
@@ -486,16 +483,6 @@ export class ChatService {
     );
   }
 
-  /**
-   * If the message is exactly a Zlobyaka sticker wire payload, the stem must be in the catalog.
-   */
-  private assertZlobyakaStickerPayload(text: string): void {
-    const stem = parseZlobyakaStickerStem(text);
-    if (!stem) return;
-    if (!ZLOBYAKA_STICKER_STEMS.has(stem)) {
-      throw new BadRequestException('Unknown sticker');
-    }
-  }
 
   private async getReplyTarget(
     allianceId: string,
@@ -556,7 +543,7 @@ export class ChatService {
         'Message must include non-empty text or at least one attachment',
       );
     }
-    this.assertZlobyakaStickerPayload(trimmedText);
+    assertStickerPayload(trimmedText);
     await this.stickerAccess.assertUserMaySendStickerMessage(
       authorUser,
       trimmedText,
@@ -677,7 +664,7 @@ export class ChatService {
     await this.assertMayModerateOthersMessage(actor, lean);
     const trimmed = text.trim();
     if (!trimmed) throw new BadRequestException('Text is required');
-    this.assertZlobyakaStickerPayload(trimmed);
+    assertStickerPayload(trimmed);
     await this.stickerAccess.assertUserMaySendStickerMessage(actor, trimmed);
     message.text = trimmed;
     message.editedAt = new Date();
@@ -744,7 +731,7 @@ export class ChatService {
       .exec();
     if (!source) throw new NotFoundException('Message not found');
     const fwdText = (source.text ?? '').trim();
-    this.assertZlobyakaStickerPayload(fwdText);
+    assertStickerPayload(fwdText);
     await this.stickerAccess.assertUserMaySendStickerMessage(actor, fwdText);
     const squadRoleMap = await this.teamsService.resolveSquadRolesByUserIds([
       userId,

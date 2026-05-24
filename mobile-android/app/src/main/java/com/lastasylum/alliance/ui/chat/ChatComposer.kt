@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -94,7 +95,8 @@ import coil.request.ImageRequest
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
-import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
+import com.lastasylum.alliance.data.chat.stickers.ChatStickerPack
+import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayAwareBottomSheet
 import com.lastasylum.alliance.overlay.OverlayChatImagePickerSheet
@@ -117,7 +119,7 @@ internal fun ChatComposer(
     isSending: Boolean,
     sendEnabled: Boolean = true,
     readOnly: Boolean = false,
-    canUseZlobyakaStickers: Boolean = false,
+    enabledStickerPackKeys: Set<String> = emptySet(),
     onDraftChange: (String) -> Unit,
     onSendDraft: () -> Unit,
     onSendStickerPayload: (String) -> Unit,
@@ -146,7 +148,10 @@ internal fun ChatComposer(
     val overlayUi = LocalOverlayUiMode.current
     val activityResultOwner = LocalActivityResultRegistryOwner.current
     val canHandleBack = LocalOnBackPressedDispatcherOwner.current != null
-    val zlobStems = remember(context) { ZlobyakaStickerPack.listSortedStems(context) }
+    val enabledStickerPacks = remember(enabledStickerPackKeys, context) {
+        StickerPacks.enabledPacks(enabledStickerPackKeys)
+    }
+    val hasStickerPacks = enabledStickerPacks.isNotEmpty()
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
@@ -319,7 +324,15 @@ internal fun ChatComposer(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = SquadRelayDimens.itemGap),
+            .padding(top = SquadRelayDimens.itemGap)
+            .then(
+                if (overlayUi) {
+                    // Оверлей: IME уже учтён на корневом FrameLayout (CombatOverlayService).
+                    Modifier
+                } else {
+                    Modifier.imePadding()
+                },
+            ),
     ) {
         HorizontalDivider(
             modifier = Modifier.padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
@@ -593,35 +606,37 @@ internal fun ChatComposer(
                                 .padding(horizontal = 2.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            IconButton(
-                                onClick = {
-                                    if (readOnly) return@IconButton
-                                    if (showMediaPanel) {
-                                        showMediaPanel = false
-                                        focusRequester.requestFocus()
-                                        keyboard?.show()
-                                    } else {
-                                        focusManager.clearFocus()
-                                        keyboard?.hide()
-                                        showMediaPanel = true
-                                    }
-                                },
-                                enabled = !readOnly,
-                                modifier = Modifier.size(44.dp),
-                            ) {
-                                Icon(
-                                    imageVector = if (showMediaPanel) {
-                                        Icons.Outlined.Keyboard
-                                    } else {
-                                        Icons.Outlined.Mood
+                            if (hasStickerPacks) {
+                                IconButton(
+                                    onClick = {
+                                        if (readOnly) return@IconButton
+                                        if (showMediaPanel) {
+                                            showMediaPanel = false
+                                            focusRequester.requestFocus()
+                                            keyboard?.show()
+                                        } else {
+                                            focusManager.clearFocus()
+                                            keyboard?.hide()
+                                            showMediaPanel = true
+                                        }
                                     },
-                                    contentDescription = if (showMediaPanel) {
-                                        stringResource(R.string.chat_show_keyboard_cd)
-                                    } else {
-                                        stringResource(R.string.chat_open_media_panel_cd)
-                                    },
-                                    tint = MaterialTheme.colorScheme.primary,
-                                )
+                                    enabled = !readOnly,
+                                    modifier = Modifier.size(44.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = if (showMediaPanel) {
+                                            Icons.Outlined.Keyboard
+                                        } else {
+                                            Icons.Outlined.Mood
+                                        },
+                                        contentDescription = if (showMediaPanel) {
+                                            stringResource(R.string.chat_show_keyboard_cd)
+                                        } else {
+                                            stringResource(R.string.chat_open_media_panel_cd)
+                                        },
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
                             }
                             if (clipboardHasText) {
                                 IconButton(
@@ -804,7 +819,13 @@ internal fun ChatComposer(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .navigationBarsPadding()
+                    .then(
+                        if (overlayUi) {
+                            Modifier.navigationBarsPadding()
+                        } else {
+                            Modifier
+                        },
+                    )
                     .clip(RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp)),
             ) {
                 HorizontalDivider(
@@ -816,87 +837,84 @@ internal fun ChatComposer(
                         .fillMaxWidth()
                         .padding(bottom = 4.dp),
                 ) {
-                    HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
-                    )
-                    Text(
-                        text = stringResource(R.string.chat_stickers_pack_zlobyaka),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                    )
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(4),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 280.dp)
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        items(zlobStems, key = { it }) { stem ->
-                            val sch = MaterialTheme.colorScheme
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = sch.surface.copy(alpha = 0.45f),
-                                border = BorderStroke(
-                                    1.dp,
-                                    sch.outlineVariant.copy(alpha = 0.28f),
-                                ),
-                                tonalElevation = 0.dp,
-                                shadowElevation = 2.dp,
-                                modifier = Modifier
-                                    .padding(4.dp)
-                                    .aspectRatio(1f)
-                                    .clickable(
-                                        enabled = sendEnabled &&
-                                            !readOnly &&
-                                            canUseZlobyakaStickers,
-                                        onClick = {
-                                            onSendStickerPayload(ZlobyakaStickerPack.encode(stem))
-                                            showMediaPanel = false
-                                        },
-                                    ),
-                            ) {
-                                Box(Modifier.fillMaxSize()) {
-                                    AsyncImage(
-                                        model = ImageRequest.Builder(context)
-                                            .data(ZlobyakaStickerPack.assetUriForStem(stem))
-                                            .size(192)
-                                            .crossfade(true)
-                                            .build(),
-                                        contentDescription = stringResource(R.string.cd_chat_sticker),
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(6.dp)
-                                            .clip(RoundedCornerShape(8.dp)),
-                                        contentScale = ContentScale.Fit,
-                                        alpha = if (canUseZlobyakaStickers) 1f else 0.42f,
-                                    )
-                                    if (!canUseZlobyakaStickers) {
-                                        Box(
-                                            Modifier
-                                                .fillMaxSize()
-                                                .background(
-                                                    MaterialTheme.colorScheme.scrim.copy(alpha = 0.42f),
-                                                ),
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Outlined.Lock,
-                                                contentDescription = stringResource(
-                                                    R.string.cd_chat_sticker_locked,
-                                                ),
-                                                tint = MaterialTheme.colorScheme.onSurface,
-                                                modifier = Modifier.size(26.dp),
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    enabledStickerPacks.forEach { pack ->
+                        StickerPackGridSection(
+                            pack = pack,
+                            context = context,
+                            sendEnabled = sendEnabled,
+                            readOnly = readOnly,
+                            onSendStickerPayload = { payload ->
+                                onSendStickerPayload(payload)
+                                showMediaPanel = false
+                            },
+                        )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StickerPackGridSection(
+    pack: ChatStickerPack,
+    context: android.content.Context,
+    sendEnabled: Boolean,
+    readOnly: Boolean,
+    onSendStickerPayload: (String) -> Unit,
+) {
+    val stems = remember(pack.packKey, context) { pack.listStems(context) }
+    if (stems.isEmpty()) return
+    HorizontalDivider(
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+    )
+    Text(
+        text = stringResource(pack.titleRes),
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+    )
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(4),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 280.dp)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        items(stems, key = { "${pack.packKey}:$it" }) { stem ->
+            val sch = MaterialTheme.colorScheme
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = sch.surface.copy(alpha = 0.45f),
+                border = BorderStroke(
+                    1.dp,
+                    sch.outlineVariant.copy(alpha = 0.28f),
+                ),
+                tonalElevation = 0.dp,
+                shadowElevation = 2.dp,
+                modifier = Modifier
+                    .padding(4.dp)
+                    .aspectRatio(1f)
+                    .clickable(
+                        enabled = sendEnabled && !readOnly,
+                        onClick = { onSendStickerPayload(pack.encode(stem)) },
+                    ),
+            ) {
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(pack.assetUriForStem(stem))
+                        .size(192)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = stringResource(R.string.cd_chat_sticker),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(8.dp)),
+                    contentScale = ContentScale.Fit,
+                )
             }
         }
     }

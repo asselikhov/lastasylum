@@ -63,6 +63,13 @@ interface AdminApi {
         @Body body: PutAllianceStickerAccessBody,
     ): AllianceStickerAccessDto
 
+    @PATCH("admin/sticker-access/{allianceCode}/users/{userId}")
+    suspend fun patchUserStickerAccess(
+        @Path("allianceCode") allianceCode: String,
+        @Path("userId") userId: String,
+        @Body body: PatchUserStickerAccessBody,
+    ): AllianceStickerAccessDto
+
     @GET("admin/game-servers")
     suspend fun listGameServers(): List<AdminServerSummaryDto>
 

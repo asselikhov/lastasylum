@@ -22,16 +22,30 @@ data class StickerPackCatalogItemDto(
 )
 
 @JsonClass(generateAdapter = true)
+data class StickerAllianceMemberDto(
+    val userId: String,
+    val username: String,
+    val accountRole: String,
+    val serverNumber: Int? = null,
+)
+
+@JsonClass(generateAdapter = true)
 data class AllianceStickerAccessDto(
     val catalog: List<StickerPackCatalogItemDto>,
     val roleGrants: Map<String, List<String>>,
     val userGrants: Map<String, List<String>>,
+    val members: List<StickerAllianceMemberDto> = emptyList(),
 )
 
 @JsonClass(generateAdapter = true)
 data class PutAllianceStickerAccessBody(
     val roleGrants: Map<String, List<String>>,
     val userGrants: Map<String, List<String>>,
+)
+
+@JsonClass(generateAdapter = true)
+data class PatchUserStickerAccessBody(
+    val packKeys: List<String>,
 )
 
 @JsonClass(generateAdapter = true)
