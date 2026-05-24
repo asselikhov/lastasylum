@@ -684,16 +684,7 @@ class ChatViewModel(
                 rawServerUnread = room.unreadCount,
                 optimisticFloor = floor,
             )
-            val merged = room.copy(unreadCount = unread)
-            reconcileOptimisticUnreadFloor(merged)
-            merged
-        }
-    }
-
-    private fun reconcileOptimisticUnreadFloor(room: ChatRoomDto) {
-        val floor = optimisticUnreadFloorByRoom[room.id] ?: return
-        if (room.unreadCount >= floor) {
-            optimisticUnreadFloorByRoom.remove(room.id)
+            room.copy(unreadCount = unread)
         }
     }
 
@@ -861,29 +852,32 @@ class ChatViewModel(
             return
         }
         val serverLast = event.lastReadMessageId?.trim().orEmpty()
-        if (serverLast.isNotBlank()) {
+        val serverUnread = event.unreadCount.coerceAtLeast(0)
+        val selectedId = _state.value.selectedRoomId
+        if (serverLast.isNotBlank() &&
+            (serverUnread > 0 || (selectedId == roomId && isChatTabActive))
+        ) {
             mergeReadCursor(roomId, serverLast)
         }
         _state.update { st ->
             val rooms = st.rooms.map { room ->
                 if (room.id != roomId) room
                 else {
+                    val floor = optimisticUnreadFloorByRoom[roomId] ?: 0
+                    val prevDisplayed = room.unreadCount
                     val merged = room.copy(
-                        unreadCount = event.unreadCount.coerceAtLeast(0),
+                        unreadCount = serverUnread,
                         lastReadMessageId = serverLast.takeIf { s -> s.isNotBlank() }
                             ?: room.lastReadMessageId,
                     )
                     val effective = effectiveUnreadForRoom(merged)
-                    val floor = optimisticUnreadFloorByRoom[roomId] ?: 0
                     val displayed = displayedUnreadCount(
                         effectiveUnread = effective,
-                        previouslyDisplayed = room.unreadCount,
-                        rawServerUnread = event.unreadCount,
+                        previouslyDisplayed = prevDisplayed,
+                        rawServerUnread = serverUnread,
                         optimisticFloor = floor,
                     )
-                    val withUnread = merged.copy(unreadCount = displayed)
-                    reconcileOptimisticUnreadFloor(withUnread)
-                    withUnread
+                    merged.copy(unreadCount = displayed)
                 }
             }
             st.copy(rooms = rooms)

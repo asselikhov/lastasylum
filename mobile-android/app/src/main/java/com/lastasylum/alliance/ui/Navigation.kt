@@ -237,6 +237,16 @@ fun AppNavigation(
     val msgStickerSaved = stringResource(R.string.admin_sticker_saved)
     val chatState by chatViewModel.state.collectAsStateWithLifecycle()
     val chatTabUnreadTotal = chatState.tabUnreadBadge
+    val chatRouteActive =
+        currentDestination?.hierarchy?.any { it.route == AppTab.CHAT.route } == true
+    DisposableEffect(chatRouteActive) {
+        if (chatRouteActive) {
+            chatViewModel.onChatTabResumed()
+        } else {
+            chatViewModel.onChatTabPaused()
+        }
+        onDispose { chatViewModel.onChatTabPaused() }
+    }
     Scaffold(
         modifier = modifier,
         containerColor = Color.Transparent,

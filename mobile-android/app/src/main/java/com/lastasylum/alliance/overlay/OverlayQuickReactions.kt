@@ -84,6 +84,12 @@ private val overlayGifDrawableIds = intArrayOf(
     R.drawable.overlay_reaction_gif_12,
 )
 
+private val overlayGifReactionById: Map<String, Int> = buildMap {
+    overlayGifDrawableIds.forEachIndexed { index, drawableRes ->
+        put("gif_%02d".format(index + 1), drawableRes)
+    }
+}
+
 private fun overlayLottieAnimationReactions(): List<OverlayQuickReaction> = listOf(
     OverlayQuickReaction(
         id = "heart",
@@ -210,6 +216,16 @@ internal fun overlayQuickReactionById(context: Context, reactionId: String): Ove
             tintHex = "#FFFFF8F0",
             textPayload = text,
             burstAccentHex = "#CCFFE082",
+        )
+    }
+    overlayGifReactionById[reactionId]?.let { drawableRes ->
+        return OverlayQuickReaction(
+            id = reactionId,
+            category = OverlayReactionCategory.ANIMATIONS,
+            labelRes = R.string.overlay_reaction_gif_cd,
+            tintHex = "#FFE8F0FF",
+            gifDrawableRes = drawableRes,
+            burstAccentHex = "#CC90A4AE",
         )
     }
     return overlayQuickReactionCatalog(context).find { it.id == reactionId }

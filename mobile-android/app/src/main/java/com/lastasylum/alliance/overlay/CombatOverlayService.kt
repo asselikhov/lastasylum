@@ -1079,6 +1079,10 @@ class CombatOverlayService : Service() {
     private fun isOverlayHudOnlyMode(): Boolean =
         AppContainer.from(this).userSettingsPreferences.isOverlayHudOnlyMode()
 
+    /** Лента «Рейд» / карточки сообщений — при включённой панели (не режим «только HUD»). */
+    private fun isOverlayChatStripEnabled(): Boolean =
+        AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()
+
     private fun isOverlayLightStripMode(): Boolean =
         AppContainer.from(this).userSettingsPreferences.isOverlayLightStrip()
 
@@ -1098,7 +1102,7 @@ class CombatOverlayService : Service() {
             return
         }
         repairOrRemoveDetachedHudWindows()
-        if (!isOverlayHudOnlyMode()) {
+        if (isOverlayChatStripEnabled()) {
             repairDetachedChatStripIfNeeded(mgr)
         }
         val host = chatStripHost ?: return
@@ -1858,7 +1862,7 @@ class CombatOverlayService : Service() {
         ensureOverlayIfPermitted()
         val mgr = windowManager ?: systemWindowManager() ?: return
         overlayCommandsPopover.toggle(mgr)
-        if (!isOverlayHudOnlyMode() && chatStripHost?.isAttachedToWindow != true) {
+        if (isOverlayChatStripEnabled() && chatStripHost?.isAttachedToWindow != true) {
             repairDetachedOverlayShellIfNeeded()
         }
     }
@@ -2103,7 +2107,7 @@ class CombatOverlayService : Service() {
         if (!shouldShow) {
             if (overlayCommandsPopover.isBlockingGameGateDismiss()) {
                 ensureOverlayIfPermitted()
-                if (!isOverlayHudOnlyMode()) {
+                if (isOverlayChatStripEnabled()) {
                     applyOverlayStripVisibility()
                 }
                 return
@@ -2162,7 +2166,7 @@ class CombatOverlayService : Service() {
         if (shouldShow && wasInGame) {
             scheduleOverlayStatusHudRefresh()
         }
-        if (isOverlayShellActive() && !isOverlayHudOnlyMode()) {
+        if (isOverlayShellActive() && isOverlayChatStripEnabled()) {
             applyOverlayStripVisibility()
         }
     }
@@ -2567,7 +2571,7 @@ class CombatOverlayService : Service() {
     /** Лента «Рейд» у игрока с активным оверлеем (гейт UI + короткий grace). */
     private fun isOverlayRaidStripEligible(): Boolean {
         if (!AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()) return false
-        if (isOverlayHudOnlyMode()) return false
+        if (!isOverlayChatStripEnabled()) return false
         if (isInGameOverlayUiActive()) return true
         val last = lastOverlayInGameAtMs
         if (last <= 0L) return false
@@ -2625,7 +2629,7 @@ class CombatOverlayService : Service() {
     private fun applyLocalSentMessageToStrip(sent: ChatMessage) {
         stripBuffer.markClientSend(sent)
         ingestOverlayRaidMessage(sent, refreshNow = true, forceIngest = true)
-        if (!isOverlayHudOnlyMode()) {
+        if (isOverlayChatStripEnabled()) {
             applyOverlayStripVisibility()
         }
     }
@@ -2971,7 +2975,7 @@ class CombatOverlayService : Service() {
         syncOverlayRaidRoomSubscription()
         refreshOverlayHubUnreadFromCache()
         refreshOverlayHubUnreadOnly()
-        if (!isOverlayHudOnlyMode()) {
+        if (isOverlayChatStripEnabled()) {
             scheduleStripTick()
         }
         resolveCachedAllianceHubRoomId()
@@ -3148,7 +3152,7 @@ class CombatOverlayService : Service() {
         overlaySessionActive = true
         prefetchOverlayRaidRoomForStrip()
         resolveCachedAllianceHubRoomId()
-        if (!isOverlayHudOnlyMode()) {
+        if (isOverlayChatStripEnabled()) {
             ensureChatStripWindow(manager)
             if (chatStripHost == null) {
                 Log.e(TAG, "showOverlayShell: failed to attach chat strip; continuing chat subscription")
@@ -3166,7 +3170,7 @@ class CombatOverlayService : Service() {
         (windowManager ?: systemWindowManager())?.let { wm ->
             runCatching { ensureChatStripWindow(wm) }
         }
-        if (!isOverlayHudOnlyMode()) {
+        if (isOverlayChatStripEnabled()) {
             val hasStripContent = chatStripPreviewFlow.value.isNotEmpty() ||
                 stripBuffer.visibleForPreview().isNotEmpty()
             val showStrip = !overlayChatTeamPanelVisible && (
