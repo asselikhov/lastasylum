@@ -1,67 +1,90 @@
-package com.lastasylum.alliance.data.chat
-
-import org.junit.Assert.assertEquals
-import org.junit.Test
-
-class ChatUnreadCountsTest {
-    @Test
-    fun tabBadgeTotal_sumsDisplayedRoomUnread() {
-        val rooms = listOf(
-            room(id = "hub", sortOrder = 1, allianceId = "pt:1", unread = 2),
-            room(id = "raid", sortOrder = 2, allianceId = "pt:1", title = "Рейд", unread = 1),
-        )
-        assertEquals(3, ChatUnreadCounts.tabBadgeTotal(rooms))
-    }
-
-    @Test
-    fun tabBadgeTotalFromServer_suppressesStaleHubWhenLocalReadAhead() {
-        val rooms = listOf(
-            room(
-                id = "hub",
-                sortOrder = 1,
-                allianceId = "pt:team1",
-                unread = 3,
-                lastRead = "000000000000000000000040",
-            ),
-        )
-        val local = mapOf("hub" to "000000000000000000000080")
-        assertEquals(0, ChatUnreadCounts.tabBadgeTotalFromServer(rooms, local))
-    }
-
-    @Test
-    fun allianceHubDisplayUnread_readsMergedHubChip() {
-        val rooms = listOf(
-            room(id = "hub", sortOrder = 1, allianceId = "pt:1", unread = 4),
-            room(id = "raid", sortOrder = 2, allianceId = "pt:1", unread = 9),
-        )
-        assertEquals(4, ChatUnreadCounts.allianceHubDisplayUnread(rooms))
-    }
-
-    @Test
-    fun hubClear_mustNotUseReconcileDisplayedUnread() {
-        assertEquals(
-            0,
-            com.lastasylum.alliance.data.displayedUnreadCount(
-                effectiveUnread = 0,
-                previouslyDisplayed = 5,
-                rawServerUnread = 2,
-            ),
-        )
-    }
-
-    private fun room(
-        id: String,
-        sortOrder: Int = 0,
-        allianceId: String = "",
-        unread: Int = 0,
-        lastRead: String? = null,
-        title: String = id,
-    ): ChatRoomDto = ChatRoomDto(
-        id = id,
-        allianceId = allianceId,
-        title = title,
-        sortOrder = sortOrder,
-        unreadCount = unread,
-        lastReadMessageId = lastRead,
-    )
-}
+package com.lastasylum.alliance.data.chat
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class ChatUnreadCountsTest {
+    @Test
+    fun tabBadgeTotal_sumsDisplayedRoomUnread() {
+        val rooms = listOf(
+            room(id = "hub", sortOrder = 1, allianceId = "pt:1", unread = 2),
+            room(id = "raid", sortOrder = 2, allianceId = "pt:1", title = "Рейд", unread = 1),
+        )
+        assertEquals(3, ChatUnreadCounts.tabBadgeTotal(rooms))
+    }
+
+    @Test
+    fun tabBadgeTotalFromServer_suppressesStaleHubWhenLocalReadAhead() {
+        val rooms = listOf(
+            room(
+                id = "hub",
+                sortOrder = 1,
+                allianceId = "pt:team1",
+                unread = 3,
+                lastRead = "000000000000000000000040",
+            ),
+        )
+        val local = mapOf("hub" to "000000000000000000000080")
+        assertEquals(0, ChatUnreadCounts.tabBadgeTotalFromServer(rooms, local))
+    }
+
+    @Test
+    fun allianceHubDisplayUnread_readsMergedHubChip() {
+        val rooms = listOf(
+            room(id = "hub", sortOrder = 1, allianceId = "pt:1", unread = 4),
+            room(id = "raid", sortOrder = 2, allianceId = "pt:1", unread = 9),
+        )
+        assertEquals(4, ChatUnreadCounts.allianceHubDisplayUnread(rooms))
+    }
+
+    @Test
+    fun overlayAllianceHubBadge_zeroWhenReadLocally_despiteFloorAndPrevious() {
+        val rooms = listOf(
+            room(
+                id = "hub",
+                sortOrder = 1,
+                allianceId = "pt:team1",
+                unread = 6,
+                lastRead = "000000000000000000000040",
+            ),
+        )
+        val local = mapOf("hub" to "000000000000000000000090")
+        assertEquals(
+            0,
+            ChatUnreadCounts.overlayAllianceHubBadge(
+                rooms = rooms,
+                localReadByRoom = local,
+                optimisticFloor = 4,
+                previouslyDisplayed = 5,
+            ),
+        )
+    }
+
+    @Test
+    fun hubClear_mustNotUseReconcileDisplayedUnread() {
+        assertEquals(
+            0,
+            com.lastasylum.alliance.data.displayedUnreadCount(
+                effectiveUnread = 0,
+                previouslyDisplayed = 5,
+                rawServerUnread = 2,
+            ),
+        )
+    }
+
+    private fun room(
+        id: String,
+        sortOrder: Int = 0,
+        allianceId: String = "",
+        unread: Int = 0,
+        lastRead: String? = null,
+        title: String = id,
+    ): ChatRoomDto = ChatRoomDto(
+        id = id,
+        allianceId = allianceId,
+        title = title,
+        sortOrder = sortOrder,
+        unreadCount = unread,
+        lastReadMessageId = lastRead,
+    )
+}

@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.data.chat
 
+import com.lastasylum.alliance.data.displayedUnreadCount
 import com.lastasylum.alliance.data.effectiveUnreadCount
 import com.lastasylum.alliance.overlay.OverlayGameStatusHudRefresh
 
@@ -26,6 +27,31 @@ object ChatUnreadCounts {
             ?.unreadCount
             ?.coerceAtLeast(0)
             ?: 0
+
+    fun allianceHubRawUnread(rooms: List<ChatRoomDto>): Int =
+        OverlayGameStatusHudRefresh.allianceHubRawUnread(rooms)
+
+    /**
+     * Overlay mail chip: same effective count as app when [localReadByRoom] is current.
+     * When the hub is read locally (effective 0), never resurrect from optimistic floor or
+     * a previously shown badge — required after reading in the main app before entering the game.
+     */
+    fun overlayAllianceHubBadge(
+        rooms: List<ChatRoomDto>,
+        localReadByRoom: Map<String, String>,
+        optimisticFloor: Int = 0,
+        previouslyDisplayed: Int = 0,
+    ): Int {
+        val effective = allianceHubUnread(rooms, localReadByRoom)
+        if (effective <= 0) return 0
+        val raw = allianceHubRawUnread(rooms)
+        return displayedUnreadCount(
+            effectiveUnread = effective,
+            previouslyDisplayed = previouslyDisplayed,
+            rawServerUnread = raw,
+            optimisticFloor = optimisticFloor,
+        )
+    }
 
     /** Bottom nav «Чат» — sum of displayed room chips (already merged in [ChatViewModel]). */
     fun tabBadgeTotal(rooms: List<ChatRoomDto>): Int =

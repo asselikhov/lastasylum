@@ -266,8 +266,10 @@ class ChatViewModel(
     }
 
     private fun syncOverlayAllianceHubBadge(rooms: List<ChatRoomDto> = _state.value.rooms) {
-        val count = ChatUnreadCounts.allianceHubDisplayUnread(rooms)
-        CombatOverlayService.notifyAllianceHubUnread(count)
+        val localRead = chatRoomPreferences.loadAllLastReadMessageIds()
+        val sourceRooms = ChatSessionCache.getFreshRooms() ?: rooms
+        val count = ChatUnreadCounts.allianceHubUnread(sourceRooms, localRead)
+        CombatOverlayService.syncHubBadgeFromSharedReadState(count)
     }
 
     private fun realtimeSubscriptionRoomIds(rooms: List<ChatRoomDto>): List<String> {

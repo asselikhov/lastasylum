@@ -382,7 +382,6 @@ fun TeamNewsNavHost(
                 onOpenDetail = { nav.navigate(TeamNewsRoutes.detail(it)) },
                 onCreate = { nav.navigate(TeamNewsRoutes.CREATE) },
                 onEditFromList = { nav.navigate(TeamNewsRoutes.edit(it)) },
-                onInboxBadgesChanged = onInboxBadgesChanged,
             )
         }
         composable(
@@ -454,7 +453,6 @@ private fun TeamNewsListRoute(
     onOpenDetail: (String) -> Unit,
     onCreate: () -> Unit,
     onEditFromList: (String) -> Unit,
-    onInboxBadgesChanged: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val res = context.resources
@@ -473,14 +471,6 @@ private fun TeamNewsListRoute(
             .onSuccess { page ->
                 newsItems = if (append) newsItems + page.items else page.items
                 newsNextCursor = page.nextCursor
-                val merged = newsItems
-                merged.maxByOrNull { it.createdAt }?.createdAt?.let { newest ->
-                    OverlayGameStatusHudRefresh.markTeamNewsSeenAt(
-                        newest,
-                        AppContainer.from(context).userSettingsPreferences,
-                    )
-                    onInboxBadgesChanged()
-                }
                 loading = false
                 loadingMore = false
             }
