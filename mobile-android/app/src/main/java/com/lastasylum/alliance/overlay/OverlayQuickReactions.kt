@@ -76,6 +76,12 @@ private val overlayGifDrawableIds = intArrayOf(
     R.drawable.overlay_reaction_gif_04,
     R.drawable.overlay_reaction_gif_05,
     R.drawable.overlay_reaction_gif_06,
+    R.drawable.overlay_reaction_gif_07,
+    R.drawable.overlay_reaction_gif_08,
+    R.drawable.overlay_reaction_gif_09,
+    R.drawable.overlay_reaction_gif_10,
+    R.drawable.overlay_reaction_gif_11,
+    R.drawable.overlay_reaction_gif_12,
 )
 
 private fun overlayLottieAnimationReactions(): List<OverlayQuickReaction> = listOf(
