@@ -32,4 +32,7 @@ jobs:
       - uses: android-actions/setup-android@v3
       - name: Assemble prod debug
         working-directory: mobile-android
+        env:
+          # Monotonic APK version for sideload/update checks (overrides git rev-count in CI).
+          SQUADRELAY_VERSION_CODE: ${{ github.run_number }}
         run: chmod +x gradlew && ./gradlew assembleProdDebug --no-daemon

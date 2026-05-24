@@ -66,6 +66,43 @@ fun firebaseBuildConfigString(localKey: String, fromJson: String): String {
 
 val firebaseFromJson = firebaseFromGoogleServicesJson()
 
+/** Monorepo git root (LastAsylum); falls back to mobile-android module dir. */
+fun gitRepositoryRoot(): java.io.File {
+    val parent = rootProject.file("..")
+    return if (parent.resolve(".git").exists()) parent else rootProject.rootDir
+}
+
+/** Short SHA of HEAD at build time; shown in Settings for sideload traceability. */
+fun gitCommitShort(): String = runCatching {
+    val repo = gitRepositoryRoot()
+    ProcessBuilder("git", "-C", repo.absolutePath, "rev-parse", "--short", "HEAD")
+        .redirectErrorStream(true)
+        .start()
+        .let { process ->
+            val output = process.inputStream.bufferedReader().readText().trim()
+            val ok = process.waitFor() == 0
+            if (ok && output.isNotEmpty()) output else "unknown"
+        }
+}.getOrDefault("unknown")
+
+/** Monotonic build number from git history; CI may override via SQUADRELAY_VERSION_CODE. */
+fun gitCommitCount(): Int = runCatching {
+    val repo = gitRepositoryRoot()
+    ProcessBuilder("git", "-C", repo.absolutePath, "rev-list", "--count", "HEAD")
+        .redirectErrorStream(true)
+        .start()
+        .let { process ->
+            val output = process.inputStream.bufferedReader().readText().trim()
+            val ok = process.waitFor() == 0
+            if (ok) output.toIntOrNull()?.coerceAtLeast(1) else null
+        }
+}.getOrNull() ?: 2
+
+val squadRelayGitCommit = gitCommitShort()
+val squadRelayVersionCode = System.getenv("SQUADRELAY_VERSION_CODE")?.trim()?.toIntOrNull()
+    ?.coerceAtLeast(1)
+    ?: gitCommitCount()
+
 /** Публичный бэкенд (Render). И prod, и dev по умолчанию — чтобы телефон работал без LAN. */
 val squadRelayPublicBackendUrl = "https://lastasylum-backend.onrender.com/"
 
@@ -79,7 +116,7 @@ android {
         // Android 15+: overlay при targetSdk < 35 — системный диалог «не оптимизировано»
         // и ломает прохождение тапов в игру (стрелка «назад» в чате и т.п.).
         targetSdk = 35
-        versionCode = 2
+        versionCode = squadRelayVersionCode
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -87,6 +124,7 @@ android {
             useSupportLibrary = true
         }
         buildConfigField("long", "BUILD_TIME_MS", "${System.currentTimeMillis()}L")
+        buildConfigField("String", "GIT_COMMIT", "\"$squadRelayGitCommit\"")
         buildConfigField(
             "String",
             "FIREBASE_PROJECT_ID",

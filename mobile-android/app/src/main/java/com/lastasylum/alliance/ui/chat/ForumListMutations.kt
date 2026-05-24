@@ -13,3 +13,18 @@ internal fun capForumMessagesOldestFirst(
     if (overflow <= 0) return
     repeat(overflow) { messages.removeAt(0) }
 }
+
+internal fun TeamForumMessageDto.hasForumImages(): Boolean =
+    imageRelativeUrls.isNotEmpty() || !imageRelativeUrl.isNullOrBlank()
+
+/** Socket/REST races must not drop attachments already shown in the thread. */
+internal fun TeamForumMessageDto.mergePreservingForumMedia(incoming: TeamForumMessageDto): TeamForumMessageDto {
+    if (incoming.hasForumImages()) return incoming
+    if (!hasForumImages()) return incoming
+    return incoming.copy(
+        imageRelativeUrl = imageRelativeUrl,
+        imageRelativeUrls = imageRelativeUrls,
+        fileRelativeUrl = incoming.fileRelativeUrl ?: fileRelativeUrl,
+        fileFilename = incoming.fileFilename ?: fileFilename,
+    )
+}

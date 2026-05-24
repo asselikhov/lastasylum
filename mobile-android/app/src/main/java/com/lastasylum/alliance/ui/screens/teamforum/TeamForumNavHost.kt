@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.lerp
 import com.lastasylum.alliance.ui.chat.AttachmentPreviewOverlay
 import com.lastasylum.alliance.ui.chat.ChatComposer
 import com.lastasylum.alliance.ui.chat.capForumMessagesOldestFirst
+import com.lastasylum.alliance.ui.chat.mergePreservingForumMedia
 import com.lastasylum.alliance.ui.chat.rememberForumMessageClusterFlags
 import com.lastasylum.alliance.ui.chat.LocalOpenRemoteChatImagePreview
 import com.lastasylum.alliance.ui.chat.MessengerImagesPreviewHost
@@ -637,7 +638,7 @@ private fun TeamForumTopicChatRoute(
     fun applyEdited(msg: TeamForumMessageDto) {
         val i = messages.indexOfFirst { it.id == msg.id }
         if (i >= 0) {
-            messages[i] = msg
+            messages[i] = messages[i].mergePreservingForumMedia(msg)
         } else {
             messages.add(msg)
             trimForumMessagesInMemory()
@@ -675,9 +676,13 @@ private fun TeamForumTopicChatRoute(
     }
 
     fun mergeNew(msg: TeamForumMessageDto) {
-        if (messages.any { it.id == msg.id }) return
-        messages.add(msg)
-        trimForumMessagesInMemory()
+        val i = messages.indexOfFirst { it.id == msg.id }
+        if (i >= 0) {
+            messages[i] = messages[i].mergePreservingForumMedia(msg)
+        } else {
+            messages.add(msg)
+            trimForumMessagesInMemory()
+        }
         markTopicReadToLatest()
     }
 
@@ -1022,15 +1027,16 @@ private fun TeamForumTopicChatRoute(
             onSendDraft = {
                 scope.launch {
                     val trimmed = draft.trim()
-                    if (trimmed.isEmpty() && pickedImageUris.isEmpty() && pendingApkFileId == null) {
+                    val urisToUpload = pickedImageUris
+                    if (trimmed.isEmpty() && urisToUpload.isEmpty() && pendingApkFileId == null) {
                         return@launch
                     }
                     if (uploadingImage || uploadingFile || sending) return@launch
                     sending = true
                     var imageFileIds: List<String>? = null
-                    if (pickedImageUris.isNotEmpty()) {
+                    if (urisToUpload.isNotEmpty()) {
                         uploadingImage = true
-                        uploadForumImagesFromUris(context, res, teamsRepository, teamId, pickedImageUris)
+                        uploadForumImagesFromUris(context, res, teamsRepository, teamId, urisToUpload)
                             .onSuccess { (ids, _) -> imageFileIds = ids.takeIf { it.isNotEmpty() } }
                             .onFailure { e ->
                                 error = e.toUserMessageRu(res)
@@ -1092,10 +1098,13 @@ private fun TeamForumTopicChatRoute(
             onOpenAttachmentPreview = { idx -> attachmentPreviewStartIndex = idx },
             pendingApkLabel = pendingApkLabel,
             onClearPendingApk = { clearPendingAttachment() },
-            isForumAdmin = canModerateMessages,
-            onPickApk = {
-                OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
-                pickApkLauncher.launch("application/*")
+            onPickApk = if (canModerateMessages) {
+                {
+                    OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
+                    pickApkLauncher.launch("application/*")
+                }
+            } else {
+                null
             },
             hasReadyFileAttachment = !pendingApkFileId.isNullOrBlank(),
             isUploadingFile = uploadingFile,

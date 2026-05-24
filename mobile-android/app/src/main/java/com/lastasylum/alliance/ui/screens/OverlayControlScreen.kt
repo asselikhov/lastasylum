@@ -43,6 +43,7 @@ import com.lastasylum.alliance.overlay.OverlayGamePackageSuggestions
 import com.lastasylum.alliance.overlay.OverlayPermissions
 import com.lastasylum.alliance.ui.components.SettingsDivider
 import com.lastasylum.alliance.ui.components.SettingsToggleRow
+import com.lastasylum.alliance.ui.util.AppBuildInfo
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import kotlinx.coroutines.delay
@@ -139,6 +140,11 @@ fun OverlayControlScreen() {
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = AppBuildInfo.authStyleBuildFooter(context),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
                     text = stringResource(R.string.settings_screen_subtitle),

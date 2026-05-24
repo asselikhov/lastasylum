@@ -53,8 +53,6 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Mood
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -130,14 +128,12 @@ internal fun ChatComposer(
     onOpenAttachmentPreview: (Int) -> Unit = {},
     pendingApkLabel: String? = null,
     onClearPendingApk: (() -> Unit)? = null,
-    isForumAdmin: Boolean = false,
     onPickApk: (() -> Unit)? = null,
     hasReadyFileAttachment: Boolean = false,
     isUploadingFile: Boolean = false,
 ) {
     var showMediaPanel by remember { mutableStateOf(false) }
     var showAttachmentsSheet by remember { mutableStateOf(false) }
-    var showAttachMenu by remember { mutableStateOf(false) }
     var showOverlayGalleryPicker by remember { mutableStateOf(false) }
     val composerLocked = readOnly || isSending || isUploadingFile
     val pasteState = rememberComposerPasteState(
@@ -731,54 +727,35 @@ internal fun ChatComposer(
                                 )
                             }
 
-                            if (isForumAdmin && onPickApk != null) {
-                                Box {
-                                    IconButton(
-                                        onClick = { showAttachMenu = true },
-                                        enabled = !composerLocked,
-                                        modifier = Modifier.size(44.dp),
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Outlined.AttachFile,
-                                            contentDescription = stringResource(R.string.chat_attach_apk_cd),
-                                            tint = if (!composerLocked) {
-                                                MaterialTheme.colorScheme.onSurfaceVariant
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
-                                            },
-                                        )
-                                    }
-                                    DropdownMenu(
-                                        expanded = showAttachMenu,
-                                        onDismissRequest = { showAttachMenu = false },
-                                    ) {
-                                        DropdownMenuItem(
-                                            text = { Text(stringResource(R.string.chat_attach_menu_photo)) },
-                                            onClick = {
-                                                showAttachMenu = false
-                                                openImageAttach()
-                                            },
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text(stringResource(R.string.chat_attach_menu_apk)) },
-                                            onClick = {
-                                                showAttachMenu = false
-                                                onPickApk()
-                                            },
-                                        )
-                                    }
-                                }
-                            } else {
+                            IconButton(
+                                onClick = { openImageAttach() },
+                                enabled = !composerLocked,
+                                modifier = Modifier.size(44.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.AttachFile,
+                                    contentDescription = stringResource(R.string.chat_attach_images_cd),
+                                    tint = if (!composerLocked) {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                                    },
+                                )
+                            }
+                            if (onPickApk != null) {
                                 IconButton(
-                                    onClick = { openImageAttach() },
+                                    onClick = {
+                                        if (composerLocked) return@IconButton
+                                        onPickApk()
+                                    },
                                     enabled = !composerLocked,
                                     modifier = Modifier.size(44.dp),
                                 ) {
                                     Icon(
                                         imageVector = Icons.Outlined.AttachFile,
-                                        contentDescription = stringResource(R.string.chat_attach_images_cd),
+                                        contentDescription = stringResource(R.string.chat_attach_apk_cd),
                                         tint = if (!composerLocked) {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
                                         } else {
                                             MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
                                         },
