@@ -254,7 +254,7 @@ fun AppNavigation(
         modifier = modifier,
         containerColor = Color.Transparent,
         contentColor = MaterialTheme.colorScheme.onBackground,
-        // IME: MainActivity adjustResize shrinks content above keyboard; exclude IME from Scaffold padding to avoid double insets.
+        // IME: adjustNothing + chatComposerImePadding; exclude IME from Scaffold padding to avoid double insets.
         contentWindowInsets = WindowInsets.safeDrawing.exclude(WindowInsets.ime),
         bottomBar = {
             Box(

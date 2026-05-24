@@ -316,6 +316,7 @@ fun AdminScreen(
                 onToggleUser = onToggleStickerUserGrant,
                 onSave = onSaveStickerAccess,
                 onDismiss = onCloseStickerSettings,
+                onClearError = onClearStickerAccessError,
             )
         }
     }

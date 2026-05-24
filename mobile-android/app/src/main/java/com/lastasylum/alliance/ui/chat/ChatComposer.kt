@@ -32,7 +32,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -59,7 +58,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -135,6 +136,7 @@ internal fun ChatComposer(
     isUploadingFile: Boolean = false,
 ) {
     var showMediaPanel by remember { mutableStateOf(false) }
+    var selectedStickerPackKey by remember { mutableStateOf<String?>(null) }
     var showAttachmentsSheet by remember { mutableStateOf(false) }
     var showOverlayGalleryPicker by remember { mutableStateOf(false) }
     val composerLocked = readOnly || isSending || isUploadingFile
@@ -152,6 +154,17 @@ internal fun ChatComposer(
         StickerPacks.enabledPacks(enabledStickerPackKeys)
     }
     val hasStickerPacks = enabledStickerPacks.isNotEmpty()
+    LaunchedEffect(showMediaPanel, enabledStickerPacks.map { it.packKey }) {
+        if (!showMediaPanel) return@LaunchedEffect
+        val keys = enabledStickerPacks.map { it.packKey }
+        if (keys.isEmpty()) {
+            selectedStickerPackKey = null
+            return@LaunchedEffect
+        }
+        if (selectedStickerPackKey !in keys) {
+            selectedStickerPackKey = keys.first()
+        }
+    }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
@@ -325,14 +338,7 @@ internal fun ChatComposer(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = SquadRelayDimens.itemGap)
-            .then(
-                if (overlayUi) {
-                    // Оверлей: IME уже учтён на корневом FrameLayout (CombatOverlayService).
-                    Modifier
-                } else {
-                    Modifier.imePadding()
-                },
-            ),
+            .chatComposerImePadding(overlayUi = overlayUi),
     ) {
         HorizontalDivider(
             modifier = Modifier.padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
@@ -832,31 +838,77 @@ internal fun ChatComposer(
                     thickness = 0.5.dp,
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
                 )
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 4.dp),
-                ) {
-                    enabledStickerPacks.forEach { pack ->
-                        StickerPackGridSection(
-                            pack = pack,
-                            context = context,
-                            sendEnabled = sendEnabled,
-                            readOnly = readOnly,
-                            onSendStickerPayload = { payload ->
-                                onSendStickerPayload(payload)
-                                showMediaPanel = false
-                            },
-                        )
-                    }
-                }
+                StickerPackPickerPanel(
+                    packs = enabledStickerPacks,
+                    selectedPackKey = selectedStickerPackKey,
+                    onSelectPackKey = { selectedStickerPackKey = it },
+                    context = context,
+                    sendEnabled = sendEnabled,
+                    readOnly = readOnly,
+                    onSendStickerPayload = { payload ->
+                        onSendStickerPayload(payload)
+                        showMediaPanel = false
+                    },
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
             }
         }
     }
 }
 
 @Composable
-private fun StickerPackGridSection(
+private fun StickerPackPickerPanel(
+    packs: List<ChatStickerPack>,
+    selectedPackKey: String?,
+    onSelectPackKey: (String) -> Unit,
+    context: android.content.Context,
+    sendEnabled: Boolean,
+    readOnly: Boolean,
+    onSendStickerPayload: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (packs.isEmpty()) return
+    val activePack = packs.find { it.packKey == selectedPackKey } ?: packs.first()
+    Column(modifier = modifier.fillMaxWidth()) {
+        if (packs.size > 1) {
+            val tabIndex = packs.indexOfFirst { it.packKey == activePack.packKey }.coerceAtLeast(0)
+            ScrollableTabRow(
+                selectedTabIndex = tabIndex,
+                edgePadding = 8.dp,
+                containerColor = Color.Transparent,
+                divider = {
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                    )
+                },
+            ) {
+                packs.forEach { pack ->
+                    Tab(
+                        selected = pack.packKey == activePack.packKey,
+                        onClick = { onSelectPackKey(pack.packKey) },
+                        text = {
+                            Text(
+                                text = stringResource(pack.titleRes),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                    )
+                }
+            }
+        }
+        StickerPackStickerGrid(
+            pack = activePack,
+            context = context,
+            sendEnabled = sendEnabled,
+            readOnly = readOnly,
+            onSendStickerPayload = onSendStickerPayload,
+        )
+    }
+}
+
+@Composable
+private fun StickerPackStickerGrid(
     pack: ChatStickerPack,
     context: android.content.Context,
     sendEnabled: Boolean,
@@ -865,15 +917,6 @@ private fun StickerPackGridSection(
 ) {
     val stems = remember(pack.packKey, context) { pack.listStems(context) }
     if (stems.isEmpty()) return
-    HorizontalDivider(
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
-    )
-    Text(
-        text = stringResource(pack.titleRes),
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-    )
     LazyVerticalGrid(
         columns = GridCells.Fixed(4),
         modifier = Modifier

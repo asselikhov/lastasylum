@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import com.lastasylum.alliance.ui.chat.AttachmentPreviewOverlay
 import com.lastasylum.alliance.ui.chat.ChatComposer
+import com.lastasylum.alliance.ui.chat.chatComposerHostBottomSpacing
 import com.lastasylum.alliance.ui.chat.stabilizeComposerImageUris
 import com.lastasylum.alliance.ui.chat.capForumMessagesOldestFirst
 import com.lastasylum.alliance.ui.chat.mergePreservingForumMedia
@@ -849,7 +850,7 @@ private fun TeamForumTopicChatRoute(
     Box(
         Modifier
             .fillMaxSize()
-            .padding(bottom = SquadRelayDimens.chatComposerNavGap),
+            .chatComposerHostBottomSpacing(),
     ) {
     Column(
         Modifier.fillMaxSize(),

@@ -45,6 +45,7 @@ fun AdminStickerAccessSheet(
     onToggleUser: (String, String, Boolean) -> Unit,
     onSave: () -> Unit,
     onDismiss: () -> Unit,
+    onClearError: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val allianceCode = state.stickerAllianceCode.orEmpty()
@@ -70,7 +71,21 @@ fun AdminStickerAccessSheet(
             CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
         }
         state.stickerAccessError?.let { err ->
-            Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    err,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onClearError) {
+                    Text(stringResource(R.string.admin_dismiss_error))
+                }
+            }
         }
         if (state.stickerCatalog.isNotEmpty()) {
             ScrollableTabRow(selectedTabIndex = state.stickerCatalog.indexOfFirst { it.key == selectedKey }

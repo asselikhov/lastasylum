@@ -19,10 +19,10 @@ object ZlobyakaStickerPack : ChatStickerPack {
     @Volatile
     private var sortedStemsCache: List<String>? = null
 
-    override fun encode(fileStem: String): String {
-        val stem = fileStem.trim()
-        require(stem.isNotEmpty()) { "empty sticker stem" }
-        return "$PREFIX$stem$SUFFIX"
+    override fun encode(stem: String): String {
+        val trimmed = stem.trim()
+        require(trimmed.isNotEmpty()) { "empty sticker stem" }
+        return "$PREFIX$trimmed$SUFFIX"
     }
 
     override fun parseStem(text: String): String? {

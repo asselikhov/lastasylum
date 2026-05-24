@@ -215,6 +215,7 @@ import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarEndPad
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarSize
 import com.lastasylum.alliance.ui.chat.AttachmentPreviewOverlay
 import com.lastasylum.alliance.ui.chat.ChatComposer
+import com.lastasylum.alliance.ui.chat.chatComposerHostBottomSpacing
 import com.lastasylum.alliance.ui.chat.ChatFileAttachmentCard
 import com.lastasylum.alliance.ui.chat.ChatMessageBubbleRow
 import com.lastasylum.alliance.ui.chat.ChatMessageClusterFlags
@@ -679,8 +680,7 @@ fun ChatScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    // IME: ChatComposer.imePadding(); здесь только зазор над нижней навигацией вкладок.
-                    .padding(bottom = SquadRelayDimens.chatComposerNavGap),
+                    .chatComposerHostBottomSpacing(),
             ) {
                 state.sendFailure?.let { failure ->
                     Surface(

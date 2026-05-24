@@ -45,7 +45,7 @@ class MainActivity : ComponentActivity() {
         WindowCompat.getInsetsController(window, window.decorView).apply {
             systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            // adjustResize остаётся в манифесте; фактический отступ под клавиатуру — imePadding в ChatComposer.
+            // adjustNothing в манифесте: один источник отступа под IME (chatComposerImePadding), без двойного resize.
             // Hiding legacy three-button navigation strip so more vertical space is available for game/content.
             hide(WindowInsetsCompat.Type.navigationBars())
         }
