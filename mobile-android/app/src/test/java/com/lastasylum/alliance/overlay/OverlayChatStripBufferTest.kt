@@ -117,6 +117,30 @@ class OverlayChatStripBufferTest {
     }
 
     @Test
+    fun touchReceivedNow_refreshesTtlForExistingMessage() {
+        val ttl = OverlayChatStripBuffer.DEFAULT_MESSAGE_TTL_SECONDS
+        val buffer = OverlayChatStripBuffer(messageTtlSeconds = ttl)
+        val oldCreated = Instant.now().minusSeconds(ttl + 90).toString()
+        val msg = ChatMessage(
+            _id = "touch-1",
+            allianceId = "a",
+            roomId = "r",
+            senderId = "u1",
+            senderUsername = "Pilot",
+            senderRole = "R2",
+            text = "coords",
+            createdAt = oldCreated,
+        )
+        buffer.upsert(msg)
+        buffer.mergeReceiveTimeline(msg, selfId = "u1")
+        assertTrue(buffer.visibleForPreview().isEmpty())
+        buffer.touchReceivedNow(msg)
+        val visible = buffer.visibleForPreview()
+        assertEquals(1, visible.size)
+        assertEquals("coords", visible.first().text)
+    }
+
+    @Test
     fun containsMessageId_detectsBufferedMessage() {
         val buffer = OverlayChatStripBuffer()
         val msg = ChatMessage(

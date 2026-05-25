@@ -75,15 +75,27 @@ class OverlayChatStripBuffer(
     }
 
     fun markClientSend(sent: ChatMessage) {
-        receivedAt[sent.stableKey()] = Instant.now()
+        touchReceivedNow(sent)
+    }
+
+    /** Поднять TTL ленты для сообщения (повторная отправка / обновление карточки). */
+    fun touchReceivedNow(msg: ChatMessage) {
+        receivedAt[msg.stableKey()] = Instant.now()
     }
 
     fun mergeReceiveTimeline(msg: ChatMessage, @Suppress("UNUSED_PARAMETER") selfId: String?) {
         val key = msg.stableKey()
         val parsed = OverlayChatTime.parseInstant(msg.createdAt)
+        val now = Instant.now()
         when {
-            parsed == null -> receivedAt.putIfAbsent(key, Instant.now())
-            else -> receivedAt.putIfAbsent(key, parsed)
+            parsed == null -> receivedAt.putIfAbsent(key, now)
+            else -> {
+                val prev = receivedAt[key]
+                receivedAt[key] = when {
+                    prev == null -> parsed
+                    else -> maxOf(prev, parsed)
+                }
+            }
         }
     }
 

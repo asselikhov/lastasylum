@@ -867,6 +867,8 @@ class CombatOverlayService : Service() {
     /** Throttle для Log при «панель скрыта» — не дёргаем FGS-текст при каждом тике гейта. */
     private var gateNotifyKey: String = ""
     private var lastStripRenderSignature: Int = 0
+    /** Increments on each live strip publish so Compose/refresh never skip repeat sends. */
+    private var stripLiveRevision: Int = 0
     private var lastAppliedGateShouldShow: Boolean? = null
     private var stableGatePollTicks = 0
     @Volatile
@@ -1026,12 +1028,18 @@ class CombatOverlayService : Service() {
         if (!container.authRepository.hasSession()) return
         fcmRegistrationJob?.cancel()
         fcmRegistrationJob = serviceScope.launch {
+            val bootstrapDelaysMs = longArrayOf(0L, 2_000L, 10_000L, 30_000L, 120_000L)
+            for (delayMs in bootstrapDelaysMs) {
+                if (!isActive) return@launch
+                if (delayMs > 0) delay(delayMs)
+                if (FcmTokenManager.registerWithBackend(this@CombatOverlayService).isSuccess) break
+            }
             val intervalMs = 20 * 60 * 1000L
             while (isActive) {
+                delay(intervalMs)
                 runCatching {
                     FcmTokenManager.registerWithBackend(this@CombatOverlayService)
                 }
-                delay(intervalMs)
             }
         }
     }
@@ -2981,6 +2989,7 @@ class CombatOverlayService : Service() {
 
     private fun overlayStripPreviewSignature(preview: List<ChatMessage>): Int {
         var h = 17
+        h = 31 * h + stripLiveRevision
         h = 31 * h + preview.size
         for (msg in preview) {
             val key = msg._id?.takeIf { it.isNotBlank() } ?: msg.stableKey()
@@ -3144,11 +3153,12 @@ class CombatOverlayService : Service() {
             roomId = sent.roomId.trim().ifBlank { raid },
             text = text,
         )
-        stripBuffer.markClientSend(normalized)
         stripBuffer.upsert(normalized)
         stripBuffer.mergeReceiveTimeline(normalized, jwtSubFromAccessToken())
-        lastStripRenderSignature = 0
-        val preview = stripBuffer.visibleForPreview()
+        stripBuffer.markClientSend(normalized)
+        stripLiveRevision++
+        val preview = stripBuffer.visibleForPreview().toList()
+        lastStripRenderSignature = overlayStripPreviewSignature(preview)
         forceShowStripUntilMs = maxOf(
             forceShowStripUntilMs,
             System.currentTimeMillis() + FORCE_SHOW_STRIP_AFTER_LOCAL_SEND_MS,
@@ -3266,12 +3276,34 @@ class CombatOverlayService : Service() {
     }
 
     private fun isStaleOverlayStripMessage(msg: ChatMessage): Boolean {
+        val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
+        if (selfId.isNotEmpty() && msg.senderId.trim() == selfId) {
+            return false
+        }
         val parsed = OverlayChatTime.parseInstant(msg.createdAt) ?: return false
         val cutoff = Instant.now().minus(
             OverlayChatStripBuffer.DEFAULT_MESSAGE_TTL_SECONDS,
             ChronoUnit.SECONDS,
         )
         return parsed.isBefore(cutoff)
+    }
+
+    private fun refreshExistingStripMessage(
+        msg: ChatMessage,
+        refreshNow: Boolean,
+    ) {
+        stripBuffer.upsert(msg)
+        stripBuffer.touchReceivedNow(msg)
+        stripLiveRevision++
+        val preview = stripBuffer.visibleForPreview().toList()
+        lastStripRenderSignature = overlayStripPreviewSignature(preview)
+        chatStripPreviewFlow.value = preview
+        if (refreshNow) {
+            refreshOverlayChatStripNow()
+        } else {
+            scheduleRefreshOverlayChatStrip()
+        }
+        ensureStripWindowVisibleForRaidTraffic()
     }
 
     private fun ingestOverlayRaidMessage(
@@ -3289,7 +3321,10 @@ class CombatOverlayService : Service() {
         val normalized = normalizeStripRaidMessage(msg, raidId)
         if (!forceIngest && isStaleOverlayStripMessage(normalized)) return
         normalized._id?.trim()?.takeIf { it.isNotEmpty() }?.let { existingId ->
-            if (stripBuffer.containsMessageId(existingId)) return
+            if (stripBuffer.containsMessageId(existingId)) {
+                refreshExistingStripMessage(normalized, refreshNow)
+                return
+            }
         }
         if (!shouldIngestForRaidStrip(normalized)) {
             val forcedRaid = raidId?.trim().orEmpty()
@@ -3300,7 +3335,11 @@ class CombatOverlayService : Service() {
                 rememberOverlayRaidRoomId(forcedRaid)
                 stripBuffer.upsert(forced)
                 stripBuffer.mergeReceiveTimeline(forced, jwtSubFromAccessToken())
-                lastStripRenderSignature = 0
+                stripBuffer.touchReceivedNow(forced)
+                stripLiveRevision++
+                val forcedPreview = stripBuffer.visibleForPreview().toList()
+                lastStripRenderSignature = overlayStripPreviewSignature(forcedPreview)
+                chatStripPreviewFlow.value = forcedPreview
                 if (refreshNow) {
                     refreshOverlayChatStripNow()
                 } else {
@@ -3332,7 +3371,11 @@ class CombatOverlayService : Service() {
         }
         stripBuffer.upsert(normalized)
         stripBuffer.mergeReceiveTimeline(normalized, jwtSubFromAccessToken())
-        lastStripRenderSignature = 0
+        stripBuffer.touchReceivedNow(normalized)
+        stripLiveRevision++
+        val preview = stripBuffer.visibleForPreview().toList()
+        lastStripRenderSignature = overlayStripPreviewSignature(preview)
+        chatStripPreviewFlow.value = preview
         if (refreshNow) {
             refreshOverlayChatStripNow()
         } else {

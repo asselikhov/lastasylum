@@ -33,11 +33,9 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
             if (!prefs.isExcavationPushEnabled()) {
                 return
             }
-            // В игре с видимым оверлеем — сокет/лента; push показываем вне боя и при скрытом оверлее.
-            val overlayActiveInGame =
-                CombatOverlayService.inGameOverlayUiActive.value &&
-                    CombatOverlayService.overlayVisible.value
-            if (overlayActiveInGame) {
+            // В игре с оверлеем — сокет/лента; push только вне матча (не привязываем к overlayVisible:
+            // на части устройств окна остаются attached в GONE и ложно блокировали FCM).
+            if (CombatOverlayService.inGameOverlayUiActive.value) {
                 return
             }
             val title = message.data["title"]

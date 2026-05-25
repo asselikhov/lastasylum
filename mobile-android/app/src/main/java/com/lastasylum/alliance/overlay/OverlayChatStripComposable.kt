@@ -134,7 +134,12 @@ fun OverlayChatStrip(
             val key = keyOf(m)
             leaving.remove(key)
             val i = keep.indexOfFirst { keyOf(it) == key }
-            if (i >= 0) keep[i] = m else keep.add(m)
+            if (i >= 0) {
+                keep[i] = m
+                if (!lightStrip) accentEnterKey = key
+            } else {
+                keep.add(m)
+            }
         }
         val currentKeys = latestMessages.map { keyOf(it) }.toSet()
         val removed = keep.filter { keyOf(it) !in currentKeys }
