@@ -30,4 +30,21 @@ object TeamVoicePresenceStore {
     fun clear() {
         _peers.value = emptyMap()
     }
+
+    /** Mic/sound badges for a roster row; self prefers live session flags over stale peer map. */
+    fun voiceFlagsForMember(
+        memberUserId: String,
+        selfUserId: String?,
+        peers: Map<String, VoicePeerState>,
+        localMicOn: Boolean?,
+        localSoundOn: Boolean?,
+    ): Pair<Boolean, Boolean> {
+        if (!selfUserId.isNullOrBlank() && memberUserId == selfUserId) {
+            if (localMicOn != null && localSoundOn != null) {
+                return localMicOn to localSoundOn
+            }
+        }
+        val peer = peers[memberUserId]
+        return (peer?.micOn == true) to (peer?.soundOn == true)
+    }
 }

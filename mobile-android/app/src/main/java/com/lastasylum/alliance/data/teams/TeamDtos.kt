@@ -215,6 +215,16 @@ data class TeamInboxBadgesDto(
 )
 
 @JsonClass(generateAdapter = true)
+data class TeamNewsReadCursorDto(
+    val lastSeenCreatedAt: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class AdvanceTeamNewsReadCursorBody(
+    val createdAt: String,
+)
+
+@JsonClass(generateAdapter = true)
 data class TeamForumTopicDto(
     val id: String,
     val teamId: String,

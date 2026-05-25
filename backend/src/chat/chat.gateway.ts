@@ -21,14 +21,6 @@ import { ChatService } from './chat.service';
 import { ALLIANCE_RAID_ROOM_TITLE } from '../common/constants/chat-room-constants';
 import { Types } from 'mongoose';
 
-/** Align with HTTP POST /chat/messages throttling (8 sends per 10s window). */
-const WS_MESSAGE_WINDOW_MS = 10_000;
-const WS_MESSAGE_MAX = 8;
-
-/** Quick overlay reaction burst (e.g. heart) — slightly looser cap than chat messages. */
-const WS_OVERLAY_REACTION_WINDOW_MS = 10_000;
-const WS_OVERLAY_REACTION_MAX = 15;
-
 /** Must match overlay reaction ids in Android OverlayQuickReactions.kt */
 const ALLOWED_OVERLAY_ANIMATION_REACTIONS = [
   'heart',
@@ -95,12 +87,6 @@ type AuthSocket = Socket<
 export class ChatGateway {
   @WebSocketServer()
   server: Namespace;
-
-  /** userId -> timestamps of message:send (sliding window). */
-  private readonly wsMessageSendTimestamps = new Map<string, number[]>();
-
-  /** userId -> timestamps of overlay:reaction (sliding window). */
-  private readonly wsOverlayReactionTimestamps = new Map<string, number[]>();
 
   /** socketId:roomId -> last typing broadcast (ms). */
   private readonly wsTypingLastEmit = new Map<string, number>();
@@ -172,8 +158,6 @@ export class ChatGateway {
     if (!payload.roomId?.trim()) {
       throw new WsException('roomId is required');
     }
-    this.assertWsMessageSendRate(client.data.user.userId);
-
     const message = await this.chatService.createMessage({
       roomId: payload.roomId.trim(),
       text: payload.text,
@@ -304,8 +288,6 @@ export class ChatGateway {
       throw new WsException('Invalid recipient');
     }
 
-    this.assertWsOverlayReactionRate(client.data.user.userId);
-
     await this.chatService.assertUserMayUseChat(client.data.user.userId);
 
     const sender = await this.usersService.findById(client.data.user.userId);
@@ -349,7 +331,6 @@ export class ChatGateway {
 
   /**
    * Broadcast overlay reaction to all teammates in game with a fresh overlay ping.
-   * Counts as a single send for rate limiting (not per recipient).
    */
   @SubscribeMessage('overlay:reaction:broadcast')
   async broadcastOverlayReaction(
@@ -360,8 +341,6 @@ export class ChatGateway {
       throw new WsException('Unauthorized socket connection');
     }
     const reaction = this.normalizeOverlayReaction(body?.reaction);
-
-    this.assertWsOverlayReactionRate(client.data.user.userId);
 
     await this.chatService.assertUserMayUseChat(client.data.user.userId);
 
@@ -473,27 +452,5 @@ export class ChatGateway {
 
   broadcastMessageDeleted(roomId: string, payload: unknown) {
     this.server?.to(`chat:${roomId}`).emit('message:deleted', payload);
-  }
-
-  private assertWsMessageSendRate(userId: string): void {
-    const now = Date.now();
-    const prev = this.wsMessageSendTimestamps.get(userId) ?? [];
-    const recent = prev.filter((t) => now - t < WS_MESSAGE_WINDOW_MS);
-    if (recent.length >= WS_MESSAGE_MAX) {
-      throw new WsException('Too many messages, try again shortly');
-    }
-    recent.push(now);
-    this.wsMessageSendTimestamps.set(userId, recent);
-  }
-
-  private assertWsOverlayReactionRate(userId: string): void {
-    const now = Date.now();
-    const prev = this.wsOverlayReactionTimestamps.get(userId) ?? [];
-    const recent = prev.filter((t) => now - t < WS_OVERLAY_REACTION_WINDOW_MS);
-    if (recent.length >= WS_OVERLAY_REACTION_MAX) {
-      throw new WsException('Too many reactions, try again shortly');
-    }
-    recent.push(now);
-    this.wsOverlayReactionTimestamps.set(userId, recent);
   }
 }

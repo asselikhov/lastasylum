@@ -113,6 +113,8 @@ class VoiceChatSession(
             this.localUserId = localUserId
             socketManager.emitState(micOn, soundOn)
         }
+        notifyState()
+        applyMicCapture()
         if (micOn) onMicForegroundChanged(true)
         publishVoiceStateToServer()
     }
@@ -146,6 +148,8 @@ class VoiceChatSession(
         micOn = enabled
         userSettings.setOverlayVoiceMicEnabled(enabled)
         onMicForegroundChanged(micOn)
+        notifyState()
+        applyMicCapture()
         publishVoiceStateToServer()
         return true
     }
@@ -154,6 +158,7 @@ class VoiceChatSession(
         soundOn = enabled
         userSettings.setOverlayVoiceSoundEnabled(enabled)
         audioPipeline.setSoundEnabled(soundOn)
+        notifyState()
         publishVoiceStateToServer()
     }
 

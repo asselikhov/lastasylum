@@ -14,9 +14,6 @@ import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { parseAllowedOriginsFromEnv } from '../common/config/allowed-origins';
 import { TeamForumService, TeamForumMessageRow } from './team-forum.service';
 
-const WS_MESSAGE_WINDOW_MS = 10_000;
-const WS_MESSAGE_MAX = 8;
-
 type GatewayUser = {
   userId: string;
   username: string;
@@ -45,8 +42,6 @@ type AuthSocket = Socket<
 export class TeamForumGateway {
   @WebSocketServer()
   server: Server;
-
-  private readonly wsMessageSendTimestamps = new Map<string, number[]>();
 
   constructor(
     private readonly forumService: TeamForumService,
@@ -169,8 +164,6 @@ export class TeamForumGateway {
     if (!teamId || !topicId) {
       throw new WsException('teamId and topicId are required');
     }
-    this.assertWsMessageSendRate(client.data.user.userId);
-
     const message = await this.forumService.postMessage(
       teamId,
       topicId,
@@ -245,16 +238,5 @@ export class TeamForumGateway {
     this.server
       ?.to(this.roomKey(teamId, topicId))
       .emit('message:edited', { ...message, teamId, topicId });
-  }
-
-  private assertWsMessageSendRate(userId: string): void {
-    const now = Date.now();
-    const prev = this.wsMessageSendTimestamps.get(userId) ?? [];
-    const recent = prev.filter((t) => now - t < WS_MESSAGE_WINDOW_MS);
-    if (recent.length >= WS_MESSAGE_MAX) {
-      throw new WsException('Too many messages, try again shortly');
-    }
-    recent.push(now);
-    this.wsMessageSendTimestamps.set(userId, recent);
   }
 }

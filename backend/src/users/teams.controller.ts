@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -36,7 +37,10 @@ import { UpdatePlayerTeamDisplayNameDto } from './dto/update-player-team-display
 import { UpdateSquadMemberRoleDto } from './dto/update-squad-member-role.dto';
 import { UpdateTeamNewsDto } from './dto/update-team-news.dto';
 import { VoteTeamNewsDto } from './dto/vote-team-news.dto';
-import { SkipThrottle, Throttle } from '@nestjs/throttler';
+import {
+  AdvanceTeamNewsReadCursorDto,
+  TeamNewsReadCursorDto,
+} from './dto/team-news-read-cursor.dto';
 import { TeamForumGateway } from './team-forum.gateway';
 import {
   CreateTeamForumMessageDto,
@@ -224,7 +228,6 @@ export class TeamsController {
     });
   }
 
-  @SkipThrottle()
   @Get(':teamId/ingame-online')
   @Roles(AllianceRole.MEMBER)
   teamIngameOnline(
@@ -241,11 +244,41 @@ export class TeamsController {
     @Param('teamId') teamId: string,
     @Query('newsAfter') newsAfter?: string,
   ) {
+    if (newsAfter?.trim()) {
+      await this.teamNews.adoptClientLastSeen(
+        teamId,
+        req.user.userId,
+        newsAfter,
+      );
+    }
     const [forumUnread, newsUnread] = await Promise.all([
       this.teamForum.sumUnreadMessages(teamId, req.user.userId),
-      this.teamNews.countUnread(teamId, req.user.userId, newsAfter ?? null),
+      this.teamNews.countUnread(teamId, req.user.userId),
     ]);
     return { forumUnread, newsUnread };
+  }
+
+  @Get(':teamId/news/read-cursor')
+  @Roles(AllianceRole.MEMBER)
+  teamNewsReadCursor(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+  ) {
+    return this.teamNews.getReadCursor(teamId, req.user.userId);
+  }
+
+  @Put(':teamId/news/read-cursor')
+  @Roles(AllianceRole.MEMBER)
+  advanceTeamNewsReadCursor(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Body() body: AdvanceTeamNewsReadCursorDto,
+  ) {
+    return this.teamNews.advanceReadCursor(
+      teamId,
+      req.user.userId,
+      body.createdAt,
+    );
   }
 
   @Get(':teamId/news')
@@ -390,7 +423,6 @@ export class TeamsController {
 
   @Post(':teamId/forum/topics/:topicId/read')
   @Roles(AllianceRole.MEMBER)
-  @Throttle({ default: { limit: 120, ttl: 60_000 } })
   markForumTopicRead(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
@@ -407,7 +439,6 @@ export class TeamsController {
 
   @Post(':teamId/forum/topics/:topicId/messages')
   @Roles(AllianceRole.MEMBER)
-  @Throttle({ default: { limit: 8, ttl: 10_000 } })
   async postForumMessage(
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
@@ -521,7 +552,6 @@ export class TeamsController {
     return { ok: true };
   }
 
-  @SkipThrottle()
   @Get(':teamId')
   @Roles(AllianceRole.MEMBER)
   getTeam(@Req() req: { user: RequestUser }, @Param('teamId') teamId: string) {

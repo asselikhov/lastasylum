@@ -13,6 +13,10 @@ import {
 } from '../common/enums/player-team-member-role.enum';
 import { User } from './schemas/user.schema';
 import { TeamNews, TeamNewsDocument } from './schemas/team-news.schema';
+import {
+  TeamNewsReadState,
+  TeamNewsReadStateDocument,
+} from './schemas/team-news-read-state.schema';
 import { CreateTeamNewsDto } from './dto/create-team-news.dto';
 import { UpdateTeamNewsDto } from './dto/update-team-news.dto';
 import { TeamNewsAttachmentsService } from './team-news-attachments.service';
@@ -60,6 +64,8 @@ export class TeamNewsService {
   constructor(
     @InjectModel(TeamNews.name)
     private readonly newsModel: Model<TeamNewsDocument>,
+    @InjectModel(TeamNewsReadState.name)
+    private readonly newsReadStateModel: Model<TeamNewsReadStateDocument>,
     @InjectModel(User.name) private readonly userModel: Model<User>,
     private readonly teams: TeamsService,
     private readonly attachments: TeamNewsAttachmentsService,
@@ -294,25 +300,101 @@ export class TeamNewsService {
     return { items, nextCursor: null };
   }
 
-  /**
-   * Posts in [teamId] with createdAt strictly after [afterIso] (client last-seen cursor).
-   */
-  async countUnread(
+  async getReadCursor(
     teamId: string,
     userId: string,
-    afterIso?: string | null,
-  ): Promise<number> {
+  ): Promise<{ lastSeenCreatedAt: string | null }> {
+    await this.teams.getTeamIfMemberOrThrow(teamId, userId);
+    const row = await this.newsReadStateModel
+      .findOne({
+        teamId: new Types.ObjectId(teamId),
+        userId,
+      })
+      .lean()
+      .exec();
+    if (!row?.lastSeenCreatedAt) {
+      return { lastSeenCreatedAt: null };
+    }
+    return { lastSeenCreatedAt: row.lastSeenCreatedAt.toISOString() };
+  }
+
+  /**
+   * One-time migration from legacy device prefs ([newsAfter] query) into Mongo.
+   */
+  async adoptClientLastSeen(
+    teamId: string,
+    userId: string,
+    afterIso: string,
+  ): Promise<void> {
+    const trimmed = afterIso?.trim();
+    if (!trimmed) return;
+    const incoming = new Date(trimmed);
+    if (Number.isNaN(incoming.getTime())) return;
+    await this.teams.getTeamIfMemberOrThrow(teamId, userId);
+    const teamOid = new Types.ObjectId(teamId);
+    const existing = await this.newsReadStateModel
+      .findOne({ teamId: teamOid, userId })
+      .lean()
+      .exec();
+    if (
+      existing?.lastSeenCreatedAt &&
+      existing.lastSeenCreatedAt.getTime() >= incoming.getTime()
+    ) {
+      return;
+    }
+    await this.newsReadStateModel
+      .updateOne(
+        { teamId: teamOid, userId },
+        { $set: { lastSeenCreatedAt: incoming } },
+        { upsert: true },
+      )
+      .exec();
+  }
+
+  async advanceReadCursor(
+    teamId: string,
+    userId: string,
+    createdAtIso: string,
+  ): Promise<{ lastSeenCreatedAt: string }> {
+    await this.teams.getTeamIfMemberOrThrow(teamId, userId);
+    const incoming = new Date(createdAtIso.trim());
+    if (Number.isNaN(incoming.getTime())) {
+      throw new BadRequestException('Invalid createdAt');
+    }
+    const teamOid = new Types.ObjectId(teamId);
+    const existing = await this.newsReadStateModel
+      .findOne({ teamId: teamOid, userId })
+      .lean()
+      .exec();
+    const prev = existing?.lastSeenCreatedAt;
+    const next =
+      !prev || incoming.getTime() > prev.getTime() ? incoming : prev;
+    await this.newsReadStateModel
+      .updateOne(
+        { teamId: teamOid, userId },
+        { $set: { lastSeenCreatedAt: next } },
+        { upsert: true },
+      )
+      .exec();
+    return { lastSeenCreatedAt: next.toISOString() };
+  }
+
+  /** Unread team news for [userId] using server read cursor (not device prefs). */
+  async countUnread(teamId: string, userId: string): Promise<number> {
     await this.teams.getTeamIfMemberOrThrow(teamId, userId);
     const filter: Record<string, unknown> = {
       teamId: new Types.ObjectId(teamId),
       authorUserId: { $ne: userId },
     };
-    const trimmed = afterIso?.trim();
-    if (trimmed) {
-      const after = new Date(trimmed);
-      if (!Number.isNaN(after.getTime())) {
-        filter.createdAt = { $gt: after };
-      }
+    const row = await this.newsReadStateModel
+      .findOne({
+        teamId: new Types.ObjectId(teamId),
+        userId,
+      })
+      .lean()
+      .exec();
+    if (row?.lastSeenCreatedAt) {
+      filter.createdAt = { $gt: row.lastSeenCreatedAt };
     }
     return this.newsModel.countDocuments(filter).exec();
   }

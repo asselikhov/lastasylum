@@ -8,6 +8,7 @@ import retrofit2.http.GET
 import retrofit2.http.Multipart
 import retrofit2.http.PATCH
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
@@ -72,6 +73,17 @@ interface TeamsApi {
         @Path("teamId") teamId: String,
         @Query("newsAfter") newsAfter: String? = null,
     ): TeamInboxBadgesDto
+
+    @GET("teams/{teamId}/news/read-cursor")
+    suspend fun getTeamNewsReadCursor(
+        @Path("teamId") teamId: String,
+    ): TeamNewsReadCursorDto
+
+    @PUT("teams/{teamId}/news/read-cursor")
+    suspend fun advanceTeamNewsReadCursor(
+        @Path("teamId") teamId: String,
+        @Body body: AdvanceTeamNewsReadCursorBody,
+    ): TeamNewsReadCursorDto
 
     @GET("teams/{teamId}/news")
     suspend fun listTeamNews(

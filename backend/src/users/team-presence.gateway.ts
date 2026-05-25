@@ -14,9 +14,6 @@ import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { parseAllowedOriginsFromEnv } from '../common/config/allowed-origins';
 import { TeamsService } from './teams.service';
 
-const WS_JOIN_WINDOW_MS = 10_000;
-const WS_JOIN_MAX = 12;
-
 export type TeamPresenceSocketPayload = {
   userId: string;
   presenceStatus: string | null;
@@ -51,8 +48,6 @@ export class TeamPresenceGateway {
   @WebSocketServer()
   server: Server;
 
-  private readonly wsJoinTimestamps = new Map<string, number[]>();
-
   constructor(
     private readonly teamsService: TeamsService,
     private readonly jwtService: JwtService,
@@ -71,17 +66,6 @@ export class TeamPresenceGateway {
     return `team:${teamId}`;
   }
 
-  private assertJoinRate(socketId: string): void {
-    const now = Date.now();
-    const prev = this.wsJoinTimestamps.get(socketId) ?? [];
-    const recent = prev.filter((t) => now - t < WS_JOIN_WINDOW_MS);
-    if (recent.length >= WS_JOIN_MAX) {
-      throw new WsException('Too many team presence join requests');
-    }
-    recent.push(now);
-    this.wsJoinTimestamps.set(socketId, recent);
-  }
-
   @SubscribeMessage('team:join')
   async joinTeam(
     @ConnectedSocket() client: AuthSocket,
@@ -95,7 +79,6 @@ export class TeamPresenceGateway {
     if (!teamId) {
       throw new WsException('teamId is required');
     }
-    this.assertJoinRate(client.id);
     await this.teamsService.getTeamDetailForUser(teamId, client.data.user.userId);
     const key = this.teamRoomKey(teamId);
     if (client.data.teamRoom && client.data.teamRoom !== key) {

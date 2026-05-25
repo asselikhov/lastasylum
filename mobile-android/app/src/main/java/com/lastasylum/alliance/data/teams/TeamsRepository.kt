@@ -82,6 +82,20 @@ class TeamsRepository(
     ): Result<TeamInboxBadgesDto> =
         runCatching { teamsApi.getTeamInboxBadges(teamId, newsAfter) }
 
+    suspend fun getTeamNewsReadCursor(teamId: String): Result<TeamNewsReadCursorDto> =
+        runCatching { teamsApi.getTeamNewsReadCursor(teamId) }
+
+    suspend fun advanceTeamNewsReadCursor(
+        teamId: String,
+        createdAt: String,
+    ): Result<TeamNewsReadCursorDto> =
+        runCatching {
+            teamsApi.advanceTeamNewsReadCursor(
+                teamId,
+                AdvanceTeamNewsReadCursorBody(createdAt = createdAt),
+            )
+        }
+
     suspend fun listTeamNews(
         teamId: String,
         cursor: String? = null,

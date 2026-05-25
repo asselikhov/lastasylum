@@ -11,6 +11,7 @@ import com.lastasylum.alliance.data.auth.AuthRepository
 import com.lastasylum.alliance.data.auth.RegisterResult
 import com.lastasylum.alliance.data.auth.TokenStore
 import com.lastasylum.alliance.data.teams.TeamForumPreferences
+import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.push.FcmTokenManager
@@ -72,6 +73,14 @@ class AuthViewModel(
             userSettingsPreferences,
             userId,
         )
+        val app = AppContainer.from(getApplication())
+        viewModelScope.launch {
+            ReadCursorSession.syncTeamNewsReadCursor(
+                app.usersRepository,
+                app.teamsRepository,
+                userSettingsPreferences,
+            )
+        }
     }
 
     fun login(email: String, password: String) {

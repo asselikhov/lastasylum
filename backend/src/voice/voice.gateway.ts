@@ -187,7 +187,7 @@ export class VoiceGateway {
       await this.usersService.updatePresence(user.userId, 'ingame');
       this.setOverlayIngameCached(user.userId, true);
     }
-    client.to(this.voiceRoomKey(roomId)).emit('voice:peer-state', {
+    this.server.to(this.voiceRoomKey(roomId)).emit('voice:peer-state', {
       roomId,
       peer,
     });

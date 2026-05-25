@@ -3,6 +3,7 @@ import { getModelToken } from '@nestjs/mongoose';
 import mongoose, { Types } from 'mongoose';
 import { TeamNewsService } from './team-news.service';
 import { TeamNews, TeamNewsSchema } from './schemas/team-news.schema';
+import { TeamNewsReadState } from './schemas/team-news-read-state.schema';
 import { User } from './schemas/user.schema';
 import { TeamsService } from './teams.service';
 import { TeamNewsAttachmentsService } from './team-news-attachments.service';
@@ -53,6 +54,15 @@ describe('TeamNewsService poll create', () => {
     }),
   };
 
+  const newsReadStateModel = {
+    findOne: jest.fn().mockReturnValue({
+      lean: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue(null),
+      }),
+    }),
+    updateOne: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue({}) }),
+  };
+
   const userModel = {
     find: jest.fn().mockReturnValue({
       select: jest.fn().mockReturnValue({
@@ -72,6 +82,10 @@ describe('TeamNewsService poll create', () => {
       providers: [
         TeamNewsService,
         { provide: getModelToken(TeamNews.name), useValue: newsModel },
+        {
+          provide: getModelToken(TeamNewsReadState.name),
+          useValue: newsReadStateModel,
+        },
         { provide: getModelToken(User.name), useValue: userModel },
         { provide: TeamsService, useValue: teams },
         { provide: TeamNewsAttachmentsService, useValue: attachments },

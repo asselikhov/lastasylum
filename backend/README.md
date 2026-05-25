@@ -6,7 +6,7 @@ NestJS backend for alliance communication features:
 - Realtime chat stream over Socket.IO
 - MongoDB persistence for users and messages
 - Role-based permissions and moderation controls
-- Rate limiting on sensitive endpoints
+- Role-based access; no HTTP rate limits on chat/team messaging (protect at infra if needed)
 
 ## Tech stack
 

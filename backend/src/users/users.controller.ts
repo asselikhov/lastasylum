@@ -12,7 +12,6 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { DEFAULT_ALLIANCE_ID } from '../common/constants/default-alliance-id';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -54,7 +53,6 @@ export class UsersController {
     private readonly teamPresenceGateway: TeamPresenceGateway,
   ) {}
 
-  @SkipThrottle()
   @Get('me')
   @Roles(AllianceRole.MEMBER)
   async getMyProfile(@Req() req: { user: RequestUser }) {
@@ -68,7 +66,6 @@ export class UsersController {
 
   @Post('me/push-token')
   @Roles(AllianceRole.MEMBER)
-  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   async registerPushToken(
     @Req() req: { user: RequestUser },
     @Body() dto: RegisterPushTokenDto,
@@ -89,7 +86,6 @@ export class UsersController {
 
   @Post('me/presence')
   @Roles(AllianceRole.MEMBER)
-  @Throttle({ default: { limit: 120, ttl: 60_000 } })
   async updatePresence(
     @Req() req: { user: RequestUser },
     @Body() dto: UpdatePresenceDto,
@@ -101,7 +97,6 @@ export class UsersController {
 
   @Patch('me/notification-preferences')
   @Roles(AllianceRole.MEMBER)
-  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async updateMyNotificationPreferences(
     @Req() req: { user: RequestUser },
     @Body() dto: UpdateNotificationPreferencesDto,
@@ -118,7 +113,6 @@ export class UsersController {
 
   @Patch('me/telegram')
   @Roles(AllianceRole.MEMBER)
-  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   async updateMyTelegram(
     @Req() req: { user: RequestUser },
     @Body() dto: UpdateTelegramDto,
@@ -135,7 +129,6 @@ export class UsersController {
 
   @Patch('me/username')
   @Roles(AllianceRole.MEMBER)
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async updateMyUsername(
     @Req() req: { user: RequestUser },
     @Body() dto: UpdateUsernameDto,
@@ -152,7 +145,6 @@ export class UsersController {
 
   @Post('me/game-identities')
   @Roles(AllianceRole.MEMBER)
-  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   async addGameIdentity(
     @Req() req: { user: RequestUser },
     @Body() dto: CreateGameIdentityDto,
@@ -167,7 +159,6 @@ export class UsersController {
 
   @Patch('me/game-identities/:identityId')
   @Roles(AllianceRole.MEMBER)
-  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async updateGameIdentity(
     @Req() req: { user: RequestUser },
     @Param('identityId') identityId: string,
@@ -183,7 +174,6 @@ export class UsersController {
 
   @Delete('me/game-identities/:identityId')
   @Roles(AllianceRole.MEMBER)
-  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   async deleteGameIdentity(
     @Req() req: { user: RequestUser },
     @Param('identityId') identityId: string,
@@ -197,7 +187,6 @@ export class UsersController {
 
   @Post('me/active-game-identity')
   @Roles(AllianceRole.MEMBER)
-  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   async switchActiveGameIdentity(
     @Req() req: { user: RequestUser },
     @Body() dto: SwitchActiveGameIdentityDto,

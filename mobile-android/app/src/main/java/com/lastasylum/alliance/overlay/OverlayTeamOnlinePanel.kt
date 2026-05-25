@@ -39,6 +39,7 @@ import com.lastasylum.alliance.data.users.MyProfileDto
 import com.lastasylum.alliance.data.users.UsersRepository
 import com.lastasylum.alliance.data.voice.TeamVoicePresenceStore
 import com.lastasylum.alliance.data.voice.VoicePeerState
+import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.components.team.TeamMemberPresenceCard
 import com.lastasylum.alliance.ui.screens.TeamLeaderDialogsHost
 import com.lastasylum.alliance.ui.screens.TeamLeaderToolbar
@@ -76,6 +77,7 @@ fun OverlayTeamOnlinePanel(
     val scope = rememberCoroutineScope()
     val leaderUi = rememberTeamLeaderOverlayState()
     val voicePeers by TeamVoicePresenceStore.peers.collectAsState()
+    val voiceSession = AppContainer.from(context).overlayVoiceSession
 
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -371,6 +373,8 @@ fun OverlayTeamOnlinePanel(
                                     selfUserId = p?.id,
                                     selfLabel = selfLabel,
                                     voicePeers = voicePeers,
+                                    localMicOn = voiceSession?.micOn,
+                                    localSoundOn = voiceSession?.soundOn,
                                 )
                             }
                         }
@@ -390,6 +394,8 @@ fun OverlayTeamOnlinePanel(
                                     selfUserId = p?.id,
                                     selfLabel = selfLabel,
                                     voicePeers = voicePeers,
+                                    localMicOn = voiceSession?.micOn,
+                                    localSoundOn = voiceSession?.soundOn,
                                 )
                             }
                         }
@@ -406,10 +412,11 @@ private fun PresenceMemberRow(
     selfUserId: String?,
     selfLabel: String,
     voicePeers: Map<String, VoicePeerState>,
+    localMicOn: Boolean?,
+    localSoundOn: Boolean?,
 ) {
     val member = item.member
     val isSelf = member.userId == selfUserId
-    val peer = voicePeers[member.userId]
     val squadRole = member.teamRole.trim().uppercase().ifBlank { "R1" }
     val presenceAge = formatOverlayPresenceAgeRu(member.lastPresenceAt)
     val inGameNow = item.inGameNow ||
@@ -419,6 +426,13 @@ private fun PresenceMemberRow(
     } else {
         member.username
     }
+    val (micOn, soundOn) = TeamVoicePresenceStore.voiceFlagsForMember(
+        member.userId,
+        selfUserId,
+        voicePeers,
+        localMicOn,
+        localSoundOn,
+    )
     TeamMemberPresenceCard(
         username = member.username,
         telegramUsername = member.telegramUsername,
@@ -427,8 +441,8 @@ private fun PresenceMemberRow(
         presenceSubtitle = presenceAge,
         inGameNow = inGameNow,
         showIngameAvatarRing = inGameNow,
-        micOn = peer?.micOn == true,
-        soundOn = peer?.soundOn == true,
+        micOn = micOn,
+        soundOn = soundOn,
         showVoiceBadges = inGameNow,
     )
 }

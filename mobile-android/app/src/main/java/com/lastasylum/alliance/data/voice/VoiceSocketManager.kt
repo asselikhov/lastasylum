@@ -128,6 +128,9 @@ class VoiceSocketManager {
                 payload,
                 Ack { args ->
                     if (!isVoiceErrorPayload(args)) {
+                        extractPeerFromStateAck(args)?.let { peer ->
+                            dispatchPeer(VoicePeerEvent.State(peer))
+                        }
                         mainHandler.post { onAck() }
                     }
                 },
@@ -232,7 +235,10 @@ class VoiceSocketManager {
                     val peer = payload.optJSONObject("peer")?.toPeerState() ?: return@on
                     dispatchPeer(VoicePeerEvent.State(peer))
                 }
-                on("voice:state-ack") {
+                on("voice:state-ack") { args ->
+                    extractPeerFromStateAck(args)?.let { peer ->
+                        dispatchPeer(VoicePeerEvent.State(peer))
+                    }
                     mainHandler.post {
                         stateAckCallbacks.forEach { callback ->
                             runCatching { callback() }
@@ -345,6 +351,16 @@ class VoiceSocketManager {
     }
 
     /** Nest may deliver join via Socket.IO ack and/or explicit `voice:joined` emit. */
+    private fun extractPeerFromStateAck(args: Array<out Any>): VoicePeerState? {
+        val first = args.firstOrNull() as? JSONObject ?: return null
+        val data = when {
+            first.optString("event") == "voice:state-ack" -> first.optJSONObject("data")
+            first.has("userId") -> first
+            else -> null
+        } ?: return null
+        return data.toPeerState().takeIf { it.userId.isNotBlank() }
+    }
+
     private fun extractVoiceJoinedData(args: Array<out Any>): JSONObject? {
         val first = args.firstOrNull() ?: return null
         if (first is JSONObject) {

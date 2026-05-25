@@ -101,6 +101,7 @@ import com.lastasylum.alliance.data.teams.TeamNewsListItemDto
 import com.lastasylum.alliance.data.teams.TeamNewsPollCreateBody
 import com.lastasylum.alliance.data.teams.TeamNewsPollOptionDto
 import com.lastasylum.alliance.data.teams.TeamNewsPollVoteDto
+import com.lastasylum.alliance.data.teams.TeamNewsReadCursorSync
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.teams.UpdateTeamNewsBody
 import com.lastasylum.alliance.di.AppContainer
@@ -634,9 +635,12 @@ private fun TeamNewsDetailRoute(
         teamsRepository.getTeamNews(teamId, newsId)
             .onSuccess { doc ->
                 detail = doc
-                OverlayGameStatusHudRefresh.markTeamNewsSeenAt(
+                val app = AppContainer.from(context)
+                TeamNewsReadCursorSync.markNewsSeen(
+                    app.teamsRepository,
+                    app.userSettingsPreferences,
+                    teamId,
                     doc.createdAt,
-                    AppContainer.from(context).userSettingsPreferences,
                 )
                 onNewsInboxChanged()
                 loading = false
@@ -1237,10 +1241,12 @@ private fun TeamNewsEditorRoute(
                                 ),
                             )
                                 .onSuccess { created ->
-                                    val prefs = AppContainer.from(context).userSettingsPreferences
-                                    OverlayGameStatusHudRefresh.markTeamNewsSeenAt(
+                                    val app = AppContainer.from(context)
+                                    TeamNewsReadCursorSync.markNewsSeen(
+                                        app.teamsRepository,
+                                        app.userSettingsPreferences,
+                                        teamId,
                                         created.createdAt,
-                                        prefs,
                                     )
                                     onNewsInboxChanged()
                                     saving = false

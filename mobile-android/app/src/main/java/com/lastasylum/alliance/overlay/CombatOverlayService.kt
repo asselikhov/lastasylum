@@ -83,6 +83,7 @@ import com.lastasylum.alliance.data.teams.TeamForumTopicActivityEvent
 import com.lastasylum.alliance.data.teams.TeamInboxUnread
 import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.displayedUnreadCount
+import com.lastasylum.alliance.data.effectiveUnreadCount
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
 import com.lastasylum.alliance.data.chat.ChatSessionCache
@@ -1547,6 +1548,11 @@ class CombatOverlayService : Service() {
                 container.userSettingsPreferences,
                 uid,
             )
+            ReadCursorSession.syncTeamNewsReadCursor(
+                container.usersRepository,
+                container.teamsRepository,
+                container.userSettingsPreferences,
+            )
         }
     }
 
@@ -1979,6 +1985,76 @@ class CombatOverlayService : Service() {
 
     private val hubUnreadBumpedMessageIds = LinkedHashSet<String>()
 
+    /** Realtime [rooms:unread] for alliance hub — works without activity [ChatViewModel]. */
+    private fun applyOverlayHubUnreadFromSocket(event: com.lastasylum.alliance.data.chat.ChatRoomUnreadEvent) {
+        val hubId = resolveOverlayHubRoomId().trim()
+        if (hubId.isEmpty() || event.roomId.trim() != hubId) return
+        val container = AppContainer.from(this)
+        val localRead = container.chatRoomPreferences.getLastReadMessageId(hubId)
+        val serverLast = event.lastReadMessageId?.trim().orEmpty()
+        val serverUnread = event.unreadCount.coerceAtLeast(0)
+
+        if (serverUnread > 0 && !localRead.isNullOrBlank()) {
+            val suppressed = effectiveUnreadCount(
+                serverUnread = serverUnread,
+                lastReadMessageId = serverLast.takeIf { it.isNotEmpty() },
+                localLastReadMessageId = localRead,
+            ) == 0
+            if (suppressed) {
+                hubUnreadOptimisticFloor = 0
+                applyAllianceHubUnreadCount(0)
+                patchHubUnreadInSessionCache(0, localRead)
+                return
+            }
+        }
+
+        if (serverUnread <= 0) {
+            hubUnreadOptimisticFloor = 0
+            applyAllianceHubUnreadCount(0)
+            if (serverLast.isNotBlank()) {
+                container.chatRoomPreferences.setLastReadMessageId(hubId, serverLast)
+                patchHubUnreadInSessionCache(0, serverLast)
+            }
+            return
+        }
+
+        if (serverLast.isNotBlank() && !localRead.isNullOrBlank() &&
+            !isObjectIdNewer(serverLast, localRead)
+        ) {
+            container.chatRoomPreferences.setLastReadMessageId(hubId, serverLast)
+        }
+
+        val rooms = ChatSessionCache.getFreshRooms()
+        val displayed = if (rooms != null) {
+            ChatUnreadCounts.overlayAllianceHubBadge(
+                rooms = rooms,
+                localReadByRoom = container.chatRoomPreferences.loadAllLastReadMessageIds(),
+                optimisticFloor = hubUnreadOptimisticFloor,
+                previouslyDisplayed = overlayStatusHudFlow.value.allianceChatUnread,
+            )
+        } else {
+            displayedUnreadCount(
+                effectiveUnread = serverUnread,
+                previouslyDisplayed = maxOf(
+                    overlayStatusHudFlow.value.allianceChatUnread,
+                    hubUnreadOptimisticFloor,
+                ),
+                rawServerUnread = serverUnread,
+                optimisticFloor = hubUnreadOptimisticFloor,
+            )
+        }
+        if (displayed >= serverUnread) {
+            hubUnreadOptimisticFloor = 0
+        } else if (displayed <= 0) {
+            hubUnreadOptimisticFloor = 0
+        }
+        applyAllianceHubUnreadCount(displayed)
+        patchHubUnreadInSessionCache(
+            displayed,
+            serverLast.takeIf { it.isNotBlank() } ?: localRead,
+        )
+    }
+
     private fun bumpAllianceHubUnreadLocally(messageId: String? = null) {
         val mid = messageId?.trim().orEmpty()
         if (mid.isNotEmpty() && !hubUnreadBumpedMessageIds.add(mid)) return
@@ -2180,6 +2256,9 @@ class CombatOverlayService : Service() {
         syncOverlayHudWindowLayout()
         refreshOverlayTopRightHudState()
         applyOverlayStripVisibility()
+        ensureOverlayRaidRealtimeIfNeeded()
+        seedOverlayInboxBadgesBeforeRefresh()
+        refreshOverlayStatusHudData(force = true)
     }
 
     private fun syncOverlayStatusHudVisibility() {
@@ -3664,6 +3743,7 @@ class CombatOverlayService : Service() {
             roomUnreadListener@{ event ->
                 mainHandler.post {
                     if (!isOverlayChatRoutingActive()) return@post
+                    applyOverlayHubUnreadFromSocket(event)
                     resolveChatViewModel()?.applyRoomUnreadFromServer(event)
                 }
             }
@@ -4592,7 +4672,8 @@ class CombatOverlayService : Service() {
         private const val GAME_GATE_POLL_WARM_MS = 1_800L
         /** FGS включён, оверлей скрыт: редкий опрос usage stats. */
         private const val GAME_GATE_POLL_IDLE_MS = 2_000L
-        private const val STATUS_HUD_REFRESH_MS = 60_000L
+        /** Fallback poll for news/forum when no socket activity (realtime is primary). */
+        private const val STATUS_HUD_REFRESH_MS = 20_000L
         /** Краткий grace при ложном «не в игре» во время чата/пикера; не применяется при явном лаунчере/другом приложении. */
         private const val OVERLAY_INGAME_GRACE_MS = 3_500L
         /** Sustained «not in game» before tearing down overlay windows. */

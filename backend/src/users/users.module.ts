@@ -31,6 +31,10 @@ import {
   TeamNewsAttachment,
   TeamNewsAttachmentSchema,
 } from './schemas/team-news-attachment.schema';
+import {
+  TeamNewsReadState,
+  TeamNewsReadStateSchema,
+} from './schemas/team-news-read-state.schema';
 import { TeamNewsService } from './team-news.service';
 import { TeamNewsAttachmentsService } from './team-news-attachments.service';
 import {
@@ -58,6 +62,7 @@ import { StickerAccessService } from './sticker-access.service';
       { name: TeamJoinRequest.name, schema: TeamJoinRequestSchema },
       { name: TeamNews.name, schema: TeamNewsSchema },
       { name: TeamNewsAttachment.name, schema: TeamNewsAttachmentSchema },
+      { name: TeamNewsReadState.name, schema: TeamNewsReadStateSchema },
       { name: AllianceStickerRoleGrant.name, schema: AllianceStickerRoleGrantSchema },
       {
         name: AllianceStickerUserGrant.name,

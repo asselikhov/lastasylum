@@ -18,7 +18,6 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { isAppAdminRole } from '../common/alliance-role.util';
@@ -191,7 +190,6 @@ export class ChatController {
 
   @Post('messages')
   @Roles(AllianceRole.MEMBER)
-  @Throttle({ default: { limit: 8, ttl: 10_000 } })
   async createMessage(
     @Req() req: { user: RequestUser },
     @Body() dto: CreateMessageDto,
