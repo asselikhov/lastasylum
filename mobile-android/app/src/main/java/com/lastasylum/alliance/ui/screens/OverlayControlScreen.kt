@@ -199,6 +199,12 @@ fun OverlayControlScreen() {
                         scope.launch {
                             appContainer.usersRepository
                                 .updateExcavationPushEnabled(on)
+                                .onSuccess {
+                                    runCatching {
+                                        com.lastasylum.alliance.push.FcmTokenManager
+                                            .registerWithBackend(context.applicationContext)
+                                    }
+                                }
                                 .onFailure {
                                     excavationPushEnabled = !on
                                     prefs.setExcavationPushEnabled(!on)

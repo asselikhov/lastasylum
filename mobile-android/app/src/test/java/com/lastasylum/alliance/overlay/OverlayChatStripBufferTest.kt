@@ -90,4 +90,47 @@ class OverlayChatStripBufferTest {
         assertEquals(1, visible.size)
         assertEquals("fresh", visible.first().text)
     }
+
+    @Test
+    fun mergeReceiveTimeline_doesNotRefreshTtlForStaleForeignMessage() {
+        val ttl = OverlayChatStripBuffer.DEFAULT_MESSAGE_TTL_SECONDS
+        val buffer = OverlayChatStripBuffer(
+            messageTtlSeconds = ttl,
+            bufferCap = 100,
+            maxPreviewMessages = 10,
+        )
+        val oldCreated = Instant.now().minusSeconds(ttl + 60).toString()
+        val msg = ChatMessage(
+            _id = "old-foreign",
+            allianceId = "a",
+            roomId = "r",
+            senderId = "ally-2",
+            senderUsername = "Ally",
+            senderRole = "R2",
+            text = "stale",
+            createdAt = oldCreated,
+        )
+        buffer.upsert(msg)
+        buffer.mergeReceiveTimeline(msg, selfId = "me")
+        buffer.prune()
+        assertTrue(buffer.visibleForPreview().isEmpty())
+    }
+
+    @Test
+    fun containsMessageId_detectsBufferedMessage() {
+        val buffer = OverlayChatStripBuffer()
+        val msg = ChatMessage(
+            _id = "dup-id",
+            allianceId = "a",
+            roomId = "r",
+            senderId = "u1",
+            senderUsername = "Pilot",
+            senderRole = "R2",
+            text = "hello",
+            createdAt = Instant.now().toString(),
+        )
+        buffer.upsert(msg)
+        assertTrue(buffer.containsMessageId("dup-id"))
+        org.junit.Assert.assertFalse(buffer.containsMessageId("other"))
+    }
 }

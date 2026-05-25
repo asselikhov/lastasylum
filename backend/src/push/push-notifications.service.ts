@@ -50,7 +50,8 @@ export class PushNotificationsService implements OnModuleInit {
     if (tokens.length === 0) {
       this.logger.warn(
         `FCM excavation: no device tokens for allianceId=${input.allianceId} ` +
-          `(excludeUserId=${input.excludeUserId}). Recipients need pushFcmTokens and must not be fresh ingame.`,
+          `(excludeUserId=${input.excludeUserId}). Recipients need pushFcmTokens, excavation push enabled, ` +
+          `and must not be overlay-ingame (those allies get the raid strip card only).`,
       );
       return;
     }

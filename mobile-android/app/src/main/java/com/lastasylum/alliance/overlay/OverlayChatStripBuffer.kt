@@ -78,19 +78,19 @@ class OverlayChatStripBuffer(
         receivedAt[sent.stableKey()] = Instant.now()
     }
 
-    fun mergeReceiveTimeline(msg: ChatMessage, selfId: String?) {
+    fun mergeReceiveTimeline(msg: ChatMessage, @Suppress("UNUSED_PARAMETER") selfId: String?) {
         val key = msg.stableKey()
         val parsed = OverlayChatTime.parseInstant(msg.createdAt)
-        val cutoff = Instant.now().minus(messageTtlSeconds, ChronoUnit.SECONDS)
         when {
             parsed == null -> receivedAt.putIfAbsent(key, Instant.now())
-            parsed.isBefore(cutoff) &&
-                selfId != null &&
-                msg.senderId == selfId -> {
-                receivedAt[key] = Instant.now()
-            }
             else -> receivedAt.putIfAbsent(key, parsed)
         }
+    }
+
+    fun containsMessageId(messageId: String): Boolean {
+        val id = messageId.trim()
+        if (id.isEmpty()) return false
+        return messages.any { it._id?.trim() == id }
     }
 
     fun seedFromHistory(loaded: List<ChatMessage>) {

@@ -605,58 +605,48 @@ export class UsersService implements OnModuleInit {
     return rows.map((r) => r._id.toString());
   }
 
-  /** Push: skip only allies with a fresh overlay ingame ping (~1× heartbeat 60 s). */
-  private static readonly EXCAVATION_PUSH_INGAME_FRESH_MS = 62_000;
-
   async collectPushTokensForExcavationAlert(
     allianceId: string,
     excludeUserId: string,
   ): Promise<string[]> {
     if (!Types.ObjectId.isValid(excludeUserId)) return [];
-    const staleBefore = new Date(
-      Date.now() - UsersService.EXCAVATION_PUSH_INGAME_FRESH_MS,
-    );
-    const presenceEligible = {
-      $or: [
-        { presenceStatus: { $ne: 'ingame' } },
-        { presenceStatus: null },
-        { lastPresenceAt: null },
-        { lastPresenceAt: { $lt: staleBefore } },
-      ],
-    };
     const filter: Record<string, unknown> = {
       membershipStatus: TeamMembershipStatus.ACTIVE,
       _id: { $ne: new Types.ObjectId(excludeUserId) },
       pushFcmTokens: { $exists: true, $ne: [] },
       excavationPushEnabled: { $ne: false },
-      ...presenceEligible,
     };
     if (allianceId.startsWith('pt:')) {
       const teamId = allianceId.slice(3);
       if (!Types.ObjectId.isValid(teamId)) return [];
       const teamOid = new Types.ObjectId(teamId);
-      filter.$and = [
-        presenceEligible,
-        {
-          $or: [
-            { playerTeamId: teamOid },
-            { 'gameIdentities.playerTeamId': teamOid },
-          ],
-        },
+      filter.$or = [
+        { playerTeamId: teamOid },
+        { 'gameIdentities.playerTeamId': teamOid },
       ];
-      delete filter.$or;
     } else {
       filter.allianceName = allianceId;
     }
     const users = await this.userModel
       .find(filter)
-      .select('pushFcmTokens')
-      .lean()
+      .select('_id pushFcmTokens')
+      .lean<Array<{ _id: Types.ObjectId; pushFcmTokens?: string[] }>>()
       .exec();
     const out: string[] = [];
+    let excludedOverlayIngame = 0;
     for (const u of users) {
-      const arr = (u as { pushFcmTokens?: string[] }).pushFcmTokens;
+      const userId = u._id.toString();
+      if (await this.isOverlayIngameNow(userId)) {
+        excludedOverlayIngame++;
+        continue;
+      }
+      const arr = u.pushFcmTokens;
       if (Array.isArray(arr)) out.push(...arr);
+    }
+    if (excludedOverlayIngame > 0) {
+      this.logger.debug(
+        `FCM excavation: excluded ${excludedOverlayIngame} overlay-ingame ally(ies) (allianceId=${allianceId})`,
+      );
     }
     return out;
   }

@@ -123,13 +123,18 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import com.lastasylum.alliance.push.FcmTokenManager
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 class CombatOverlayService : Service() {
     private var windowManager: WindowManager? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var fcmRegistrationJob: Job? = null
     private val overlayTicker by lazy {
         OverlayTickerWindow(
             context = this,
@@ -1008,9 +1013,26 @@ class CombatOverlayService : Service() {
         val targets = AppContainer.from(this).userSettingsPreferences.getOverlayTargetGamePackages()
         GameForegroundGate.primeTotalTimeForegroundWatch(this, targets)
         registerScreenOnReceiver()
+        startOverlayFcmTokenRegistration()
         mainHandler.post {
             ensureOverlayRaidRealtimeIfNeeded()
             tickGameGate()
+        }
+    }
+
+    /** FCM token on backend even when MainActivity never opens (overlay-only players). */
+    private fun startOverlayFcmTokenRegistration() {
+        val container = AppContainer.from(this)
+        if (!container.authRepository.hasSession()) return
+        fcmRegistrationJob?.cancel()
+        fcmRegistrationJob = serviceScope.launch {
+            val intervalMs = 20 * 60 * 1000L
+            while (isActive) {
+                runCatching {
+                    FcmTokenManager.registerWithBackend(this@CombatOverlayService)
+                }
+                delay(intervalMs)
+            }
         }
     }
 
@@ -2120,6 +2142,7 @@ class CombatOverlayService : Service() {
         overlayStatusHudHost?.visibility = View.VISIBLE
         overlayTopRightHudHost?.visibility = View.VISIBLE
         applyOverlayStripVisibility()
+        attachOverlayHudWindowsIfNeeded()
     }
 
     private fun syncOverlayHudsIfReady() {
@@ -2551,6 +2574,9 @@ class CombatOverlayService : Service() {
         ensureOverlayIfPermitted()
         if (shouldShow && !wasInGame) {
             stableGatePollTicks = HUD_STABLE_TICKS_BEFORE_ATTACH
+            stripBuffer.clear()
+            lastStripRenderSignature = 0
+            chatStripPreviewFlow.value = emptyList()
             resetOverlayVoiceForGameEntry()
             ensureOverlayRaidRealtimeIfNeeded()
             ensureOverlayForumInboxRealtimeIfNeeded()
@@ -2558,12 +2584,12 @@ class CombatOverlayService : Service() {
             OverlayGameStatusHudRefresh.invalidateNewsForumCache()
             lastHudRefreshCompletedAtMs = 0L
             syncOverlayHubBadgeFromAppReadState()
+            repairDetachedOverlayShellIfNeeded()
             attachOverlayHudWindowsIfNeeded()
             mainHandler.post {
                 if (!isInGameOverlayUiActive()) return@post
                 refreshOverlayStatusHudData(force = true)
                 scheduleOverlayStatusHudRefresh()
-                refreshOverlayChatStripNow()
             }
         }
         syncOverlayHudsIfReady()
@@ -2571,6 +2597,11 @@ class CombatOverlayService : Service() {
             scheduleOverlayStatusHudRefresh()
         }
         if (shouldShow) {
+            if (overlayStatusHudHost == null || overlayTopRightHudHost == null) {
+                repairDetachedOverlayShellIfNeeded()
+                runCatching { showOverlayShell() }
+                attachOverlayHudWindowsIfNeeded()
+            }
             restoreOverlayInGameWindowVisibility()
         } else if (isOverlayShellActive() && isOverlayChatStripEnabled()) {
             applyOverlayStripVisibility()
@@ -2591,6 +2622,7 @@ class CombatOverlayService : Service() {
             return
         }
         deferredDismissWhenPickerEnds = false
+        stopOverlayIngamePresence(markAway = true)
         gateUiHideStreak = 0
         gateSoftHideStartedAtMs = 0L
         lastForegroundHintPkg = null
@@ -2750,6 +2782,8 @@ class CombatOverlayService : Service() {
         stopOverlayVoice()
         overlayTicker.hideTicker()
         runCatching { hideOverlayChatTeamPanel() }
+        fcmRegistrationJob?.cancel()
+        fcmRegistrationJob = null
         stopOverlayIngamePresence(markAway = true)
         removeOverlayControl(force = true)
         removeOverlayStatusHudWindow()
@@ -3231,6 +3265,15 @@ class CombatOverlayService : Service() {
         )
     }
 
+    private fun isStaleOverlayStripMessage(msg: ChatMessage): Boolean {
+        val parsed = OverlayChatTime.parseInstant(msg.createdAt) ?: return false
+        val cutoff = Instant.now().minus(
+            OverlayChatStripBuffer.DEFAULT_MESSAGE_TTL_SECONDS,
+            ChronoUnit.SECONDS,
+        )
+        return parsed.isBefore(cutoff)
+    }
+
     private fun ingestOverlayRaidMessage(
         msg: ChatMessage,
         refreshNow: Boolean,
@@ -3241,9 +3284,13 @@ class CombatOverlayService : Service() {
             mainHandler.post { ingestOverlayRaidMessage(msg, refreshNow, retryIndex, forceIngest) }
             return
         }
-        if (!forceIngest && !isOverlayChatRoutingActive()) return
+        if (!forceIngest && !isOverlayRaidStripEligible()) return
         val raidId = resolveOverlayRaidRoomId() ?: trustedOverlayRaidRoomId
         val normalized = normalizeStripRaidMessage(msg, raidId)
+        if (!forceIngest && isStaleOverlayStripMessage(normalized)) return
+        normalized._id?.trim()?.takeIf { it.isNotEmpty() }?.let { existingId ->
+            if (stripBuffer.containsMessageId(existingId)) return
+        }
         if (!shouldIngestForRaidStrip(normalized)) {
             val forcedRaid = raidId?.trim().orEmpty()
             if (forceIngest && forcedRaid.isNotEmpty()) {
@@ -3636,36 +3683,7 @@ class CombatOverlayService : Service() {
                         OverlayStripNoticeIds.NO_RAID,
                     )
                 }
-                return@launch
             }
-            val cachedHistory = com.lastasylum.alliance.data.chat.ChatSessionCache
-                .getFreshMessages(raidId)
-            if (!cachedHistory.isNullOrEmpty()) {
-                mainHandler.post {
-                    stripBuffer.seedFromHistory(cachedHistory.take(OVERLAY_HISTORY_LOAD))
-                    lastStripRenderSignature = 0
-                    refreshOverlayChatStripNow()
-                }
-            }
-            container.chatRepository.loadRecentMessages(raidId, null, OVERLAY_HISTORY_LOAD)
-                .onSuccess { loaded ->
-                    com.lastasylum.alliance.data.chat.ChatSessionCache.updateMessages(raidId, loaded)
-                    mainHandler.post {
-                        stripBuffer.seedFromHistory(loaded)
-                        lastStripRenderSignature = 0
-                        refreshOverlayChatStripNow()
-                    }
-                }
-                .onFailure {
-                    if (cachedHistory.isNullOrEmpty()) {
-                        mainHandler.post {
-                            setStripPlainMessage(
-                                getString(R.string.overlay_strip_history_failed),
-                                OverlayStripNoticeIds.HISTORY_FAILED,
-                            )
-                        }
-                    }
-                }
         }
     }
 
@@ -4553,7 +4571,7 @@ class CombatOverlayService : Service() {
         private const val OVERLAY_CLOSE_HUD_REFRESH_DELAY_MS = 80L
         private const val STRIP_ZORDER_MIN_INTERVAL_MS = 30_000L
         private const val STRIP_ZORDER_LIFT_DELAY_MS = 0L
-        private val STRIP_INGEST_RETRY_DELAYS_MS = longArrayOf(120L, 350L, 800L, 1_800L)
+        private val STRIP_INGEST_RETRY_DELAYS_MS = longArrayOf(0L, 120L)
         /** Симметричный отступ HUD от края игрового экрана (левый START / правый END). */
         private const val OVERLAY_HUD_WINDOW_X_DP = OverlayHudLayout.WINDOW_X_DP
         private const val OVERLAY_HUD_LEFT_WINDOW_X_DP = OverlayHudLayout.WINDOW_X_DP

@@ -251,7 +251,13 @@ describe('UsersService', () => {
   describe('collectPushTokensForExcavationAlert', () => {
     it('excludes users in fresh ingame overlay and opted out', async () => {
       const exclude = new Types.ObjectId();
-      execCollect.mockResolvedValue([{ pushFcmTokens: ['t1'] }]);
+      const allyId = new Types.ObjectId();
+      execCollect.mockResolvedValue([{ _id: allyId, pushFcmTokens: ['t1'] }]);
+      execFindByIdLean.mockResolvedValue({
+        presenceStatus: 'online',
+        lastPresenceAt: new Date(0),
+        membershipStatus: TeamMembershipStatus.ACTIVE,
+      });
       const out = await usersService.collectPushTokensForExcavationAlert(
         'pt:507f1f77bcf86cd799439011',
         exclude.toHexString(),
@@ -259,7 +265,33 @@ describe('UsersService', () => {
       expect(out).toEqual(['t1']);
       const call = findForAlliance.mock.calls[0][0] as Record<string, unknown>;
       expect(call.excavationPushEnabled).toEqual({ $ne: false });
-      expect(call.$and).toBeDefined();
+      expect(call.$or).toBeDefined();
+    });
+
+    it('skips push tokens for overlay-ingame allies', async () => {
+      const exclude = new Types.ObjectId();
+      const ingameAlly = new Types.ObjectId();
+      const offlineAlly = new Types.ObjectId();
+      execCollect.mockResolvedValue([
+        { _id: ingameAlly, pushFcmTokens: ['skip'] },
+        { _id: offlineAlly, pushFcmTokens: ['keep'] },
+      ]);
+      execFindByIdLean
+        .mockResolvedValueOnce({
+          presenceStatus: 'ingame',
+          lastPresenceAt: new Date(),
+          membershipStatus: TeamMembershipStatus.ACTIVE,
+        })
+        .mockResolvedValueOnce({
+          presenceStatus: 'online',
+          lastPresenceAt: new Date(0),
+          membershipStatus: TeamMembershipStatus.ACTIVE,
+        });
+      const out = await usersService.collectPushTokensForExcavationAlert(
+        'ally1',
+        exclude.toHexString(),
+      );
+      expect(out).toEqual(['keep']);
     });
   });
 
