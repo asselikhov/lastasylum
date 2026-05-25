@@ -2142,7 +2142,6 @@ class CombatOverlayService : Service() {
         overlayStatusHudHost?.visibility = View.VISIBLE
         overlayTopRightHudHost?.visibility = View.VISIBLE
         applyOverlayStripVisibility()
-        attachOverlayHudWindowsIfNeeded()
     }
 
     private fun syncOverlayHudsIfReady() {
@@ -2172,7 +2171,7 @@ class CombatOverlayService : Service() {
         }
         syncOverlayHudWindowLayout()
         refreshOverlayTopRightHudState()
-        restoreOverlayInGameWindowVisibility()
+        applyOverlayStripVisibility()
     }
 
     private fun syncOverlayStatusHudVisibility() {
@@ -2601,8 +2600,9 @@ class CombatOverlayService : Service() {
                 repairDetachedOverlayShellIfNeeded()
                 runCatching { showOverlayShell() }
                 attachOverlayHudWindowsIfNeeded()
+            } else {
+                restoreOverlayInGameWindowVisibility()
             }
-            restoreOverlayInGameWindowVisibility()
         } else if (isOverlayShellActive() && isOverlayChatStripEnabled()) {
             applyOverlayStripVisibility()
         }

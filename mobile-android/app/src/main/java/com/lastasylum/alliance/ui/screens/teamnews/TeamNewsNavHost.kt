@@ -488,25 +488,8 @@ private fun TeamNewsListRoute(
         loadNewsPage(cursor = null, append = false)
     }
 
-    Scaffold(
-        containerColor = Color.Transparent,
-        floatingActionButton = {
-            if (canPublishNews) {
-                FloatingActionButton(
-                    onClick = onCreate,
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.team_news_new))
-                }
-            }
-        },
-    ) { pad ->
-        Box(
-            Modifier
-                .fillMaxSize()
-                .padding(pad),
-        ) {
+    Column(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize()) {
             when {
                 loading && newsItems.isEmpty() -> {
                     CircularProgressIndicator(Modifier.align(Alignment.Center))
@@ -550,61 +533,73 @@ private fun TeamNewsListRoute(
                     )
                 }
                 else -> {
-                        val listTopPad = if (overlayUi) 4.dp else 12.dp
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(
-                                start = SquadRelayDimens.contentPaddingHorizontal,
-                                end = SquadRelayDimens.contentPaddingHorizontal,
-                                top = listTopPad,
-                                bottom = 88.dp,
-                            ),
-                            verticalArrangement = Arrangement.spacedBy(14.dp),
-                        ) {
-                            items(
-                                items = newsItems,
-                                key = { it.id },
-                            ) { item ->
-                                TeamNewsFeedCard(
-                                    item = item,
-                                    isUnread = TeamInboxUnread.isNewsItemUnread(
-                                        item,
-                                        newsPrefs,
-                                        currentUserId,
-                                    ),
-                                    onClick = { onOpenDetail(item.id) },
-                                    onEdit = {
-                                        val isAuthor = item.authorUserId == currentUserId
-                                        val isOfficer =
-                                            myTeamRole == "R4" || myTeamRole == "R5"
-                                        if (isAuthor || isOfficer) onEditFromList(item.id)
+                    val listTopPad = if (overlayUi) 0.dp else 8.dp
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = SquadRelayDimens.contentPaddingHorizontal,
+                            end = SquadRelayDimens.contentPaddingHorizontal,
+                            top = listTopPad,
+                            bottom = 88.dp,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        items(
+                            items = newsItems,
+                            key = { it.id },
+                        ) { item ->
+                            TeamNewsFeedCard(
+                                item = item,
+                                isUnread = TeamInboxUnread.isNewsItemUnread(
+                                    item,
+                                    newsPrefs,
+                                    currentUserId,
+                                ),
+                                onClick = { onOpenDetail(item.id) },
+                                onEdit = {
+                                    val isAuthor = item.authorUserId == currentUserId
+                                    val isOfficer =
+                                        myTeamRole == "R4" || myTeamRole == "R5"
+                                    if (isAuthor || isOfficer) onEditFromList(item.id)
+                                },
+                                showEdit = item.authorUserId == currentUserId ||
+                                    myTeamRole == "R4" || myTeamRole == "R5",
+                            )
+                        }
+                        if (!newsNextCursor.isNullOrBlank()) {
+                            item {
+                                OutlinedButton(
+                                    onClick = {
+                                        scope.launch {
+                                            loadNewsPage(newsNextCursor, append = true)
+                                        }
                                     },
-                                    showEdit = item.authorUserId == currentUserId ||
-                                        myTeamRole == "R4" || myTeamRole == "R5",
-                                )
-                            }
-                            if (!newsNextCursor.isNullOrBlank()) {
-                                item {
-                                    OutlinedButton(
-                                        onClick = {
-                                            scope.launch {
-                                                loadNewsPage(newsNextCursor, append = true)
-                                            }
+                                    enabled = !loadingMore,
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Text(
+                                        if (loadingMore) {
+                                            stringResource(R.string.team_news_loading_more)
+                                        } else {
+                                            stringResource(R.string.team_news_load_more)
                                         },
-                                        enabled = !loadingMore,
-                                        modifier = Modifier.fillMaxWidth(),
-                                    ) {
-                                        Text(
-                                            if (loadingMore) {
-                                                stringResource(R.string.team_news_loading_more)
-                                            } else {
-                                                stringResource(R.string.team_news_load_more)
-                                            },
-                                        )
-                                    }
+                                    )
                                 }
                             }
                         }
+                    }
+                }
+            }
+            if (canPublishNews) {
+                FloatingActionButton(
+                    onClick = onCreate,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(16.dp),
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.team_news_new))
                 }
             }
         }
