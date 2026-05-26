@@ -65,7 +65,13 @@ internal fun mergeLoadedPageWithExisting(
     maxMessages: Int = CHAT_MAX_MESSAGES_IN_MEMORY,
 ): List<ChatMessage> {
     if (existing.isEmpty()) return capNewestFirst(loaded, maxMessages)
-    if (loaded.isEmpty()) return capNewestFirst(existing, maxMessages)
+    if (loaded.isEmpty()) {
+        // Server returned an empty page — room has no messages; do not resurrect disk/socket cache.
+        val pendingOnly = existing.filter { msg ->
+            msg._id?.trim().orEmpty().startsWith("pending-")
+        }
+        return capNewestFirst(pendingOnly, maxMessages)
+    }
     val loadedIds = loaded.mapNotNull { msg ->
         msg._id?.trim()?.takeIf { it.isNotEmpty() }
     }.toSet()

@@ -127,6 +127,13 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun mergeLoadedPageWithExisting_clearsCacheWhenServerPageEmpty() {
+        val existing = listOf(msg("stale-1", "old"), msg("pending-1", "sending"))
+        val merged = mergeLoadedPageWithExisting(existing, loaded = emptyList())
+        assertEquals(listOf("pending-1"), merged.map { it._id })
+    }
+
+    @Test
     fun mergeLoadedPageWithExisting_prefersLoadedTextForSameId() {
         val existing = listOf(msg("1", "socket text"))
         val loaded = listOf(msg("1", "http text"), msg("0", "older"))
