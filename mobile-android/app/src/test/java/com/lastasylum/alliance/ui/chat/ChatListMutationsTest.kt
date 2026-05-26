@@ -119,11 +119,36 @@ class ChatListMutationsTest {
 
     @Test
     fun mergeLoadedPageWithExisting_keepsSocketRowMissingFromHttpPage() {
-        val socketNew = msg("server-new", "from socket")
-        val existing = listOf(socketNew, msg("older", "x"))
-        val loaded = listOf(msg("older", "x"))
+        val socketNew = msg("507f1f77bcf86cd799439013", "from socket")
+        val existing = listOf(socketNew, msg("507f1f77bcf86cd799439011", "x"))
+        val loaded = listOf(msg("507f1f77bcf86cd799439011", "x"))
         val merged = mergeLoadedPageWithExisting(existing, loaded)
-        assertEquals(listOf("server-new", "older"), merged.map { it._id })
+        assertEquals(listOf("507f1f77bcf86cd799439013", "507f1f77bcf86cd799439011"), merged.map { it._id })
+    }
+
+    @Test
+    fun mergeLoadedPageWithExisting_dropsStaleOlderMissingFromServer() {
+        val anchor = "507f1f77bcf86cd799439013"
+        val staleMiddle = "507f1f77bcf86cd799439012"
+        val older = "507f1f77bcf86cd799439011"
+        val existing = listOf(msg(anchor), msg(staleMiddle), msg(older))
+        val loaded = listOf(msg(anchor), msg(older))
+        val merged = mergeLoadedPageWithExisting(existing, loaded)
+        assertEquals(listOf(anchor, older), merged.map { it._id })
+    }
+
+    @Test
+    fun mergeLoadedPageWithExisting_honorsExcludedIds() {
+        val stale = "507f1f77bcf86cd799439099"
+        val anchor = "507f1f77bcf86cd799439011"
+        val existing = listOf(msg(stale, "ghost"))
+        val loaded = listOf(msg(anchor, "ok"))
+        val merged = mergeLoadedPageWithExisting(
+            existing = existing,
+            loaded = loaded,
+            excludedMessageIds = setOf(stale),
+        )
+        assertEquals(listOf(anchor), merged.map { it._id })
     }
 
     @Test

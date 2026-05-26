@@ -154,6 +154,8 @@ class ChatViewModel(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     private val roomMessageCache = mutableMapOf<String, RoomMessageCache>()
+    /** Hard-deleted ids — mergeLoadedPageWithExisting must not resurrect them from disk/socket cache. */
+    private val locallyRemovedMessageIds = LinkedHashSet<String>()
     /** Latest message id we successfully marked read per room (avoids regress + duplicate bumps). */
     private val lastMarkedReadByRoom = mutableMapOf<String, String>()
     /** Socket can deliver the same message via new + reaction/edited; count unread once per id. */
@@ -1686,6 +1688,7 @@ class ChatViewModel(
                             existing = current,
                             loaded = loaded,
                             maxMessages = messageMemoryCap,
+                            excludedMessageIds = locallyRemovedMessageIds,
                         )
                     }
                     val unchanged = withContext(Dispatchers.Default) {
@@ -1737,6 +1740,7 @@ class ChatViewModel(
             existing = current,
             loaded = loaded,
             maxMessages = messageMemoryCap,
+            excludedMessageIds = locallyRemovedMessageIds,
         )
         ChatSessionCache.updateMessages(roomId, merged)
         knownMessageIds.clear()
@@ -2352,6 +2356,7 @@ class ChatViewModel(
                                 isDeletingSelection = true,
                             ),
                         )
+                        persistMessageRemoved(messageId, result.roomId)
                     }
                     .onFailure { t ->
                         if (t.isChatMessageAlreadyGoneOnServer()) {
@@ -2361,6 +2366,7 @@ class ChatViewModel(
                                     isDeletingSelection = true,
                                 ),
                             )
+                            persistMessageRemoved(id, _state.value.selectedRoomId.orEmpty())
                         } else {
                             lastFailure = t
                         }
@@ -2395,6 +2401,7 @@ class ChatViewModel(
                             error = null,
                         ),
                     )
+                    persistMessageRemoved(result.messageId, result.roomId)
                 }
                 .onFailure { throwable ->
                     if (throwable.isChatMessageAlreadyGoneOnServer()) {
@@ -2405,6 +2412,7 @@ class ChatViewModel(
                                 error = null,
                             ),
                         )
+                        persistMessageRemoved(messageId, _state.value.selectedRoomId.orEmpty())
                     } else {
                         _state.value = _state.value.copy(
                             deletingMessageId = null,
@@ -2495,7 +2503,7 @@ class ChatViewModel(
             if (removedId.isEmpty()) return@launch
             val eventRoomId = event.roomId.trim()
             val selected = _state.value.selectedRoomId
-            if (eventRoomId.isNotBlank() && eventRoomId == selected) {
+            if (eventRoomId.isBlank() || eventRoomId == selected) {
                 val scrubbed = scrubRemovedMessage(_state.value, removedId)
                 _state.value = syncSelections(
                     scrubbed.copy(
@@ -2507,13 +2515,46 @@ class ChatViewModel(
                     ),
                 )
             }
-            if (eventRoomId.isBlank() || !roomMessageCache.containsKey(eventRoomId)) return@launch
-            val cached = roomMessageCache[eventRoomId] ?: return@launch
-            val cacheKnown = cached.messages.mapNotNull { it._id }.toMutableSet()
-            val nextMessages = scrubMessagesAfterRemove(cached.messages, removedId, cacheKnown)
-            val updated = cached.copy(messages = nextMessages)
-            roomMessageCache[eventRoomId] = updated
-            ChatSessionCache.updateMessages(eventRoomId, nextMessages)
+            persistMessageRemoved(removedId, eventRoomId)
+        }
+    }
+
+    private fun persistMessageRemoved(removedId: String, roomId: String) {
+        val id = removedId.trim()
+        if (id.isEmpty()) return
+        markMessageRemovedLocally(id)
+        val rid = roomId.trim().ifBlank { _state.value.selectedRoomId?.trim().orEmpty() }
+        if (rid.isEmpty()) {
+            schedulePersistChatSnapshot()
+            return
+        }
+        val cached = roomMessageCache[rid]
+        val nextMessages = when {
+            cached != null -> {
+                val cacheKnown = cached.messages.mapNotNull { it._id }.toMutableSet()
+                scrubMessagesAfterRemove(cached.messages, id, cacheKnown)
+            }
+            _state.value.selectedRoomId == rid -> _state.value.messages
+            else -> null
+        }
+        if (nextMessages != null) {
+            val capped = capMessagesForMemory(nextMessages)
+            roomMessageCache[rid] = RoomMessageCache(
+                messages = capped,
+                hasMoreOlder = cached?.hasMoreOlder ?: _state.value.hasMoreOlder,
+            )
+            ChatSessionCache.updateMessages(rid, capped)
+        }
+        schedulePersistChatSnapshot()
+    }
+
+    private fun markMessageRemovedLocally(messageId: String) {
+        val id = messageId.trim()
+        if (id.isEmpty()) return
+        locallyRemovedMessageIds.add(id)
+        while (locallyRemovedMessageIds.size > 512) {
+            val eldest = locallyRemovedMessageIds.first()
+            locallyRemovedMessageIds.remove(eldest)
         }
     }
 

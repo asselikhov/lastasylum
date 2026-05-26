@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.ui.chat
 
+import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.mergeIncomingChatUpdate
 import com.lastasylum.alliance.data.chat.mergePreservingAttachments
@@ -58,40 +59,50 @@ internal fun stripRedundantPendingOutgoing(
 
 /**
  * HTTP refresh must not drop rows already shown from socket (API can lag behind realtime).
+ * Rows missing from the server page are kept only when still newer than the page anchor
+ * (socket ahead of REST) or optimistic pending — not when deleted and left in disk cache.
  */
 internal fun mergeLoadedPageWithExisting(
     existing: List<ChatMessage>,
     loaded: List<ChatMessage>,
     maxMessages: Int = CHAT_MAX_MESSAGES_IN_MEMORY,
+    excludedMessageIds: Set<String> = emptySet(),
 ): List<ChatMessage> {
     if (existing.isEmpty()) return capNewestFirst(loaded, maxMessages)
     if (loaded.isEmpty()) {
         // Server returned an empty page — room has no messages; do not resurrect disk/socket cache.
         val pendingOnly = existing.filter { msg ->
-            msg._id?.trim().orEmpty().startsWith("pending-")
+            val id = msg._id?.trim().orEmpty()
+            id.startsWith("pending-") && id !in excludedMessageIds
         }
         return capNewestFirst(pendingOnly, maxMessages)
     }
     val loadedIds = loaded.mapNotNull { msg ->
         msg._id?.trim()?.takeIf { it.isNotEmpty() }
     }.toSet()
+    val newestLoadedId = loaded.firstOrNull()?._id?.trim().orEmpty()
     val known = loadedIds.toMutableSet()
     val index = mutableMapOf<String, Int>()
     rebuildMessageIdIndex(loaded, index)
     var messages = loaded
     for (msg in existing) {
         val id = msg._id?.trim().orEmpty()
-        if (id.isEmpty()) continue
-        if (id.startsWith("pending-") || id !in loadedIds) {
-            val update = upsertMessage(
-                current = messages,
-                incoming = msg,
-                knownMessageIds = known,
-                idIndex = index,
-                deferIndexShift = true,
-            )
-            messages = update.messages
+        if (id.isEmpty() || id in excludedMessageIds) continue
+        val keep = when {
+            id.startsWith("pending-") -> true
+            id in loadedIds -> false
+            newestLoadedId.isEmpty() -> false
+            else -> isObjectIdNewer(id, newestLoadedId)
         }
+        if (!keep) continue
+        val update = upsertMessage(
+            current = messages,
+            incoming = msg,
+            knownMessageIds = known,
+            idIndex = index,
+            deferIndexShift = true,
+        )
+        messages = update.messages
     }
     return dedupeMessagesByIdNewestFirst(capNewestFirst(messages, maxMessages))
 }
