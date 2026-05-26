@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.ui.insets.LocalImeSnapState
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 
@@ -15,20 +16,22 @@ fun Modifier.chatComposerOverlayDock(): Modifier =
     padding(bottom = SquadRelayDimens.composerBottomGap)
 
 /**
- * Приложение (edge-to-edge, adjustNothing): только композер реагирует на IME.
- * На вкладке чата нижняя навигация скрывается при открытой клавиатуре ([com.lastasylum.alliance.ui.AppNavigation]),
- * поэтому достаточно полного IME-inset без вычитания высоты bottomBar.
+ * Приложение: подъём всего [com.lastasylum.alliance.ui.screens.ChatScreen] (как padding корня в оверлее).
+ * Композер — только [chatComposerOverlayDock].
  */
-fun Modifier.chatComposerAppDock(): Modifier = composed {
+fun Modifier.chatScreenImeLift(): Modifier = composed {
     val density = LocalDensity.current
     val imeBottomPx = LocalImeSnapState.current.bottomPx
     val bottom = if (imeBottomPx > 0) {
-        with(density) { imeBottomPx.toDp() } + SquadRelayDimens.composerBottomGap
+        with(density) { imeBottomPx.toDp() }
     } else {
-        SquadRelayDimens.composerBottomGap
+        0.dp
     }
     padding(bottom = bottom)
 }
 
-/** @deprecated Используйте [chatComposerOverlayDock] или [chatComposerAppDock]. */
-fun Modifier.chatComposerDock(): Modifier = chatComposerAppDock()
+/** @deprecated IME на уровне экрана — [chatScreenImeLift] + [chatComposerOverlayDock]. */
+fun Modifier.chatComposerAppDock(): Modifier = chatComposerOverlayDock()
+
+/** @deprecated Используйте [chatComposerOverlayDock] или [chatScreenImeLift]. */
+fun Modifier.chatComposerDock(): Modifier = chatComposerOverlayDock()

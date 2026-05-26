@@ -60,7 +60,6 @@ internal object OverlayGameStatusHudRefresh {
                 profileUserId,
             )
         }
-        val usersRepository = container.usersRepository
         val chatRepository = container.chatRepository
         val teamsRepository = container.teamsRepository
         val prefs = container.userSettingsPreferences

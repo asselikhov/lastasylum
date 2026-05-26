@@ -221,6 +221,7 @@ import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarSize
 import com.lastasylum.alliance.ui.chat.AttachmentPreviewOverlay
 import com.lastasylum.alliance.ui.chat.ChatComposer
 import com.lastasylum.alliance.ui.chat.ChatComposerBar
+import com.lastasylum.alliance.ui.chat.chatScreenImeLift
 import com.lastasylum.alliance.ui.chat.ChatFileAttachmentCard
 import com.lastasylum.alliance.ui.chat.ChatMessageBubbleRow
 import com.lastasylum.alliance.ui.chat.ChatMessageClusterFlags
@@ -610,7 +611,6 @@ private fun ChatScreenMessagesHost(
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun ChatScreenComposerSection(
-    overlayUi: Boolean,
     composerPane: ChatComposerPaneState,
     chromePane: ChatChromePaneState,
     selectedRoomId: String?,
@@ -633,7 +633,7 @@ private fun ChatScreenComposerSection(
     ) {
         return
     }
-    ChatComposerBar(overlayUi = overlayUi) {
+    ChatComposerBar {
         composerPane.sendFailure?.let { failure ->
             Surface(
                 modifier = Modifier.fillMaxWidth(),
@@ -675,6 +675,24 @@ private fun ChatScreenComposerSection(
             }
         }
 
+        if (globalComposerLocked) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+            ) {
+                Text(
+                    text = stringResource(R.string.chat_global_team_notice),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(
+                        horizontal = SquadRelayDimens.contentPaddingHorizontal,
+                        vertical = SquadRelayDimens.itemGap,
+                    ),
+                )
+            }
+        }
+
         if (selectedRoomId != null && chromePane.rooms.isNotEmpty()) {
             ChatComposer(
                 draft = draftMessage,
@@ -682,7 +700,7 @@ private fun ChatScreenComposerSection(
                 replyToMessage = composerPane.replyToMessage,
                 isSending = composerPane.isSending,
                 sendEnabled = !globalComposerLocked,
-                readOnly = globalComposerLocked,
+                readOnly = false,
                 enabledStickerPackKeys = composerPane.enabledStickerPackKeys,
                 onDraftChange = onDraftChange,
                 onSendDraft = {
@@ -831,7 +849,17 @@ fun ChatScreen(
         } else {
             Modifier.padding(top = SquadRelayDimens.screenTopPadding)
         }
-        Column(Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .then(
+                    if (overlayUi) {
+                        Modifier
+                    } else {
+                        Modifier.chatScreenImeLift()
+                    },
+                ),
+        ) {
             ChatScreenMessagesHost(
                 modifier = Modifier
                     .weight(1f, fill = true)
@@ -862,7 +890,6 @@ fun ChatScreen(
                 messageListKey = messageListKey,
             )
             ChatScreenComposerSection(
-                overlayUi = overlayUi,
                 composerPane = composerPane,
                 chromePane = chromePane,
                 selectedRoomId = selectedRoomId,

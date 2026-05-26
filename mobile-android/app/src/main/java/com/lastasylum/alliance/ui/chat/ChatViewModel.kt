@@ -673,6 +673,7 @@ class ChatViewModel(
         overlayChatPanelVisible = visible
         if (visible) {
             refreshStickerPackAccess()
+            refreshTeamProfileGateLight()
             syncReadStateFromPreferences()
             primeOverlayChatFromCache(preferAllianceHubRoom = true)
             recomputeRoomUnreadBadges()
@@ -967,6 +968,12 @@ class ChatViewModel(
         }
     }
 
+    private fun isGlobalChatRoom(
+        roomId: String,
+        rooms: List<ChatRoomDto> = _state.value.rooms,
+    ): Boolean =
+        rooms.find { it.id == roomId }?.allianceId == ChatAllianceIds.GLOBAL
+
     private fun globalSendBlocked(
         roomId: String,
         messageText: String,
@@ -1094,6 +1101,9 @@ class ChatViewModel(
 
     fun selectRoom(roomId: String) {
         if (roomId == _state.value.selectedRoomId) return
+        if (isGlobalChatRoom(roomId)) {
+            refreshTeamProfileGateLight()
+        }
         val previousRoomId = _state.value.selectedRoomId
         if (previousRoomId != null && _state.value.messages.isNotEmpty()) {
             roomMessageCache[previousRoomId] = RoomMessageCache(
@@ -1498,7 +1508,9 @@ class ChatViewModel(
         _state.update { st ->
             st.copy(rooms = clearUnreadForRoom(st.rooms.ifEmpty { rooms }, roomId))
         }
+        val isGlobalRoom = isGlobalChatRoom(roomId, rooms)
         val hasTeam = when {
+            isGlobalRoom -> loadTeamProfileGate()
             hadCachedMessages && cachedTeamProfileGate != null -> cachedTeamProfileGate == true
             messagesAlreadyInState -> _state.value.hasTeamProfileForGlobalChat
             else -> loadTeamProfileGate()
