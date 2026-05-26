@@ -36,18 +36,24 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import android.provider.Settings
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.Alignment
@@ -251,7 +257,23 @@ fun AppNavigation(
         .collectAsStateWithLifecycle(0)
     val chatRouteActive =
         currentDestination?.hierarchy?.any { it.route == AppTab.CHAT.route } == true
-    val hideBottomBarForChatIme = chatRouteActive && WindowInsets.isImeVisible
+    val imeVisible = WindowInsets.isImeVisible
+    // Скрываем навбар сразу при IME; показываем с задержкой после закрытия — без «дёрганья».
+    var chatNavBarVisible by remember { mutableStateOf(true) }
+    LaunchedEffect(chatRouteActive, imeVisible) {
+        if (!chatRouteActive) {
+            chatNavBarVisible = true
+            return@LaunchedEffect
+        }
+        if (imeVisible) {
+            chatNavBarVisible = false
+        } else {
+            delay(160)
+            chatNavBarVisible = true
+        }
+    }
+    val showBottomNav = !chatRouteActive || chatNavBarVisible
+    val navBarImeAnimMs = 200
     DisposableEffect(chatRouteActive) {
         if (chatRouteActive) {
             chatViewModel.onChatTabResumed()
@@ -267,7 +289,17 @@ fun AppNavigation(
         // IME — только на композере ([chatComposerAppDock]); контент NavHost не дублирует inset.
         contentWindowInsets = WindowInsets.safeDrawing.exclude(WindowInsets.ime),
         bottomBar = {
-            if (hideBottomBarForChatIme) return@Scaffold
+            AnimatedVisibility(
+                visible = showBottomNav,
+                enter = fadeIn(tween(navBarImeAnimMs)) + expandVertically(
+                    animationSpec = tween(navBarImeAnimMs, easing = FastOutSlowInEasing),
+                    expandFrom = Alignment.Bottom,
+                ),
+                exit = fadeOut(tween(100)) + shrinkVertically(
+                    animationSpec = tween(navBarImeAnimMs, easing = FastOutSlowInEasing),
+                    shrinkTowards = Alignment.Bottom,
+                ),
+            ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -394,6 +426,7 @@ fun AppNavigation(
                         }
                     }
                 }
+            }
             }
         },
     ) { contentPadding ->

@@ -14,12 +14,15 @@ fun Modifier.chatComposerOverlayDock(): Modifier =
     padding(bottom = SquadRelayDimens.composerBottomGap)
 
 /**
- * Приложение: подъём всего [com.lastasylum.alliance.ui.screens.ChatScreen] над IME
- * (аналог padding корня в оверлее). Композер — [chatComposerOverlayDock] (+8dp).
+ * Приложение: подъём только композера над IME (список сообщений не remeasure на каждом кадре анимации).
+ * Оверлей по-прежнему поднимает корень [android.widget.FrameLayout].
  */
-fun Modifier.chatScreenImeLift(): Modifier = imePadding()
+fun Modifier.chatComposerImePadding(): Modifier = imePadding()
 
-/** @deprecated IME на уровне экрана — [chatScreenImeLift] + [chatComposerOverlayDock]. */
+/** @deprecated Используйте [chatComposerImePadding] на [ChatComposerBar], не на весь экран. */
+fun Modifier.chatScreenImeLift(): Modifier = chatComposerImePadding()
+
+/** @deprecated IME на уровне композера — [chatComposerImePadding] + [chatComposerOverlayDock]. */
 fun Modifier.chatComposerAppDock(): Modifier = chatComposerOverlayDock()
 
 /** @deprecated Используйте [chatComposerOverlayDock] или [chatScreenImeLift]. */

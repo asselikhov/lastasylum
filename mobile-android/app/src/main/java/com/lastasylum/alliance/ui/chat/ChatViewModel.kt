@@ -2518,11 +2518,6 @@ class ChatViewModel(
                     newestMessageKey = serverId,
                     previousDerived = previousDerived,
                 )
-            } ?: run {
-                withContext(Dispatchers.Main) {
-                    applyIncomingMessage(sent, clearComposer = false)
-                }
-                return@launch
             }
             if (roomId != null && _state.value.selectedRoomId != roomId) return@launch
             val derived = buildDerivedAfterUpsert(

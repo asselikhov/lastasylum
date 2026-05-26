@@ -221,7 +221,6 @@ import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarSize
 import com.lastasylum.alliance.ui.chat.AttachmentPreviewOverlay
 import com.lastasylum.alliance.ui.chat.ChatComposer
 import com.lastasylum.alliance.ui.chat.ChatComposerBar
-import com.lastasylum.alliance.ui.chat.chatScreenImeLift
 import com.lastasylum.alliance.ui.chat.ChatFileAttachmentCard
 import com.lastasylum.alliance.ui.chat.ChatMessageBubbleRow
 import com.lastasylum.alliance.ui.chat.ChatMessageClusterFlags
@@ -849,17 +848,7 @@ fun ChatScreen(
         } else {
             Modifier.padding(top = SquadRelayDimens.screenTopPadding)
         }
-        Column(
-            Modifier
-                .fillMaxSize()
-                .then(
-                    if (overlayUi) {
-                        Modifier
-                    } else {
-                        Modifier.chatScreenImeLift()
-                    },
-                ),
-        ) {
+        Column(Modifier.fillMaxSize()) {
             ChatScreenMessagesHost(
                 modifier = Modifier
                     .weight(1f, fill = true)
