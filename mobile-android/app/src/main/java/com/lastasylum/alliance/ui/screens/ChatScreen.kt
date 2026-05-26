@@ -502,6 +502,11 @@ private fun ChatScreenMessagesHost(
         val key = listPane.newestMessageKey ?: return@LaunchedEffect
         if (listDerivedRef.value.timeline.isEmpty()) return@LaunchedEffect
         if (key == lastAutoScrolledNewestKey) return@LaunchedEffect
+        val headId = listPane.messages.firstOrNull()?._id
+        if (isNearLatest && headId != null && key == headId) {
+            lastAutoScrolledNewestKey = key
+            return@LaunchedEffect
+        }
         lastAutoScrolledNewestKey = key
         if (!isNearLatest) return@LaunchedEffect
         runCatching {

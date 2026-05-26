@@ -257,6 +257,24 @@ class ChatViewModel(
         onRoomUnreadFromServer(event)
     }
 
+    /**
+     * Сохранить realtime в кэш комнаты (оверлей FGS), даже если полноэкранная панель закрыта.
+     * Иначе при открытии «Рейд» остаётся устаревшая короткая выборка из диска/RAM.
+     */
+    fun stashOverlayRealtimeMessage(message: ChatMessage) {
+        if (message.isCompactReactionSocketUpdate()) {
+            applyKnownChatMessageUpdate(message)
+            return
+        }
+        val roomId = message.roomId.trim()
+        if (roomId.isBlank() || message._id.isNullOrBlank()) return
+        if (isKnownChatMessageId(message._id)) {
+            applyKnownChatMessageUpdate(message)
+            return
+        }
+        stashIncomingMessageForRoom(message)
+    }
+
     /** Overlay socket while in-game chat panel is open (primary listener may be absent). */
     fun applyOverlayChatMessageFromSocket(message: ChatMessage) {
         if (message.isCompactReactionSocketUpdate()) {
@@ -298,7 +316,11 @@ class ChatViewModel(
         }
         val selected = _state.value.selectedRoomId
         if (roomId == selected) {
-            applyIncomingMessage(message)
+            if (isRoomActivelyViewed(roomId)) {
+                applyIncomingMessage(message)
+            } else {
+                stashIncomingMessageForRoom(message)
+            }
             if (!isRoomActivelyViewed(roomId) && message.senderId != currentUserId) {
                 val mid = message._id ?: return
                 if (shouldTrackUnreadForMessage(roomId, mid)) {
@@ -307,6 +329,9 @@ class ChatViewModel(
                 }
             }
             return
+        }
+        if (message._id != null) {
+            stashIncomingMessageForRoom(message)
         }
         if (message.senderId == currentUserId) return
         val mid = message._id ?: return
@@ -719,6 +744,10 @@ class ChatViewModel(
             primeOverlayChatFromCache(preferAllianceHubRoom = true)
             recomputeRoomUnreadBadges()
             reconnectRealtimeIfNeeded()
+            val roomId = _state.value.selectedRoomId
+            if (!roomId.isNullOrBlank() && _state.value.messages.size < PAGE_SIZE) {
+                refreshMessagesInBackground(roomId, force = true)
+            }
             return
         }
         schedulePersistChatSnapshot()
@@ -1076,6 +1105,11 @@ class ChatViewModel(
                 if (preferOverlayRaidRoom && overlayRaidAlreadyReady(_state.value.rooms)) {
                     recomputeRoomUnreadBadges()
                     viewModelScope.launch { syncRoomsFromServer(reconfirmVisibleRoom = false) }
+                    _state.value.selectedRoomId?.let { rid ->
+                        if (_state.value.messages.size < PAGE_SIZE) {
+                            refreshMessagesInBackground(rid, force = true)
+                        }
+                    }
                     return
                 }
                 if (preferAllianceHubRoom && overlayHubAlreadyReady(_state.value.rooms)) {
@@ -1389,6 +1423,8 @@ class ChatViewModel(
         val fresh = ChatSessionCache.getFreshMessages(roomId) ?: return false
         val current = _state.value.messages
         if (current.isEmpty()) return false
+        // Неполная страница в RAM-кэше — всегда догружаем с API (типичный кейс оверлея «Рейд»).
+        if (fresh.size < PAGE_SIZE || current.size < PAGE_SIZE) return false
         val head = current.firstOrNull()?._id?.trim().orEmpty()
         val cachedHead = fresh.firstOrNull()?._id?.trim().orEmpty()
         if (head.isEmpty() || cachedHead.isEmpty() || head != cachedHead) return false
@@ -1672,6 +1708,8 @@ class ChatViewModel(
             }
             if (!shouldSkipBackgroundMessageRefresh(roomId)) {
                 refreshMessagesInBackground(roomId)
+            } else if (filteredCache.size < PAGE_SIZE) {
+                refreshMessagesInBackground(roomId, force = true)
             }
             schedulePersistChatSnapshot()
             return
@@ -1699,8 +1737,8 @@ class ChatViewModel(
             }
     }
 
-    private fun refreshMessagesInBackground(roomId: String) {
-        if (shouldSkipBackgroundMessageRefresh(roomId)) return
+    private fun refreshMessagesInBackground(roomId: String, force: Boolean = false) {
+        if (!force && shouldSkipBackgroundMessageRefresh(roomId)) return
         val deferMs = if (ChatSessionCache.getFreshMessages(roomId) != null) {
             BACKGROUND_MESSAGE_REFRESH_DEFER_MS
         } else {
@@ -2005,7 +2043,7 @@ class ChatViewModel(
         val optimistic = buildOptimisticOutgoingMessage(roomId, trimmed, replyToMessageId)
         val pendingId = optimistic._id
         _state.value = _state.value.copy(isSending = false, error = null, sendFailure = null)
-        applyIncomingMessage(optimistic, clearComposer = true)
+        insertOptimisticOutgoingSynchronously(optimistic, clearComposer = true)
         viewModelScope.launch {
             repository.sendMessageWithRetries(trimmed, roomId, replyToMessageId)
                 .onSuccess { sent ->
@@ -2037,7 +2075,7 @@ class ChatViewModel(
             val optimistic = buildOptimisticOutgoingMessage(roomId, text, replyToMessageId)
             val pendingId = optimistic._id
             _state.value = _state.value.copy(isSending = false, error = null, sendFailure = null)
-            applyIncomingMessage(optimistic, clearComposer = true)
+            insertOptimisticOutgoingSynchronously(optimistic, clearComposer = true)
             viewModelScope.launch {
                 repository.sendMessageWithRetries(
                     text = text.trim(),
@@ -2691,6 +2729,54 @@ class ChatViewModel(
             createdAt = java.time.Instant.now().toString(),
         )
 
+    /** Pending row must exist before HTTP/socket echo to avoid a brief duplicate at the list head. */
+    private fun insertOptimisticOutgoingSynchronously(
+        message: ChatMessage,
+        clearComposer: Boolean,
+    ) {
+        if (clearComposer && overlayChatPanelVisible) {
+            runCatching { CombatOverlayService.extendInGameOverlayUiHold() }
+        }
+        val work = synchronized(chatMutationLock) {
+            val snapshot = _state.value
+            val update = upsertMessage(
+                current = snapshot.messages,
+                incoming = message,
+                knownMessageIds = knownMessageIds,
+                idIndex = messageIdIndex,
+            )
+            val capped = capMessagesForMemory(update.messages)
+            rebuildMessageIdIndex(capped, messageIdIndex)
+            Triple(snapshot, capped, update.newestMessageKey ?: message._id?.trim().orEmpty())
+        }
+        val (snapshot, capped, newestKey) = work
+        var nextState = snapshot.copy(
+            messages = capped,
+            newestMessageKey = newestKey.ifEmpty { snapshot.newestMessageKey },
+            isSending = false,
+            error = null,
+        )
+        if (clearComposer) {
+            _draftMessage.value = ""
+            _pickedImageUris.value = emptyList()
+            nextState = nextState.copy(
+                replyToMessage = null,
+                sendFailure = null,
+                scrollToLatestNonce = nextState.scrollToLatestNonce + 1L,
+            )
+        }
+        _state.value = syncSelections(nextState)
+        publishMessagesDerivedImmediate(capped)
+        val rid = _state.value.selectedRoomId
+        if (!rid.isNullOrBlank()) {
+            roomMessageCache[rid] = RoomMessageCache(
+                messages = capped,
+                hasMoreOlder = _state.value.hasMoreOlder,
+            )
+            ChatSessionCache.updateMessages(rid, capped)
+        }
+    }
+
     private fun removePendingOutgoingMessage(pendingId: String?) {
         val id = pendingId?.trim().orEmpty()
         if (id.isEmpty()) return
@@ -2768,18 +2854,32 @@ class ChatViewModel(
                 val snapshot = _state.value
                 val previousMessages = snapshot.messages
                 val previousDerived = _listDerived.value
-                var updated = previousMessages.filterNot { it._id?.trim() == pending }
-                val serverIdx = updated.indexOfFirst { it._id?.trim() == serverId }
-                updated = if (serverIdx >= 0) {
-                    updated.toMutableList().apply {
-                        this[serverIdx] = sent.mergePreservingAttachments(this[serverIdx])
-                    }
+                val replacement = replaceMatchingPendingOutgoing(
+                    current = previousMessages,
+                    incoming = sent,
+                    currentUserId = currentUserId,
+                )
+                val updated = if (replacement != null) {
+                    knownMessageIds.remove(replacement.pendingId)
+                    knownMessageIds.add(replacement.serverId)
+                    messageIdIndex.remove(replacement.pendingId)
+                    messageIdIndex[replacement.serverId] = replacement.replacedIndex
+                    replacement.messages
                 } else {
-                    listOf(sent) + updated
+                    var list = previousMessages.filterNot { it._id?.trim() == pending }
+                    val serverIdx = list.indexOfFirst { it._id?.trim() == serverId }
+                    list = if (serverIdx >= 0) {
+                        list.toMutableList().apply {
+                            this[serverIdx] = sent.mergePreservingAttachments(this[serverIdx])
+                        }
+                    } else {
+                        listOf(sent) + list
+                    }
+                    knownMessageIds.remove(pending)
+                    knownMessageIds.add(serverId)
+                    messageIdIndex.remove(pending)
+                    list
                 }
-                knownMessageIds.remove(pending)
-                knownMessageIds.add(serverId)
-                messageIdIndex.remove(pending)
                 val capped = capMessagesForMemory(
                     dedupeMessagesByIdNewestFirst(
                         stripRedundantPendingOutgoing(updated, currentUserId),
@@ -2809,7 +2909,6 @@ class ChatViewModel(
                         isSending = false,
                         error = null,
                         sendFailure = null,
-                        scrollToLatestNonce = snapshot.scrollToLatestNonce + 1L,
                     ),
                 )
                 _listDerived.value = derived
@@ -2952,15 +3051,10 @@ class ChatViewModel(
                         sendFailure = null,
                     )
                 }
-                if (ownOutgoing && (clearComposer || !work.echoesOnly)) {
-                    val grew = work.cappedMessages.size > work.previousMessages.size
-                    val replacedPending = work.newestMessageKey != null &&
-                        work.previousMessages.any { it._id?.startsWith("pending-") == true }
-                    if (clearComposer || grew || replacedPending) {
-                        nextState = nextState.copy(
-                            scrollToLatestNonce = nextState.scrollToLatestNonce + 1L,
-                        )
-                    }
+                if (ownOutgoing && clearComposer) {
+                    nextState = nextState.copy(
+                        scrollToLatestNonce = nextState.scrollToLatestNonce + 1L,
+                    )
                 }
                 _state.value = syncSelections(nextState)
                 _listDerived.value = derived

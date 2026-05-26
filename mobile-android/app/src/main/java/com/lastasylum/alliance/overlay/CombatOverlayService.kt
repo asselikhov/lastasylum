@@ -2159,6 +2159,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun forwardOverlaySocketMessageToViewModel(msg: ChatMessage) {
+        resolveChatViewModel()?.stashOverlayRealtimeMessage(msg)
         if (!overlayChatTeamPanelVisible) return
         resolveChatViewModel()?.applyOverlayChatMessageFromSocket(msg)
     }
