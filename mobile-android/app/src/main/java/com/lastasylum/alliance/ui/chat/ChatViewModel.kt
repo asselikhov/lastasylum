@@ -260,16 +260,12 @@ class ChatViewModel(
         }
         val selected = _state.value.selectedRoomId
         if (roomId == selected) {
-            if (isRoomActivelyViewed(roomId)) {
-                applyIncomingMessage(message)
-            } else {
-                stashIncomingMessageForRoom(message)
-                if (message.senderId != currentUserId) {
-                    val mid = message._id ?: return
-                    if (shouldTrackUnreadForMessage(roomId, mid)) {
-                        bumpRoomUnreadLocally(roomId, mid)
-                        scheduleUnreadSyncFromServer()
-                    }
+            applyIncomingMessage(message)
+            if (!isRoomActivelyViewed(roomId) && message.senderId != currentUserId) {
+                val mid = message._id ?: return
+                if (shouldTrackUnreadForMessage(roomId, mid)) {
+                    bumpRoomUnreadLocally(roomId, mid)
+                    scheduleUnreadSyncFromServer()
                 }
             }
             return
@@ -680,9 +676,9 @@ class ChatViewModel(
         if (roomId.isBlank()) return
         val selected = _state.value.selectedRoomId
         when {
-            roomId == selected && isRoomActivelyViewed(roomId) ->
+            roomId == selected ->
                 applyIncomingMessage(message)
-            roomId == selected || roomMessageCache.containsKey(roomId) ->
+            roomMessageCache.containsKey(roomId) ->
                 stashIncomingMessageForRoom(message)
         }
     }
@@ -1170,8 +1166,12 @@ class ChatViewModel(
     private fun clearUnreadForRoom(
         rooms: List<ChatRoomDto>,
         roomId: String,
-    ): List<ChatRoomDto> =
+    ): List<ChatRoomDto> = run {
+        // The UI cleared unread, so optimistic unread floor must be cleared too
+        // otherwise badges can keep accumulating after leaving and returning.
+        clearOptimisticUnreadFloor(roomId)
         rooms.map { if (it.id == roomId) it.copy(unreadCount = 0) else it }
+    }
 
     private fun hydrateReadCursorsFromPreferences() {
         chatRoomPreferences.loadAllLastReadMessageIds().forEach { (roomId, messageId) ->

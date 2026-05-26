@@ -3472,7 +3472,8 @@ class CombatOverlayService : Service() {
             mainHandler.post { ingestOverlayRaidMessage(msg, refreshNow, retryIndex, forceIngest) }
             return
         }
-        if (!forceIngest && !isOverlayRaidStripEligible()) return
+        // Do not drop raid messages based on current eligibility: buffer them anyway.
+        // Window visibility is controlled by [ensureStripWindowVisibleForRaidTraffic] / TTL pruning.
         val raidId = resolveOverlayRaidRoomId() ?: trustedOverlayRaidRoomId
         val normalized = normalizeStripRaidMessage(msg, raidId)
         if (!forceIngest && isStaleOverlayStripMessage(normalized)) return
