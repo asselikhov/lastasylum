@@ -477,6 +477,7 @@ fun AppNavigation(
                     onConsumeScrollToMessage = chatViewModel::consumeScrollToMessage,
                     onClearHighlightMessage = chatViewModel::clearHighlightMessage,
                     onConsumeTransientNotice = chatViewModel::consumeTransientNotice,
+                    messageListKey = chatViewModel::messageListCompositionKey,
                 )
             }
             composable(AppTab.OVERLAY.route) {

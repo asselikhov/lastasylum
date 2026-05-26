@@ -22,6 +22,31 @@ internal fun capNewestFirst(messages: List<ChatMessage>, max: Int): List<ChatMes
     return messages.take(max)
 }
 
+/** Drop optimistic rows when the server message for the same outgoing text arrives. */
+internal fun dropMatchingPendingOutgoing(
+    current: List<ChatMessage>,
+    incoming: List<ChatMessage>,
+    currentUserId: String,
+): List<ChatMessage> {
+    val selfId = currentUserId.trim()
+    if (selfId.isEmpty() || incoming.isEmpty()) return current
+    val confirmed = incoming.filter { msg ->
+        val id = msg._id?.trim().orEmpty()
+        msg.senderId.trim() == selfId &&
+            id.isNotEmpty() &&
+            !id.startsWith("pending-")
+    }
+    if (confirmed.isEmpty()) return current
+    return current.filter { msg ->
+        val id = msg._id?.trim().orEmpty()
+        if (!id.startsWith("pending-")) return@filter true
+        !confirmed.any { sent ->
+            sent.text.trim() == msg.text.trim() &&
+                sent.replyToMessageId == msg.replyToMessageId
+        }
+    }
+}
+
 internal fun rebuildMessageIdIndex(
     messages: List<ChatMessage>,
     index: MutableMap<String, Int>,

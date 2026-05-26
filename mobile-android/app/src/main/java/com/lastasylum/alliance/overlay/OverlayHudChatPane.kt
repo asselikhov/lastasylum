@@ -61,5 +61,6 @@ internal fun OverlayHudChatPane(
         onConsumeScrollToMessage = vm::consumeScrollToMessage,
         onClearHighlightMessage = vm::clearHighlightMessage,
         onConsumeTransientNotice = vm::consumeTransientNotice,
+        messageListKey = vm::messageListCompositionKey,
     )
 }

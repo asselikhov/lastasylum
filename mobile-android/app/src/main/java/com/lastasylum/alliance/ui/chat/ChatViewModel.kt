@@ -30,6 +30,7 @@ import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.data.chat.ChatUnreadCounts
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
+import com.lastasylum.alliance.data.chat.mergePreservingAttachments
 import com.lastasylum.alliance.data.users.UsersRepository
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.CancellationException
@@ -91,6 +92,9 @@ class ChatViewModel(
     val listDerived: StateFlow<ChatMessagesListDerived> = _listDerived.asStateFlow()
     private var deriveJob: Job? = null
     private val chatMutationLock = Any()
+
+    /** LazyColumn keys: pending id kept after server confirms (avoids row dispose blink). */
+    private val listCompositionKeyByMessageId = mutableMapOf<String, String>()
 
     /** Isolated from [state] so each keystroke does not recompose the whole chat list. */
     private val _draftMessage = MutableStateFlow("")
@@ -308,6 +312,27 @@ class ChatViewModel(
 
     fun refreshChat() {
         scheduleBootstrap(preferAllianceHubRoom = true, force = true)
+    }
+
+    /** Stable row key for [ChatScreen] — pending id survives replace with server [_id]. */
+    fun messageListCompositionKey(message: ChatMessage): String {
+        val id = message._id?.trim().orEmpty()
+        if (id.isEmpty()) return chatMessageKey(message)
+        listCompositionKeyByMessageId[id]?.let { return it }
+        if (id.startsWith("pending-")) {
+            listCompositionKeyByMessageId[id] = id
+            return id
+        }
+        return id
+    }
+
+    private fun linkListCompositionKey(pendingId: String, serverId: String) {
+        val pending = pendingId.trim()
+        val server = serverId.trim()
+        if (pending.isEmpty() || server.isEmpty()) return
+        val stable = listCompositionKeyByMessageId[pending] ?: pending
+        listCompositionKeyByMessageId[server] = stable
+        listCompositionKeyByMessageId.remove(pending)
     }
 
     /** Splash: комнаты сразу; сообщения — из диска или фоном после UI. */
@@ -1437,6 +1462,7 @@ class ChatViewModel(
         if (!messagesAlreadyInState) {
             knownMessageIds.clear()
             messageIdIndex.clear()
+            listCompositionKeyByMessageId.clear()
             _draftMessage.value = ""
             _typingPeers.value = emptyMap()
         }
@@ -1817,8 +1843,7 @@ class ChatViewModel(
         viewModelScope.launch {
             repository.sendMessageWithRetries(trimmed, roomId, replyToMessageId)
                 .onSuccess { sent ->
-                    removePendingOutgoingMessage(pendingId)
-                    applyIncomingMessage(sent, clearComposer = false)
+                    confirmPendingOutgoingMessage(pendingId, sent)
                 }
                 .onFailure { throwable ->
                     removePendingOutgoingMessage(pendingId)
@@ -1854,8 +1879,7 @@ class ChatViewModel(
                     replyToMessageId = replyToMessageId,
                 )
                     .onSuccess { sent ->
-                        removePendingOutgoingMessage(pendingId)
-                        applyIncomingMessage(sent, clearComposer = false)
+                        confirmPendingOutgoingMessage(pendingId, sent)
                     }
                     .onFailure { throwable ->
                         removePendingOutgoingMessage(pendingId)
@@ -2359,6 +2383,7 @@ class ChatViewModel(
         if (id.isEmpty()) return
         knownMessageIds.remove(id)
         messageIdIndex.remove(id)
+        listCompositionKeyByMessageId.remove(id)
         val filtered = _state.value.messages.filter { it._id != id }
         _state.update { st -> st.copy(messages = filtered) }
         publishMessagesDerived(filtered)
@@ -2368,6 +2393,77 @@ class ChatViewModel(
             hasMoreOlder = _state.value.hasMoreOlder,
         )
         ChatSessionCache.updateMessages(rid, _state.value.messages)
+    }
+
+    /** Replace optimistic row in-place (no remove+insert, no extra scroll). */
+    private fun confirmPendingOutgoingMessage(pendingId: String?, sent: ChatMessage) {
+        val pending = pendingId?.trim().orEmpty()
+        val serverId = sent._id?.trim().orEmpty()
+        if (pending.isEmpty() || serverId.isEmpty()) {
+            applyIncomingMessage(sent, clearComposer = false)
+            return
+        }
+        val roomId = _state.value.selectedRoomId
+        viewModelScope.launch(Dispatchers.Default) {
+            val work = synchronized(chatMutationLock) {
+                val snapshot = _state.value
+                val previousMessages = snapshot.messages
+                val previousDerived = _listDerived.value
+                val idx = messageIdIndex[pending]
+                    ?: previousMessages.indexOfFirst { it._id == pending }
+                if (idx < 0) {
+                    return@synchronized null
+                }
+                val updated = previousMessages.toMutableList()
+                updated[idx] = sent.mergePreservingAttachments(previousMessages[idx])
+                knownMessageIds.remove(pending)
+                knownMessageIds.add(serverId)
+                messageIdIndex.remove(pending)
+                messageIdIndex[serverId] = idx
+                linkListCompositionKey(pending, serverId)
+                val capped = capMessagesForMemory(updated)
+                IncomingBatchWork(
+                    previousMessages = previousMessages,
+                    cappedMessages = capped,
+                    newestMessageKey = serverId,
+                    previousDerived = previousDerived,
+                )
+            } ?: run {
+                withContext(Dispatchers.Main) {
+                    applyIncomingMessage(sent, clearComposer = false)
+                }
+                return@launch
+            }
+            if (roomId != null && _state.value.selectedRoomId != roomId) return@launch
+            val derived = buildDerivedAfterUpsert(
+                messages = work.cappedMessages,
+                previousMessages = work.previousMessages,
+                previousDerived = work.previousDerived,
+            )
+            withContext(Dispatchers.Main) {
+                if (roomId != null && _state.value.selectedRoomId != roomId) return@withContext
+                val snapshot = _state.value
+                _state.value = syncSelections(
+                    snapshot.copy(
+                        messages = work.cappedMessages,
+                        newestMessageKey = serverId,
+                        isSending = false,
+                        error = null,
+                        sendFailure = null,
+                    ),
+                )
+                _listDerived.value = derived
+                val rid = _state.value.selectedRoomId
+                if (!rid.isNullOrBlank()) {
+                    roomMessageCache[rid] = RoomMessageCache(
+                        messages = work.cappedMessages,
+                        hasMoreOlder = _state.value.hasMoreOlder,
+                    )
+                    ChatSessionCache.updateMessages(rid, work.cappedMessages)
+                    schedulePersistChatSnapshot()
+                }
+            }
+        }
     }
 
     private fun applyIncomingMessage(
@@ -2386,7 +2482,11 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.Default) {
             val work = synchronized(chatMutationLock) {
                 val snapshot = _state.value
-                val previousMessages = snapshot.messages
+                val previousMessages = dropMatchingPendingOutgoing(
+                    current = snapshot.messages,
+                    incoming = batch,
+                    currentUserId = currentUserId,
+                )
                 val previousDerived = _listDerived.value
                 val update = upsertMessagesBatch(
                     current = previousMessages,
@@ -2427,17 +2527,18 @@ class ChatViewModel(
                 if (clearComposer) {
                     _draftMessage.value = ""
                     _pickedImageUris.value = emptyList()
-                    val sentId = batch.firstOrNull()?._id
                     nextState = nextState.copy(
                         replyToMessage = null,
                         scrollToLatestNonce = nextState.scrollToLatestNonce + 1L,
                         sendFailure = null,
-                        highlightMessageId = sentId ?: nextState.highlightMessageId,
                     )
                 } else if (ownOutgoing) {
-                    nextState = nextState.copy(
-                        scrollToLatestNonce = nextState.scrollToLatestNonce + 1L,
-                    )
+                    val grew = work.cappedMessages.size > work.previousMessages.size
+                    if (grew) {
+                        nextState = nextState.copy(
+                            scrollToLatestNonce = nextState.scrollToLatestNonce + 1L,
+                        )
+                    }
                 }
                 _state.value = syncSelections(nextState)
                 _listDerived.value = derived

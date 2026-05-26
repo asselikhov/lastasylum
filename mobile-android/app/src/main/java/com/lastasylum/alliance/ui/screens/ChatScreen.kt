@@ -334,6 +334,7 @@ private fun ChatScreenMessagesHost(
     onToggleMessageSelection: (String) -> Unit,
     onClearMessageSelection: () -> Unit,
     onRequestBulkDelete: () -> Unit,
+    messageListKey: (ChatMessage) -> String,
 ) {
     Column(
         modifier = modifier
@@ -388,6 +389,7 @@ private fun ChatScreenMessagesHost(
                     inSelectionMode = inSelectionMode,
                     selectedMessageIds = state.selectedMessageIds,
                     onToggleMessageSelection = onToggleMessageSelection,
+                    messageListKey = messageListKey,
                 )
                 ChatTypingIndicator(
                     typingPeers = typingPeers,
@@ -451,6 +453,9 @@ fun ChatScreen(
     onConsumeScrollToMessage: () -> Unit = {},
     onClearHighlightMessage: () -> Unit = {},
     onConsumeTransientNotice: () -> Unit = {},
+    messageListKey: (ChatMessage) -> String = { msg ->
+        msg._id?.trim()?.takeIf { it.isNotEmpty() } ?: chatMessageKey(msg)
+    },
     /** Overlay panel: hide room bar, rely on cached session + narrow socket subscriptions. */
     compactOverlayMode: Boolean = false,
 ) {
@@ -843,6 +848,7 @@ fun ChatScreen(
                     onToggleMessageSelection = onToggleMessageSelection,
                     onClearMessageSelection = onClearMessageSelection,
                     onRequestBulkDelete = onRequestBulkDelete,
+                    messageListKey = messageListKey,
                 )
                 Box(Modifier.align(Alignment.BottomCenter)) {
                     composerBar()
@@ -882,6 +888,7 @@ fun ChatScreen(
                     onToggleMessageSelection = onToggleMessageSelection,
                     onClearMessageSelection = onClearMessageSelection,
                     onRequestBulkDelete = onRequestBulkDelete,
+                    messageListKey = messageListKey,
                 )
                 composerBar()
             }
@@ -1192,6 +1199,7 @@ private fun ChatMessagesLazyList(
     inSelectionMode: Boolean,
     selectedMessageIds: Set<String>,
     onToggleMessageSelection: (String) -> Unit,
+    messageListKey: (ChatMessage) -> String,
 ) {
     val overlayUi = LocalOverlayUiMode.current
     val minSystemViewport = (LocalConfiguration.current.screenHeightDp * 0.55f).dp.coerceAtLeast(280.dp)
@@ -1326,7 +1334,7 @@ private fun ChatMessagesLazyList(
                                     messageId != null && highlightMessageId == messageId
                                 }
                             }
-                            key(messageId ?: chatMessageKey(message)) {
+                            key(messageListKey(message)) {
                             ChatMessageBubble(
                                 message = message,
                                 cluster = cluster,
