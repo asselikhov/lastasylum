@@ -17,13 +17,24 @@ class OverlayChatStripBuffer(
 ) {
     private val messages = mutableListOf<ChatMessage>()
     private val receivedAt = mutableMapOf<String, Instant>()
+    /**
+     * null — вне игровой сессии, чужие карточки не показываем;
+     * [resetVisibleSession] — только сообщения, принятые после входа в матч.
+     */
+    private var visibleSince: Instant? = null
 
     /** Та же структура, что раньше в сервисе — для [OverlayChatHistoryPanel]. */
     fun receivedAtMap(): MutableMap<String, Instant> = receivedAt
 
+    /** Новая игровая сессия оверлея — сбросить накопленное «офлайн» и показывать только новый трафик. */
+    fun resetVisibleSession() {
+        visibleSince = Instant.now()
+    }
+
     fun clear() {
         messages.clear()
         receivedAt.clear()
+        visibleSince = null
     }
 
     fun upsert(msg: ChatMessage) {
@@ -51,11 +62,14 @@ class OverlayChatStripBuffer(
 
     fun prune() {
         if (messages.isEmpty()) return
-        val cutoff = Instant.now().minus(messageTtlSeconds, ChronoUnit.SECONDS)
+        val ttlCutoff = Instant.now().minus(messageTtlSeconds, ChronoUnit.SECONDS)
+        val sessionCutoff = visibleSince
         messages.removeAll {
             // Keep service notices (e.g. "no room selected") visible; they are not part of TTL preview.
             if (OverlayStripNoticeIds.isNotice(it._id)) return@removeAll false
-            OverlayChatTime.effectiveInstant(it, receivedAt).isBefore(cutoff)
+            if (sessionCutoff == null) return@removeAll true
+            val t = OverlayChatTime.effectiveInstant(it, receivedAt)
+            t.isBefore(ttlCutoff) || t.isBefore(sessionCutoff)
         }
         messages.sortBy { OverlayChatTime.effectiveInstant(it, receivedAt) }
         while (messages.size > bufferCap) {
@@ -64,11 +78,14 @@ class OverlayChatStripBuffer(
     }
 
     fun visibleForPreview(): List<ChatMessage> {
-        val cutoff = Instant.now().minus(messageTtlSeconds, ChronoUnit.SECONDS)
+        val ttlCutoff = Instant.now().minus(messageTtlSeconds, ChronoUnit.SECONDS)
+        val sessionCutoff = visibleSince
         return messages
             .filter {
-                OverlayStripNoticeIds.isNotice(it._id) ||
-                    !OverlayChatTime.effectiveInstant(it, receivedAt).isBefore(cutoff)
+                if (OverlayStripNoticeIds.isNotice(it._id)) return@filter true
+                if (sessionCutoff == null) return@filter false
+                val t = OverlayChatTime.effectiveInstant(it, receivedAt)
+                !t.isBefore(ttlCutoff) && !t.isBefore(sessionCutoff)
             }
             .sortedBy { OverlayChatTime.effectiveInstant(it, receivedAt) }
             .takeLast(maxPreviewMessages)
@@ -85,18 +102,9 @@ class OverlayChatStripBuffer(
 
     fun mergeReceiveTimeline(msg: ChatMessage, @Suppress("UNUSED_PARAMETER") selfId: String?) {
         val key = msg.stableKey()
-        val parsed = OverlayChatTime.parseInstant(msg.createdAt)
         val now = Instant.now()
-        when {
-            parsed == null -> receivedAt.putIfAbsent(key, now)
-            else -> {
-                val prev = receivedAt[key]
-                receivedAt[key] = when {
-                    prev == null -> parsed
-                    else -> maxOf(prev, parsed)
-                }
-            }
-        }
+        // В ленте оверлея важно «когда увидели в этой игровой сессии», не createdAt с сервера.
+        receivedAt[key] = now
     }
 
     fun containsMessageId(messageId: String): Boolean {
@@ -107,6 +115,7 @@ class OverlayChatStripBuffer(
 
     fun seedFromHistory(loaded: List<ChatMessage>) {
         clear()
+        visibleSince = Instant.EPOCH
         loaded.forEach { m ->
             upsert(m)
             when (val p = OverlayChatTime.parseInstant(m.createdAt)) {

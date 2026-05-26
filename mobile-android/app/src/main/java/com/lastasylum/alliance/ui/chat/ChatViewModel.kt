@@ -2921,7 +2921,16 @@ class ChatViewModel(
                     ChatSessionCache.updateMessages(rid, work.cappedMessages)
                     schedulePersistChatSnapshot()
                 }
+                publishRaidStripIfNeeded(sent)
             }
+        }
+    }
+
+    private fun publishRaidStripIfNeeded(message: ChatMessage) {
+        if (!isRaidStripMessage(message)) return
+        runCatching {
+            CombatOverlayService.extendInGameOverlayUiHold()
+            CombatOverlayService.publishRaidMessageToStripFromApp(message)
         }
     }
 

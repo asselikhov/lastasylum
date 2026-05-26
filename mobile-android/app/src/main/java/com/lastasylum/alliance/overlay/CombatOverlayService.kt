@@ -851,10 +851,7 @@ class CombatOverlayService : Service() {
     }
 
     private val stripTickRunnable = Runnable {
-        if (!isInGameOverlayUiActive() ||
-            !isOverlayShellActive() ||
-            overlayChatTeamPanelVisible
-        ) {
+        if (!isInGameOverlayUiActive() || !isOverlayShellActive()) {
             return@Runnable
         }
         val before = stripBuffer.visibleForPreview().size
@@ -2280,6 +2277,21 @@ class CombatOverlayService : Service() {
         overlayTicker.hideTicker()
     }
 
+    private fun clearOverlayStripForOffline() {
+        stripBuffer.clear()
+        lastStripRenderSignature = 0
+        chatStripPreviewFlow.value = emptyList()
+    }
+
+    /** Пустой буфер + новая видимая сессия: только трафик после входа в игру. */
+    private fun beginOverlayStripGameSession() {
+        stripBuffer.clear()
+        stripBuffer.resetVisibleSession()
+        lastStripRenderSignature = 0
+        chatStripPreviewFlow.value = emptyList()
+        stripLiveRevision++
+    }
+
     /** Краткий «не в игре» — GONE, окна остаются attached (без removeOverlayControl). */
     private fun softHideOverlayUiBecauseNotInGame() {
         overlayCommandsPopover.hide()
@@ -2298,10 +2310,11 @@ class CombatOverlayService : Service() {
         if (!isInGameOverlayUiActive()) return
         val prefs = AppContainer.from(this).userSettingsPreferences
         if (!prefs.isOverlayPanelEnabled() || !canDrawOverlaysNow()) return
-        if (overlayChatTeamPanelVisible) return
         repairDetachedOverlayShellIfNeeded()
-        overlayStatusHudHost?.visibility = View.VISIBLE
-        overlayTopRightHudHost?.visibility = View.VISIBLE
+        if (!overlayChatTeamPanelVisible) {
+            overlayStatusHudHost?.visibility = View.VISIBLE
+            overlayTopRightHudHost?.visibility = View.VISIBLE
+        }
         applyOverlayStripVisibility()
     }
 
@@ -2319,11 +2332,14 @@ class CombatOverlayService : Service() {
         if (!isInGameOverlayUiActive()) return
         val prefs = AppContainer.from(this).userSettingsPreferences
         if (!prefs.isOverlayPanelEnabled() || !canDrawOverlaysNow()) return
-        if (overlayChatTeamPanelVisible) return
         ensureOverlayIfPermitted()
+        ensureOverlayMessageStripIfNeeded()
+        if (overlayChatTeamPanelVisible) {
+            applyOverlayStripVisibility()
+            return
+        }
         ensureOverlayStatusHudWindow()
         ensureOverlayTopRightHudWindow()
-        ensureOverlayMessageStripIfNeeded()
         if (overlayStatusHudHost?.visibility != View.VISIBLE) {
             overlayStatusHudHost?.visibility = View.VISIBLE
         }
@@ -2665,6 +2681,9 @@ class CombatOverlayService : Service() {
         lastAppliedGateShouldShow = shouldShow
         _inGameOverlayUiActive.value = shouldShow
         if (!shouldShow) {
+            if (wasInGame) {
+                clearOverlayStripForOffline()
+            }
             if (overlayChatTeamPanelVisible ||
                 OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible
             ) {
@@ -2744,9 +2763,7 @@ class CombatOverlayService : Service() {
         ensureOverlayIfPermitted()
         if (shouldShow && !wasInGame) {
             stableGatePollTicks = HUD_STABLE_TICKS_BEFORE_ATTACH
-            stripBuffer.clear()
-            lastStripRenderSignature = 0
-            chatStripPreviewFlow.value = emptyList()
+            beginOverlayStripGameSession()
             resetOverlayVoiceForGameEntry()
             ensureOverlayRaidRealtimeIfNeeded()
             ensureOverlayForumInboxRealtimeIfNeeded()
@@ -3180,11 +3197,25 @@ class CombatOverlayService : Service() {
         return h
     }
 
+    private fun stripPreviewContentEqual(
+        a: List<ChatMessage>,
+        b: List<ChatMessage>,
+    ): Boolean {
+        if (a === b) return true
+        if (a.size != b.size) return false
+        for (i in a.indices) {
+            if (a[i] != b[i]) return false
+        }
+        return true
+    }
+
     private fun refreshOverlayChatStripNow() {
         stripBuffer.prune()
         val preview = stripBuffer.visibleForPreview()
         val signature = overlayStripPreviewSignature(preview)
-        if (signature == lastStripRenderSignature) {
+        if (signature == lastStripRenderSignature &&
+            stripPreviewContentEqual(preview, chatStripPreviewFlow.value)
+        ) {
             ensureStripWindowVisibleForRaidTraffic()
             return
         }
@@ -3218,7 +3249,6 @@ class CombatOverlayService : Service() {
 
     /** Поднять окно ленты, когда в буфере есть карточки и игрок в матче. */
     private fun ensureStripWindowVisibleForRaidTraffic() {
-        if (overlayChatTeamPanelVisible) return
         val hasContent = stripBuffer.visibleForPreview().isNotEmpty() ||
             chatStripPreviewFlow.value.isNotEmpty()
         if (!hasContent && !isOverlayRaidStripEligible()) return
@@ -3519,8 +3549,8 @@ class CombatOverlayService : Service() {
             mainHandler.post { ingestOverlayRaidMessage(msg, refreshNow, retryIndex, forceIngest) }
             return
         }
-        // Do not drop raid messages based on current eligibility: buffer them anyway.
-        // Window visibility is controlled by [ensureStripWindowVisibleForRaidTraffic] / TTL pruning.
+        // Не копим карточки вне матча — иначе при входе в игру всплывает старый рейд-чат.
+        if (!forceIngest && !isOverlayRaidStripEligible()) return
         val raidId = resolveOverlayRaidRoomId() ?: trustedOverlayRaidRoomId
         val normalized = normalizeStripRaidMessage(msg, raidId)
         if (!forceIngest && isStaleOverlayStripMessage(normalized)) return
@@ -4092,10 +4122,7 @@ class CombatOverlayService : Service() {
             runCatching { ensureChatStripWindow(wm) }
         }
         if (isOverlayChatStripEnabled()) {
-            val showStrip = !overlayChatTeamPanelVisible && (
-                shouldForceShowRaidStrip() ||
-                    isOverlayRaidStripEligible()
-                )
+            val showStrip = shouldForceShowRaidStrip() || isOverlayRaidStripEligible()
             chatStripHost?.visibility = if (showStrip) View.VISIBLE else View.GONE
         }
         if (rebalanceZOrder) {
@@ -4150,6 +4177,8 @@ class CombatOverlayService : Service() {
         ensureOverlayTopRightHudWindow()
         restoreOverlayHudChromeAfterPanel()
         extendOverlayUiHold(OVERLAY_UI_HOLD_PANEL_TRANSITION_MS)
+        lastStripRenderSignature = 0
+        applyOverlayStripVisibility(rebalanceZOrder = false)
         refreshOverlayChatStripNow()
         mainHandler.removeCallbacks(overlayCloseHudRefreshRunnable)
         mainHandler.postDelayed(overlayCloseHudRefreshRunnable, OVERLAY_CLOSE_HUD_REFRESH_DELAY_MS)
@@ -4305,7 +4334,6 @@ class CombatOverlayService : Service() {
             showOverlayShell()
             windowManager
         } ?: return
-        chatStripHost?.visibility = View.GONE
         overlayStatusHudHost?.visibility = View.GONE
         overlayTopRightHudHost?.visibility = View.GONE
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -4667,6 +4695,12 @@ class CombatOverlayService : Service() {
         syncOverlayChatPanelVisibilityToViewModel(true)
         OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = true
         rebalanceOverlayFullscreenZOrder()
+        if (isOverlayRaidStripEligible()) {
+            ensureOverlayMessageStripIfNeeded()
+            applyOverlayStripVisibility(rebalanceZOrder = false)
+            chatStripZOrderLifted = false
+            requestChatStripZOrderLift()
+        }
         ViewCompat.requestApplyInsets(root)
     }
     private fun dp(value: Int): Int {

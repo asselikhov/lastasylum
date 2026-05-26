@@ -94,28 +94,24 @@ class OverlayChatStripBufferTest {
     }
 
     @Test
-    fun mergeReceiveTimeline_doesNotRefreshTtlForStaleForeignMessage() {
-        val ttl = OverlayChatStripBuffer.DEFAULT_MESSAGE_TTL_SECONDS
-        val buffer = OverlayChatStripBuffer(
-            messageTtlSeconds = ttl,
-            bufferCap = 100,
-            maxPreviewMessages = 10,
-        )
-        val oldCreated = Instant.now().minusSeconds(ttl + 60).toString()
+    fun visibleForPreview_hidesChatUntilGameSessionStarted() {
+        val buffer = OverlayChatStripBuffer(messageTtlSeconds = 3600)
         val msg = ChatMessage(
-            _id = "old-foreign",
+            _id = "offline-1",
             allianceId = "a",
             roomId = "r",
             senderId = "ally-2",
             senderUsername = "Ally",
             senderRole = "R2",
-            text = "stale",
-            createdAt = oldCreated,
+            text = "while away",
+            createdAt = Instant.now().toString(),
         )
         buffer.upsert(msg)
         buffer.mergeReceiveTimeline(msg, selfId = "me")
-        buffer.prune()
         assertTrue(buffer.visibleForPreview().isEmpty())
+        buffer.resetVisibleSession()
+        buffer.mergeReceiveTimeline(msg, selfId = "me")
+        assertEquals(1, buffer.visibleForPreview().size)
     }
 
     @Test
@@ -133,8 +129,10 @@ class OverlayChatStripBufferTest {
             text = "coords",
             createdAt = oldCreated,
         )
+        buffer.resetVisibleSession()
         buffer.upsert(msg)
-        buffer.mergeReceiveTimeline(msg, selfId = "u1")
+        buffer.receivedAtMap()[msg.stableKey()] =
+            Instant.now().minusSeconds(ttl + 90)
         assertTrue(buffer.visibleForPreview().isEmpty())
         buffer.touchReceivedNow(msg)
         val visible = buffer.visibleForPreview()
@@ -155,6 +153,7 @@ class OverlayChatStripBufferTest {
             text = "hello",
             createdAt = Instant.now().toString(),
         )
+        buffer.resetVisibleSession()
         buffer.upsert(msg)
         assertTrue(buffer.containsMessageId("dup-id"))
         org.junit.Assert.assertFalse(buffer.containsMessageId("other"))
@@ -191,7 +190,9 @@ class OverlayChatStripBufferTest {
             createdAt = Instant.now().toString(),
             reactions = listOf(ChatReaction(emoji = "❤", count = 3, reactedByMe = false)),
         )
+        buffer.resetVisibleSession()
         buffer.upsert(existing)
+        buffer.touchReceivedNow(existing)
         val socket = existing.copy(
             reactions = listOf(ChatReaction(emoji = "❤", count = 0, reactedByMe = true)),
         )
@@ -213,7 +214,9 @@ class OverlayChatStripBufferTest {
             text = "delete me",
             createdAt = Instant.now().toString(),
         )
+        buffer.resetVisibleSession()
         buffer.upsert(msg)
+        buffer.touchReceivedNow(msg)
         assertEquals(1, buffer.visibleForPreview().size)
         buffer.removeMessageWithKey("gone-id")
         assertTrue(buffer.visibleForPreview().isEmpty())
