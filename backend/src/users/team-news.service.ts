@@ -75,17 +75,17 @@ export class TeamNewsService {
 
   private assertCanPublish(team: PlayerTeamDocument, userId: string): void {
     const role = this.teams.getSquadRoleForUser(team, userId);
-    if (
-      role !== PlayerTeamMemberRole.R4 &&
-      role !== PlayerTeamMemberRole.R5
-    ) {
+    if (role !== PlayerTeamMemberRole.R4 && role !== PlayerTeamMemberRole.R5) {
       throw new ForbiddenException(
         'Only squad roles R4 and R5 can publish team news',
       );
     }
   }
 
-  async assertMayUploadNewsImage(teamId: string, userId: string): Promise<void> {
+  async assertMayUploadNewsImage(
+    teamId: string,
+    userId: string,
+  ): Promise<void> {
     const team = await this.teams.getTeamIfMemberOrThrow(teamId, userId);
     this.assertCanPublish(team, userId);
   }
@@ -171,7 +171,10 @@ export class TeamNewsService {
     }));
   }
 
-  private myVote(poll: NonNullable<TeamNews['poll']>, userId: string): string | null {
+  private myVote(
+    poll: NonNullable<TeamNews['poll']>,
+    userId: string,
+  ): string | null {
     const v = poll.votes.find((x) => x.userId === userId);
     return v?.optionId ?? null;
   }
@@ -201,9 +204,7 @@ export class TeamNewsService {
     teamId: string,
   ): Promise<Map<string, string>> {
     const profiles = await this.userProfilesFor(ids, teamId);
-    return new Map(
-      [...profiles.entries()].map(([id, p]) => [id, p.username]),
-    );
+    return new Map([...profiles.entries()].map(([id, p]) => [id, p.username]));
   }
 
   /** Display nick for news author / poll voters (game nickname, not login email). */
@@ -252,9 +253,7 @@ export class TeamNewsService {
         : null;
     const bodyTrim = doc.body.trim();
     const excerpt =
-      bodyTrim.length > 220
-        ? `${bodyTrim.slice(0, 217).trimEnd()}…`
-        : bodyTrim;
+      bodyTrim.length > 220 ? `${bodyTrim.slice(0, 217).trimEnd()}…` : bodyTrim;
     const pollOnly =
       !!poll && bodyTrim.length === 0 && doc.imageAttachments.length === 0;
     const created = (doc as unknown as { createdAt?: Date }).createdAt;
@@ -273,7 +272,8 @@ export class TeamNewsService {
       hasPoll: !!poll,
       pollOnly,
       pollQuestion: poll?.question ?? null,
-      pollOptions: poll?.options.map((o) => ({ id: o.id, text: o.text })) ?? null,
+      pollOptions:
+        poll?.options.map((o) => ({ id: o.id, text: o.text })) ?? null,
       firstImageRelativeUrl: first,
       pollTallies: tallies,
       myVoteOptionId,
@@ -369,8 +369,7 @@ export class TeamNewsService {
       .lean()
       .exec();
     const prev = existing?.lastSeenCreatedAt;
-    const next =
-      !prev || incoming.getTime() > prev.getTime() ? incoming : prev;
+    const next = !prev || incoming.getTime() > prev.getTime() ? incoming : prev;
     await this.newsReadStateModel
       .updateOne(
         { teamId: teamOid, userId },
@@ -431,9 +430,7 @@ export class TeamNewsService {
     const profiles = await this.userProfilesFor(authorIds, teamId);
     const items = page.map((r) => this.toListRow(r, profiles, userId));
     const nextCursor =
-      hasMore && page.length > 0
-        ? page[page.length - 1]._id.toString()
-        : null;
+      hasMore && page.length > 0 ? page[page.length - 1]._id.toString() : null;
     return { items, nextCursor };
   }
 
@@ -452,11 +449,12 @@ export class TeamNewsService {
         teamId: new Types.ObjectId(teamId),
       })
       .lean<
-        (TeamNews & {
-          _id: Types.ObjectId;
-          createdAt: Date;
-          updatedAt: Date;
-        }) | null
+        | (TeamNews & {
+            _id: Types.ObjectId;
+            createdAt: Date;
+            updatedAt: Date;
+          })
+        | null
       >()
       .exec();
     if (!doc) throw new NotFoundException('News not found');
@@ -468,8 +466,7 @@ export class TeamNewsService {
     const base = this.toListRow(doc, profiles, userId);
     const teamIdStr = this.idString(doc.teamId);
     const images = doc.imageAttachments.map(
-      (a) =>
-        `/teams/${teamIdStr}/news/attachments/${this.idString(a.fileId)}`,
+      (a) => `/teams/${teamIdStr}/news/attachments/${this.idString(a.fileId)}`,
     );
     const pollOut = doc.poll
       ? {
@@ -478,8 +475,7 @@ export class TeamNewsService {
           votes: doc.poll.votes.map((v) => ({
             userId: v.userId,
             username: profiles.get(v.userId)?.username ?? '—',
-            telegramUsername:
-              profiles.get(v.userId)?.telegramUsername ?? null,
+            telegramUsername: profiles.get(v.userId)?.telegramUsername ?? null,
             optionId: v.optionId,
           })),
           tallies: this.pollTallies(doc.poll),
@@ -511,7 +507,9 @@ export class TeamNewsService {
     const titleRaw = (dto.title ?? '').trim();
     const bodyRaw = (dto.body ?? '').trim();
     if (!poll && (!titleRaw || !bodyRaw)) {
-      throw new BadRequestException('Title and body are required without a poll');
+      throw new BadRequestException(
+        'Title and body are required without a poll',
+      );
     }
     const titleSource = poll && !titleRaw ? poll.question : titleRaw;
     if (!titleSource) {

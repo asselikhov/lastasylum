@@ -7,10 +7,7 @@ import { AdminTeamsController } from './admin-teams.controller';
 import { UsersModule } from './users.module';
 
 @Module({
-  imports: [
-    forwardRef(() => UsersModule),
-    forwardRef(() => ChatModule),
-  ],
+  imports: [forwardRef(() => UsersModule), forwardRef(() => ChatModule)],
   controllers: [
     AdminAlliancesController,
     AdminStickerAccessController,

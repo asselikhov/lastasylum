@@ -362,11 +362,7 @@ export class ChatGateway {
 
     const senderTeamId = sender.playerTeamId?.toString() ?? null;
     const targetTeamId = target.playerTeamId?.toString() ?? null;
-    if (
-      !senderTeamId ||
-      !targetTeamId ||
-      senderTeamId !== targetTeamId
-    ) {
+    if (!senderTeamId || !targetTeamId || senderTeamId !== targetTeamId) {
       throw new WsException('Recipient is not in your team');
     }
 
@@ -414,10 +410,9 @@ export class ChatGateway {
       throw new WsException('You are not in a team');
     }
 
-    const targetUserIds =
-      await this.usersService.listOverlayIngameTeammateIds(
-        client.data.user.userId,
-      );
+    const targetUserIds = await this.usersService.listOverlayIngameTeammateIds(
+      client.data.user.userId,
+    );
 
     for (const targetUserId of targetUserIds) {
       this.server
@@ -522,7 +517,9 @@ export class ChatGateway {
     const adapterRoom = this.server?.adapter.rooms.get(`chat:${roomId}`);
     if (!adapterRoom) return out;
     for (const socketId of adapterRoom) {
-      const client = this.server.sockets.get(socketId) as AuthSocket | undefined;
+      const client = this.server.sockets.get(socketId) as
+        | AuthSocket
+        | undefined;
       const userId = client?.data?.user?.userId?.trim();
       if (userId) out.add(userId);
     }
@@ -579,8 +576,10 @@ export class ChatGateway {
     const rid = roomId?.trim();
     if (!uid || !rid) return;
     const unreadMap = await this.chatService.countUnreadByRoomIds(uid, [rid]);
-    const lastReadMap =
-      await this.chatService.getLastReadMessageIdsByRoomIds(uid, [rid]);
+    const lastReadMap = await this.chatService.getLastReadMessageIdsByRoomIds(
+      uid,
+      [rid],
+    );
     this.server?.to(`user:${uid}`).emit('rooms:unread', {
       roomId: rid,
       unreadCount: unreadMap.get(rid) ?? 0,

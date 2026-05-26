@@ -17,9 +17,9 @@ describe('sticker-wire.util', () => {
   it('parses zlobyaka wire message', () => {
     const parsed = parseStickerOnlyMessage('[[zlobyaka:1-96632-512b]]');
     expect(parsed).toEqual({ packKey: 'zlobyaka', stem: '1-96632-512b' });
-    expect(stickerPackKeyFromStickerOnlyMessage('[[zlobyaka:1-96632-512b]]')).toBe(
-      'zlobyaka',
-    );
+    expect(
+      stickerPackKeyFromStickerOnlyMessage('[[zlobyaka:1-96632-512b]]'),
+    ).toBe('zlobyaka');
   });
 
   it('rejects unknown pack keys', () => {

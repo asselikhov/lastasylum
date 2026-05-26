@@ -23,10 +23,7 @@ import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 
 import { StorageModule } from '../storage/storage.module';
-import {
-  TeamNews,
-  TeamNewsSchema,
-} from './schemas/team-news.schema';
+import { TeamNews, TeamNewsSchema } from './schemas/team-news.schema';
 import {
   TeamNewsAttachment,
   TeamNewsAttachmentSchema,
@@ -63,7 +60,10 @@ import { StickerAccessService } from './sticker-access.service';
       { name: TeamNews.name, schema: TeamNewsSchema },
       { name: TeamNewsAttachment.name, schema: TeamNewsAttachmentSchema },
       { name: TeamNewsReadState.name, schema: TeamNewsReadStateSchema },
-      { name: AllianceStickerRoleGrant.name, schema: AllianceStickerRoleGrantSchema },
+      {
+        name: AllianceStickerRoleGrant.name,
+        schema: AllianceStickerRoleGrantSchema,
+      },
       {
         name: AllianceStickerUserGrant.name,
         schema: AllianceStickerUserGrantSchema,

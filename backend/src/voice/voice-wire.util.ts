@@ -81,7 +81,9 @@ export function packDownstreamFrame(
   return out;
 }
 
-export function parseDownstreamFrame(data: Buffer): ParsedDownstreamFrame | null {
+export function parseDownstreamFrame(
+  data: Buffer,
+): ParsedDownstreamFrame | null {
   if (!Buffer.isBuffer(data) || data.length < 7) return null;
   const userLen = data[0];
   if (userLen <= 0 || userLen > MAX_VOICE_USER_ID_BYTES) return null;

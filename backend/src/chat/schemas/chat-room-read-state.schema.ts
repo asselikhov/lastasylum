@@ -6,7 +6,12 @@ export type ChatRoomReadStateDocument = HydratedDocument<ChatRoomReadState>;
 
 @Schema({ timestamps: true })
 export class ChatRoomReadState {
-  @Prop({ type: Types.ObjectId, ref: ChatRoom.name, required: true, index: true })
+  @Prop({
+    type: Types.ObjectId,
+    ref: ChatRoom.name,
+    required: true,
+    index: true,
+  })
   roomId: Types.ObjectId;
 
   @Prop({ type: String, required: true, index: true })

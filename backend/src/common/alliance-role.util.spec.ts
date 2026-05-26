@@ -1,8 +1,5 @@
 import { AllianceRole } from './enums/alliance-role.enum';
-import {
-  isAppAdminRole,
-  normalizeAllianceRole,
-} from './alliance-role.util';
+import { isAppAdminRole, normalizeAllianceRole } from './alliance-role.util';
 
 describe('alliance-role.util', () => {
   it('normalizes legacy R* values to account roles', () => {

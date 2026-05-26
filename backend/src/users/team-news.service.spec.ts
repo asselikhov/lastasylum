@@ -73,16 +73,20 @@ describe('TeamNewsService poll create', () => {
         exec: jest.fn().mockResolvedValue(null),
       }),
     }),
-    updateOne: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue({}) }),
+    updateOne: jest
+      .fn()
+      .mockReturnValue({ exec: jest.fn().mockResolvedValue({}) }),
   };
 
   const userModel = {
     find: jest.fn().mockReturnValue({
       select: jest.fn().mockReturnValue({
         lean: jest.fn().mockReturnValue({
-          exec: jest.fn().mockResolvedValue([
-            { _id: userId, username: 'tester', telegramUsername: null },
-          ]),
+          exec: jest
+            .fn()
+            .mockResolvedValue([
+              { _id: userId, username: 'tester', telegramUsername: null },
+            ]),
         }),
       }),
     }),

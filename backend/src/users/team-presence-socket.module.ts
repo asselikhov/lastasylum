@@ -4,10 +4,7 @@ import { TeamPresenceGateway } from './team-presence.gateway';
 import { UsersModule } from './users.module';
 
 @Module({
-  imports: [
-    forwardRef(() => AuthModule),
-    forwardRef(() => UsersModule),
-  ],
+  imports: [forwardRef(() => AuthModule), forwardRef(() => UsersModule)],
   providers: [TeamPresenceGateway],
   exports: [TeamPresenceGateway],
 })

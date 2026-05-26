@@ -35,7 +35,12 @@ export class TeamForumMessage {
    * Sender snapshot at send time.
    * Matches in-app squad role strings: R1..R5.
    */
-  @Prop({ required: true, type: String, trim: true, enum: Object.values(PlayerTeamMemberRole) })
+  @Prop({
+    required: true,
+    type: String,
+    trim: true,
+    enum: Object.values(PlayerTeamMemberRole),
+  })
   senderRole: PlayerTeamMemberRole;
 
   /** Sender team tag snapshot at send time (3-letter, may be null). */
@@ -95,16 +100,14 @@ export class TeamForumMessage {
     },
     default: null,
   })
-  forwardedFrom:
-    | {
-        messageId: Types.ObjectId;
-        senderUserId: string;
-        senderUsername: string;
-        senderRole: PlayerTeamMemberRole;
-        senderTeamTag: string | null;
-        senderServerNumber: number | null;
-      }
-    | null;
+  forwardedFrom: {
+    messageId: Types.ObjectId;
+    senderUserId: string;
+    senderUsername: string;
+    senderRole: PlayerTeamMemberRole;
+    senderTeamTag: string | null;
+    senderServerNumber: number | null;
+  } | null;
 
   createdAt?: Date;
   updatedAt?: Date;

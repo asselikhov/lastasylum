@@ -16,7 +16,12 @@ export class TeamNewsAttachment {
   @Prop({ required: true })
   uploaderUserId: string;
 
-  @Prop({ type: String, required: true, enum: ['image', 'file'], default: 'image' })
+  @Prop({
+    type: String,
+    required: true,
+    enum: ['image', 'file'],
+    default: 'image',
+  })
   kind: 'image' | 'file';
 
   /** Original filename for kind=file (APK uploads). */

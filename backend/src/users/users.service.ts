@@ -15,7 +15,10 @@ import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
 import { AllianceRegistryService } from './alliance-registry.service';
 import { User, UserDocument } from './schemas/user.schema';
-import { GameIdentitiesService, SafeGameIdentity } from './game-identities.service';
+import {
+  GameIdentitiesService,
+  SafeGameIdentity,
+} from './game-identities.service';
 import { StickerAccessService } from './sticker-access.service';
 import { TeamsService } from './teams.service';
 import {
@@ -260,7 +263,11 @@ export class UsersService implements OnModuleInit {
   ): Promise<UserDocument | null> {
     const normalized = normalizeAllianceRole(role);
     return this.userModel
-      .findByIdAndUpdate(userId, { role: normalized }, { returnDocument: 'after' })
+      .findByIdAndUpdate(
+        userId,
+        { role: normalized },
+        { returnDocument: 'after' },
+      )
       .exec();
   }
 
@@ -410,7 +417,9 @@ export class UsersService implements OnModuleInit {
       teamDisplayName: inSquad
         ? teamFields.playerTeamDisplayName
         : (reconciled.teamDisplayName ?? null),
-      teamTag: inSquad ? teamFields.playerTeamTag : (reconciled.teamTag ?? null),
+      teamTag: inSquad
+        ? teamFields.playerTeamTag
+        : (reconciled.teamTag ?? null),
       membershipStatus: this.effectiveMembership(reconciled),
       presenceStatus: reconciled.presenceStatus ?? null,
       lastPresenceAt: reconciled.lastPresenceAt
@@ -647,11 +656,18 @@ export class UsersService implements OnModuleInit {
     const base = { membershipStatus: TeamMembershipStatus.ACTIVE };
     type Row = Pick<
       UserDocument,
-      'allianceName' | 'playerTeamId' | 'gameIdentities' | 'activeGameIdentityId'
+      | 'allianceName'
+      | 'playerTeamId'
+      | 'gameIdentities'
+      | 'activeGameIdentityId'
     > & { _id: Types.ObjectId };
     let rows: Row[];
     if (room.allianceId === GLOBAL_CHAT_ALLIANCE_ID) {
-      rows = await this.userModel.find(base).select(select).lean<Row[]>().exec();
+      rows = await this.userModel
+        .find(base)
+        .select(select)
+        .lean<Row[]>()
+        .exec();
     } else if (room.allianceId.startsWith('pt:')) {
       const teamId = parsePlayerTeamIdFromChatScope(room.allianceId);
       if (!teamId) {
@@ -670,7 +686,11 @@ export class UsersService implements OnModuleInit {
         .lean<Row[]>()
         .exec();
     } else if (isServerChatScope(room.allianceId)) {
-      rows = await this.userModel.find(base).select(select).lean<Row[]>().exec();
+      rows = await this.userModel
+        .find(base)
+        .select(select)
+        .lean<Row[]>()
+        .exec();
     } else {
       rows = await this.userModel
         .find({ ...base, allianceName: room.allianceId })
@@ -690,7 +710,10 @@ export class UsersService implements OnModuleInit {
     const sender = await this.userModel
       .findById(excludeUserId)
       .select('playerTeamId membershipStatus')
-      .lean<{ playerTeamId?: Types.ObjectId | null; membershipStatus?: string }>()
+      .lean<{
+        playerTeamId?: Types.ObjectId | null;
+        membershipStatus?: string;
+      }>()
       .exec();
     if (
       !sender?.playerTeamId ||

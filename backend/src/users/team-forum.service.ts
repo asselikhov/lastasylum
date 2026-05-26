@@ -20,9 +20,7 @@ import {
   TeamForumTopic,
   TeamForumTopicDocument,
 } from './schemas/team-forum-topic.schema';
-import {
-  TeamForumTopicReadState,
-} from './schemas/team-forum-topic-read-state.schema';
+import { TeamForumTopicReadState } from './schemas/team-forum-topic-read-state.schema';
 import { TeamNewsAttachmentsService } from './team-news-attachments.service';
 import { GameIdentitiesService } from './game-identities.service';
 import { TeamsService } from './teams.service';
@@ -57,16 +55,14 @@ export type TeamForumMessageRow = {
   senderServerNumber: number | null;
   text: string;
   replyToMessageId: string | null;
-  replyTo:
-    | {
-        id: string;
-        senderUsername: string;
-        senderRole: PlayerTeamMemberRole;
-        senderTeamTag: string | null;
-        senderServerNumber: number | null;
-        text: string;
-      }
-    | null;
+  replyTo: {
+    id: string;
+    senderUsername: string;
+    senderRole: PlayerTeamMemberRole;
+    senderTeamTag: string | null;
+    senderServerNumber: number | null;
+    text: string;
+  } | null;
   editedAt: string | null;
   deletedAt: string | null;
   deletedByUserId: string | null;
@@ -74,16 +70,14 @@ export type TeamForumMessageRow = {
   imageRelativeUrls: string[];
   fileRelativeUrl: string | null;
   fileFilename: string | null;
-  forwardedFrom:
-    | {
-        messageId: string;
-        senderUserId: string;
-        senderUsername: string;
-        senderRole: PlayerTeamMemberRole;
-        senderTeamTag: string | null;
-        senderServerNumber: number | null;
-      }
-    | null;
+  forwardedFrom: {
+    messageId: string;
+    senderUserId: string;
+    senderUsername: string;
+    senderRole: PlayerTeamMemberRole;
+    senderTeamTag: string | null;
+    senderServerNumber: number | null;
+  } | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -127,8 +121,7 @@ export class TeamForumService {
       await this.usersService.findTelegramUsernamesByIds(creatorIds);
     return rows.map((r) => ({
       ...r,
-      createdByTelegramUsername:
-        telegramMap.get(r.createdByUserId) ?? null,
+      createdByTelegramUsername: telegramMap.get(r.createdByUserId) ?? null,
     }));
   }
 
@@ -178,10 +171,7 @@ export class TeamForumService {
       .lean()
       .exec();
     return new Map(
-      readStates.map((r) => [
-        (r.topicId as Types.ObjectId).toString(),
-        r.lastReadMessageId,
-      ]),
+      readStates.map((r) => [r.topicId.toString(), r.lastReadMessageId]),
     );
   }
 
@@ -225,12 +215,18 @@ export class TeamForumService {
     messageId: string,
   ): Promise<{ topicId: string; messageId: string }> {
     await this.teams.getTeamIfMemberOrThrow(teamId, userId);
-    if (!Types.ObjectId.isValid(topicId) || !Types.ObjectId.isValid(messageId)) {
+    if (
+      !Types.ObjectId.isValid(topicId) ||
+      !Types.ObjectId.isValid(messageId)
+    ) {
       throw new BadRequestException('Invalid id');
     }
     const topOid = new Types.ObjectId(topicId);
     const teamOid = new Types.ObjectId(teamId);
-    const topic = await this.topicModel.findOne({ _id: topOid, teamId: teamOid });
+    const topic = await this.topicModel.findOne({
+      _id: topOid,
+      teamId: teamOid,
+    });
     if (!topic) {
       throw new NotFoundException('Topic not found');
     }
@@ -244,7 +240,7 @@ export class TeamForumService {
       !prev ||
       !Types.ObjectId.isValid(prev) ||
       messageOid > new Types.ObjectId(prev);
-    const lastReadMessageId = advanced ? messageId : prev!;
+    const lastReadMessageId = advanced ? messageId : prev;
     if (advanced) {
       await this.topicReadStateModel
         .updateOne(
@@ -256,7 +252,6 @@ export class TeamForumService {
     }
     return { topicId, messageId: lastReadMessageId };
   }
-
 
   private rethrowMongooseValidation(err: unknown): never {
     if (err instanceof mongoose.Error.ValidationError) {
@@ -291,8 +286,7 @@ export class TeamForumService {
         }),
       ),
     ];
-    const map =
-      await this.gameIdentities.buildSenderServerNumberMap(senderIds);
+    const map = await this.gameIdentities.buildSenderServerNumberMap(senderIds);
     for (const d of docs) {
       if (d.senderServerNumber == null || d.senderServerNumber < 1) {
         const n = map.get(d.senderUserId);
@@ -375,7 +369,9 @@ export class TeamForumService {
         albumUrls.length > 0
           ? albumUrls
           : legacyHasImage
-            ? [`/teams/${teamIdStr}/news/attachments/${doc.imageFileId!.toString()}`]
+            ? [
+                `/teams/${teamIdStr}/news/attachments/${doc.imageFileId!.toString()}`,
+              ]
             : [],
       fileRelativeUrl:
         !doc.deletedAt &&
@@ -383,7 +379,7 @@ export class TeamForumService {
         Types.ObjectId.isValid(doc.fileFileId.toString())
           ? `/teams/${teamIdStr}/news/attachments/${doc.fileFileId.toString()}`
           : null,
-      fileFilename: doc.deletedAt ? null : doc.fileFilename ?? null,
+      fileFilename: doc.deletedAt ? null : (doc.fileFilename ?? null),
       forwardedFrom: doc.forwardedFrom
         ? {
             messageId: doc.forwardedFrom.messageId.toString(),
@@ -391,8 +387,7 @@ export class TeamForumService {
             senderUsername: doc.forwardedFrom.senderUsername,
             senderRole: doc.forwardedFrom.senderRole ?? PlayerTeamMemberRole.R1,
             senderTeamTag: doc.forwardedFrom.senderTeamTag ?? null,
-            senderServerNumber:
-              doc.forwardedFrom.senderServerNumber ?? null,
+            senderServerNumber: doc.forwardedFrom.senderServerNumber ?? null,
           }
         : null,
       createdAt: doc.createdAt?.toISOString() ?? new Date().toISOString(),
@@ -408,9 +403,7 @@ export class TeamForumService {
       .sort({ lastMessageAt: -1, updatedAt: -1 })
       .limit(100)
       .lean();
-    const topicIds = rows.map(
-      (r) => (r as { _id: Types.ObjectId })._id as Types.ObjectId,
-    );
+    const topicIds = rows.map((r) => (r as { _id: Types.ObjectId })._id);
     const countAgg = await this.messageModel.aggregate<{
       _id: Types.ObjectId;
       count: number;
@@ -418,9 +411,7 @@ export class TeamForumService {
       { $match: { teamId: tid, deletedAt: null } },
       { $group: { _id: '$topicId', count: { $sum: 1 } } },
     ]);
-    const countMap = new Map(
-      countAgg.map((c) => [c._id.toString(), c.count]),
-    );
+    const countMap = new Map(countAgg.map((c) => [c._id.toString(), c.count]));
     return this.enrichTopicsWithCreatorTelegram(
       rows.map((r) => {
         const doc = r as unknown as TeamForumTopicDocument;
@@ -468,7 +459,10 @@ export class TeamForumService {
     return topics.reduce((sum, t) => sum + (t.unreadCount ?? 0), 0);
   }
 
-  async listTopics(teamId: string, userId: string): Promise<TeamForumTopicRow[]> {
+  async listTopics(
+    teamId: string,
+    userId: string,
+  ): Promise<TeamForumTopicRow[]> {
     await this.teams.getTeamIfMemberOrThrow(teamId, userId);
     const tid = new Types.ObjectId(teamId);
     const topicLimit = 100;
@@ -477,9 +471,7 @@ export class TeamForumService {
       .sort({ lastMessageAt: -1, updatedAt: -1 })
       .limit(topicLimit)
       .lean();
-    const topicIds = rows.map(
-      (r) => (r as { _id: Types.ObjectId })._id as Types.ObjectId,
-    );
+    const topicIds = rows.map((r) => (r as { _id: Types.ObjectId })._id);
     const countAgg = await this.messageModel.aggregate<{
       _id: Types.ObjectId;
       count: number;
@@ -487,11 +479,12 @@ export class TeamForumService {
       { $match: { teamId: tid, deletedAt: null } },
       { $group: { _id: '$topicId', count: { $sum: 1 } } },
     ]);
-    const countMap = new Map(
-      countAgg.map((c) => [c._id.toString(), c.count]),
-    );
+    const countMap = new Map(countAgg.map((c) => [c._id.toString(), c.count]));
     const unreadMap = await this.countUnreadForumMessages(userId, topicIds);
-    const lastReadMap = await this.getLastReadMessageIdsByTopicIds(userId, topicIds);
+    const lastReadMap = await this.getLastReadMessageIdsByTopicIds(
+      userId,
+      topicIds,
+    );
     return this.enrichTopicsWithCreatorTelegram(
       rows.map((r) => {
         const doc = r as unknown as TeamForumTopicDocument;
@@ -639,7 +632,9 @@ export class TeamForumService {
     if (replyDocs.length > 0) {
       const replySenderIds = [
         ...new Set(
-          (replyDocs as unknown as TeamForumMessageDocument[]).map((d) => d.senderUserId),
+          (replyDocs as unknown as TeamForumMessageDocument[]).map(
+            (d) => d.senderUserId,
+          ),
         ),
       ];
       const replySenderTeamTagMap = new Map(
@@ -718,7 +713,10 @@ export class TeamForumService {
         ? imageFileId.trim()
         : null;
     const imgArr = Array.isArray(imageFileIds)
-      ? imageFileIds.map((x) => x.trim()).filter(Boolean).slice(0, 12)
+      ? imageFileIds
+          .map((x) => x.trim())
+          .filter(Boolean)
+          .slice(0, 12)
       : [];
     const fileRaw =
       typeof fileFileId === 'string' && fileFileId.trim()
@@ -728,7 +726,9 @@ export class TeamForumService {
       throw new BadRequestException('Message text or attachment is required');
     }
     if (fileRaw && (imgRaw || imgArr.length > 0)) {
-      throw new BadRequestException('Cannot attach images and file in one message');
+      throw new BadRequestException(
+        'Cannot attach images and file in one message',
+      );
     }
     let replyTarget: TeamForumMessageDocument | null = null;
     if (replyIdRaw) {
@@ -757,7 +757,7 @@ export class TeamForumService {
     if (trimmed) {
       assertStickerPayload(trimmed);
       await this.stickerAccess.assertUserMaySendStickerMessage(
-        senderDoc as UserDocument,
+        senderDoc,
         trimmed,
       );
     }
@@ -861,16 +861,12 @@ export class TeamForumService {
       throw new ForbiddenException('User not found');
     }
     const actorRole =
-      this.teams.getSquadRoleForUser(team, userId) ??
-      PlayerTeamMemberRole.R1;
+      this.teams.getSquadRoleForUser(team, userId) ?? PlayerTeamMemberRole.R1;
     const actorTeamTag = actor.teamTag ?? null;
 
     const fwdText = (source.text ?? '').trim();
     assertStickerPayload(fwdText);
-    await this.stickerAccess.assertUserMaySendStickerMessage(
-      actor,
-      fwdText,
-    );
+    await this.stickerAccess.assertUserMaySendStickerMessage(actor, fwdText);
 
     const sourceRole =
       source.senderRole ??
@@ -897,10 +893,9 @@ export class TeamForumService {
       ),
       senderRole: actorRole,
       senderTeamTag: actorTeamTag,
-      senderServerNumber:
-        this.gameIdentities.resolveSenderServerNumber(
-          await this.gameIdentities.ensureMigrated(actor),
-        ),
+      senderServerNumber: this.gameIdentities.resolveSenderServerNumber(
+        await this.gameIdentities.ensureMigrated(actor),
+      ),
       text: fwdText,
       replyToMessageId: null,
       imageFileId: source.imageFileId ?? null,
@@ -934,7 +929,7 @@ export class TeamForumService {
     const rows = await this.enrichMessagesWithTelegram([
       this.messageRow(doc, null),
     ]);
-    return rows[0]!;
+    return rows[0];
   }
 
   private async assertMayEditMessage(
@@ -983,7 +978,7 @@ export class TeamForumService {
       throw new ForbiddenException('User not found');
     }
     await this.stickerAccess.assertUserMaySendStickerMessage(
-      editorDoc as UserDocument,
+      editorDoc,
       trimmed,
     );
     msg.text = trimmed;
@@ -992,7 +987,7 @@ export class TeamForumService {
     const rows = await this.enrichMessagesWithTelegram([
       this.messageRow(msg, null),
     ]);
-    return rows[0]!;
+    return rows[0];
   }
 
   async deleteMessage(

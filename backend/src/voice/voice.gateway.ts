@@ -88,11 +88,7 @@ export class VoiceGateway {
   ) {}
 
   handleConnection(client: AuthSocket) {
-    authenticateSocketConnection(
-      client,
-      this.jwtService,
-      this.configService,
-    );
+    authenticateSocketConnection(client, this.jwtService, this.configService);
     client.data.micOn = false;
     client.data.soundOn = false;
   }
@@ -216,10 +212,7 @@ export class VoiceGateway {
     if (!parsed) {
       throw new WsException('Invalid voice frame');
     }
-    if (
-      parsed.codec !== VOICE_CODEC_OPUS &&
-      parsed.codec !== VOICE_CODEC_PCM
-    ) {
+    if (parsed.codec !== VOICE_CODEC_OPUS && parsed.codec !== VOICE_CODEC_PCM) {
       throw new WsException('Unsupported codec');
     }
     if (parsed.payload.length > MAX_VOICE_FRAME_BYTES) {
@@ -245,9 +238,7 @@ export class VoiceGateway {
     if (!room) return;
     for (const socketId of room) {
       if (socketId === exceptSocketId) continue;
-      const peer = this.server.sockets.get(socketId) as
-        | AuthSocket
-        | undefined;
+      const peer = this.server.sockets.get(socketId) as AuthSocket | undefined;
       if (!peer?.data?.soundOn) continue;
       (peer as Socket).emit('voice:frame', packet);
     }
@@ -261,7 +252,7 @@ export class VoiceGateway {
     }
     if (Array.isArray(body) && body.length > 0) {
       if (body.every((x) => typeof x === 'number')) {
-        return Buffer.from(body as number[]);
+        return Buffer.from(body);
       }
       return this.coerceBuffer(body[0]);
     }

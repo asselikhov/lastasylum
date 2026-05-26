@@ -14,7 +14,9 @@ export type ParsedStickerWire = {
 /**
  * If the body is exactly one supported sticker wire message, returns pack key + stem.
  */
-export function parseStickerOnlyMessage(text: string): ParsedStickerWire | null {
+export function parseStickerOnlyMessage(
+  text: string,
+): ParsedStickerWire | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
   const m = trimmed.match(GENERIC_STICKER_WIRE);
@@ -34,6 +36,8 @@ export function parseStickerOnlyMessage(text: string): ParsedStickerWire | null 
 /**
  * If the body is exactly one supported sticker wire message, returns its pack key.
  */
-export function stickerPackKeyFromStickerOnlyMessage(text: string): string | null {
+export function stickerPackKeyFromStickerOnlyMessage(
+  text: string,
+): string | null {
   return parseStickerOnlyMessage(text)?.packKey ?? null;
 }

@@ -6,7 +6,9 @@ import { assertStickerPayload } from './sticker-payload.util';
 
 describe('soidow-cat-stickers.const', () => {
   it('parses wire message', () => {
-    expect(parseSoidowCatStickerStem('[[soidow_cat:00ef3379]]')).toBe('00ef3379');
+    expect(parseSoidowCatStickerStem('[[soidow_cat:00ef3379]]')).toBe(
+      '00ef3379',
+    );
     expect(isSoidowCatStickerOnlyMessage('[[soidow_cat:00ef3379]]')).toBe(true);
   });
 

@@ -4,7 +4,10 @@ import {
   serverChatAllianceId,
 } from '../common/constants/chat-room-constants';
 import { playerTeamChatAllianceId } from './chat-alliance-scope';
-import { resolveTeamChatScope, userMayAccessChatRoom } from './chat-room-access';
+import {
+  resolveTeamChatScope,
+  userMayAccessChatRoom,
+} from './chat-room-access';
 
 describe('chat-room-access', () => {
   const teamId = new Types.ObjectId();

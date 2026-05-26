@@ -81,7 +81,9 @@ export class ChatAttachmentsService {
   }): Promise<UploadedChatAttachment> {
     const { buffer, mimeType, size, filename } = input;
     if (!ChatAttachmentsService.isApkUpload(mimeType, filename)) {
-      throw new BadRequestException('Only APK files are supported for file uploads');
+      throw new BadRequestException(
+        'Only APK files are supported for file uploads',
+      );
     }
     if (size > FILE_MAX_BYTES) {
       throw new BadRequestException('File exceeds 120 MB limit');
@@ -95,8 +97,7 @@ export class ChatAttachmentsService {
 
     return this.putAttachment({
       buffer,
-      mimeType:
-        mimeType.trim() || 'application/vnd.android.package-archive',
+      mimeType: mimeType.trim() || 'application/vnd.android.package-archive',
       size,
       allianceId: input.allianceId,
       roomId: input.roomId,
@@ -118,7 +119,8 @@ export class ChatAttachmentsService {
     filename: string | null;
     ext: string;
   }): Promise<UploadedChatAttachment> {
-    const safeExt = input.ext.replace(/[^a-zA-Z0-9]+/g, '').slice(0, 8) || 'bin';
+    const safeExt =
+      input.ext.replace(/[^a-zA-Z0-9]+/g, '').slice(0, 8) || 'bin';
     const fileId = new Types.ObjectId();
     const key = `chat/${input.allianceId}/${input.roomId.toString()}/${fileId.toString()}.${safeExt}`;
 

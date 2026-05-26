@@ -35,9 +35,7 @@ import { UsersService } from '../users/users.service';
 import { ChatGateway } from './chat.gateway';
 import { ChatRoomsService } from './chat-rooms.service';
 import { ChatService } from './chat.service';
-import {
-  ChatAttachmentsService,
-} from './chat-attachments.service';
+import { ChatAttachmentsService } from './chat-attachments.service';
 import { CreateChatRoomDto } from './dto/create-chat-room.dto';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { UpdateChatRoomDto } from './dto/update-chat-room.dto';
@@ -142,10 +140,11 @@ export class ChatController {
       roomId,
       resolveChatAllianceScope(user),
       {
-      title: dto.title,
-      sortOrder: dto.sortOrder,
-      archived: dto.archived,
-    });
+        title: dto.title,
+        sortOrder: dto.sortOrder,
+        archived: dto.archived,
+      },
+    );
   }
 
   @Delete('rooms/:roomId')
@@ -297,7 +296,11 @@ export class ChatController {
             'Only app administrators may upload APK files',
           );
         }
-        assertUploadSizeWithinLimit(file.size, FORUM_APK_MAX_UPLOAD_BYTES, 'APK');
+        assertUploadSizeWithinLimit(
+          file.size,
+          FORUM_APK_MAX_UPLOAD_BYTES,
+          'APK',
+        );
         return this.attachmentsService.uploadFile({
           buffer: file.buffer,
           filename: originalName || 'update.apk',
@@ -458,7 +461,9 @@ export class ChatController {
       roomId: roomId.trim(),
       messageId,
     });
-    this.chatGateway.server?.to(`chat:${result.roomId}`).emit('room:read', result);
+    this.chatGateway.server
+      ?.to(`chat:${result.roomId}`)
+      .emit('room:read', result);
     void this.chatGateway.emitUnreadToUser(req.user.userId, result.roomId);
     return {
       success: true,

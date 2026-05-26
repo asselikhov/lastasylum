@@ -19,7 +19,12 @@ describe('voice-wire.util', () => {
 
   it('round-trips downstream frame', () => {
     const payload = Buffer.from([9, 8, 7]);
-    const packed = packDownstreamFrame('user-abc', VOICE_CODEC_OPUS, 7, payload);
+    const packed = packDownstreamFrame(
+      'user-abc',
+      VOICE_CODEC_OPUS,
+      7,
+      payload,
+    );
     const parsed = parseDownstreamFrame(packed);
     expect(parsed).not.toBeNull();
     expect(parsed!.userId).toBe('user-abc');

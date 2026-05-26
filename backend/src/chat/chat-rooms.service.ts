@@ -17,7 +17,10 @@ import {
 } from '../common/constants/chat-room-constants';
 import { UsersService } from '../users/users.service';
 import { resolveUserActiveServerNumber } from './chat-user-server';
-import { PlayerTeam, PlayerTeamDocument } from '../users/schemas/player-team.schema';
+import {
+  PlayerTeam,
+  PlayerTeamDocument,
+} from '../users/schemas/player-team.schema';
 import {
   isPlayerTeamChatScope,
   parsePlayerTeamIdFromChatScope,
@@ -68,7 +71,10 @@ export class ChatRoomsService {
   async listRoomsVisibleToUser(
     user: Pick<
       User,
-      'allianceName' | 'playerTeamId' | 'gameIdentities' | 'activeGameIdentityId'
+      | 'allianceName'
+      | 'playerTeamId'
+      | 'gameIdentities'
+      | 'activeGameIdentityId'
     >,
   ) {
     const publicRooms = await this.listPublicRoomsForUser(user);
@@ -256,7 +262,7 @@ export class ChatRoomsService {
       .find({ allianceId: GLOBAL_CHAT_ALLIANCE_ID, archivedAt: null })
       .sort({ sortOrder: 1, createdAt: 1 })
       .exec();
-    let hub =
+    const hub =
       globals.find((r) => r.title === GLOBAL_CHAT_ROOM_TITLE) ??
       globals.find((r) => legacyGlobalTitles.includes(r.title)) ??
       globals[0];
@@ -367,7 +373,7 @@ export class ChatRoomsService {
 
   /** Alliance «Рейд» room (sortOrder 2), same access as hub. */
   async ensureAllianceRaidRoom(allianceId: string): Promise<void> {
-    let raid = await this.roomModel
+    const raid = await this.roomModel
       .findOne({
         allianceId,
         title: ALLIANCE_RAID_ROOM_TITLE,

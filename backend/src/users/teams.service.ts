@@ -268,9 +268,7 @@ export class TeamsService {
 
     // No squad list and no legacy: repair with leader only
     const leaderOid = team.leaderUserId;
-    const squadMembers = [
-      { userId: leaderOid, role: PlayerTeamMemberRole.R5 },
-    ];
+    const squadMembers = [{ userId: leaderOid, role: PlayerTeamMemberRole.R5 }];
     await this.teamModel
       .updateOne({ _id: team._id }, { $set: { squadMembers } })
       .exec();
@@ -525,9 +523,7 @@ export class TeamsService {
         leaderUserId: leaderOid,
         tag,
         displayName: nameTrim.slice(0, 48),
-        squadMembers: [
-          { userId: leaderOid, role: PlayerTeamMemberRole.R5 },
-        ],
+        squadMembers: [{ userId: leaderOid, role: PlayerTeamMemberRole.R5 }],
       });
     } catch (e: unknown) {
       const code = (e as { code?: number })?.code;
@@ -643,9 +639,7 @@ export class TeamsService {
     if ((row.presenceStatus ?? '').trim().toLowerCase() !== 'ingame') {
       return false;
     }
-    const at = row.lastPresenceAt
-      ? Date.parse(row.lastPresenceAt)
-      : Number.NaN;
+    const at = row.lastPresenceAt ? Date.parse(row.lastPresenceAt) : Number.NaN;
     return !Number.isNaN(at) && nowMs - at <= staleMs;
   }
 
@@ -657,9 +651,7 @@ export class TeamsService {
     if ((row.presenceStatus ?? '').trim().toLowerCase() === 'ingame') {
       return false;
     }
-    const at = row.lastPresenceAt
-      ? Date.parse(row.lastPresenceAt)
-      : Number.NaN;
+    const at = row.lastPresenceAt ? Date.parse(row.lastPresenceAt) : Number.NaN;
     return !Number.isNaN(at) && nowMs - at <= staleMs;
   }
 
@@ -728,15 +720,15 @@ export class TeamsService {
   }
 
   /** Active game server from profile; null when no valid identity. */
-  private resolveActiveServerNumber(
-    user: UserDocument | null,
-  ): number | null {
+  private resolveActiveServerNumber(user: UserDocument | null): number | null {
     if (!user) return null;
     return this.gameIdentities.resolveSenderServerNumber(user);
   }
 
   /** Team ids with at least one member identity on [serverNumber]. */
-  private async teamIdsOnServer(serverNumber: number): Promise<Types.ObjectId[]> {
+  private async teamIdsOnServer(
+    serverNumber: number,
+  ): Promise<Types.ObjectId[]> {
     const rows = await this.userModel
       .aggregate<{ _id: Types.ObjectId }>([
         { $unwind: '$gameIdentities' },
@@ -813,7 +805,11 @@ export class TeamsService {
     }
     await this.assertUserNotInAnySquad(requesterUserId);
     const rid = new Types.ObjectId(requesterUserId);
-    if (team.squadMembers.some((m) => squadMemberUserIdEquals(m.userId, requesterUserId))) {
+    if (
+      team.squadMembers.some((m) =>
+        squadMemberUserIdEquals(m.userId, requesterUserId),
+      )
+    ) {
       throw new ConflictException('Already a member');
     }
     const serverNumber = this.resolveActiveServerNumber(requester);
@@ -939,7 +935,11 @@ export class TeamsService {
     }
     await this.assertTeamHasMemberOnServer(team._id, serverNumber);
     const rid = new Types.ObjectId(requesterId);
-    if (team.squadMembers.some((m) => squadMemberUserIdEquals(m.userId, requesterId))) {
+    if (
+      team.squadMembers.some((m) =>
+        squadMemberUserIdEquals(m.userId, requesterId),
+      )
+    ) {
       reqDoc.status = TeamJoinRequestStatus.ACCEPTED;
       await reqDoc.save();
       return { ok: true };
@@ -998,7 +998,11 @@ export class TeamsService {
     }
     await this.assertUserNotInAnySquad(target._id.toString());
     const tid = new Types.ObjectId(target._id.toString());
-    if (team.squadMembers.some((m) => squadMemberUserIdEquals(m.userId, target._id.toString()))) {
+    if (
+      team.squadMembers.some((m) =>
+        squadMemberUserIdEquals(m.userId, target._id.toString()),
+      )
+    ) {
       throw new ConflictException('Already a member');
     }
     const serverNumber = this.resolveActiveServerNumber(target);
@@ -1037,16 +1041,20 @@ export class TeamsService {
       throw new BadRequestException('Cannot remove the team leader');
     }
     const mid = new Types.ObjectId(memberUserId);
-    if (!team.squadMembers.some((m) => squadMemberUserIdEquals(m.userId, memberUserId))) {
+    if (
+      !team.squadMembers.some((m) =>
+        squadMemberUserIdEquals(m.userId, memberUserId),
+      )
+    ) {
       throw new NotFoundException('Member not on this team');
     }
     await this.teamModel
-      .updateOne({ _id: team._id }, { $pull: { squadMembers: { userId: mid } } })
+      .updateOne(
+        { _id: team._id },
+        { $pull: { squadMembers: { userId: mid } } },
+      )
       .exec();
-    await this.gameIdentities.clearPlayerTeamForTeam(
-      memberUserId,
-      team._id,
-    );
+    await this.gameIdentities.clearPlayerTeamForTeam(memberUserId, team._id);
     return { ok: true };
   }
 
@@ -1066,12 +1074,12 @@ export class TeamsService {
 
     const nameOther = await this.findTeamByDisplayNameCaseInsensitive(
       nameVal,
-      team._id as Types.ObjectId,
+      team._id,
     );
     if (nameOther) {
       throw new ConflictException('This team name is already taken');
     }
-    const tagOther = await this.findTeamByTag(tagNorm, team._id as Types.ObjectId);
+    const tagOther = await this.findTeamByTag(tagNorm, team._id);
     if (tagOther) {
       throw new ConflictException('This team tag is already taken');
     }
@@ -1121,7 +1129,7 @@ export class TeamsService {
       nameVal = nameTrim.slice(0, 48);
       const nameOther = await this.findTeamByDisplayNameCaseInsensitive(
         nameVal,
-        team._id as Types.ObjectId,
+        team._id,
       );
       if (nameOther) {
         throw new ConflictException('This team name is already taken');
@@ -1130,10 +1138,7 @@ export class TeamsService {
 
     if (rawTag != null) {
       tagNorm = this.normalizeTag(rawTag);
-      const tagOther = await this.findTeamByTag(
-        tagNorm,
-        team._id as Types.ObjectId,
-      );
+      const tagOther = await this.findTeamByTag(tagNorm, team._id);
       if (tagOther) {
         throw new ConflictException('This team tag is already taken');
       }
@@ -1201,9 +1206,7 @@ export class TeamsService {
         ? SQUAD_ROLES_ASSIGNABLE_BY_R5
         : SQUAD_ROLES_ASSIGNABLE_BY_R4;
     if (!allowed.includes(role)) {
-      throw new ForbiddenException(
-        'Only squad role R5 can assign rank R5',
-      );
+      throw new ForbiddenException('Only squad role R5 can assign rank R5');
     }
 
     const targetRole = this.resolveSquadRoleForMember(team, targetUserId);
@@ -1217,7 +1220,11 @@ export class TeamsService {
     }
 
     const tid = new Types.ObjectId(targetUserId);
-    if (!team.squadMembers.some((m) => squadMemberUserIdEquals(m.userId, targetUserId))) {
+    if (
+      !team.squadMembers.some((m) =>
+        squadMemberUserIdEquals(m.userId, targetUserId),
+      )
+    ) {
       throw new NotFoundException('Member not on this team');
     }
     const res = await this.teamModel
@@ -1294,7 +1301,7 @@ export class TeamsService {
     const routesByTeam = new Map(
       memberRoutes.map((r) => [
         r._id.toString(),
-        (r.routes ?? []).map((x) => x?.trim()).filter(Boolean) as string[],
+        (r.routes ?? []).map((x) => x?.trim()).filter(Boolean),
       ]),
     );
 
@@ -1311,10 +1318,7 @@ export class TeamsService {
         displayName: team.displayName,
         leaderUserId: team.leaderUserId.toString(),
         leaderUsername: leader
-          ? this.gameIdentities.resolveMemberDisplayNickname(
-              leader,
-              teamIdStr,
-            )
+          ? this.gameIdentities.resolveMemberDisplayNickname(leader, teamIdStr)
           : '—',
         leaderServerNumber: leader
           ? this.gameIdentities.resolveServerNumberForTeam(leader, teamIdStr)
@@ -1401,7 +1405,9 @@ export class TeamsService {
         identityId: this.gameIdentities.resolveIdentityIdForTeam(u, teamIdStr),
       };
     });
-    members.sort((a, b) => squadRoleRank(b.teamRole) - squadRoleRank(a.teamRole));
+    members.sort(
+      (a, b) => squadRoleRank(b.teamRole) - squadRoleRank(a.teamRole),
+    );
     return {
       id: team._id.toString(),
       tag: team.tag,

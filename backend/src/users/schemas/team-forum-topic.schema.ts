@@ -30,5 +30,6 @@ export class TeamForumTopic {
   updatedAt?: Date;
 }
 
-export const TeamForumTopicSchema = SchemaFactory.createForClass(TeamForumTopic);
+export const TeamForumTopicSchema =
+  SchemaFactory.createForClass(TeamForumTopic);
 TeamForumTopicSchema.index({ teamId: 1, lastMessageAt: -1 });

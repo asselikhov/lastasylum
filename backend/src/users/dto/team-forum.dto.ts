@@ -1,4 +1,10 @@
-import { IsArray, IsOptional, IsString, Length, MaxLength } from 'class-validator';
+import {
+  IsArray,
+  IsOptional,
+  IsString,
+  Length,
+  MaxLength,
+} from 'class-validator';
 
 export class CreateTeamForumTopicDto {
   @IsString()

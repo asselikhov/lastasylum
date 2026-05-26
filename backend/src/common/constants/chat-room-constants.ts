@@ -29,6 +29,9 @@ export function parseServerNumberFromChatScope(
   allianceId: string,
 ): number | null {
   if (!isServerChatScope(allianceId)) return null;
-  const n = Number.parseInt(allianceId.slice(SERVER_CHAT_ALLIANCE_PREFIX.length), 10);
+  const n = Number.parseInt(
+    allianceId.slice(SERVER_CHAT_ALLIANCE_PREFIX.length),
+    10,
+  );
   return Number.isFinite(n) && n >= 1 ? n : null;
 }

@@ -12,7 +12,10 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { RolesGuard } from '../common/guards/roles.guard';
-import { CreateGameIdentityDto, UpdateGameIdentityDto } from './dto/game-identity.dto';
+import {
+  CreateGameIdentityDto,
+  UpdateGameIdentityDto,
+} from './dto/game-identity.dto';
 import { GameIdentitiesService } from './game-identities.service';
 import { UsersService } from './users.service';
 

@@ -33,8 +33,14 @@ describe('StickerAccessService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         StickerAccessService,
-        { provide: getModelToken(AllianceStickerRoleGrant.name), useValue: roleGrantModel },
-        { provide: getModelToken(AllianceStickerUserGrant.name), useValue: userGrantModel },
+        {
+          provide: getModelToken(AllianceStickerRoleGrant.name),
+          useValue: roleGrantModel,
+        },
+        {
+          provide: getModelToken(AllianceStickerUserGrant.name),
+          useValue: userGrantModel,
+        },
         { provide: getModelToken(User.name), useValue: userModel },
         { provide: GameIdentitiesService, useValue: gameIdentities },
       ],
@@ -54,7 +60,9 @@ describe('StickerAccessService', () => {
         gameIdentities: [],
       }),
     });
-    userGrantModel.deleteMany.mockReturnValue({ exec: jest.fn().mockResolvedValue({}) });
+    userGrantModel.deleteMany.mockReturnValue({
+      exec: jest.fn().mockResolvedValue({}),
+    });
     userGrantModel.insertMany.mockResolvedValue([]);
     roleGrantModel.find.mockReturnValue({
       lean: jest.fn().mockReturnValue({
@@ -63,9 +71,11 @@ describe('StickerAccessService', () => {
     });
     userGrantModel.find.mockReturnValue({
       lean: jest.fn().mockReturnValue({
-        exec: jest.fn().mockResolvedValue([
-          { packKey: 'zlobyaka', userId: new Types.ObjectId(userId) },
-        ]),
+        exec: jest
+          .fn()
+          .mockResolvedValue([
+            { packKey: 'zlobyaka', userId: new Types.ObjectId(userId) },
+          ]),
       }),
     });
     userModel.find.mockReturnValue({
@@ -74,7 +84,9 @@ describe('StickerAccessService', () => {
       }),
     });
 
-    const view = await service.replaceUserPackGrants(alliance, userId, ['zlobyaka']);
+    const view = await service.replaceUserPackGrants(alliance, userId, [
+      'zlobyaka',
+    ]);
 
     expect(userGrantModel.deleteMany).toHaveBeenCalledWith({
       allianceName: alliance,

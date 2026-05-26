@@ -26,7 +26,10 @@ export function resolveTeamChatScope(
  * «Межсерв» и комната сервера — для всех; «Альянс» и «Рейд» — только участникам player team.
  */
 export function userMayAccessChatRoom(
-  user: Pick<User, 'allianceName' | 'playerTeamId' | 'gameIdentities' | 'activeGameIdentityId'>,
+  user: Pick<
+    User,
+    'allianceName' | 'playerTeamId' | 'gameIdentities' | 'activeGameIdentityId'
+  >,
   room: ChatRoomAccessFields,
 ): boolean {
   if (room.archivedAt) {
@@ -39,9 +42,7 @@ export function userMayAccessChatRoom(
     const roomServer = parseServerNumberFromChatScope(room.allianceId);
     const userServer = resolveUserActiveServerNumber(user);
     return (
-      roomServer != null &&
-      userServer != null &&
-      roomServer === userServer
+      roomServer != null && userServer != null && roomServer === userServer
     );
   }
   const teamScope = resolveTeamChatScope(user);

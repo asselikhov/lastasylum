@@ -95,7 +95,7 @@ export class StickerAccessService implements OnModuleInit {
     if (!allianceName) {
       return [];
     }
-    const uid = user._id as Types.ObjectId;
+    const uid = user._id;
     const keys = new Set<string>();
 
     const roleRows = await this.roleGrantModel
@@ -131,13 +131,13 @@ export class StickerAccessService implements OnModuleInit {
     }
   }
 
-  async getAllianceAccess(allianceName: string): Promise<AllianceStickerAccessView> {
+  async getAllianceAccess(
+    allianceName: string,
+  ): Promise<AllianceStickerAccessView> {
     const trimmed = allianceName.trim();
     const roleDocs = await this.roleGrantModel
       .find({ allianceName: trimmed })
-      .lean<
-        Array<{ packKey: string; role: AllianceRole }>
-      >()
+      .lean<Array<{ packKey: string; role: AllianceRole }>>()
       .exec();
     const userDocs = await this.userGrantModel
       .find({ allianceName: trimmed })
@@ -209,9 +209,13 @@ export class StickerAccessService implements OnModuleInit {
     }
     const user = await this.userModel.findById(userId).exec();
     if (!user || user.allianceName.trim() !== trimmed) {
-      throw new BadRequestException(`User ${userId} is not in alliance ${trimmed}`);
+      throw new BadRequestException(
+        `User ${userId} is not in alliance ${trimmed}`,
+      );
     }
-    const uniqueKeys = [...new Set(packKeys.map((k) => k.trim()).filter(Boolean))];
+    const uniqueKeys = [
+      ...new Set(packKeys.map((k) => k.trim()).filter(Boolean)),
+    ];
     for (const packKey of uniqueKeys) {
       if (!isKnownStickerPackKey(packKey)) {
         throw new BadRequestException(`Unknown sticker pack: ${packKey}`);

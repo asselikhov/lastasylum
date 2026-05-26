@@ -55,11 +55,7 @@ export class TeamPresenceGateway {
   ) {}
 
   handleConnection(client: AuthSocket) {
-    authenticateSocketConnection(
-      client,
-      this.jwtService,
-      this.configService,
-    );
+    authenticateSocketConnection(client, this.jwtService, this.configService);
   }
 
   private teamRoomKey(teamId: string): string {
@@ -79,7 +75,10 @@ export class TeamPresenceGateway {
     if (!teamId) {
       throw new WsException('teamId is required');
     }
-    await this.teamsService.getTeamDetailForUser(teamId, client.data.user.userId);
+    await this.teamsService.getTeamDetailForUser(
+      teamId,
+      client.data.user.userId,
+    );
     const key = this.teamRoomKey(teamId);
     if (client.data.teamRoom && client.data.teamRoom !== key) {
       void client.leave(client.data.teamRoom);

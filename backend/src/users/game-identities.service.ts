@@ -15,10 +15,7 @@ import {
   GameIdentity,
   GameIdentityDocument,
 } from './schemas/game-identity.schema';
-import {
-  PlayerTeam,
-  PlayerTeamDocument,
-} from './schemas/player-team.schema';
+import { PlayerTeam, PlayerTeamDocument } from './schemas/player-team.schema';
 import { User, UserDocument } from './schemas/user.schema';
 
 export type AdminServerSummary = {
@@ -69,9 +66,7 @@ export class GameIdentitiesService {
   normalizeGameNickname(raw: string): string {
     const trimmed = raw.trim();
     if (trimmed.length < 2 || trimmed.length > 32) {
-      throw new BadRequestException(
-        'Game nickname must be 2–32 characters',
-      );
+      throw new BadRequestException('Game nickname must be 2–32 characters');
     }
     return trimmed;
   }
@@ -100,7 +95,9 @@ export class GameIdentitiesService {
     return this.userModel.findOne(filter).exec();
   }
 
-  private identityId(identity: GameIdentity & { _id?: Types.ObjectId }): string {
+  private identityId(
+    identity: GameIdentity & { _id?: Types.ObjectId },
+  ): string {
     return identity._id?.toString() ?? '';
   }
 
@@ -272,8 +269,13 @@ export class GameIdentitiesService {
     }
     const activeServer = this.resolveSenderServerNumber(user);
     if (activeServer != null) {
-      const onActiveServer = onTeam.find((g) => g.serverNumber === activeServer);
-      if (onActiveServer?.serverNumber != null && onActiveServer.serverNumber >= 1) {
+      const onActiveServer = onTeam.find(
+        (g) => g.serverNumber === activeServer,
+      );
+      if (
+        onActiveServer?.serverNumber != null &&
+        onActiveServer.serverNumber >= 1
+      ) {
         return onActiveServer.serverNumber;
       }
     }
@@ -281,17 +283,16 @@ export class GameIdentitiesService {
     return first?.serverNumber ?? null;
   }
 
-  resolveMemberDisplayNickname(
-    user: UserDocument,
-    teamId: string,
-  ): string {
+  resolveMemberDisplayNickname(user: UserDocument, teamId: string): string {
     const onTeam = this.identitiesOnTeam(user, teamId);
     if (onTeam.length === 0) {
       return this.resolveSenderUsername(user);
     }
     const activeServer = this.resolveSenderServerNumber(user);
     if (activeServer != null) {
-      const onActiveServer = onTeam.find((g) => g.serverNumber === activeServer);
+      const onActiveServer = onTeam.find(
+        (g) => g.serverNumber === activeServer,
+      );
       const nick = onActiveServer?.gameNickname?.trim();
       if (nick) return nick;
     }
@@ -453,9 +454,7 @@ export class GameIdentitiesService {
       (g) => g.serverNumber === server,
     );
     if (dupServer) {
-      throw new ConflictException(
-        'You already have a nickname on this server',
-      );
+      throw new ConflictException('You already have a nickname on this server');
     }
     const taken = await this.findNicknameOnServer(server, nick, userId);
     if (taken) {
@@ -532,8 +531,7 @@ export class GameIdentitiesService {
 
     if (server !== current.serverNumber) {
       const dupServer = (migrated.gameIdentities ?? []).some(
-        (g) =>
-          this.identityId(g) !== identityId && g.serverNumber === server,
+        (g) => this.identityId(g) !== identityId && g.serverNumber === server,
       );
       if (dupServer) {
         throw new ConflictException(
@@ -593,13 +591,12 @@ export class GameIdentitiesService {
     if ((migrated.gameIdentities?.length ?? 0) <= 1) {
       throw new BadRequestException('Cannot remove your only game nickname');
     }
-    const wasActive =
-      migrated.activeGameIdentityId?.toString() === identityId;
+    const wasActive = migrated.activeGameIdentityId?.toString() === identityId;
     const identities = (migrated.gameIdentities ?? []).filter(
       (g) => this.identityId(g) !== identityId,
     );
     const nextActiveId = wasActive
-      ? identities[0]?._id ?? null
+      ? (identities[0]?._id ?? null)
       : migrated.activeGameIdentityId;
     const updated = await this.userModel
       .findByIdAndUpdate(
@@ -644,7 +641,9 @@ export class GameIdentitiesService {
     }
     const tid = new Types.ObjectId(teamId);
     const rows = await this.userModel
-      .aggregate<{ _id: number }>([
+      .aggregate<{
+        _id: number;
+      }>([
         { $match: { 'gameIdentities.playerTeamId': tid } },
         { $unwind: '$gameIdentities' },
         { $match: { 'gameIdentities.playerTeamId': tid } },
@@ -652,15 +651,10 @@ export class GameIdentitiesService {
         { $sort: { _id: 1 } },
       ])
       .exec();
-    return rows
-      .map((r) => r._id)
-      .filter((n) => Number.isFinite(n) && n >= 1);
+    return rows.map((r) => r._id).filter((n) => Number.isFinite(n) && n >= 1);
   }
 
-  resolveIdentityIdForTeam(
-    user: UserDocument,
-    teamId: string,
-  ): string | null {
+  resolveIdentityIdForTeam(user: UserDocument, teamId: string): string | null {
     const list = user.gameIdentities ?? [];
     const onTeam = list.find((g) => g.playerTeamId?.toString() === teamId);
     if (onTeam?._id) {
@@ -692,7 +686,9 @@ export class GameIdentitiesService {
   }
 
   /** Team ids that have at least one identity on [serverNumber]. */
-  async findTeamIdsWithMemberOnServer(serverNumber: number): Promise<Types.ObjectId[]> {
+  async findTeamIdsWithMemberOnServer(
+    serverNumber: number,
+  ): Promise<Types.ObjectId[]> {
     const rows = await this.userModel
       .aggregate<{ _id: Types.ObjectId }>([
         { $match: { 'gameIdentities.serverNumber': serverNumber } },
@@ -739,7 +735,10 @@ export class GameIdentitiesService {
       if (!tid || server == null || server < 1) continue;
       const list = out.get(tid) ?? [];
       if (!list.includes(server)) list.push(server);
-      out.set(tid, list.sort((a, b) => a - b));
+      out.set(
+        tid,
+        list.sort((a, b) => a - b),
+      );
     }
     return out;
   }

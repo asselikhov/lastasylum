@@ -103,7 +103,9 @@ export class TeamNewsAttachmentsService {
   }): Promise<UploadedTeamNewsImage> {
     const { buffer, mimeType, size, filename } = input;
     if (!isApkUpload(mimeType, filename)) {
-      throw new BadRequestException('Only APK files are supported for file uploads');
+      throw new BadRequestException(
+        'Only APK files are supported for file uploads',
+      );
     }
     if (size > FILE_MAX_BYTES) {
       throw new BadRequestException('File exceeds 120 MB limit');
@@ -112,7 +114,8 @@ export class TeamNewsAttachmentsService {
       throw new BadRequestException('file is empty');
     }
 
-    const safeName = filename.replace(/[^\w.\-()+ ]+/g, '_').slice(0, 120) || 'update.apk';
+    const safeName =
+      filename.replace(/[^\w.\-()+ ]+/g, '_').slice(0, 120) || 'update.apk';
     const fileId = new Types.ObjectId();
     const key = `team-news/${input.teamId.toString()}/${fileId.toString()}.apk`;
 
@@ -131,7 +134,8 @@ export class TeamNewsAttachmentsService {
       await this.r2.putObject({
         key,
         body: buffer,
-        contentType: mimeType.trim() || 'application/vnd.android.package-archive',
+        contentType:
+          mimeType.trim() || 'application/vnd.android.package-archive',
         cacheControl: 'private, max-age=31536000, immutable',
       });
     } catch (err) {
@@ -164,7 +168,9 @@ export class TeamNewsAttachmentsService {
     teamId: Types.ObjectId,
     fileIds: string[],
     uploaderUserId: string,
-  ): Promise<Array<{ fileId: Types.ObjectId; mimeType: string; size: number }>> {
+  ): Promise<
+    Array<{ fileId: Types.ObjectId; mimeType: string; size: number }>
+  > {
     if (fileIds.length === 0) return [];
     const oids = fileIds.map((id) => {
       if (!Types.ObjectId.isValid(id)) {
@@ -184,7 +190,9 @@ export class TeamNewsAttachmentsService {
       >()
       .exec();
     if (docs.length !== oids.length) {
-      throw new BadRequestException('One or more images not found for this team');
+      throw new BadRequestException(
+        'One or more images not found for this team',
+      );
     }
     for (const d of docs) {
       if (!attachmentUploaderIdEquals(d.uploaderUserId, uploaderUserId)) {
@@ -212,7 +220,12 @@ export class TeamNewsAttachmentsService {
     const fileId = new Types.ObjectId(fileIdRaw);
     const doc = await this.attachmentModel
       .findOne({ _id: fileId, teamId })
-      .lean<{ _id: Types.ObjectId; uploaderUserId: string; mimeType: string; size: number } | null>()
+      .lean<{
+        _id: Types.ObjectId;
+        uploaderUserId: string;
+        mimeType: string;
+        size: number;
+      } | null>()
       .exec();
     if (!doc) {
       throw new BadRequestException('Image not found for this team');
@@ -237,7 +250,12 @@ export class TeamNewsAttachmentsService {
     teamId: Types.ObjectId,
     fileIdRaw: string,
     uploaderUserId: string,
-  ): Promise<{ fileId: Types.ObjectId; mimeType: string; size: number; filename: string }> {
+  ): Promise<{
+    fileId: Types.ObjectId;
+    mimeType: string;
+    size: number;
+    filename: string;
+  }> {
     if (!Types.ObjectId.isValid(fileIdRaw)) {
       throw new BadRequestException('Invalid file id');
     }

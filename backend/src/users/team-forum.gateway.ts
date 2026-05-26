@@ -50,11 +50,7 @@ export class TeamForumGateway {
   ) {}
 
   handleConnection(client: AuthSocket) {
-    authenticateSocketConnection(
-      client,
-      this.jwtService,
-      this.configService,
-    );
+    authenticateSocketConnection(client, this.jwtService, this.configService);
   }
 
   private roomKey(teamId: string, topicId: string): string {
@@ -186,29 +182,30 @@ export class TeamForumGateway {
     if (!client.data.user) {
       throw new WsException('Unauthorized websocket connection');
     }
-    const teamId =
-      typeof body?.teamId === 'string' ? body.teamId.trim() : '';
+    const teamId = typeof body?.teamId === 'string' ? body.teamId.trim() : '';
     const topicId =
       typeof body?.topicId === 'string' ? body.topicId.trim() : '';
     if (!teamId || !topicId) {
       throw new WsException('teamId and topicId are required');
     }
-    this.server?.to(this.roomKey(teamId, topicId)).except(client.id).emit(
-      'user:typing',
-      {
+    this.server
+      ?.to(this.roomKey(teamId, topicId))
+      .except(client.id)
+      .emit('user:typing', {
         teamId,
         topicId,
         userId: client.data.user.userId,
         username: client.data.user.username,
-      },
-    );
+      });
   }
 
-  broadcastNewMessage(teamId: string, topicId: string, message: TeamForumMessageRow) {
+  broadcastNewMessage(
+    teamId: string,
+    topicId: string,
+    message: TeamForumMessageRow,
+  ) {
     const payload = { ...message, teamId, topicId };
-    this.server
-      ?.to(this.roomKey(teamId, topicId))
-      .emit('message:new', payload);
+    this.server?.to(this.roomKey(teamId, topicId)).emit('message:new', payload);
     this.server?.to(this.teamInboxRoomKey(teamId)).emit('topic:activity', {
       teamId,
       topicId,
@@ -234,7 +231,11 @@ export class TeamForumGateway {
     });
   }
 
-  broadcastMessageEdited(teamId: string, topicId: string, message: TeamForumMessageRow) {
+  broadcastMessageEdited(
+    teamId: string,
+    topicId: string,
+    message: TeamForumMessageRow,
+  ) {
     this.server
       ?.to(this.roomKey(teamId, topicId))
       .emit('message:edited', { ...message, teamId, topicId });
