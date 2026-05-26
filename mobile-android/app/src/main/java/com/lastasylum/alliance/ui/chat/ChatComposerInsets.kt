@@ -1,41 +1,36 @@
 package com.lastasylum.alliance.ui.chat
 
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 
 /**
- * Нижний отступ композера: [SquadRelayDimens.composerBottomGap] над клавиатурой / краем контента.
- *
- * В приложении контент чата заканчивается **над** нижним Scaffold-nav — полный [ime] даёт лишний зазор.
- * Передайте [imeObstruction] ≈ высота bottomBar (см. [SquadRelayDimens.chatComposerScaffoldBottomObstruction]).
- *
- * Оверлей: [imeObstruction] = 0 (padding задаётся на корневом [android.widget.FrameLayout]).
+ * Оверлей: IME в Compose ([imePadding]); корневой FrameLayout — только systemBars.
  */
-fun Modifier.chatComposerDock(imeObstruction: Dp = 0.dp): Modifier = composed {
+fun Modifier.chatComposerOverlayDock(): Modifier =
+    imePadding().padding(bottom = SquadRelayDimens.composerBottomGap)
+
+/**
+ * Приложение: [imePadding] + компенсация bottomBar Scaffold (навбар не скрываем).
+ */
+fun Modifier.chatComposerAppDock(): Modifier = composed {
     val density = LocalDensity.current
-    val imeBottom = WindowInsets.ime
-        .asPaddingValues(density)
-        .calculateBottomPadding()
-    val gap = SquadRelayDimens.composerBottomGap
-    val bottom = if (imeBottom > 0.dp) {
-        (imeBottom - imeObstruction).coerceAtLeast(0.dp) + gap
-    } else {
-        gap
+    val obstructionPx = with(density) {
+        SquadRelayDimens.chatComposerScaffoldBottomObstruction.roundToPx()
     }
-    Modifier.padding(bottom = bottom)
+    val pullDownPx = if (WindowInsets.ime.getBottom(density) > 0) obstructionPx else 0
+    Modifier
+        .offset { IntOffset(0, pullDownPx) }
+        .imePadding()
+        .padding(bottom = SquadRelayDimens.composerBottomGap)
 }
 
-@Composable
-fun rememberChatAppComposerImeObstruction(): Dp = remember {
-    SquadRelayDimens.chatComposerScaffoldBottomObstruction
-}
+/** @deprecated Используйте [chatComposerOverlayDock] или [chatComposerAppDock]. */
+fun Modifier.chatComposerDock(): Modifier = chatComposerAppDock()

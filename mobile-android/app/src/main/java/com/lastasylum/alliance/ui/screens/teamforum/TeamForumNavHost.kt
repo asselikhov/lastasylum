@@ -30,7 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import com.lastasylum.alliance.ui.chat.AttachmentPreviewOverlay
 import com.lastasylum.alliance.ui.chat.ChatComposer
-import com.lastasylum.alliance.ui.chat.chatComposerDock
+import com.lastasylum.alliance.ui.chat.chatComposerAppDock
 import com.lastasylum.alliance.ui.chat.stabilizeComposerImageUris
 import com.lastasylum.alliance.ui.chat.capForumMessagesOldestFirst
 import com.lastasylum.alliance.ui.chat.mergePreservingForumMedia
@@ -1077,7 +1077,7 @@ private fun TeamForumTopicChatRoute(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .onSizeChanged { size -> composerBlockHeightPx = size.height }
-                .chatComposerDock(),
+                .chatComposerAppDock(),
         ) {
         ChatComposer(
             draft = draft,

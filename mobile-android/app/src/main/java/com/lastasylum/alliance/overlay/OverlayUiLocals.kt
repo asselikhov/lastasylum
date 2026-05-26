@@ -46,7 +46,9 @@ fun OverlayModalScope(
             OverlayChatInteractionHold.acquireGameForegroundSuppress()
         }
         onDispose {
-            OverlayChatInteractionHold.releaseGameForegroundSuppress()
+            if (!preparedByCaller) {
+                OverlayChatInteractionHold.releaseGameForegroundSuppress()
+            }
         }
     }
     content()

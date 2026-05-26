@@ -2635,6 +2635,13 @@ class CombatOverlayService : Service() {
         lastAppliedGateShouldShow = shouldShow
         _inGameOverlayUiActive.value = shouldShow
         if (!shouldShow) {
+            if (overlayChatTeamPanelVisible ||
+                OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible
+            ) {
+                // Не снимать полноэкранный чат по краткому ложному «не в игре» (IME, usage-stats).
+                gateSoftHideStartedAtMs = 0L
+                return
+            }
             softHideOverlayUiBecauseNotInGame()
             if (!overlayInGameProbeActive) {
                 gateSoftHideStartedAtMs = 0L
@@ -2659,7 +2666,11 @@ class CombatOverlayService : Service() {
             }
             if (nowMs - gateSoftHideStartedAtMs >= GATE_DISMISS_AFTER_MS) {
                 gateSoftHideStartedAtMs = 0L
-                dismissOverlayUiBecauseNotInGame(logWaitingForGame = true)
+                if (!overlayChatTeamPanelVisible &&
+                    !OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible
+                ) {
+                    dismissOverlayUiBecauseNotInGame(logWaitingForGame = true)
+                }
             }
             return
         }
@@ -4483,7 +4494,6 @@ class CombatOverlayService : Service() {
         }
 
         val surfaceArgb = overlayChatTeamSurfaceColor()
-        val keyboardGapPx = (8f * resources.displayMetrics.density).toInt()
         val root = FrameLayout(this).apply {
             setBackgroundColor(surfaceArgb)
             elevation = 48f
@@ -4495,12 +4505,9 @@ class CombatOverlayService : Service() {
                 val safeTypes = WindowInsetsCompat.Type.systemBars() or
                     WindowInsetsCompat.Type.displayCutout()
                 val safe = windowInsets.getInsets(safeTypes)
-                val ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime())
-                val bottom = maxOf(safe.bottom, ime.bottom) + keyboardGapPx
-                // Верхний отступ — в Compose (крестик в строке с камерой; комнаты — statusBarsPadding).
-                view.setPadding(safe.left, 0, safe.right, bottom)
+                // IME + 8dp — в Compose (imePadding), без setPadding на корне (меньше jank).
+                view.setPadding(safe.left, 0, safe.right, safe.bottom)
                 WindowInsetsCompat.Builder(windowInsets)
-                    .setInsets(WindowInsetsCompat.Type.ime(), Insets.NONE)
                     .setInsets(safeTypes, Insets.NONE)
                     .build()
             }

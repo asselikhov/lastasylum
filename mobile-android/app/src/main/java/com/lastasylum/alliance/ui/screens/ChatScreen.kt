@@ -105,7 +105,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.key
@@ -118,7 +117,6 @@ import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Brush
@@ -217,8 +215,8 @@ import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarEndPad
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarSize
 import com.lastasylum.alliance.ui.chat.AttachmentPreviewOverlay
 import com.lastasylum.alliance.ui.chat.ChatComposer
-import com.lastasylum.alliance.ui.chat.chatComposerDock
-import com.lastasylum.alliance.ui.chat.rememberChatAppComposerImeObstruction
+import com.lastasylum.alliance.ui.chat.chatComposerAppDock
+import com.lastasylum.alliance.ui.chat.chatComposerOverlayDock
 import com.lastasylum.alliance.ui.chat.ChatFileAttachmentCard
 import com.lastasylum.alliance.ui.chat.ChatMessageBubbleRow
 import com.lastasylum.alliance.ui.chat.ChatMessageClusterFlags
@@ -459,7 +457,11 @@ fun ChatScreen(
 ) {
     val context = LocalContext.current
     val overlayUi = LocalOverlayUiMode.current
-    val composerImeObstruction = if (overlayUi) 0.dp else rememberChatAppComposerImeObstruction()
+    val composerDockModifier = if (overlayUi) {
+        Modifier.chatComposerOverlayDock()
+    } else {
+        Modifier.chatComposerAppDock()
+    }
     val canHandleBack = LocalOnBackPressedDispatcherOwner.current != null
 
     val listState = remember(state.selectedRoomId) {
@@ -668,10 +670,12 @@ fun ChatScreen(
         lastHandledScrollNonce = nonce
         lastAutoScrolledNewestKey = state.newestMessageKey
         newMessagesWhileScrolledUp = 0
-        listState.scrollReverseChatRevealLatest(
-            animate = false,
-            adjustViewport = false,
-        )
+        if (!listState.isAtReverseChatBottom()) {
+            listState.scrollReverseChatRevealLatest(
+                animate = false,
+                adjustViewport = false,
+            )
+        }
     }
 
     LaunchedEffect(state.newestMessageKey, isNearLatest, listDerived.timeline.size) {
@@ -707,10 +711,6 @@ fun ChatScreen(
             remoteChatImagePreview = urls to idx
         },
     ) {
-        var composerBlockHeightPx by remember { mutableIntStateOf(0) }
-        val composerReserveBottom = with(LocalDensity.current) {
-            composerBlockHeightPx.toDp()
-        }
         val messagesTopPadding = if (overlayUi) {
             Modifier.padding(top = 2.dp)
         } else {
@@ -721,8 +721,7 @@ fun ChatScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .onSizeChanged { size -> composerBlockHeightPx = size.height }
-                    .chatComposerDock(imeObstruction = composerImeObstruction),
+                    .then(composerDockModifier),
             ) {
                 state.sendFailure?.let { failure ->
                     Surface(
@@ -817,46 +816,7 @@ fun ChatScreen(
             }
         }
         }
-        if (overlayUi) {
-            Box(Modifier.fillMaxSize()) {
-                ChatScreenMessagesHost(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(bottom = composerReserveBottom),
-                    topPadding = messagesTopPadding,
-                    compactOverlayMode = compactOverlayMode,
-                    overlayUi = overlayUi,
-                    state = state,
-                    selectedRoomId = selectedRoomId,
-                    messages = messages,
-                    listDerived = listDerived,
-                    listUiState = listUiState,
-                    listState = listState,
-                    typingPeers = typingPeers,
-                    otherReadUptoMessageId = otherReadUptoMessageId,
-                    inSelectionMode = inSelectionMode,
-                    showScrollToLatestFab = showScrollToLatestFab,
-                    newMessagesWhileScrolledUp = newMessagesWhileScrolledUp,
-                    scrollToLatest = scrollToLatest,
-                    onSelectRoom = onSelectRoom,
-                    onClearError = onClearError,
-                    onJumpToQuotedMessage = onJumpToQuotedMessage,
-                    onToggleReaction = onToggleReaction,
-                    onOpenMessageActions = onOpenMessageActions,
-                    onReplyToMessage = onReplyToMessage,
-                    onToggleMessageSelection = onToggleMessageSelection,
-                    onClearMessageSelection = onClearMessageSelection,
-                    onRequestBulkDelete = onRequestBulkDelete,
-                    messageListKey = messageListKey,
-                )
-                Box(Modifier.align(Alignment.BottomCenter)) {
-                    composerBar()
-                }
-            }
-        } else {
-            Column(
-                Modifier.fillMaxSize(),
-            ) {
+        Column(Modifier.fillMaxSize()) {
                 ChatScreenMessagesHost(
                     modifier = Modifier
                         .weight(1f, fill = true)
@@ -887,8 +847,7 @@ fun ChatScreen(
                     onRequestBulkDelete = onRequestBulkDelete,
                     messageListKey = messageListKey,
                 )
-                composerBar()
-            }
+            composerBar()
         }
 
     if (!inSelectionMode) {

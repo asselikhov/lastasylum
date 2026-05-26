@@ -1696,6 +1696,17 @@ class ChatViewModel(
                 messages = messages,
             )
         }
+        if (previousMessages.isNotEmpty() &&
+            messages.size == previousMessages.size &&
+            messages.drop(1) == previousMessages.drop(1) &&
+            messages[0] != previousMessages[0]
+        ) {
+            return buildChatMessagesListDerivedAfterReplaceNewest(
+                previousDerived = previousDerived,
+                previousMessages = previousMessages,
+                messages = messages,
+            )
+        }
         return if (messages.size <= CHAT_LIST_DERIVE_SYNC_MAX) {
             buildChatMessagesListDerived(messages)
         } else {
@@ -2470,6 +2481,9 @@ class ChatViewModel(
         message: ChatMessage,
         clearComposer: Boolean = false,
     ) {
+        if (clearComposer && overlayChatPanelVisible) {
+            com.lastasylum.alliance.overlay.CombatOverlayService.extendInGameOverlayUiHold()
+        }
         applyIncomingBatch(listOf(message), clearComposer = clearComposer)
     }
 

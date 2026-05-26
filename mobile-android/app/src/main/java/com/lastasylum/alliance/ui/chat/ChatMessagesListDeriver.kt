@@ -123,6 +123,46 @@ private fun canIncrementallyPrependDerived(
     return true
 }
 
+private fun canIncrementallyReplaceNewestDerived(
+    previousMessages: List<ChatMessage>,
+    messages: List<ChatMessage>,
+    previousDerived: ChatMessagesListDerived,
+): Boolean {
+    if (messages.isEmpty() || previousMessages.isEmpty()) return false
+    if (messages.size != previousMessages.size) return false
+    if (messages.drop(1) != previousMessages.drop(1)) return false
+    if (messages[0] == previousMessages[0]) return false
+    if (previousDerived.timeline.isEmpty()) return false
+    val head = previousDerived.timeline.first()
+    return head is ChatTimelineEntry.ChatMessageItem && head.messageIndex == 0 &&
+        !chatMessageIsAlbumCandidate(messages[0])
+}
+
+/** Confirm optimistic → server id: обновить только верхнюю строку без полного rebuild ленты. */
+fun buildChatMessagesListDerivedAfterReplaceNewest(
+    previousDerived: ChatMessagesListDerived,
+    previousMessages: List<ChatMessage>,
+    messages: List<ChatMessage>,
+): ChatMessagesListDerived {
+    if (!canIncrementallyReplaceNewestDerived(previousMessages, messages, previousDerived)) {
+        return buildChatMessagesListDerived(messages)
+    }
+    val newTimeline = previousDerived.timeline.toMutableList()
+    val head = newTimeline[0] as ChatTimelineEntry.ChatMessageItem
+    newTimeline[0] = head.copy(message = messages[0])
+    val newClusterFlags = previousDerived.clusterFlags.toMutableList()
+    newClusterFlags[0] = ChatMessageClusterFlags(
+        showHeader = chatMessageShowsClusterHeaderNewestFirst(messages, 0),
+        isChainBottom = chatMessageIsClusterChainBottomNewestFirst(messages, 0),
+        tightInnerTop = chatMessageClusterTightInnerTopNewestFirst(messages, 0),
+    )
+    return ChatMessagesListDerived(
+        timeline = newTimeline,
+        clusterFlags = newClusterFlags,
+        clusterTopSpacingDp = buildClusterTopSpacingDp(newTimeline),
+    )
+}
+
 fun buildChatMessagesListDerivedAfterPrepend(
     previousDerived: ChatMessagesListDerived,
     previousMessages: List<ChatMessage>,
