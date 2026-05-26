@@ -936,6 +936,28 @@ class ChatViewModel(
         }
     }
 
+    /** While the user is in this room, never show a local unread badge on the tab/chip. */
+    private fun clearUnreadWhileActivelyViewing(roomId: String) {
+        val rid = roomId.trim()
+        if (rid.isEmpty() || !isRoomActivelyViewed(rid)) return
+        clearOptimisticUnreadFloor(rid)
+        _state.update { st ->
+            st.copy(rooms = clearUnreadForRoom(st.rooms, rid))
+        }
+        ChatSessionCache.update(_state.value.rooms)
+        syncTabUnreadBadge()
+        syncOverlayAllianceHubBadge()
+    }
+
+    /** After HTTP confirm — advance read cursor so peer gets room:read and ✓✓ on sender side. */
+    private fun acknowledgeOwnOutgoingInActiveRoom(roomId: String, serverMessageId: String?) {
+        clearUnreadWhileActivelyViewing(roomId)
+        val id = serverMessageId?.trim().orEmpty()
+        if (!isValidMarkReadMessageId(id)) return
+        mergeReadCursor(roomId, id)
+        viewModelScope.launch { markRoomReadUpTo(roomId, id) }
+    }
+
     private fun recomputeRoomUnreadBadges() {
         val rooms = _state.value.rooms
         if (rooms.isEmpty()) return
@@ -1687,6 +1709,15 @@ class ChatViewModel(
     private fun onRoomUnreadFromServer(event: ChatRoomUnreadEvent) {
         val roomId = event.roomId.trim()
         if (roomId.isBlank()) return
+        if (roomId == _state.value.selectedRoomId && isRoomActivelyViewed(roomId)) {
+            clearUnreadWhileActivelyViewing(roomId)
+            _state.value.messages.firstOrNull()?._id?.let { newestId ->
+                if (isValidMarkReadMessageId(newestId)) {
+                    viewModelScope.launch { markRoomReadUpTo(roomId, newestId) }
+                }
+            }
+            return
+        }
         if (_state.value.rooms.none { it.id == roomId }) {
             scheduleUnreadSyncFromServer()
             return
@@ -2986,7 +3017,11 @@ class ChatViewModel(
             nextState = nextState.copy(
                 replyToMessage = null,
                 sendFailure = null,
+                scrollToLatestNonce = snapshot.scrollToLatestNonce + 1L,
             )
+            snapshot.selectedRoomId?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                clearUnreadWhileActivelyViewing(it)
+            }
         }
         _state.value = syncSelections(nextState)
         publishMessagesDerivedImmediate(capped)
@@ -3180,12 +3215,16 @@ class ChatViewModel(
                 isSending = false,
                 error = null,
                 sendFailure = null,
+                scrollToLatestNonce = snapshot.scrollToLatestNonce + 1L,
             ),
         )
         _listDerived.value = derived
         activeOutgoingPendingId = null
         clearInFlightOutgoing(sent.roomId, sent.text, sent.replyToMessageId)
         val rid = _state.value.selectedRoomId
+        if (!rid.isNullOrBlank()) {
+            acknowledgeOwnOutgoingInActiveRoom(rid, serverId)
+        }
         if (!rid.isNullOrBlank()) {
             roomMessageCache[rid] = RoomMessageCache(
                 messages = work.cappedMessages,

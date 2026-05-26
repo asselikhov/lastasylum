@@ -375,6 +375,10 @@ private fun ChatScreenMessagesHost(
         val key = listPane.newestMessageKey ?: return@LaunchedEffect
         if (key == lastCountedNewestKey) return@LaunchedEffect
         lastCountedNewestKey = key
+        val head = listPane.messages.firstOrNull()
+        if (head != null && chatMessageIsOwn(head, listUiState.currentUserId)) {
+            return@LaunchedEffect
+        }
         if (!isNearLatest) {
             newMessagesWhileScrolledUp = (newMessagesWhileScrolledUp + 1).coerceAtMost(999)
         }
