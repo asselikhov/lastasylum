@@ -160,7 +160,7 @@ class AuthViewModel(
         cancelAuthBootstrap()
         viewModelScope.launch {
             runCatching { FcmTokenManager.unregister(getApplication()) }
-            authRepository.logout()
+            authRepository.logout(userId = _state.value.user?.id)
             _state.value = AuthState(
                 isCheckingStoredSession = false,
                 isLoading = false,
@@ -247,7 +247,7 @@ class AuthViewModel(
             .onFailure { err ->
                 if (err is CancellationException) throw err
                 logAuthFailure("refreshSession", err)
-                authRepository.logout()
+                authRepository.logout(userId = _state.value.user?.id)
                 _state.value = AuthState(
                     isCheckingStoredSession = false,
                     isLoading = false,

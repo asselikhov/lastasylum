@@ -17,6 +17,7 @@ import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatMessageDeletedEvent
 import com.lastasylum.alliance.data.chat.ChatReaction
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.data.cache.LaunchDiskCache
 import com.lastasylum.alliance.data.chat.ChatRepository
 import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.data.chat.ChatRoomReadEvent
@@ -72,6 +73,7 @@ class ChatViewModel(
     private val repository: ChatRepository,
     private val chatRoomPreferences: ChatRoomPreferences,
     private val usersRepository: UsersRepository,
+    private val launchDiskCache: LaunchDiskCache,
     private val currentUserId: String,
     private val currentUserRole: String,
 ) : AndroidViewModel(application) {
@@ -144,6 +146,10 @@ class ChatViewModel(
     private var overlayChatPanelVisible = false
     private val bootstrapMutex = Mutex()
     private var bootstrapJob: Job? = null
+    private var persistSnapshotJob: Job? = null
+
+    @Volatile
+    private var launchWarmupNeedsMessages = false
 
     @Volatile
     private var cachedTeamProfileGate: Boolean? = null
@@ -304,9 +310,180 @@ class ChatViewModel(
         scheduleBootstrap(preferAllianceHubRoom = true, force = true)
     }
 
-    /** Splash: полный bootstrap чата до первого показа вкладок. */
+    /** Splash: комнаты сразу; сообщения — из диска или фоном после UI. */
     suspend fun warmUpForLaunch() {
-        bootstrap(preferAllianceHubRoom = true, force = true)
+        val primed = primeFromLaunchDisk()
+        if (primed) {
+            bootstrap(preferAllianceHubRoom = true, force = false)
+            if (_state.value.messages.isEmpty() &&
+                !_state.value.selectedRoomId.isNullOrBlank()
+            ) {
+                launchWarmupNeedsMessages = true
+            }
+        } else {
+            bootstrap(
+                preferAllianceHubRoom = true,
+                force = true,
+                deferNetworkMessages = true,
+            )
+        }
+    }
+
+    /** После splash: догрузить ленту, если splash завершился без сообщений. */
+    fun continueLaunchWarmup() {
+        viewModelScope.launch {
+            if (!launchWarmupNeedsMessages) {
+                if (_state.value.rooms.isNotEmpty()) schedulePersistChatSnapshot()
+                return@launch
+            }
+            val roomId = _state.value.selectedRoomId?.trim().orEmpty()
+            if (roomId.isEmpty()) {
+                launchWarmupNeedsMessages = false
+                return@launch
+            }
+            launchWarmupNeedsMessages = false
+            val result = withContext(Dispatchers.IO) {
+                repository.loadRecentMessages(
+                    roomId,
+                    beforeMessageId = null,
+                    limit = INITIAL_PAGE_SIZE,
+                )
+            }
+            result
+                .onSuccess { loaded ->
+                    applyLoadedMessagePage(
+                        roomId = roomId,
+                        loaded = loaded,
+                        pageSizeForHasMore = INITIAL_PAGE_SIZE,
+                    )
+                }
+                .onFailure { e ->
+                    _state.update {
+                        it.copy(
+                            isLoading = false,
+                            error = e.toUserMessageRu(res),
+                        )
+                    }
+                }
+        }
+    }
+
+    /**
+     * Подставить комнаты/сообщения с диска до сети (offline-first после прошлого входа).
+     * @return true если список комнат восстановлен
+     */
+    fun primeFromLaunchDisk(): Boolean {
+        if (currentUserId.isBlank()) return false
+        val roomsRaw = launchDiskCache.loadChatRooms(currentUserId) ?: return false
+        val rooms = applyRoomsFromServer(roomsRaw)
+        if (rooms.isEmpty()) return false
+        ChatSessionCache.update(roomsRaw)
+        val selected = resolveOverlayPreferredRoomId(
+            rooms = rooms,
+            preferOverlayRaidRoom = false,
+        ) ?: chatRoomPreferences.getSelectedRoomId()?.takeIf { id ->
+            rooms.any { it.id == id }
+        } ?: rooms.first().id
+        val roomIdsToPrime = linkedSetOf(selected)
+        allianceHubRoomId(rooms)?.let { roomIdsToPrime.add(it) }
+        allianceRaidRoomId(rooms)?.let { roomIdsToPrime.add(it) }
+        for (rid in roomIdsToPrime) {
+            launchDiskCache.loadRoomMessages(currentUserId, rid)?.let { disk ->
+                val capped = capNewestFirst(disk.messages, PAGE_SIZE)
+                roomMessageCache[rid] = RoomMessageCache(
+                    messages = capped,
+                    hasMoreOlder = disk.hasMoreOlder,
+                )
+                ChatSessionCache.updateMessages(rid, disk.messages)
+            }
+        }
+        val cached = roomMessageCache[selected]
+        if (cached != null && cached.messages.isNotEmpty()) {
+            knownMessageIds.clear()
+            messageIdIndex.clear()
+            knownMessageIds.addAll(cached.messages.mapNotNull { it._id })
+            rebuildMessageIdIndex(cached.messages, messageIdIndex)
+            _state.value = _state.value.copy(
+                isLoading = false,
+                isRoomsLoading = false,
+                rooms = clearUnreadForRoom(rooms, selected),
+                selectedRoomId = selected,
+                messages = cached.messages,
+                hasMoreOlder = cached.hasMoreOlder,
+                error = null,
+                scrollToLatestNonce = _state.value.scrollToLatestNonce + 1L,
+            )
+            publishMessagesDerived(cached.messages)
+        } else {
+            _state.value = _state.value.copy(
+                isLoading = true,
+                isRoomsLoading = false,
+                rooms = clearUnreadForRoom(rooms, selected),
+                selectedRoomId = selected,
+                messages = emptyList(),
+                hasMoreOlder = true,
+                error = null,
+            )
+            _listDerived.value = ChatMessagesListDerived.Empty
+        }
+        return true
+    }
+
+    private fun schedulePersistChatSnapshot() {
+        if (currentUserId.isBlank()) return
+        persistSnapshotJob?.cancel()
+        persistSnapshotJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(300L)
+            persistChatSnapshot()
+        }
+    }
+
+    private fun persistChatSnapshot() {
+        if (currentUserId.isBlank()) return
+        val rooms = _state.value.rooms
+        if (rooms.isNotEmpty()) {
+            launchDiskCache.saveChatRooms(currentUserId, rooms)
+        }
+        val selected = _state.value.selectedRoomId?.trim().orEmpty()
+        if (selected.isNotEmpty()) {
+            val entry = roomMessageCache[selected]
+            val messages = entry?.messages?.takeIf { it.isNotEmpty() }
+                ?: _state.value.messages.takeIf { it.isNotEmpty() }
+            if (!messages.isNullOrEmpty()) {
+                launchDiskCache.saveRoomMessages(
+                    userId = currentUserId,
+                    roomId = selected,
+                    messages = messages,
+                    hasMoreOlder = entry?.hasMoreOlder ?: _state.value.hasMoreOlder,
+                )
+            }
+        }
+        val hubId = allianceHubRoomId(rooms)
+        if (!hubId.isNullOrBlank() && hubId != selected) {
+            roomMessageCache[hubId]?.let { entry ->
+                if (entry.messages.isNotEmpty()) {
+                    launchDiskCache.saveRoomMessages(
+                        currentUserId,
+                        hubId,
+                        entry.messages,
+                        entry.hasMoreOlder,
+                    )
+                }
+            }
+        }
+        val raidId = allianceRaidRoomId(rooms)
+        if (!raidId.isNullOrBlank() && raidId != selected && raidId != hubId) {
+            roomMessageCache[raidId]?.let { entry ->
+                if (entry.messages.isNotEmpty()) {
+                    launchDiskCache.saveRoomMessages(
+                        currentUserId,
+                        raidId,
+                        entry.messages,
+                        entry.hasMoreOlder,
+                    )
+                }
+            }
+        }
     }
 
     /**
@@ -724,6 +901,7 @@ class ChatViewModel(
         preferAllianceHubRoom: Boolean = false,
         preferOverlayRaidRoom: Boolean = false,
         force: Boolean = false,
+        deferNetworkMessages: Boolean = false,
     ) {
         bootstrapMutex.withLock {
             if (!force) {
@@ -751,6 +929,7 @@ class ChatViewModel(
         )
         val roomsRaw = roomsResult.getOrElse { e ->
             val fallback = ChatSessionCache.getFreshRooms()
+                ?: launchDiskCache.loadChatRooms(currentUserId)
                 ?: _state.value.rooms.takeIf { it.isNotEmpty() }
             if (!fallback.isNullOrEmpty()) {
                 fallback
@@ -771,6 +950,7 @@ class ChatViewModel(
         }
         if (roomsResult.isSuccess) {
             ChatSessionCache.update(roomsRaw)
+            schedulePersistChatSnapshot()
         }
         val rooms = applyRoomsFromServer(roomsRaw)
         if (rooms.isEmpty()) {
@@ -806,9 +986,18 @@ class ChatViewModel(
                 messages = capped,
                 hasMoreOlder = cachedOverlayMessages.size >= PAGE_SIZE,
             )
-            openRoom(selected, rooms, hadCachedMessages = true)
+            openRoom(
+                selected,
+                rooms,
+                hadCachedMessages = true,
+                deferNetworkMessages = deferNetworkMessages,
+            )
         } else {
-            openRoom(selected, rooms)
+            openRoom(
+                selected,
+                rooms,
+                deferNetworkMessages = deferNetworkMessages,
+            )
         }
     }
 
@@ -1201,6 +1390,7 @@ class ChatViewModel(
         rooms: List<ChatRoomDto>,
         hadCachedMessages: Boolean = false,
         messagesAlreadyInState: Boolean = false,
+        deferNetworkMessages: Boolean = false,
     ) {
         typingEmitJob?.cancel()
         typingEmitJob = null
@@ -1302,6 +1492,12 @@ class ChatViewModel(
             if (!shouldSkipBackgroundMessageRefresh(roomId)) {
                 refreshMessagesInBackground(roomId)
             }
+            schedulePersistChatSnapshot()
+            return
+        }
+        if (deferNetworkMessages) {
+            launchWarmupNeedsMessages = true
+            schedulePersistChatSnapshot()
             return
         }
         repository.loadRecentMessages(roomId, beforeMessageId = null, limit = INITIAL_PAGE_SIZE)
@@ -1401,6 +1597,7 @@ class ChatViewModel(
                 viewModelScope.launch { markRoomReadUpTo(roomId, newestId) }
             }
         }
+        schedulePersistChatSnapshot()
     }
 
     private fun publishMessagesDerived(messages: List<ChatMessage>) {

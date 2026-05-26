@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.lastasylum.alliance.data.ReadCursorSession
+import com.lastasylum.alliance.data.cache.LaunchDiskCache
 import com.lastasylum.alliance.data.chat.ChatRepository
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
@@ -17,6 +18,7 @@ class ChatViewModelFactory(
     private val teamForumPreferences: TeamForumPreferences,
     private val userSettingsPreferences: UserSettingsPreferences,
     private val usersRepository: UsersRepository,
+    private val launchDiskCache: LaunchDiskCache,
     private val currentUserId: String,
     private val currentUserRole: String,
 ) : ViewModelProvider.Factory {
@@ -34,6 +36,7 @@ class ChatViewModelFactory(
                 repository,
                 chatRoomPreferences,
                 usersRepository,
+                launchDiskCache,
                 currentUserId,
                 currentUserRole,
             ) as T

@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.data.cache.LaunchDiskCache
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.teams.TeamDetailDto
 import com.lastasylum.alliance.data.teams.TeamForumPreferences
@@ -38,6 +39,8 @@ class TeamViewModel(
     private val teamsRepository: TeamsRepository,
     private val userSettingsPreferences: UserSettingsPreferences,
     private val teamForumPreferences: TeamForumPreferences,
+    private val launchDiskCache: LaunchDiskCache,
+    private val currentUserId: String,
 ) : ViewModel() {
     private val _data = MutableStateFlow(TeamScreenData())
     val data: StateFlow<TeamScreenData> = _data.asStateFlow()
@@ -48,9 +51,34 @@ class TeamViewModel(
 
     fun reloadProfileAndTeam(resources: Resources) {
         viewModelScope.launch {
-            _data.update { it.copy(loading = true, error = null) }
+            val cachedProfile = currentUserId.takeIf { it.isNotBlank() }
+                ?.let { launchDiskCache.loadProfile(it) }
+            val cachedTeam = if (
+                cachedProfile != null &&
+                currentUserId.isNotBlank() &&
+                !cachedProfile.playerTeamId.isNullOrBlank()
+            ) {
+                launchDiskCache.loadTeam(currentUserId)
+            } else {
+                null
+            }
+            if (cachedProfile != null) {
+                _data.update {
+                    it.copy(
+                        profile = cachedProfile,
+                        teamDetail = cachedTeam,
+                        loading = cachedTeam == null && !cachedProfile.playerTeamId.isNullOrBlank(),
+                        error = null,
+                    )
+                }
+            } else {
+                _data.update { it.copy(loading = true, error = null) }
+            }
             usersRepository.getMyProfile()
                 .onSuccess { my ->
+                    if (currentUserId.isNotBlank()) {
+                        launchDiskCache.saveProfile(currentUserId, my)
+                    }
                     val teamId = my.playerTeamId
                     if (teamId.isNullOrBlank()) {
                         _data.update {
@@ -59,6 +87,9 @@ class TeamViewModel(
                     } else {
                         teamsRepository.getTeam(teamId)
                             .onSuccess { detail ->
+                                if (currentUserId.isNotBlank()) {
+                                    launchDiskCache.saveTeam(currentUserId, detail)
+                                }
                                 _data.update {
                                     it.copy(profile = my, teamDetail = detail, loading = false)
                                 }
@@ -67,7 +98,7 @@ class TeamViewModel(
                                 _data.update {
                                     it.copy(
                                         profile = my,
-                                        teamDetail = null,
+                                        teamDetail = cachedTeam,
                                         loading = false,
                                         error = e.toUserMessageRu(resources),
                                     )
@@ -76,13 +107,17 @@ class TeamViewModel(
                     }
                 }
                 .onFailure {
-                    _data.update {
-                        it.copy(
-                            profile = null,
-                            teamDetail = null,
-                            loading = false,
-                            error = resources.getString(R.string.profile_load_error),
-                        )
+                    if (cachedProfile == null) {
+                        _data.update {
+                            it.copy(
+                                profile = null,
+                                teamDetail = null,
+                                loading = false,
+                                error = resources.getString(R.string.profile_load_error),
+                            )
+                        }
+                    } else {
+                        _data.update { it.copy(loading = false) }
                     }
                 }
         }
@@ -97,7 +132,15 @@ class TeamViewModel(
         viewModelScope.launch {
             val newsAfter = userSettingsPreferences.getLastSeenTeamNewsCreatedAt()
             val localForumRead = teamForumPreferences.loadAllLastReadMessageIds(teamId)
-            val topics = teamsRepository.listForumTopics(teamId).getOrNull()
+            val topics = if (currentUserId.isNotBlank()) {
+                launchDiskCache.loadForumTopics(currentUserId, teamId)
+            } else {
+                null
+            } ?: teamsRepository.listForumTopics(teamId).getOrNull()?.also { loaded ->
+                if (currentUserId.isNotBlank()) {
+                    launchDiskCache.saveForumTopics(currentUserId, teamId, loaded)
+                }
+            }
             val profileId = _data.value.profile?.id?.trim().orEmpty()
             val forumUnread = topics?.let { TeamInboxUnread.sumForumUnread(it, localForumRead) }
             val newsFallback = teamsRepository.listTeamNews(teamId, cursor = null, limit = 40)
@@ -137,6 +180,8 @@ class TeamViewModelFactory(
     private val teamsRepository: TeamsRepository,
     private val userSettingsPreferences: UserSettingsPreferences,
     private val teamForumPreferences: TeamForumPreferences,
+    private val launchDiskCache: LaunchDiskCache,
+    private val currentUserId: String,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -146,6 +191,8 @@ class TeamViewModelFactory(
                 teamsRepository,
                 userSettingsPreferences,
                 teamForumPreferences,
+                launchDiskCache,
+                currentUserId,
             ) as T
         }
         error("Unsupported ViewModel: ${modelClass.name}")

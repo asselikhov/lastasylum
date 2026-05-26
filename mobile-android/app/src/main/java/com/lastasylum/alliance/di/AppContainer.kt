@@ -2,6 +2,7 @@ package com.lastasylum.alliance.di
 
 import android.content.Context
 import com.lastasylum.alliance.data.admin.AdminRepository
+import com.lastasylum.alliance.data.cache.LaunchDiskCache
 import com.lastasylum.alliance.data.auth.AuthRepository
 import com.lastasylum.alliance.data.auth.TokenStore
 import com.lastasylum.alliance.data.chat.ChatRepository
@@ -30,6 +31,7 @@ class AppContainer private constructor(context: Context) {
     val teamForumPreferences: TeamForumPreferences = TeamForumPreferences(appContext)
     val userSettingsPreferences: UserSettingsPreferences = UserSettingsPreferences(appContext)
     val onboardingPreferences: OnboardingPreferences = OnboardingPreferences(appContext)
+    val launchDiskCache: LaunchDiskCache = LaunchDiskCache(appContext)
 
     private val chatSocketManager = ChatSocketManager()
     private val voiceSocketManager = VoiceSocketManager()
@@ -86,6 +88,7 @@ class AppContainer private constructor(context: Context) {
             chatRoomPreferences = chatRoomPreferences,
             teamForumPreferences = teamForumPreferences,
             userSettingsPreferences = userSettingsPreferences,
+            launchDiskCache = launchDiskCache,
         )
     }
 

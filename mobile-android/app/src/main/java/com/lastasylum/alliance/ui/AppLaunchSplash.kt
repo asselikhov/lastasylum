@@ -46,6 +46,7 @@ import com.lastasylum.alliance.ui.components.AtmosphericBackground
 import com.lastasylum.alliance.ui.theme.SquadRelayAtmosphericPurple
 import com.lastasylum.alliance.ui.theme.SquadRelayAtmosphericSky
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 
 @Composable
 private fun rememberAnimatorScaleDisabled(): Boolean {
@@ -85,7 +86,9 @@ fun PostAuthLaunchSplash(
 
     LaunchedEffect(warmup) {
         val startedAt = System.currentTimeMillis()
-        warmup()
+        withTimeoutOrNull(LAUNCH_WARMUP_MAX_MS) {
+            warmup()
+        }
         warmupDone = true
         val elapsed = System.currentTimeMillis() - startedAt
         val minMs = if (reduceMotion) 0L else LAUNCH_SPLASH_MIN_MS
@@ -257,6 +260,9 @@ private fun LaunchSplashContent(
 
 /** Минимальное время splash, чтобы анимация не мелькала (без reduce motion). */
 const val LAUNCH_SPLASH_MIN_MS = 450L
+
+/** Максимум ожидания прогрева; UI показывается даже при медленной сети. */
+const val LAUNCH_WARMUP_MAX_MS = 8_000L
 
 /** @deprecated Используйте [LAUNCH_SPLASH_MIN_MS]; оставлено для совместимости. */
 const val LAUNCH_SPLASH_MS = LAUNCH_SPLASH_MIN_MS

@@ -462,9 +462,17 @@ private fun TeamNewsListRoute(
     val overlayUi = LocalOverlayUiMode.current
     val scope = rememberCoroutineScope()
     val newsPrefs = remember { AppContainer.from(context).userSettingsPreferences }
-    var loading by remember { mutableStateOf(true) }
-    var newsItems by remember { mutableStateOf<List<TeamNewsListItemDto>>(emptyList()) }
-    var newsNextCursor by remember { mutableStateOf<String?>(null) }
+    val launchDiskCache = remember { AppContainer.from(context).launchDiskCache }
+    val cachedPage = remember(teamId, currentUserId) {
+        if (currentUserId.isNotBlank()) {
+            launchDiskCache.loadTeamNews(currentUserId, teamId)
+        } else {
+            null
+        }
+    }
+    var loading by remember { mutableStateOf(cachedPage == null) }
+    var newsItems by remember { mutableStateOf(cachedPage?.items ?: emptyList()) }
+    var newsNextCursor by remember { mutableStateOf(cachedPage?.nextCursor) }
     var loadingMore by remember { mutableStateOf(false) }
     var loadError by remember { mutableStateOf<String?>(null) }
 
@@ -475,6 +483,9 @@ private fun TeamNewsListRoute(
             .onSuccess { page ->
                 newsItems = if (append) newsItems + page.items else page.items
                 newsNextCursor = page.nextCursor
+                if (!append && currentUserId.isNotBlank()) {
+                    launchDiskCache.saveTeamNews(currentUserId, teamId, page)
+                }
                 loading = false
                 loadingMore = false
             }

@@ -39,6 +39,7 @@ import com.lastasylum.alliance.push.FcmTokenManager
 import com.lastasylum.alliance.push.PushTokenRegistrationEffect
 import com.lastasylum.alliance.ui.chat.ChatViewModel
 import com.lastasylum.alliance.ui.chat.ChatViewModelFactory
+import com.lastasylum.alliance.ui.schedulePostSplashLaunchContinuation
 import com.lastasylum.alliance.ui.onboarding.PermissionOnboardingGate
 import com.lastasylum.alliance.update.fetchNewerApkDownloadUrl
 import com.lastasylum.alliance.update.openApkDownload
@@ -139,6 +140,7 @@ fun SquadRelayApp() {
                                     teamForumPreferences = appContainer.teamForumPreferences,
                                     userSettingsPreferences = appContainer.userSettingsPreferences,
                                     usersRepository = appContainer.usersRepository,
+                                    launchDiskCache = appContainer.launchDiskCache,
                                     currentUserId = authState.user?.id.orEmpty(),
                                     currentUserRole = authState.user?.role.orEmpty(),
                                 ),
@@ -157,12 +159,16 @@ fun SquadRelayApp() {
                             }
                             if (!postAuthSplashComplete) {
                                 PostAuthLaunchSplash(
-                                    onComplete = { postAuthSplashComplete = true },
+                                    onComplete = {
+                                        postAuthSplashComplete = true
+                                        schedulePostSplashLaunchContinuation(chatViewModel)
+                                    },
                                     warmup = {
                                         runAppLaunchWarmup(
                                             application = application,
                                             container = appContainer,
                                             chatViewModel = chatViewModel,
+                                            userId = authState.user?.id.orEmpty(),
                                         )
                                     },
                                 )
@@ -181,6 +187,7 @@ fun SquadRelayApp() {
                                         teamForumPreferences = appContainer.teamForumPreferences,
                                         userSettingsPreferences = appContainer.userSettingsPreferences,
                                         usersRepository = appContainer.usersRepository,
+                                        launchDiskCache = appContainer.launchDiskCache,
                                         currentUserId = authState.user?.id.orEmpty(),
                                         currentUserRole = authState.user?.role.orEmpty(),
                                     ),

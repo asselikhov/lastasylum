@@ -4115,6 +4115,7 @@ class CombatOverlayService : Service() {
             repository = container.chatRepository,
             chatRoomPreferences = container.chatRoomPreferences,
             usersRepository = container.usersRepository,
+            launchDiskCache = container.launchDiskCache,
             currentUserId = userId,
             currentUserRole = userRole,
         ).also { overlayFallbackChatViewModel = it }

@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.data.auth
 
 import com.lastasylum.alliance.data.ReadCursorSession
+import com.lastasylum.alliance.data.cache.LaunchDiskCache
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.teams.TeamForumPreferences
@@ -14,6 +15,7 @@ class AuthRepository(
     private val chatRoomPreferences: ChatRoomPreferences,
     private val teamForumPreferences: TeamForumPreferences,
     private val userSettingsPreferences: UserSettingsPreferences,
+    private val launchDiskCache: LaunchDiskCache,
 ) {
     suspend fun register(
         email: String,
@@ -89,8 +91,14 @@ class AuthRepository(
         }
     }
 
-    suspend fun logout() {
+    suspend fun logout(userId: String? = null) {
         runCatching { authorizedAuthApi.logout() }
+        val uid = userId?.trim().orEmpty()
+        if (uid.isNotEmpty()) {
+            launchDiskCache.clearUser(uid)
+        } else {
+            launchDiskCache.clearAll()
+        }
         tokenStore.clearTokens()
         ReadCursorSession.clearAll(
             chatRoomPreferences,

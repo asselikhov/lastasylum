@@ -322,28 +322,49 @@ private fun TeamForumListRoute(
             localLastReadMessageId = lastReadByTopic[topic.id],
         )
 
+    fun applyTopicRows(rows: List<TeamForumTopicDto>) {
+        topics.clear()
+        hydrateReadCursorsFromTopics(rows)
+        topics.addAll(
+            rows.map { topic ->
+                topic.copy(unreadCount = effectiveTopicUnread(topic))
+            },
+        )
+        rows.forEach { t -> topicTitles[t.id] = t.title }
+        rows.filter { topic ->
+            topic.unreadCount > 0 && effectiveTopicUnread(topic) == 0
+        }.forEach { topic ->
+            val localLast = lastReadByTopic[topic.id] ?: return@forEach
+            scope.launch {
+                teamsRepository.markForumTopicRead(teamId, topic.id, localLast)
+            }
+        }
+    }
+
     fun reload() {
         scope.launch {
-            loading = true
+            val diskTopics = if (currentUserId.isNotBlank()) {
+                app.launchDiskCache.loadForumTopics(currentUserId, teamId)
+            } else {
+                null
+            }
+            if (!diskTopics.isNullOrEmpty()) {
+                applyTopicRows(diskTopics)
+                loading = false
+            } else {
+                loading = true
+            }
             error = null
             teamsRepository.listForumTopics(teamId)
                 .onSuccess {
-                    topics.clear()
-                    hydrateReadCursorsFromTopics(it)
-                    topics.addAll(
-                        it.map { topic ->
-                            topic.copy(unreadCount = effectiveTopicUnread(topic))
-                        },
-                    )
-                    it.forEach { t -> topicTitles[t.id] = t.title }
-                    it.filter { topic ->
-                        topic.unreadCount > 0 && effectiveTopicUnread(topic) == 0
-                    }.forEach { topic ->
-                        val localLast = lastReadByTopic[topic.id] ?: return@forEach
-                        teamsRepository.markForumTopicRead(teamId, topic.id, localLast)
+                    if (currentUserId.isNotBlank()) {
+                        app.launchDiskCache.saveForumTopics(currentUserId, teamId, it)
                     }
+                    applyTopicRows(it)
                 }
-                .onFailure { e -> error = e.toUserMessageRu(res) }
+                .onFailure { e ->
+                    if (topics.isEmpty()) error = e.toUserMessageRu(res)
+                }
             loading = false
         }
     }
