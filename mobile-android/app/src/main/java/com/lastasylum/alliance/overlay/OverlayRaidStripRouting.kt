@@ -41,6 +41,11 @@ internal object OverlayRaidStripRouting {
             onRaidRoomIdResolved?.invoke(room)
             return true
         }
+        val prefsRaid = prefsRaidId?.trim().orEmpty()
+        if (prefsRaid.isNotEmpty() && room == prefsRaid) {
+            onRaidRoomIdResolved?.invoke(room)
+            return true
+        }
         val rooms = ChatSessionCache.getFreshRooms() ?: return false
         val dto = rooms.firstOrNull { it.id.trim() == room } ?: return false
         if (!ChatRaidRoomSync.isAllianceRaidRoom(dto)) return false

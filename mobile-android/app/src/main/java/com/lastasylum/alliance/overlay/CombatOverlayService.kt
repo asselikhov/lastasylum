@@ -3098,8 +3098,21 @@ class CombatOverlayService : Service() {
     }
 
     private fun handleOverlayMessageDeleted(event: com.lastasylum.alliance.data.chat.ChatMessageDeletedEvent) {
-        removeStripMessageByKey(event.messageId)
+        removeStripServerMessageAndOptimisticEchoes(event.messageId)
         forwardOverlayDeleteToViewModel(event)
+    }
+
+    private fun removeStripServerMessageAndOptimisticEchoes(serverMessageId: String) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { removeStripServerMessageAndOptimisticEchoes(serverMessageId) }
+            return
+        }
+        val id = serverMessageId.trim()
+        if (id.isEmpty()) return
+        stripBuffer.removeServerMessageAndOptimisticEchoes(id)
+        lastStripRenderSignature = 0
+        updateStripDismissScreenRects(emptyList())
+        refreshOverlayChatStrip()
     }
 
     private var lastStripDismissRects: List<Rect> = emptyList()
@@ -3386,6 +3399,7 @@ class CombatOverlayService : Service() {
             roomId = sent.roomId.trim().ifBlank { raid },
             text = text,
         )
+        stripBuffer.removeOptimisticEchoesForServerMessage(normalized)
         stripBuffer.upsert(normalized)
         stripBuffer.mergeReceiveTimeline(normalized, jwtSubFromAccessToken())
         stripBuffer.markClientSend(normalized)
@@ -3493,6 +3507,14 @@ class CombatOverlayService : Service() {
         val room = msg.roomId.trim()
         if (room.isEmpty()) return false
         if (room in trustedOverlayRaidRoomIds()) return true
+        val prefsRaid = AppContainer.from(this).chatRoomPreferences.getRaidRoomId()?.trim().orEmpty()
+        if (prefsRaid.isNotEmpty() && room == prefsRaid) {
+            onOverlayRaidRoomIdResolved(room)
+            return true
+        }
+        resolveOverlayRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }?.let { resolved ->
+            if (room == resolved) return true
+        }
         val cached = com.lastasylum.alliance.data.chat.ChatSessionCache.getFreshRooms() ?: return false
         val dto = cached.firstOrNull { it.id.trim() == room } ?: return false
         if (!com.lastasylum.alliance.data.chat.ChatRaidRoomSync.isAllianceRaidRoom(dto)) return false
@@ -3603,6 +3625,7 @@ class CombatOverlayService : Service() {
                 "stripIngest id=${normalized._id} room=${normalized.roomId} sender=${normalized.senderId} textLen=${normalized.text.length}",
             )
         }
+        stripBuffer.removeOptimisticEchoesForServerMessage(normalized)
         stripBuffer.upsert(normalized)
         stripBuffer.mergeReceiveTimeline(normalized, jwtSubFromAccessToken())
         stripBuffer.touchReceivedNow(normalized)

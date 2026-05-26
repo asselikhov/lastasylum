@@ -137,6 +137,53 @@ class OverlayChatStripBuffer(
         receivedAt.remove(messageKey)
     }
 
+    /** Удалить серверную карточку и optimistic-дубль (overlay-pending- / pending-) с тем же текстом. */
+    fun removeServerMessageAndOptimisticEchoes(serverMessageId: String) {
+        val serverId = serverMessageId.trim()
+        if (serverId.isEmpty()) return
+        val anchor = messages.firstOrNull { it._id?.trim() == serverId }
+        val anchorText = anchor?.text?.trim().orEmpty()
+        val anchorSender = anchor?.senderId?.trim().orEmpty()
+        val removedKeys = ArrayList<String>()
+        messages.removeAll { m ->
+            val id = m._id?.trim().orEmpty()
+            val drop = when {
+                id == serverId -> true
+                anchorText.isNotEmpty() &&
+                    anchorSender.isNotEmpty() &&
+                    m.senderId.trim() == anchorSender &&
+                    m.text.trim() == anchorText &&
+                    (id.startsWith("pending-") || id.startsWith("overlay-pending-")) -> true
+                else -> false
+            }
+            if (drop) {
+                removedKeys.add(m._id?.takeIf { it.isNotBlank() } ?: m.stableKey())
+            }
+            drop
+        }
+        removedKeys.forEach { receivedAt.remove(it) }
+    }
+
+    /** Перед upsert ответа API — убрать optimistic-карточку с тем же текстом (быстрые команды / чат). */
+    fun removeOptimisticEchoesForServerMessage(server: ChatMessage) {
+        val serverText = server.text.trim()
+        val serverSender = server.senderId.trim()
+        if (serverText.isEmpty()) return
+        val removedKeys = ArrayList<String>()
+        messages.removeAll { m ->
+            val id = m._id?.trim().orEmpty()
+            val isOptimistic = id.startsWith("pending-") || id.startsWith("overlay-pending-")
+            if (!isOptimistic) return@removeAll false
+            if (serverSender.isNotEmpty() && m.senderId.trim() != serverSender) return@removeAll false
+            val drop = m.text.trim() == serverText
+            if (drop) {
+                removedKeys.add(m._id?.takeIf { it.isNotBlank() } ?: m.stableKey())
+            }
+            drop
+        }
+        removedKeys.forEach { receivedAt.remove(it) }
+    }
+
     companion object {
         /** Keep overlay strip messages for 5 minutes by default. */
         const val DEFAULT_MESSAGE_TTL_SECONDS = 300L

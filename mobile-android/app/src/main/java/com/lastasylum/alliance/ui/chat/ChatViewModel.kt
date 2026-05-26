@@ -237,7 +237,9 @@ class ChatViewModel(
             val roomId = message.roomId.trim()
             if (roomId.isBlank()) continue
             if (roomId == selected && isRoomActivelyViewed(roomId)) {
-                applyQueue.add(message)
+                if (!shouldDeferOwnOutgoingSocketEcho(message)) {
+                    applyQueue.add(message)
+                }
             } else {
                 processRealtimeMessageForUnread(message)
             }
@@ -2793,6 +2795,24 @@ class ChatViewModel(
         ChatSessionCache.updateMessages(rid, _state.value.messages)
     }
 
+    /**
+     * Пока в ленте есть optimistic `pending-*` с тем же текстом, не вставляем свой socket-echo —
+     * иначе кратко видны две строки до [confirmPendingOutgoingMessage].
+     */
+    private fun shouldDeferOwnOutgoingSocketEcho(message: ChatMessage): Boolean {
+        val selfId = currentUserId.trim()
+        val serverId = message._id?.trim().orEmpty()
+        if (selfId.isEmpty() || serverId.isEmpty() || serverId.startsWith("pending-")) return false
+        if (message.senderId.trim() != selfId) return false
+        if (messageIdIndex.containsKey(serverId)) return false
+        return _state.value.messages.any { msg ->
+            val pendingId = msg._id?.trim().orEmpty()
+            pendingId.startsWith("pending-") &&
+                msg.senderId.trim() == selfId &&
+                outgoingTextsMatch(msg, message)
+        }
+    }
+
     private fun partitionOwnOutgoingEchoes(
         batch: List<ChatMessage>,
     ): Pair<List<ChatMessage>, List<ChatMessage>> {
@@ -2849,7 +2869,7 @@ class ChatViewModel(
             return
         }
         val roomId = _state.value.selectedRoomId
-        viewModelScope.launch(Dispatchers.Default) {
+        viewModelScope.launch(Dispatchers.Main.immediate) {
             val work = synchronized(chatMutationLock) {
                 val snapshot = _state.value
                 val previousMessages = snapshot.messages
@@ -2899,38 +2919,27 @@ class ChatViewModel(
                 previousMessages = work.previousMessages,
                 previousDerived = work.previousDerived,
             )
-            withContext(Dispatchers.Main) {
-                if (roomId != null && _state.value.selectedRoomId != roomId) return@withContext
-                val snapshot = _state.value
-                _state.value = syncSelections(
-                    snapshot.copy(
-                        messages = work.cappedMessages,
-                        newestMessageKey = serverId,
-                        isSending = false,
-                        error = null,
-                        sendFailure = null,
-                    ),
+            if (roomId != null && _state.value.selectedRoomId != roomId) return@launch
+            val snapshot = _state.value
+            _state.value = syncSelections(
+                snapshot.copy(
+                    messages = work.cappedMessages,
+                    newestMessageKey = serverId,
+                    isSending = false,
+                    error = null,
+                    sendFailure = null,
+                ),
+            )
+            _listDerived.value = derived
+            val rid = _state.value.selectedRoomId
+            if (!rid.isNullOrBlank()) {
+                roomMessageCache[rid] = RoomMessageCache(
+                    messages = work.cappedMessages,
+                    hasMoreOlder = _state.value.hasMoreOlder,
                 )
-                _listDerived.value = derived
-                val rid = _state.value.selectedRoomId
-                if (!rid.isNullOrBlank()) {
-                    roomMessageCache[rid] = RoomMessageCache(
-                        messages = work.cappedMessages,
-                        hasMoreOlder = _state.value.hasMoreOlder,
-                    )
-                    ChatSessionCache.updateMessages(rid, work.cappedMessages)
-                    schedulePersistChatSnapshot()
-                }
-                publishRaidStripIfNeeded(sent)
+                ChatSessionCache.updateMessages(rid, work.cappedMessages)
+                schedulePersistChatSnapshot()
             }
-        }
-    }
-
-    private fun publishRaidStripIfNeeded(message: ChatMessage) {
-        if (!isRaidStripMessage(message)) return
-        runCatching {
-            CombatOverlayService.extendInGameOverlayUiHold()
-            CombatOverlayService.publishRaidMessageToStripFromApp(message)
         }
     }
 
@@ -3083,14 +3092,6 @@ class ChatViewModel(
                         }
                     }
                 }
-                batch.forEach { message ->
-                    if (isRaidStripMessage(message)) {
-                        runCatching {
-                            CombatOverlayService.extendInGameOverlayUiHold()
-                            CombatOverlayService.publishRaidMessageToStripFromApp(message)
-                        }
-                    }
-                }
             }
         }
     }
@@ -3103,17 +3104,6 @@ class ChatViewModel(
         val precomputedDerived: ChatMessagesListDerived? = null,
         val echoesOnly: Boolean = false,
     )
-
-    private fun isRaidStripMessage(message: ChatMessage): Boolean {
-        val roomId = message.roomId.trim()
-        if (roomId.isEmpty()) return false
-        chatRoomPreferences.getRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }?.let { raidId ->
-            if (roomId == raidId) return true
-        }
-        val rooms = ChatSessionCache.getFreshRooms() ?: _state.value.rooms
-        val dto = rooms.firstOrNull { it.id.trim() == roomId } ?: return false
-        return ChatRaidRoomSync.isAllianceRaidRoom(dto)
-    }
 
     fun clearError() {
         _state.value = _state.value.copy(error = null)

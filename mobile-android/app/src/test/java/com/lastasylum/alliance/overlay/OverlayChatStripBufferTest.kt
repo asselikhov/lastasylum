@@ -202,6 +202,54 @@ class OverlayChatStripBufferTest {
     }
 
     @Test
+    fun removeServerMessageAndOptimisticEchoes_dropsPendingTwin() {
+        val buffer = OverlayChatStripBuffer(messageTtlSeconds = 3600)
+        buffer.resetVisibleSession()
+        val optimistic = ChatMessage(
+            _id = "overlay-pending-1",
+            allianceId = "a",
+            roomId = "raid",
+            senderId = "me",
+            senderUsername = "Me",
+            senderRole = "R2",
+            text = "Атака",
+            createdAt = Instant.now().toString(),
+        )
+        val server = optimistic.copy(_id = "server-99")
+        buffer.upsert(optimistic)
+        buffer.touchReceivedNow(optimistic)
+        buffer.upsert(server)
+        buffer.touchReceivedNow(server)
+        assertEquals(2, buffer.visibleForPreview().size)
+        buffer.removeServerMessageAndOptimisticEchoes("server-99")
+        assertTrue(buffer.visibleForPreview().isEmpty())
+    }
+
+    @Test
+    fun removeOptimisticEchoesForServerMessage_beforeUpsert() {
+        val buffer = OverlayChatStripBuffer(messageTtlSeconds = 3600)
+        buffer.resetVisibleSession()
+        val optimistic = ChatMessage(
+            _id = "overlay-pending-2",
+            allianceId = "a",
+            roomId = "raid",
+            senderId = "me",
+            senderUsername = "Me",
+            senderRole = "R2",
+            text = "Штурм",
+            createdAt = Instant.now().toString(),
+        )
+        val server = optimistic.copy(_id = "server-100")
+        buffer.upsert(optimistic)
+        buffer.touchReceivedNow(optimistic)
+        buffer.removeOptimisticEchoesForServerMessage(server)
+        buffer.upsert(server)
+        buffer.touchReceivedNow(server)
+        assertEquals(1, buffer.visibleForPreview().size)
+        assertEquals("server-100", buffer.visibleForPreview().first()._id)
+    }
+
+    @Test
     fun removeMessageWithKey_dropsBufferedRow() {
         val buffer = OverlayChatStripBuffer(messageTtlSeconds = 3600)
         val msg = ChatMessage(
