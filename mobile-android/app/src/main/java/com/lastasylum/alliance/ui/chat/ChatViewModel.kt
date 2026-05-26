@@ -125,6 +125,10 @@ class ChatViewModel(
     /** HTTP in-flight sends — socket echo must not insert a second row before [confirmPendingOutgoingMessage]. */
     private val inFlightOutgoingFingerprints =
         java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<String, Boolean>())
+    /**
+     * Stable LazyColumn keys: pending id → server id swap must not change Compose item identity.
+     */
+    private val lazyColumnKeyByMessageId = mutableMapOf<String, String>()
 
     /** Isolated from [state] so each keystroke does not recompose the whole chat list. */
     private val _draftMessage = MutableStateFlow("")
@@ -239,6 +243,7 @@ class ChatViewModel(
         roomMessageCache.clear()
         knownMessageIds.clear()
         messageIdIndex.clear()
+        lazyColumnKeyByMessageId.clear()
         locallyRemovedMessageIds.clear()
         unreadBumpedMessageIds.clear()
         pendingUnreadBumps.clear()
@@ -464,11 +469,34 @@ class ChatViewModel(
         scheduleBootstrap(preferAllianceHubRoom = true, force = true)
     }
 
-    /** Stable LazyColumn key — always [_id]; never alias server rows to pending ids (duplicate-key crash). */
+    /** Stable LazyColumn key — survives pending → server id confirm without remove/insert flicker. */
     fun messageListCompositionKey(message: ChatMessage): String {
         val id = message._id?.trim().orEmpty()
-        if (id.isNotEmpty()) return id
+        if (id.isNotEmpty()) {
+            lazyColumnKeyByMessageId[id]?.let { return it }
+            return id
+        }
         return chatMessageKey(message)
+    }
+
+    private fun registerOutgoingLazyColumnKey(messageId: String) {
+        val id = messageId.trim()
+        if (id.isEmpty()) return
+        lazyColumnKeyByMessageId[id] = "out-${UUID.randomUUID()}"
+    }
+
+    private fun transferOutgoingLazyColumnKey(fromMessageId: String, toMessageId: String) {
+        val from = fromMessageId.trim()
+        val to = toMessageId.trim()
+        if (from.isEmpty() || to.isEmpty() || from == to) return
+        val stable = lazyColumnKeyByMessageId.remove(from) ?: return
+        lazyColumnKeyByMessageId[to] = stable
+    }
+
+    private fun dropOutgoingLazyColumnKey(messageId: String?) {
+        val id = messageId?.trim().orEmpty()
+        if (id.isEmpty()) return
+        lazyColumnKeyByMessageId.remove(id)
     }
 
     /** Splash: комнаты сразу; сообщения — из диска или фоном после UI. */
@@ -1311,6 +1339,7 @@ class ChatViewModel(
             }
         knownMessageIds.clear()
         messageIdIndex.clear()
+        lazyColumnKeyByMessageId.clear()
         _draftMessage.value = ""
         _typingPeers.value = emptyMap()
         synchronized(typingPeerJobsLock) {
@@ -2859,6 +2888,7 @@ class ChatViewModel(
             Triple(snapshot, capped, update.newestMessageKey ?: message._id?.trim().orEmpty())
         }
         val (snapshot, capped, newestKey) = work
+        message._id?.let { registerOutgoingLazyColumnKey(it) }
         var nextState = snapshot.copy(
             messages = capped,
             newestMessageKey = newestKey.ifEmpty { snapshot.newestMessageKey },
@@ -2871,7 +2901,6 @@ class ChatViewModel(
             nextState = nextState.copy(
                 replyToMessage = null,
                 sendFailure = null,
-                scrollToLatestNonce = nextState.scrollToLatestNonce + 1L,
             )
         }
         _state.value = syncSelections(nextState)
@@ -2889,6 +2918,7 @@ class ChatViewModel(
     private fun removePendingOutgoingMessage(pendingId: String?) {
         val id = pendingId?.trim().orEmpty()
         if (id.isEmpty()) return
+        dropOutgoingLazyColumnKey(id)
         knownMessageIds.remove(id)
         messageIdIndex.remove(id)
         val filtered = _state.value.messages.filter { it._id != id }
@@ -3005,6 +3035,7 @@ class ChatViewModel(
                     currentUserId = currentUserId,
                 )
                 val updated = if (replacement != null) {
+                    transferOutgoingLazyColumnKey(replacement.pendingId, replacement.serverId)
                     knownMessageIds.remove(replacement.pendingId)
                     knownMessageIds.add(replacement.serverId)
                     messageIdIndex.remove(replacement.pendingId)
@@ -3020,6 +3051,7 @@ class ChatViewModel(
                     } else {
                         listOf(sent) + list
                     }
+                    transferOutgoingLazyColumnKey(pending, serverId)
                     knownMessageIds.remove(pending)
                     knownMessageIds.add(serverId)
                     messageIdIndex.remove(pending)
@@ -3039,12 +3071,27 @@ class ChatViewModel(
                 )
             }
             if (roomId != null && _state.value.selectedRoomId != roomId) return@launch
-            val derived = buildDerivedAfterUpsert(
-                messages = work.cappedMessages,
-                previousMessages = work.previousMessages,
-                previousDerived = work.previousDerived,
-            )
+            val isInPlaceConfirm = work.cappedMessages.size == work.previousMessages.size &&
+                work.cappedMessages.isNotEmpty() &&
+                work.previousMessages.isNotEmpty() &&
+                work.cappedMessages.drop(1) == work.previousMessages.drop(1) &&
+                work.cappedMessages[0] != work.previousMessages[0]
+            val derived = if (isInPlaceConfirm) {
+                buildChatMessagesListDerivedAfterReplaceNewest(
+                    previousDerived = work.previousDerived,
+                    previousMessages = work.previousMessages,
+                    messages = work.cappedMessages,
+                )
+            } else {
+                buildDerivedAfterUpsert(
+                    messages = work.cappedMessages,
+                    previousMessages = work.previousMessages,
+                    previousDerived = work.previousDerived,
+                )
+            }
             if (roomId != null && _state.value.selectedRoomId != roomId) return@launch
+            deriveJob?.cancel()
+            deriveDebounceJob?.cancel()
             val snapshot = _state.value
             _state.value = syncSelections(
                 snapshot.copy(
@@ -3116,6 +3163,7 @@ class ChatViewModel(
                         currentUserId = currentUserId,
                     )
                     if (replacement != null) {
+                        transferOutgoingLazyColumnKey(replacement.pendingId, replacement.serverId)
                         messages = replacement.messages
                         knownMessageIds.remove(replacement.pendingId)
                         knownMessageIds.add(replacement.serverId)
