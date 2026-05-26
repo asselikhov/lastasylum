@@ -43,8 +43,12 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -86,6 +90,24 @@ class ChatViewModel(
         ),
     )
     val state: StateFlow<ChatState> = _state.asStateFlow()
+
+    /** List subtree — updates on message/scroll/selection changes, not on draft/typing. */
+    val listPaneState: StateFlow<ChatListPaneState> = _state
+        .map { it.toListPane() }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatListPaneState())
+
+    /** Rooms bar, errors, action sheets — not on every new message. */
+    val chromePaneState: StateFlow<ChatChromePaneState> = _state
+        .map { it.toChromePane() }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatChromePaneState())
+
+    /** Composer subtree — reply, send failure, stickers. */
+    val composerPaneState: StateFlow<ChatComposerPaneState> = _state
+        .map { it.toComposerPane() }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatComposerPaneState())
 
     /** Precomputed timeline for [ChatScreen] — avoids derive on every Compose frame. */
     private val _listDerived = MutableStateFlow(ChatMessagesListDerived.Empty)
@@ -1668,10 +1690,6 @@ class ChatViewModel(
             _listDerived.value = ChatMessagesListDerived.Empty
             return
         }
-        if (messages.size <= CHAT_LIST_DERIVE_SYNC_MAX) {
-            _listDerived.value = buildChatMessagesListDerived(messages)
-            return
-        }
         val expected = messages
         deriveJob = viewModelScope.launch(Dispatchers.Default) {
             val derived = buildChatMessagesListDerived(expected)
@@ -1707,12 +1725,8 @@ class ChatViewModel(
                 messages = messages,
             )
         }
-        return if (messages.size <= CHAT_LIST_DERIVE_SYNC_MAX) {
+        return withContext(Dispatchers.Default) {
             buildChatMessagesListDerived(messages)
-        } else {
-            withContext(Dispatchers.Default) {
-                buildChatMessagesListDerived(messages)
-            }
         }
     }
 
@@ -2406,6 +2420,53 @@ class ChatViewModel(
         ChatSessionCache.updateMessages(rid, _state.value.messages)
     }
 
+    private fun partitionOwnOutgoingEchoes(
+        batch: List<ChatMessage>,
+    ): Pair<List<ChatMessage>, List<ChatMessage>> {
+        val selfId = currentUserId.trim()
+        if (selfId.isEmpty()) return emptyList<ChatMessage>() to batch
+        val echoes = ArrayList<ChatMessage>(batch.size)
+        val fresh = ArrayList<ChatMessage>(batch.size)
+        for (message in batch) {
+            val id = message._id?.trim().orEmpty()
+            if (id.isNotEmpty() &&
+                message.senderId.trim() == selfId &&
+                messageIdIndex.containsKey(id)
+            ) {
+                echoes.add(message)
+            } else {
+                fresh.add(message)
+            }
+        }
+        return echoes to fresh
+    }
+
+    private fun mergeOwnOutgoingEchoesInPlace(
+        echoes: List<ChatMessage>,
+        messages: List<ChatMessage>,
+        derived: ChatMessagesListDerived,
+    ): Pair<List<ChatMessage>, ChatMessagesListDerived> {
+        var nextMessages = messages
+        var nextDerived = derived
+        for (echo in echoes) {
+            val id = echo._id?.trim().orEmpty()
+            val idx = messageIdIndex[id] ?: continue
+            if (idx !in nextMessages.indices) continue
+            val before = nextMessages
+            val merged = echo.mergePreservingAttachments(nextMessages[idx])
+            if (merged == nextMessages[idx]) continue
+            val updated = nextMessages.toMutableList()
+            updated[idx] = merged
+            nextMessages = updated
+            nextDerived = buildChatMessagesListDerivedAfterReplaceNewest(
+                previousDerived = nextDerived,
+                previousMessages = before,
+                messages = nextMessages,
+            )
+        }
+        return nextMessages to nextDerived
+    }
+
     /** Replace optimistic row in-place (no remove+insert, no extra scroll). */
     private fun confirmPendingOutgoingMessage(pendingId: String?, sent: ChatMessage) {
         val pending = pendingId?.trim().orEmpty()
@@ -2420,10 +2481,15 @@ class ChatViewModel(
                 val snapshot = _state.value
                 val previousMessages = snapshot.messages
                 val previousDerived = _listDerived.value
-                val idx = messageIdIndex[pending]
+                var idx = messageIdIndex[pending]
                     ?: previousMessages.indexOfFirst { it._id == pending }
                 if (idx < 0) {
-                    return@synchronized null
+                    val echoIdx = messageIdIndex[serverId]
+                        ?: previousMessages.indexOfFirst { it._id == serverId }
+                    if (echoIdx < 0) {
+                        return@synchronized null
+                    }
+                    idx = echoIdx
                 }
                 val updated = previousMessages.toMutableList()
                 updated[idx] = sent.mergePreservingAttachments(previousMessages[idx])
@@ -2482,7 +2548,7 @@ class ChatViewModel(
         clearComposer: Boolean = false,
     ) {
         if (clearComposer && overlayChatPanelVisible) {
-            com.lastasylum.alliance.overlay.CombatOverlayService.extendInGameOverlayUiHold()
+            runCatching { CombatOverlayService.extendInGameOverlayUiHold() }
         }
         applyIncomingBatch(listOf(message), clearComposer = clearComposer)
     }
@@ -2496,28 +2562,47 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.Default) {
             val work = synchronized(chatMutationLock) {
                 val snapshot = _state.value
-                val previousMessages = dropMatchingPendingOutgoing(
+                val afterDrop = dropMatchingPendingOutgoing(
                     current = snapshot.messages,
                     incoming = batch,
                     currentUserId = currentUserId,
                 )
-                val previousDerived = _listDerived.value
+                val (echoes, fresh) = partitionOwnOutgoingEchoes(batch)
+                var messages = afterDrop
+                var listDerived = _listDerived.value
+                if (echoes.isNotEmpty()) {
+                    val merged = mergeOwnOutgoingEchoesInPlace(echoes, messages, listDerived)
+                    messages = merged.first
+                    listDerived = merged.second
+                }
+                if (fresh.isEmpty()) {
+                    return@synchronized IncomingBatchWork(
+                        previousMessages = snapshot.messages,
+                        cappedMessages = messages,
+                        newestMessageKey = null,
+                        previousDerived = _listDerived.value,
+                        precomputedDerived = listDerived,
+                        echoesOnly = true,
+                    )
+                }
                 val update = upsertMessagesBatch(
-                    current = previousMessages,
-                    incoming = batch,
+                    current = messages,
+                    incoming = fresh,
                     knownMessageIds = knownMessageIds,
                     idIndex = messageIdIndex,
                     maxMessages = messageMemoryCap,
                 )
                 IncomingBatchWork(
-                    previousMessages = previousMessages,
+                    previousMessages = messages,
                     cappedMessages = update.messages,
                     newestMessageKey = update.newestMessageKey,
-                    previousDerived = previousDerived,
+                    previousDerived = listDerived,
+                    precomputedDerived = null,
+                    echoesOnly = false,
                 )
             }
             if (roomId != null && _state.value.selectedRoomId != roomId) return@launch
-            val derived = buildDerivedAfterUpsert(
+            val derived = work.precomputedDerived ?: buildDerivedAfterUpsert(
                 messages = work.cappedMessages,
                 previousMessages = work.previousMessages,
                 previousDerived = work.previousDerived,
@@ -2525,6 +2610,12 @@ class ChatViewModel(
             withContext(Dispatchers.Main) {
                 if (roomId != null && _state.value.selectedRoomId != roomId) return@withContext
                 val snapshot = _state.value
+                if (chatMessagesListContentEqual(snapshot.messages, work.cappedMessages) &&
+                    work.echoesOnly &&
+                    !clearComposer
+                ) {
+                    return@withContext
+                }
                 var nextState = snapshot.copy(
                     messages = work.cappedMessages,
                     newestMessageKey = work.newestMessageKey ?: snapshot.newestMessageKey,
@@ -2543,10 +2634,9 @@ class ChatViewModel(
                     _pickedImageUris.value = emptyList()
                     nextState = nextState.copy(
                         replyToMessage = null,
-                        scrollToLatestNonce = nextState.scrollToLatestNonce + 1L,
                         sendFailure = null,
                     )
-                } else if (ownOutgoing) {
+                } else if (ownOutgoing && !work.echoesOnly) {
                     val grew = work.cappedMessages.size > work.previousMessages.size
                     if (grew) {
                         nextState = nextState.copy(
@@ -2574,8 +2664,10 @@ class ChatViewModel(
                 }
                 batch.forEach { message ->
                     if (isRaidStripMessage(message)) {
-                        CombatOverlayService.extendInGameOverlayUiHold()
-                        CombatOverlayService.publishRaidMessageToStripFromApp(message)
+                        runCatching {
+                            CombatOverlayService.extendInGameOverlayUiHold()
+                            CombatOverlayService.publishRaidMessageToStripFromApp(message)
+                        }
                     }
                 }
             }
@@ -2587,6 +2679,8 @@ class ChatViewModel(
         val cappedMessages: List<ChatMessage>,
         val newestMessageKey: String?,
         val previousDerived: ChatMessagesListDerived,
+        val precomputedDerived: ChatMessagesListDerived? = null,
+        val echoesOnly: Boolean = false,
     )
 
     private fun isRaidStripMessage(message: ChatMessage): Boolean {

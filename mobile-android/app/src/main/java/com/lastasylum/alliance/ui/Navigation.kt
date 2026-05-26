@@ -430,14 +430,18 @@ fun AppNavigation(
                         app.chatRepository.removeOverlayChatPanelClosedListener(listener)
                     }
                 }
-                val chatState by chatViewModel.state.collectAsStateWithLifecycle()
+                val listPane by chatViewModel.listPaneState.collectAsStateWithLifecycle()
+                val chromePane by chatViewModel.chromePaneState.collectAsStateWithLifecycle()
+                val composerPane by chatViewModel.composerPaneState.collectAsStateWithLifecycle()
                 val listDerived by chatViewModel.listDerived.collectAsStateWithLifecycle()
                 val draftMessage by chatViewModel.draftMessage.collectAsStateWithLifecycle()
                 val pickedImageUris by chatViewModel.pickedImageUris.collectAsStateWithLifecycle()
                 val typingPeers by chatViewModel.typingPeers.collectAsStateWithLifecycle()
                 val otherReadUptoMessageId by chatViewModel.otherReadUptoMessageId.collectAsStateWithLifecycle()
                 ChatScreen(
-                    state = chatState,
+                    listPane = listPane,
+                    chromePane = chromePane,
+                    composerPane = composerPane,
                     listDerived = listDerived,
                     typingPeers = typingPeers,
                     draftMessage = draftMessage,

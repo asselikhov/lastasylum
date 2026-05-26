@@ -790,7 +790,6 @@ internal fun ChatComposer(
                                     onClick = {
                                         if (!sendButtonEnabled) return@IconButton
                                         onSendDraft()
-                                        focusRequester.requestFocus()
                                     },
                                     enabled = sendButtonEnabled || isSending,
                                     modifier = Modifier.size(44.dp),

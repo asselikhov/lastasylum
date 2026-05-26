@@ -17,14 +17,20 @@ data class ChatListUiState(
 )
 
 fun ChatState.toChatListUiState(): ChatListUiState =
+    toChatListUiState(toListPane(), toChromePane())
+
+fun toChatListUiState(
+    listPane: ChatListPaneState,
+    chromePane: ChatChromePaneState,
+): ChatListUiState =
     ChatListUiState(
-        isRoomsLoading = isRoomsLoading,
-        roomsEmpty = rooms.isEmpty(),
-        isLoading = isLoading,
-        isLoadingOlder = isLoadingOlder,
-        error = error,
-        currentUserId = currentUserId,
-        isAppAdmin = isAppAdmin,
-        playerTeamSquadRole = playerTeamSquadRole,
-        deletingMessageId = deletingMessageId,
+        isRoomsLoading = chromePane.isRoomsLoading,
+        roomsEmpty = chromePane.rooms.isEmpty(),
+        isLoading = listPane.isLoading,
+        isLoadingOlder = listPane.isLoadingOlder,
+        error = chromePane.error,
+        currentUserId = chromePane.currentUserId,
+        isAppAdmin = chromePane.isAppAdmin,
+        playerTeamSquadRole = chromePane.playerTeamSquadRole,
+        deletingMessageId = listPane.deletingMessageId,
     )

@@ -4391,16 +4391,18 @@ class CombatOverlayService : Service() {
                             }
                             return@SquadRelayTheme
                         }
-                        val chatState by chatVm.state.collectAsStateWithLifecycle(owner)
+                        val listPane by chatVm.listPaneState.collectAsStateWithLifecycle(owner)
+                        val chromePane by chatVm.chromePaneState.collectAsStateWithLifecycle(owner)
+                        val composerPane by chatVm.composerPaneState.collectAsStateWithLifecycle(owner)
                         val draftMessage by chatVm.draftMessage.collectAsStateWithLifecycle(owner)
                         val pickedImageUris by chatVm.pickedImageUris.collectAsStateWithLifecycle(owner)
                         val typingPeers by chatVm.typingPeers.collectAsStateWithLifecycle(owner)
                         val otherReadUptoMessageId by chatVm.otherReadUptoMessageId.collectAsStateWithLifecycle(owner)
 
                         val blockPanelBack = OverlayChatInteractionHold.blocksFullscreenPanelBack() ||
-                            chatState.activeActionMessageId != null ||
-                            chatState.confirmDeleteMessageId != null ||
-                            chatState.confirmBulkDelete
+                            chromePane.activeActionMessageId != null ||
+                            chromePane.confirmDeleteMessageId != null ||
+                            chromePane.confirmBulkDelete
                         BackHandler(enabled = !blockPanelBack) {
                             hideOverlayChatTeamPanel()
                         }
@@ -4430,7 +4432,9 @@ class CombatOverlayService : Service() {
                                 ) {
                                     when (overlayPane) {
                                         OverlayHudPane.Chat -> OverlayHudChatPane(
-                                            chatState = chatState,
+                                            listPane = listPane,
+                                            chromePane = chromePane,
+                                            composerPane = composerPane,
                                             typingPeers = typingPeers,
                                             draftMessage = draftMessage,
                                             pickedImageUris = pickedImageUris,
@@ -4439,7 +4443,9 @@ class CombatOverlayService : Service() {
                                         )
                                         null -> when (selectedTab) {
                                             0 -> OverlayHudChatPane(
-                                                chatState = chatState,
+                                                listPane = listPane,
+                                                chromePane = chromePane,
+                                                composerPane = composerPane,
                                                 typingPeers = typingPeers,
                                                 draftMessage = draftMessage,
                                                 pickedImageUris = pickedImageUris,
@@ -4458,9 +4464,9 @@ class CombatOverlayService : Service() {
                                         else -> Unit
                                     }
                                 }
-                                val overlayChatModalOpen = chatState.activeActionMessageId != null ||
-                                    chatState.confirmDeleteMessageId != null ||
-                                    chatState.confirmBulkDelete
+                                val overlayChatModalOpen = chromePane.activeActionMessageId != null ||
+                                    chromePane.confirmDeleteMessageId != null ||
+                                    chromePane.confirmBulkDelete
                                 if (overlayPane == null && !overlayChatModalOpen) {
                                     TabRow(selectedTabIndex = selectedTab) {
                                         Tab(

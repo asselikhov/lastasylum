@@ -4,13 +4,17 @@ import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.lastasylum.alliance.ui.chat.ChatState
+import com.lastasylum.alliance.ui.chat.ChatChromePaneState
+import com.lastasylum.alliance.ui.chat.ChatComposerPaneState
+import com.lastasylum.alliance.ui.chat.ChatListPaneState
 import com.lastasylum.alliance.ui.chat.ChatViewModel
 import com.lastasylum.alliance.ui.screens.ChatScreen
 
 @Composable
 internal fun OverlayHudChatPane(
-    chatState: ChatState,
+    listPane: ChatListPaneState,
+    chromePane: ChatChromePaneState,
+    composerPane: ChatComposerPaneState,
     typingPeers: Map<String, String>,
     draftMessage: String,
     pickedImageUris: List<Uri>,
@@ -19,7 +23,9 @@ internal fun OverlayHudChatPane(
 ) {
     val listDerived by vm.listDerived.collectAsStateWithLifecycle()
     ChatScreen(
-        state = chatState,
+        listPane = listPane,
+        chromePane = chromePane,
+        composerPane = composerPane,
         listDerived = listDerived,
         typingPeers = typingPeers,
         draftMessage = draftMessage,

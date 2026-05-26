@@ -31,8 +31,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.imeNestedScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -173,6 +171,13 @@ import com.lastasylum.alliance.overlay.OverlayInteractionSuppressEffect
 import com.lastasylum.alliance.overlay.OverlayModalScope
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.ui.chat.ChatState
+import com.lastasylum.alliance.ui.chat.ChatListPaneState
+import com.lastasylum.alliance.ui.chat.ChatChromePaneState
+import com.lastasylum.alliance.ui.chat.ChatComposerPaneState
+import com.lastasylum.alliance.ui.chat.toListPane
+import com.lastasylum.alliance.ui.chat.toChromePane
+import com.lastasylum.alliance.ui.chat.toComposerPane
+import com.lastasylum.alliance.ui.chat.toChatListUiState
 import com.lastasylum.alliance.ui.chat.SquadRelayImageRequests
 import com.lastasylum.alliance.ui.chat.chatAuthedImageRequest
 import com.lastasylum.alliance.ui.chat.ChatVoicePhase
@@ -303,26 +308,28 @@ private data class ChatScrollAnchor(
     val timelineSize: Int,
 )
 
+private fun findChatMessage(messages: List<ChatMessage>, id: String?): ChatMessage? {
+    val key = id?.trim().orEmpty()
+    if (key.isEmpty()) return null
+    return messages.firstOrNull { it._id?.trim() == key }
+}
+
+@OptIn(FlowPreview::class)
 @Composable
 private fun ChatScreenMessagesHost(
     modifier: Modifier,
     topPadding: Modifier,
     compactOverlayMode: Boolean,
     overlayUi: Boolean,
-    state: ChatState,
-    selectedRoomId: String?,
-    messages: List<com.lastasylum.alliance.data.chat.ChatMessage>,
+    listPane: ChatListPaneState,
+    chromePane: ChatChromePaneState,
     listDerived: ChatMessagesListDerived,
     listUiState: ChatListUiState,
-    listState: androidx.compose.foundation.lazy.LazyListState,
     typingPeers: Map<String, String>,
     otherReadUptoMessageId: String?,
-    inSelectionMode: Boolean,
-    showScrollToLatestFab: Boolean,
-    newMessagesWhileScrolledUp: Int,
-    scrollToLatest: () -> Unit,
     onSelectRoom: (String) -> Unit,
     onClearError: () -> Unit,
+    onLoadOlder: () -> Unit,
     onJumpToQuotedMessage: (String) -> Unit,
     onToggleReaction: (String, String) -> Unit,
     onOpenMessageActions: (String) -> Unit,
@@ -330,8 +337,195 @@ private fun ChatScreenMessagesHost(
     onToggleMessageSelection: (String) -> Unit,
     onClearMessageSelection: () -> Unit,
     onRequestBulkDelete: () -> Unit,
+    onScrollToLatest: () -> Unit,
+    onConsumeScrollToMessage: () -> Unit,
+    onClearHighlightMessage: () -> Unit,
+    onConsumeTransientNotice: () -> Unit,
     messageListKey: (ChatMessage) -> String,
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val listState = remember(listPane.selectedRoomId) {
+        LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+    }
+    val messages = listPane.messages
+    val selectedRoomId = listPane.selectedRoomId
+    val inSelectionMode = listPane.selectedMessageIds.isNotEmpty()
+    val timelineSize = listDerived.timeline.size
+
+    val isNearLatest by remember(listState) {
+        derivedStateOf { listState.isAtReverseChatBottom() }
+    }
+
+    var newMessagesWhileScrolledUp by remember { mutableStateOf(0) }
+    var lastCountedNewestKey by remember(listPane.selectedRoomId) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(listPane.selectedRoomId) {
+        newMessagesWhileScrolledUp = 0
+        lastCountedNewestKey = listPane.newestMessageKey
+    }
+
+    LaunchedEffect(isNearLatest) {
+        if (isNearLatest) {
+            newMessagesWhileScrolledUp = 0
+            lastCountedNewestKey = listPane.newestMessageKey
+        }
+    }
+
+    LaunchedEffect(listPane.newestMessageKey, isNearLatest) {
+        val key = listPane.newestMessageKey ?: return@LaunchedEffect
+        if (key == lastCountedNewestKey) return@LaunchedEffect
+        lastCountedNewestKey = key
+        if (!isNearLatest) {
+            newMessagesWhileScrolledUp = (newMessagesWhileScrolledUp + 1).coerceAtMost(999)
+        }
+    }
+
+    val showScrollToLatestFab by remember(
+        listState,
+        inSelectionMode,
+        listPane.messages.size,
+        listPane.isLoading,
+        listPane.selectedRoomId,
+    ) {
+        derivedStateOf {
+            !listState.isAtReverseChatBottom() &&
+                !inSelectionMode &&
+                listPane.messages.isNotEmpty() &&
+                !listPane.isLoading &&
+                listPane.selectedRoomId != null
+        }
+    }
+
+    var pendingScrollAnchor by remember(listPane.selectedRoomId) {
+        mutableStateOf<ChatScrollAnchor?>(null)
+    }
+
+    LaunchedEffect(listPane.isLoadingOlder) {
+        if (listPane.isLoadingOlder && pendingScrollAnchor == null) {
+            pendingScrollAnchor = ChatScrollAnchor(
+                firstVisibleItemIndex = listState.firstVisibleItemIndex,
+                firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
+                timelineSize = timelineSize,
+            )
+        }
+    }
+
+    LaunchedEffect(listPane.isLoadingOlder, timelineSize) {
+        if (listPane.isLoadingOlder) return@LaunchedEffect
+        val anchor = pendingScrollAnchor ?: return@LaunchedEffect
+        pendingScrollAnchor = null
+        val delta = timelineSize - anchor.timelineSize
+        if (delta > 0) {
+            listState.scrollToItem(
+                anchor.firstVisibleItemIndex + delta,
+                anchor.firstVisibleItemScrollOffset,
+            )
+        }
+    }
+
+    val messagesRef = rememberUpdatedState(messages)
+    LaunchedEffect(listPane.scrollToMessageId, timelineSize) {
+        val targetId = listPane.scrollToMessageId?.trim().orEmpty()
+        if (targetId.isEmpty()) return@LaunchedEffect
+        val timeline = listDerived.timeline
+        val idx = chatTimelineIndexForMessageId(timeline, messagesRef.value, targetId)
+        if (idx < 0) return@LaunchedEffect
+        runCatching { listState.scrollTimelineItemToViewportCenter(idx) }
+            .onFailure { listState.scrollToItem(idx) }
+        onConsumeScrollToMessage()
+    }
+
+    LaunchedEffect(listPane.highlightMessageId) {
+        val highlightId = listPane.highlightMessageId?.trim().orEmpty()
+        if (highlightId.isEmpty()) return@LaunchedEffect
+        delay(700)
+        onClearHighlightMessage()
+    }
+
+    LaunchedEffect(chromePane.transientNotice) {
+        val notice = chromePane.transientNotice?.trim().orEmpty()
+        if (notice.isEmpty()) return@LaunchedEffect
+        Toast.makeText(context, notice, Toast.LENGTH_SHORT).show()
+        onConsumeTransientNotice()
+    }
+
+    val listStateRef = rememberUpdatedState(listState)
+    val hasMoreOlderRef = rememberUpdatedState(listPane.hasMoreOlder)
+    val isLoadingOlderRef = rememberUpdatedState(listPane.isLoadingOlder)
+    val isLoadingRef = rememberUpdatedState(listPane.isLoading)
+    val onLoadOlderRef = rememberUpdatedState(onLoadOlder)
+
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            val info = listStateRef.value.layoutInfo
+            val lastIdx = info.visibleItemsInfo.lastOrNull()?.index ?: -1
+            val total = info.totalItemsCount
+            val hasMore = hasMoreOlderRef.value
+            val busy = isLoadingOlderRef.value || isLoadingRef.value
+            ChatListLoadSignal(lastIdx, total, hasMore, busy)
+        }
+            .distinctUntilChanged()
+            .debounce(24)
+            .collect { sig ->
+                if (sig.totalItems > 4 &&
+                    sig.lastVisibleIndex >= sig.totalItems - 2 &&
+                    sig.hasMoreOlder &&
+                    !sig.isBusy
+                ) {
+                    onLoadOlderRef.value()
+                }
+            }
+    }
+
+    var lastHandledScrollNonce by remember(listPane.selectedRoomId) { mutableLongStateOf(0L) }
+    var lastAutoScrolledNewestKey by remember(listPane.selectedRoomId) { mutableStateOf<String?>(null) }
+    val listDerivedRef = rememberUpdatedState(listDerived)
+    val messagesEmptyRef = rememberUpdatedState(listPane.messages.isEmpty())
+
+    LaunchedEffect(listPane.selectedRoomId, listPane.scrollToLatestNonce) {
+        val nonce = listPane.scrollToLatestNonce
+        if (nonce <= lastHandledScrollNonce) return@LaunchedEffect
+        if (messagesEmptyRef.value || listDerivedRef.value.timeline.isEmpty()) return@LaunchedEffect
+        lastHandledScrollNonce = nonce
+        lastAutoScrolledNewestKey = listPane.newestMessageKey
+        newMessagesWhileScrolledUp = 0
+        if (!listState.isAtReverseChatBottom()) {
+            listState.scrollReverseChatRevealLatest(
+                animate = false,
+                adjustViewport = false,
+            )
+        }
+    }
+
+    LaunchedEffect(listPane.newestMessageKey, isNearLatest) {
+        if (listPane.scrollToLatestNonce > lastHandledScrollNonce) return@LaunchedEffect
+        val key = listPane.newestMessageKey ?: return@LaunchedEffect
+        if (listDerivedRef.value.timeline.isEmpty()) return@LaunchedEffect
+        if (key == lastAutoScrolledNewestKey) return@LaunchedEffect
+        lastAutoScrolledNewestKey = key
+        if (!isNearLatest) return@LaunchedEffect
+        listState.scrollReverseChatRevealLatest(
+            animate = false,
+            adjustViewport = false,
+        )
+    }
+
+    val newestKeyForScroll = rememberUpdatedState(listPane.newestMessageKey)
+    val scrollToLatest: () -> Unit = remember(scope, listState, onScrollToLatest) {
+        {
+            newMessagesWhileScrolledUp = 0
+            lastCountedNewestKey = newestKeyForScroll.value
+            onScrollToLatest()
+            scope.launch {
+                listState.scrollReverseChatRevealLatest(
+                    animate = false,
+                    adjustViewport = false,
+                )
+            }
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -345,7 +539,7 @@ private fun ChatScreenMessagesHost(
         ) {
             if (!compactOverlayMode) {
                 ChatRoomsBar(
-                    rooms = state.rooms,
+                    rooms = chromePane.rooms,
                     selectedRoomId = selectedRoomId,
                     onSelectRoom = onSelectRoom,
                     overlayUi = overlayUi,
@@ -353,8 +547,8 @@ private fun ChatScreenMessagesHost(
             }
             if (inSelectionMode) {
                 ChatSelectionToolbar(
-                    selectedCount = state.selectedMessageIds.size,
-                    isDeleting = state.isDeletingSelection,
+                    selectedCount = listPane.selectedMessageIds.size,
+                    isDeleting = chromePane.isDeletingSelection,
                     onClear = onClearMessageSelection,
                     onDelete = {
                         if (overlayUi) {
@@ -377,13 +571,13 @@ private fun ChatScreenMessagesHost(
                     otherReadUptoMessageId = otherReadUptoMessageId,
                     listState = listState,
                     jumpToQuotedMessage = onJumpToQuotedMessage,
-                    highlightMessageId = state.highlightMessageId,
+                    highlightMessageId = listPane.highlightMessageId,
                     onToggleReaction = onToggleReaction,
                     onOpenMessageActions = onOpenMessageActions,
                     onReplyToMessage = onReplyToMessage,
                     onClearError = onClearError,
                     inSelectionMode = inSelectionMode,
-                    selectedMessageIds = state.selectedMessageIds,
+                    selectedMessageIds = listPane.selectedMessageIds,
                     onToggleMessageSelection = onToggleMessageSelection,
                     messageListKey = messageListKey,
                 )
@@ -410,8 +604,118 @@ private fun ChatScreenMessagesHost(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
+private fun ChatScreenComposerSection(
+    overlayUi: Boolean,
+    composerPane: ChatComposerPaneState,
+    chromePane: ChatChromePaneState,
+    selectedRoomId: String?,
+    globalComposerLocked: Boolean,
+    draftMessage: String,
+    pickedImageUris: List<Uri>,
+    onAttachmentPreviewStartIndex: (Int) -> Unit,
+    onDraftChange: (String) -> Unit,
+    onSendDraft: () -> Unit,
+    onSendStickerPayload: (String) -> Unit,
+    onPickImages: (List<Uri>, Boolean) -> Unit,
+    onRemovePickedImage: (Uri) -> Unit,
+    onClearPickedImages: () -> Unit,
+    onClearReply: () -> Unit,
+    onRetrySendFailure: () -> Unit,
+    onDismissSendFailure: () -> Unit,
+) {
+    if (composerPane.sendFailure == null &&
+        (selectedRoomId == null || chromePane.rooms.isEmpty())
+    ) {
+        return
+    }
+    ChatComposerBar(overlayUi = overlayUi) {
+        composerPane.sendFailure?.let { failure ->
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = SquadRelayDimens.contentPaddingHorizontal,
+                            vertical = SquadRelayDimens.itemGap,
+                        ),
+                    verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+                ) {
+                    Text(
+                        text = stringResource(R.string.chat_send_failed_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    Text(
+                        text = failure.errorMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextButton(onClick = onDismissSendFailure) {
+                            Text(stringResource(R.string.chat_send_failed_dismiss))
+                        }
+                        TextButton(onClick = onRetrySendFailure) {
+                            Text(stringResource(R.string.chat_send_failed_retry))
+                        }
+                    }
+                }
+            }
+        }
+
+        if (selectedRoomId != null && chromePane.rooms.isNotEmpty()) {
+            ChatComposer(
+                draft = draftMessage,
+                pickedImageUris = pickedImageUris,
+                replyToMessage = composerPane.replyToMessage,
+                isSending = composerPane.isSending,
+                sendEnabled = !globalComposerLocked,
+                readOnly = globalComposerLocked,
+                enabledStickerPackKeys = composerPane.enabledStickerPackKeys,
+                onDraftChange = onDraftChange,
+                onSendDraft = {
+                    if (!globalComposerLocked &&
+                        (
+                            !draftMessage.isBlank() ||
+                                pickedImageUris.isNotEmpty()
+                            ) &&
+                        !composerPane.isSending
+                    ) {
+                        onSendDraft()
+                    }
+                },
+                onSendStickerPayload = { payload ->
+                    if (!globalComposerLocked && !composerPane.isSending) {
+                        onSendStickerPayload(payload)
+                    }
+                },
+                onPickImages = { uris, append ->
+                    if (!globalComposerLocked && !composerPane.isSending) {
+                        onPickImages(uris, append)
+                    }
+                },
+                onRemovePickedImage = onRemovePickedImage,
+                onClearPickedImages = onClearPickedImages,
+                onClearReply = onClearReply,
+                onOpenAttachmentPreview = onAttachmentPreviewStartIndex,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
 fun ChatScreen(
-    state: ChatState,
+    listPane: ChatListPaneState,
+    chromePane: ChatChromePaneState,
+    composerPane: ChatComposerPaneState,
     listDerived: ChatMessagesListDerived,
     typingPeers: Map<String, String>,
     draftMessage: String,
@@ -459,32 +763,20 @@ fun ChatScreen(
     val overlayUi = LocalOverlayUiMode.current
     val canHandleBack = LocalOnBackPressedDispatcherOwner.current != null
 
-    val listState = remember(state.selectedRoomId) {
-        LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
-    }
-    val scope = rememberCoroutineScope()
-    val selectedRoomId = state.selectedRoomId
-    val selectedRoom = remember(selectedRoomId, state.rooms) {
-        selectedRoomId?.let { id -> state.rooms.find { it.id == id } }
+    val selectedRoomId = chromePane.selectedRoomId
+    val selectedRoom = remember(selectedRoomId, chromePane.rooms) {
+        selectedRoomId?.let { id -> chromePane.rooms.find { it.id == id } }
     }
     val showGlobalTeamNotice = selectedRoom?.allianceId == ChatAllianceIds.GLOBAL &&
-        !state.hasTeamProfileForGlobalChat
+        !chromePane.hasTeamProfileForGlobalChat
     val globalComposerLocked = showGlobalTeamNotice
-    val messageById = remember(state.messages) {
-        buildMap {
-            for (m in state.messages) {
-                val id = m._id?.trim().orEmpty()
-                if (id.isNotEmpty()) put(id, m)
-            }
-        }
+    val activeActionMessage = remember(chromePane.activeActionMessageId, listPane.messages) {
+        findChatMessage(listPane.messages, chromePane.activeActionMessageId)
     }
-    val activeActionMessage = remember(state.activeActionMessageId, messageById) {
-        state.activeActionMessageId?.let { messageById[it] }
+    val confirmDeleteMessage = remember(chromePane.confirmDeleteMessageId, listPane.messages) {
+        findChatMessage(listPane.messages, chromePane.confirmDeleteMessageId)
     }
-    val confirmDeleteMessage = remember(state.confirmDeleteMessageId, messageById) {
-        state.confirmDeleteMessageId?.let { messageById[it] }
-    }
-    val inSelectionMode = state.selectedMessageIds.isNotEmpty()
+    val inSelectionMode = listPane.selectedMessageIds.isNotEmpty()
 
     var remoteChatImagePreview by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
     var attachmentPreviewStartIndex by remember { mutableStateOf<Int?>(null) }
@@ -496,7 +788,7 @@ fun ChatScreen(
     }
 
     if (canHandleBack) {
-        BackHandler(enabled = inSelectionMode && !state.isDeletingSelection) {
+        BackHandler(enabled = inSelectionMode && !chromePane.isDeletingSelection) {
             onClearMessageSelection()
         }
     }
@@ -510,195 +802,18 @@ fun ChatScreen(
             }
         }
     }
-    val messages = state.messages
     val listUiState = remember(
-        state.isRoomsLoading,
-        state.rooms,
-        state.isLoading,
-        state.isLoadingOlder,
-        state.error,
-        state.currentUserId,
-        state.isAppAdmin,
-        state.playerTeamSquadRole,
-        state.deletingMessageId,
+        chromePane.isRoomsLoading,
+        chromePane.rooms,
+        listPane.isLoading,
+        listPane.isLoadingOlder,
+        chromePane.error,
+        chromePane.currentUserId,
+        chromePane.isAppAdmin,
+        chromePane.playerTeamSquadRole,
+        listPane.deletingMessageId,
     ) {
-        state.toChatListUiState()
-    }
-
-    val isNearLatest by remember(listState) {
-        derivedStateOf { listState.isAtReverseChatBottom() }
-    }
-
-    var newMessagesWhileScrolledUp by remember { mutableStateOf(0) }
-    var lastCountedNewestKey by remember(state.selectedRoomId) { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(state.selectedRoomId) {
-        newMessagesWhileScrolledUp = 0
-        lastCountedNewestKey = state.newestMessageKey
-    }
-
-    LaunchedEffect(isNearLatest) {
-        if (isNearLatest) {
-            newMessagesWhileScrolledUp = 0
-            lastCountedNewestKey = state.newestMessageKey
-        }
-    }
-
-    LaunchedEffect(state.newestMessageKey, isNearLatest) {
-        val key = state.newestMessageKey ?: return@LaunchedEffect
-        if (key == lastCountedNewestKey) return@LaunchedEffect
-        lastCountedNewestKey = key
-        if (!isNearLatest) {
-            newMessagesWhileScrolledUp = (newMessagesWhileScrolledUp + 1).coerceAtMost(999)
-        }
-    }
-
-    val showScrollToLatestFab by remember(
-        listState,
-        inSelectionMode,
-        state.messages.size,
-        state.isLoading,
-        state.selectedRoomId,
-    ) {
-        derivedStateOf {
-            !listState.isAtReverseChatBottom() &&
-                !inSelectionMode &&
-                state.messages.isNotEmpty() &&
-                !state.isLoading &&
-                state.selectedRoomId != null
-        }
-    }
-
-    var pendingScrollAnchor by remember(state.selectedRoomId) {
-        mutableStateOf<ChatScrollAnchor?>(null)
-    }
-    val timelineSize = listDerived.timeline.size
-
-    LaunchedEffect(state.isLoadingOlder) {
-        if (state.isLoadingOlder && pendingScrollAnchor == null) {
-            pendingScrollAnchor = ChatScrollAnchor(
-                firstVisibleItemIndex = listState.firstVisibleItemIndex,
-                firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
-                timelineSize = timelineSize,
-            )
-        }
-    }
-
-    LaunchedEffect(state.isLoadingOlder, timelineSize) {
-        if (state.isLoadingOlder) return@LaunchedEffect
-        val anchor = pendingScrollAnchor ?: return@LaunchedEffect
-        pendingScrollAnchor = null
-        val delta = timelineSize - anchor.timelineSize
-        if (delta > 0) {
-            listState.scrollToItem(
-                anchor.firstVisibleItemIndex + delta,
-                anchor.firstVisibleItemScrollOffset,
-            )
-        }
-    }
-
-    LaunchedEffect(state.scrollToMessageId, timelineSize) {
-        val targetId = state.scrollToMessageId?.trim().orEmpty()
-        if (targetId.isEmpty()) return@LaunchedEffect
-        val timeline = listDerived.timeline
-        val idx = chatTimelineIndexForMessageId(timeline, messages, targetId)
-        if (idx < 0) return@LaunchedEffect
-        runCatching { listState.scrollTimelineItemToViewportCenter(idx) }
-            .onFailure { listState.scrollToItem(idx) }
-        onConsumeScrollToMessage()
-    }
-
-    LaunchedEffect(state.highlightMessageId) {
-        val highlightId = state.highlightMessageId?.trim().orEmpty()
-        if (highlightId.isEmpty()) return@LaunchedEffect
-        delay(700)
-        onClearHighlightMessage()
-    }
-
-    LaunchedEffect(state.transientNotice) {
-        val notice = state.transientNotice?.trim().orEmpty()
-        if (notice.isEmpty()) return@LaunchedEffect
-        Toast.makeText(context, notice, Toast.LENGTH_SHORT).show()
-        onConsumeTransientNotice()
-    }
-
-    val listStateRef = rememberUpdatedState(listState)
-    val hasMoreOlderRef = rememberUpdatedState(state.hasMoreOlder)
-    val isLoadingOlderRef = rememberUpdatedState(state.isLoadingOlder)
-    val isLoadingRef = rememberUpdatedState(state.isLoading)
-    val onLoadOlderRef = rememberUpdatedState(onLoadOlder)
-
-    @OptIn(FlowPreview::class)
-    LaunchedEffect(listState) {
-        snapshotFlow {
-            val info = listStateRef.value.layoutInfo
-            val lastIdx = info.visibleItemsInfo.lastOrNull()?.index ?: -1
-            val total = info.totalItemsCount
-            val hasMore = hasMoreOlderRef.value
-            val busy = isLoadingOlderRef.value || isLoadingRef.value
-            ChatListLoadSignal(lastIdx, total, hasMore, busy)
-        }
-            .distinctUntilChanged()
-            .debounce(24)
-            .collect { sig ->
-                if (sig.totalItems > 4 &&
-                    sig.lastVisibleIndex >= sig.totalItems - 2 &&
-                    sig.hasMoreOlder &&
-                    !sig.isBusy
-                ) {
-                    onLoadOlderRef.value()
-                }
-            }
-    }
-
-    var lastHandledScrollNonce by remember(state.selectedRoomId) { mutableLongStateOf(0L) }
-    var lastAutoScrolledNewestKey by remember(state.selectedRoomId) { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(
-        state.scrollToLatestNonce,
-        listDerived.timeline.size,
-        state.messages.size,
-    ) {
-        val nonce = state.scrollToLatestNonce
-        if (nonce <= lastHandledScrollNonce) return@LaunchedEffect
-        if (state.messages.isEmpty() || listDerived.timeline.isEmpty()) return@LaunchedEffect
-        lastHandledScrollNonce = nonce
-        lastAutoScrolledNewestKey = state.newestMessageKey
-        newMessagesWhileScrolledUp = 0
-        if (!listState.isAtReverseChatBottom()) {
-            listState.scrollReverseChatRevealLatest(
-                animate = false,
-                adjustViewport = false,
-            )
-        }
-    }
-
-    LaunchedEffect(state.newestMessageKey, isNearLatest, listDerived.timeline.size) {
-        if (state.scrollToLatestNonce > lastHandledScrollNonce) return@LaunchedEffect
-        val key = state.newestMessageKey ?: return@LaunchedEffect
-        if (listDerived.timeline.isEmpty()) return@LaunchedEffect
-        if (key == lastAutoScrolledNewestKey) return@LaunchedEffect
-        lastAutoScrolledNewestKey = key
-        if (!isNearLatest) return@LaunchedEffect
-        listState.scrollReverseChatRevealLatest(
-            animate = false,
-            adjustViewport = false,
-        )
-    }
-
-    val newestKeyForScroll = rememberUpdatedState(state.newestMessageKey)
-    val scrollToLatest: () -> Unit = remember(scope, listState, onScrollToLatest) {
-        {
-            newMessagesWhileScrolledUp = 0
-            lastCountedNewestKey = newestKeyForScroll.value
-            onScrollToLatest()
-            scope.launch {
-                listState.scrollReverseChatRevealLatest(
-                    animate = false,
-                    adjustViewport = false,
-                )
-            }
-        }
+        toChatListUiState(listPane, chromePane)
     }
 
     CompositionLocalProvider(
@@ -711,122 +826,55 @@ fun ChatScreen(
         } else {
             Modifier.padding(top = SquadRelayDimens.screenTopPadding)
         }
-        val composerBar: @Composable () -> Unit = {
-            if (state.sendFailure != null || (selectedRoomId != null && state.rooms.isNotEmpty())) {
-            ChatComposerBar(overlayUi = overlayUi) {
-                state.sendFailure?.let { failure ->
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
-                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f),
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(
-                                    horizontal = SquadRelayDimens.contentPaddingHorizontal,
-                                    vertical = SquadRelayDimens.itemGap,
-                                ),
-                            verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.chat_send_failed_title),
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                            Text(
-                                text = failure.errorMessage,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                TextButton(onClick = onDismissSendFailure) {
-                                    Text(stringResource(R.string.chat_send_failed_dismiss))
-                                }
-                                TextButton(onClick = onRetrySendFailure) {
-                                    Text(stringResource(R.string.chat_send_failed_retry))
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if (selectedRoomId != null && state.rooms.isNotEmpty()) {
-                    ChatComposer(
-                        draft = draftMessage,
-                        pickedImageUris = pickedImageUris,
-                        replyToMessage = state.replyToMessage,
-                        isSending = state.isSending,
-                        sendEnabled = !globalComposerLocked,
-                        readOnly = globalComposerLocked,
-                        enabledStickerPackKeys = state.enabledStickerPackKeys,
-                        onDraftChange = onDraftChange,
-                        onSendDraft = {
-                            if (!globalComposerLocked &&
-                                (
-                                    !draftMessage.isBlank() ||
-                                        pickedImageUris.isNotEmpty()
-                                    ) &&
-                                !state.isSending
-                            ) {
-                                onSendDraft()
-                            }
-                        },
-                        onSendStickerPayload = { payload ->
-                            if (!globalComposerLocked && !state.isSending) {
-                                onSendStickerPayload(payload)
-                            }
-                        },
-                        onPickImages = { uris, append ->
-                            if (!globalComposerLocked && !state.isSending) {
-                                onPickImages(uris, append)
-                            }
-                        },
-                        onRemovePickedImage = onRemovePickedImage,
-                        onClearPickedImages = onClearPickedImages,
-                        onClearReply = onClearReply,
-                        onOpenAttachmentPreview = { idx -> attachmentPreviewStartIndex = idx },
-                    )
-                }
-            }
-            }
-        }
         Column(Modifier.fillMaxSize()) {
-                ChatScreenMessagesHost(
-                    modifier = Modifier
-                        .weight(1f, fill = true)
-                        .fillMaxWidth(),
-                    topPadding = messagesTopPadding,
-                    compactOverlayMode = compactOverlayMode,
-                    overlayUi = overlayUi,
-                    state = state,
-                    selectedRoomId = selectedRoomId,
-                    messages = messages,
-                    listDerived = listDerived,
-                    listUiState = listUiState,
-                    listState = listState,
-                    typingPeers = typingPeers,
-                    otherReadUptoMessageId = otherReadUptoMessageId,
-                    inSelectionMode = inSelectionMode,
-                    showScrollToLatestFab = showScrollToLatestFab,
-                    newMessagesWhileScrolledUp = newMessagesWhileScrolledUp,
-                    scrollToLatest = scrollToLatest,
-                    onSelectRoom = onSelectRoom,
-                    onClearError = onClearError,
-                    onJumpToQuotedMessage = onJumpToQuotedMessage,
-                    onToggleReaction = onToggleReaction,
-                    onOpenMessageActions = onOpenMessageActions,
-                    onReplyToMessage = onReplyToMessage,
-                    onToggleMessageSelection = onToggleMessageSelection,
-                    onClearMessageSelection = onClearMessageSelection,
-                    onRequestBulkDelete = onRequestBulkDelete,
-                    messageListKey = messageListKey,
-                )
-            composerBar()
+            ChatScreenMessagesHost(
+                modifier = Modifier
+                    .weight(1f, fill = true)
+                    .fillMaxWidth(),
+                topPadding = messagesTopPadding,
+                compactOverlayMode = compactOverlayMode,
+                overlayUi = overlayUi,
+                listPane = listPane,
+                chromePane = chromePane,
+                listDerived = listDerived,
+                listUiState = listUiState,
+                typingPeers = typingPeers,
+                otherReadUptoMessageId = otherReadUptoMessageId,
+                onSelectRoom = onSelectRoom,
+                onClearError = onClearError,
+                onLoadOlder = onLoadOlder,
+                onJumpToQuotedMessage = onJumpToQuotedMessage,
+                onToggleReaction = onToggleReaction,
+                onOpenMessageActions = onOpenMessageActions,
+                onReplyToMessage = onReplyToMessage,
+                onToggleMessageSelection = onToggleMessageSelection,
+                onClearMessageSelection = onClearMessageSelection,
+                onRequestBulkDelete = onRequestBulkDelete,
+                onScrollToLatest = onScrollToLatest,
+                onConsumeScrollToMessage = onConsumeScrollToMessage,
+                onClearHighlightMessage = onClearHighlightMessage,
+                onConsumeTransientNotice = onConsumeTransientNotice,
+                messageListKey = messageListKey,
+            )
+            ChatScreenComposerSection(
+                overlayUi = overlayUi,
+                composerPane = composerPane,
+                chromePane = chromePane,
+                selectedRoomId = selectedRoomId,
+                globalComposerLocked = globalComposerLocked,
+                draftMessage = draftMessage,
+                pickedImageUris = pickedImageUris,
+                onAttachmentPreviewStartIndex = { attachmentPreviewStartIndex = it },
+                onDraftChange = onDraftChange,
+                onSendDraft = onSendDraft,
+                onSendStickerPayload = onSendStickerPayload,
+                onPickImages = onPickImages,
+                onRemovePickedImage = onRemovePickedImage,
+                onClearPickedImages = onClearPickedImages,
+                onClearReply = onClearReply,
+                onRetrySendFailure = onRetrySendFailure,
+                onDismissSendFailure = onDismissSendFailure,
+            )
         }
 
     if (!inSelectionMode) {
@@ -864,9 +912,9 @@ fun ChatScreen(
             }
             val sheetCanModerate = canDeleteChatMessage(
                 message = message,
-                currentUserId = state.currentUserId,
-                isAppAdmin = state.isAppAdmin,
-                playerTeamSquadRole = state.playerTeamSquadRole,
+                currentUserId = chromePane.currentUserId,
+                isAppAdmin = chromePane.isAppAdmin,
+                playerTeamSquadRole = chromePane.playerTeamSquadRole,
             )
             ChatMessageActionsSheet(
                 message = message,
@@ -941,7 +989,7 @@ fun ChatScreen(
         }
     }
 
-    if (state.confirmBulkDelete && state.selectedMessageIds.isNotEmpty()) {
+    if (chromePane.confirmBulkDelete && listPane.selectedMessageIds.isNotEmpty()) {
         OverlayModalScope(preparedByCaller = true) {
         OverlayAwareAlertDialog(
             onDismissRequest = onDismissBulkDeleteConfirm,
@@ -950,14 +998,14 @@ fun ChatScreen(
                 Text(
                     stringResource(
                         R.string.chat_bulk_delete_body,
-                        state.selectedMessageIds.size,
+                        listPane.selectedMessageIds.size,
                     ),
                 )
             },
             confirmButton = {
                 TextButton(
                     onClick = onConfirmDeleteSelectedMessages,
-                    enabled = !state.isDeletingSelection,
+                    enabled = !chromePane.isDeletingSelection,
                 ) {
                     Text(
                         text = stringResource(R.string.chat_delete_confirm),
@@ -968,7 +1016,7 @@ fun ChatScreen(
             dismissButton = {
                 TextButton(
                     onClick = onDismissBulkDeleteConfirm,
-                    enabled = !state.isDeletingSelection,
+                    enabled = !chromePane.isDeletingSelection,
                 ) {
                     Text(stringResource(R.string.chat_delete_cancel))
                 }
@@ -1033,6 +1081,96 @@ fun ChatScreen(
             }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun ChatScreen(
+    state: ChatState,
+    listDerived: ChatMessagesListDerived,
+    typingPeers: Map<String, String>,
+    draftMessage: String,
+    pickedImageUris: List<Uri>,
+    otherReadUptoMessageId: String? = null,
+    onSelectRoom: (String) -> Unit,
+    onClearError: () -> Unit,
+    onLoadOlder: () -> Unit,
+    onDraftChange: (String) -> Unit,
+    onSendDraft: () -> Unit,
+    onSendStickerPayload: (String) -> Unit,
+    onPickImages: (List<Uri>, append: Boolean) -> Unit,
+    onRemovePickedImage: (Uri) -> Unit,
+    onClearPickedImages: () -> Unit,
+    onReplyToMessage: (String) -> Unit,
+    onClearReply: () -> Unit,
+    onOpenMessageActions: (String) -> Unit,
+    onDismissMessageActions: () -> Unit,
+    onRequestDeleteMessage: (String) -> Unit,
+    onDismissDeleteMessage: () -> Unit,
+    onConfirmDeleteMessage: () -> Unit,
+    onBeginMessageSelection: (String) -> Unit,
+    onToggleMessageSelection: (String) -> Unit,
+    onClearMessageSelection: () -> Unit,
+    onRequestBulkDelete: () -> Unit,
+    onDismissBulkDeleteConfirm: () -> Unit,
+    onConfirmDeleteSelectedMessages: () -> Unit,
+    onRetrySendFailure: () -> Unit,
+    onDismissSendFailure: () -> Unit,
+    onEditMessage: (String, String) -> Unit,
+    onForwardMessage: (String) -> Unit,
+    onToggleReaction: (String, String) -> Unit,
+    onScrollToLatest: () -> Unit = {},
+    onJumpToQuotedMessage: (String) -> Unit = {},
+    onConsumeScrollToMessage: () -> Unit = {},
+    onClearHighlightMessage: () -> Unit = {},
+    onConsumeTransientNotice: () -> Unit = {},
+    messageListKey: (ChatMessage) -> String = { msg ->
+        msg._id?.trim()?.takeIf { it.isNotEmpty() } ?: chatMessageKey(msg)
+    },
+    compactOverlayMode: Boolean = false,
+) = ChatScreen(
+    listPane = state.toListPane(),
+    chromePane = state.toChromePane(),
+    composerPane = state.toComposerPane(),
+    listDerived = listDerived,
+    typingPeers = typingPeers,
+    draftMessage = draftMessage,
+    pickedImageUris = pickedImageUris,
+    otherReadUptoMessageId = otherReadUptoMessageId,
+    onSelectRoom = onSelectRoom,
+    onClearError = onClearError,
+    onLoadOlder = onLoadOlder,
+    onDraftChange = onDraftChange,
+    onSendDraft = onSendDraft,
+    onSendStickerPayload = onSendStickerPayload,
+    onPickImages = onPickImages,
+    onRemovePickedImage = onRemovePickedImage,
+    onClearPickedImages = onClearPickedImages,
+    onReplyToMessage = onReplyToMessage,
+    onClearReply = onClearReply,
+    onOpenMessageActions = onOpenMessageActions,
+    onDismissMessageActions = onDismissMessageActions,
+    onRequestDeleteMessage = onRequestDeleteMessage,
+    onDismissDeleteMessage = onDismissDeleteMessage,
+    onConfirmDeleteMessage = onConfirmDeleteMessage,
+    onBeginMessageSelection = onBeginMessageSelection,
+    onToggleMessageSelection = onToggleMessageSelection,
+    onClearMessageSelection = onClearMessageSelection,
+    onRequestBulkDelete = onRequestBulkDelete,
+    onDismissBulkDeleteConfirm = onDismissBulkDeleteConfirm,
+    onConfirmDeleteSelectedMessages = onConfirmDeleteSelectedMessages,
+    onRetrySendFailure = onRetrySendFailure,
+    onDismissSendFailure = onDismissSendFailure,
+    onEditMessage = onEditMessage,
+    onForwardMessage = onForwardMessage,
+    onToggleReaction = onToggleReaction,
+    onScrollToLatest = onScrollToLatest,
+    onJumpToQuotedMessage = onJumpToQuotedMessage,
+    onConsumeScrollToMessage = onConsumeScrollToMessage,
+    onClearHighlightMessage = onClearHighlightMessage,
+    onConsumeTransientNotice = onConsumeTransientNotice,
+    messageListKey = messageListKey,
+    compactOverlayMode = compactOverlayMode,
+)
 
 @Composable
 private fun ChatSelectionToolbar(
@@ -1117,7 +1255,6 @@ private fun ChatDayDivider(label: String) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ChatMessagesLazyList(
     modifier: Modifier = Modifier,
@@ -1143,9 +1280,7 @@ private fun ChatMessagesLazyList(
     val messageClusterFlags = listDerived.clusterFlags
     LazyColumn(
         state = listState,
-        modifier = modifier.then(
-            if (!overlayUi) Modifier.imeNestedScroll() else Modifier,
-        ),
+        modifier = modifier,
         reverseLayout = true,
         verticalArrangement = Arrangement.spacedBy(0.dp),
         contentPadding = PaddingValues(
