@@ -16,6 +16,7 @@ class AuthRepository(
     private val teamForumPreferences: TeamForumPreferences,
     private val userSettingsPreferences: UserSettingsPreferences,
     private val launchDiskCache: LaunchDiskCache,
+    private val onProfileCacheInvalidate: () -> Unit = {},
 ) {
     suspend fun register(
         email: String,
@@ -100,6 +101,8 @@ class AuthRepository(
             launchDiskCache.clearAll()
         }
         tokenStore.clearTokens()
+        JwtAccessTokenClaims.invalidateCache()
+        onProfileCacheInvalidate()
         ReadCursorSession.clearAll(
             chatRoomPreferences,
             teamForumPreferences,

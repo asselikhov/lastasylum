@@ -82,6 +82,10 @@ export class User {
   @Prop({ type: Date, default: null })
   lastAppActiveAt: Date | null;
 
+  /** Throttle [UsersService.toSafeUser] squad reconcile (heavy DB). */
+  @Prop({ type: Date, default: null })
+  lastProfileReconcileAt: Date | null;
+
   /** ingame | online | away */
   @Prop({ type: String, default: null })
   presenceStatus: string | null;

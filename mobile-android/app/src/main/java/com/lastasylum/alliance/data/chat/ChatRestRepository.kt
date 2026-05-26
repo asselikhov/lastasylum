@@ -13,7 +13,7 @@ class ChatRestRepository(
     private val chatRoomPreferences: ChatRoomPreferences,
 ) {
     suspend fun listRooms(): Result<List<ChatRoomDto>> =
-        runCatching { chatApi.listRooms() }
+        ChatRoomsSessionCache.listRooms { chatApi.listRooms() }
 
     suspend fun loadRecentMessages(
         roomId: String,

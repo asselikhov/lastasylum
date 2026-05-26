@@ -1,21 +1,58 @@
 package com.lastasylum.alliance.data.users
 
+import com.lastasylum.alliance.data.cache.LaunchDiskCache
+import com.lastasylum.alliance.data.auth.JwtAccessTokenClaims
+import com.lastasylum.alliance.data.auth.TokenStore
+
 class UsersRepository(
     private val usersApi: UsersApi,
+    launchDiskCache: LaunchDiskCache,
+    tokenStore: TokenStore,
 ) {
-    suspend fun getMyProfile(): Result<MyProfileDto> =
-        runCatching { usersApi.getMyProfile() }
+    private val sessionProfileCache = SessionProfileCache(
+        launchDiskCache = launchDiskCache,
+        resolveUserId = {
+            JwtAccessTokenClaims.sub(tokenStore.getAccessToken())
+        },
+        fetchFromNetwork = { usersApi.getMyProfile() },
+    )
+
+    /** Cached profile if still within [SessionProfileCache.MEMORY_TTL_MS]. */
+    fun peekMyProfile(): MyProfileDto? = sessionProfileCache.peekFresh()
+
+  /** Disk snapshot without network. */
+    fun peekMyProfileDisk(): MyProfileDto? = sessionProfileCache.peekDisk()
+
+    suspend fun getMyProfile(forceRefresh: Boolean = false): Result<MyProfileDto> =
+        sessionProfileCache.get(forceRefresh)
+
+    /** Memory or disk snapshot without forcing network when possible. */
+    suspend fun resolveMyProfilePreferCache(): MyProfileDto? =
+        peekMyProfile()
+            ?: peekMyProfileDisk()
+            ?: getMyProfile().getOrNull()
+
+    fun invalidateProfileCache() {
+        sessionProfileCache.invalidate()
+    }
+
+    private suspend fun applyProfileMutation(block: suspend () -> MyProfileDto): Result<MyProfileDto> =
+        runCatching {
+            block().also { sessionProfileCache.put(it) }
+        }
 
     suspend fun updateMyTelegram(username: String): Result<MyProfileDto> =
-        runCatching { usersApi.updateMyTelegram(UpdateTelegramBody(username = username)) }
+        applyProfileMutation {
+            usersApi.updateMyTelegram(UpdateTelegramBody(username = username))
+        }
 
     suspend fun updateMyUsername(username: String): Result<MyProfileDto> =
-        runCatching {
+        applyProfileMutation {
             usersApi.updateMyUsername(UpdateUsernameBody(username = username.trim()))
         }
 
     suspend fun addGameIdentity(serverNumber: Int, gameNickname: String): Result<MyProfileDto> =
-        runCatching {
+        applyProfileMutation {
             usersApi.addGameIdentity(
                 CreateGameIdentityBody(
                     serverNumber = serverNumber,
@@ -29,7 +66,7 @@ class UsersRepository(
         serverNumber: Int?,
         gameNickname: String?,
     ): Result<MyProfileDto> =
-        runCatching {
+        applyProfileMutation {
             usersApi.updateGameIdentity(
                 identityId,
                 UpdateGameIdentityBody(
@@ -40,17 +77,17 @@ class UsersRepository(
         }
 
     suspend fun deleteGameIdentity(identityId: String): Result<MyProfileDto> =
-        runCatching { usersApi.deleteGameIdentity(identityId) }
+        applyProfileMutation { usersApi.deleteGameIdentity(identityId) }
 
     suspend fun switchActiveGameIdentity(identityId: String): Result<MyProfileDto> =
-        runCatching {
+        applyProfileMutation {
             usersApi.switchActiveGameIdentity(
                 SwitchActiveGameIdentityBody(gameIdentityId = identityId),
             )
         }
 
     suspend fun updateExcavationPushEnabled(enabled: Boolean): Result<MyProfileDto> =
-        runCatching {
+        applyProfileMutation {
             usersApi.updateNotificationPreferences(
                 UpdateNotificationPreferencesBody(excavationPushEnabled = enabled),
             )

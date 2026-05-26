@@ -56,7 +56,7 @@ export class UsersController {
   @Get('me')
   @Roles(AllianceRole.MEMBER)
   async getMyProfile(@Req() req: { user: RequestUser }) {
-    const user = await this.usersService.findById(req.user.userId);
+    const user = await this.usersService.findByIdRaw(req.user.userId);
     if (!user) {
       throw new NotFoundException('User not found');
     }

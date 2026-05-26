@@ -50,7 +50,7 @@ internal object OverlayGameStatusHudRefresh {
         refreshNewsForum: Boolean = true,
     ): OverlayGameStatusHudState {
         val container = AppContainer.from(context)
-        val profile = container.usersRepository.getMyProfile().getOrNull()
+        val profile = container.usersRepository.resolveMyProfilePreferCache()
         val profileUserId = profile?.id?.trim().orEmpty()
         if (profileUserId.isNotEmpty()) {
             ReadCursorSession.bind(
@@ -71,7 +71,7 @@ internal object OverlayGameStatusHudRefresh {
         val localChatRead = container.chatRoomPreferences.loadAllLastReadMessageIds()
         val allianceUnread = allianceHubUnread(rooms, localChatRead)
 
-        val teamId = usersRepository.getMyProfile().getOrNull()?.playerTeamId?.trim().orEmpty()
+        val teamId = profile?.playerTeamId?.trim().orEmpty()
         val now = System.currentTimeMillis()
         val cacheFresh = !refreshNewsForum &&
             teamId.isNotEmpty() &&
@@ -117,7 +117,7 @@ internal object OverlayGameStatusHudRefresh {
 
     suspend fun loadTeamJoinRequestCount(context: android.content.Context): Int {
         val container = AppContainer.from(context)
-        val profile = container.usersRepository.getMyProfile().getOrNull() ?: return 0
+        val profile = container.usersRepository.resolveMyProfilePreferCache() ?: return 0
         if (!profile.isPlayerTeamLeader) return 0
         val fromProfile = profile.pendingPlayerTeamJoinRequests.coerceAtLeast(0)
         if (fromProfile > 0) return fromProfile
@@ -170,7 +170,7 @@ internal object OverlayGameStatusHudRefresh {
         usersRepository: UsersRepository,
         teamsRepository: TeamsRepository,
     ): Int {
-        val teamId = usersRepository.getMyProfile().getOrNull()?.playerTeamId?.trim().orEmpty()
+        val teamId = usersRepository.resolveMyProfilePreferCache()?.playerTeamId?.trim().orEmpty()
         if (teamId.isEmpty()) return 0
         return teamsRepository.getTeamOverlayPresence(teamId)
             .getOrNull()

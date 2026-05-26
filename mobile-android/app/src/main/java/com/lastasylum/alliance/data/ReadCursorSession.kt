@@ -34,7 +34,7 @@ object ReadCursorSession {
         userSettingsPreferences: UserSettingsPreferences,
     ) {
         withContext(Dispatchers.IO) {
-            val teamId = usersRepository.getMyProfile().getOrNull()?.playerTeamId?.trim().orEmpty()
+            val teamId = usersRepository.resolveMyProfilePreferCache()?.playerTeamId?.trim().orEmpty()
             if (teamId.isEmpty()) return@withContext
             TeamNewsReadCursorSync.pushPrefsToServerIfNewer(
                 teamsRepository,

@@ -6,6 +6,7 @@ import com.lastasylum.alliance.data.cache.LaunchDiskCache
 import com.lastasylum.alliance.data.auth.AuthRepository
 import com.lastasylum.alliance.data.auth.TokenStore
 import com.lastasylum.alliance.data.chat.ChatRepository
+import com.lastasylum.alliance.data.chat.ChatRoomsSessionCache
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
 import com.lastasylum.alliance.data.chat.ChatRoomsRepository
 import com.lastasylum.alliance.data.chat.ChatSocketManager
@@ -80,6 +81,14 @@ class AppContainer private constructor(context: Context) {
             }
         }
 
+    val usersRepository: UsersRepository by lazy {
+        UsersRepository(
+            usersApi = authorizedClients.usersApi,
+            launchDiskCache = launchDiskCache,
+            tokenStore = tokenStore,
+        )
+    }
+
     val authRepository: AuthRepository by lazy {
         AuthRepository(
             authApi = NetworkModule.authApi,
@@ -89,15 +98,15 @@ class AppContainer private constructor(context: Context) {
             teamForumPreferences = teamForumPreferences,
             userSettingsPreferences = userSettingsPreferences,
             launchDiskCache = launchDiskCache,
+            onProfileCacheInvalidate = {
+                usersRepository.invalidateProfileCache()
+                ChatRoomsSessionCache.invalidate()
+            },
         )
     }
 
     val chatRoomsRepository: ChatRoomsRepository by lazy {
         ChatRoomsRepository(chatApi = authorizedClients.chatApi)
-    }
-
-    val usersRepository: UsersRepository by lazy {
-        UsersRepository(usersApi = authorizedClients.usersApi)
     }
 
     val adminRepository: AdminRepository by lazy {

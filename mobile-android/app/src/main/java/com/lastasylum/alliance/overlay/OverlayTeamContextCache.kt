@@ -80,7 +80,8 @@ internal object OverlayTeamContextCache {
                 if (now - cachedAtMs < TTL_MS) return@runCatching ctx
             }
         }
-        val profile = usersRepository.getMyProfile().getOrThrow()
+        val profile = usersRepository.peekMyProfile()
+            ?: usersRepository.getMyProfile().getOrThrow()
         val teamId = profile.playerTeamId?.trim().orEmpty()
         if (teamId.isEmpty()) {
             error("no_team")

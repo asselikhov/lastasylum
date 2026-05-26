@@ -41,7 +41,9 @@ class SquadRelayApplication : Application(), ImageLoaderFactory {
             if (!access.isNullOrBlank()) {
                 runCatching { FcmTokenManager.registerWithBackend(this@SquadRelayApplication) }
                 runCatching {
-                    container.usersRepository.getMyProfile().getOrNull()?.let { profile ->
+                    val profile = container.usersRepository.peekMyProfileDisk()
+                        ?: container.usersRepository.peekMyProfile()
+                    if (profile != null) {
                         container.userSettingsPreferences.setExcavationPushEnabled(
                             profile.excavationPushEnabled,
                         )

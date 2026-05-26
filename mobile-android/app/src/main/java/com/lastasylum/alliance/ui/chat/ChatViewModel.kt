@@ -917,7 +917,8 @@ class ChatViewModel(
                 }
             }
         }
-        val p = usersRepository.getMyProfile().getOrNull()
+        val p = usersRepository.peekMyProfile()
+            ?: usersRepository.getMyProfile().getOrNull()
         val keys = p?.enabledStickerPacks?.toSet() ?: emptySet()
         _state.value = _state.value.copy(
             enabledStickerPackKeys = keys,

@@ -58,6 +58,15 @@ export type SafeUser = {
 export class UsersService implements OnModuleInit {
   private readonly logger = new Logger(UsersService.name);
 
+  private static readonly SAFE_USER_CACHE_MS = 30_000;
+
+  private static readonly PROFILE_RECONCILE_INTERVAL_MS = 5 * 60_000;
+
+  private readonly safeUserCache = new Map<
+    string,
+    { at: number; value: SafeUser }
+  >();
+
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<User>,
     private readonly allianceRegistry: AllianceRegistryService,
@@ -116,12 +125,34 @@ export class UsersService implements OnModuleInit {
     return this.gameIdentities.ensureMigrated(user);
   }
 
+  /** Load user without squad reconcile (for GET /users/me — reconcile in [toSafeUser]). */
+  async findByIdRaw(id: string): Promise<UserDocument | null> {
+    if (!Types.ObjectId.isValid(id)) {
+      return null;
+    }
+    return this.userModel.findById(id).exec();
+  }
+
   async findById(id: string): Promise<UserDocument | null> {
-    const user = await this.userModel.findById(id).exec();
+    const user = await this.findByIdRaw(id);
     if (!user) {
       return null;
     }
     return this.teamsService.reconcileSquadTeamBindingForUser(id);
+  }
+
+  invalidateSafeUserCache(userId: string): void {
+    this.safeUserCache.delete(userId);
+  }
+
+  private shouldReconcileProfile(user: UserDocument): boolean {
+    const last = user.lastProfileReconcileAt;
+    if (!last) {
+      return true;
+    }
+    return (
+      Date.now() - last.getTime() > UsersService.PROFILE_RECONCILE_INTERVAL_MS
+    );
   }
 
   async findByUsername(username: string): Promise<UserDocument | null> {
@@ -322,12 +353,32 @@ export class UsersService implements OnModuleInit {
       .exec();
   }
 
-  async toSafeUser(user: UserDocument): Promise<SafeUser> {
+  async toSafeUser(
+    user: UserDocument,
+    opts?: { forceReconcile?: boolean },
+  ): Promise<SafeUser> {
+    const userId = user._id.toString();
+    const now = Date.now();
+    const cached = this.safeUserCache.get(userId);
+    if (cached && now - cached.at < UsersService.SAFE_USER_CACHE_MS) {
+      return cached.value;
+    }
+
     const synced = await this.gameIdentities.ensureMigrated(user);
-    const reconciled =
-      (await this.teamsService.reconcileSquadTeamBindingForUser(
-        synced._id.toString(),
-      )) ?? synced;
+    const needsReconcile =
+      opts?.forceReconcile === true || this.shouldReconcileProfile(synced);
+    let reconciled = synced;
+    if (needsReconcile) {
+      reconciled =
+        (await this.teamsService.reconcileSquadTeamBindingForUser(userId)) ??
+        synced;
+      await this.userModel
+        .updateOne(
+          { _id: reconciled._id },
+          { $set: { lastProfileReconcileAt: new Date() } },
+        )
+        .exec();
+    }
     const flags = await this.allianceRegistry.resolveFlagsByAllianceCode(
       reconciled.allianceName,
     );
@@ -339,8 +390,8 @@ export class UsersService implements OnModuleInit {
     const inSquad = Boolean(teamFields.playerTeamId);
     const enabledStickerPacks =
       await this.stickerAccess.listEnabledPackKeysForUser(reconciled);
-    return {
-      id: reconciled._id.toString(),
+    const safe: SafeUser = {
+      id: userId,
       username: reconciled.username,
       email: reconciled.email,
       role: normalizeAllianceRole(reconciled.role),
@@ -369,6 +420,8 @@ export class UsersService implements OnModuleInit {
       activeGameNickname: active?.gameNickname ?? null,
       activeServerNumber: active?.serverNumber ?? null,
     };
+    this.safeUserCache.set(userId, { at: now, value: safe });
+    return safe;
   }
 
   async updateNotificationPreferences(

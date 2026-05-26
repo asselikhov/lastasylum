@@ -305,7 +305,7 @@ class CombatOverlayService : Service() {
         val container = AppContainer.from(this)
         if (!container.authRepository.hasSession()) return
         serviceScope.launch(Dispatchers.IO) {
-            val profile = runCatching { container.usersRepository.getMyProfile().getOrNull() }
+            val profile = runCatching { container.usersRepository.resolveMyProfilePreferCache() }
                 .getOrNull()
             val hasTeam = !profile?.playerTeamId.isNullOrBlank()
             runCatching {
@@ -1572,7 +1572,7 @@ class CombatOverlayService : Service() {
     private fun bindOverlayReadCursorsIfPossible() {
         serviceScope.launch(Dispatchers.IO) {
             val container = AppContainer.from(this@CombatOverlayService)
-            val uid = container.usersRepository.getMyProfile().getOrNull()?.id?.trim().orEmpty()
+            val uid = container.usersRepository.resolveMyProfilePreferCache()?.id?.trim().orEmpty()
                 .ifEmpty { jwtSubFromAccessToken()?.trim().orEmpty() }
             if (uid.isEmpty()) return@launch
             ReadCursorSession.bind(
@@ -1780,7 +1780,7 @@ class CombatOverlayService : Service() {
         if (inboxBadgeCoordinator.shouldDeferNewsReconcile()) return
         serviceScope.launch(Dispatchers.IO) {
             val container = AppContainer.from(this@CombatOverlayService)
-            val profile = container.usersRepository.getMyProfile().getOrNull() ?: return@launch
+            val profile = container.usersRepository.resolveMyProfilePreferCache() ?: return@launch
             val teamId = profile.playerTeamId?.trim().orEmpty()
             if (teamId.isEmpty()) return@launch
             val userId = profile.id.trim()
@@ -1803,7 +1803,7 @@ class CombatOverlayService : Service() {
         bindOverlayReadCursorsIfPossible()
         serviceScope.launch(Dispatchers.IO) {
             val container = AppContainer.from(this@CombatOverlayService)
-            val profile = container.usersRepository.getMyProfile().getOrNull() ?: return@launch
+            val profile = container.usersRepository.resolveMyProfilePreferCache() ?: return@launch
             val teamId = profile.playerTeamId?.trim().orEmpty()
             if (teamId.isEmpty()) return@launch
             val userId = profile.id.trim()
@@ -1849,7 +1849,7 @@ class CombatOverlayService : Service() {
         if (inboxBadgeCoordinator.shouldDeferForumReconcile()) return
         serviceScope.launch(Dispatchers.IO) {
             val container = AppContainer.from(this@CombatOverlayService)
-            val teamId = container.usersRepository.getMyProfile().getOrNull()?.playerTeamId?.trim().orEmpty()
+            val teamId = container.usersRepository.resolveMyProfilePreferCache()?.playerTeamId?.trim().orEmpty()
             if (teamId.isEmpty()) return@launch
             val count = inboxBadgeCoordinator.fetchForumUnread(this@CombatOverlayService, teamId)
             mainHandler.post {
@@ -3223,8 +3223,7 @@ class CombatOverlayService : Service() {
         overlayForumTopicActivityListener = listener
         container.teamForumSocket.addTopicActivityListener(listener)
         serviceScope.launch(Dispatchers.IO) {
-            val teamId = container.usersRepository.getMyProfile()
-                .getOrNull()
+            val teamId = container.usersRepository.resolveMyProfilePreferCache()
                 ?.playerTeamId
                 ?.trim()
                 .orEmpty()

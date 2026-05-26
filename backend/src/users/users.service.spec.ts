@@ -10,6 +10,7 @@ import { StickerAccessService } from './sticker-access.service';
 import { GameIdentitiesService } from './game-identities.service';
 
 describe('UsersService', () => {
+  const reconcileSquadTeamBindingForUser = jest.fn();
   const updateOneExec = jest.fn().mockResolvedValue({ modifiedCount: 1 });
   const updateOne = jest.fn().mockReturnValue({ exec: updateOneExec });
   const execFindById = jest.fn();
@@ -37,20 +38,50 @@ describe('UsersService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    reconcileSquadTeamBindingForUser.mockImplementation((id: string) =>
+      findById(id).exec(),
+    );
     const moduleRef = await Test.createTestingModule({
       providers: [
         UsersService,
-        { provide: AllianceRegistryService, useValue: {} },
         {
           provide: TeamsService,
           useValue: {
-            reconcileSquadTeamBindingForUser: jest.fn((id: string) =>
-              findById(id).exec(),
-            ),
+            reconcileSquadTeamBindingForUser,
+            getPlayerTeamProfileFields: jest.fn().mockResolvedValue({
+              playerTeamId: null,
+              playerTeamTag: null,
+              playerTeamDisplayName: null,
+              playerTeamLeaderUserId: null,
+              isPlayerTeamLeader: false,
+              pendingPlayerTeamJoinRequests: 0,
+              playerTeamSquadRole: null,
+            }),
           },
         },
-        { provide: StickerAccessService, useValue: {} },
-        { provide: GameIdentitiesService, useValue: {} },
+        {
+          provide: AllianceRegistryService,
+          useValue: {
+            resolveFlagsByAllianceCode: jest.fn().mockResolvedValue({
+              alliancePublicId: 'pub',
+              overlayTabVisible: true,
+            }),
+          },
+        },
+        {
+          provide: StickerAccessService,
+          useValue: {
+            listEnabledPackKeysForUser: jest.fn().mockResolvedValue([]),
+          },
+        },
+        {
+          provide: GameIdentitiesService,
+          useValue: {
+            ensureMigrated: jest.fn((user: unknown) => Promise.resolve(user)),
+            buildSafeIdentities: jest.fn().mockResolvedValue([]),
+            getActiveIdentity: jest.fn().mockReturnValue(null),
+          },
+        },
         {
           provide: getModelToken(User.name),
           useValue: {
@@ -70,32 +101,34 @@ describe('UsersService', () => {
   });
 
   describe('registerPushToken', () => {
+    const pushUserId = new Types.ObjectId().toHexString();
+
     it('does nothing when user missing', async () => {
       execFindById.mockResolvedValue(null);
-      await usersService.registerPushToken('u1', 'tok');
+      await usersService.registerPushToken(pushUserId, 'tok');
       expect(updateOne).not.toHaveBeenCalled();
     });
 
     it('merges unique tokens and trims', async () => {
       execFindById.mockResolvedValue({
-        _id: 'u1',
+        _id: pushUserId,
         pushFcmTokens: ['a'],
       });
-      await usersService.registerPushToken('u1', '  b  ');
+      await usersService.registerPushToken(pushUserId, '  b  ');
       expect(updateOne).toHaveBeenCalledWith(
-        { _id: 'u1' },
+        { _id: pushUserId },
         { $set: { pushFcmTokens: ['a', 'b'] } },
       );
     });
 
     it('dedupes identical token', async () => {
       execFindById.mockResolvedValue({
-        _id: 'u1',
+        _id: pushUserId,
         pushFcmTokens: ['x'],
       });
-      await usersService.registerPushToken('u1', 'x');
+      await usersService.registerPushToken(pushUserId, 'x');
       expect(updateOne).toHaveBeenCalledWith(
-        { _id: 'u1' },
+        { _id: pushUserId },
         { $set: { pushFcmTokens: ['x'] } },
       );
     });
@@ -103,10 +136,10 @@ describe('UsersService', () => {
     it('keeps at most 10 tokens', async () => {
       const many = Array.from({ length: 10 }, (_, i) => `t${i}`);
       execFindById.mockResolvedValue({
-        _id: 'u1',
+        _id: pushUserId,
         pushFcmTokens: many,
       });
-      await usersService.registerPushToken('u1', 'new');
+      await usersService.registerPushToken(pushUserId, 'new');
       const setArg = updateOne.mock.calls[0][1] as {
         $set: { pushFcmTokens: string[] };
       };
@@ -322,6 +355,48 @@ describe('UsersService', () => {
         _id: { $ne: exclude },
         pushFcmTokens: { $exists: true, $ne: [] },
       });
+    });
+  });
+
+  describe('toSafeUser', () => {
+    const baseUser = () => ({
+      _id: new Types.ObjectId(),
+      username: 'u',
+      email: 'u@test.com',
+      role: 'MEMBER',
+      allianceName: 'ally',
+      membershipStatus: TeamMembershipStatus.ACTIVE,
+      excavationPushEnabled: true,
+      pushFcmTokens: [],
+      lastProfileReconcileAt: null as Date | null,
+    });
+
+    it('skips reconcile when lastProfileReconcileAt is recent', async () => {
+      reconcileSquadTeamBindingForUser.mockClear();
+      const user = {
+        ...baseUser(),
+        lastProfileReconcileAt: new Date(),
+      };
+      await usersService.toSafeUser(user as never);
+      expect(reconcileSquadTeamBindingForUser).not.toHaveBeenCalled();
+    });
+
+    it('reconciles when lastProfileReconcileAt is missing', async () => {
+      reconcileSquadTeamBindingForUser.mockClear();
+      reconcileSquadTeamBindingForUser.mockResolvedValue(baseUser());
+      const user = baseUser();
+      await usersService.toSafeUser(user as never);
+      expect(reconcileSquadTeamBindingForUser).toHaveBeenCalledTimes(1);
+      expect(updateOne).toHaveBeenCalled();
+    });
+
+    it('returns cached SafeUser within TTL without second reconcile', async () => {
+      reconcileSquadTeamBindingForUser.mockClear();
+      reconcileSquadTeamBindingForUser.mockResolvedValue(baseUser());
+      const user = baseUser();
+      await usersService.toSafeUser(user as never);
+      await usersService.toSafeUser(user as never);
+      expect(reconcileSquadTeamBindingForUser).toHaveBeenCalledTimes(1);
     });
   });
 });
