@@ -303,9 +303,76 @@ class ChatViewModel(
         bootstrap(preferAllianceHubRoom = true, force = true)
     }
 
+    /**
+     * Синхронно подставить комнаты/ленту из [ChatSessionCache] и [roomMessageCache]
+     * до первого кадра оверлея (без «Пока нет сообщений…» и ожидания bootstrap).
+     */
+    fun primeOverlayChatFromCache(
+        preferAllianceHubRoom: Boolean = true,
+        preferOverlayRaidRoom: Boolean = false,
+    ) {
+        if (preferOverlayRaidRoom && overlayRaidAlreadyReady(_state.value.rooms)) {
+            _state.update { it.copy(isLoading = false, isRoomsLoading = false) }
+            return
+        }
+        if (preferAllianceHubRoom && !preferOverlayRaidRoom &&
+            overlayHubAlreadyReady(_state.value.rooms)
+        ) {
+            _state.update { it.copy(isLoading = false, isRoomsLoading = false) }
+            return
+        }
+        val roomsRaw = ChatSessionCache.getFreshRooms()
+            ?: _state.value.rooms.takeIf { it.isNotEmpty() }
+            ?: return
+        val rooms = applyRoomsFromServer(roomsRaw)
+        if (rooms.isEmpty()) return
+        val roomId = resolveOverlayPreferredRoomId(
+            rooms = rooms,
+            preferOverlayRaidRoom = preferOverlayRaidRoom,
+        ) ?: return
+        if (_state.value.selectedRoomId == roomId && _state.value.messages.isNotEmpty()) {
+            _state.update { it.copy(isLoading = false, isRoomsLoading = false) }
+            return
+        }
+        val cached = roomMessageCache[roomId]
+            ?: ChatSessionCache.getFreshMessages(roomId)?.let { sessionMessages ->
+                val capped = capNewestFirst(sessionMessages, PAGE_SIZE)
+                RoomMessageCache(
+                    messages = capped,
+                    hasMoreOlder = sessionMessages.size >= PAGE_SIZE,
+                ).also { roomMessageCache[roomId] = it }
+            }
+        if (cached == null || cached.messages.isEmpty()) {
+            _state.update { st ->
+                st.copy(
+                    isLoading = st.messages.isEmpty(),
+                    isRoomsLoading = false,
+                    selectedRoomId = roomId,
+                    rooms = if (st.rooms.isEmpty()) clearUnreadForRoom(rooms, roomId) else st.rooms,
+                )
+            }
+            return
+        }
+        knownMessageIds.clear()
+        messageIdIndex.clear()
+        knownMessageIds.addAll(cached.messages.mapNotNull { it._id })
+        rebuildMessageIdIndex(cached.messages, messageIdIndex)
+        _state.value = _state.value.copy(
+            isLoading = false,
+            isRoomsLoading = false,
+            rooms = clearUnreadForRoom(rooms, roomId),
+            selectedRoomId = roomId,
+            messages = cached.messages,
+            hasMoreOlder = cached.hasMoreOlder,
+            error = null,
+            scrollToLatestNonce = _state.value.scrollToLatestNonce + 1L,
+        )
+    }
+
     /** Оверлей-чат: по умолчанию комната «Альянс» (hub), как вкладка чата в приложении. */
     fun refreshChatForOverlay() {
         syncReadStateFromPreferences()
+        primeOverlayChatFromCache(preferAllianceHubRoom = true)
         scheduleBootstrap(preferAllianceHubRoom = true, force = false)
         viewModelScope.launch {
             repository.listRooms()
@@ -337,6 +404,7 @@ class ChatViewModel(
         if (visible) {
             refreshStickerPackAccess()
             syncReadStateFromPreferences()
+            primeOverlayChatFromCache(preferAllianceHubRoom = true)
             recomputeRoomUnreadBadges()
             reconnectRealtimeIfNeeded()
             return
@@ -611,6 +679,19 @@ class ChatViewModel(
         ChatRoomKindResolver.allianceRaidRoom(rooms)?.id
             ?: chatRoomPreferences.getRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }
 
+    private fun resolveOverlayPreferredRoomId(
+        rooms: List<ChatRoomDto>,
+        preferOverlayRaidRoom: Boolean,
+    ): String? {
+        val hubId = allianceHubRoomId(rooms)
+        val raidId = allianceRaidRoomId(rooms)
+        return when {
+            preferOverlayRaidRoom && raidId != null -> raidId
+            hubId != null -> hubId
+            else -> rooms.minByOrNull { it.sortOrder }?.id ?: rooms.firstOrNull()?.id
+        }
+    }
+
     private fun globalSendBlocked(
         roomId: String,
         messageText: String,
@@ -651,7 +732,12 @@ class ChatViewModel(
                 }
             }
         }
-        _state.value = _state.value.copy(isRoomsLoading = true, error = null)
+        _state.update { st ->
+            st.copy(
+                isRoomsLoading = st.rooms.isEmpty() && st.messages.isEmpty(),
+                error = null,
+            )
+        }
         val roomsResult = resolveRoomsForBootstrap(
             preferAllianceHubRoom = preferAllianceHubRoom,
             preferOverlayRaidRoom = preferOverlayRaidRoom,
@@ -699,24 +785,14 @@ class ChatViewModel(
         }
         syncRaidRoomPreference(rooms)
         syncOverlayAllianceHubBadge(rooms)
-        val hubId = allianceHubRoomId(rooms)
-        val raidId = allianceRaidRoomId(rooms)
-        val selected = when {
-            preferOverlayRaidRoom && raidId != null -> raidId
-            hubId != null -> hubId
-            else ->
-                rooms.minByOrNull { it.sortOrder }?.id
-                    ?: rooms.first().id
-        }
+        val selected = resolveOverlayPreferredRoomId(
+            rooms = rooms,
+            preferOverlayRaidRoom = preferOverlayRaidRoom,
+        ) ?: rooms.first().id
         chatRoomPreferences.setSelectedRoomId(selected)
         reconcileStaleServerUnread(rooms, roomsRaw)
-        val cachedOverlayMessages = when {
-            preferOverlayRaidRoom && raidId != null ->
-                ChatSessionCache.getFreshMessages(raidId)
-            preferAllianceHubRoom ->
-                ChatSessionCache.getFreshMessages(selected)
-            else -> null
-        }
+        val cachedOverlayMessages = ChatSessionCache.getFreshMessages(selected)
+            ?: roomMessageCache[selected]?.messages
         if (!cachedOverlayMessages.isNullOrEmpty()) {
             val capped = capNewestFirst(cachedOverlayMessages, PAGE_SIZE)
             roomMessageCache[selected] = RoomMessageCache(
@@ -1448,13 +1524,9 @@ class ChatViewModel(
         if (globalSendBlocked(roomId, trimmed, replyToMessageId)) return
         val optimistic = buildOptimisticOutgoingMessage(roomId, trimmed, replyToMessageId)
         val pendingId = optimistic._id
+        _state.value = _state.value.copy(isSending = false, error = null, sendFailure = null)
+        applyIncomingMessage(optimistic, clearComposer = true)
         viewModelScope.launch {
-            _state.value = _state.value.copy(
-                isSending = false,
-                error = null,
-                sendFailure = null,
-            )
-            applyIncomingMessage(optimistic, clearComposer = true)
             repository.sendMessageWithRetries(trimmed, roomId, replyToMessageId)
                 .onSuccess { sent ->
                     removePendingOutgoingMessage(pendingId)
@@ -1482,12 +1554,12 @@ class ChatViewModel(
         val uris = _pickedImageUris.value
         if (globalSendBlocked(roomId, text, replyToMessageId)) return
 
-        viewModelScope.launch {
-            if (uris.isEmpty() && text.isNotBlank()) {
-                val optimistic = buildOptimisticOutgoingMessage(roomId, text, replyToMessageId)
-                val pendingId = optimistic._id
-                _state.value = _state.value.copy(isSending = false, error = null, sendFailure = null)
-                applyIncomingMessage(optimistic, clearComposer = true)
+        if (uris.isEmpty() && text.isNotBlank()) {
+            val optimistic = buildOptimisticOutgoingMessage(roomId, text, replyToMessageId)
+            val pendingId = optimistic._id
+            _state.value = _state.value.copy(isSending = false, error = null, sendFailure = null)
+            applyIncomingMessage(optimistic, clearComposer = true)
+            viewModelScope.launch {
                 repository.sendMessageWithRetries(
                     text = text.trim(),
                     roomId = roomId,
@@ -1508,8 +1580,10 @@ class ChatViewModel(
                             ),
                         )
                     }
-                return@launch
             }
+            return
+        }
+        viewModelScope.launch {
             _state.value = _state.value.copy(isSending = true, error = null, sendFailure = null)
             val uploadedIds = ArrayList<String>(uris.size)
             try {

@@ -4143,6 +4143,22 @@ class CombatOverlayService : Service() {
         activeOverlayChatSessionViewModel()?.refreshChatForOverlay()
     }
 
+    /** Кэш ленты до attach Compose — без кадра «Пока нет сообщений…». */
+    private fun prepareOverlayChatBeforePanelShow() {
+        val uid = jwtSubFromAccessToken()?.trim().orEmpty()
+        if (uid.isBlank()) return
+        val container = AppContainer.from(this)
+        ReadCursorSession.bind(
+            container.chatRoomPreferences,
+            container.teamForumPreferences,
+            container.userSettingsPreferences,
+            uid,
+        )
+        val vm = resolveChatViewModel()
+            ?: ensureOverlayFallbackChatViewModel(uid, jwtRoleFromAccessToken())
+        vm.primeOverlayChatFromCache(preferAllianceHubRoom = true)
+    }
+
     private fun showOverlayChatTeamPanel(
         initialTabIndex: Int = 0,
         hudPane: OverlayHudPane? = null,
@@ -4151,6 +4167,9 @@ class CombatOverlayService : Service() {
         if (overlayChatTeamPanelVisible) return
         val initialTab = initialTabIndex.coerceIn(0, 1)
         val overlayPane = hudPane
+        if (overlayPane == null || overlayPane == OverlayHudPane.Chat) {
+            prepareOverlayChatBeforePanelShow()
+        }
         currentOverlayHudPane = hudPane
         overlayCommandsPopover.hide()
         extendOverlayUiHold(OVERLAY_UI_HOLD_PANEL_TRANSITION_MS)

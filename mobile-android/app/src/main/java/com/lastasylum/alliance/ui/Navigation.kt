@@ -88,7 +88,6 @@ import com.lastasylum.alliance.ui.admin.AdminViewModelFactory
 import com.lastasylum.alliance.ui.chat.ChatViewModel
 import com.lastasylum.alliance.ui.chat.ChatViewModelFactory
 import com.lastasylum.alliance.ui.screens.AdminScreen
-import com.lastasylum.alliance.ui.chat.LocalScaffoldContentBottomPadding
 import com.lastasylum.alliance.ui.screens.ChatScreen
 import com.lastasylum.alliance.ui.screens.OverlayControlScreen
 import com.lastasylum.alliance.ui.screens.ProfileScreen
@@ -389,9 +388,6 @@ fun AppNavigation(
             }
         },
     ) { contentPadding ->
-        CompositionLocalProvider(
-            LocalScaffoldContentBottomPadding provides contentPadding.calculateBottomPadding(),
-        ) {
         Box(
             modifier = Modifier
                 .padding(contentPadding)
@@ -570,7 +566,6 @@ fun AppNavigation(
                     onLoadMorePlayerTeams = adminViewModel::loadMorePlayerTeams,
                 )
             }
-        }
         }
         }
     }

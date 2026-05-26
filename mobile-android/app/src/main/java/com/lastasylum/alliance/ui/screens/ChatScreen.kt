@@ -30,7 +30,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -302,6 +306,109 @@ private data class ChatScrollAnchor(
     val firstVisibleItemScrollOffset: Int,
     val timelineSize: Int,
 )
+
+@Composable
+private fun ChatScreenMessagesHost(
+    modifier: Modifier,
+    topPadding: Modifier,
+    compactOverlayMode: Boolean,
+    overlayUi: Boolean,
+    state: ChatState,
+    selectedRoomId: String?,
+    messages: List<com.lastasylum.alliance.data.chat.ChatMessage>,
+    listDerived: ChatMessagesListDerived,
+    listUiState: ChatListUiState,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    typingPeers: Map<String, String>,
+    otherReadUptoMessageId: String?,
+    inSelectionMode: Boolean,
+    showScrollToLatestFab: Boolean,
+    newMessagesWhileScrolledUp: Int,
+    scrollToLatest: () -> Unit,
+    onSelectRoom: (String) -> Unit,
+    onClearError: () -> Unit,
+    onJumpToQuotedMessage: (String) -> Unit,
+    onToggleReaction: (String, String) -> Unit,
+    onOpenMessageActions: (String) -> Unit,
+    onReplyToMessage: (String) -> Unit,
+    onToggleMessageSelection: (String) -> Unit,
+    onClearMessageSelection: () -> Unit,
+    onRequestBulkDelete: () -> Unit,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(topPadding),
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f, fill = true)
+                .fillMaxWidth()
+                .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
+        ) {
+            if (!compactOverlayMode) {
+                ChatRoomsBar(
+                    rooms = state.rooms,
+                    selectedRoomId = selectedRoomId,
+                    onSelectRoom = onSelectRoom,
+                    overlayUi = overlayUi,
+                )
+            }
+            if (inSelectionMode) {
+                ChatSelectionToolbar(
+                    selectedCount = state.selectedMessageIds.size,
+                    isDeleting = state.isDeletingSelection,
+                    onClear = onClearMessageSelection,
+                    onDelete = {
+                        if (overlayUi) {
+                            OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
+                        }
+                        onRequestBulkDelete()
+                    },
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .weight(1f, fill = true)
+                    .fillMaxWidth(),
+            ) {
+                ChatMessagesLazyList(
+                    modifier = Modifier.fillMaxSize(),
+                    messages = messages,
+                    listDerived = listDerived,
+                    listUiState = listUiState,
+                    otherReadUptoMessageId = otherReadUptoMessageId,
+                    listState = listState,
+                    jumpToQuotedMessage = onJumpToQuotedMessage,
+                    highlightMessageId = state.highlightMessageId,
+                    onToggleReaction = onToggleReaction,
+                    onOpenMessageActions = onOpenMessageActions,
+                    onReplyToMessage = onReplyToMessage,
+                    onClearError = onClearError,
+                    inSelectionMode = inSelectionMode,
+                    selectedMessageIds = state.selectedMessageIds,
+                    onToggleMessageSelection = onToggleMessageSelection,
+                )
+                ChatTypingIndicator(
+                    typingPeers = typingPeers,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = 4.dp, bottom = 10.dp)
+                        .zIndex(3f),
+                )
+                ChatScrollToLatestFab(
+                    visible = showScrollToLatestFab,
+                    newMessageCount = newMessagesWhileScrolledUp,
+                    onClick = scrollToLatest,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 8.dp, bottom = 52.dp)
+                        .zIndex(6f),
+                )
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -607,94 +714,15 @@ fun ChatScreen(
         val composerReserveBottom = with(LocalDensity.current) {
             composerBlockHeightPx.toDp()
         }
-        Box(Modifier.fillMaxSize()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(bottom = composerReserveBottom)
-                    .then(
-                        if (overlayUi) {
-                            Modifier.padding(top = 2.dp)
-                        } else {
-                            Modifier.padding(top = SquadRelayDimens.screenTopPadding)
-                        },
-                    ),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .weight(1f, fill = true)
-                        .fillMaxWidth()
-                        .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
-                ) {
-            if (!compactOverlayMode) {
-                ChatRoomsBar(
-                    rooms = state.rooms,
-                    selectedRoomId = selectedRoomId,
-                    onSelectRoom = onSelectRoom,
-                    overlayUi = overlayUi,
-                )
-            }
-
-            if (inSelectionMode) {
-                ChatSelectionToolbar(
-                    selectedCount = state.selectedMessageIds.size,
-                    isDeleting = state.isDeletingSelection,
-                    onClear = onClearMessageSelection,
-                    onDelete = {
-                        if (overlayUi) {
-                            OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
-                        }
-                        onRequestBulkDelete()
-                    },
-                )
-            }
-
-            Box(
-                modifier = Modifier
-                    .weight(1f, fill = true)
-                    .fillMaxWidth(),
-            ) {
-                ChatMessagesLazyList(
-                    modifier = Modifier.fillMaxSize(),
-                    messages = messages,
-                    listDerived = listDerived,
-                    listUiState = listUiState,
-                    otherReadUptoMessageId = otherReadUptoMessageId,
-                    listState = listState,
-                    jumpToQuotedMessage = onJumpToQuotedMessage,
-                    highlightMessageId = state.highlightMessageId,
-                    onToggleReaction = onToggleReaction,
-                    onOpenMessageActions = onOpenMessageActions,
-                    onReplyToMessage = onReplyToMessage,
-                    onClearError = onClearError,
-                    inSelectionMode = inSelectionMode,
-                    selectedMessageIds = state.selectedMessageIds,
-                    onToggleMessageSelection = onToggleMessageSelection,
-                )
-                ChatTypingIndicator(
-                    typingPeers = typingPeers,
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(start = 4.dp, bottom = 10.dp)
-                        .zIndex(3f),
-                )
-                ChatScrollToLatestFab(
-                    visible = showScrollToLatestFab,
-                    newMessageCount = newMessagesWhileScrolledUp,
-                    onClick = scrollToLatest,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = 8.dp, bottom = 52.dp)
-                        .zIndex(6f),
-                )
-            }
+        val messagesTopPadding = if (overlayUi) {
+            Modifier.padding(top = 2.dp)
+        } else {
+            Modifier.padding(top = SquadRelayDimens.screenTopPadding)
         }
-            }
-
+        val composerBar: @Composable () -> Unit = {
             if (state.sendFailure != null || (selectedRoomId != null && state.rooms.isNotEmpty())) {
             Column(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .onSizeChanged { size -> composerBlockHeightPx = size.height }
                     .chatComposerDock(),
@@ -759,11 +787,23 @@ fun ChatScreen(
                                 !state.isSending
                             ) {
                                 onSendDraft()
+                                scope.launch {
+                                    listState.scrollReverseChatRevealLatest(
+                                        animate = false,
+                                        adjustViewport = false,
+                                    )
+                                }
                             }
                         },
                         onSendStickerPayload = { payload ->
                             if (!globalComposerLocked && !state.isSending) {
                                 onSendStickerPayload(payload)
+                                scope.launch {
+                                    listState.scrollReverseChatRevealLatest(
+                                        animate = false,
+                                        adjustViewport = false,
+                                    )
+                                }
                             }
                         },
                         onPickImages = { uris, append ->
@@ -779,6 +819,79 @@ fun ChatScreen(
                 }
             }
         }
+        }
+        if (overlayUi) {
+            Box(Modifier.fillMaxSize()) {
+                ChatScreenMessagesHost(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(bottom = composerReserveBottom),
+                    topPadding = messagesTopPadding,
+                    compactOverlayMode = compactOverlayMode,
+                    overlayUi = overlayUi,
+                    state = state,
+                    selectedRoomId = selectedRoomId,
+                    messages = messages,
+                    listDerived = listDerived,
+                    listUiState = listUiState,
+                    listState = listState,
+                    typingPeers = typingPeers,
+                    otherReadUptoMessageId = otherReadUptoMessageId,
+                    inSelectionMode = inSelectionMode,
+                    showScrollToLatestFab = showScrollToLatestFab,
+                    newMessagesWhileScrolledUp = newMessagesWhileScrolledUp,
+                    scrollToLatest = scrollToLatest,
+                    onSelectRoom = onSelectRoom,
+                    onClearError = onClearError,
+                    onJumpToQuotedMessage = onJumpToQuotedMessage,
+                    onToggleReaction = onToggleReaction,
+                    onOpenMessageActions = onOpenMessageActions,
+                    onReplyToMessage = onReplyToMessage,
+                    onToggleMessageSelection = onToggleMessageSelection,
+                    onClearMessageSelection = onClearMessageSelection,
+                    onRequestBulkDelete = onRequestBulkDelete,
+                )
+                Box(Modifier.align(Alignment.BottomCenter)) {
+                    composerBar()
+                }
+            }
+        } else {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .imePadding(),
+            ) {
+                ChatScreenMessagesHost(
+                    modifier = Modifier
+                        .weight(1f, fill = true)
+                        .consumeWindowInsets(WindowInsets.ime),
+                    topPadding = messagesTopPadding,
+                    compactOverlayMode = compactOverlayMode,
+                    overlayUi = overlayUi,
+                    state = state,
+                    selectedRoomId = selectedRoomId,
+                    messages = messages,
+                    listDerived = listDerived,
+                    listUiState = listUiState,
+                    listState = listState,
+                    typingPeers = typingPeers,
+                    otherReadUptoMessageId = otherReadUptoMessageId,
+                    inSelectionMode = inSelectionMode,
+                    showScrollToLatestFab = showScrollToLatestFab,
+                    newMessagesWhileScrolledUp = newMessagesWhileScrolledUp,
+                    scrollToLatest = scrollToLatest,
+                    onSelectRoom = onSelectRoom,
+                    onClearError = onClearError,
+                    onJumpToQuotedMessage = onJumpToQuotedMessage,
+                    onToggleReaction = onToggleReaction,
+                    onOpenMessageActions = onOpenMessageActions,
+                    onReplyToMessage = onReplyToMessage,
+                    onToggleMessageSelection = onToggleMessageSelection,
+                    onClearMessageSelection = onClearMessageSelection,
+                    onRequestBulkDelete = onRequestBulkDelete,
+                )
+                composerBar()
+            }
         }
 
     if (!inSelectionMode) {
