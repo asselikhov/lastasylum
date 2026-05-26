@@ -216,8 +216,7 @@ import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarEndPad
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarSize
 import com.lastasylum.alliance.ui.chat.AttachmentPreviewOverlay
 import com.lastasylum.alliance.ui.chat.ChatComposer
-import com.lastasylum.alliance.ui.chat.chatComposerAppDock
-import com.lastasylum.alliance.ui.chat.chatComposerOverlayDock
+import com.lastasylum.alliance.ui.chat.ChatComposerBar
 import com.lastasylum.alliance.ui.chat.ChatFileAttachmentCard
 import com.lastasylum.alliance.ui.chat.ChatMessageBubbleRow
 import com.lastasylum.alliance.ui.chat.ChatMessageClusterFlags
@@ -458,11 +457,6 @@ fun ChatScreen(
 ) {
     val context = LocalContext.current
     val overlayUi = LocalOverlayUiMode.current
-    val composerDockModifier = if (overlayUi) {
-        Modifier.chatComposerOverlayDock()
-    } else {
-        Modifier.chatComposerAppDock()
-    }
     val canHandleBack = LocalOnBackPressedDispatcherOwner.current != null
 
     val listState = remember(state.selectedRoomId) {
@@ -719,9 +713,7 @@ fun ChatScreen(
         }
         val composerBar: @Composable () -> Unit = {
             if (state.sendFailure != null || (selectedRoomId != null && state.rooms.isNotEmpty())) {
-            Column(
-                modifier = Modifier.fillMaxWidth().then(composerDockModifier),
-            ) {
+            ChatComposerBar(overlayUi = overlayUi) {
                 state.sendFailure?.let { failure ->
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
@@ -801,13 +793,9 @@ fun ChatScreen(
                     )
                 }
             }
+            }
         }
-        }
-        Column(
-            Modifier
-                .fillMaxSize()
-                .then(if (!overlayUi) Modifier.imeNestedScroll() else Modifier),
-        ) {
+        Column(Modifier.fillMaxSize()) {
                 ChatScreenMessagesHost(
                     modifier = Modifier
                         .weight(1f, fill = true)
@@ -1129,6 +1117,7 @@ private fun ChatDayDivider(label: String) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ChatMessagesLazyList(
     modifier: Modifier = Modifier,
@@ -1154,7 +1143,9 @@ private fun ChatMessagesLazyList(
     val messageClusterFlags = listDerived.clusterFlags
     LazyColumn(
         state = listState,
-        modifier = modifier,
+        modifier = modifier.then(
+            if (!overlayUi) Modifier.imeNestedScroll() else Modifier,
+        ),
         reverseLayout = true,
         verticalArrangement = Arrangement.spacedBy(0.dp),
         contentPadding = PaddingValues(

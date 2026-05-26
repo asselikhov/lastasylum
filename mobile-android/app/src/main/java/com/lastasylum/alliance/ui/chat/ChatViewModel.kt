@@ -2566,7 +2566,10 @@ class ChatViewModel(
                 }
                 if (shouldAutoMarkReadSelectedRoom() && !rid.isNullOrBlank()) {
                     work.cappedMessages.firstOrNull()?._id?.let { newestId ->
-                        viewModelScope.launch { markRoomReadUpTo(rid, newestId) }
+                        viewModelScope.launch {
+                            kotlinx.coroutines.yield()
+                            markRoomReadUpTo(rid, newestId)
+                        }
                     }
                 }
                 batch.forEach { message ->
