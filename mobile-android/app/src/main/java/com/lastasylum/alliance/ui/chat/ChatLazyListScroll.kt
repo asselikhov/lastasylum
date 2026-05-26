@@ -45,7 +45,7 @@ internal suspend fun LazyListState.scrollReverseChatRevealLatest(
         runCatching { animateScrollToItem(newestIndex, 0) }
             .onFailure { scrollToItem(newestIndex, 0) }
     } else {
-        scrollToItem(newestIndex, 0)
+        runCatching { scrollToItem(newestIndex, 0) }
     }
     if (!adjustViewport) return
     snapshotFlow {

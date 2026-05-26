@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import com.lastasylum.alliance.ui.insets.LocalImeSnapState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -248,6 +249,7 @@ fun AppNavigation(
         .collectAsStateWithLifecycle(0)
     val chatRouteActive =
         currentDestination?.hierarchy?.any { it.route == AppTab.CHAT.route } == true
+    val hideBottomBarForChatIme = chatRouteActive && LocalImeSnapState.current.isVisible
     DisposableEffect(chatRouteActive) {
         if (chatRouteActive) {
             chatViewModel.onChatTabResumed()
@@ -263,6 +265,7 @@ fun AppNavigation(
         // IME — только на композере ([chatComposerAppDock]); контент NavHost не дублирует inset.
         contentWindowInsets = WindowInsets.safeDrawing.exclude(WindowInsets.ime),
         bottomBar = {
+            if (hideBottomBarForChatIme) return@Scaffold
             Box(
                 modifier = Modifier
                     .fillMaxWidth()

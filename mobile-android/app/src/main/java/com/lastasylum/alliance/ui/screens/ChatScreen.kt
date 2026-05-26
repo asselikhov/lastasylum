@@ -106,7 +106,6 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -491,10 +490,12 @@ private fun ChatScreenMessagesHost(
         lastAutoScrolledNewestKey = listPane.newestMessageKey
         newMessagesWhileScrolledUp = 0
         if (!listState.isAtReverseChatBottom()) {
-            listState.scrollReverseChatRevealLatest(
-                animate = false,
-                adjustViewport = false,
-            )
+            runCatching {
+                listState.scrollReverseChatRevealLatest(
+                    animate = false,
+                    adjustViewport = false,
+                )
+            }
         }
     }
 
@@ -505,10 +506,12 @@ private fun ChatScreenMessagesHost(
         if (key == lastAutoScrolledNewestKey) return@LaunchedEffect
         lastAutoScrolledNewestKey = key
         if (!isNearLatest) return@LaunchedEffect
-        listState.scrollReverseChatRevealLatest(
-            animate = false,
-            adjustViewport = false,
-        )
+        runCatching {
+            listState.scrollReverseChatRevealLatest(
+                animate = false,
+                adjustViewport = false,
+            )
+        }
     }
 
     val newestKeyForScroll = rememberUpdatedState(listPane.newestMessageKey)
@@ -518,10 +521,12 @@ private fun ChatScreenMessagesHost(
             lastCountedNewestKey = newestKeyForScroll.value
             onScrollToLatest()
             scope.launch {
-                listState.scrollReverseChatRevealLatest(
-                    animate = false,
-                    adjustViewport = false,
-                )
+                runCatching {
+                    listState.scrollReverseChatRevealLatest(
+                        animate = false,
+                        adjustViewport = false,
+                    )
+                }
             }
         }
     }
@@ -1407,7 +1412,6 @@ private fun ChatMessagesLazyList(
                                     messageId != null && highlightMessageId == messageId
                                 }
                             }
-                            key(messageListKey(message)) {
                             ChatMessageBubble(
                                 message = message,
                                 cluster = cluster,
@@ -1431,7 +1435,6 @@ private fun ChatMessagesLazyList(
                                 onSwipeReply = onReplyToMessage,
                                 onJumpToQuotedMessage = jumpToQuotedMessage,
                             )
-                            }
                         }
                         is ChatTimelineEntry.ChatAlbumItem -> {
                             val message = e.representativeMessage

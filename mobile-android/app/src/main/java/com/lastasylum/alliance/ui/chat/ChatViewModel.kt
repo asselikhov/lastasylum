@@ -336,11 +336,18 @@ class ChatViewModel(
         scheduleBootstrap(preferAllianceHubRoom = true, force = true)
     }
 
-    /** Stable row key for [ChatScreen] — pending id survives replace with server [_id]. */
+    /** Stable row key for [ChatScreen] — pending id survives in-place replace with server [_id]. */
     fun messageListCompositionKey(message: ChatMessage): String {
         val id = message._id?.trim().orEmpty()
         if (id.isEmpty()) return chatMessageKey(message)
-        listCompositionKeyByMessageId[id]?.let { return it }
+        val linked = listCompositionKeyByMessageId[id]
+        if (linked != null && linked != id) {
+            // Guard: never reuse pending lazy key while that pending row still exists.
+            if (_state.value.messages.any { it._id?.trim() == linked }) {
+                return id
+            }
+            return linked
+        }
         if (id.startsWith("pending-")) {
             listCompositionKeyByMessageId[id] = id
             return id
@@ -2596,19 +2603,44 @@ class ChatViewModel(
                     messages = merged.first
                     listDerived = merged.second
                 }
-                if (fresh.isEmpty()) {
+                var newestFromPendingReplace: String? = null
+                val stillFresh = ArrayList<ChatMessage>(fresh.size)
+                for (message in fresh) {
+                    val replacement = replaceMatchingPendingOutgoing(
+                        current = messages,
+                        incoming = message,
+                        currentUserId = currentUserId,
+                    )
+                    if (replacement != null) {
+                        messages = replacement.messages
+                        knownMessageIds.remove(replacement.pendingId)
+                        knownMessageIds.add(replacement.serverId)
+                        messageIdIndex.remove(replacement.pendingId)
+                        messageIdIndex[replacement.serverId] = replacement.replacedIndex
+                        linkListCompositionKey(replacement.pendingId, replacement.serverId)
+                        newestFromPendingReplace = replacement.serverId
+                        listDerived = buildChatMessagesListDerivedAfterReplaceNewest(
+                            previousDerived = listDerived,
+                            previousMessages = snapshot.messages,
+                            messages = messages,
+                        )
+                    } else {
+                        stillFresh.add(message)
+                    }
+                }
+                if (stillFresh.isEmpty()) {
                     return@synchronized IncomingBatchWork(
                         previousMessages = snapshot.messages,
                         cappedMessages = messages,
-                        newestMessageKey = null,
+                        newestMessageKey = newestFromPendingReplace,
                         previousDerived = _listDerived.value,
                         precomputedDerived = listDerived,
-                        echoesOnly = true,
+                        echoesOnly = newestFromPendingReplace == null,
                     )
                 }
                 val update = upsertMessagesBatch(
                     current = messages,
-                    incoming = fresh,
+                    incoming = stillFresh,
                     knownMessageIds = knownMessageIds,
                     idIndex = messageIdIndex,
                     maxMessages = messageMemoryCap,
@@ -2616,7 +2648,7 @@ class ChatViewModel(
                 IncomingBatchWork(
                     previousMessages = messages,
                     cappedMessages = update.messages,
-                    newestMessageKey = update.newestMessageKey,
+                    newestMessageKey = update.newestMessageKey ?: newestFromPendingReplace,
                     previousDerived = listDerived,
                     precomputedDerived = null,
                     echoesOnly = false,

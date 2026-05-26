@@ -41,6 +41,7 @@ import com.lastasylum.alliance.ui.chat.ChatViewModel
 import com.lastasylum.alliance.ui.chat.ChatViewModelFactory
 import com.lastasylum.alliance.ui.schedulePostSplashLaunchContinuation
 import com.lastasylum.alliance.ui.onboarding.PermissionOnboardingGate
+import com.lastasylum.alliance.ui.insets.ProvideImeSnapInsets
 import com.lastasylum.alliance.update.fetchNewerApkDownloadUrl
 import com.lastasylum.alliance.update.openApkDownload
 import kotlinx.coroutines.Dispatchers
@@ -98,6 +99,7 @@ fun SquadRelayApp() {
     }
 
     SquadRelayTheme {
+        ProvideImeSnapInsets {
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = Color.Transparent,
@@ -245,6 +247,7 @@ fun SquadRelayApp() {
                     },
                 )
             }
+        }
         }
     }
 }

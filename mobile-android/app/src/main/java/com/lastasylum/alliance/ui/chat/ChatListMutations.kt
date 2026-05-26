@@ -36,6 +36,44 @@ internal fun dedupeMessagesByIdNewestFirst(messages: List<ChatMessage>): List<Ch
     return out
 }
 
+/** In-place swap of a matching optimistic row for the confirmed server message (socket/HTTP). */
+internal data class PendingOutgoingReplacement(
+    val messages: List<ChatMessage>,
+    val pendingId: String,
+    val serverId: String,
+    val replacedIndex: Int,
+)
+
+internal fun replaceMatchingPendingOutgoing(
+    current: List<ChatMessage>,
+    incoming: ChatMessage,
+    currentUserId: String,
+): PendingOutgoingReplacement? {
+    val selfId = currentUserId.trim()
+    val serverId = incoming._id?.trim().orEmpty()
+    if (selfId.isEmpty() || serverId.isEmpty() || serverId.startsWith("pending-")) return null
+    if (incoming.senderId.trim() != selfId) return null
+    val incomingText = incoming.text.trim()
+    val idx = current.indexOfFirst { msg ->
+        val pendingId = msg._id?.trim().orEmpty()
+        pendingId.startsWith("pending-") &&
+            msg.senderId.trim() == selfId &&
+            msg.text.trim() == incomingText &&
+            msg.replyToMessageId == incoming.replyToMessageId
+    }
+    if (idx < 0) return null
+    val pendingId = current[idx]._id?.trim().orEmpty()
+    if (pendingId.isEmpty()) return null
+    val updated = current.toMutableList()
+    updated[idx] = incoming.mergePreservingAttachments(current[idx])
+    return PendingOutgoingReplacement(
+        messages = updated,
+        pendingId = pendingId,
+        serverId = serverId,
+        replacedIndex = idx,
+    )
+}
+
 /** Drop optimistic rows when the server message for the same outgoing text arrives. */
 internal fun dropMatchingPendingOutgoing(
     current: List<ChatMessage>,

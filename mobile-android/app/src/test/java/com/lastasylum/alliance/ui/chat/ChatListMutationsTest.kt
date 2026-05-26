@@ -95,6 +95,18 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun replaceMatchingPendingOutgoing_swapsOptimisticRow() {
+        val pending = msg("pending-1", "hello")
+        val server = msg("server-1", "hello")
+        val current = listOf(pending, msg("older", "x"))
+        val replacement = replaceMatchingPendingOutgoing(current, server, "u1")
+        requireNotNull(replacement)
+        assertEquals("server-1", replacement.messages[0]._id)
+        assertEquals("pending-1", replacement.pendingId)
+        assertEquals(0, replacement.replacedIndex)
+    }
+
+    @Test
     fun dedupeMessagesByIdNewestFirst_keepsFirstOccurrence() {
         val server = msg("same", "hello")
         val dup = server.copy(text = "hello (server)")
