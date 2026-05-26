@@ -30,6 +30,25 @@ fun ChatMessage.mergePreservingAttachments(existing: ChatMessage): ChatMessage {
     return merged.copy(editedAt = editedAt)
 }
 
+/** In-place row from socket (reactions, edit, delete) — incoming fields win except attachments. */
+fun ChatMessage.mergeIncomingChatUpdate(existing: ChatMessage): ChatMessage {
+    val merged = mergePreservingAttachments(existing)
+    return merged.copy(reactions = merged.reactions.resolveFromSocketUpdate(existing.reactions))
+}
+
+/**
+ * Socket payloads should use `{ count, reactedByMe }`, but a bad parse yields `count = 0`
+ * while the row already shows reactions from REST — do not wipe peers' reactions.
+ */
+internal fun List<ChatReaction>.resolveFromSocketUpdate(
+    existing: List<ChatReaction>,
+): List<ChatReaction> {
+    if (isEmpty()) return emptyList()
+    if (any { it.count > 0 }) return this
+    if (existing.any { it.count > 0 }) return existing
+    return this
+}
+
 internal fun JSONObject.parseChatAttachments(): List<ChatAttachment> {
     val arr = optJSONArray("attachments") ?: return emptyList()
     val out = ArrayList<ChatAttachment>(arr.length())

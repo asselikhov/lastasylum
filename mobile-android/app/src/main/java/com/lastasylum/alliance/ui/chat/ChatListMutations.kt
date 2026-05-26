@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.ui.chat
 
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.mergeIncomingChatUpdate
 import com.lastasylum.alliance.data.chat.mergePreservingAttachments
 
 /** Newest-first in-memory cap to keep scroll/diff bounded for very long threads. */
@@ -53,6 +54,40 @@ internal fun stripRedundantPendingOutgoing(
         val fp = "${msg.text.trim()}\u0000${normalizeOutgoingReplyToId(msg.replyToMessageId)}"
         fp !in confirmedFingerprints
     }
+}
+
+/**
+ * HTTP refresh must not drop rows already shown from socket (API can lag behind realtime).
+ */
+internal fun mergeLoadedPageWithExisting(
+    existing: List<ChatMessage>,
+    loaded: List<ChatMessage>,
+    maxMessages: Int = CHAT_MAX_MESSAGES_IN_MEMORY,
+): List<ChatMessage> {
+    if (existing.isEmpty()) return capNewestFirst(loaded, maxMessages)
+    if (loaded.isEmpty()) return capNewestFirst(existing, maxMessages)
+    val loadedIds = loaded.mapNotNull { msg ->
+        msg._id?.trim()?.takeIf { it.isNotEmpty() }
+    }.toSet()
+    val known = loadedIds.toMutableSet()
+    val index = mutableMapOf<String, Int>()
+    rebuildMessageIdIndex(loaded, index)
+    var messages = loaded
+    for (msg in existing) {
+        val id = msg._id?.trim().orEmpty()
+        if (id.isEmpty()) continue
+        if (id.startsWith("pending-") || id !in loadedIds) {
+            val update = upsertMessage(
+                current = messages,
+                incoming = msg,
+                knownMessageIds = known,
+                idIndex = index,
+                deferIndexShift = true,
+            )
+            messages = update.messages
+        }
+    }
+    return dedupeMessagesByIdNewestFirst(capNewestFirst(messages, maxMessages))
 }
 
 internal fun dedupeMessagesByIdNewestFirst(messages: List<ChatMessage>): List<ChatMessage> {
@@ -149,7 +184,7 @@ internal fun upsertMessage(
         val existingIndex = idIndex?.get(id) ?: current.indexOfFirst { it._id == id }
         if (existingIndex >= 0) {
             val updated = current.toMutableList()
-            updated[existingIndex] = incoming.mergePreservingAttachments(current[existingIndex])
+            updated[existingIndex] = incoming.mergeIncomingChatUpdate(current[existingIndex])
             idIndex?.put(id, existingIndex)
             return MessageUpsertResult(
                 messages = updated,

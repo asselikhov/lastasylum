@@ -489,13 +489,11 @@ private fun ChatScreenMessagesHost(
         lastHandledScrollNonce = nonce
         lastAutoScrolledNewestKey = listPane.newestMessageKey
         newMessagesWhileScrolledUp = 0
-        if (!listState.isAtReverseChatBottom()) {
-            runCatching {
-                listState.scrollReverseChatRevealLatest(
-                    animate = false,
-                    adjustViewport = false,
-                )
-            }
+        runCatching {
+            listState.scrollReverseChatRevealLatest(
+                animate = false,
+                adjustViewport = false,
+            )
         }
     }
 

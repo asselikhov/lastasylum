@@ -3,7 +3,9 @@ package com.lastasylum.alliance.ui.chat
 import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatAttachment
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.ChatReaction
 import com.lastasylum.alliance.data.chat.mergePreservingAttachments
+import com.lastasylum.alliance.data.chat.resolveFromSocketUpdate
 import com.lastasylum.alliance.data.chat.ChatMessageReplyPreview
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -54,6 +56,27 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun resolveFromSocketUpdate_keepsExistingWhenIncomingCountsZero() {
+        val existing = listOf(ChatReaction(emoji = "👍", count = 2, reactedByMe = false))
+        val broken = listOf(ChatReaction(emoji = "👍", count = 0, reactedByMe = false))
+        assertEquals(existing, broken.resolveFromSocketUpdate(existing))
+        assertEquals(emptyList<ChatReaction>(), emptyList<ChatReaction>().resolveFromSocketUpdate(existing))
+    }
+
+    @Test
+    fun upsertMessage_mergesReactionsFromSocket() {
+        val known = linkedSetOf("1")
+        val withReaction = msg("1", "a").copy(
+            reactions = listOf(ChatReaction(emoji = "👍", count = 1, reactedByMe = false)),
+        )
+        val incoming = msg("1", "a").copy(
+            reactions = listOf(ChatReaction(emoji = "👍", count = 2, reactedByMe = false)),
+        )
+        val r = upsertMessage(listOf(withReaction), incoming, known)
+        assertEquals(2, r.messages[0].reactions.single().count)
+    }
+
+    @Test
     fun upsertMessage_replacesExistingById() {
         val known = linkedSetOf("1")
         val current = listOf(msg("1", "old"))
@@ -92,6 +115,15 @@ class ChatListMutationsTest {
         val merged = mergeOlderPage(current, older, known)
         assertEquals(listOf("a", "b", "c"), merged.map { it._id })
         assertTrue(known.contains("c"))
+    }
+
+    @Test
+    fun mergeLoadedPageWithExisting_keepsSocketRowMissingFromHttpPage() {
+        val socketNew = msg("server-new", "from socket")
+        val existing = listOf(socketNew, msg("older", "x"))
+        val loaded = listOf(msg("older", "x"))
+        val merged = mergeLoadedPageWithExisting(existing, loaded)
+        assertEquals(listOf("server-new", "older"), merged.map { it._id })
     }
 
     @Test

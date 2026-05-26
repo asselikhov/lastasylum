@@ -30,6 +30,7 @@ import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.data.chat.ChatUnreadCounts
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
+import com.lastasylum.alliance.data.chat.mergeIncomingChatUpdate
 import com.lastasylum.alliance.data.chat.mergePreservingAttachments
 import com.lastasylum.alliance.data.users.UsersRepository
 import com.lastasylum.alliance.ui.util.toUserMessageRu
@@ -245,9 +246,18 @@ class ChatViewModel(
         onRoomUnreadFromServer(event)
     }
 
+    private fun isKnownChatMessageId(messageId: String?): Boolean {
+        val id = messageId?.trim().orEmpty()
+        return id.isNotEmpty() && knownMessageIds.contains(id)
+    }
+
     private fun processRealtimeMessageForUnread(message: ChatMessage) {
         val roomId = message.roomId
         if (roomId.isBlank()) return
+        if (isKnownChatMessageId(message._id)) {
+            applyKnownChatMessageUpdate(message)
+            return
+        }
         val selected = _state.value.selectedRoomId
         if (roomId == selected) {
             if (isRoomActivelyViewed(roomId)) {
@@ -317,7 +327,7 @@ class ChatViewModel(
             if (!raid.isNullOrBlank()) add(raid)
             if (!hub.isNullOrBlank() && hub !in this) add(hub)
             if (!selected.isNullOrBlank() && selected !in this) add(selected)
-            if (overlayChatPanelVisible) {
+            if (isChatTabActive || overlayChatPanelVisible) {
                 rooms.forEach { room ->
                     val id = room.id.trim()
                     if (id.isNotEmpty() && id !in this) add(id)
@@ -664,10 +674,23 @@ class ChatViewModel(
         }
     }
 
+    /** Reaction/edit/delete socket rows — update list/cache, never bump unread. */
+    private fun applyKnownChatMessageUpdate(message: ChatMessage) {
+        val roomId = message.roomId.trim()
+        if (roomId.isBlank()) return
+        val selected = _state.value.selectedRoomId
+        when {
+            roomId == selected && isRoomActivelyViewed(roomId) ->
+                applyIncomingMessage(message)
+            roomId == selected || roomMessageCache.containsKey(roomId) ->
+                stashIncomingMessageForRoom(message)
+        }
+    }
+
     private fun isRoomActivelyViewed(roomId: String): Boolean {
         if (_state.value.selectedRoomId != roomId) return false
-        if (overlayChatPanelVisible && _state.value.messages.isNotEmpty()) return true
-        if (!appInForeground || _state.value.messages.isEmpty()) return false
+        if (overlayChatPanelVisible) return true
+        if (!appInForeground) return false
         return isChatTabActive
     }
 
@@ -1609,18 +1632,24 @@ class ChatViewModel(
             repository.loadRecentMessages(roomId, beforeMessageId = null, limit = PAGE_SIZE)
                 .onSuccess { loaded ->
                     if (_state.value.selectedRoomId != roomId || loaded.isEmpty()) return@onSuccess
-                    val capped = capMessagesForMemory(loaded)
                     val hasMoreOlder = loaded.size >= PAGE_SIZE
                     val current = _state.value.messages
+                    val merged = withContext(Dispatchers.Default) {
+                        mergeLoadedPageWithExisting(
+                            existing = current,
+                            loaded = loaded,
+                            maxMessages = messageMemoryCap,
+                        )
+                    }
                     val unchanged = withContext(Dispatchers.Default) {
-                        chatMessagesListContentEqual(current, capped)
+                        chatMessagesListContentEqual(current, merged)
                     }
                     if (unchanged) {
                         roomMessageCache[roomId] = RoomMessageCache(
-                            messages = capped,
+                            messages = merged,
                             hasMoreOlder = hasMoreOlder,
                         )
-                        ChatSessionCache.updateMessages(roomId, loaded)
+                        ChatSessionCache.updateMessages(roomId, merged)
                         if (_state.value.hasMoreOlder != hasMoreOlder) {
                             _state.update { it.copy(hasMoreOlder = hasMoreOlder) }
                         }
@@ -1628,20 +1657,21 @@ class ChatViewModel(
                     }
                     knownMessageIds.clear()
                     messageIdIndex.clear()
-                    knownMessageIds.addAll(capped.mapNotNull { it._id })
-                    rebuildMessageIdIndex(capped, messageIdIndex)
+                    knownMessageIds.addAll(merged.mapNotNull { it._id })
+                    rebuildMessageIdIndex(merged, messageIdIndex)
                     roomMessageCache[roomId] = RoomMessageCache(
-                        messages = capped,
+                        messages = merged,
                         hasMoreOlder = hasMoreOlder,
                     )
-                    ChatSessionCache.updateMessages(roomId, loaded)
+                    ChatSessionCache.updateMessages(roomId, merged)
                     _state.update {
                         it.copy(
-                            messages = capped,
+                            messages = merged,
                             hasMoreOlder = hasMoreOlder,
+                            newestMessageKey = merged.firstOrNull()?._id,
                         )
                     }
-                    publishMessagesDerived(capped)
+                    publishMessagesDerived(merged)
                 }
         }
     }
@@ -2305,7 +2335,11 @@ class ChatViewModel(
     }
 
     private fun onIncomingMessage(message: ChatMessage) {
-        incomingMessages.trySend(message).isSuccess
+        if (!incomingMessages.trySend(message).isSuccess) {
+            viewModelScope.launch(Dispatchers.Main) {
+                dispatchIncomingBatch(listOf(message))
+            }
+        }
     }
 
     private fun onRoomReadEvent(event: ChatRoomReadEvent) {
@@ -2388,10 +2422,9 @@ class ChatViewModel(
     private fun stashIncomingMessageForRoom(message: ChatMessage) {
         val roomId = message.roomId.trim()
         if (roomId.isBlank()) return
-        val mid = message._id ?: return
+        if (message._id == null) return
         val cached = roomMessageCache[roomId]
         val existing = cached?.messages ?: emptyList()
-        if (existing.any { it._id == mid }) return
         val localKnown = existing.mapNotNull { it._id }.toMutableSet()
         val update = upsertMessage(existing, message, localKnown, idIndex = null)
         roomMessageCache[roomId] = RoomMessageCache(
@@ -2466,7 +2499,7 @@ class ChatViewModel(
             val idx = messageIdIndex[id] ?: continue
             if (idx !in nextMessages.indices) continue
             val before = nextMessages
-            val merged = echo.mergePreservingAttachments(nextMessages[idx])
+            val merged = echo.mergeIncomingChatUpdate(nextMessages[idx])
             if (merged == nextMessages[idx]) continue
             val updated = nextMessages.toMutableList()
             updated[idx] = merged
@@ -2535,6 +2568,7 @@ class ChatViewModel(
                         isSending = false,
                         error = null,
                         sendFailure = null,
+                        scrollToLatestNonce = snapshot.scrollToLatestNonce + 1L,
                     ),
                 )
                 _listDerived.value = derived
@@ -2650,9 +2684,9 @@ class ChatViewModel(
             withContext(Dispatchers.Main) {
                 if (roomId != null && _state.value.selectedRoomId != roomId) return@withContext
                 val snapshot = _state.value
-                if (chatMessagesListContentEqual(snapshot.messages, work.cappedMessages) &&
-                    work.echoesOnly &&
-                    !clearComposer
+                if (work.echoesOnly &&
+                    !clearComposer &&
+                    chatMessagesListContentEqual(snapshot.messages, work.cappedMessages)
                 ) {
                     return@withContext
                 }
@@ -2676,9 +2710,12 @@ class ChatViewModel(
                         replyToMessage = null,
                         sendFailure = null,
                     )
-                } else if (ownOutgoing && !work.echoesOnly) {
+                }
+                if (ownOutgoing && (clearComposer || !work.echoesOnly)) {
                     val grew = work.cappedMessages.size > work.previousMessages.size
-                    if (grew) {
+                    val replacedPending = work.newestMessageKey != null &&
+                        work.previousMessages.any { it._id?.startsWith("pending-") == true }
+                    if (clearComposer || grew || replacedPending) {
                         nextState = nextState.copy(
                             scrollToLatestNonce = nextState.scrollToLatestNonce + 1L,
                         )

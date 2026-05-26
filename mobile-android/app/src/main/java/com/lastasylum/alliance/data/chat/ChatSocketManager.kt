@@ -329,14 +329,18 @@ class ChatSocketManager {
                 on("message:edited") { args ->
                     val payload = args.firstOrNull() as? JSONObject ?: return@on
                     val msgRoom = payload.optString("roomId", "")
-                    if (msgRoom.isNotBlank() && !isSubscribedRoom(msgRoom)) return@on
+                    if (msgRoom.isNotBlank() && !isSubscribedRoom(msgRoom)) {
+                        opportunisticallyJoinRoom(msgRoom)
+                    }
                     val message = payload.toChatMessage()
                     messageListeners.forEach { l -> runCatching { l(message) } }
                 }
                 on("message:reaction") { args ->
                     val payload = args.firstOrNull() as? JSONObject ?: return@on
                     val msgRoom = payload.optString("roomId", "")
-                    if (msgRoom.isNotBlank() && !isSubscribedRoom(msgRoom)) return@on
+                    if (msgRoom.isNotBlank() && !isSubscribedRoom(msgRoom)) {
+                        opportunisticallyJoinRoom(msgRoom)
+                    }
                     val message = payload.toChatMessage()
                     messageListeners.forEach { l -> runCatching { l(message) } }
                 }
@@ -349,7 +353,9 @@ class ChatSocketManager {
                         deletedByUserId = payload.optString("deletedByUserId")
                             .takeIf { it.isNotBlank() },
                     )
-                    if (event.roomId.isNotBlank() && !isSubscribedRoom(event.roomId)) return@on
+                    if (event.roomId.isNotBlank() && !isSubscribedRoom(event.roomId)) {
+                        opportunisticallyJoinRoom(event.roomId)
+                    }
                     if (event.messageId.isBlank()) return@on
                     messageDeletedListeners.forEach { l ->
                         runCatching { l(event) }
@@ -358,7 +364,9 @@ class ChatSocketManager {
                 on("user:typing") { args ->
                     val payload = args.firstOrNull() as? JSONObject ?: return@on
                     val rid = payload.optString("roomId", "")
-                    if (rid.isNotBlank() && !isSubscribedRoom(rid)) return@on
+                    if (rid.isNotBlank() && !isSubscribedRoom(rid)) {
+                        opportunisticallyJoinRoom(rid)
+                    }
                     val event = ChatTypingEvent(
                         roomId = rid,
                         userId = payload.optString("userId"),
@@ -372,7 +380,9 @@ class ChatSocketManager {
                 on("room:read") { args ->
                     val payload = args.firstOrNull() as? JSONObject ?: return@on
                     val rid = payload.optString("roomId", "")
-                    if (rid.isNotBlank() && !isSubscribedRoom(rid)) return@on
+                    if (rid.isNotBlank() && !isSubscribedRoom(rid)) {
+                        opportunisticallyJoinRoom(rid)
+                    }
                     val event = ChatRoomReadEvent(
                         roomId = rid,
                         userId = payload.optString("userId"),
@@ -473,10 +483,16 @@ private fun org.json.JSONArray.toReactions(): List<ChatReaction> {
     for (i in 0 until length()) {
         val o = optJSONObject(i) ?: continue
         val emoji = o.optString("emoji").takeIf { it.isNotBlank() } ?: continue
+        val userIds = o.optJSONArray("userIds")
+        val count = when {
+            o.has("count") -> o.optInt("count", 0)
+            userIds != null && userIds.length() > 0 -> userIds.length()
+            else -> 0
+        }
         out.add(
             ChatReaction(
                 emoji = emoji,
-                count = o.optInt("count", 0),
+                count = count,
                 reactedByMe = o.optBoolean("reactedByMe", false),
             ),
         )
