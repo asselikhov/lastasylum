@@ -121,3 +121,8 @@ export class Message {
 export const MessageSchema = SchemaFactory.createForClass(Message);
 MessageSchema.index({ allianceId: 1, createdAt: -1 });
 MessageSchema.index({ allianceId: 1, roomId: 1, createdAt: -1 });
+/**
+ * Cursor pagination for chat history uses `_id < before` and sorts by `_id` desc.
+ * Add a supporting compound index to avoid gaps and keep the query efficient.
+ */
+MessageSchema.index({ allianceId: 1, roomId: 1, deletedAt: 1, _id: -1 });

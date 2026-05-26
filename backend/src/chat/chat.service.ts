@@ -49,16 +49,14 @@ type MessageLean = {
   senderServerNumber?: number | null;
   text: string;
   editedAt?: Date | null;
-  forwardedFrom?:
-    | {
-        messageId: Types.ObjectId;
-        senderId: string;
-        senderUsername: string;
-        senderRole: PlayerTeamMemberRole;
-        senderTeamTag?: string | null;
-        senderServerNumber?: number | null;
-      }
-    | null;
+  forwardedFrom?: {
+    messageId: Types.ObjectId;
+    senderId: string;
+    senderUsername: string;
+    senderRole: PlayerTeamMemberRole;
+    senderTeamTag?: string | null;
+    senderServerNumber?: number | null;
+  } | null;
   reactions?: { emoji: string; userIds: string[] }[];
   attachments?: MessageAttachment[];
   replyToMessageId?: Types.ObjectId | string | null;
@@ -94,16 +92,14 @@ export type ChatMessageView = {
   senderTelegramUsername: string | null;
   text: string;
   editedAt: string | null;
-  forwardedFrom:
-    | {
-        messageId: string;
-        senderId: string;
-        senderUsername: string;
-        senderRole: PlayerTeamMemberRole;
-        senderTeamTag: string | null;
-        senderServerNumber: number | null;
-      }
-    | null;
+  forwardedFrom: {
+    messageId: string;
+    senderId: string;
+    senderUsername: string;
+    senderRole: PlayerTeamMemberRole;
+    senderTeamTag: string | null;
+    senderServerNumber: number | null;
+  } | null;
   reactions: { emoji: string; count: number; reactedByMe: boolean }[];
   attachments: {
     kind: 'image' | 'file';
@@ -484,7 +480,6 @@ export class ChatService {
     );
   }
 
-
   private async getReplyTarget(
     allianceId: string,
     roomObjectId: Types.ObjectId,
@@ -607,7 +602,11 @@ export class ChatService {
     }
     const messages = await this.messageModel
       .find(filter)
-      .sort({ createdAt: -1 })
+      /**
+       * IMPORTANT: cursor pagination uses `_id < before`, so the sort MUST be based on `_id`.
+       * Sorting by `createdAt` here can produce gaps between pages (inconsistent cursor).
+       */
+      .sort({ _id: -1 })
       .limit(limit)
       .lean<MessageLean[]>()
       .exec();
@@ -639,7 +638,11 @@ export class ChatService {
     }
     const messages = await this.messageModel
       .find(filter)
-      .sort({ createdAt: -1 })
+      /**
+       * IMPORTANT: cursor pagination uses `_id < before`, so the sort MUST be based on `_id`.
+       * Sorting by `createdAt` here can produce gaps between pages (inconsistent cursor).
+       */
+      .sort({ _id: -1 })
       .limit(limit)
       .lean<MessageLean[]>()
       .exec();
@@ -689,8 +692,14 @@ export class ChatService {
     if (!trimmed) throw new BadRequestException('emoji is required');
     const message = await this.messageModel.findById(messageId).exec();
     if (!message) throw new NotFoundException('Message not found');
-    await this.assertMayAccessMessageRoom(userId, message.toObject<MessageLean>());
-    const list = (message.reactions ?? []) as { emoji: string; userIds: string[] }[];
+    await this.assertMayAccessMessageRoom(
+      userId,
+      message.toObject<MessageLean>(),
+    );
+    const list = (message.reactions ?? []) as {
+      emoji: string;
+      userIds: string[];
+    }[];
     const r = list.find((x) => x.emoji === trimmed);
     if (!r) {
       list.push({ emoji: trimmed, userIds: [userId] });
@@ -709,7 +718,9 @@ export class ChatService {
     if (!Types.ObjectId.isValid(messageId)) {
       return null;
     }
-    const message = await this.messageModel.findById(messageId).lean<MessageLean>();
+    const message = await this.messageModel
+      .findById(messageId)
+      .lean<MessageLean>();
     if (!message) {
       return null;
     }
@@ -720,7 +731,9 @@ export class ChatService {
     return buildMessageReactionBroadcastPayload({
       messageId: message._id.toString(),
       roomId,
-      reactions: message.reactions as { emoji: string; userIds: string[] }[] | undefined,
+      reactions: message.reactions as
+        | { emoji: string; userIds: string[] }[]
+        | undefined,
     });
   }
 
@@ -758,8 +771,7 @@ export class ChatService {
       userId,
       source.senderId,
     ]);
-    const actorSquadRole =
-      squadRoleMap.get(userId) ?? PlayerTeamMemberRole.R1;
+    const actorSquadRole = squadRoleMap.get(userId) ?? PlayerTeamMemberRole.R1;
     const sourceSquadRole =
       squadRoleMap.get(source.senderId) ?? PlayerTeamMemberRole.R1;
     const created = await this.messageModel.create({
@@ -771,8 +783,7 @@ export class ChatService {
       senderUsername: this.gameIdentities.resolveSenderUsername(actor),
       senderRole: actorSquadRole,
       senderTeamTag: actor.teamTag ?? null,
-      senderServerNumber:
-        this.gameIdentities.resolveSenderServerNumber(actor),
+      senderServerNumber: this.gameIdentities.resolveSenderServerNumber(actor),
       replyToMessageId: null,
       deletedAt: null,
       deletedByUserId: null,
@@ -804,10 +815,7 @@ export class ChatService {
       .lean()
       .exec();
     return new Map(
-      readStates.map((r) => [
-        (r.roomId as Types.ObjectId).toString(),
-        r.lastReadMessageId,
-      ]),
+      readStates.map((r) => [r.roomId.toString(), r.lastReadMessageId]),
     );
   }
 
@@ -874,10 +882,7 @@ export class ChatService {
                 in: {
                   $cond: [
                     {
-                      $and: [
-                        { $ne: ['$$raw', null] },
-                        { $ne: ['$$raw', ''] },
-                      ],
+                      $and: [{ $ne: ['$$raw', null] }, { $ne: ['$$raw', ''] }],
                     },
                     { $toObjectId: '$$raw' },
                     null,
@@ -936,7 +941,7 @@ export class ChatService {
       !prev ||
       !Types.ObjectId.isValid(prev) ||
       messageOid > new Types.ObjectId(prev);
-    const lastReadMessageId = advanced ? input.messageId : prev!;
+    const lastReadMessageId = advanced ? input.messageId : prev;
     if (advanced) {
       await this.chatReadStateModel
         .updateOne(
