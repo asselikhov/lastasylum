@@ -17,11 +17,15 @@ fun chatMessageShowsEditedLabel(editedAt: String?, createdAt: String?): Boolean 
     val editedRaw = editedAt?.trim().orEmpty()
     if (editedRaw.isEmpty()) return false
     val createdRaw = createdAt?.trim().orEmpty()
-    if (createdRaw.isEmpty()) return true
-    val editedMs = parseChatInstantMs(editedRaw) ?: return true
-    val createdMs = parseChatInstantMs(createdRaw) ?: return true
+    if (createdRaw.isEmpty()) return false
+    val editedMs = parseChatInstantMs(editedRaw) ?: return false
+    val createdMs = parseChatInstantMs(createdRaw) ?: return false
     return editedMs - createdMs >= EDITED_LABEL_MIN_DELTA_MS
 }
+
+/** Strip [editedAt] unless the row qualifies for the «изменено» label (socket/REST safe). */
+fun ChatMessage.normalizeEditedAtForDisplay(): ChatMessage =
+    copy(editedAt = if (chatMessageShowsEditedLabel(this)) editedAt else null)
 
 internal fun parseChatInstantMs(iso: String): Long? =
     parseIsoInstantEpochMilli(iso)

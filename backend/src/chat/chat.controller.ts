@@ -462,9 +462,12 @@ export class ChatController {
       roomId: roomId.trim(),
       messageId,
     });
-    this.chatGateway.server
-      ?.to(`chat:${result.roomId}`)
-      .emit('room:read', result);
+    this.chatGateway.broadcastChatRoomEvent(
+      result.roomId,
+      'room:read',
+      result,
+      result.userId,
+    );
     void this.chatGateway.emitUnreadToUser(req.user.userId, result.roomId);
     return {
       success: true,

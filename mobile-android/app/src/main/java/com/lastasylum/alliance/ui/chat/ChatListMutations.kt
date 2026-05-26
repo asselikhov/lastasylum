@@ -305,7 +305,7 @@ internal fun upsertMessage(
             )
         }
         knownMessageIds.add(id)
-        val next = listOf(incoming) + current
+        val next = listOf(incoming.normalizeEditedAtForDisplay()) + current
         idIndex?.let { map ->
             map[id] = 0
             if (!deferIndexShift) {
@@ -328,9 +328,10 @@ internal fun upsertMessage(
     if (exists) {
         return MessageUpsertResult(current, null)
     }
+    val normalized = incoming.normalizeEditedAtForDisplay()
     return MessageUpsertResult(
-        messages = listOf(incoming) + current,
-        newestMessageKey = fallbackMessageKey(incoming),
+        messages = listOf(normalized) + current,
+        newestMessageKey = fallbackMessageKey(normalized),
     )
 }
 

@@ -379,6 +379,9 @@ class ChatViewModel(
             if (isRoomActivelyViewed(roomId)) {
                 if (!shouldDeferOwnOutgoingSocketEcho(message)) {
                     applyIncomingMessage(message)
+                    if (message.senderId.trim() != currentUserId.trim()) {
+                        scheduleMarkReadForVisibleIncoming(message)
+                    }
                 }
             } else {
                 stashIncomingMessageForRoom(message)
@@ -893,6 +896,44 @@ class ChatViewModel(
     private fun shouldAutoMarkReadSelectedRoom(): Boolean {
         val roomId = _state.value.selectedRoomId ?: return false
         return isRoomActivelyViewed(roomId)
+    }
+
+    private fun isValidMarkReadMessageId(messageId: String?): Boolean {
+        val id = messageId?.trim().orEmpty()
+        return id.isNotEmpty() && !id.startsWith("pending-")
+    }
+
+    /** Peer opened the thread — advance local read cursor so sender gets ✓✓ via room:read. */
+    private fun scheduleMarkReadForVisibleIncoming(message: ChatMessage) {
+        val roomId = _state.value.selectedRoomId?.trim().orEmpty()
+        val messageId = message._id?.trim().orEmpty()
+        if (roomId.isEmpty() || !isValidMarkReadMessageId(messageId)) return
+        if (!shouldAutoMarkReadSelectedRoom()) return
+        if (message.senderId.trim() == currentUserId.trim()) return
+        viewModelScope.launch {
+            markRoomReadUpTo(roomId, messageId)
+        }
+    }
+
+    private fun scheduleMarkReadAfterIncomingBatch(
+        roomId: String?,
+        scopedBatch: List<ChatMessage>,
+        cappedMessages: List<ChatMessage>,
+    ) {
+        val rid = roomId?.trim().orEmpty()
+        if (rid.isEmpty() || !shouldAutoMarkReadSelectedRoom()) return
+        val markId = scopedBatch
+            .mapNotNull { it._id?.trim() }
+            .filter(::isValidMarkReadMessageId)
+            .maxOrNull()
+            ?: cappedMessages
+                .mapNotNull { it._id?.trim() }
+                .firstOrNull { isValidMarkReadMessageId(it) }
+        if (markId == null) return
+        viewModelScope.launch {
+            kotlinx.coroutines.yield()
+            markRoomReadUpTo(rid, markId)
+        }
     }
 
     private fun recomputeRoomUnreadBadges() {
@@ -3319,14 +3360,7 @@ class ChatViewModel(
                     )
                     ChatSessionCache.updateMessages(rid, cappedMessages)
                 }
-                if (shouldAutoMarkReadSelectedRoom() && !rid.isNullOrBlank()) {
-                    cappedMessages.firstOrNull()?._id?.let { newestId ->
-                        viewModelScope.launch {
-                            kotlinx.coroutines.yield()
-                            markRoomReadUpTo(rid, newestId)
-                        }
-                    }
-                }
+                scheduleMarkReadAfterIncomingBatch(rid, scopedBatch, cappedMessages)
             }
         }
     }
