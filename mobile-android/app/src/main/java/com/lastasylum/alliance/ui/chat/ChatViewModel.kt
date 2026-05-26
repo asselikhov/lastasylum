@@ -229,6 +229,48 @@ class ChatViewModel(
         }
     }
 
+    private fun onChatHistoryClearedFromServer() {
+        val userId = currentUserId.trim()
+        if (userId.isNotEmpty()) {
+            runCatching { launchDiskCache.clearChatHistory(userId) }
+        }
+        ChatSessionCache.clear()
+        roomMessageCache.clear()
+        knownMessageIds.clear()
+        messageIdIndex.clear()
+        locallyRemovedMessageIds.clear()
+        unreadBumpedMessageIds.clear()
+        pendingUnreadBumps.clear()
+        optimisticUnreadFloorByRoom.clear()
+        lastMarkedReadByRoom.clear()
+
+        val selected = _state.value.selectedRoomId
+        _state.update { st ->
+            st.copy(
+                messages = emptyList(),
+                newestMessageKey = null,
+                hasMoreOlder = false,
+                isLoadingOlder = false,
+                isSending = false,
+                deletingMessageId = null,
+                confirmDeleteMessageId = null,
+                selectedMessageIds = emptySet(),
+                isDeletingSelection = false,
+                activeActionMessageId = null,
+                rooms = st.rooms.map { it.copy(unreadCount = 0, lastReadMessageId = null) },
+            )
+        }
+        _otherReadUptoMessageId.value = null
+        _listDerived.value = ChatMessagesListDerived.Empty
+        publishMessagesDerived(emptyList())
+
+        viewModelScope.launch {
+            syncRoomsFromServer(reconfirmVisibleRoom = !selected.isNullOrBlank())
+            selected?.let { refreshMessagesInBackground(it, force = true) }
+        }
+        schedulePersistChatSnapshot()
+    }
+
     private fun dispatchIncomingBatch(batch: List<ChatMessage>) {
         if (batch.isEmpty()) return
         val selected = _state.value.selectedRoomId
@@ -1594,6 +1636,7 @@ class ChatViewModel(
             onTyping = ::onTypingFromPeer,
             onRead = ::onRoomReadEvent,
             onRoomUnread = ::onRoomUnreadFromServer,
+            onHistoryCleared = ::onChatHistoryClearedFromServer,
         )
     }
 
@@ -1672,6 +1715,7 @@ class ChatViewModel(
             onTyping = ::onTypingFromPeer,
             onRead = ::onRoomReadEvent,
             onRoomUnread = ::onRoomUnreadFromServer,
+            onHistoryCleared = ::onChatHistoryClearedFromServer,
         )
         val cached = roomMessageCache[roomId]
         if (hadCachedMessages && cached != null && cached.messages.isNotEmpty()) {
@@ -1751,7 +1795,7 @@ class ChatViewModel(
             if (_state.value.selectedRoomId != roomId) return@launch
             repository.loadRecentMessages(roomId, beforeMessageId = null, limit = PAGE_SIZE)
                 .onSuccess { loaded ->
-                    if (_state.value.selectedRoomId != roomId || loaded.isEmpty()) return@onSuccess
+                    if (_state.value.selectedRoomId != roomId) return@onSuccess
                     val hasMoreOlder = loaded.size >= PAGE_SIZE
                     val current = _state.value.messages
                     val merged = withContext(Dispatchers.Default) {

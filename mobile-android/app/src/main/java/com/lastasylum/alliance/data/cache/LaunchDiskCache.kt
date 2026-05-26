@@ -136,6 +136,21 @@ class LaunchDiskCache(private val context: Context) {
         userDir(userId).deleteRecursively()
     }
 
+    /** Remove only chat history snapshots (rooms/messages), keep profile/team/news/forum. */
+    fun clearChatHistory(userId: String) {
+        if (userId.isBlank()) return
+        val dir = userDir(userId)
+        if (!dir.isDirectory) return
+        // Messages per room.
+        dir.listFiles { f ->
+            f.isFile && f.name.startsWith(MESSAGE_FILE_PREFIX) && f.name.endsWith(".json")
+        }?.forEach { it.delete() }
+        // Rooms snapshot (unread counts/read cursors may be stale after admin wipe).
+        File(dir, FILE_CHAT_ROOMS).delete()
+        // Deleted-id filter is now meaningless; drop to avoid hiding new messages.
+        File(dir, FILE_REMOVED_MESSAGE_IDS).delete()
+    }
+
     fun clearAll() {
         cacheRoot().deleteRecursively()
     }

@@ -115,6 +115,7 @@ class ChatRepository(
         onTyping: (ChatTypingEvent) -> Unit = {},
         onRead: (ChatRoomReadEvent) -> Unit = {},
         onRoomUnread: (ChatRoomUnreadEvent) -> Unit = {},
+        onHistoryCleared: (() -> Unit)? = null,
     ) = realtime.connectRealtimeRooms(
         roomIds,
         onMessage,
@@ -122,6 +123,7 @@ class ChatRepository(
         onTyping,
         onRead,
         onRoomUnread,
+        onHistoryCleared,
     )
 
     fun emitTypingPing(roomId: String) = realtime.emitTypingPing(roomId)
@@ -217,6 +219,12 @@ class ChatRepository(
 
     fun addOverlayMessageDeletedListener(listener: (ChatMessageDeletedEvent) -> Unit) =
         realtime.addOverlayMessageDeletedListener(listener)
+
+    fun addOverlayChatHistoryClearedListener(listener: () -> Unit) =
+        realtime.addOverlayChatHistoryClearedListener(listener)
+
+    fun removeOverlayChatHistoryClearedListener(listener: () -> Unit) =
+        realtime.removeOverlayChatHistoryClearedListener(listener)
 
     fun removeOverlayMessageDeletedListener(listener: (ChatMessageDeletedEvent) -> Unit) =
         realtime.removeOverlayMessageDeletedListener(listener)

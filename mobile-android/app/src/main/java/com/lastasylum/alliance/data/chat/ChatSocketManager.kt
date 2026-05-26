@@ -25,6 +25,7 @@ class ChatSocketManager {
     private val roomUnreadListeners = CopyOnWriteArrayList<(ChatRoomUnreadEvent) -> Unit>()
     private val overlayReactionListeners =
         CopyOnWriteArrayList<(OverlayReactionEvent) -> Unit>()
+    private val chatHistoryClearedListeners = CopyOnWriteArrayList<() -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var reconnectAttempt = 0
     private var intentionalDisconnect = false
@@ -117,12 +118,23 @@ class ChatSocketManager {
         overlayReactionListeners.remove(listener)
     }
 
+    fun addChatHistoryClearedListener(listener: () -> Unit) {
+        if (!chatHistoryClearedListeners.contains(listener)) {
+            chatHistoryClearedListeners.add(listener)
+        }
+    }
+
+    fun removeChatHistoryClearedListener(listener: () -> Unit) {
+        chatHistoryClearedListeners.remove(listener)
+    }
+
     fun clearMessageListeners() {
         messageListeners.clear()
         messageDeletedListeners.clear()
         typingListeners.clear()
         readListeners.clear()
         overlayReactionListeners.clear()
+        chatHistoryClearedListeners.clear()
     }
 
     fun emitOverlayReaction(targetUserId: String, reaction: String = "heart") {
@@ -231,6 +243,7 @@ class ChatSocketManager {
         readListeners.clear()
         roomUnreadListeners.clear()
         overlayReactionListeners.clear()
+        chatHistoryClearedListeners.clear()
     }
 
     private fun cancelReconnect() {
@@ -420,6 +433,15 @@ class ChatSocketManager {
                         broadcast = payload.optBoolean("broadcast", false),
                     )
                     overlayReactionListeners.forEach { l -> runCatching { l(event) } }
+                }
+                on("chat:history:cleared") {
+                    val listeners = chatHistoryClearedListeners.toList()
+                    if (listeners.isEmpty()) return@on
+                    if (Looper.myLooper() == Looper.getMainLooper()) {
+                        listeners.forEach { l -> runCatching { l() } }
+                    } else {
+                        mainHandler.post { listeners.forEach { l -> runCatching { l() } } }
+                    }
                 }
                 connect()
             }

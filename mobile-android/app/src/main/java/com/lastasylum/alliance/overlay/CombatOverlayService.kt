@@ -346,6 +346,7 @@ class CombatOverlayService : Service() {
     private val chatStripPreviewFlow = MutableStateFlow<List<ChatMessage>>(emptyList())
     private var overlayMessageListener: ((ChatMessage) -> Unit)? = null
     private var overlayMessageDeletedListener: ((com.lastasylum.alliance.data.chat.ChatMessageDeletedEvent) -> Unit)? = null
+    private var overlayChatHistoryClearedListener: (() -> Unit)? = null
     private var overlayForumTopicActivityListener: ((TeamForumTopicActivityEvent) -> Unit)? = null
     private var overlayReadListener: ((com.lastasylum.alliance.data.chat.ChatRoomReadEvent) -> Unit)? = null
     private var overlayRoomUnreadListener: ((com.lastasylum.alliance.data.chat.ChatRoomUnreadEvent) -> Unit)? = null
@@ -3883,6 +3884,17 @@ class CombatOverlayService : Service() {
         repo.addOverlayTypingListener(typingListener)
         repo.addOverlayRoomUnreadListener(roomUnreadListener)
         repo.addOverlayReactionListener(reactionListener)
+        val historyListener: () -> Unit = {
+            mainHandler.post {
+                // Admin wiped all chat history — drop any cached overlay preview immediately.
+                stripBuffer.clear()
+                lastStripRenderSignature = 0
+                updateStripDismissScreenRects(emptyList())
+                refreshOverlayChatStrip()
+            }
+        }
+        overlayChatHistoryClearedListener = historyListener
+        repo.addOverlayChatHistoryClearedListener(historyListener)
         resolveOverlayRaidRoomId()?.let { rememberOverlayRaidRoomId(it) }
             ?: AppContainer.from(this).chatRoomPreferences.getRaidRoomId()
                 ?.let { rememberOverlayRaidRoomId(it) }
@@ -4086,6 +4098,12 @@ class CombatOverlayService : Service() {
             }
         }
         overlayReactionListener = null
+        overlayChatHistoryClearedListener?.let { listener ->
+            runCatching {
+                AppContainer.from(applicationContext).chatRepository.removeOverlayChatHistoryClearedListener(listener)
+            }
+        }
+        overlayChatHistoryClearedListener = null
     }
 
     /**
