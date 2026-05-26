@@ -260,7 +260,7 @@ fun AppNavigation(
         modifier = modifier,
         containerColor = Color.Transparent,
         contentColor = MaterialTheme.colorScheme.onBackground,
-        // IME: adjustNothing; композер над клавиатурой через chatComposerDock, bottomBar всегда виден.
+        // IME: adjustNothing; композер — chatComposerDock (IME − высота bottomBar + 8dp), bottomBar виден.
         contentWindowInsets = WindowInsets.safeDrawing.exclude(WindowInsets.ime),
         bottomBar = {
             Box(

@@ -21,6 +21,12 @@ object SquadRelayDimens {
     val composerInnerPadding = 10.dp
     /** Небольший зазор композера над нижним краем контента / IME ([chatComposerDock]). */
     val composerBottomGap = 8.dp
+    /**
+     * Вкладка чата в [com.lastasylum.alliance.ui.AppNavigation]: контент выше bottomBar;
+     * вычитается из [androidx.compose.foundation.layout.WindowInsets.ime] в [chatComposerDock].
+     */
+    val chatComposerScaffoldBottomObstruction =
+        bottomNavigationBarHeight + 20.dp
     val headerSubtitleGap = 2.dp
     val listRowHorizontalPadding = 10.dp
     val listRowVerticalPadding = 10.dp

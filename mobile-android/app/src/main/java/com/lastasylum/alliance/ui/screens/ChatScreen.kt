@@ -30,11 +30,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -221,6 +218,7 @@ import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarSize
 import com.lastasylum.alliance.ui.chat.AttachmentPreviewOverlay
 import com.lastasylum.alliance.ui.chat.ChatComposer
 import com.lastasylum.alliance.ui.chat.chatComposerDock
+import com.lastasylum.alliance.ui.chat.rememberChatAppComposerImeObstruction
 import com.lastasylum.alliance.ui.chat.ChatFileAttachmentCard
 import com.lastasylum.alliance.ui.chat.ChatMessageBubbleRow
 import com.lastasylum.alliance.ui.chat.ChatMessageClusterFlags
@@ -461,6 +459,7 @@ fun ChatScreen(
 ) {
     val context = LocalContext.current
     val overlayUi = LocalOverlayUiMode.current
+    val composerImeObstruction = if (overlayUi) 0.dp else rememberChatAppComposerImeObstruction()
     val canHandleBack = LocalOnBackPressedDispatcherOwner.current != null
 
     val listState = remember(state.selectedRoomId) {
@@ -723,7 +722,7 @@ fun ChatScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .onSizeChanged { size -> composerBlockHeightPx = size.height }
-                    .chatComposerDock(),
+                    .chatComposerDock(imeObstruction = composerImeObstruction),
             ) {
                 state.sendFailure?.let { failure ->
                     Surface(
@@ -856,14 +855,12 @@ fun ChatScreen(
             }
         } else {
             Column(
-                Modifier
-                    .fillMaxSize()
-                    .imePadding(),
+                Modifier.fillMaxSize(),
             ) {
                 ChatScreenMessagesHost(
                     modifier = Modifier
                         .weight(1f, fill = true)
-                        .consumeWindowInsets(WindowInsets.ime),
+                        .fillMaxWidth(),
                     topPadding = messagesTopPadding,
                     compactOverlayMode = compactOverlayMode,
                     overlayUi = overlayUi,
