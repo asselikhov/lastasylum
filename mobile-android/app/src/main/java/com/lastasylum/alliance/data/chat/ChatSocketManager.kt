@@ -229,6 +229,7 @@ class ChatSocketManager {
         messageDeletedListeners.clear()
         typingListeners.clear()
         readListeners.clear()
+        roomUnreadListeners.clear()
         overlayReactionListeners.clear()
     }
 
@@ -341,7 +342,7 @@ class ChatSocketManager {
                     if (msgRoom.isNotBlank() && !isSubscribedRoom(msgRoom)) {
                         opportunisticallyJoinRoom(msgRoom)
                     }
-                    val message = payload.toChatMessage()
+                    val message = payload.toReactionSocketMessage()
                     messageListeners.forEach { l -> runCatching { l(message) } }
                 }
                 on("message:deleted") { args ->
@@ -478,7 +479,7 @@ private fun JSONObject.toForwardedFrom(): ChatForwardedFrom? {
     )
 }
 
-private fun org.json.JSONArray.toReactions(): List<ChatReaction> {
+private fun org.json.JSONArray.toReactions(viewerUserId: String? = null): List<ChatReaction> {
     val out = ArrayList<ChatReaction>(length())
     for (i in 0 until length()) {
         val o = optJSONObject(i) ?: continue
@@ -489,15 +490,42 @@ private fun org.json.JSONArray.toReactions(): List<ChatReaction> {
             userIds != null && userIds.length() > 0 -> userIds.length()
             else -> 0
         }
+        val reactedByMe = when {
+            o.has("reactedByMe") -> o.optBoolean("reactedByMe", false)
+            !viewerUserId.isNullOrBlank() && userIds != null -> {
+                (0 until userIds.length()).any { userIds.optString(it) == viewerUserId }
+            }
+            else -> false
+        }
         out.add(
             ChatReaction(
                 emoji = emoji,
                 count = count,
-                reactedByMe = o.optBoolean("reactedByMe", false),
+                reactedByMe = reactedByMe,
             ),
         )
     }
     return out
+}
+
+/** Neutral backend payload or legacy full message row. */
+private fun JSONObject.toReactionSocketMessage(): ChatMessage {
+    val compactId = optString("messageId").takeIf { it.isNotBlank() }
+    return if (compactId != null && !has("senderId")) {
+        ChatMessage(
+            _id = compactId,
+            allianceId = "",
+            roomId = optString("roomId"),
+            senderId = "",
+            senderUsername = "",
+            senderRole = "",
+            reactions = optJSONArray("reactions")?.toReactions().orEmpty(),
+            text = "",
+            createdAt = "",
+        )
+    } else {
+        toChatMessage()
+    }
 }
 
 private fun JSONObject.toChatMessage(): ChatMessage {

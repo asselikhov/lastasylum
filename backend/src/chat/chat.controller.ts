@@ -32,7 +32,6 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/chat-room-constants';
 import { resolveChatAllianceScope } from './chat-alliance-scope';
 import { UsersService } from '../users/users.service';
-import { PushNotificationsService } from '../push/push-notifications.service';
 import { ChatGateway } from './chat.gateway';
 import { ChatRoomsService } from './chat-rooms.service';
 import { ChatService } from './chat.service';
@@ -73,7 +72,6 @@ export class ChatController {
     private readonly chatRoomsService: ChatRoomsService,
     private readonly chatGateway: ChatGateway,
     private readonly usersService: UsersService,
-    private readonly pushNotifications: PushNotificationsService,
     private readonly attachmentsService: ChatAttachmentsService,
   ) {}
 
@@ -220,16 +218,6 @@ export class ChatController {
       author: req.user,
       attachments: resolvedAttachments,
     });
-    this.chatGateway.broadcastNewMessageWithOverlayFanout(
-      dto.roomId,
-      message,
-      req.user.userId,
-    );
-    void this.chatGateway.notifyRoomUnreadAfterNewMessage(
-      dto.roomId,
-      req.user.userId,
-    );
-    const authorUser = await this.usersService.findById(req.user.userId);
     const messageId =
       typeof (message as { _id?: unknown })._id === 'string'
         ? (message as { _id: string })._id
@@ -237,25 +225,16 @@ export class ChatController {
             (message as { _id?: { toString?: () => string } })._id != null
           ? (message as { _id: { toString: () => string } })._id.toString()
           : '';
-    if (
-      authorUser &&
-      message.allianceId !== GLOBAL_CHAT_ALLIANCE_ID &&
-      dto.excavationAlert === true
-    ) {
-      const excavationBody = dto.text?.trim() ?? '';
-      void this.pushNotifications
-        .notifyExcavationAlert({
-          allianceId: message.allianceId,
-          excludeUserId: req.user.userId,
-          senderName: req.user.username,
-          body: excavationBody,
-          data: {
-            roomId: dto.roomId,
-            messageId,
-          },
-        })
-        .catch(() => undefined);
-    }
+    await this.chatGateway.afterMessageCreated({
+      roomId: dto.roomId,
+      message,
+      senderUserId: req.user.userId,
+      excavationAlert: dto.excavationAlert === true,
+      excavationText: dto.text?.trim() ?? '',
+      messageAllianceId: message.allianceId,
+      messageId,
+      senderName: req.user.username,
+    });
     // Обычные сообщения альянса не шлём push: в игре — оверлей/сокет; вне игры — только
     // excavation_alert (notifyExcavationAlert) со звуком, чтобы не отвлекать от жизни вне рейда.
     return message;
@@ -403,9 +382,12 @@ export class ChatController {
       messageId,
       dto?.text ?? '',
     );
-    this.chatGateway.server
-      ?.to(`chat:${edited.roomId}`)
-      .emit('message:edited', edited);
+    this.chatGateway.broadcastChatRoomEvent(
+      edited.roomId,
+      'message:edited',
+      edited,
+      req.user.userId,
+    );
     return edited;
   }
 
@@ -421,9 +403,16 @@ export class ChatController {
       messageId,
       dto?.emoji ?? '',
     );
-    this.chatGateway.server
-      ?.to(`chat:${updated.roomId}`)
-      .emit('message:reaction', updated);
+    const broadcast =
+      await this.chatService.getReactionBroadcastPayload(messageId);
+    if (broadcast) {
+      this.chatGateway.broadcastChatRoomEvent(
+        broadcast.roomId,
+        'message:reaction',
+        broadcast,
+        req.user.userId,
+      );
+    }
     return updated;
   }
 

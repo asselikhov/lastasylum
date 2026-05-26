@@ -18,6 +18,15 @@ import { User, UserDocument } from './schemas/user.schema';
 import { GameIdentitiesService, SafeGameIdentity } from './game-identities.service';
 import { StickerAccessService } from './sticker-access.service';
 import { TeamsService } from './teams.service';
+import {
+  type ChatRoomAccessFields,
+  userMayAccessChatRoom,
+} from '../chat/chat-room-access';
+import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/chat-room-constants';
+import {
+  isServerChatScope,
+  parsePlayerTeamIdFromChatScope,
+} from '../chat/chat-alliance-scope';
 
 export type SafeUser = {
   id: string;
@@ -624,6 +633,56 @@ export class UsersService implements OnModuleInit {
   /**
    * Teammates currently in game with a fresh overlay heartbeat (excluding sender).
    */
+  /**
+   * Active users who may see a chat room in listRooms (for rooms:unread fanout).
+   */
+  async listActiveUserIdsForChatRoomAccess(
+    room: ChatRoomAccessFields,
+  ): Promise<string[]> {
+    if (room.archivedAt) {
+      return [];
+    }
+    const select =
+      '_id allianceName playerTeamId gameIdentities activeGameIdentityId';
+    const base = { membershipStatus: TeamMembershipStatus.ACTIVE };
+    type Row = Pick<
+      UserDocument,
+      'allianceName' | 'playerTeamId' | 'gameIdentities' | 'activeGameIdentityId'
+    > & { _id: Types.ObjectId };
+    let rows: Row[];
+    if (room.allianceId === GLOBAL_CHAT_ALLIANCE_ID) {
+      rows = await this.userModel.find(base).select(select).lean<Row[]>().exec();
+    } else if (room.allianceId.startsWith('pt:')) {
+      const teamId = parsePlayerTeamIdFromChatScope(room.allianceId);
+      if (!teamId) {
+        return [];
+      }
+      const teamOid = new Types.ObjectId(teamId);
+      rows = await this.userModel
+        .find({
+          ...base,
+          $or: [
+            { playerTeamId: teamOid },
+            { 'gameIdentities.playerTeamId': teamOid },
+          ],
+        })
+        .select(select)
+        .lean<Row[]>()
+        .exec();
+    } else if (isServerChatScope(room.allianceId)) {
+      rows = await this.userModel.find(base).select(select).lean<Row[]>().exec();
+    } else {
+      rows = await this.userModel
+        .find({ ...base, allianceName: room.allianceId })
+        .select(select)
+        .lean<Row[]>()
+        .exec();
+    }
+    return rows
+      .filter((u) => userMayAccessChatRoom(u, room))
+      .map((u) => u._id.toString());
+  }
+
   async listOverlayIngameTeammateIds(excludeUserId: string): Promise<string[]> {
     if (!Types.ObjectId.isValid(excludeUserId)) {
       return [];

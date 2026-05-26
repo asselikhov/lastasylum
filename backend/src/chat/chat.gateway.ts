@@ -18,8 +18,13 @@ import { ChatRoomsService } from './chat-rooms.service';
 import { parseAllowedOriginsFromEnv } from '../common/config/allowed-origins';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { ChatService } from './chat.service';
-import { ALLIANCE_RAID_ROOM_TITLE } from '../common/constants/chat-room-constants';
+import {
+  GLOBAL_CHAT_ALLIANCE_ID,
+  ALLIANCE_RAID_ROOM_TITLE,
+} from '../common/constants/chat-room-constants';
 import { Types } from 'mongoose';
+import { PushNotificationsService } from '../push/push-notifications.service';
+import { ChatAttachmentsService } from './chat-attachments.service';
 
 /** Must match overlay reaction ids in Android OverlayQuickReactions.kt */
 const ALLOWED_OVERLAY_ANIMATION_REACTIONS = [
@@ -97,6 +102,8 @@ export class ChatGateway {
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly pushNotifications: PushNotificationsService,
+    private readonly attachmentsService: ChatAttachmentsService,
   ) {}
 
   handleConnection(client: AuthSocket) {
@@ -142,9 +149,26 @@ export class ChatGateway {
 
     const key = `chat:${roomId}`;
     /** Allow multiple chat rooms per socket (e.g. selected room + «Рейд» for overlay). */
-    void client.join(key);
+    await client.join(key);
 
     return { event: 'room:joined', data: { roomId } };
+  }
+
+  @SubscribeMessage('room:leave')
+  async leaveRoom(
+    @ConnectedSocket() client: AuthSocket,
+    @MessageBody() payload: { roomId?: string },
+  ) {
+    if (!client.data.user) {
+      throw new WsException('Unauthorized socket connection');
+    }
+    const roomId =
+      typeof payload?.roomId === 'string' ? payload.roomId.trim() : '';
+    if (!roomId) {
+      throw new WsException('roomId is required');
+    }
+    await client.leave(`chat:${roomId}`);
+    return { event: 'room:left', data: { roomId } };
   }
 
   @SubscribeMessage('message:send')
@@ -158,20 +182,52 @@ export class ChatGateway {
     if (!payload.roomId?.trim()) {
       throw new WsException('roomId is required');
     }
+    const roomId = payload.roomId.trim();
+    const attachmentIds = Array.isArray(payload.attachments)
+      ? payload.attachments.filter((id) => typeof id === 'string' && id.trim())
+      : [];
+    const anyChat = this.chatService as unknown as {
+      assertRoomForUser: (
+        userId: string,
+        roomId: string,
+      ) => Promise<{ allianceId: string; roomObjectId: Types.ObjectId }>;
+    };
+    const { allianceId, roomObjectId } = await anyChat.assertRoomForUser(
+      client.data.user.userId,
+      roomId,
+    );
+    const resolvedAttachments = await this.attachmentsService.resolveForRoom({
+      allianceId,
+      roomObjectId,
+      attachmentIds,
+    });
     const message = await this.chatService.createMessage({
-      roomId: payload.roomId.trim(),
-      text: payload.text,
+      roomId,
+      text: payload.text ?? '',
       replyToMessageId: payload.replyToMessageId,
       author: client.data.user,
+      attachments: resolvedAttachments,
     });
-
-    const roomId = payload.roomId.trim();
-    this.broadcastNewMessageWithOverlayFanout(
+    const messageId =
+      typeof (message as { _id?: unknown })._id === 'string'
+        ? (message as { _id: string })._id
+        : typeof (message as { _id?: unknown })._id === 'object' &&
+            (message as { _id?: { toString?: () => string } })._id != null
+          ? (message as { _id: { toString: () => string } })._id.toString()
+          : '';
+    await this.afterMessageCreated({
       roomId,
       message,
-      client.data.user.userId,
-    );
-    void this.emitUnreadSnapshotsForRoom(roomId, client.data.user.userId);
+      senderUserId: client.data.user.userId,
+      excavationAlert: payload.excavationAlert === true,
+      excavationText: payload.text?.trim() ?? '',
+      messageAllianceId:
+        typeof (message as { allianceId?: string }).allianceId === 'string'
+          ? (message as { allianceId: string }).allianceId
+          : allianceId,
+      messageId,
+      senderName: client.data.user.username,
+    });
     return { event: 'message:sent', data: message };
   }
 
@@ -383,6 +439,102 @@ export class ChatGateway {
     };
   }
 
+  /**
+   * HTTP + WS: broadcast message, unread snapshots, optional excavation push.
+   */
+  async afterMessageCreated(input: {
+    roomId: string;
+    message: unknown;
+    senderUserId: string;
+    excavationAlert?: boolean;
+    excavationText?: string;
+    messageAllianceId?: string;
+    messageId?: string;
+    senderName?: string;
+  }): Promise<void> {
+    const roomId = input.roomId.trim();
+    const senderUserId = input.senderUserId.trim();
+    if (!roomId || !senderUserId) return;
+    this.broadcastNewMessageWithOverlayFanout(
+      roomId,
+      input.message,
+      senderUserId,
+    );
+    await this.notifyRoomUnreadAfterNewMessage(roomId, senderUserId);
+    if (
+      input.excavationAlert &&
+      input.messageAllianceId &&
+      input.messageAllianceId !== GLOBAL_CHAT_ALLIANCE_ID
+    ) {
+      void this.pushNotifications
+        .notifyExcavationAlert({
+          allianceId: input.messageAllianceId,
+          excludeUserId: senderUserId,
+          senderName: input.senderName ?? '',
+          body: input.excavationText ?? '',
+          data: {
+            roomId,
+            messageId: input.messageId ?? '',
+          },
+        })
+        .catch(() => undefined);
+    }
+  }
+
+  /**
+   * Emit to joined `chat:{roomId}` sockets and mirror on `user:{id}` for eligible users not in the room.
+   */
+  broadcastChatRoomEvent(
+    roomId: string,
+    event: string,
+    payload: unknown,
+    excludeUserId?: string,
+  ): void {
+    const rid = roomId.trim();
+    if (!rid) return;
+    this.server?.to(`chat:${rid}`).emit(event, payload);
+    void this.fanOutChatEventToEligibleUsersNotInRoom(
+      rid,
+      event,
+      payload,
+      excludeUserId,
+    );
+  }
+
+  private async fanOutChatEventToEligibleUsersNotInRoom(
+    roomId: string,
+    event: string,
+    payload: unknown,
+    excludeUserId?: string,
+  ): Promise<void> {
+    const inRoom = this.userIdsInChatRoom(roomId);
+    const eligible = await this.listEligibleUserIdsForRoom(roomId);
+    const exclude = excludeUserId?.trim();
+    for (const userId of eligible) {
+      if (exclude && userId === exclude) continue;
+      if (inRoom.has(userId)) continue;
+      this.server?.to(`user:${userId}`).emit(event, payload);
+    }
+  }
+
+  private userIdsInChatRoom(roomId: string): Set<string> {
+    const out = new Set<string>();
+    const adapterRoom = this.server?.adapter.rooms.get(`chat:${roomId}`);
+    if (!adapterRoom) return out;
+    for (const socketId of adapterRoom) {
+      const client = this.server.sockets.get(socketId) as AuthSocket | undefined;
+      const userId = client?.data?.user?.userId?.trim();
+      if (userId) out.add(userId);
+    }
+    return out;
+  }
+
+  private async listEligibleUserIdsForRoom(roomId: string): Promise<string[]> {
+    const room = await this.chatRoomsService.findById(roomId);
+    if (!room) return [];
+    return this.usersService.listActiveUserIdsForChatRoomAccess(room);
+  }
+
   broadcastNewMessage(roomId: string, message: unknown) {
     this.server?.to(`chat:${roomId}`).emit('message:new', message);
   }
@@ -448,27 +600,15 @@ export class ChatGateway {
     roomId: string,
     excludeUserId: string,
   ): Promise<void> {
-    const notified = new Set<string>();
-    const adapterRoom = this.server?.adapter.rooms.get(`chat:${roomId}`);
-    if (adapterRoom) {
-      for (const socketId of adapterRoom) {
-        const client = this.server.sockets.get(socketId) as AuthSocket | undefined;
-        const userId = client?.data?.user?.userId;
-        if (!userId || userId === excludeUserId || notified.has(userId)) continue;
-        notified.add(userId);
-        await this.emitUnreadToUser(userId, roomId);
-      }
-    }
-    const overlayTeammates =
-      await this.usersService.listOverlayIngameTeammateIds(excludeUserId);
-    for (const userId of overlayTeammates) {
-      if (notified.has(userId)) continue;
-      notified.add(userId);
+    const exclude = excludeUserId.trim();
+    const eligible = await this.listEligibleUserIdsForRoom(roomId);
+    for (const userId of eligible) {
+      if (userId === exclude) continue;
       await this.emitUnreadToUser(userId, roomId);
     }
   }
 
   broadcastMessageDeleted(roomId: string, payload: unknown) {
-    this.server?.to(`chat:${roomId}`).emit('message:deleted', payload);
+    this.broadcastChatRoomEvent(roomId, 'message:deleted', payload);
   }
 }

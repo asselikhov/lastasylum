@@ -127,6 +127,15 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun mergeLoadedPageWithExisting_prefersLoadedTextForSameId() {
+        val existing = listOf(msg("1", "socket text"))
+        val loaded = listOf(msg("1", "http text"), msg("0", "older"))
+        val merged = mergeLoadedPageWithExisting(existing, loaded)
+        assertEquals("http text", merged.first { it._id == "1" }.text)
+        assertEquals(listOf("1", "0"), merged.map { it._id })
+    }
+
+    @Test
     fun stripRedundantPendingOutgoing_removesPendingWhenServerEchoExists() {
         val pending = msg("pending-1", "hello")
         val server = msg("server-1", "hello")

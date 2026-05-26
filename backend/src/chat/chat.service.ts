@@ -27,6 +27,7 @@ import { GameIdentitiesService } from '../users/game-identities.service';
 import { UsersService } from '../users/users.service';
 import { StickerAccessService } from '../users/sticker-access.service';
 import { ChatRoomsService } from './chat-rooms.service';
+import { buildMessageReactionBroadcastPayload } from './chat-realtime-broadcast.util';
 import { Message, MessageAttachment } from './schemas/message.schema';
 import { ChatRoomReadState } from './schemas/chat-room-read-state.schema';
 import { assertStickerPayload } from './sticker-payload.util';
@@ -701,6 +702,26 @@ export class ChatService {
     message.reactions = list.filter((x) => x.userIds.length > 0) as any;
     await message.save();
     return this.viewMessageForUser(message.toObject<MessageLean>(), userId);
+  }
+
+  /** Raw reactions for neutral `message:reaction` socket fanout. */
+  async getReactionBroadcastPayload(messageId: string) {
+    if (!Types.ObjectId.isValid(messageId)) {
+      return null;
+    }
+    const message = await this.messageModel.findById(messageId).lean<MessageLean>();
+    if (!message) {
+      return null;
+    }
+    const roomId = this.asIdString(message.roomId);
+    if (!roomId) {
+      return null;
+    }
+    return buildMessageReactionBroadcastPayload({
+      messageId: message._id.toString(),
+      roomId,
+      reactions: message.reactions as { emoji: string; userIds: string[] }[] | undefined,
+    });
   }
 
   async forwardMessage(

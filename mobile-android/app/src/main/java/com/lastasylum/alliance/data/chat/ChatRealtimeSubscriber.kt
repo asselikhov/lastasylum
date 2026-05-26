@@ -272,9 +272,9 @@ class ChatRealtimeSubscriber(
     }
 
     fun resetRealtimeForLogout() {
-        realtimeUiListener?.let { socketManager.removeMessageListener(it) }
-        realtimeUiListener = null
-        primaryRealtimeRoomIds.clear()
+        disconnectRealtime()
+        overlayMessageListeners.toList().forEach { socketManager.removeMessageListener(it) }
+        overlayMessageListeners.clear()
         overlayRealtimeRoomIds.clear()
         overlayReactionListeners.forEach { socketManager.removeOverlayReactionListener(it) }
         overlayReactionListeners.clear()

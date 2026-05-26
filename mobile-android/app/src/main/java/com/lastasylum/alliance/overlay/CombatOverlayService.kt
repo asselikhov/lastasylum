@@ -2140,12 +2140,17 @@ class CombatOverlayService : Service() {
             return
         }
         if (shouldBumpOverlayHubUnread(msg, hubId)) {
-            resolveChatViewModel()?.recordRealtimeUnreadHint(msg)
-                ?: bumpAllianceHubUnreadLocally(msg._id)
+            if (!activityChatViewModelHandlesUnread()) {
+                bumpAllianceHubUnreadLocally(msg._id)
+            }
             return
         }
         scheduleDebouncedHubHudRefresh()
     }
+
+    /** Activity-bound VM already receives socket unread on the primary listener — avoid double bump. */
+    private fun activityChatViewModelHandlesUnread(): Boolean =
+        ChatViewModelRegistry.shared != null || activityScopedChatViewModel != null
 
     private fun resolveOverlayHubRoomId(): String {
         cachedAllianceHubRoomId?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
@@ -3270,15 +3275,17 @@ class CombatOverlayService : Service() {
         val rid = roomId.trim()
         val body = text.trim()
         val senderId = jwtSubFromAccessToken()?.trim().orEmpty()
+        val profile = AppContainer.from(this).usersRepository.peekMyProfile()
+            ?: AppContainer.from(this).usersRepository.peekMyProfileDisk()
         return ChatMessage(
             _id = "overlay-pending-${System.nanoTime()}",
             allianceId = "",
             roomId = rid,
             senderId = senderId,
-            senderUsername = "",
-            senderRole = "",
-            senderTeamTag = null,
-            senderTelegramUsername = null,
+            senderUsername = profile?.username?.trim().orEmpty(),
+            senderRole = profile?.role?.trim().orEmpty(),
+            senderTeamTag = profile?.playerTeamTag?.trim()?.takeIf { it.isNotEmpty() },
+            senderTelegramUsername = profile?.telegramUsername?.trim()?.takeIf { it.isNotEmpty() },
             text = body,
             attachments = emptyList(),
             createdAt = Instant.now().toString(),
@@ -3834,14 +3841,19 @@ class CombatOverlayService : Service() {
                 val normalized = normalizeStripRaidMessage(msg, raidId)
                 val isRaid = shouldIngestForRaidStrip(normalized)
                 if (!isRaid && !isHub) {
-                    resolveChatViewModel()?.recordRealtimeUnreadHint(msg)
+                    if (!activityChatViewModelHandlesUnread()) {
+                        resolveChatViewModel()?.recordRealtimeUnreadHint(msg)
+                    }
                     return@post
                 }
                 val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
                 if (isRaid) {
                     ingestOverlayRaidMessage(normalized, refreshNow = true)
                     ensureOverlayMessageStripIfNeeded()
-                    if (selfId.isNotEmpty() && msg.senderId.trim() != selfId) {
+                    if (selfId.isNotEmpty() &&
+                        msg.senderId.trim() != selfId &&
+                        !activityChatViewModelHandlesUnread()
+                    ) {
                         resolveChatViewModel()?.recordRealtimeUnreadHint(msg)
                     }
                 } else if (isHub) {

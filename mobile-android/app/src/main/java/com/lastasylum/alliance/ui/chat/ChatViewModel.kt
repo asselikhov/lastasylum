@@ -7,6 +7,8 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
+import android.util.Log
+import com.lastasylum.alliance.BuildConfig
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lastasylum.alliance.data.displayedUnreadCount
@@ -62,7 +64,8 @@ import java.util.UUID
 
 private const val INITIAL_PAGE_SIZE = 20
 private const val PAGE_SIZE = 30
-private const val INCOMING_SOCKET_DEBOUNCE_MS = 0L
+private const val INCOMING_SOCKET_DEBOUNCE_MS = 24L
+private const val CHAT_DERIVE_DEBOUNCE_MS = 24L
 private const val PROFILE_GATE_TTL_MS = 5 * 60_000L
 /** Отложить reconcile с сервером, если сообщения уже в кэше после splash/bootstrap. */
 private const val BACKGROUND_MESSAGE_REFRESH_DEFER_MS = 400L
@@ -114,6 +117,7 @@ class ChatViewModel(
     private val _listDerived = MutableStateFlow(ChatMessagesListDerived.Empty)
     val listDerived: StateFlow<ChatMessagesListDerived> = _listDerived.asStateFlow()
     private var deriveJob: Job? = null
+    private var deriveDebounceJob: Job? = null
     private val chatMutationLock = Any()
 
     /** Isolated from [state] so each keystroke does not recompose the whole chat list. */
@@ -297,7 +301,7 @@ class ChatViewModel(
         val selected = _state.value.selectedRoomId
         for ((roomId, messageId) in pending) {
             if (_state.value.rooms.none { it.id == roomId }) continue
-            if (roomId == selected) continue
+            if (roomId == selected && isRoomActivelyViewed(roomId)) continue
             if (!shouldTrackUnreadForMessage(roomId, messageId)) continue
             bumpRoomUnreadLocally(roomId, messageId)
         }
@@ -315,6 +319,10 @@ class ChatViewModel(
         CombatOverlayService.syncHubBadgeFromSharedReadState(displayed)
     }
 
+  /**
+     * Socket `room:join` targets. When chat UI is inactive, rely on `rooms:unread` on `user:{id}`
+     * (backend fanout) and only join raid/hub/selected plus rooms that still show a local badge.
+     */
     private fun realtimeSubscriptionRoomIds(rooms: List<ChatRoomDto>): List<String> {
         val raid = chatRoomPreferences.getRaidRoomId()
         val selected = _state.value.selectedRoomId
@@ -327,6 +335,13 @@ class ChatViewModel(
                 rooms.forEach { room ->
                     val id = room.id.trim()
                     if (id.isNotEmpty() && id !in this) add(id)
+                }
+            } else {
+                rooms.forEach { room ->
+                    val id = room.id.trim()
+                    if (id.isNotEmpty() && room.unreadCount > 0 && id !in this) {
+                        add(id)
+                    }
                 }
             }
             if (rooms.isNotEmpty() && isEmpty()) {
@@ -685,7 +700,10 @@ class ChatViewModel(
 
     private fun isRoomActivelyViewed(roomId: String): Boolean {
         if (_state.value.selectedRoomId != roomId) return false
-        if (overlayChatPanelVisible) return true
+        if (overlayChatPanelVisible) {
+            return appInForeground ||
+                com.lastasylum.alliance.overlay.OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible
+        }
         if (!appInForeground) return false
         return isChatTabActive
     }
@@ -1681,11 +1699,21 @@ class ChatViewModel(
         loaded: List<ChatMessage>,
         pageSizeForHasMore: Int,
     ) {
-        ChatSessionCache.updateMessages(roomId, loaded)
+        val current = if (_state.value.selectedRoomId == roomId) {
+            _state.value.messages
+        } else {
+            emptyList()
+        }
+        val merged = mergeLoadedPageWithExisting(
+            existing = current,
+            loaded = loaded,
+            maxMessages = messageMemoryCap,
+        )
+        ChatSessionCache.updateMessages(roomId, merged)
         knownMessageIds.clear()
         messageIdIndex.clear()
-        knownMessageIds.addAll(loaded.mapNotNull { it._id })
-        val capped = capMessagesForMemory(loaded)
+        knownMessageIds.addAll(merged.mapNotNull { it._id })
+        val capped = capMessagesForMemory(merged)
         rebuildMessageIdIndex(capped, messageIdIndex)
         val hasMoreOlder = loaded.size >= pageSizeForHasMore
         roomMessageCache[roomId] = RoomMessageCache(
@@ -1710,15 +1738,19 @@ class ChatViewModel(
 
     private fun publishMessagesDerived(messages: List<ChatMessage>) {
         deriveJob?.cancel()
+        deriveDebounceJob?.cancel()
         if (messages.isEmpty()) {
             _listDerived.value = ChatMessagesListDerived.Empty
             return
         }
         val expected = messages
-        deriveJob = viewModelScope.launch(Dispatchers.Default) {
-            val derived = buildChatMessagesListDerived(expected)
-            if (!chatMessagesListContentEqual(expected, _state.value.messages)) return@launch
-            _listDerived.value = derived
+        deriveDebounceJob = viewModelScope.launch {
+            delay(CHAT_DERIVE_DEBOUNCE_MS)
+            deriveJob = launch(Dispatchers.Default) {
+                val derived = buildChatMessagesListDerived(expected)
+                if (!chatMessagesListContentEqual(expected, _state.value.messages)) return@launch
+                _listDerived.value = derived
+            }
         }
     }
 
@@ -2336,6 +2368,9 @@ class ChatViewModel(
 
     private fun onIncomingMessage(message: ChatMessage) {
         if (!incomingMessages.trySend(message).isSuccess) {
+            if (BuildConfig.DEBUG) {
+                Log.w("ChatViewModel", "incomingMessages channel overflow; flushing on main")
+            }
             viewModelScope.launch(Dispatchers.Main) {
                 dispatchIncomingBatch(listOf(message))
             }
@@ -2397,18 +2432,29 @@ class ChatViewModel(
 
     private fun onDeletedMessage(event: ChatMessageDeletedEvent) {
         viewModelScope.launch {
-            val roomId = _state.value.selectedRoomId ?: return@launch
-            if (event.roomId.isNotBlank() && event.roomId != roomId) return@launch
-            val scrubbed = scrubRemovedMessage(_state.value, event.messageId)
-            _state.value = syncSelections(
-                scrubbed.copy(
-                    deletingMessageId = if (scrubbed.deletingMessageId == event.messageId) {
-                        null
-                    } else {
-                        scrubbed.deletingMessageId
-                    },
-                ),
-            )
+            val removedId = event.messageId.trim()
+            if (removedId.isEmpty()) return@launch
+            val eventRoomId = event.roomId.trim()
+            val selected = _state.value.selectedRoomId
+            if (eventRoomId.isNotBlank() && eventRoomId == selected) {
+                val scrubbed = scrubRemovedMessage(_state.value, removedId)
+                _state.value = syncSelections(
+                    scrubbed.copy(
+                        deletingMessageId = if (scrubbed.deletingMessageId == removedId) {
+                            null
+                        } else {
+                            scrubbed.deletingMessageId
+                        },
+                    ),
+                )
+            }
+            if (eventRoomId.isBlank() || !roomMessageCache.containsKey(eventRoomId)) return@launch
+            val cached = roomMessageCache[eventRoomId] ?: return@launch
+            val cacheKnown = cached.messages.mapNotNull { it._id }.toMutableSet()
+            val nextMessages = scrubMessagesAfterRemove(cached.messages, removedId, cacheKnown)
+            val updated = cached.copy(messages = nextMessages)
+            roomMessageCache[eventRoomId] = updated
+            ChatSessionCache.updateMessages(eventRoomId, nextMessages)
         }
     }
 
