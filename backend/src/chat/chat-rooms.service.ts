@@ -51,6 +51,16 @@ export class ChatRoomsService {
       .exec();
   }
 
+  /** All non-archived room ids (admin history wipe unread fan-out). */
+  async listActiveRoomIds(): Promise<string[]> {
+    const rows = await this.roomModel
+      .find({ archivedAt: null })
+      .select('_id')
+      .lean()
+      .exec();
+    return rows.map((row) => row._id.toString());
+  }
+
   /** R5 admin: chat rooms scoped to a player team (`pt:<teamId>`). */
   async listForPlayerTeamAdmin(teamId: string) {
     if (!Types.ObjectId.isValid(teamId)) {

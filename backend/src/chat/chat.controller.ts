@@ -370,6 +370,7 @@ export class ChatController {
       messageId: deleted.messageId,
       roomId: deleted.roomId,
     });
+    void this.chatGateway.notifyRoomUnreadAfterNewMessage(deleted.roomId, '');
     return deleted;
   }
 

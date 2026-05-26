@@ -116,8 +116,11 @@ class LaunchDiskCache(private val context: Context) {
         )
     }
 
-    fun loadTeamNews(userId: String, teamId: String): TeamNewsListPageDto? =
-        readCached(userId, newsFileName(teamId), newsAdapter)?.page
+    fun loadTeamNews(userId: String, teamId: String): TeamNewsListPageDto? {
+        val cached = readCached(userId, newsFileName(teamId), newsAdapter) ?: return null
+        if (isStale(cached.savedAtMs)) return null
+        return cached.page
+    }
 
     fun saveForumTopics(userId: String, teamId: String, topics: List<TeamForumTopicDto>) {
         if (userId.isBlank() || teamId.isBlank()) return
@@ -128,8 +131,11 @@ class LaunchDiskCache(private val context: Context) {
         )
     }
 
-    fun loadForumTopics(userId: String, teamId: String): List<TeamForumTopicDto>? =
-        readCached(userId, forumFileName(teamId), forumTopicsAdapter)?.topics
+    fun loadForumTopics(userId: String, teamId: String): List<TeamForumTopicDto>? {
+        val cached = readCached(userId, forumFileName(teamId), forumTopicsAdapter) ?: return null
+        if (isStale(cached.savedAtMs)) return null
+        return cached.topics.takeIf { it.isNotEmpty() }
+    }
 
     fun clearUser(userId: String) {
         if (userId.isBlank()) return

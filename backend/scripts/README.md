@@ -23,9 +23,9 @@ node scripts/<script>.mjs
 | Script | Purpose | Extra `.env` keys |
 |--------|---------|-------------------|
 | [`migrate-chat-rooms.mjs`](migrate-chat-rooms.mjs) | Create default «Общий» room per alliance; backfill `message.roomId` | — |
-| [`clear-chat-messages.mjs`](clear-chat-messages.mjs) | **Destructive:** delete all chat messages, read cursors, attachment metadata | `SCRIPT_CONFIRM_CLEAR_CHAT=yes`, optional `SCRIPT_DRY_RUN=1` |
+| [`clear-chat-messages.mjs`](clear-chat-messages.mjs) | **Destructive:** delete all chat messages, read cursors, attachment metadata (DB only; **no** socket events) | `SCRIPT_CONFIRM_CLEAR_CHAT=yes`, optional `SCRIPT_DRY_RUN=1` |
 
-Same wipe is available in the app admin hub: **DELETE** `admin/chat/messages` (R5 only).
+Prefer the app admin hub **DELETE** `admin/chat/messages` (R5): same DB wipe plus `chat:history:cleared` and `rooms:unread` zero fan-out to connected clients.
 | [`normalize-legacy-users.mjs`](normalize-legacy-users.mjs) | Set `membershipStatus: active` for legacy users; optional admin role fix | `SCRIPT_ADMIN_USERNAME` (optional) |
 | [`consolidate-obzhory.mjs`](consolidate-obzhory.mjs) | One-off team/chat consolidation | `SCRIPT_TEAM_TAG`, `SCRIPT_ALLIANCE_SCOPE`, `SCRIPT_MEMBER_USERNAMES` |
 | [`lookup-user.mjs`](lookup-user.mjs) | Find user by username/email fragment | — |

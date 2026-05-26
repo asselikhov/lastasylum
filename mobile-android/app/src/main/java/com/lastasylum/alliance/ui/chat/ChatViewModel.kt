@@ -14,6 +14,7 @@ import androidx.lifecycle.viewModelScope
 import com.lastasylum.alliance.data.displayedUnreadCount
 import com.lastasylum.alliance.data.effectiveUnreadCount
 import com.lastasylum.alliance.data.isObjectIdNewer
+import com.lastasylum.alliance.data.chat.ChatHistoryWipe
 import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatMessageDeletedEvent
@@ -229,12 +230,9 @@ class ChatViewModel(
         }
     }
 
-    private fun onChatHistoryClearedFromServer() {
-        val userId = currentUserId.trim()
-        if (userId.isNotEmpty()) {
-            runCatching { launchDiskCache.clearChatHistory(userId) }
-        }
-        ChatSessionCache.clear()
+    /** Admin wiped all chat history (socket or overlay forward). */
+    fun applyChatHistoryClearedFromServer() {
+        ChatHistoryWipe.wipeCaches(currentUserId, launchDiskCache, chatRoomPreferences)
         roomMessageCache.clear()
         knownMessageIds.clear()
         messageIdIndex.clear()
@@ -269,6 +267,10 @@ class ChatViewModel(
             selected?.let { refreshMessagesInBackground(it, force = true) }
         }
         schedulePersistChatSnapshot()
+    }
+
+    private fun onChatHistoryClearedFromServer() {
+        applyChatHistoryClearedFromServer()
     }
 
     private fun dispatchIncomingBatch(batch: List<ChatMessage>) {
@@ -531,7 +533,7 @@ class ChatViewModel(
         val roomsRaw = launchDiskCache.loadChatRooms(currentUserId) ?: return false
         val rooms = applyRoomsFromServer(roomsRaw)
         if (rooms.isEmpty()) return false
-        ChatSessionCache.update(roomsRaw)
+        ChatSessionCache.update(rooms)
         val selected = resolveOverlayPreferredRoomId(
             rooms = rooms,
             preferOverlayRaidRoom = false,
@@ -561,7 +563,7 @@ class ChatViewModel(
             _state.value = _state.value.copy(
                 isLoading = false,
                 isRoomsLoading = false,
-                rooms = clearUnreadForRoom(rooms, selected),
+                rooms = rooms,
                 selectedRoomId = selected,
                 messages = cached.messages,
                 hasMoreOlder = cached.hasMoreOlder,
@@ -573,7 +575,7 @@ class ChatViewModel(
             _state.value = _state.value.copy(
                 isLoading = true,
                 isRoomsLoading = false,
-                rooms = clearUnreadForRoom(rooms, selected),
+                rooms = rooms,
                 selectedRoomId = selected,
                 messages = emptyList(),
                 hasMoreOlder = true,
@@ -686,10 +688,10 @@ class ChatViewModel(
             ?: _state.value.rooms.takeIf { it.isNotEmpty() }
             ?: diskChatRoomsOrNull()
             ?: return
-        if (ChatSessionCache.getFreshRooms() == null) {
-            ChatSessionCache.update(roomsRaw)
-        }
         val rooms = applyRoomsFromServer(roomsRaw)
+        if (ChatSessionCache.getFreshRooms() == null) {
+            ChatSessionCache.update(rooms)
+        }
         if (rooms.isEmpty()) return
         val roomId = resolveOverlayPreferredRoomId(
             rooms = rooms,
@@ -715,7 +717,7 @@ class ChatViewModel(
                     isLoading = st.messages.isEmpty(),
                     isRoomsLoading = false,
                     selectedRoomId = roomId,
-                    rooms = if (st.rooms.isEmpty()) clearUnreadForRoom(rooms, roomId) else st.rooms,
+                    rooms = if (st.rooms.isEmpty()) rooms else st.rooms,
                 )
             }
             return
@@ -727,7 +729,7 @@ class ChatViewModel(
         _state.value = _state.value.copy(
             isLoading = false,
             isRoomsLoading = false,
-            rooms = clearUnreadForRoom(rooms, roomId),
+            rooms = rooms,
             selectedRoomId = roomId,
             messages = cached.messages,
             hasMoreOlder = cached.hasMoreOlder,
@@ -818,6 +820,7 @@ class ChatViewModel(
     private fun isRoomActivelyViewed(roomId: String): Boolean {
         if (_state.value.selectedRoomId != roomId) return false
         if (overlayChatPanelVisible) {
+            if (!CombatOverlayService.isOverlayChatTabActive()) return false
             return appInForeground ||
                 com.lastasylum.alliance.overlay.OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible
         }
@@ -1194,11 +1197,11 @@ class ChatViewModel(
                 return
             }
         }
+        val rooms = applyRoomsFromServer(roomsRaw)
         if (roomsResult.isSuccess) {
-            ChatSessionCache.update(roomsRaw)
+            ChatSessionCache.update(rooms)
             schedulePersistChatSnapshot()
         }
-        val rooms = applyRoomsFromServer(roomsRaw)
         if (rooms.isEmpty()) {
             _draftMessage.value = ""
             _typingPeers.value = emptyMap()
@@ -1291,7 +1294,12 @@ class ChatViewModel(
             scrollToMessageId = null,
             highlightMessageId = null,
             transientNotice = null,
-            rooms = clearUnreadForRoom(_state.value.rooms, roomId),
+            rooms = clearUnreadForRoomIfViewing(
+                _state.value.rooms,
+                roomId,
+                treatAsViewing = isChatTabActive ||
+                    (overlayChatPanelVisible && CombatOverlayService.isOverlayChatTabActive()),
+            ),
         )
         if (hasCachedMessages) {
             knownMessageIds.addAll(cachedMessages.mapNotNull { it._id })
@@ -1324,6 +1332,17 @@ class ChatViewModel(
         // otherwise badges can keep accumulating after leaving and returning.
         clearOptimisticUnreadFloor(roomId)
         rooms.map { if (it.id == roomId) it.copy(unreadCount = 0) else it }
+    }
+
+    /** Avoid zeroing server unread in UI when the room is not actively viewed (background / other tab). */
+    private fun clearUnreadForRoomIfViewing(
+        rooms: List<ChatRoomDto>,
+        roomId: String,
+        treatAsViewing: Boolean = false,
+    ): List<ChatRoomDto> {
+        val viewing = treatAsViewing ||
+            (_state.value.selectedRoomId == roomId && isRoomActivelyViewed(roomId))
+        return if (viewing) clearUnreadForRoom(rooms, roomId) else rooms
     }
 
     private fun hydrateReadCursorsFromPreferences() {
@@ -1660,7 +1679,7 @@ class ChatViewModel(
             _typingPeers.value = emptyMap()
         }
         _state.update { st ->
-            st.copy(rooms = clearUnreadForRoom(st.rooms.ifEmpty { rooms }, roomId))
+            st.copy(rooms = clearUnreadForRoomIfViewing(st.rooms.ifEmpty { rooms }, roomId, treatAsViewing = true))
         }
         val isGlobalRoom = isGlobalChatRoom(roomId, rooms)
         val hasTeam = when {
@@ -1673,7 +1692,7 @@ class ChatViewModel(
             _state.value = _state.value.copy(
                 isLoading = true,
                 isRoomsLoading = false,
-                rooms = clearUnreadForRoom(rooms, roomId),
+                rooms = clearUnreadForRoomIfViewing(rooms, roomId, treatAsViewing = true),
                 selectedRoomId = roomId,
                 hasTeamProfileForGlobalChat = hasTeam,
                 error = null,
@@ -1703,7 +1722,7 @@ class ChatViewModel(
             _otherReadUptoMessageId.value = null
             _state.value = _state.value.copy(
                 isRoomsLoading = false,
-                rooms = clearUnreadForRoom(rooms, roomId),
+                rooms = clearUnreadForRoomIfViewing(rooms, roomId, treatAsViewing = true),
                 selectedRoomId = roomId,
                 hasTeamProfileForGlobalChat = hasTeam,
             )
@@ -1734,7 +1753,7 @@ class ChatViewModel(
                     messages = filteredCache,
                     selectedRoomId = roomId,
                     hasMoreOlder = cached.hasMoreOlder,
-                    rooms = clearUnreadForRoom(_state.value.rooms, roomId),
+                    rooms = clearUnreadForRoomIfViewing(_state.value.rooms, roomId, treatAsViewing = true),
                 )
                 publishMessagesDerived(filteredCache)
             } else {
@@ -1743,7 +1762,7 @@ class ChatViewModel(
                         isLoading = false,
                         selectedRoomId = roomId,
                         hasMoreOlder = cached.hasMoreOlder,
-                        rooms = clearUnreadForRoom(it.rooms, roomId),
+                        rooms = clearUnreadForRoomIfViewing(it.rooms, roomId, treatAsViewing = true),
                     )
                 }
             }
@@ -1873,7 +1892,7 @@ class ChatViewModel(
             messages = capped,
             selectedRoomId = roomId,
             hasMoreOlder = hasMoreOlder,
-            rooms = clearUnreadForRoom(_state.value.rooms, roomId),
+            rooms = clearUnreadForRoomIfViewing(_state.value.rooms, roomId, treatAsViewing = true),
         )
         publishMessagesDerived(capped)
         if (shouldAutoMarkReadSelectedRoom()) {

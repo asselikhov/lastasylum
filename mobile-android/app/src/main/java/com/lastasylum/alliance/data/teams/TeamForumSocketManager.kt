@@ -128,7 +128,23 @@ class TeamForumSocketManager {
         teamId: String,
         tokenProvider: () -> String?,
     ) {
-        connect(baseUrl, teamId, topicId = null, tokenProvider)
+        intentionalDisconnect = false
+        cancelReconnect()
+        lastBaseUrl = baseUrl.trimEnd('/')
+        this.tokenProvider = tokenProvider
+        val token = tokenProvider() ?: run {
+            emitState(TeamForumSocketState.Disconnected)
+            return
+        }
+        if (socket?.connected() == true && subscribedTeamId == teamId) {
+            leaveTopic()
+            subscribedTopicId = null
+            emitTeamAndTopicJoin(teamId, null)
+            return
+        }
+        subscribedTeamId = teamId
+        subscribedTopicId = null
+        openSocket(lastBaseUrl!!, token, teamId, null)
     }
 
     fun connect(
@@ -146,16 +162,52 @@ class TeamForumSocketManager {
             return
         }
         val topicKey = topicId?.trim()?.takeIf { it.isNotEmpty() }
-        if (socket?.connected() == true &&
-            subscribedTeamId == teamId &&
-            subscribedTopicId == topicKey
-        ) {
-            emitTeamAndTopicJoin(teamId, topicKey)
+        if (socket?.connected() == true && subscribedTeamId == teamId) {
+            if (topicKey == null) {
+                leaveTopic()
+                subscribedTopicId = null
+                emitTeamAndTopicJoin(teamId, null)
+                return
+            }
+            if (subscribedTopicId == topicKey) {
+                emitTeamAndTopicJoin(teamId, topicKey)
+                return
+            }
+            joinTopic(topicKey)
             return
         }
         subscribedTeamId = teamId
         subscribedTopicId = topicKey
         openSocket(lastBaseUrl!!, token, teamId, topicKey)
+    }
+
+    fun joinTopic(topicId: String) {
+        val teamId = subscribedTeamId?.trim().orEmpty()
+        val topic = topicId.trim()
+        if (teamId.isEmpty() || topic.isEmpty()) return
+        val previous = subscribedTopicId?.trim()?.takeIf { it.isNotEmpty() }
+        if (previous == topic) return
+        previous?.let { prev ->
+            socket?.emit(
+                "topic:leave",
+                JSONObject().put("teamId", teamId).put("topicId", prev),
+            )
+        }
+        subscribedTopicId = topic
+        socket?.emit(
+            "topic:join",
+            JSONObject().put("teamId", teamId).put("topicId", topic),
+        )
+    }
+
+    fun leaveTopic() {
+        val teamId = subscribedTeamId?.trim().orEmpty()
+        val topic = subscribedTopicId?.trim()?.takeIf { it.isNotEmpty() } ?: return
+        socket?.emit(
+            "topic:leave",
+            JSONObject().put("teamId", teamId).put("topicId", topic),
+        )
+        subscribedTopicId = null
     }
 
     fun reconnectWithFreshToken() {

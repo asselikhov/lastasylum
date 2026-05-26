@@ -132,15 +132,17 @@ class TeamViewModel(
         viewModelScope.launch {
             val newsAfter = userSettingsPreferences.getLastSeenTeamNewsCreatedAt()
             val localForumRead = teamForumPreferences.loadAllLastReadMessageIds(teamId)
-            val topics = if (currentUserId.isNotBlank()) {
+            val diskTopics = if (currentUserId.isNotBlank()) {
                 launchDiskCache.loadForumTopics(currentUserId, teamId)
             } else {
                 null
-            } ?: teamsRepository.listForumTopics(teamId).getOrNull()?.also { loaded ->
+            }
+            val networkTopics = teamsRepository.listForumTopics(teamId).getOrNull()?.also { loaded ->
                 if (currentUserId.isNotBlank()) {
                     launchDiskCache.saveForumTopics(currentUserId, teamId, loaded)
                 }
             }
+            val topics = networkTopics ?: diskTopics
             val profileId = _data.value.profile?.id?.trim().orEmpty()
             val forumUnread = topics?.let { TeamInboxUnread.sumForumUnread(it, localForumRead) }
             val newsFallback = teamsRepository.listTeamNews(teamId, cursor = null, limit = 40)

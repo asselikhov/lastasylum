@@ -2021,6 +2021,7 @@ class CombatOverlayService : Service() {
 
     /** Realtime [rooms:unread] for any overlay chat room (hub HUD + overlay panel tabs). */
     private fun applyOverlayRoomUnreadFromSocket(event: com.lastasylum.alliance.data.chat.ChatRoomUnreadEvent) {
+        if (activityChatViewModelHandlesUnread()) return
         val roomId = event.roomId.trim()
         if (roomId.isEmpty()) return
         ChatSessionCache.patchRoomUnread(
@@ -2125,6 +2126,7 @@ class CombatOverlayService : Service() {
         val lastRead = AppContainer.from(this).chatRoomPreferences.getLastReadMessageId(hubId)
         if (!isObjectIdNewer(messageId, lastRead)) return false
         if (overlayChatTeamPanelVisible) {
+            if (overlayChatTeamTabIndex != 0) return false
             val vm = activeOverlayChatSessionViewModel()
             if (vm != null && vm.state.value.selectedRoomId == hubId) {
                 return false
@@ -2157,9 +2159,13 @@ class CombatOverlayService : Service() {
     }
 
     private fun forwardOverlaySocketMessageToViewModel(msg: ChatMessage) {
-        resolveChatViewModel()?.stashOverlayRealtimeMessage(msg)
+        val vm = resolveChatViewModel() ?: return
+        if (!activityChatViewModelHandlesUnread()) {
+            vm.stashOverlayRealtimeMessage(msg)
+        }
         if (!overlayChatTeamPanelVisible) return
-        resolveChatViewModel()?.applyOverlayChatMessageFromSocket(msg)
+        if (activityChatViewModelHandlesUnread()) return
+        vm.applyOverlayChatMessageFromSocket(msg)
     }
 
     private fun forwardOverlayTypingToViewModel(event: com.lastasylum.alliance.data.chat.ChatTypingEvent) {
@@ -3886,11 +3892,11 @@ class CombatOverlayService : Service() {
         repo.addOverlayReactionListener(reactionListener)
         val historyListener: () -> Unit = {
             mainHandler.post {
-                // Admin wiped all chat history — drop any cached overlay preview immediately.
                 stripBuffer.clear()
                 lastStripRenderSignature = 0
                 updateStripDismissScreenRects(emptyList())
                 refreshOverlayChatStrip()
+                CombatOverlayService.resolveChatViewModel()?.applyChatHistoryClearedFromServer()
             }
         }
         overlayChatHistoryClearedListener = historyListener
@@ -4907,6 +4913,19 @@ class CombatOverlayService : Service() {
             activityScopedChatViewModel
                 ?: ChatViewModelRegistry.shared
                 ?: runningInstance?.overlayFallbackChatViewModel
+
+        /** True when overlay team panel is on the Chat tab (not Team news/forum). */
+        fun isOverlayChatTabActive(): Boolean = runningInstance?.overlayChatTeamTabIndex == 0
+
+        /** Reset hub mail chip optimistic floor after admin chat wipe. */
+        fun clearHubUnreadState() {
+            val service = runningInstance ?: return
+            service.mainHandler.post {
+                service.hubUnreadOptimisticFloor = 0
+                service.hubUnreadBumpedMessageIds.clear()
+                service.applyAllianceHubUnreadCount(0)
+            }
+        }
 
         /** Sync alliance hub unread badge on overlay mail chip (room «Альянс» only). */
         fun notifyAllianceHubUnread(count: Int) {

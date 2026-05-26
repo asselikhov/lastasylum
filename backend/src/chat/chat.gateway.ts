@@ -565,7 +565,16 @@ export class ChatGateway {
     if (!room || room.title !== ALLIANCE_RAID_ROOM_TITLE) return;
     const teammateIds =
       await this.usersService.listOverlayIngameTeammateIds(uid);
+    const inRoomUserIds = new Set<string>();
+    if (this.server) {
+      const sockets = await this.server.in(`chat:${rid}`).fetchSockets();
+      for (const sock of sockets) {
+        const uid = (sock.data as SocketData | undefined)?.user?.userId?.trim();
+        if (uid) inRoomUserIds.add(uid);
+      }
+    }
     for (const teammateId of teammateIds) {
+      if (inRoomUserIds.has(teammateId)) continue;
       this.server?.to(`user:${teammateId}`).emit('message:new', message);
     }
   }
@@ -614,5 +623,14 @@ export class ChatGateway {
   /** Notify connected clients that server-side chat history was wiped. */
   broadcastChatHistoryCleared(): void {
     this.server?.emit('chat:history:cleared', { ok: true });
+    void this.broadcastUnreadZeroAfterHistoryClear();
+  }
+
+  /** Push unreadCount=0 so clients drop stale badges without waiting for listRooms. */
+  private async broadcastUnreadZeroAfterHistoryClear(): Promise<void> {
+    const roomIds = await this.chatRoomsService.listActiveRoomIds();
+    for (const roomId of roomIds) {
+      await this.emitUnreadSnapshotsForRoom(roomId, '');
+    }
   }
 }

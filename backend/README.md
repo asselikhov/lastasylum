@@ -98,5 +98,9 @@ Namespace: `/chat`
 - `room:join` with `{ roomId }`
 - `message:send` with `{ roomId, text, replyToMessageId? }`
 - `typing` with `{ roomId }` — server emits `user:typing` `{ roomId, userId, username }` to others in the room
-- server emits `message:new`, `message:deleted`
+- server emits `message:new`, `message:edited`, `message:reaction`, `message:deleted`
+- per-user socket room: `rooms:unread` `{ roomId, unreadCount, lastReadMessageId }` (no `room:join` required)
+- room channel: `room:read` after HTTP mark-read
+- admin wipe: `chat:history:cleared` then `rooms:unread` zero for all eligible users per room
+- raid overlay: `message:new` on `user:{id}` only if not already in `chat:{raidRoomId}`
 - connect with `auth.token` (Bearer access token)

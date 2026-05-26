@@ -940,6 +940,18 @@ export class ChatService {
     await this.assertRoomForUser(input.userId, input.roomId);
     const roomObjectId = new Types.ObjectId(input.roomId);
     const messageOid = new Types.ObjectId(input.messageId);
+    const messageExists = await this.messageModel
+      .findOne({
+        _id: messageOid,
+        roomId: roomObjectId,
+        deletedAt: null,
+      })
+      .select('_id')
+      .lean()
+      .exec();
+    if (!messageExists) {
+      throw new BadRequestException('Message not found in room');
+    }
     const existing = await this.chatReadStateModel
       .findOne({ roomId: roomObjectId, userId: input.userId })
       .lean()

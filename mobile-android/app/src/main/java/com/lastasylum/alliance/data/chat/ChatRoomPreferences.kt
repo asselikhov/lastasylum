@@ -72,6 +72,17 @@ class ChatRoomPreferences(context: Context) {
             .toMap()
     }
 
+    /** Drop per-room read cursors only; keep selected / raid / hub room ids. */
+    fun clearLastReadCursors() {
+        val editor = prefs.edit()
+        val prefix = KEY_LAST_READ_PREFIX
+        prefs.all.keys
+            .filterIsInstance<String>()
+            .filter { it.startsWith(prefix) }
+            .forEach { editor.remove(it) }
+        editor.apply()
+    }
+
     fun clear() {
         activeUserId = null
         prefs.edit()
@@ -79,10 +90,7 @@ class ChatRoomPreferences(context: Context) {
             .remove(KEY_RAID_ROOM)
             .remove(KEY_HUB_ROOM)
             .apply()
-        val editor = prefs.edit()
-        prefs.all.keys.filter { it is String && it.startsWith(KEY_LAST_READ_PREFIX) }
-            .forEach { editor.remove(it as String) }
-        editor.apply()
+        clearLastReadCursors()
     }
 
     private fun lastReadKeyPrefix(): String {

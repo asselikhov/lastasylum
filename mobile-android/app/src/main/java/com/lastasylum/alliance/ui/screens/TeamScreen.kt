@@ -48,6 +48,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -56,8 +57,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.lastasylum.alliance.data.ReadCursorSession
 import com.lastasylum.alliance.ui.team.TeamViewModel
 import com.lastasylum.alliance.ui.team.TeamViewModelFactory
 import androidx.compose.ui.Alignment
@@ -205,6 +210,31 @@ fun TeamScreen(
 
     LaunchedEffect(Unit) {
         reloadProfileAndTeam()
+    }
+
+    LaunchedEffect(currentUserId) {
+        if (currentUserId.isNotBlank()) {
+            ReadCursorSession.bind(
+                app.chatRoomPreferences,
+                app.teamForumPreferences,
+                app.userSettingsPreferences,
+                currentUserId,
+            )
+        }
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                teamViewModel.refreshSectionBadges()
+                if (teamData.profile == null) {
+                    teamViewModel.reloadProfileAndTeam(res)
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     LaunchedEffect(profile?.playerTeamId, mainSectionOrdinal) {
