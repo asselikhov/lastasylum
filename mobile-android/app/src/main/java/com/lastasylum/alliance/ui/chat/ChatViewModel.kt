@@ -36,6 +36,7 @@ import com.lastasylum.alliance.data.chat.mergeIncomingChatUpdate
 import com.lastasylum.alliance.data.chat.mergePreservingAttachments
 import com.lastasylum.alliance.data.users.UsersRepository
 import com.lastasylum.alliance.ui.util.toUserMessageRu
+import retrofit2.HttpException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.joinAll
@@ -2325,7 +2326,15 @@ class ChatViewModel(
                         )
                     }
                     .onFailure { t ->
-                        lastFailure = t
+                        if (t.isChatMessageAlreadyGoneOnServer()) {
+                            _state.value = syncSelections(
+                                scrubRemovedMessage(_state.value, id).copy(
+                                    isDeletingSelection = true,
+                                ),
+                            )
+                        } else {
+                            lastFailure = t
+                        }
                     }
                 if (lastFailure != null) break
             }
@@ -2359,13 +2368,26 @@ class ChatViewModel(
                     )
                 }
                 .onFailure { throwable ->
-                    _state.value = _state.value.copy(
-                        deletingMessageId = null,
-                        error = throwable.toUserMessageRu(res),
-                    )
+                    if (throwable.isChatMessageAlreadyGoneOnServer()) {
+                        _state.value = syncSelections(
+                            scrubRemovedMessage(_state.value, messageId).copy(
+                                deletingMessageId = null,
+                                error = null,
+                            ),
+                        )
+                    } else {
+                        _state.value = _state.value.copy(
+                            deletingMessageId = null,
+                            error = throwable.toUserMessageRu(res),
+                        )
+                    }
                 }
         }
     }
+
+    /** Server hard-deleted the row (or never had it); drop from local feed anyway. */
+    private fun Throwable.isChatMessageAlreadyGoneOnServer(): Boolean =
+        this is HttpException && code() == 404
 
     private fun onIncomingMessage(message: ChatMessage) {
         if (!incomingMessages.trySend(message).isSuccess) {

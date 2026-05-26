@@ -966,7 +966,8 @@ export class ChatService {
     userId: string,
     messageId: string,
   ): Promise<{ messageId: string; roomId: string }> {
-    if (!Types.ObjectId.isValid(messageId)) {
+    const trimmedId = messageId.trim();
+    if (!Types.ObjectId.isValid(trimmedId)) {
       throw new BadRequestException('Invalid message id');
     }
     await this.assertUserMayUseChat(userId);
@@ -974,42 +975,37 @@ export class ChatService {
     if (!actor) {
       throw new ForbiddenException('User not found');
     }
-    const message = await this.messageModel.findById(messageId).exec();
+    const message = await this.messageModel.findById(trimmedId).exec();
     if (!message) {
       throw new NotFoundException('Message not found');
     }
-    if (
-      !userMayAccessChatRoom(actor, {
-        allianceId: message.allianceId,
-        archivedAt: null,
-      })
-    ) {
-      throw new ForbiddenException(
-        'Message is not available for your alliance',
-      );
-    }
-    const lean = message.toObject<MessageLean>();
-    await this.assertMayModerateOthersMessage(actor, lean);
-    const roomId = this.asIdString(message.roomId)!;
-    const res = await this.messageModel
-      .deleteOne({
-        _id: new Types.ObjectId(messageId),
-        allianceId: message.allianceId,
-      })
-      .exec();
-    if (res.deletedCount !== 1) {
+    const roomId = this.asIdString(message.roomId);
+    if (!roomId) {
       throw new NotFoundException('Message not found');
     }
-    await this.messageModel
-      .updateMany(
-        {
-          allianceId: message.allianceId,
-          roomId: message.roomId,
-          replyToMessageId: new Types.ObjectId(messageId),
-        },
-        { $set: { replyToMessageId: null } },
-      )
-      .exec();
-    return { messageId, roomId };
+    const room = await this.chatRoomsService.findById(roomId);
+    if (!room || room.archivedAt) {
+      throw new NotFoundException('Message not found');
+    }
+    await this.assertRoomForUser(userId, roomId);
+    const lean = message.toObject<MessageLean>();
+    await this.assertMayModerateOthersMessage(actor, {
+      ...lean,
+      allianceId: room.allianceId,
+    });
+    const messageOid = new Types.ObjectId(trimmedId);
+    const res = await this.messageModel.deleteOne({ _id: messageOid }).exec();
+    if (res.deletedCount === 1) {
+      await this.messageModel
+        .updateMany(
+          {
+            roomId: message.roomId,
+            replyToMessageId: messageOid,
+          },
+          { $set: { replyToMessageId: null } },
+        )
+        .exec();
+    }
+    return { messageId: trimmedId, roomId };
   }
 }
