@@ -209,6 +209,18 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun mergeOutgoingConfirmation_clearsEditedAt() {
+        val optimistic = msg("pending-1", "hi")
+        val confirmed = msg("server-1", "hi").copy(
+            editedAt = "2020-01-01T00:00:05.000Z",
+            createdAt = "2020-01-01T00:00:00.000Z",
+        )
+        val merged = mergeOutgoingConfirmation(optimistic, confirmed)
+        assertNull(merged.editedAt)
+        assertEquals("server-1", merged._id)
+    }
+
+    @Test
     fun replaceMatchingPendingOutgoing_swapsOptimisticRow() {
         val pending = msg("pending-1", "hello")
         val server = msg("server-1", "hello")

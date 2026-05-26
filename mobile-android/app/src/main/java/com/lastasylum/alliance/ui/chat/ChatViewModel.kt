@@ -863,6 +863,7 @@ class ChatViewModel(
     private fun applyKnownChatMessageUpdate(message: ChatMessage) {
         val roomId = message.roomId.trim()
         if (roomId.isBlank()) return
+        if (shouldDeferOwnOutgoingSocketEcho(message)) return
         val selected = _state.value.selectedRoomId
         when {
             roomId == selected ->
@@ -2180,8 +2181,9 @@ class ChatViewModel(
         viewModelScope.launch {
             repository.sendMessageWithRetries(trimmed, roomId, replyToMessageId)
                 .onSuccess { sent ->
-                    clearInFlightOutgoing(roomId, trimmed, replyToMessageId)
-                    confirmPendingOutgoingMessage(pendingId, sent)
+                    withContext(Dispatchers.Main.immediate) {
+                        confirmPendingOutgoingMessage(pendingId, sent)
+                    }
                 }
                 .onFailure { throwable ->
                     clearInFlightOutgoing(roomId, trimmed, replyToMessageId)
@@ -2219,8 +2221,9 @@ class ChatViewModel(
                     replyToMessageId = replyToMessageId,
                 )
                     .onSuccess { sent ->
-                        clearInFlightOutgoing(roomId, text, replyToMessageId)
-                        confirmPendingOutgoingMessage(pendingId, sent)
+                        withContext(Dispatchers.Main.immediate) {
+                            confirmPendingOutgoingMessage(pendingId, sent)
+                        }
                     }
                     .onFailure { throwable ->
                         clearInFlightOutgoing(roomId, text, replyToMessageId)
@@ -2953,7 +2956,14 @@ class ChatViewModel(
         val serverId = message._id?.trim().orEmpty()
         if (selfId.isEmpty() || serverId.isEmpty() || serverId.startsWith("pending-")) return false
         if (message.senderId.trim() != selfId) return false
-        if (messageIdIndex.containsKey(serverId)) return false
+        if (messageIdIndex.containsKey(serverId) &&
+            _state.value.messages.none { msg ->
+                val pid = msg._id?.trim().orEmpty()
+                pid.startsWith("pending-") && outgoingTextsMatch(msg, message)
+            }
+        ) {
+            return false
+        }
         val fingerprint = outgoingMessageFingerprint(
             message.roomId,
             message.text,
@@ -3001,8 +3011,15 @@ class ChatViewModel(
             val idx = messageIdIndex[id] ?: continue
             if (idx !in nextMessages.indices) continue
             val before = nextMessages
-            val merged = echo.mergeIncomingChatUpdate(nextMessages[idx])
-            if (merged == nextMessages[idx]) continue
+            val existing = nextMessages[idx]
+            val merged = if (existing._id?.trim().orEmpty().startsWith("pending-") &&
+                echo.senderId.trim() == currentUserId.trim()
+            ) {
+                mergeOutgoingConfirmation(existing, echo)
+            } else {
+                echo.mergeIncomingChatUpdate(existing)
+            }
+            if (merged == existing) continue
             val updated = nextMessages.toMutableList()
             updated[idx] = merged
             nextMessages = updated
@@ -3020,98 +3037,100 @@ class ChatViewModel(
         val pending = pendingId?.trim().orEmpty()
         val serverId = sent._id?.trim().orEmpty()
         if (pending.isEmpty() || serverId.isEmpty()) {
+            clearInFlightOutgoing(sent.roomId, sent.text, sent.replyToMessageId)
             applyIncomingMessage(sent, clearComposer = false)
             return
         }
         val roomId = _state.value.selectedRoomId
-        viewModelScope.launch(Dispatchers.Main.immediate) {
-            val work = synchronized(chatMutationLock) {
-                val snapshot = _state.value
-                val previousMessages = snapshot.messages
-                val previousDerived = _listDerived.value
-                val replacement = replaceMatchingPendingOutgoing(
-                    current = previousMessages,
-                    incoming = sent,
-                    currentUserId = currentUserId,
-                )
-                val updated = if (replacement != null) {
-                    transferOutgoingLazyColumnKey(replacement.pendingId, replacement.serverId)
-                    knownMessageIds.remove(replacement.pendingId)
-                    knownMessageIds.add(replacement.serverId)
-                    messageIdIndex.remove(replacement.pendingId)
-                    messageIdIndex[replacement.serverId] = replacement.replacedIndex
-                    replacement.messages
-                } else {
-                    var list = previousMessages.filterNot { it._id?.trim() == pending }
-                    val serverIdx = list.indexOfFirst { it._id?.trim() == serverId }
-                    list = if (serverIdx >= 0) {
-                        list.toMutableList().apply {
-                            this[serverIdx] = sent.mergePreservingAttachments(this[serverIdx])
-                        }
-                    } else {
-                        listOf(sent) + list
-                    }
-                    transferOutgoingLazyColumnKey(pending, serverId)
-                    knownMessageIds.remove(pending)
-                    knownMessageIds.add(serverId)
-                    messageIdIndex.remove(pending)
-                    list
-                }
-                val capped = capMessagesForMemory(
-                    dedupeMessagesByIdNewestFirst(
-                        stripRedundantPendingOutgoing(updated, currentUserId),
-                    ),
-                )
-                rebuildMessageIdIndex(capped, messageIdIndex)
-                IncomingBatchWork(
-                    previousMessages = previousMessages,
-                    cappedMessages = capped,
-                    newestMessageKey = serverId,
-                    previousDerived = previousDerived,
-                )
-            }
-            if (roomId != null && _state.value.selectedRoomId != roomId) return@launch
-            val isInPlaceConfirm = work.cappedMessages.size == work.previousMessages.size &&
-                work.cappedMessages.isNotEmpty() &&
-                work.previousMessages.isNotEmpty() &&
-                work.cappedMessages.drop(1) == work.previousMessages.drop(1) &&
-                work.cappedMessages[0] != work.previousMessages[0]
-            val derived = if (isInPlaceConfirm) {
-                buildChatMessagesListDerivedAfterReplaceNewest(
-                    previousDerived = work.previousDerived,
-                    previousMessages = work.previousMessages,
-                    messages = work.cappedMessages,
-                )
-            } else {
-                buildDerivedAfterUpsert(
-                    messages = work.cappedMessages,
-                    previousMessages = work.previousMessages,
-                    previousDerived = work.previousDerived,
-                )
-            }
-            if (roomId != null && _state.value.selectedRoomId != roomId) return@launch
-            deriveJob?.cancel()
-            deriveDebounceJob?.cancel()
+        val work = synchronized(chatMutationLock) {
             val snapshot = _state.value
-            _state.value = syncSelections(
-                snapshot.copy(
-                    messages = work.cappedMessages,
-                    newestMessageKey = serverId,
-                    isSending = false,
-                    error = null,
-                    sendFailure = null,
+            val previousMessages = snapshot.messages
+            val previousDerived = _listDerived.value
+            val withoutSocketDupes = previousMessages.filterNot { msg ->
+                val id = msg._id?.trim().orEmpty()
+                id == serverId && id != pending
+            }
+            val replacement = replaceMatchingPendingOutgoing(
+                current = withoutSocketDupes,
+                incoming = sent,
+                currentUserId = currentUserId,
+            )
+            val updated = if (replacement != null) {
+                transferOutgoingLazyColumnKey(replacement.pendingId, replacement.serverId)
+                knownMessageIds.remove(replacement.pendingId)
+                knownMessageIds.add(replacement.serverId)
+                messageIdIndex.remove(replacement.pendingId)
+                messageIdIndex[replacement.serverId] = replacement.replacedIndex
+                replacement.messages
+            } else {
+                var list = withoutSocketDupes.filterNot { it._id?.trim() == pending }
+                val serverIdx = list.indexOfFirst { it._id?.trim() == serverId }
+                list = if (serverIdx >= 0) {
+                    list.toMutableList().apply {
+                        this[serverIdx] = mergeOutgoingConfirmation(this[serverIdx], sent)
+                    }
+                } else {
+                    listOf(sent.copy(editedAt = null)) + list
+                }
+                transferOutgoingLazyColumnKey(pending, serverId)
+                knownMessageIds.remove(pending)
+                knownMessageIds.add(serverId)
+                messageIdIndex.remove(pending)
+                list
+            }
+            val capped = capMessagesForMemory(
+                dedupeMessagesByIdNewestFirst(
+                    stripRedundantPendingOutgoing(updated, currentUserId),
                 ),
             )
-            _listDerived.value = derived
-            val rid = _state.value.selectedRoomId
-            if (!rid.isNullOrBlank()) {
-                roomMessageCache[rid] = RoomMessageCache(
-                    messages = work.cappedMessages,
-                    hasMoreOlder = _state.value.hasMoreOlder,
-                )
-                ChatSessionCache.updateMessages(rid, work.cappedMessages)
-                schedulePersistChatSnapshot()
-            }
+            rebuildMessageIdIndex(capped, messageIdIndex)
+            IncomingBatchWork(
+                previousMessages = previousMessages,
+                cappedMessages = capped,
+                newestMessageKey = serverId,
+                previousDerived = previousDerived,
+            )
+        }
+        if (roomId != null && _state.value.selectedRoomId != roomId) {
+            clearInFlightOutgoing(sent.roomId, sent.text, sent.replyToMessageId)
+            return
+        }
+        val isInPlaceConfirm = work.cappedMessages.size == work.previousMessages.size &&
+            work.cappedMessages.isNotEmpty() &&
+            work.previousMessages.isNotEmpty() &&
+            work.cappedMessages.drop(1) == work.previousMessages.drop(1) &&
+            work.cappedMessages[0] != work.previousMessages[0]
+        val derived = if (isInPlaceConfirm) {
+            buildChatMessagesListDerivedAfterReplaceNewest(
+                previousDerived = work.previousDerived,
+                previousMessages = work.previousMessages,
+                messages = work.cappedMessages,
+            )
+        } else {
+            buildChatMessagesListDerived(work.cappedMessages)
+        }
+        deriveJob?.cancel()
+        deriveDebounceJob?.cancel()
+        val snapshot = _state.value
+        _state.value = syncSelections(
+            snapshot.copy(
+                messages = work.cappedMessages,
+                newestMessageKey = serverId,
+                isSending = false,
+                error = null,
+                sendFailure = null,
+            ),
+        )
+        _listDerived.value = derived
+        clearInFlightOutgoing(sent.roomId, sent.text, sent.replyToMessageId)
+        val rid = _state.value.selectedRoomId
+        if (!rid.isNullOrBlank()) {
+            roomMessageCache[rid] = RoomMessageCache(
+                messages = work.cappedMessages,
+                hasMoreOlder = _state.value.hasMoreOlder,
+            )
+            ChatSessionCache.updateMessages(rid, work.cappedMessages)
+            schedulePersistChatSnapshot()
         }
     }
 
@@ -3157,6 +3176,7 @@ class ChatViewModel(
                 var newestFromPendingReplace: String? = null
                 val stillFresh = ArrayList<ChatMessage>(fresh.size)
                 for (message in fresh) {
+                    if (shouldDeferOwnOutgoingSocketEcho(message)) continue
                     val replacement = replaceMatchingPendingOutgoing(
                         current = messages,
                         incoming = message,

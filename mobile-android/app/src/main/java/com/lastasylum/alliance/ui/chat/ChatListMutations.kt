@@ -53,6 +53,23 @@ internal fun outgoingTextsMatch(a: ChatMessage, b: ChatMessage): Boolean =
         normalizeOutgoingReplyToId(a.replyToMessageId) ==
         normalizeOutgoingReplyToId(b.replyToMessageId)
 
+/** HTTP confirm of an optimistic row — never inherit spurious [editedAt] from socket/REST. */
+internal fun mergeOutgoingConfirmation(
+    optimistic: ChatMessage,
+    confirmed: ChatMessage,
+): ChatMessage =
+    confirmed.copy(
+        editedAt = null,
+        createdAt = confirmed.createdAt ?: optimistic.createdAt,
+        attachments = if (confirmed.attachments.isNotEmpty()) {
+            confirmed.attachments
+        } else {
+            optimistic.attachments
+        },
+        replyTo = confirmed.replyTo ?: optimistic.replyTo,
+        replyToMessageId = confirmed.replyToMessageId ?: optimistic.replyToMessageId,
+    )
+
 /** Removes optimistic rows when any confirmed server row from self matches the same outgoing. */
 internal fun stripRedundantPendingOutgoing(
     messages: List<ChatMessage>,
@@ -169,7 +186,7 @@ internal fun replaceMatchingPendingOutgoing(
     val pendingId = current[idx]._id?.trim().orEmpty()
     if (pendingId.isEmpty()) return null
     val updated = current.toMutableList()
-    updated[idx] = incoming.mergePreservingAttachments(current[idx])
+    updated[idx] = mergeOutgoingConfirmation(current[idx], incoming)
     return PendingOutgoingReplacement(
         messages = updated,
         pendingId = pendingId,

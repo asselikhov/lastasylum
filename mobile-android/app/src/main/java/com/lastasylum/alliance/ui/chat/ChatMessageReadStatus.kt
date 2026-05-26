@@ -29,7 +29,7 @@ fun ChatMessageReadStatus(
     readColor: Color = Color(0xFF5EB3F6),
 ) {
     val mid = messageId?.trim().orEmpty()
-    if (mid.isEmpty()) return
+    if (mid.isEmpty() || mid.startsWith("pending-")) return
     val read = isChatMessageReadByPeer(mid, otherReadUptoMessageId)
     Text(
         text = if (read) "✓✓" else "✓",
