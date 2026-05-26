@@ -610,4 +610,9 @@ export class ChatGateway {
   broadcastMessageDeleted(roomId: string, payload: unknown) {
     this.broadcastChatRoomEvent(roomId, 'message:deleted', payload);
   }
+
+  /** Notify connected clients that server-side chat history was wiped. */
+  broadcastChatHistoryCleared(): void {
+    this.server?.emit('chat:history:cleared', { ok: true });
+  }
 }

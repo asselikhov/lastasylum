@@ -30,6 +30,7 @@ import { ChatRoomsService } from './chat-rooms.service';
 import { buildMessageReactionBroadcastPayload } from './chat-realtime-broadcast.util';
 import { Message, MessageAttachment } from './schemas/message.schema';
 import { ChatRoomReadState } from './schemas/chat-room-read-state.schema';
+import { ChatAttachmentsService } from './chat-attachments.service';
 import { assertStickerPayload } from './sticker-payload.util';
 
 type MessageAuthor = {
@@ -116,12 +117,19 @@ export type ChatMessageView = {
   deletedByUserId: string | null;
 };
 
+export type ChatClearHistoryForAdminResult = {
+  messagesDeleted: number;
+  readStatesDeleted: number;
+  attachmentsDeleted: number;
+};
+
 @Injectable()
 export class ChatService {
   constructor(
     @InjectModel(Message.name) private readonly messageModel: Model<Message>,
     @InjectModel(ChatRoomReadState.name)
     private readonly chatReadStateModel: Model<ChatRoomReadState>,
+    private readonly chatAttachments: ChatAttachmentsService,
     private readonly usersService: UsersService,
     private readonly gameIdentities: GameIdentitiesService,
     @Inject(forwardRef(() => TeamsService))
@@ -1007,5 +1015,22 @@ export class ChatService {
         .exec();
     }
     return { messageId: trimmedId, roomId };
+  }
+
+  /**
+   * R5 admin: wipe all chat messages, read cursors, and attachment metadata.
+   * Chat rooms are kept (same as scripts/clear-chat-messages.mjs).
+   */
+  async clearAllChatHistoryForAdmin(): Promise<ChatClearHistoryForAdminResult> {
+    const [messages, readStates, attachmentsDeleted] = await Promise.all([
+      this.messageModel.deleteMany({}).exec(),
+      this.chatReadStateModel.deleteMany({}).exec(),
+      this.chatAttachments.deleteAllMetadataForAdmin(),
+    ]);
+    return {
+      messagesDeleted: messages.deletedCount ?? 0,
+      readStatesDeleted: readStates.deletedCount ?? 0,
+      attachmentsDeleted,
+    };
   }
 }

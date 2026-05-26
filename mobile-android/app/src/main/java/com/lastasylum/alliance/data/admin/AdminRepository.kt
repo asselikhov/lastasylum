@@ -136,6 +136,9 @@ class AdminRepository(
             adminApi.listChatRoomMessages(roomId = roomId, before = before)
         }
 
+    suspend fun clearAllChatMessages(): Result<AdminClearChatHistoryResultDto> =
+        runCatching { adminApi.clearAllChatMessages() }
+
     suspend fun createGameIdentity(
         userId: String,
         gameNickname: String,

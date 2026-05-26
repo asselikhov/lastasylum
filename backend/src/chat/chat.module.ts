@@ -45,6 +45,6 @@ import {
     ChatRoomsService,
     ChatAttachmentsService,
   ],
-  exports: [ChatService, ChatRoomsService],
+  exports: [ChatService, ChatRoomsService, ChatGateway],
 })
 export class ChatModule {}

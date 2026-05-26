@@ -17,6 +17,7 @@ import com.lastasylum.alliance.data.teams.TeamForumMessageDto
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamNewsListItemDto
 import com.lastasylum.alliance.data.users.TeamMemberDto
+import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.users.UsersRepository
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.Job
@@ -121,6 +122,8 @@ data class AdminUiState(
     val usersOnServersError: String? = null,
     val playerTeamsHasMore: Boolean = false,
     val playerTeamsLoadingMore: Boolean = false,
+    val confirmClearAllChatHistory: Boolean = false,
+    val clearAllChatHistoryLoading: Boolean = false,
 )
 
 /** Unified player row for admin lists and edit sheet. */
@@ -527,6 +530,44 @@ class AdminViewModel(
 
     fun clearActionError() {
         _state.value = _state.value.copy(actionError = null)
+    }
+
+    fun requestClearAllChatHistoryConfirm() {
+        _state.value = _state.value.copy(confirmClearAllChatHistory = true, actionError = null)
+    }
+
+    fun dismissClearAllChatHistoryConfirm() {
+        if (!_state.value.confirmClearAllChatHistory) return
+        _state.value = _state.value.copy(confirmClearAllChatHistory = false)
+    }
+
+    fun confirmClearAllChatHistory() {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(
+                confirmClearAllChatHistory = false,
+                clearAllChatHistoryLoading = true,
+                actionError = null,
+            )
+            adminRepository.clearAllChatMessages()
+                .onSuccess { result ->
+                    _state.value = _state.value.copy(
+                        clearAllChatHistoryLoading = false,
+                        chatRoomMessages = emptyList(),
+                        snackMessage = res.getString(
+                            R.string.admin_clear_all_chat_messages_ok,
+                            result.messagesDeleted,
+                            result.readStatesDeleted,
+                            result.attachmentsDeleted,
+                        ),
+                    )
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(
+                        clearAllChatHistoryLoading = false,
+                        actionError = e.toUserMessageRu(res),
+                    )
+                }
+        }
     }
 
     fun refreshOverview() {

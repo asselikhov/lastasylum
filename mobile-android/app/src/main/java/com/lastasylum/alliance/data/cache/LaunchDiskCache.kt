@@ -25,6 +25,7 @@ class LaunchDiskCache(private val context: Context) {
     private val teamAdapter = moshi.adapter(CachedTeam::class.java)
     private val roomsAdapter = moshi.adapter(CachedChatRooms::class.java)
     private val messagesAdapter = moshi.adapter(CachedRoomMessages::class.java)
+    private val removedMessageIdsAdapter = moshi.adapter(CachedRemovedMessageIds::class.java)
     private val newsAdapter = moshi.adapter(CachedTeamNews::class.java)
     private val forumTopicsAdapter = moshi.adapter(CachedForumTopics::class.java)
 
@@ -73,6 +74,37 @@ class LaunchDiskCache(private val context: Context) {
     fun loadRoomMessages(userId: String, roomId: String): CachedRoomMessages? {
         if (userId.isBlank() || roomId.isBlank()) return null
         return readCached(userId, messageFileName(roomId), messagesAdapter)
+    }
+
+    fun loadRemovedMessageIds(userId: String): Set<String> {
+        if (userId.isBlank()) return emptySet()
+        return readCached(userId, FILE_REMOVED_MESSAGE_IDS, removedMessageIdsAdapter)
+            ?.messageIds
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.toSet()
+            ?: emptySet()
+    }
+
+    fun saveRemovedMessageIds(userId: String, ids: Collection<String>) {
+        if (userId.isBlank()) return
+        val capped = ids
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .takeLast(MAX_REMOVED_MESSAGE_IDS)
+        write(
+            userId,
+            FILE_REMOVED_MESSAGE_IDS,
+            removedMessageIdsAdapter.toJson(CachedRemovedMessageIds(capped, nowMs())),
+        )
+    }
+
+    fun addRemovedMessageId(userId: String, messageId: String) {
+        val id = messageId.trim()
+        if (userId.isBlank() || id.isEmpty()) return
+        val merged = loadRemovedMessageIds(userId) + id
+        saveRemovedMessageIds(userId, merged)
     }
 
     fun saveTeamNews(userId: String, teamId: String, page: TeamNewsListPageDto) {
@@ -164,8 +196,10 @@ class LaunchDiskCache(private val context: Context) {
         private const val FILE_PROFILE = "profile.json"
         private const val FILE_TEAM = "team.json"
         private const val FILE_CHAT_ROOMS = "chat_rooms.json"
+        private const val FILE_REMOVED_MESSAGE_IDS = "chat_removed_message_ids.json"
         private const val MESSAGE_FILE_PREFIX = "messages_"
         private const val MAX_MESSAGE_ROOM_FILES = 3
+        private const val MAX_REMOVED_MESSAGE_IDS = 512
 
         /** Soft TTL — stale data is still returned; callers refresh from network. */
         const val SOFT_TTL_MS = 7L * 24 * 60 * 60 * 1000
@@ -197,6 +231,12 @@ data class CachedChatRooms(
 data class CachedRoomMessages(
     val messages: List<ChatMessage>,
     val hasMoreOlder: Boolean,
+    val savedAtMs: Long,
+)
+
+@JsonClass(generateAdapter = true)
+data class CachedRemovedMessageIds(
+    val messageIds: List<String>,
     val savedAtMs: Long,
 )
 

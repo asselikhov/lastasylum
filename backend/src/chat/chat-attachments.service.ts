@@ -190,6 +190,12 @@ export class ChatAttachmentsService {
     return out;
   }
 
+  /** Admin wipe: metadata only (R2 binaries are not deleted here). */
+  async deleteAllMetadataForAdmin(): Promise<number> {
+    const res = await this.attachmentModel.deleteMany({}).exec();
+    return res.deletedCount ?? 0;
+  }
+
   async findAttachment(fileId: string): Promise<ChatAttachment | null> {
     if (!Types.ObjectId.isValid(fileId)) return null;
     return this.attachmentModel

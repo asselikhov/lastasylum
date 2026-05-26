@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   NotFoundException,
   Param,
@@ -14,6 +15,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { ChatRoomsService } from '../chat/chat-rooms.service';
+import { ChatGateway } from '../chat/chat.gateway';
 import { ChatService } from '../chat/chat.service';
 import { TeamsService } from './teams.service';
 import { TeamNewsService } from './team-news.service';
@@ -28,6 +30,7 @@ export class AdminTeamsController {
     private readonly users: UsersService,
     private readonly chatRooms: ChatRoomsService,
     private readonly chat: ChatService,
+    private readonly chatGateway: ChatGateway,
     private readonly teamNews: TeamNewsService,
     private readonly teamForum: TeamForumService,
   ) {}
@@ -119,6 +122,14 @@ export class AdminTeamsController {
       topicId,
       Number.isFinite(limit) ? limit : 100,
     );
+  }
+
+  @Delete('chat/messages')
+  @Roles(AllianceRole.ADMIN)
+  async clearAllChatMessages() {
+    const result = await this.chat.clearAllChatHistoryForAdmin();
+    this.chatGateway.broadcastChatHistoryCleared();
+    return result;
   }
 
   @Get('chat-rooms/:roomId/messages')

@@ -79,6 +79,7 @@ import com.lastasylum.alliance.ui.screens.admin.AdminPlayerManageSheet
 import com.lastasylum.alliance.ui.screens.admin.AdminStickerAccessSheet
 import com.lastasylum.alliance.ui.screens.admin.AdminTeamBrandingDialog
 import com.lastasylum.alliance.ui.screens.admin.AdminTeamDetailContent
+import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.Edit
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
@@ -127,6 +128,9 @@ fun AdminScreen(
     onUpdatePlayerTeam: (teamId: String, tag: String, displayName: String) -> Unit = { _, _, _ -> },
     onLoadMorePlayers: () -> Unit = {},
     onLoadMorePlayerTeams: () -> Unit = {},
+    onRequestClearAllChatHistory: () -> Unit = {},
+    onDismissClearAllChatHistoryConfirm: () -> Unit = {},
+    onConfirmClearAllChatHistory: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var selectedPlayer by remember { mutableStateOf<AdminUserOnServerDto?>(null) }
@@ -170,7 +174,8 @@ fun AdminScreen(
                 state.teamNewsLoading || state.teamForumLoading ||
                 state.chatRoomMessagesLoading || state.forumTopicMessagesLoading ||
                 state.alliancesLoading ||
-                state.gameServersLoading || state.usersOnServersLoading,
+                state.gameServersLoading || state.usersOnServersLoading ||
+                state.clearAllChatHistoryLoading,
         )
 
         state.snackMessage?.let { msg ->
@@ -204,6 +209,7 @@ fun AdminScreen(
             AdminRoute.Hub -> AdminHubContent(
                 state = state,
                 onOpenRoute = onOpenRoute,
+                onRequestClearAllChatHistory = onRequestClearAllChatHistory,
             )
             AdminRoute.PlayerTeams -> AdminPlayerTeamsContent(
                 state = state,
@@ -367,6 +373,34 @@ fun AdminScreen(
         )
     }
 
+    if (state.confirmClearAllChatHistory) {
+        AlertDialog(
+            onDismissRequest = onDismissClearAllChatHistoryConfirm,
+            containerColor = SquadRelaySurfaces.dialogColor(),
+            title = { Text(stringResource(R.string.admin_clear_all_chat_messages_title)) },
+            text = { Text(stringResource(R.string.admin_clear_all_chat_messages_body)) },
+            confirmButton = {
+                TextButton(
+                    onClick = onConfirmClearAllChatHistory,
+                    enabled = !state.clearAllChatHistoryLoading,
+                ) {
+                    Text(
+                        stringResource(R.string.admin_clear_all_chat_messages_confirm),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = onDismissClearAllChatHistoryConfirm,
+                    enabled = !state.clearAllChatHistoryLoading,
+                ) {
+                    Text(stringResource(R.string.admin_delete_cancel))
+                }
+            },
+        )
+    }
+
 }
 
 @Composable
@@ -419,6 +453,7 @@ private fun AdminTopBar(
 private fun AdminHubContent(
     state: AdminUiState,
     onOpenRoute: (AdminRoute) -> Unit,
+    onRequestClearAllChatHistory: () -> Unit,
 ) {
     LazyColumn(
         contentPadding = PaddingValues(
@@ -460,6 +495,21 @@ private fun AdminHubContent(
                 title = stringResource(R.string.admin_hub_chat_routing),
                 subtitle = stringResource(R.string.admin_hub_chat_routing_sub),
                 onClick = { onOpenRoute(AdminRoute.ChatRouting) },
+            )
+        }
+        item {
+            AdminHubTile(
+                icon = {
+                    Icon(
+                        Icons.Outlined.DeleteForever,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                },
+                title = stringResource(R.string.admin_clear_all_chat_messages),
+                subtitle = stringResource(R.string.admin_clear_all_chat_messages_sub),
+                onClick = onRequestClearAllChatHistory,
+                enabled = !state.clearAllChatHistoryLoading,
             )
         }
     }
@@ -638,9 +688,11 @@ private fun AdminHubTile(
     title: String,
     subtitle: String,
     onClick: () -> Unit,
+    enabled: Boolean = true,
 ) {
     Surface(
         onClick = onClick,
+        enabled = enabled,
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         color = SquadRelaySurfaces.panelColor(0.48f),

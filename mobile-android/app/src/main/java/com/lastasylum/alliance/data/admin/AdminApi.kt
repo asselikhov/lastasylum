@@ -7,6 +7,7 @@ import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamNewsListPageDto
 import com.lastasylum.alliance.data.users.TeamMemberDto
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.PATCH
 import retrofit2.http.POST
@@ -111,6 +112,9 @@ interface AdminApi {
         @Query("before") before: String? = null,
         @Query("limit") limit: Int = 80,
     ): List<ChatMessage>
+
+    @DELETE("admin/chat/messages")
+    suspend fun clearAllChatMessages(): AdminClearChatHistoryResultDto
 
     @POST("admin/users/{userId}/game-identities")
     suspend fun createGameIdentity(

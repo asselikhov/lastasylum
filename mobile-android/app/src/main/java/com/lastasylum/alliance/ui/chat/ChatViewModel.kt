@@ -204,6 +204,9 @@ class ChatViewModel(
 
     init {
         hydrateReadCursorsFromPreferences()
+        if (currentUserId.isNotBlank()) {
+            locallyRemovedMessageIds.addAll(launchDiskCache.loadRemovedMessageIds(currentUserId))
+        }
         viewModelScope.launch(Dispatchers.Default) {
             val pending = ArrayList<ChatMessage>(16)
             var flushJob: Job? = null
@@ -471,12 +474,13 @@ class ChatViewModel(
         allianceRaidRoomId(rooms)?.let { roomIdsToPrime.add(it) }
         for (rid in roomIdsToPrime) {
             launchDiskCache.loadRoomMessages(currentUserId, rid)?.let { disk ->
-                val capped = capNewestFirst(disk.messages, PAGE_SIZE)
+                val scrubbed = messagesWithoutLocallyRemoved(disk.messages)
+                val capped = capNewestFirst(scrubbed, PAGE_SIZE)
                 roomMessageCache[rid] = RoomMessageCache(
                     messages = capped,
                     hasMoreOlder = disk.hasMoreOlder,
                 )
-                ChatSessionCache.updateMessages(rid, disk.messages)
+                ChatSessionCache.updateMessages(rid, capped)
             }
         }
         val cached = roomMessageCache[selected]
@@ -529,8 +533,9 @@ class ChatViewModel(
         val selected = _state.value.selectedRoomId?.trim().orEmpty()
         if (selected.isNotEmpty()) {
             val entry = roomMessageCache[selected]
-            val messages = entry?.messages?.takeIf { it.isNotEmpty() }
+            val raw = entry?.messages?.takeIf { it.isNotEmpty() }
                 ?: _state.value.messages.takeIf { it.isNotEmpty() }
+            val messages = raw?.let { messagesWithoutLocallyRemoved(it) }
             if (!messages.isNullOrEmpty()) {
                 launchDiskCache.saveRoomMessages(
                     userId = currentUserId,
@@ -543,11 +548,12 @@ class ChatViewModel(
         val hubId = allianceHubRoomId(rooms)
         if (!hubId.isNullOrBlank() && hubId != selected) {
             roomMessageCache[hubId]?.let { entry ->
-                if (entry.messages.isNotEmpty()) {
+                val messages = messagesWithoutLocallyRemoved(entry.messages)
+                if (messages.isNotEmpty()) {
                     launchDiskCache.saveRoomMessages(
                         currentUserId,
                         hubId,
-                        entry.messages,
+                        messages,
                         entry.hasMoreOlder,
                     )
                 }
@@ -556,11 +562,12 @@ class ChatViewModel(
         val raidId = allianceRaidRoomId(rooms)
         if (!raidId.isNullOrBlank() && raidId != selected && raidId != hubId) {
             roomMessageCache[raidId]?.let { entry ->
-                if (entry.messages.isNotEmpty()) {
+                val messages = messagesWithoutLocallyRemoved(entry.messages)
+                if (messages.isNotEmpty()) {
                     launchDiskCache.saveRoomMessages(
                         currentUserId,
                         raidId,
-                        entry.messages,
+                        messages,
                         entry.hasMoreOlder,
                     )
                 }
@@ -577,13 +584,14 @@ class ChatViewModel(
         if (currentUserId.isBlank() || roomId.isBlank()) return null
         val disk = launchDiskCache.loadRoomMessages(currentUserId, roomId) ?: return null
         if (disk.messages.isEmpty()) return null
-        val capped = capNewestFirst(disk.messages, PAGE_SIZE)
+        val scrubbed = messagesWithoutLocallyRemoved(disk.messages)
+        val capped = capNewestFirst(scrubbed, PAGE_SIZE)
         return RoomMessageCache(
             messages = capped,
             hasMoreOlder = disk.hasMoreOlder,
         ).also { entry ->
             roomMessageCache[roomId] = entry
-            ChatSessionCache.updateMessages(roomId, disk.messages)
+            ChatSessionCache.updateMessages(roomId, capped)
         }
     }
 
@@ -624,10 +632,11 @@ class ChatViewModel(
         }
         val cached = roomMessageCache[roomId]
             ?: ChatSessionCache.getFreshMessages(roomId)?.let { sessionMessages ->
-                val capped = capNewestFirst(sessionMessages, PAGE_SIZE)
+                val scrubbed = messagesWithoutLocallyRemoved(sessionMessages)
+                val capped = capNewestFirst(scrubbed, PAGE_SIZE)
                 RoomMessageCache(
                     messages = capped,
-                    hasMoreOlder = sessionMessages.size >= PAGE_SIZE,
+                    hasMoreOlder = scrubbed.size >= PAGE_SIZE,
                 ).also { roomMessageCache[roomId] = it }
             }
             ?: primeRoomMessagesFromDisk(roomId)
@@ -692,6 +701,10 @@ class ChatViewModel(
         appInForeground = inForeground
         if (inForeground) {
             syncReadStateFromPreferences()
+            applyLocallyRemovedFilterToLoadedCaches()
+        } else {
+            persistSnapshotJob?.cancel()
+            viewModelScope.launch(Dispatchers.IO) { persistChatSnapshot() }
         }
         recomputeRoomUnreadBadges()
     }
@@ -892,15 +905,28 @@ class ChatViewModel(
             } else {
                 recomputeRoomUnreadBadges()
             }
-            val roomId = _state.value.selectedRoomId
+            val roomId = _state.value.selectedRoomId?.trim().orEmpty()
+            if (roomId.isEmpty()) return@launch
             roomMessageCache[roomId]?.let { cached ->
+                val filtered = messagesWithoutLocallyRemoved(cached.messages)
+                if (filtered.size != cached.messages.size) {
+                    val updated = cached.copy(messages = capMessagesForMemory(filtered))
+                    roomMessageCache[roomId] = updated
+                    ChatSessionCache.updateMessages(roomId, updated.messages)
+                }
                 _state.update { st ->
+                    val messages = if (st.messages.isEmpty()) {
+                        filtered
+                    } else {
+                        messagesWithoutLocallyRemoved(st.messages)
+                    }
                     st.copy(
-                        messages = cached.messages,
+                        messages = messages,
                         hasMoreOlder = cached.hasMoreOlder,
                         isLoading = false,
                     )
                 }
+                publishMessagesDerived(_state.value.messages)
             }
             if (_state.value.selectedRoomId.isNullOrBlank()) {
                 ensureAllianceHubRoomSelected()
@@ -1611,19 +1637,24 @@ class ChatViewModel(
         )
         val cached = roomMessageCache[roomId]
         if (hadCachedMessages && cached != null && cached.messages.isNotEmpty()) {
+            val filteredCache = messagesWithoutLocallyRemoved(cached.messages)
+            if (filteredCache.size != cached.messages.size) {
+                roomMessageCache[roomId] = cached.copy(messages = capMessagesForMemory(filteredCache))
+                ChatSessionCache.updateMessages(roomId, roomMessageCache[roomId]!!.messages)
+            }
             if (!messagesAlreadyInState) {
                 knownMessageIds.clear()
                 messageIdIndex.clear()
-                knownMessageIds.addAll(cached.messages.mapNotNull { it._id })
-                rebuildMessageIdIndex(cached.messages, messageIdIndex)
+                knownMessageIds.addAll(filteredCache.mapNotNull { it._id })
+                rebuildMessageIdIndex(filteredCache, messageIdIndex)
                 _state.value = _state.value.copy(
                     isLoading = false,
-                    messages = cached.messages,
+                    messages = filteredCache,
                     selectedRoomId = roomId,
                     hasMoreOlder = cached.hasMoreOlder,
                     rooms = clearUnreadForRoom(_state.value.rooms, roomId),
                 )
-                publishMessagesDerived(cached.messages)
+                publishMessagesDerived(filteredCache)
             } else {
                 _state.update {
                     it.copy(
@@ -2545,6 +2576,7 @@ class ChatViewModel(
             )
             ChatSessionCache.updateMessages(rid, capped)
         }
+        flushRoomMessagesToDiskNow(rid)
         schedulePersistChatSnapshot()
     }
 
@@ -2555,6 +2587,69 @@ class ChatViewModel(
         while (locallyRemovedMessageIds.size > 512) {
             val eldest = locallyRemovedMessageIds.first()
             locallyRemovedMessageIds.remove(eldest)
+        }
+        if (currentUserId.isNotBlank()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                launchDiskCache.addRemovedMessageId(currentUserId, id)
+            }
+        }
+    }
+
+    private fun messagesWithoutLocallyRemoved(messages: List<ChatMessage>): List<ChatMessage> {
+        if (locallyRemovedMessageIds.isEmpty()) return messages
+        var out = messages
+        val known = out.mapNotNull { it._id }.toMutableSet()
+        for (removedId in locallyRemovedMessageIds) {
+            if (removedId.isBlank()) continue
+            out = scrubMessagesAfterRemove(out, removedId, known)
+        }
+        return out
+    }
+
+    private fun applyLocallyRemovedFilterToLoadedCaches() {
+        if (locallyRemovedMessageIds.isEmpty()) return
+        for ((rid, entry) in roomMessageCache.toList()) {
+            val filtered = messagesWithoutLocallyRemoved(entry.messages)
+            if (filtered.size == entry.messages.size) continue
+            val capped = capMessagesForMemory(filtered)
+            roomMessageCache[rid] = entry.copy(messages = capped)
+            ChatSessionCache.updateMessages(rid, capped)
+        }
+        val roomId = _state.value.selectedRoomId?.trim().orEmpty()
+        if (roomId.isEmpty()) return
+        val current = messagesWithoutLocallyRemoved(_state.value.messages)
+        if (current.size == _state.value.messages.size) return
+        knownMessageIds.clear()
+        messageIdIndex.clear()
+        knownMessageIds.addAll(current.mapNotNull { it._id })
+        rebuildMessageIdIndex(current, messageIdIndex)
+        _state.update { st -> syncSelections(st.copy(messages = current)) }
+        publishMessagesDerived(current)
+    }
+
+    private fun flushRoomMessagesToDiskNow(roomId: String) {
+        if (currentUserId.isBlank()) return
+        val rid = roomId.trim()
+        if (rid.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val snapshot = withContext(Dispatchers.Main) {
+                val entry = roomMessageCache[rid]
+                val raw = entry?.messages?.takeIf { it.isNotEmpty() }
+                    ?: if (_state.value.selectedRoomId == rid) {
+                        _state.value.messages
+                    } else {
+                        null
+                    }
+                if (raw == null) return@withContext null
+                Triple(
+                    messagesWithoutLocallyRemoved(raw),
+                    entry?.hasMoreOlder ?: _state.value.hasMoreOlder,
+                    raw,
+                )
+            } ?: return@launch
+            val (messages, hasMoreOlder, _) = snapshot
+            if (messages.isEmpty()) return@launch
+            launchDiskCache.saveRoomMessages(currentUserId, rid, messages, hasMoreOlder)
         }
     }
 

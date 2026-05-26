@@ -395,6 +395,12 @@
     <string name="admin_hub_users_without_team_sub">%1$d аккаунтов</string>
     <string name="admin_hub_chat_routing">Маршрутизация чата</string>
     <string name="admin_hub_chat_routing_sub">Коды альянса, оверлей, стикеры</string>
+    <string name="admin_clear_all_chat_messages">Удалить все сообщения чата</string>
+    <string name="admin_clear_all_chat_messages_sub">Все комнаты: сообщения, курсоры прочтения и метаданные вложений в БД</string>
+    <string name="admin_clear_all_chat_messages_title">Очистить всю историю чата?</string>
+    <string name="admin_clear_all_chat_messages_body">Будут безвозвратно удалены все сообщения во всех чат-комнатах, курсоры прочтения и записи вложений в базе. Сами комнаты останутся. Файлы в хранилище (R2) этим действием не удаляются.</string>
+    <string name="admin_clear_all_chat_messages_confirm">Удалить всё</string>
+    <string name="admin_clear_all_chat_messages_ok">Удалено сообщений: %1$d, курсоров: %2$d, вложений: %3$d</string>
     <string name="admin_hub_rooms_sub">Создание и редактирование каналов</string>
     <string name="admin_hub_game_servers">Игроки по серверам</string>
     <string name="admin_hub_game_servers_sub">Никнеймы, команды, редактирование</string>

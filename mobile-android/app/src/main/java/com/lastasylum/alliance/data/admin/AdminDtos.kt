@@ -73,6 +73,13 @@ data class AdminOverviewDto(
 )
 
 @JsonClass(generateAdapter = true)
+data class AdminClearChatHistoryResultDto(
+    val messagesDeleted: Int = 0,
+    val readStatesDeleted: Int = 0,
+    val attachmentsDeleted: Int = 0,
+)
+
+@JsonClass(generateAdapter = true)
 data class PlayerTeamAdminDto(
     val id: String,
     val tag: String,

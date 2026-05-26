@@ -614,6 +614,9 @@ fun AppNavigation(
                     },
                     onLoadMorePlayers = adminViewModel::loadMorePlayersList,
                     onLoadMorePlayerTeams = adminViewModel::loadMorePlayerTeams,
+                    onRequestClearAllChatHistory = adminViewModel::requestClearAllChatHistoryConfirm,
+                    onDismissClearAllChatHistoryConfirm = adminViewModel::dismissClearAllChatHistoryConfirm,
+                    onConfirmClearAllChatHistory = adminViewModel::confirmClearAllChatHistory,
                 )
             }
         }
