@@ -4,7 +4,10 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeFormatterBuilder
+import java.time.temporal.ChronoField
 import java.util.Locale
 
 /** Единая зона отображения дат/времени в UI (МСК). Сервер отдаёт UTC в ISO-8601. */
@@ -12,17 +15,47 @@ val APP_DISPLAY_ZONE: ZoneId = ZoneId.of("Europe/Moscow")
 
 private val LOCALE_RU: Locale = Locale.forLanguageTag("ru")
 
-/** Разбор ISO UTC (`…Z` / offset) или локальной даты-времени без зоны (трактуем как МСК). */
+private val ISO_LOCAL_DATE_TIME_FLEX: DateTimeFormatter = DateTimeFormatterBuilder()
+    .append(DateTimeFormatter.ISO_LOCAL_DATE)
+    .appendLiteral('T')
+    .appendValue(ChronoField.HOUR_OF_DAY, 2)
+    .appendLiteral(':')
+    .appendValue(ChronoField.MINUTE_OF_HOUR, 2)
+    .optionalStart()
+    .appendLiteral(':')
+    .appendValue(ChronoField.SECOND_OF_MINUTE, 2)
+    .optionalStart()
+    .appendFraction(ChronoField.NANO_OF_SECOND, 1, 9, true)
+    .optionalEnd()
+    .optionalEnd()
+    .toFormatter()
+
+/**
+ * Разбор ISO с зоной (`Z` / offset) или без зоны.
+ * Без зоны — UTC (Mongo/Nest), не локальное МСК: иначе время в чатах отстаёт на 3 ч.
+ */
 fun parseIsoInstant(iso: String?): Instant? {
     if (iso.isNullOrBlank()) return null
     val s = iso.trim()
-    return runCatching { Instant.parse(s) }.getOrNull()
-        ?: runCatching {
-            LocalDateTime.parse(s, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-                .atZone(APP_DISPLAY_ZONE)
-                .toInstant()
-        }.getOrNull()
+    runCatching { Instant.parse(s) }.getOrNull()?.let { return it }
+    runCatching {
+        java.time.OffsetDateTime.parse(s, DateTimeFormatter.ISO_OFFSET_DATE_TIME).toInstant()
+    }.getOrNull()?.let { return it }
+    runCatching {
+        LocalDateTime.parse(s, ISO_LOCAL_DATE_TIME_FLEX)
+            .atZone(ZoneOffset.UTC)
+            .toInstant()
+    }.getOrNull()?.let { return it }
+    runCatching {
+        LocalDateTime.parse(s, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+            .atZone(ZoneOffset.UTC)
+            .toInstant()
+    }.getOrNull()?.let { return it }
+    return null
 }
+
+/** Epoch millis for sorting/clustering; null if unparseable. */
+fun parseIsoInstantEpochMilli(iso: String?): Long? = parseIsoInstant(iso)?.toEpochMilli()
 
 private fun mskFormatter(pattern: String): DateTimeFormatter =
     DateTimeFormatter.ofPattern(pattern, LOCALE_RU).withZone(APP_DISPLAY_ZONE)

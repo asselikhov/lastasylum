@@ -27,7 +27,8 @@ class DisplayTimeTest {
     }
 
     @Test
-    fun parseIsoInstant_localWithoutZone_asMoscow() {
-        assertEquals("12:00", formatChatTimeMsk("2024-06-01T12:00:00"))
+    fun parseIsoInstant_localWithoutZone_asUtcThenMsk() {
+        assertEquals("15:00", formatChatTimeMsk("2024-06-01T12:00:00"))
+        assertEquals("21:00", formatChatTimeMsk("2024-06-01T18:00:00.000"))
     }
 }

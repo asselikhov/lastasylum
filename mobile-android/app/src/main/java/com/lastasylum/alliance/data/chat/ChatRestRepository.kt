@@ -67,7 +67,7 @@ class ChatRestRepository(
             }
             last = r.exceptionOrNull()
             if (attempt < 2) {
-                delay(listOf(400L, 1200L)[attempt])
+                delay(listOf(120L, 350L)[attempt])
             }
         }
         return Result.failure(last ?: IllegalStateException("send_failed"))

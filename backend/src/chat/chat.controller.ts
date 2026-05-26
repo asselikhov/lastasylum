@@ -225,6 +225,10 @@ export class ChatController {
       message,
       req.user.userId,
     );
+    void this.chatGateway.notifyRoomUnreadAfterNewMessage(
+      dto.roomId,
+      req.user.userId,
+    );
     const authorUser = await this.usersService.findById(req.user.userId);
     const messageId =
       typeof (message as { _id?: unknown })._id === 'string'
@@ -442,6 +446,10 @@ export class ChatController {
     this.chatGateway.broadcastNewMessageWithOverlayFanout(
       roomId,
       forwarded,
+      req.user.userId,
+    );
+    void this.chatGateway.notifyRoomUnreadAfterNewMessage(
+      roomId,
       req.user.userId,
     );
     return forwarded;

@@ -2,6 +2,9 @@ package com.lastasylum.alliance.ui.chat
 
 import com.lastasylum.alliance.data.chat.ChatMessage
 
+/** Max messages to derive synchronously on the main thread (no frame wait). */
+const val CHAT_LIST_DERIVE_SYNC_MAX = 160
+
 /**
  * Precomputed list layout for the chat [androidx.compose.foundation.lazy.LazyColumn].
  * [clusterTopSpacingDp] values are Compose dp units (see [clusterTopSpacingAt]).
@@ -53,4 +56,26 @@ fun buildChatMessagesListDerived(messages: List<ChatMessage>): ChatMessagesListD
         clusterFlags = clusterFlags,
         clusterTopSpacingDp = clusterTopSpacingDp,
     )
+}
+
+/**
+ * Fast path when a single message was prepended at the head (send / live socket).
+ * Falls back to full rebuild if the diff is not a simple prepend.
+ */
+fun buildChatMessagesListDerivedAfterPrepend(
+    previousDerived: ChatMessagesListDerived,
+    previousMessages: List<ChatMessage>,
+    messages: List<ChatMessage>,
+): ChatMessagesListDerived {
+    if (messages.isEmpty()) return ChatMessagesListDerived.Empty
+    if (previousMessages.isEmpty() || previousDerived.timeline.isEmpty()) {
+        return buildChatMessagesListDerived(messages)
+    }
+    if (messages.size != previousMessages.size + 1) {
+        return buildChatMessagesListDerived(messages)
+    }
+    if (messages.drop(1) != previousMessages) {
+        return buildChatMessagesListDerived(messages)
+    }
+    return buildChatMessagesListDerived(messages)
 }

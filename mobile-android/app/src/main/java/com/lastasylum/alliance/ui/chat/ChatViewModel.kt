@@ -55,12 +55,12 @@ import java.util.UUID
 
 private const val INITIAL_PAGE_SIZE = 20
 private const val PAGE_SIZE = 30
-private const val INCOMING_SOCKET_DEBOUNCE_MS = 75L
+private const val INCOMING_SOCKET_DEBOUNCE_MS = 0L
 private const val PROFILE_GATE_TTL_MS = 5 * 60_000L
 /** Не подгружать старую страницу сразу после первого кадра ленты — иначе второй diff и фриз. */
 private const val PREFETCH_OLDER_DEFER_MS = 2_500L
 /** Отложить reconcile с сервером, если сообщения уже в кэше после splash/bootstrap. */
-private const val BACKGROUND_MESSAGE_REFRESH_DEFER_MS = 1_800L
+private const val BACKGROUND_MESSAGE_REFRESH_DEFER_MS = 400L
 
 private data class RoomMessageCache(
     val messages: List<ChatMessage>,
@@ -282,6 +282,12 @@ class ChatViewModel(
             if (!raid.isNullOrBlank()) add(raid)
             if (!hub.isNullOrBlank() && hub !in this) add(hub)
             if (!selected.isNullOrBlank() && selected !in this) add(selected)
+            if (overlayChatPanelVisible) {
+                rooms.forEach { room ->
+                    val id = room.id.trim()
+                    if (id.isNotEmpty() && id !in this) add(id)
+                }
+            }
             if (rooms.isNotEmpty() && isEmpty()) {
                 rooms.firstOrNull { it.id == selected }?.id?.let { add(it) }
             }
@@ -330,7 +336,9 @@ class ChatViewModel(
         overlayChatPanelVisible = visible
         if (visible) {
             refreshStickerPackAccess()
+            syncReadStateFromPreferences()
             recomputeRoomUnreadBadges()
+            reconnectRealtimeIfNeeded()
             return
         }
         viewModelScope.launch {
@@ -761,6 +769,11 @@ class ChatViewModel(
             highlightMessageId = null,
             transientNotice = null,
             rooms = clearUnreadForRoom(_state.value.rooms, roomId),
+            scrollToLatestNonce = if (cached != null) {
+                _state.value.scrollToLatestNonce + 1L
+            } else {
+                _state.value.scrollToLatestNonce
+            },
         )
         cached?.messages?.mapNotNull { it._id }?.let { knownMessageIds.addAll(it) }
         viewModelScope.launch {
@@ -910,7 +923,6 @@ class ChatViewModel(
     private fun scheduleUnreadSyncFromServer() {
         unreadSyncJob?.cancel()
         unreadSyncJob = viewModelScope.launch {
-            delay(400)
             syncRoomsFromServer(reconfirmVisibleRoom = false)
         }
     }
@@ -1094,9 +1106,13 @@ class ChatViewModel(
         messageIdIndex.clear()
         _draftMessage.value = ""
         _typingPeers.value = emptyMap()
-        val hasTeam = loadTeamProfileGate()
         _state.update { st ->
             st.copy(rooms = clearUnreadForRoom(st.rooms.ifEmpty { rooms }, roomId))
+        }
+        val hasTeam = if (hadCachedMessages && cachedTeamProfileGate != null) {
+            cachedTeamProfileGate == true
+        } else {
+            loadTeamProfileGate()
         }
         if (!hadCachedMessages) {
             _state.value = _state.value.copy(
@@ -1430,17 +1446,22 @@ class ChatViewModel(
         val roomId = _state.value.selectedRoomId ?: return
         val replyToMessageId = replyOverride ?: _state.value.replyToMessage?._id
         if (globalSendBlocked(roomId, trimmed, replyToMessageId)) return
+        val optimistic = buildOptimisticOutgoingMessage(roomId, trimmed, replyToMessageId)
+        val pendingId = optimistic._id
         viewModelScope.launch {
             _state.value = _state.value.copy(
-                isSending = true,
+                isSending = false,
                 error = null,
                 sendFailure = null,
             )
+            applyIncomingMessage(optimistic, clearComposer = true)
             repository.sendMessageWithRetries(trimmed, roomId, replyToMessageId)
                 .onSuccess { sent ->
-                    applyIncomingMessage(sent, clearComposer = true)
+                    removePendingOutgoingMessage(pendingId)
+                    applyIncomingMessage(sent, clearComposer = false)
                 }
                 .onFailure { throwable ->
+                    removePendingOutgoingMessage(pendingId)
                     _state.value = _state.value.copy(
                         isSending = false,
                         sendFailure = ChatSendFailure(
@@ -1462,6 +1483,33 @@ class ChatViewModel(
         if (globalSendBlocked(roomId, text, replyToMessageId)) return
 
         viewModelScope.launch {
+            if (uris.isEmpty() && text.isNotBlank()) {
+                val optimistic = buildOptimisticOutgoingMessage(roomId, text, replyToMessageId)
+                val pendingId = optimistic._id
+                _state.value = _state.value.copy(isSending = false, error = null, sendFailure = null)
+                applyIncomingMessage(optimistic, clearComposer = true)
+                repository.sendMessageWithRetries(
+                    text = text.trim(),
+                    roomId = roomId,
+                    replyToMessageId = replyToMessageId,
+                )
+                    .onSuccess { sent ->
+                        removePendingOutgoingMessage(pendingId)
+                        applyIncomingMessage(sent, clearComposer = false)
+                    }
+                    .onFailure { throwable ->
+                        removePendingOutgoingMessage(pendingId)
+                        _state.value = _state.value.copy(
+                            isSending = false,
+                            sendFailure = ChatSendFailure(
+                                messageText = text,
+                                replyToMessageId = replyToMessageId,
+                                errorMessage = throwable.toUserMessageRu(res),
+                            ),
+                        )
+                    }
+                return@launch
+            }
             _state.value = _state.value.copy(isSending = true, error = null, sendFailure = null)
             val uploadedIds = ArrayList<String>(uris.size)
             try {
@@ -1618,7 +1666,7 @@ class ChatViewModel(
         if (_draftMessage.value.isBlank()) return
         typingEmitJob = viewModelScope.launch {
             try {
-                delay(500)
+                delay(280)
                 repository.emitTypingPing(roomId)
             } catch (_: CancellationException) {
                 // cancelled by newer keystroke or room switch
@@ -1924,6 +1972,39 @@ class ChatViewModel(
         )
     }
 
+    private fun buildOptimisticOutgoingMessage(
+        roomId: String,
+        text: String,
+        replyToMessageId: String?,
+    ): ChatMessage =
+        ChatMessage(
+            _id = "pending-${UUID.randomUUID()}",
+            allianceId = "",
+            roomId = roomId,
+            senderId = currentUserId,
+            senderUsername = "",
+            senderRole = currentUserRole,
+            text = text,
+            replyToMessageId = replyToMessageId,
+            createdAt = java.time.Instant.now().toString(),
+        )
+
+    private fun removePendingOutgoingMessage(pendingId: String?) {
+        val id = pendingId?.trim().orEmpty()
+        if (id.isEmpty()) return
+        knownMessageIds.remove(id)
+        messageIdIndex.remove(id)
+        _state.update { st ->
+            st.copy(messages = st.messages.filter { it._id != id })
+        }
+        val rid = _state.value.selectedRoomId ?: return
+        roomMessageCache[rid] = RoomMessageCache(
+            messages = _state.value.messages,
+            hasMoreOlder = _state.value.hasMoreOlder,
+        )
+        ChatSessionCache.updateMessages(rid, _state.value.messages)
+    }
+
     private fun applyIncomingMessage(
         message: ChatMessage,
         clearComposer: Boolean = false,
@@ -1954,13 +2035,22 @@ class ChatViewModel(
         if (nextState.deletingMessageId in clearedDeletingId) {
             nextState = nextState.copy(deletingMessageId = null)
         }
+        val selfId = currentUserId.trim()
+        val ownOutgoing = selfId.isNotEmpty() &&
+            batch.any { it.senderId.trim() == selfId }
         if (clearComposer) {
             _draftMessage.value = ""
             _pickedImageUris.value = emptyList()
+            val sentId = batch.firstOrNull()?._id
             nextState = nextState.copy(
                 replyToMessage = null,
                 scrollToLatestNonce = nextState.scrollToLatestNonce + 1L,
                 sendFailure = null,
+                highlightMessageId = sentId ?: nextState.highlightMessageId,
+            )
+        } else if (ownOutgoing) {
+            nextState = nextState.copy(
+                scrollToLatestNonce = nextState.scrollToLatestNonce + 1L,
             )
         }
         _state.value = syncSelections(nextState)

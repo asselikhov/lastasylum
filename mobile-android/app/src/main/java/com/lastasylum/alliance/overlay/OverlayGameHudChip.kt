@@ -10,11 +10,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.ui.zIndex
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -32,7 +33,7 @@ import androidx.compose.ui.unit.sp
 private val HudIconSize = 16.dp
 private val HudChipPaddingH = 6.dp
 private val HudChipPaddingV = 5.dp
-private val HudRowSpacing = 4.dp
+private val HudRowSpacing = 8.dp
 private val HudChipBackground = Color(0xB310141E)
 private val HudChipCorner = 6.dp
 private val HudBadgeOverflowPaddingTop = 10.dp
@@ -76,26 +77,7 @@ internal fun OverlayGameHudChip(
 ) {
     require(icon != null || painter != null) { "icon or painter required" }
     val badge = badgeCount.coerceAtLeast(0)
-    BadgedBox(
-        modifier = modifier.wrapContentSize(unbounded = true),
-        badge = {
-            if (badge > 0) {
-                val badgeText = if (badge > 99) "99+" else badge.toString()
-                Badge(
-                    containerColor = HudBadgeColor,
-                    modifier = Modifier.defaultMinSize(minWidth = 16.dp, minHeight = 16.dp),
-                ) {
-                    Text(
-                        text = badgeText,
-                        color = Color.White,
-                        fontSize = 9.sp,
-                        style = MaterialTheme.typography.labelSmall,
-                        maxLines = 1,
-                    )
-                }
-            }
-        },
-    ) {
+    Box(modifier = modifier.wrapContentSize(unbounded = true)) {
         Box(
             modifier = Modifier
                 .background(HudChipBackground, RoundedCornerShape(HudChipCorner))
@@ -121,6 +103,25 @@ internal fun OverlayGameHudChip(
                         modifier = Modifier.size(HudIconSize),
                     )
                 }
+            }
+        }
+        if (badge > 0) {
+            val badgeText = if (badge > 99) "99+" else badge.toString()
+            Badge(
+                containerColor = HudBadgeColor,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 6.dp, y = (-6).dp)
+                    .zIndex(2f)
+                    .defaultMinSize(minWidth = 16.dp, minHeight = 16.dp),
+            ) {
+                Text(
+                    text = badgeText,
+                    color = Color.White,
+                    fontSize = 9.sp,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                )
             }
         }
     }

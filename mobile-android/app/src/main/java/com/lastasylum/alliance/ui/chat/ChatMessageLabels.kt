@@ -1,7 +1,7 @@
 package com.lastasylum.alliance.ui.chat
 
 import com.lastasylum.alliance.data.chat.ChatMessage
-import java.time.Instant
+import com.lastasylum.alliance.ui.util.parseIsoInstantEpochMilli
 
 /** Slack between [createdAt] and [editedAt] to ignore clock skew / same-second saves. */
 private const val EDITED_LABEL_MIN_DELTA_MS = 2_000L
@@ -24,4 +24,4 @@ fun chatMessageShowsEditedLabel(editedAt: String?, createdAt: String?): Boolean 
 }
 
 internal fun parseChatInstantMs(iso: String): Long? =
-    runCatching { Instant.parse(iso.trim()).toEpochMilli() }.getOrNull()
+    parseIsoInstantEpochMilli(iso)

@@ -16,10 +16,7 @@ internal object ChatOverlayRoomIds {
         add(hubRoomId)
         add(selectedRoomId)
         // Prefs may be empty before first listRooms; cache still has raid/hub ids.
-        ChatSessionCache.getFreshRooms()?.forEach { room ->
-            if (ChatRaidRoomSync.isAllianceRaidRoom(room)) add(room.id)
-            if (ChatHubRoomSync.isAllianceHubRoom(room)) add(room.id)
-        }
+        ChatSessionCache.getFreshRooms()?.forEach { room -> add(room.id) }
         return out.toList()
     }
 }

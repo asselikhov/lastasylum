@@ -49,6 +49,24 @@ object ChatSessionCache {
         cachedRoomsAtMs = System.currentTimeMillis()
     }
 
+    fun patchRoomUnread(
+        roomId: String,
+        unreadCount: Int,
+        lastReadMessageId: String? = null,
+    ) {
+        if (roomId.isBlank()) return
+        val current = cachedRooms ?: return
+        cachedRooms = current.map { room ->
+            if (room.id != roomId) room
+            else room.copy(
+                unreadCount = unreadCount.coerceAtLeast(0),
+                lastReadMessageId = lastReadMessageId?.takeIf { it.isNotBlank() }
+                    ?: room.lastReadMessageId,
+            )
+        }
+        cachedRoomsAtMs = System.currentTimeMillis()
+    }
+
     fun getFreshMessages(roomId: String): List<ChatMessage>? {
         if (roomId.isBlank()) return null
         val messages = cachedMessages ?: return null

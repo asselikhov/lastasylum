@@ -102,6 +102,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -138,10 +139,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -199,9 +198,12 @@ import com.lastasylum.alliance.ui.chat.ChatMessageTimeWithReadStatus
 import com.lastasylum.alliance.ui.chat.ChatQuickReactions
 import com.lastasylum.alliance.ui.chat.ChatScrollToLatestFab
 import com.lastasylum.alliance.ui.chat.isAtReverseChatBottom
+import com.lastasylum.alliance.ui.chat.scrollReverseChatRevealLatest
 import com.lastasylum.alliance.ui.chat.scrollReverseChatToLatest
 import com.lastasylum.alliance.ui.chat.scrollTimelineItemToViewportCenter
+import com.lastasylum.alliance.ui.chat.CHAT_LIST_DERIVE_SYNC_MAX
 import com.lastasylum.alliance.ui.chat.buildChatMessagesListDerived
+import com.lastasylum.alliance.ui.chat.buildChatMessagesListDerivedAfterPrepend
 import com.lastasylum.alliance.ui.chat.ChatMessagesListDerived
 import com.lastasylum.alliance.ui.chat.clusterTopSpacingAt
 import com.lastasylum.alliance.ui.chat.chatTimelineDaySeparatorKey
@@ -355,8 +357,6 @@ fun ChatScreen(
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
     val scope = rememberCoroutineScope()
-    val focusManager = LocalFocusManager.current
-    val keyboardController = LocalSoftwareKeyboardController.current
     val selectedRoomId = state.selectedRoomId
     val selectedRoom = remember(selectedRoomId, state.rooms) {
         selectedRoomId?.let { id -> state.rooms.find { it.id == id } }
@@ -405,22 +405,37 @@ fun ChatScreen(
         }
     }
     val messages = state.messages
-    var listDerived by remember(state.selectedRoomId) {
-        mutableStateOf(ChatMessagesListDerived.Empty)
+    var lastDerivedMessages by remember(state.selectedRoomId) {
+        mutableStateOf<List<ChatMessage>>(emptyList())
     }
-    LaunchedEffect(state.selectedRoomId, messages) {
+    val listDerived by produceState(
+        initialValue = ChatMessagesListDerived.Empty,
+        state.selectedRoomId,
+        messages,
+    ) {
         if (messages.isEmpty()) {
-            listDerived = ChatMessagesListDerived.Empty
-            return@LaunchedEffect
-        }
-        if (messages.size <= 28 && listDerived.timeline.isEmpty()) {
-            listDerived = buildChatMessagesListDerived(messages)
-        }
-        val built = withContext(Dispatchers.Default) {
-            buildChatMessagesListDerived(messages)
-        }
-        if (built != listDerived) {
-            listDerived = built
+            lastDerivedMessages = emptyList()
+            ChatMessagesListDerived.Empty
+        } else {
+            when {
+                messages.size == lastDerivedMessages.size + 1 &&
+                    messages.drop(1) == lastDerivedMessages &&
+                    value.timeline.isNotEmpty() -> {
+                    if (messages.size <= CHAT_LIST_DERIVE_SYNC_MAX) {
+                        buildChatMessagesListDerivedAfterPrepend(value, lastDerivedMessages, messages)
+                    } else {
+                        withContext(Dispatchers.Default) {
+                            buildChatMessagesListDerivedAfterPrepend(value, lastDerivedMessages, messages)
+                        }
+                    }
+                }
+                messages.size <= CHAT_LIST_DERIVE_SYNC_MAX ->
+                    buildChatMessagesListDerived(messages)
+                else ->
+                    withContext(Dispatchers.Default) {
+                        buildChatMessagesListDerived(messages)
+                    }
+            }.also { lastDerivedMessages = messages }
         }
     }
     val listUiState = remember(
@@ -523,7 +538,7 @@ fun ChatScreen(
     LaunchedEffect(state.highlightMessageId) {
         val highlightId = state.highlightMessageId?.trim().orEmpty()
         if (highlightId.isEmpty()) return@LaunchedEffect
-        delay(1_200)
+        delay(700)
         onClearHighlightMessage()
     }
 
@@ -551,7 +566,7 @@ fun ChatScreen(
             ChatListLoadSignal(lastIdx, total, hasMore, busy)
         }
             .distinctUntilChanged()
-            .debounce(80)
+            .debounce(24)
             .collect { sig ->
                 if (sig.totalItems > 4 &&
                     sig.lastVisibleIndex >= sig.totalItems - 2 &&
@@ -566,17 +581,34 @@ fun ChatScreen(
     var lastHandledScrollNonce by remember(state.selectedRoomId) { mutableLongStateOf(0L) }
     var lastAutoScrolledNewestKey by remember(state.selectedRoomId) { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(state.scrollToLatestNonce, state.newestMessageKey, isNearLatest) {
-        if (state.scrollToLatestNonce > lastHandledScrollNonce) {
-            lastHandledScrollNonce = state.scrollToLatestNonce
-            listState.scrollReverseChatToLatest(animate = true)
-            return@LaunchedEffect
-        }
-        val key = state.newestMessageKey
-        if (!key.isNullOrBlank() && isNearLatest && key != lastAutoScrolledNewestKey) {
-            lastAutoScrolledNewestKey = key
-            listState.scrollReverseChatToLatest(animate = false)
-        }
+    LaunchedEffect(
+        state.scrollToLatestNonce,
+        listDerived.timeline.size,
+        state.messages.size,
+    ) {
+        val nonce = state.scrollToLatestNonce
+        if (nonce <= lastHandledScrollNonce) return@LaunchedEffect
+        if (state.messages.isEmpty() || listDerived.timeline.isEmpty()) return@LaunchedEffect
+        lastHandledScrollNonce = nonce
+        lastAutoScrolledNewestKey = state.newestMessageKey
+        newMessagesWhileScrolledUp = 0
+        listState.scrollReverseChatRevealLatest(
+            animate = false,
+            adjustViewport = false,
+        )
+    }
+
+    LaunchedEffect(state.newestMessageKey, isNearLatest, listDerived.timeline.size) {
+        if (state.scrollToLatestNonce > lastHandledScrollNonce) return@LaunchedEffect
+        val key = state.newestMessageKey ?: return@LaunchedEffect
+        if (listDerived.timeline.isEmpty()) return@LaunchedEffect
+        if (key == lastAutoScrolledNewestKey) return@LaunchedEffect
+        lastAutoScrolledNewestKey = key
+        if (!isNearLatest) return@LaunchedEffect
+        listState.scrollReverseChatRevealLatest(
+            animate = false,
+            adjustViewport = false,
+        )
     }
 
     val newestKeyForScroll = rememberUpdatedState(state.newestMessageKey)
@@ -586,7 +618,10 @@ fun ChatScreen(
             lastCountedNewestKey = newestKeyForScroll.value
             onScrollToLatest()
             scope.launch {
-                listState.scrollReverseChatToLatest(animate = true)
+                listState.scrollReverseChatRevealLatest(
+                    animate = false,
+                    adjustViewport = false,
+                )
             }
         }
     }
@@ -751,10 +786,6 @@ fun ChatScreen(
                                     ) &&
                                 !state.isSending
                             ) {
-                                if (overlayUi) {
-                                    focusManager.clearFocus(force = true)
-                                    keyboardController?.hide()
-                                }
                                 onSendDraft()
                             }
                         },
@@ -1095,7 +1126,7 @@ private fun ChatMessagesLazyList(
         verticalArrangement = Arrangement.spacedBy(0.dp),
         contentPadding = PaddingValues(
             top = SquadRelayDimens.sectionGap,
-            bottom = SquadRelayDimens.sectionGap,
+            bottom = SquadRelayDimens.sectionGap + 6.dp,
         ),
     ) {
         when {

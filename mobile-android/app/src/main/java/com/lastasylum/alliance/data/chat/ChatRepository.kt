@@ -50,7 +50,7 @@ class ChatRepository(
             onHttpSuccess = realtime::dispatchOverlayHttpMessage,
         )
 
-    /** Overlay quick commands: strip is updated locally; skip HTTP echo to avoid duplicate cards. */
+    /** Overlay quick commands: strip is updated optimistically in [CombatOverlayService] before HTTP. */
     suspend fun sendOverlayRaidCommandWithRetries(
         text: String,
         roomId: String,

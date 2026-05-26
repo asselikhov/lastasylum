@@ -436,16 +436,34 @@ export class ChatGateway {
     });
   }
 
+  /** Push per-user unread after a new message (HTTP or WS), including overlay FGS without room:join. */
+  async notifyRoomUnreadAfterNewMessage(
+    roomId: string,
+    excludeUserId: string,
+  ): Promise<void> {
+    await this.emitUnreadSnapshotsForRoom(roomId, excludeUserId);
+  }
+
   private async emitUnreadSnapshotsForRoom(
     roomId: string,
     excludeUserId: string,
   ): Promise<void> {
+    const notified = new Set<string>();
     const adapterRoom = this.server?.adapter.rooms.get(`chat:${roomId}`);
-    if (!adapterRoom) return;
-    for (const socketId of adapterRoom) {
-      const client = this.server.sockets.get(socketId) as AuthSocket | undefined;
-      const userId = client?.data?.user?.userId;
-      if (!userId || userId === excludeUserId) continue;
+    if (adapterRoom) {
+      for (const socketId of adapterRoom) {
+        const client = this.server.sockets.get(socketId) as AuthSocket | undefined;
+        const userId = client?.data?.user?.userId;
+        if (!userId || userId === excludeUserId || notified.has(userId)) continue;
+        notified.add(userId);
+        await this.emitUnreadToUser(userId, roomId);
+      }
+    }
+    const overlayTeammates =
+      await this.usersService.listOverlayIngameTeammateIds(excludeUserId);
+    for (const userId of overlayTeammates) {
+      if (notified.has(userId)) continue;
+      notified.add(userId);
       await this.emitUnreadToUser(userId, roomId);
     }
   }

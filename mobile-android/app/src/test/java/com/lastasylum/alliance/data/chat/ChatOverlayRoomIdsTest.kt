@@ -37,4 +37,17 @@ class ChatOverlayRoomIdsTest {
         val ids = ChatOverlayRoomIds.forOverlayBootstrap(null, null, null)
         assertEquals(listOf("raid-cached"), ids)
     }
+
+    @Test
+    fun bootstrap_subscribesAllCachedRoomsForOverlayUnread() {
+        ChatSessionCache.update(
+            listOf(
+                ChatRoomDto(id = "raid-1", allianceId = "pt:team", title = "Рейд", sortOrder = 2),
+                ChatRoomDto(id = "hub-1", allianceId = "a1", title = "Альянс", sortOrder = 1),
+                ChatRoomDto(id = "inter-1", allianceId = "global", title = "Межсерв", sortOrder = 0),
+            ),
+        )
+        val ids = ChatOverlayRoomIds.forOverlayBootstrap("raid-1", "hub-1", null)
+        assertEquals(listOf("raid-1", "hub-1", "inter-1"), ids)
+    }
 }

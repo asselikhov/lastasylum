@@ -28,11 +28,46 @@ internal fun LazyListState.isAtReverseChatBottom(
 }
 
 internal suspend fun LazyListState.scrollReverseChatToLatest(animate: Boolean) {
+    scrollReverseChatRevealLatest(animate = animate, adjustViewport = !animate)
+}
+
+/**
+ * Snap to newest row. [adjustViewport] = false for instant send (Telegram-style, no wait on layout).
+ */
+internal suspend fun LazyListState.scrollReverseChatRevealLatest(
+    newestIndex: Int = 0,
+    animate: Boolean = false,
+    edgeInsetPx: Int = 12,
+    adjustViewport: Boolean = true,
+) {
+    if (layoutInfo.totalItemsCount == 0) return
     if (animate) {
-        runCatching { animateScrollToItem(0) }
-            .onFailure { scrollToItem(0) }
+        runCatching { animateScrollToItem(newestIndex, 0) }
+            .onFailure { scrollToItem(newestIndex, 0) }
     } else {
-        scrollToItem(0)
+        scrollToItem(newestIndex, 0)
+    }
+    if (!adjustViewport) return
+    snapshotFlow {
+        layoutInfo.visibleItemsInfo.firstOrNull { it.index == newestIndex } to layoutInfo.viewportSize.height
+    }
+        .filter { it.first != null && it.second > 0 }
+        .first()
+    val item = layoutInfo.visibleItemsInfo.firstOrNull { it.index == newestIndex } ?: return
+    val viewportStart = layoutInfo.viewportStartOffset
+    val viewportEnd = layoutInfo.viewportEndOffset
+    val viewportHeight = (viewportEnd - viewportStart).coerceAtLeast(1)
+    val itemStart = item.offset
+    val itemEnd = item.offset + item.size
+    val bottomInset = edgeInsetPx.coerceAtLeast(0)
+    val topInset = edgeInsetPx.coerceAtLeast(0)
+    if (itemEnd > viewportEnd - bottomInset) {
+        scrollBy((itemEnd - viewportEnd + bottomInset).toFloat())
+    }
+    if (item.size <= viewportHeight - topInset - bottomInset &&
+        itemStart < viewportStart + topInset
+    ) {
+        scrollBy((itemStart - viewportStart - topInset).toFloat())
     }
 }
 

@@ -4,6 +4,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.stickers.StickerPacks
+import com.lastasylum.alliance.ui.util.parseIsoInstantEpochMilli
 
 sealed interface ChatTimelineEntry {
     data class DaySeparator(val label: String) : ChatTimelineEntry
@@ -60,10 +61,8 @@ fun buildChatTimeline(messages: List<ChatMessage>): List<ChatTimelineEntry> {
         val hasImages = m.attachments.any { it.kind == "image" && it.url.isNotBlank() }
         return hasImages && StickerPacks.parse(m.text) == null
     }
-    fun tsMillis(createdAt: String?): Long {
-        if (createdAt.isNullOrBlank()) return -1L
-        return runCatching { java.time.Instant.parse(createdAt.trim()).toEpochMilli() }.getOrDefault(-1L)
-    }
+    fun tsMillis(createdAt: String?): Long =
+        parseIsoInstantEpochMilli(createdAt) ?: -1L
     val albumWindowMs = 3L * 60L * 1000L
 
     var i = 0
