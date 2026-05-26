@@ -260,6 +260,7 @@ fun AppNavigation(
         modifier = modifier,
         containerColor = Color.Transparent,
         contentColor = MaterialTheme.colorScheme.onBackground,
+        // adjustResize на MainActivity: IME обрабатывает система; не дублируем в padding контента.
         contentWindowInsets = WindowInsets.safeDrawing.exclude(WindowInsets.ime),
         bottomBar = {
             Box(

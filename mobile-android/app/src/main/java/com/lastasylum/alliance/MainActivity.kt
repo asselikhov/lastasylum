@@ -28,7 +28,7 @@ class MainActivity : ComponentActivity() {
             isAppearanceLightNavigationBars = false
         }
         super.onCreate(savedInstanceState)
-        // adjustNothing: IME через WindowInsets; композер — chatComposerDock, навбар не прячем.
+        // adjustResize: окно сжимается под IME; композер — 8dp, навбар остаётся в Scaffold.
         WindowCompat.setDecorFitsSystemWindows(window, false)
         hideSystemUi()
         setContent {
@@ -44,7 +44,6 @@ class MainActivity : ComponentActivity() {
         WindowCompat.getInsetsController(window, window.decorView).apply {
             systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            // adjustNothing: без медленного resize при скрытии IME.
             // Hiding legacy three-button navigation strip so more vertical space is available for game/content.
             hide(WindowInsetsCompat.Type.navigationBars())
         }

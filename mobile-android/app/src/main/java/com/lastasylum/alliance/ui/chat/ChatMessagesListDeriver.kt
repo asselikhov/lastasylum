@@ -133,6 +133,7 @@ private fun canIncrementallyReplaceNewestDerived(
     if (messages.drop(1) != previousMessages.drop(1)) return false
     if (messages[0] == previousMessages[0]) return false
     if (previousDerived.timeline.isEmpty()) return false
+    if (previousDerived.clusterFlags.isEmpty()) return false
     val head = previousDerived.timeline.first()
     return head is ChatTimelineEntry.ChatMessageItem && head.messageIndex == 0 &&
         !chatMessageIsAlbumCandidate(messages[0])
@@ -150,6 +151,9 @@ fun buildChatMessagesListDerivedAfterReplaceNewest(
     val newTimeline = previousDerived.timeline.toMutableList()
     val head = newTimeline[0] as ChatTimelineEntry.ChatMessageItem
     newTimeline[0] = head.copy(message = messages[0])
+    if (previousDerived.clusterFlags.isEmpty()) {
+        return buildChatMessagesListDerived(messages)
+    }
     val newClusterFlags = previousDerived.clusterFlags.toMutableList()
     newClusterFlags[0] = ChatMessageClusterFlags(
         showHeader = chatMessageShowsClusterHeaderNewestFirst(messages, 0),

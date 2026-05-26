@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imeNestedScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -408,7 +409,7 @@ private fun ChatScreenMessagesHost(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ChatScreen(
     state: ChatState,
@@ -719,9 +720,7 @@ fun ChatScreen(
         val composerBar: @Composable () -> Unit = {
             if (state.sendFailure != null || (selectedRoomId != null && state.rooms.isNotEmpty())) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .then(composerDockModifier),
+                modifier = Modifier.fillMaxWidth().then(composerDockModifier),
             ) {
                 state.sendFailure?.let { failure ->
                     Surface(
@@ -783,23 +782,11 @@ fun ChatScreen(
                                 !state.isSending
                             ) {
                                 onSendDraft()
-                                scope.launch {
-                                    listState.scrollReverseChatRevealLatest(
-                                        animate = false,
-                                        adjustViewport = false,
-                                    )
-                                }
                             }
                         },
                         onSendStickerPayload = { payload ->
                             if (!globalComposerLocked && !state.isSending) {
                                 onSendStickerPayload(payload)
-                                scope.launch {
-                                    listState.scrollReverseChatRevealLatest(
-                                        animate = false,
-                                        adjustViewport = false,
-                                    )
-                                }
                             }
                         },
                         onPickImages = { uris, append ->
@@ -816,7 +803,11 @@ fun ChatScreen(
             }
         }
         }
-        Column(Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .then(if (!overlayUi) Modifier.imeNestedScroll() else Modifier),
+        ) {
                 ChatScreenMessagesHost(
                     modifier = Modifier
                         .weight(1f, fill = true)
