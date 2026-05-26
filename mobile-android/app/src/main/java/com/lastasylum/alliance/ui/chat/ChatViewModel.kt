@@ -486,8 +486,27 @@ class ChatViewModel(
         }
     }
 
+    private fun diskChatRoomsOrNull(): List<ChatRoomDto>? {
+        if (currentUserId.isBlank()) return null
+        return launchDiskCache.loadChatRooms(currentUserId)
+    }
+
+    private fun primeRoomMessagesFromDisk(roomId: String): RoomMessageCache? {
+        if (currentUserId.isBlank() || roomId.isBlank()) return null
+        val disk = launchDiskCache.loadRoomMessages(currentUserId, roomId) ?: return null
+        if (disk.messages.isEmpty()) return null
+        val capped = capNewestFirst(disk.messages, PAGE_SIZE)
+        return RoomMessageCache(
+            messages = capped,
+            hasMoreOlder = disk.hasMoreOlder,
+        ).also { entry ->
+            roomMessageCache[roomId] = entry
+            ChatSessionCache.updateMessages(roomId, disk.messages)
+        }
+    }
+
     /**
-     * Синхронно подставить комнаты/ленту из [ChatSessionCache] и [roomMessageCache]
+     * Синхронно подставить комнаты/ленту из RAM, [ChatSessionCache] или [LaunchDiskCache]
      * до первого кадра оверлея (без «Пока нет сообщений…» и ожидания bootstrap).
      */
     fun primeOverlayChatFromCache(
@@ -506,7 +525,11 @@ class ChatViewModel(
         }
         val roomsRaw = ChatSessionCache.getFreshRooms()
             ?: _state.value.rooms.takeIf { it.isNotEmpty() }
+            ?: diskChatRoomsOrNull()
             ?: return
+        if (ChatSessionCache.getFreshRooms() == null) {
+            ChatSessionCache.update(roomsRaw)
+        }
         val rooms = applyRoomsFromServer(roomsRaw)
         if (rooms.isEmpty()) return
         val roomId = resolveOverlayPreferredRoomId(
@@ -525,6 +548,7 @@ class ChatViewModel(
                     hasMoreOlder = sessionMessages.size >= PAGE_SIZE,
                 ).also { roomMessageCache[roomId] = it }
             }
+            ?: primeRoomMessagesFromDisk(roomId)
         if (cached == null || cached.messages.isEmpty()) {
             _state.update { st ->
                 st.copy(
@@ -557,18 +581,26 @@ class ChatViewModel(
     fun refreshChatForOverlay() {
         syncReadStateFromPreferences()
         primeOverlayChatFromCache(preferAllianceHubRoom = true)
-        scheduleBootstrap(preferAllianceHubRoom = true, force = false)
+        if (!overlayHubAlreadyReady(_state.value.rooms)) {
+            primeFromLaunchDisk()
+            primeOverlayChatFromCache(preferAllianceHubRoom = true)
+        }
+        if (!overlayHubAlreadyReady(_state.value.rooms)) {
+            scheduleBootstrap(preferAllianceHubRoom = true, force = false)
+        }
         viewModelScope.launch {
             repository.listRooms()
                 .onSuccess { raw ->
                     val next = applyRoomsFromServer(raw)
                     syncRaidRoomPreference(next)
+                    ChatSessionCache.update(raw)
                     _state.update { it.copy(rooms = next) }
                     syncTabUnreadBadge(next)
                     syncOverlayAllianceHubBadge(next)
                     if (overlayChatPanelVisible) {
                         recomputeRoomUnreadBadges()
                     }
+                    schedulePersistChatSnapshot()
                 }
         }
     }
@@ -593,6 +625,7 @@ class ChatViewModel(
             reconnectRealtimeIfNeeded()
             return
         }
+        schedulePersistChatSnapshot()
         viewModelScope.launch {
             awaitPendingMarkRead()
             recomputeRoomUnreadBadges()
@@ -665,6 +698,9 @@ class ChatViewModel(
             _state.value.selectedRoomId == hubId &&
             _state.value.messages.isNotEmpty()
     }
+
+    /** Overlay panel: hub room has messages to show without waiting on network. */
+    fun overlayHubReadyForPanel(): Boolean = overlayHubAlreadyReady(_state.value.rooms)
 
     private fun overlayRaidAlreadyReady(rooms: List<ChatRoomDto>): Boolean {
         val raidId = allianceRaidRoomId(rooms) ?: return false

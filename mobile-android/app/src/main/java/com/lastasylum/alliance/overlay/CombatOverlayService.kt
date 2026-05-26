@@ -4118,7 +4118,11 @@ class CombatOverlayService : Service() {
             launchDiskCache = container.launchDiskCache,
             currentUserId = userId,
             currentUserRole = userRole,
-        ).also { overlayFallbackChatViewModel = it }
+        ).also { vm ->
+            overlayFallbackChatViewModel = vm
+            vm.primeFromLaunchDisk()
+            vm.primeOverlayChatFromCache(preferAllianceHubRoom = true)
+        }
     }
 
     private fun finalizeOverlayChatSessionAfterClose() {
@@ -4158,6 +4162,10 @@ class CombatOverlayService : Service() {
         val vm = resolveChatViewModel()
             ?: ensureOverlayFallbackChatViewModel(uid, jwtRoleFromAccessToken())
         vm.primeOverlayChatFromCache(preferAllianceHubRoom = true)
+        if (!vm.overlayHubReadyForPanel()) {
+            vm.primeFromLaunchDisk()
+            vm.primeOverlayChatFromCache(preferAllianceHubRoom = true)
+        }
     }
 
     private fun showOverlayChatTeamPanel(
