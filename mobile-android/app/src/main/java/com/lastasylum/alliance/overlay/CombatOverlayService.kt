@@ -2160,6 +2160,7 @@ class CombatOverlayService : Service() {
 
     private fun forwardOverlaySocketMessageToViewModel(msg: ChatMessage) {
         val vm = resolveChatViewModel() ?: return
+        if (vm.shouldSuppressOwnOutgoingRealtimeEcho(msg)) return
         if (!activityChatViewModelHandlesUnread()) {
             vm.stashOverlayRealtimeMessage(msg)
         }

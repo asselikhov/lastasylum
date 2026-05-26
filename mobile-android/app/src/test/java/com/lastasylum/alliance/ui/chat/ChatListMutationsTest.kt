@@ -209,6 +209,14 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun hasMatchingPendingOutgoing_detectsOptimisticRow() {
+        val pending = msg("pending-1", "hello")
+        val server = msg("server-1", "hello")
+        assertTrue(hasMatchingPendingOutgoing(listOf(pending), server, "u1"))
+        assertFalse(hasMatchingPendingOutgoing(listOf(server), server, "u1"))
+    }
+
+    @Test
     fun mergeOutgoingConfirmation_clearsEditedAt() {
         val optimistic = msg("pending-1", "hi")
         val confirmed = msg("server-1", "hi").copy(

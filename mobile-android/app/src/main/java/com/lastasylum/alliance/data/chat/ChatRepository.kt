@@ -50,6 +50,23 @@ class ChatRepository(
             onHttpSuccess = realtime::dispatchOverlayHttpMessage,
         )
 
+    /** App/overlay chat UI: confirm via [ChatViewModel] only — no overlay HTTP fan-out (avoids duplicate row). */
+    suspend fun sendMessageWithRetriesForChatUi(
+        text: String,
+        roomId: String,
+        replyToMessageId: String? = null,
+        attachments: List<String>? = null,
+        excavationAlert: Boolean = false,
+    ): Result<ChatMessage> =
+        rest.sendMessageWithRetries(
+            text,
+            roomId,
+            replyToMessageId,
+            attachments,
+            excavationAlert,
+            onHttpSuccess = null,
+        )
+
     /** Overlay quick commands: strip is updated optimistically in [CombatOverlayService] before HTTP. */
     suspend fun sendOverlayRaidCommandWithRetries(
         text: String,

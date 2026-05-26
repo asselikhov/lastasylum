@@ -2179,7 +2179,7 @@ class ChatViewModel(
         registerInFlightOutgoing(roomId, trimmed, replyToMessageId)
         insertOptimisticOutgoingSynchronously(optimistic, clearComposer = true)
         viewModelScope.launch {
-            repository.sendMessageWithRetries(trimmed, roomId, replyToMessageId)
+            repository.sendMessageWithRetriesForChatUi(trimmed, roomId, replyToMessageId)
                 .onSuccess { sent ->
                     withContext(Dispatchers.Main.immediate) {
                         confirmPendingOutgoingMessage(pendingId, sent)
@@ -2215,7 +2215,7 @@ class ChatViewModel(
             registerInFlightOutgoing(roomId, text, replyToMessageId)
             insertOptimisticOutgoingSynchronously(optimistic, clearComposer = true)
             viewModelScope.launch {
-                repository.sendMessageWithRetries(
+                repository.sendMessageWithRetriesForChatUi(
                     text = text.trim(),
                     roomId = roomId,
                     replyToMessageId = replyToMessageId,
@@ -2643,12 +2643,18 @@ class ChatViewModel(
         repository.notifyOverlayMessageDeleted(id, _state.value.selectedRoomId.orEmpty())
     }
 
+    /** Drop own socket/HTTP echo before the debounced channel — prevents a visible duplicate row. */
+    fun shouldSuppressOwnOutgoingRealtimeEcho(message: ChatMessage): Boolean =
+        shouldDeferOwnOutgoingSocketEcho(message)
+
     private fun onIncomingMessage(message: ChatMessage) {
+        if (shouldDeferOwnOutgoingSocketEcho(message)) return
         if (!incomingMessages.trySend(message).isSuccess) {
             if (BuildConfig.DEBUG) {
                 Log.w("ChatViewModel", "incomingMessages channel overflow; flushing on main")
             }
             viewModelScope.launch(Dispatchers.Main) {
+                if (shouldDeferOwnOutgoingSocketEcho(message)) return@launch
                 dispatchIncomingBatch(listOf(message))
             }
         }
@@ -2956,12 +2962,10 @@ class ChatViewModel(
         val serverId = message._id?.trim().orEmpty()
         if (selfId.isEmpty() || serverId.isEmpty() || serverId.startsWith("pending-")) return false
         if (message.senderId.trim() != selfId) return false
-        if (messageIdIndex.containsKey(serverId) &&
-            _state.value.messages.none { msg ->
-                val pid = msg._id?.trim().orEmpty()
-                pid.startsWith("pending-") && outgoingTextsMatch(msg, message)
-            }
-        ) {
+        if (hasMatchingPendingOutgoing(_state.value.messages, message, selfId)) {
+            return true
+        }
+        if (messageIdIndex.containsKey(serverId)) {
             return false
         }
         val fingerprint = outgoingMessageFingerprint(
@@ -3195,7 +3199,9 @@ class ChatViewModel(
                             previousMessages = snapshot.messages,
                             messages = messages,
                         )
-                    } else {
+                    } else if (
+                        !hasMatchingPendingOutgoing(messages, message, currentUserId)
+                    ) {
                         stillFresh.add(message)
                     }
                 }

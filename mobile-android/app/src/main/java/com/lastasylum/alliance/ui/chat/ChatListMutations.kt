@@ -53,6 +53,20 @@ internal fun outgoingTextsMatch(a: ChatMessage, b: ChatMessage): Boolean =
         normalizeOutgoingReplyToId(a.replyToMessageId) ==
         normalizeOutgoingReplyToId(b.replyToMessageId)
 
+/** True while optimistic row is still waiting for HTTP confirm (blocks socket duplicate row). */
+internal fun hasMatchingPendingOutgoing(
+    messages: List<ChatMessage>,
+    incoming: ChatMessage,
+    currentUserId: String,
+): Boolean {
+    val selfId = currentUserId.trim()
+    if (selfId.isEmpty() || incoming.senderId.trim() != selfId) return false
+    return messages.any { msg ->
+        val pendingId = msg._id?.trim().orEmpty()
+        pendingId.startsWith("pending-") && outgoingTextsMatch(msg, incoming)
+    }
+}
+
 /** HTTP confirm of an optimistic row — never inherit spurious [editedAt] from socket/REST. */
 internal fun mergeOutgoingConfirmation(
     optimistic: ChatMessage,
