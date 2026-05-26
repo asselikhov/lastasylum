@@ -32,6 +32,7 @@ import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.data.chat.ChatUnreadCounts
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
+import com.lastasylum.alliance.data.chat.isCompactReactionSocketUpdate
 import com.lastasylum.alliance.data.chat.mergeIncomingChatUpdate
 import com.lastasylum.alliance.data.chat.mergePreservingAttachments
 import com.lastasylum.alliance.data.users.UsersRepository
@@ -249,6 +250,33 @@ class ChatViewModel(
     /** Overlay FGS: apply server room unread without replacing primary socket listener. */
     fun applyRoomUnreadFromServer(event: ChatRoomUnreadEvent) {
         onRoomUnreadFromServer(event)
+    }
+
+    /** Overlay socket while in-game chat panel is open (primary listener may be absent). */
+    fun applyOverlayChatMessageFromSocket(message: ChatMessage) {
+        if (message.isCompactReactionSocketUpdate()) {
+            applyKnownChatMessageUpdate(message)
+            return
+        }
+        val roomId = message.roomId.trim()
+        if (roomId.isBlank()) return
+        if (isKnownChatMessageId(message._id)) {
+            applyKnownChatMessageUpdate(message)
+            return
+        }
+        processRealtimeMessageForUnread(message)
+    }
+
+    fun applyOverlayChatDeletedFromSocket(event: ChatMessageDeletedEvent) {
+        onDeletedMessage(event)
+    }
+
+    fun applyOverlayChatTypingFromSocket(event: ChatTypingEvent) {
+        onTypingFromPeer(event)
+    }
+
+    fun applyOverlayChatReadFromSocket(event: ChatRoomReadEvent) {
+        onRoomReadEvent(event)
     }
 
     private fun isKnownChatMessageId(messageId: String?): Boolean {
@@ -2327,6 +2355,7 @@ class ChatViewModel(
                     }
                     .onFailure { t ->
                         if (t.isChatMessageAlreadyGoneOnServer()) {
+                            notifyOverlayStripMessageRemoved(id)
                             _state.value = syncSelections(
                                 scrubRemovedMessage(_state.value, id).copy(
                                     isDeletingSelection = true,
@@ -2369,6 +2398,7 @@ class ChatViewModel(
                 }
                 .onFailure { throwable ->
                     if (throwable.isChatMessageAlreadyGoneOnServer()) {
+                        notifyOverlayStripMessageRemoved(messageId)
                         _state.value = syncSelections(
                             scrubRemovedMessage(_state.value, messageId).copy(
                                 deletingMessageId = null,
@@ -2388,6 +2418,12 @@ class ChatViewModel(
     /** Server hard-deleted the row (or never had it); drop from local feed anyway. */
     private fun Throwable.isChatMessageAlreadyGoneOnServer(): Boolean =
         this is HttpException && code() == 404
+
+    private fun notifyOverlayStripMessageRemoved(messageId: String) {
+        val id = messageId.trim()
+        if (id.isEmpty()) return
+        repository.notifyOverlayMessageDeleted(id, _state.value.selectedRoomId.orEmpty())
+    }
 
     private fun onIncomingMessage(message: ChatMessage) {
         if (!incomingMessages.trySend(message).isSuccess) {

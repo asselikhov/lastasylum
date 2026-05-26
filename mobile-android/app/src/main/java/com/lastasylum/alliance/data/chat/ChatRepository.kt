@@ -77,7 +77,16 @@ class ChatRepository(
         rest.sendSystemVoiceMessage(text)
 
     suspend fun deleteMessage(messageId: String): Result<ChatMessageDeleteResult> =
-        rest.deleteMessage(messageId)
+        rest.deleteMessage(messageId).also { result ->
+            result.onSuccess { deleted ->
+                realtime.dispatchOverlayMessageDeleted(
+                    ChatMessageDeletedEvent(
+                        messageId = deleted.messageId,
+                        roomId = deleted.roomId,
+                    ),
+                )
+            }
+        }
 
     suspend fun editMessage(messageId: String, text: String): Result<ChatMessage> =
         rest.editMessage(messageId, text)
@@ -135,11 +144,19 @@ class ChatRepository(
 
     fun disconnectRealtime() = realtime.disconnectRealtime()
 
+    fun hasPrimaryRealtimeSubscription(): Boolean = realtime.hasPrimaryRealtimeSubscription()
+
     fun addOverlayMessageListener(listener: (ChatMessage) -> Unit) =
         realtime.addOverlayMessageListener(listener)
 
     fun addOverlayReadListener(listener: (ChatRoomReadEvent) -> Unit) =
         realtime.addOverlayReadListener(listener)
+
+    fun addOverlayTypingListener(listener: (ChatTypingEvent) -> Unit) =
+        realtime.addOverlayTypingListener(listener)
+
+    fun removeOverlayTypingListener(listener: (ChatTypingEvent) -> Unit) =
+        realtime.removeOverlayTypingListener(listener)
 
     fun addOverlayRoomUnreadListener(listener: (ChatRoomUnreadEvent) -> Unit) =
         realtime.addOverlayRoomUnreadListener(listener)
@@ -197,6 +214,18 @@ class ChatRepository(
 
     fun removeOverlayMessageListener(listener: (ChatMessage) -> Unit) =
         realtime.removeOverlayMessageListener(listener)
+
+    fun addOverlayMessageDeletedListener(listener: (ChatMessageDeletedEvent) -> Unit) =
+        realtime.addOverlayMessageDeletedListener(listener)
+
+    fun removeOverlayMessageDeletedListener(listener: (ChatMessageDeletedEvent) -> Unit) =
+        realtime.removeOverlayMessageDeletedListener(listener)
+
+    fun notifyOverlayMessageDeleted(messageId: String, roomId: String = "") {
+        realtime.dispatchOverlayMessageDeleted(
+            ChatMessageDeletedEvent(messageId = messageId, roomId = roomId),
+        )
+    }
 
     fun addOverlayChatPanelClosedListener(listener: () -> Unit) =
         realtime.addOverlayChatPanelClosedListener(listener)

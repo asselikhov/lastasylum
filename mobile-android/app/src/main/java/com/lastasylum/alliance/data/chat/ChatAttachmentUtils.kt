@@ -15,6 +15,18 @@ fun ChatMessage.chatImageAttachments(): List<ChatAttachment> =
 
 fun ChatMessage.hasVisibleText(): Boolean = text.trim().isNotBlank()
 
+/**
+ * Compact `message:reaction` socket payload (`messageId` + reactions, no sender row).
+ * Must not create a new strip card — only merge into an existing buffered message.
+ */
+fun ChatMessage.isCompactReactionSocketUpdate(): Boolean {
+    val id = _id?.trim().orEmpty()
+    if (id.isEmpty()) return false
+    if (senderId.isNotBlank() || senderUsername.isNotBlank()) return false
+    if (hasVisibleText() || attachments.isNotEmpty()) return false
+    return true
+}
+
 /** Socket/API updates without attachments must not wipe images already shown from REST. */
 fun ChatMessage.mergePreservingAttachments(existing: ChatMessage): ChatMessage {
     val merged = when {

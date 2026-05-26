@@ -1,6 +1,8 @@
 package com.lastasylum.alliance.overlay
 
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.ChatReaction
+import com.lastasylum.alliance.data.chat.isCompactReactionSocketUpdate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -156,5 +158,65 @@ class OverlayChatStripBufferTest {
         buffer.upsert(msg)
         assertTrue(buffer.containsMessageId("dup-id"))
         org.junit.Assert.assertFalse(buffer.containsMessageId("other"))
+    }
+
+    @Test
+    fun isCompactReactionSocketUpdate_detectsReactionOnlyPayload() {
+        val compact = ChatMessage(
+            _id = "m1",
+            allianceId = "a",
+            roomId = "r",
+            senderId = "",
+            senderUsername = "",
+            senderRole = "",
+            text = "",
+            reactions = listOf(ChatReaction(emoji = "❤", count = 1, reactedByMe = false)),
+        )
+        assertTrue(compact.isCompactReactionSocketUpdate())
+        val full = compact.copy(senderId = "u1", senderUsername = "Pilot", text = "hi")
+        org.junit.Assert.assertFalse(full.isCompactReactionSocketUpdate())
+    }
+
+    @Test
+    fun upsert_mergesReactionsWithoutWipingExistingCounts() {
+        val buffer = OverlayChatStripBuffer(messageTtlSeconds = 3600)
+        val existing = ChatMessage(
+            _id = "rx-1",
+            allianceId = "a",
+            roomId = "r",
+            senderId = "u1",
+            senderUsername = "Pilot",
+            senderRole = "R2",
+            text = "hi",
+            createdAt = Instant.now().toString(),
+            reactions = listOf(ChatReaction(emoji = "❤", count = 3, reactedByMe = false)),
+        )
+        buffer.upsert(existing)
+        val socket = existing.copy(
+            reactions = listOf(ChatReaction(emoji = "❤", count = 0, reactedByMe = true)),
+        )
+        buffer.upsert(socket)
+        val merged = buffer.visibleForPreview().first().reactions.first()
+        assertEquals(3, merged.count)
+    }
+
+    @Test
+    fun removeMessageWithKey_dropsBufferedRow() {
+        val buffer = OverlayChatStripBuffer(messageTtlSeconds = 3600)
+        val msg = ChatMessage(
+            _id = "gone-id",
+            allianceId = "a",
+            roomId = "r",
+            senderId = "u1",
+            senderUsername = "Pilot",
+            senderRole = "R2",
+            text = "delete me",
+            createdAt = Instant.now().toString(),
+        )
+        buffer.upsert(msg)
+        assertEquals(1, buffer.visibleForPreview().size)
+        buffer.removeMessageWithKey("gone-id")
+        assertTrue(buffer.visibleForPreview().isEmpty())
+        org.junit.Assert.assertFalse(buffer.containsMessageId("gone-id"))
     }
 }

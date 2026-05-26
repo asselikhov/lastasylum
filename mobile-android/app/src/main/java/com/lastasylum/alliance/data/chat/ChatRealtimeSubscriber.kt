@@ -30,7 +30,14 @@ class ChatRealtimeSubscriber(
         java.util.concurrent.CopyOnWriteArrayList<(ChatRoomReadEvent) -> Unit>()
     private val overlayRoomUnreadListeners =
         java.util.concurrent.CopyOnWriteArrayList<(ChatRoomUnreadEvent) -> Unit>()
+    private val overlayMessageDeletedListeners =
+        java.util.concurrent.CopyOnWriteArrayList<(ChatMessageDeletedEvent) -> Unit>()
+    private val overlayTypingListeners =
+        java.util.concurrent.CopyOnWriteArrayList<(ChatTypingEvent) -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    /** Activity [ChatViewModel] holds the primary socket callbacks when non-null. */
+    fun hasPrimaryRealtimeSubscription(): Boolean = realtimeUiListener != null
 
     private fun realtimeRoomIdsForPrimary(primaryRoomId: String): List<String> {
         val raid = chatRoomPreferences.getRaidRoomId()
@@ -201,7 +208,30 @@ class ChatRealtimeSubscriber(
         overlayMessageListeners.isEmpty() &&
             overlayReactionListeners.isEmpty() &&
             overlayReadListeners.isEmpty() &&
-            overlayRoomUnreadListeners.isEmpty()
+            overlayRoomUnreadListeners.isEmpty() &&
+            overlayMessageDeletedListeners.isEmpty() &&
+            overlayTypingListeners.isEmpty()
+
+    fun addOverlayTypingListener(listener: (ChatTypingEvent) -> Unit) {
+        if (!overlayTypingListeners.contains(listener)) {
+            overlayTypingListeners.add(listener)
+        }
+        socketManager.addTypingListener(listener)
+        refreshOverlayRealtimeSubscriptions()
+    }
+
+    fun removeOverlayTypingListener(listener: (ChatTypingEvent) -> Unit) {
+        overlayTypingListeners.remove(listener)
+        socketManager.removeTypingListener(listener)
+        if (overlayRealtimeListenersEmpty()) {
+            overlayRealtimeRoomIds.clear()
+            if (primaryRealtimeRoomIds.isEmpty()) {
+                socketManager.disconnect()
+            } else {
+                ensureRealtimeSocketConnected()
+            }
+        }
+    }
 
     fun addOverlayRoomUnreadListener(listener: (ChatRoomUnreadEvent) -> Unit) {
         if (!overlayRoomUnreadListeners.contains(listener)) {
@@ -255,6 +285,27 @@ class ChatRealtimeSubscriber(
         }
     }
 
+    fun addOverlayMessageDeletedListener(listener: (ChatMessageDeletedEvent) -> Unit) {
+        if (!overlayMessageDeletedListeners.contains(listener)) {
+            overlayMessageDeletedListeners.add(listener)
+        }
+        socketManager.addMessageDeletedListener(listener)
+        refreshOverlayRealtimeSubscriptions()
+    }
+
+    fun removeOverlayMessageDeletedListener(listener: (ChatMessageDeletedEvent) -> Unit) {
+        overlayMessageDeletedListeners.remove(listener)
+        socketManager.removeMessageDeletedListener(listener)
+        if (overlayRealtimeListenersEmpty()) {
+            overlayRealtimeRoomIds.clear()
+            if (primaryRealtimeRoomIds.isEmpty()) {
+                socketManager.disconnect()
+            } else {
+                ensureRealtimeSocketConnected()
+            }
+        }
+    }
+
     fun addOverlayChatPanelClosedListener(listener: () -> Unit) {
         if (!overlayChatPanelClosedListeners.contains(listener)) {
             overlayChatPanelClosedListeners.add(listener)
@@ -282,6 +333,10 @@ class ChatRealtimeSubscriber(
         overlayReadListeners.clear()
         overlayRoomUnreadListeners.forEach { socketManager.removeRoomUnreadListener(it) }
         overlayRoomUnreadListeners.clear()
+        overlayMessageDeletedListeners.forEach { socketManager.removeMessageDeletedListener(it) }
+        overlayMessageDeletedListeners.clear()
+        overlayTypingListeners.forEach { socketManager.removeTypingListener(it) }
+        overlayTypingListeners.clear()
         socketManager.disconnectSocketAndClearListeners()
     }
 
@@ -295,6 +350,18 @@ class ChatRealtimeSubscriber(
         }
         mainHandler.post {
             listeners.forEach { l -> runCatching { l(message) } }
+        }
+    }
+
+    /** HTTP delete / local scrub: drop card from overlay strip even before socket echo. */
+    fun dispatchOverlayMessageDeleted(event: ChatMessageDeletedEvent) {
+        val id = event.messageId.trim()
+        if (id.isEmpty()) return
+        CombatOverlayService.publishMessageDeletedFromApp(id, event.roomId)
+        val listeners = overlayMessageDeletedListeners.toList()
+        if (listeners.isEmpty()) return
+        mainHandler.post {
+            listeners.forEach { l -> runCatching { l(event) } }
         }
     }
 }

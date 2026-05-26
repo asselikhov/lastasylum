@@ -85,6 +85,7 @@ import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.displayedUnreadCount
 import com.lastasylum.alliance.data.effectiveUnreadCount
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.isCompactReactionSocketUpdate
 import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
 import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.data.chat.OverlayReactionEvent
@@ -344,9 +345,11 @@ class CombatOverlayService : Service() {
     private var chatStripParams: WindowManager.LayoutParams? = null
     private val chatStripPreviewFlow = MutableStateFlow<List<ChatMessage>>(emptyList())
     private var overlayMessageListener: ((ChatMessage) -> Unit)? = null
+    private var overlayMessageDeletedListener: ((com.lastasylum.alliance.data.chat.ChatMessageDeletedEvent) -> Unit)? = null
     private var overlayForumTopicActivityListener: ((TeamForumTopicActivityEvent) -> Unit)? = null
     private var overlayReadListener: ((com.lastasylum.alliance.data.chat.ChatRoomReadEvent) -> Unit)? = null
     private var overlayRoomUnreadListener: ((com.lastasylum.alliance.data.chat.ChatRoomUnreadEvent) -> Unit)? = null
+    private var overlayTypingListener: ((com.lastasylum.alliance.data.chat.ChatTypingEvent) -> Unit)? = null
     private var overlayReactionListener: ((OverlayReactionEvent) -> Unit)? = null
     private val inboxBadgeCoordinator = OverlayInboxBadgeCoordinator()
     /** Лента: короткий TTL и мало строк превью — компактная полоса у края. */
@@ -2148,9 +2151,30 @@ class CombatOverlayService : Service() {
         scheduleDebouncedHubHudRefresh()
     }
 
-    /** Activity-bound VM already receives socket unread on the primary listener — avoid double bump. */
-    private fun activityChatViewModelHandlesUnread(): Boolean =
-        ChatViewModelRegistry.shared != null || activityScopedChatViewModel != null
+    /** Primary socket listener on activity VM — avoid double unread bump from overlay path. */
+    private fun activityChatViewModelHandlesUnread(): Boolean {
+        val vmBound = ChatViewModelRegistry.shared != null || activityScopedChatViewModel != null
+        if (!vmBound) return false
+        return AppContainer.from(this).chatRepository.hasPrimaryRealtimeSubscription()
+    }
+
+    private fun forwardOverlaySocketMessageToViewModel(msg: ChatMessage) {
+        if (!overlayChatTeamPanelVisible) return
+        resolveChatViewModel()?.applyOverlayChatMessageFromSocket(msg)
+    }
+
+    private fun forwardOverlayTypingToViewModel(event: com.lastasylum.alliance.data.chat.ChatTypingEvent) {
+        if (!overlayChatTeamPanelVisible) return
+        resolveChatViewModel()?.applyOverlayChatTypingFromSocket(event)
+    }
+
+    private fun forwardOverlayReadToViewModel(event: com.lastasylum.alliance.data.chat.ChatRoomReadEvent) {
+        resolveChatViewModel()?.applyOverlayChatReadFromSocket(event)
+    }
+
+    private fun forwardOverlayDeleteToViewModel(event: com.lastasylum.alliance.data.chat.ChatMessageDeletedEvent) {
+        resolveChatViewModel()?.applyOverlayChatDeletedFromSocket(event)
+    }
 
     private fun resolveOverlayHubRoomId(): String {
         cachedAllianceHubRoomId?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
@@ -3038,11 +3062,26 @@ class CombatOverlayService : Service() {
             return
         }
         val key = msg._id?.takeIf { it.isNotBlank() } ?: msg.stableKey()
+        removeStripMessageByKey(key)
+    }
+
+    private fun removeStripMessageByKey(messageKey: String) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { removeStripMessageByKey(messageKey) }
+            return
+        }
+        val key = messageKey.trim()
+        if (key.isEmpty()) return
         stripBuffer.removeMessageWithKey(key)
         lastStripRenderSignature = 0
         // Сразу снимаем зоны крестика, пока Compose не пересчитал ленту — иначе один кадр с «призрачными» rect блокирует игру.
         updateStripDismissScreenRects(emptyList())
         refreshOverlayChatStrip()
+    }
+
+    private fun handleOverlayMessageDeleted(event: com.lastasylum.alliance.data.chat.ChatMessageDeletedEvent) {
+        removeStripMessageByKey(event.messageId)
+        forwardOverlayDeleteToViewModel(event)
     }
 
     private var lastStripDismissRects: List<Rect> = emptyList()
@@ -3764,19 +3803,30 @@ class CombatOverlayService : Service() {
 
     private fun registerOverlayChatListenersOnMain(
         listener: (ChatMessage) -> Unit,
+        deleteListener: (com.lastasylum.alliance.data.chat.ChatMessageDeletedEvent) -> Unit,
         readListener: (com.lastasylum.alliance.data.chat.ChatRoomReadEvent) -> Unit,
+        typingListener: (com.lastasylum.alliance.data.chat.ChatTypingEvent) -> Unit,
         roomUnreadListener: (com.lastasylum.alliance.data.chat.ChatRoomUnreadEvent) -> Unit,
         reactionListener: (OverlayReactionEvent) -> Unit,
     ) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             mainHandler.post {
-                registerOverlayChatListenersOnMain(listener, readListener, roomUnreadListener, reactionListener)
+                registerOverlayChatListenersOnMain(
+                    listener,
+                    deleteListener,
+                    readListener,
+                    typingListener,
+                    roomUnreadListener,
+                    reactionListener,
+                )
             }
             return
         }
         val repo = AppContainer.from(this).chatRepository
         repo.addOverlayMessageListener(listener)
+        repo.addOverlayMessageDeletedListener(deleteListener)
         repo.addOverlayReadListener(readListener)
+        repo.addOverlayTypingListener(typingListener)
         repo.addOverlayRoomUnreadListener(roomUnreadListener)
         repo.addOverlayReactionListener(reactionListener)
         resolveOverlayRaidRoomId()?.let { rememberOverlayRaidRoomId(it) }
@@ -3821,9 +3871,17 @@ class CombatOverlayService : Service() {
             mainHandler.post {
                 if (!isOverlayChatRoutingActive()) return@post
                 applyOverlayHubReadFromSelf(event)
+                forwardOverlayReadToViewModel(event)
             }
         }
         overlayReadListener = readListener
+        val typingListener: (com.lastasylum.alliance.data.chat.ChatTypingEvent) -> Unit = typingListener@{ event ->
+            mainHandler.post {
+                if (!isOverlayChatRoutingActive()) return@post
+                forwardOverlayTypingToViewModel(event)
+            }
+        }
+        overlayTypingListener = typingListener
         val roomUnreadListener: (com.lastasylum.alliance.data.chat.ChatRoomUnreadEvent) -> Unit =
             roomUnreadListener@{ event ->
                 mainHandler.post {
@@ -3835,6 +3893,14 @@ class CombatOverlayService : Service() {
         val listener: (ChatMessage) -> Unit = listener@{ msg ->
             mainHandler.post {
                 if (!isOverlayChatRoutingActive()) return@post
+                forwardOverlaySocketMessageToViewModel(msg)
+                if (msg.isCompactReactionSocketUpdate()) {
+                    val id = msg._id?.trim().orEmpty()
+                    if (id.isNotEmpty() && stripBuffer.containsMessageId(id)) {
+                        refreshExistingStripMessage(msg, refreshNow = true)
+                    }
+                    return@post
+                }
                 val hubId = resolveOverlayHubRoomId()
                 val isHub = hubId.isNotBlank() && msg.roomId.trim() == hubId
                 val raidId = resolveOverlayRaidRoomId() ?: trustedOverlayRaidRoomId
@@ -3861,8 +3927,23 @@ class CombatOverlayService : Service() {
                 }
             }
         }
+        val deleteListener: (com.lastasylum.alliance.data.chat.ChatMessageDeletedEvent) -> Unit =
+            deleteListener@{ event ->
+                mainHandler.post {
+                    if (!isOverlayChatRoutingActive()) return@post
+                    handleOverlayMessageDeleted(event)
+                }
+            }
         overlayMessageListener = listener
-        registerOverlayChatListenersOnMain(listener, readListener, roomUnreadListener, reactionListener)
+        overlayMessageDeletedListener = deleteListener
+        registerOverlayChatListenersOnMain(
+            listener,
+            deleteListener,
+            readListener,
+            typingListener,
+            roomUnreadListener,
+            reactionListener,
+        )
         serviceScope.launch {
             val container = AppContainer.from(this@CombatOverlayService)
             val cachedRooms = com.lastasylum.alliance.data.chat.ChatSessionCache.getFreshRooms()
@@ -3921,12 +4002,24 @@ class CombatOverlayService : Service() {
             }
         }
         overlayMessageListener = null
+        overlayMessageDeletedListener?.let { listener ->
+            runCatching {
+                AppContainer.from(applicationContext).chatRepository.removeOverlayMessageDeletedListener(listener)
+            }
+        }
+        overlayMessageDeletedListener = null
         overlayReadListener?.let { listener ->
             runCatching {
                 AppContainer.from(applicationContext).chatRepository.removeOverlayReadListener(listener)
             }
         }
         overlayReadListener = null
+        overlayTypingListener?.let { listener ->
+            runCatching {
+                AppContainer.from(applicationContext).chatRepository.removeOverlayTypingListener(listener)
+            }
+        }
+        overlayTypingListener = null
         overlayRoomUnreadListener?.let { listener ->
             runCatching {
                 AppContainer.from(applicationContext).chatRepository.removeOverlayRoomUnreadListener(listener)
@@ -4784,6 +4877,19 @@ class CombatOverlayService : Service() {
             val service = runningInstance ?: return
             service.mainHandler.post {
                 service.applyLocalSentMessageToStrip(message)
+            }
+        }
+
+        /** Убрать карточку из ленты оверлея после delete (HTTP или socket message:deleted). */
+        fun publishMessageDeletedFromApp(messageId: String, roomId: String = "") {
+            val service = runningInstance ?: return
+            service.mainHandler.post {
+                service.handleOverlayMessageDeleted(
+                    com.lastasylum.alliance.data.chat.ChatMessageDeletedEvent(
+                        messageId = messageId,
+                        roomId = roomId,
+                    ),
+                )
             }
         }
 
