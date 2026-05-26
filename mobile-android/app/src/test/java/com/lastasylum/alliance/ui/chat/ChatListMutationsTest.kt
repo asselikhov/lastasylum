@@ -95,6 +95,16 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun dedupeMessagesByIdNewestFirst_keepsFirstOccurrence() {
+        val server = msg("same", "hello")
+        val dup = server.copy(text = "hello (server)")
+        val pending = msg("pending-1", "hello")
+        val list = listOf(server, dup, pending)
+        val out = dedupeMessagesByIdNewestFirst(list)
+        assertEquals(listOf("same", "pending-1"), out.map { it._id })
+    }
+
+    @Test
     fun capNewestFirst_keepsHead() {
         val newestFirst = (100 downTo 1).map { i -> msg("id$i", text = "$i") }
         val capped = capNewestFirst(newestFirst, 50)

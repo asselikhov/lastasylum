@@ -2518,7 +2518,8 @@ class ChatViewModel(
                 messageIdIndex.remove(pending)
                 messageIdIndex[serverId] = idx
                 linkListCompositionKey(pending, serverId)
-                val capped = capMessagesForMemory(updated)
+                val capped = capMessagesForMemory(dedupeMessagesByIdNewestFirst(updated))
+                rebuildMessageIdIndex(capped, messageIdIndex)
                 IncomingBatchWork(
                     previousMessages = previousMessages,
                     cappedMessages = capped,

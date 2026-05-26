@@ -22,6 +22,20 @@ internal fun capNewestFirst(messages: List<ChatMessage>, max: Int): List<ChatMes
     return messages.take(max)
 }
 
+/** Newest-first: keep first row per [_id] (socket echo + HTTP confirm can briefly duplicate). */
+internal fun dedupeMessagesByIdNewestFirst(messages: List<ChatMessage>): List<ChatMessage> {
+    if (messages.size <= 1) return messages
+    val seen = HashSet<String>()
+    val out = ArrayList<ChatMessage>(messages.size)
+    for (msg in messages) {
+        val id = msg._id?.trim().orEmpty()
+        if (id.isEmpty() || seen.add(id)) {
+            out.add(msg)
+        }
+    }
+    return out
+}
+
 /** Drop optimistic rows when the server message for the same outgoing text arrives. */
 internal fun dropMatchingPendingOutgoing(
     current: List<ChatMessage>,
@@ -141,7 +155,7 @@ internal fun upsertMessagesBatch(
             newestMessageKey = update.newestMessageKey
         }
     }
-    val capped = capNewestFirst(messages, maxMessages)
+    val capped = dedupeMessagesByIdNewestFirst(capNewestFirst(messages, maxMessages))
     rebuildMessageIdIndex(capped, idIndex)
     return MessageUpsertResult(
         messages = capped,

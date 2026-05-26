@@ -1383,8 +1383,8 @@ private fun ChatMessagesLazyList(
                     key = { idx ->
                         when (val e = timeline[idx]) {
                             is ChatTimelineEntry.DaySeparator -> chatTimelineDaySeparatorKey(e.label)
-                            is ChatTimelineEntry.ChatMessageItem -> chatMessageKey(e.message)
-                            is ChatTimelineEntry.ChatAlbumItem -> "album:${chatMessageKey(e.representativeMessage)}:${e.messageIndices.firstOrNull() ?: -1}:${e.messageIndices.lastOrNull() ?: -1}"
+                            is ChatTimelineEntry.ChatMessageItem -> messageListKey(e.message)
+                            is ChatTimelineEntry.ChatAlbumItem -> "album:${messageListKey(e.representativeMessage)}:${e.messageIndices.firstOrNull() ?: -1}:${e.messageIndices.lastOrNull() ?: -1}"
                         }
                     },
                     contentType = { idx ->
