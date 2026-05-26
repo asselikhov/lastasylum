@@ -466,7 +466,7 @@ private fun ChatScreenMessagesHost(
             ChatListLoadSignal(lastIdx, total, hasMore, busy)
         }
             .distinctUntilChanged()
-            .debounce(24)
+            .debounce(48)
             .collect { sig ->
                 if (sig.totalItems > 4 &&
                     sig.lastVisibleIndex >= sig.totalItems - 2 &&

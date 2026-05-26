@@ -1112,10 +1112,12 @@ class ChatViewModel(
             typingPeerJobs.values.forEach { it.cancel() }
             typingPeerJobs.clear()
         }
+        val cachedMessages = cached?.messages.orEmpty()
+        val hasCachedMessages = cachedMessages.isNotEmpty()
         _state.value = _state.value.copy(
             selectedRoomId = roomId,
-            messages = cached?.messages ?: emptyList(),
-            isLoading = cached == null,
+            messages = cachedMessages,
+            isLoading = !hasCachedMessages,
             hasMoreOlder = cached?.hasMoreOlder ?: true,
             isLoadingOlder = false,
             error = null,
@@ -1124,29 +1126,26 @@ class ChatViewModel(
             highlightMessageId = null,
             transientNotice = null,
             rooms = clearUnreadForRoom(_state.value.rooms, roomId),
-            scrollToLatestNonce = if (cached != null) {
-                _state.value.scrollToLatestNonce + 1L
-            } else {
-                _state.value.scrollToLatestNonce
-            },
         )
-        if (cached != null && cached.messages.isNotEmpty()) {
-            knownMessageIds.addAll(cached.messages.mapNotNull { it._id })
-            rebuildMessageIdIndex(cached.messages, messageIdIndex)
-            publishMessagesDerived(cached.messages)
+        if (hasCachedMessages) {
+            knownMessageIds.addAll(cachedMessages.mapNotNull { it._id })
+            rebuildMessageIdIndex(cachedMessages, messageIdIndex)
+            publishMessagesDerivedImmediate(cachedMessages)
         } else {
             _listDerived.value = ChatMessagesListDerived.Empty
         }
         viewModelScope.launch {
             chatRoomPreferences.setSelectedRoomId(roomId)
             if (previousRoomId != null && !previousNewestId.isNullOrBlank()) {
-                markRoomReadUpTo(previousRoomId, previousNewestId)
+                launch(Dispatchers.IO) {
+                    markRoomReadUpTo(previousRoomId, previousNewestId)
+                }
             }
             openRoom(
                 roomId = roomId,
                 rooms = _state.value.rooms,
                 hadCachedMessages = cached != null,
-                messagesAlreadyInState = cached != null,
+                messagesAlreadyInState = hasCachedMessages,
             )
         }
     }
@@ -1491,10 +1490,10 @@ class ChatViewModel(
         _state.update { st ->
             st.copy(rooms = clearUnreadForRoom(st.rooms.ifEmpty { rooms }, roomId))
         }
-        val hasTeam = if (hadCachedMessages && cachedTeamProfileGate != null) {
-            cachedTeamProfileGate == true
-        } else {
-            loadTeamProfileGate()
+        val hasTeam = when {
+            hadCachedMessages && cachedTeamProfileGate != null -> cachedTeamProfileGate == true
+            messagesAlreadyInState -> _state.value.hasTeamProfileForGlobalChat
+            else -> loadTeamProfileGate()
         }
         if (!hadCachedMessages) {
             _state.value = _state.value.copy(
@@ -1693,6 +1692,26 @@ class ChatViewModel(
         val expected = messages
         deriveJob = viewModelScope.launch(Dispatchers.Default) {
             val derived = buildChatMessagesListDerived(expected)
+            if (!chatMessagesListContentEqual(expected, _state.value.messages)) return@launch
+            _listDerived.value = derived
+        }
+    }
+
+    /** Мгновенная лента при переключении комнаты (кэш уже в памяти). */
+    private fun publishMessagesDerivedImmediate(messages: List<ChatMessage>) {
+        deriveJob?.cancel()
+        if (messages.isEmpty()) {
+            _listDerived.value = ChatMessagesListDerived.Empty
+            return
+        }
+        if (messages.size <= CHAT_LIST_DERIVE_SYNC_MAX) {
+            _listDerived.value = buildChatMessagesListDerived(messages)
+            return
+        }
+        val expected = messages
+        deriveJob = viewModelScope.launch(Dispatchers.Default) {
+            val derived = buildChatMessagesListDerived(expected)
+            if (_state.value.selectedRoomId == null) return@launch
             if (!chatMessagesListContentEqual(expected, _state.value.messages)) return@launch
             _listDerived.value = derived
         }

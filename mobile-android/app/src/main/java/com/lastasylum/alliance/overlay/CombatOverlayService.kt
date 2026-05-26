@@ -4510,11 +4510,15 @@ class CombatOverlayService : Service() {
             ViewCompat.setOnApplyWindowInsetsListener(this) { view, windowInsets ->
                 val safeTypes = WindowInsetsCompat.Type.systemBars() or
                     WindowInsetsCompat.Type.displayCutout()
+                val imeTypes = WindowInsetsCompat.Type.ime()
                 val safe = windowInsets.getInsets(safeTypes)
-                // IME + 8dp — в Compose (imePadding), без setPadding на корне (меньше jank).
-                view.setPadding(safe.left, 0, safe.right, safe.bottom)
+                val ime = windowInsets.getInsets(imeTypes)
+                // Подъём всего Compose-дерева над клавиатурой; композер — только +8dp.
+                val bottom = if (ime.bottom > 0) ime.bottom else safe.bottom
+                view.setPadding(safe.left, 0, safe.right, bottom)
                 WindowInsetsCompat.Builder(windowInsets)
-                    .setInsets(safeTypes, Insets.NONE)
+                    .setInsets(safeTypes, Insets.of(safe.left, 0, safe.right, 0))
+                    .setInsets(imeTypes, Insets.NONE)
                     .build()
             }
             addView(

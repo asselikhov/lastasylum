@@ -28,7 +28,7 @@ class MainActivity : ComponentActivity() {
             isAppearanceLightNavigationBars = false
         }
         super.onCreate(savedInstanceState)
-        // adjustResize: окно сжимается под IME; композер — 8dp, навбар остаётся в Scaffold.
+        // adjustNothing + imePadding на композере; навбар в Scaffold не дублирует IME.
         WindowCompat.setDecorFitsSystemWindows(window, false)
         hideSystemUi()
         setContent {

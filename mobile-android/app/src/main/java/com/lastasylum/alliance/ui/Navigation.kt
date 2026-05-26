@@ -260,7 +260,7 @@ fun AppNavigation(
         modifier = modifier,
         containerColor = Color.Transparent,
         contentColor = MaterialTheme.colorScheme.onBackground,
-        // adjustResize на MainActivity: IME обрабатывает система; не дублируем в padding контента.
+        // IME — только на композере ([chatComposerAppDock]); контент NavHost не дублирует inset.
         contentWindowInsets = WindowInsets.safeDrawing.exclude(WindowInsets.ime),
         bottomBar = {
             Box(

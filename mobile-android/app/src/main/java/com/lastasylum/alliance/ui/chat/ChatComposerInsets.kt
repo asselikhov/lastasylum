@@ -5,16 +5,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 
-/** Оверлей (adjustNothing): [imePadding] + 8dp. */
+/**
+ * Оверлей: IME поднимает корень [android.widget.FrameLayout] в [CombatOverlayService];
+ * здесь только зазор 8dp над нижним краем контента.
+ */
 fun Modifier.chatComposerOverlayDock(): Modifier =
-    imePadding().padding(bottom = SquadRelayDimens.composerBottomGap)
+    padding(bottom = SquadRelayDimens.composerBottomGap)
 
 /**
- * Приложение (adjustResize): окно сжимается под IME — только зазор 8dp.
- * Не читать [androidx.compose.foundation.layout.WindowInsets.ime] (даёт двойной отступ с resize).
+ * Приложение (edge-to-edge, adjustNothing): [imePadding] + 8dp над клавиатурой.
  */
 fun Modifier.chatComposerAppDock(): Modifier =
-    padding(bottom = SquadRelayDimens.composerBottomGap)
+    imePadding().padding(bottom = SquadRelayDimens.composerBottomGap)
 
 /** @deprecated Используйте [chatComposerOverlayDock] или [chatComposerAppDock]. */
 fun Modifier.chatComposerDock(): Modifier = chatComposerAppDock()
