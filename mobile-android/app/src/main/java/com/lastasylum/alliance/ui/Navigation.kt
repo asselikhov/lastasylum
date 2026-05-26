@@ -80,6 +80,8 @@ import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.push.FcmTokenManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
@@ -240,8 +242,10 @@ fun AppNavigation(
     val msgDeleted = stringResource(R.string.admin_ok_deleted)
     val msgOverlaySaved = stringResource(R.string.admin_ok_overlay)
     val msgStickerSaved = stringResource(R.string.admin_sticker_saved)
-    val chatState by chatViewModel.state.collectAsStateWithLifecycle()
-    val chatTabUnreadTotal = chatState.tabUnreadBadge
+    val chatTabUnreadTotal by chatViewModel.state
+        .map { it.tabUnreadBadge }
+        .distinctUntilChanged()
+        .collectAsStateWithLifecycle(0)
     val chatRouteActive =
         currentDestination?.hierarchy?.any { it.route == AppTab.CHAT.route } == true
     DisposableEffect(chatRouteActive) {
@@ -426,12 +430,15 @@ fun AppNavigation(
                         app.chatRepository.removeOverlayChatPanelClosedListener(listener)
                     }
                 }
+                val chatState by chatViewModel.state.collectAsStateWithLifecycle()
+                val listDerived by chatViewModel.listDerived.collectAsStateWithLifecycle()
                 val draftMessage by chatViewModel.draftMessage.collectAsStateWithLifecycle()
                 val pickedImageUris by chatViewModel.pickedImageUris.collectAsStateWithLifecycle()
                 val typingPeers by chatViewModel.typingPeers.collectAsStateWithLifecycle()
                 val otherReadUptoMessageId by chatViewModel.otherReadUptoMessageId.collectAsStateWithLifecycle()
                 ChatScreen(
                     state = chatState,
+                    listDerived = listDerived,
                     typingPeers = typingPeers,
                     draftMessage = draftMessage,
                     pickedImageUris = pickedImageUris,

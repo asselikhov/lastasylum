@@ -57,10 +57,10 @@ private const val INITIAL_PAGE_SIZE = 20
 private const val PAGE_SIZE = 30
 private const val INCOMING_SOCKET_DEBOUNCE_MS = 0L
 private const val PROFILE_GATE_TTL_MS = 5 * 60_000L
-/** Не подгружать старую страницу сразу после первого кадра ленты — иначе второй diff и фриз. */
-private const val PREFETCH_OLDER_DEFER_MS = 2_500L
 /** Отложить reconcile с сервером, если сообщения уже в кэше после splash/bootstrap. */
 private const val BACKGROUND_MESSAGE_REFRESH_DEFER_MS = 400L
+/** Coalesce listRooms после socket unread — не дергать сеть на каждый bump. */
+private const val UNREAD_SYNC_DEBOUNCE_MS = 450L
 
 private data class RoomMessageCache(
     val messages: List<ChatMessage>,
@@ -83,6 +83,12 @@ class ChatViewModel(
         ),
     )
     val state: StateFlow<ChatState> = _state.asStateFlow()
+
+    /** Precomputed timeline for [ChatScreen] — avoids derive on every Compose frame. */
+    private val _listDerived = MutableStateFlow(ChatMessagesListDerived.Empty)
+    val listDerived: StateFlow<ChatMessagesListDerived> = _listDerived.asStateFlow()
+    private var deriveJob: Job? = null
+    private val chatMutationLock = Any()
 
     /** Isolated from [state] so each keystroke does not recompose the whole chat list. */
     private val _draftMessage = MutableStateFlow("")
@@ -367,6 +373,7 @@ class ChatViewModel(
             error = null,
             scrollToLatestNonce = _state.value.scrollToLatestNonce + 1L,
         )
+        publishMessagesDerived(cached.messages)
     }
 
     /** Оверлей-чат: по умолчанию комната «Альянс» (hub), как вкладка чата в приложении. */
@@ -851,13 +858,24 @@ class ChatViewModel(
                 _state.value.scrollToLatestNonce
             },
         )
-        cached?.messages?.mapNotNull { it._id }?.let { knownMessageIds.addAll(it) }
+        if (cached != null && cached.messages.isNotEmpty()) {
+            knownMessageIds.addAll(cached.messages.mapNotNull { it._id })
+            rebuildMessageIdIndex(cached.messages, messageIdIndex)
+            publishMessagesDerived(cached.messages)
+        } else {
+            _listDerived.value = ChatMessagesListDerived.Empty
+        }
         viewModelScope.launch {
             chatRoomPreferences.setSelectedRoomId(roomId)
             if (previousRoomId != null && !previousNewestId.isNullOrBlank()) {
                 markRoomReadUpTo(previousRoomId, previousNewestId)
             }
-            openRoom(roomId, _state.value.rooms, hadCachedMessages = cached != null)
+            openRoom(
+                roomId = roomId,
+                rooms = _state.value.rooms,
+                hadCachedMessages = cached != null,
+                messagesAlreadyInState = cached != null,
+            )
         }
     }
 
@@ -999,8 +1017,19 @@ class ChatViewModel(
     private fun scheduleUnreadSyncFromServer() {
         unreadSyncJob?.cancel()
         unreadSyncJob = viewModelScope.launch {
+            delay(UNREAD_SYNC_DEBOUNCE_MS)
             syncRoomsFromServer(reconfirmVisibleRoom = false)
         }
+    }
+
+    private fun shouldSkipBackgroundMessageRefresh(roomId: String): Boolean {
+        val fresh = ChatSessionCache.getFreshMessages(roomId) ?: return false
+        val current = _state.value.messages
+        if (current.isEmpty()) return false
+        val head = current.firstOrNull()?._id?.trim().orEmpty()
+        val cachedHead = fresh.firstOrNull()?._id?.trim().orEmpty()
+        if (head.isEmpty() || cachedHead.isEmpty() || head != cachedHead) return false
+        return fresh.size >= current.size
     }
 
     private suspend fun reconfirmReadForVisibleRoom() {
@@ -1171,6 +1200,7 @@ class ChatViewModel(
         roomId: String,
         rooms: List<ChatRoomDto>,
         hadCachedMessages: Boolean = false,
+        messagesAlreadyInState: Boolean = false,
     ) {
         typingEmitJob?.cancel()
         typingEmitJob = null
@@ -1178,10 +1208,12 @@ class ChatViewModel(
             typingPeerJobs.values.forEach { it.cancel() }
             typingPeerJobs.clear()
         }
-        knownMessageIds.clear()
-        messageIdIndex.clear()
-        _draftMessage.value = ""
-        _typingPeers.value = emptyMap()
+        if (!messagesAlreadyInState) {
+            knownMessageIds.clear()
+            messageIdIndex.clear()
+            _draftMessage.value = ""
+            _typingPeers.value = emptyMap()
+        }
         _state.update { st ->
             st.copy(rooms = clearUnreadForRoom(st.rooms.ifEmpty { rooms }, roomId))
         }
@@ -1219,6 +1251,7 @@ class ChatViewModel(
                 sendFailure = null,
             )
             _otherReadUptoMessageId.value = null
+            _listDerived.value = ChatMessagesListDerived.Empty
         } else {
             _otherReadUptoMessageId.value = null
             _state.value = _state.value.copy(
@@ -1238,23 +1271,37 @@ class ChatViewModel(
         )
         val cached = roomMessageCache[roomId]
         if (hadCachedMessages && cached != null && cached.messages.isNotEmpty()) {
-            knownMessageIds.clear()
-            messageIdIndex.clear()
-            knownMessageIds.addAll(cached.messages.mapNotNull { it._id })
-            rebuildMessageIdIndex(cached.messages, messageIdIndex)
-            _state.value = _state.value.copy(
-                isLoading = false,
-                messages = cached.messages,
-                selectedRoomId = roomId,
-                hasMoreOlder = cached.hasMoreOlder,
-                rooms = clearUnreadForRoom(_state.value.rooms, roomId),
-            )
+            if (!messagesAlreadyInState) {
+                knownMessageIds.clear()
+                messageIdIndex.clear()
+                knownMessageIds.addAll(cached.messages.mapNotNull { it._id })
+                rebuildMessageIdIndex(cached.messages, messageIdIndex)
+                _state.value = _state.value.copy(
+                    isLoading = false,
+                    messages = cached.messages,
+                    selectedRoomId = roomId,
+                    hasMoreOlder = cached.hasMoreOlder,
+                    rooms = clearUnreadForRoom(_state.value.rooms, roomId),
+                )
+                publishMessagesDerived(cached.messages)
+            } else {
+                _state.update {
+                    it.copy(
+                        isLoading = false,
+                        selectedRoomId = roomId,
+                        hasMoreOlder = cached.hasMoreOlder,
+                        rooms = clearUnreadForRoom(it.rooms, roomId),
+                    )
+                }
+            }
             if (shouldAutoMarkReadSelectedRoom()) {
-                cached.messages.firstOrNull()?._id?.let { newestId ->
+                _state.value.messages.firstOrNull()?._id?.let { newestId ->
                     markRoomReadUpTo(roomId, newestId)
                 }
             }
-            refreshMessagesInBackground(roomId)
+            if (!shouldSkipBackgroundMessageRefresh(roomId)) {
+                refreshMessagesInBackground(roomId)
+            }
             return
         }
         repository.loadRecentMessages(roomId, beforeMessageId = null, limit = INITIAL_PAGE_SIZE)
@@ -1264,9 +1311,6 @@ class ChatViewModel(
                     loaded = loaded,
                     pageSizeForHasMore = INITIAL_PAGE_SIZE,
                 )
-                if (loaded.size >= INITIAL_PAGE_SIZE) {
-                    schedulePrefetchOlderMessages(roomId)
-                }
             }
             .onFailure { e ->
                 if (!hadCachedMessages) {
@@ -1278,15 +1322,8 @@ class ChatViewModel(
             }
     }
 
-    private fun schedulePrefetchOlderMessages(roomId: String) {
-        viewModelScope.launch {
-            delay(PREFETCH_OLDER_DEFER_MS)
-            if (_state.value.selectedRoomId != roomId) return@launch
-            prefetchOlderMessagesSilent(roomId)
-        }
-    }
-
     private fun refreshMessagesInBackground(roomId: String) {
+        if (shouldSkipBackgroundMessageRefresh(roomId)) return
         val deferMs = if (ChatSessionCache.getFreshMessages(roomId) != null) {
             BACKGROUND_MESSAGE_REFRESH_DEFER_MS
         } else {
@@ -1330,6 +1367,7 @@ class ChatViewModel(
                             hasMoreOlder = hasMoreOlder,
                         )
                     }
+                    publishMessagesDerived(capped)
                 }
         }
     }
@@ -1357,6 +1395,7 @@ class ChatViewModel(
             hasMoreOlder = hasMoreOlder,
             rooms = clearUnreadForRoom(_state.value.rooms, roomId),
         )
+        publishMessagesDerived(capped)
         if (shouldAutoMarkReadSelectedRoom()) {
             capped.firstOrNull()?._id?.let { newestId ->
                 viewModelScope.launch { markRoomReadUpTo(roomId, newestId) }
@@ -1364,30 +1403,45 @@ class ChatViewModel(
         }
     }
 
-    private fun prefetchOlderMessagesSilent(roomId: String) {
-        viewModelScope.launch {
-            if (_state.value.selectedRoomId != roomId || !_state.value.hasMoreOlder) return@launch
-            if (_state.value.isLoadingOlder || _state.value.isLoading) return@launch
-            val oldestId = _state.value.messages.lastOrNull()?._id ?: return@launch
-            repository.loadRecentMessages(
-                roomId = roomId,
-                beforeMessageId = oldestId,
-                limit = PAGE_SIZE,
-            ).onSuccess { older ->
-                if (_state.value.selectedRoomId != roomId || older.isEmpty()) return@onSuccess
-                val merged = mergeOlderPage(_state.value.messages, older, knownMessageIds)
-                rebuildMessageIdIndex(merged, messageIdIndex)
-                roomMessageCache[roomId] = RoomMessageCache(
-                    messages = merged,
-                    hasMoreOlder = older.size >= PAGE_SIZE,
-                )
-                ChatSessionCache.updateMessages(roomId, merged)
-                _state.update {
-                    it.copy(
-                        messages = merged,
-                        hasMoreOlder = older.size >= PAGE_SIZE,
-                    )
-                }
+    private fun publishMessagesDerived(messages: List<ChatMessage>) {
+        deriveJob?.cancel()
+        if (messages.isEmpty()) {
+            _listDerived.value = ChatMessagesListDerived.Empty
+            return
+        }
+        if (messages.size <= CHAT_LIST_DERIVE_SYNC_MAX) {
+            _listDerived.value = buildChatMessagesListDerived(messages)
+            return
+        }
+        val expected = messages
+        deriveJob = viewModelScope.launch(Dispatchers.Default) {
+            val derived = buildChatMessagesListDerived(expected)
+            if (!chatMessagesListContentEqual(expected, _state.value.messages)) return@launch
+            _listDerived.value = derived
+        }
+    }
+
+    private suspend fun buildDerivedAfterUpsert(
+        messages: List<ChatMessage>,
+        previousMessages: List<ChatMessage>,
+        previousDerived: ChatMessagesListDerived,
+    ): ChatMessagesListDerived {
+        if (messages.isEmpty()) return ChatMessagesListDerived.Empty
+        val canPrepend = previousMessages.isNotEmpty() &&
+            messages.size == previousMessages.size + 1 &&
+            messages.drop(1) == previousMessages
+        if (canPrepend) {
+            return buildChatMessagesListDerivedAfterPrepend(
+                previousDerived = previousDerived,
+                previousMessages = previousMessages,
+                messages = messages,
+            )
+        }
+        return if (messages.size <= CHAT_LIST_DERIVE_SYNC_MAX) {
+            buildChatMessagesListDerived(messages)
+        } else {
+            withContext(Dispatchers.Default) {
+                buildChatMessagesListDerived(messages)
             }
         }
     }
@@ -1427,6 +1481,7 @@ class ChatViewModel(
                         isLoadingOlder = false,
                         hasMoreOlder = older.size >= PAGE_SIZE,
                     )
+                    publishMessagesDerived(merged)
                 }
             }
             .onFailure { e ->
@@ -1796,6 +1851,7 @@ class ChatViewModel(
         )
         if (optimistic !== previousMessages) {
             _state.value = _state.value.copy(messages = optimistic)
+            publishMessagesDerived(optimistic)
         }
         viewModelScope.launch {
             repository.toggleReaction(messageId, emoji)
@@ -1810,6 +1866,7 @@ class ChatViewModel(
                         messages = previousMessages,
                         error = e.toUserMessageRu(res),
                     )
+                    publishMessagesDerived(previousMessages)
                 }
         }
     }
@@ -2028,6 +2085,7 @@ class ChatViewModel(
     private fun scrubRemovedMessage(state: ChatState, removedId: String): ChatState {
         val nextMessages = scrubMessagesAfterRemove(state.messages, removedId, knownMessageIds)
         rebuildMessageIdIndex(nextMessages, messageIdIndex)
+        publishMessagesDerived(nextMessages)
         return state.copy(messages = nextMessages)
     }
 
@@ -2068,9 +2126,9 @@ class ChatViewModel(
         if (id.isEmpty()) return
         knownMessageIds.remove(id)
         messageIdIndex.remove(id)
-        _state.update { st ->
-            st.copy(messages = st.messages.filter { it._id != id })
-        }
+        val filtered = _state.value.messages.filter { it._id != id }
+        _state.update { st -> st.copy(messages = filtered) }
+        publishMessagesDerived(filtered)
         val rid = _state.value.selectedRoomId ?: return
         roomMessageCache[rid] = RoomMessageCache(
             messages = _state.value.messages,
@@ -2091,63 +2149,94 @@ class ChatViewModel(
         clearComposer: Boolean = false,
     ) {
         if (batch.isEmpty()) return
-        val update = upsertMessagesBatch(
-            _state.value.messages,
-            batch,
-            knownMessageIds,
-            messageIdIndex,
-            maxMessages = messageMemoryCap,
-        )
-        val cappedMessages = update.messages
-        var nextState = _state.value.copy(
-            messages = cappedMessages,
-            newestMessageKey = update.newestMessageKey ?: _state.value.newestMessageKey,
-            isSending = false,
-            error = null,
-        )
-        val clearedDeletingId = batch.mapNotNull { it._id }.toSet()
-        if (nextState.deletingMessageId in clearedDeletingId) {
-            nextState = nextState.copy(deletingMessageId = null)
-        }
-        val selfId = currentUserId.trim()
-        val ownOutgoing = selfId.isNotEmpty() &&
-            batch.any { it.senderId.trim() == selfId }
-        if (clearComposer) {
-            _draftMessage.value = ""
-            _pickedImageUris.value = emptyList()
-            val sentId = batch.firstOrNull()?._id
-            nextState = nextState.copy(
-                replyToMessage = null,
-                scrollToLatestNonce = nextState.scrollToLatestNonce + 1L,
-                sendFailure = null,
-                highlightMessageId = sentId ?: nextState.highlightMessageId,
-            )
-        } else if (ownOutgoing) {
-            nextState = nextState.copy(
-                scrollToLatestNonce = nextState.scrollToLatestNonce + 1L,
-            )
-        }
-        _state.value = syncSelections(nextState)
-        val rid = _state.value.selectedRoomId
-        if (!rid.isNullOrBlank()) {
-            roomMessageCache[rid] = RoomMessageCache(
-                messages = cappedMessages,
-                hasMoreOlder = _state.value.hasMoreOlder,
-            )
-            ChatSessionCache.updateMessages(rid, cappedMessages)
-        }
-        if (shouldAutoMarkReadSelectedRoom() && !rid.isNullOrBlank()) {
-            cappedMessages.firstOrNull()?._id?.let { newestId ->
-                viewModelScope.launch { markRoomReadUpTo(rid, newestId) }
+        val roomId = _state.value.selectedRoomId
+        viewModelScope.launch(Dispatchers.Default) {
+            val work = synchronized(chatMutationLock) {
+                val snapshot = _state.value
+                val previousMessages = snapshot.messages
+                val previousDerived = _listDerived.value
+                val update = upsertMessagesBatch(
+                    current = previousMessages,
+                    incoming = batch,
+                    knownMessageIds = knownMessageIds,
+                    idIndex = messageIdIndex,
+                    maxMessages = messageMemoryCap,
+                )
+                IncomingBatchWork(
+                    previousMessages = previousMessages,
+                    cappedMessages = update.messages,
+                    newestMessageKey = update.newestMessageKey,
+                    previousDerived = previousDerived,
+                )
             }
-        }
-        batch.forEach { message ->
-            if (isRaidStripMessage(message)) {
-                CombatOverlayService.extendInGameOverlayUiHold()
-                CombatOverlayService.publishRaidMessageToStripFromApp(message)
+            if (roomId != null && _state.value.selectedRoomId != roomId) return@launch
+            val derived = buildDerivedAfterUpsert(
+                messages = work.cappedMessages,
+                previousMessages = work.previousMessages,
+                previousDerived = work.previousDerived,
+            )
+            withContext(Dispatchers.Main) {
+                if (roomId != null && _state.value.selectedRoomId != roomId) return@withContext
+                val snapshot = _state.value
+                var nextState = snapshot.copy(
+                    messages = work.cappedMessages,
+                    newestMessageKey = work.newestMessageKey ?: snapshot.newestMessageKey,
+                    isSending = false,
+                    error = null,
+                )
+                val clearedDeletingId = batch.mapNotNull { it._id }.toSet()
+                if (nextState.deletingMessageId in clearedDeletingId) {
+                    nextState = nextState.copy(deletingMessageId = null)
+                }
+                val selfId = currentUserId.trim()
+                val ownOutgoing = selfId.isNotEmpty() &&
+                    batch.any { it.senderId.trim() == selfId }
+                if (clearComposer) {
+                    _draftMessage.value = ""
+                    _pickedImageUris.value = emptyList()
+                    val sentId = batch.firstOrNull()?._id
+                    nextState = nextState.copy(
+                        replyToMessage = null,
+                        scrollToLatestNonce = nextState.scrollToLatestNonce + 1L,
+                        sendFailure = null,
+                        highlightMessageId = sentId ?: nextState.highlightMessageId,
+                    )
+                } else if (ownOutgoing) {
+                    nextState = nextState.copy(
+                        scrollToLatestNonce = nextState.scrollToLatestNonce + 1L,
+                    )
+                }
+                _state.value = syncSelections(nextState)
+                _listDerived.value = derived
+                val rid = _state.value.selectedRoomId
+                if (!rid.isNullOrBlank()) {
+                    roomMessageCache[rid] = RoomMessageCache(
+                        messages = work.cappedMessages,
+                        hasMoreOlder = _state.value.hasMoreOlder,
+                    )
+                    ChatSessionCache.updateMessages(rid, work.cappedMessages)
+                }
+                if (shouldAutoMarkReadSelectedRoom() && !rid.isNullOrBlank()) {
+                    work.cappedMessages.firstOrNull()?._id?.let { newestId ->
+                        viewModelScope.launch { markRoomReadUpTo(rid, newestId) }
+                    }
+                }
+                batch.forEach { message ->
+                    if (isRaidStripMessage(message)) {
+                        CombatOverlayService.extendInGameOverlayUiHold()
+                        CombatOverlayService.publishRaidMessageToStripFromApp(message)
+                    }
+                }
             }
         }
     }
+
+    private data class IncomingBatchWork(
+        val previousMessages: List<ChatMessage>,
+        val cappedMessages: List<ChatMessage>,
+        val newestMessageKey: String?,
+        val previousDerived: ChatMessagesListDerived,
+    )
 
     private fun isRaidStripMessage(message: ChatMessage): Boolean {
         val roomId = message.roomId.trim()

@@ -111,6 +111,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -204,7 +205,6 @@ import com.lastasylum.alliance.ui.chat.isAtReverseChatBottom
 import com.lastasylum.alliance.ui.chat.scrollReverseChatRevealLatest
 import com.lastasylum.alliance.ui.chat.scrollReverseChatToLatest
 import com.lastasylum.alliance.ui.chat.scrollTimelineItemToViewportCenter
-import com.lastasylum.alliance.ui.chat.buildChatMessagesListDerived
 import com.lastasylum.alliance.ui.chat.ChatMessagesListDerived
 import com.lastasylum.alliance.ui.chat.clusterTopSpacingAt
 import com.lastasylum.alliance.ui.chat.chatTimelineDaySeparatorKey
@@ -414,6 +414,7 @@ private fun ChatScreenMessagesHost(
 @Composable
 fun ChatScreen(
     state: ChatState,
+    listDerived: ChatMessagesListDerived,
     typingPeers: Map<String, String>,
     draftMessage: String,
     pickedImageUris: List<Uri>,
@@ -509,14 +510,6 @@ fun ChatScreen(
         }
     }
     val messages = state.messages
-    // Sync derive on composition — produceState left timeline empty while messages were loaded (blank feed).
-    val listDerived = remember(messages, state.selectedRoomId) {
-        if (messages.isEmpty()) {
-            ChatMessagesListDerived.Empty
-        } else {
-            buildChatMessagesListDerived(messages)
-        }
-    }
     val listUiState = remember(
         state.isRoomsLoading,
         state.rooms,
@@ -1325,14 +1318,20 @@ private fun ChatMessagesLazyList(
                         is ChatTimelineEntry.DaySeparator -> ChatDayDivider(e.label)
                         is ChatTimelineEntry.ChatMessageItem -> {
                             val message = e.message
+                            val messageId = message._id
                             val cluster = messageClusterFlags.getOrNull(e.messageIndex)
                             val clusterTop = clusterTopSpacingAt(listDerived, idx).dp
+                            val highlighted by remember(messageId, highlightMessageId) {
+                                derivedStateOf {
+                                    messageId != null && highlightMessageId == messageId
+                                }
+                            }
+                            key(messageId ?: chatMessageKey(message)) {
                             ChatMessageBubble(
                                 message = message,
                                 cluster = cluster,
                                 isMine = chatMessageIsOwn(message, listUiState.currentUserId),
-                                highlighted = highlightMessageId != null &&
-                                    highlightMessageId == message._id,
+                                highlighted = highlighted,
                                 clusterTopSpacing = clusterTop,
                                 canDelete = canDeleteChatMessage(
                                     message = message,
@@ -1351,6 +1350,7 @@ private fun ChatMessagesLazyList(
                                 onSwipeReply = onReplyToMessage,
                                 onJumpToQuotedMessage = jumpToQuotedMessage,
                             )
+                            }
                         }
                         is ChatTimelineEntry.ChatAlbumItem -> {
                             val message = e.representativeMessage

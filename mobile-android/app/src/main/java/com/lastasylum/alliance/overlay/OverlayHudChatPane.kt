@@ -2,6 +2,8 @@ package com.lastasylum.alliance.overlay
 
 import android.net.Uri
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lastasylum.alliance.ui.chat.ChatState
 import com.lastasylum.alliance.ui.chat.ChatViewModel
 import com.lastasylum.alliance.ui.screens.ChatScreen
@@ -15,8 +17,10 @@ internal fun OverlayHudChatPane(
     otherReadUptoMessageId: String?,
     vm: ChatViewModel,
 ) {
+    val listDerived by vm.listDerived.collectAsStateWithLifecycle()
     ChatScreen(
         state = chatState,
+        listDerived = listDerived,
         typingPeers = typingPeers,
         draftMessage = draftMessage,
         pickedImageUris = pickedImageUris,

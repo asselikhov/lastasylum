@@ -6,6 +6,7 @@ package com.lastasylum.alliance.data.chat
 object ChatSessionCache {
     private const val ROOMS_TTL_MS = 45_000L
     private const val MESSAGES_TTL_MS = 45_000L
+    private const val MAX_CACHED_MESSAGE_ROOMS = 8
 
     @Volatile
     private var cachedRooms: List<ChatRoomDto>? = null
@@ -13,14 +14,13 @@ object ChatSessionCache {
     @Volatile
     private var cachedRoomsAtMs: Long = 0L
 
-    @Volatile
-    private var cachedMessagesRoomId: String? = null
+    private data class RoomMessagesEntry(
+        val messages: List<ChatMessage>,
+        val atMs: Long,
+    )
 
-    @Volatile
-    private var cachedMessages: List<ChatMessage>? = null
-
-    @Volatile
-    private var cachedMessagesAtMs: Long = 0L
+    /** LRU: most recently touched room at end. */
+    private val messagesByRoom = LinkedHashMap<String, RoomMessagesEntry>(MAX_CACHED_MESSAGE_ROOMS + 1, 0.75f, true)
 
     fun getFreshRooms(): List<ChatRoomDto>? {
         val rooms = cachedRooms ?: return null
@@ -69,24 +69,29 @@ object ChatSessionCache {
 
     fun getFreshMessages(roomId: String): List<ChatMessage>? {
         if (roomId.isBlank()) return null
-        val messages = cachedMessages ?: return null
-        if (cachedMessagesRoomId != roomId) return null
-        if (System.currentTimeMillis() - cachedMessagesAtMs > MESSAGES_TTL_MS) return null
-        return messages
+        val entry = messagesByRoom[roomId] ?: return null
+        if (System.currentTimeMillis() - entry.atMs > MESSAGES_TTL_MS) {
+            messagesByRoom.remove(roomId)
+            return null
+        }
+        return entry.messages
     }
 
     fun updateMessages(roomId: String, messages: List<ChatMessage>) {
         if (roomId.isBlank()) return
-        cachedMessagesRoomId = roomId
-        cachedMessages = messages
-        cachedMessagesAtMs = System.currentTimeMillis()
+        messagesByRoom[roomId] = RoomMessagesEntry(
+            messages = messages,
+            atMs = System.currentTimeMillis(),
+        )
+        while (messagesByRoom.size > MAX_CACHED_MESSAGE_ROOMS) {
+            val eldest = messagesByRoom.keys.firstOrNull() ?: break
+            messagesByRoom.remove(eldest)
+        }
     }
 
     fun clear() {
         cachedRooms = null
         cachedRoomsAtMs = 0L
-        cachedMessages = null
-        cachedMessagesRoomId = null
-        cachedMessagesAtMs = 0L
+        messagesByRoom.clear()
     }
 }

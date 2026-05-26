@@ -53,14 +53,16 @@ fun chatBubbleClusterTopSpacing(
     return 10.dp
 }
 
+internal fun chatMessageIsAlbumCandidate(m: ChatMessage): Boolean {
+    if (m.replyTo != null) return false
+    val hasImages = m.attachments.any { it.kind == "image" && it.url.isNotBlank() }
+    return hasImages && StickerPacks.parse(m.text) == null
+}
+
 fun buildChatTimeline(messages: List<ChatMessage>): List<ChatTimelineEntry> {
     if (messages.isEmpty()) return emptyList()
     val out = ArrayList<ChatTimelineEntry>(messages.size + 8)
-    fun isAlbumCandidate(m: ChatMessage): Boolean {
-        if (m.replyTo != null) return false
-        val hasImages = m.attachments.any { it.kind == "image" && it.url.isNotBlank() }
-        return hasImages && StickerPacks.parse(m.text) == null
-    }
+    fun isAlbumCandidate(m: ChatMessage): Boolean = chatMessageIsAlbumCandidate(m)
     fun tsMillis(createdAt: String?): Long =
         parseIsoInstantEpochMilli(createdAt) ?: -1L
     val albumWindowMs = 3L * 60L * 1000L

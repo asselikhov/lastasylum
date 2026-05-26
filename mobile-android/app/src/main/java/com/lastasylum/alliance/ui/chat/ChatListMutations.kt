@@ -37,6 +37,8 @@ internal fun upsertMessage(
     incoming: ChatMessage,
     knownMessageIds: MutableSet<String>,
     idIndex: MutableMap<String, Int>? = null,
+    /** When true, [rebuildMessageIdIndex] runs once after [upsertMessagesBatch]. */
+    deferIndexShift: Boolean = false,
 ): MessageUpsertResult {
     val id = incoming._id
     if (id != null) {
@@ -54,8 +56,10 @@ internal fun upsertMessage(
         val next = listOf(incoming) + current
         idIndex?.let { map ->
             map[id] = 0
-            map.entries.forEach { (key, pos) ->
-                if (key != id) map[key] = pos + 1
+            if (!deferIndexShift) {
+                map.entries.forEach { (key, pos) ->
+                    if (key != id) map[key] = pos + 1
+                }
             }
         }
         return MessageUpsertResult(
@@ -100,14 +104,22 @@ internal fun upsertMessagesBatch(
     var messages = current
     var newestMessageKey: String? = null
     for (message in incoming) {
-        val update = upsertMessage(messages, message, knownMessageIds, idIndex)
+        val update = upsertMessage(
+            current = messages,
+            incoming = message,
+            knownMessageIds = knownMessageIds,
+            idIndex = idIndex,
+            deferIndexShift = true,
+        )
         messages = update.messages
         if (update.newestMessageKey != null) {
             newestMessageKey = update.newestMessageKey
         }
     }
+    val capped = capNewestFirst(messages, maxMessages)
+    rebuildMessageIdIndex(capped, idIndex)
     return MessageUpsertResult(
-        messages = capNewestFirst(messages, maxMessages),
+        messages = capped,
         newestMessageKey = newestMessageKey,
     )
 }

@@ -86,6 +86,17 @@ class ChatRealtimeSubscriber(
         onRead: (ChatRoomReadEvent) -> Unit = {},
         onRoomUnread: (ChatRoomUnreadEvent) -> Unit = {},
     ) {
+        val nextIds = roomIds.map { it.trim() }.filter { it.isNotEmpty() }
+        val sameRooms = nextIds.size == primaryRealtimeRoomIds.size &&
+            primaryRealtimeRoomIds.containsAll(nextIds)
+        if (sameRooms && realtimeUiListener != null) {
+            realtimeUiListener = onMessage
+            realtimeDeleteListener = onDeleteMessage
+            realtimeTypingListener = onTyping
+            realtimeReadListener = onRead
+            realtimeRoomUnreadListener = onRoomUnread
+            return
+        }
         realtimeUiListener?.let { socketManager.removeMessageListener(it) }
         realtimeDeleteListener?.let { socketManager.removeMessageDeletedListener(it) }
         realtimeTypingListener?.let { socketManager.removeTypingListener(it) }
@@ -102,7 +113,7 @@ class ChatRealtimeSubscriber(
         socketManager.addReadListener(onRead)
         socketManager.addRoomUnreadListener(onRoomUnread)
         primaryRealtimeRoomIds.clear()
-        primaryRealtimeRoomIds.addAll(roomIds.map { it.trim() }.filter { it.isNotEmpty() })
+        primaryRealtimeRoomIds.addAll(nextIds)
         ensureRealtimeSocketConnected()
     }
 
