@@ -95,6 +95,22 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun stripRedundantPendingOutgoing_removesPendingWhenServerEchoExists() {
+        val pending = msg("pending-1", "hello")
+        val server = msg("server-1", "hello")
+        val out = stripRedundantPendingOutgoing(listOf(server, pending), "u1")
+        assertEquals(listOf("server-1"), out.map { it._id })
+    }
+
+    @Test
+    fun dropMatchingPendingOutgoing_ignoresReplyToNullVsEmpty() {
+        val pending = msg("pending-1", "hello", replyTo = null)
+        val server = msg("server-1", "hello").copy(replyToMessageId = "")
+        val out = dropMatchingPendingOutgoing(listOf(pending), listOf(server), "u1")
+        assertTrue(out.isEmpty())
+    }
+
+    @Test
     fun replaceMatchingPendingOutgoing_swapsOptimisticRow() {
         val pending = msg("pending-1", "hello")
         val server = msg("server-1", "hello")

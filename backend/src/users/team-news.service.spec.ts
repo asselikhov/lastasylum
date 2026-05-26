@@ -7,6 +7,19 @@ import { TeamNewsReadState } from './schemas/team-news-read-state.schema';
 import { User } from './schemas/user.schema';
 import { TeamsService } from './teams.service';
 import { TeamNewsAttachmentsService } from './team-news-attachments.service';
+import { GameIdentitiesService } from './game-identities.service';
+
+function mockGameIdentities() {
+  return {
+    resolveMemberDisplayNickname: jest.fn(
+      (user: {
+        username: string;
+        gameIdentities?: Array<{ gameNickname?: string }>;
+      }) => user.gameIdentities?.[0]?.gameNickname?.trim() || user.username,
+    ),
+    resolveSenderUsername: jest.fn(),
+  };
+}
 
 describe('TeamNewsService poll create', () => {
   const teamId = '507f1f77bcf86cd799439011';
@@ -89,6 +102,10 @@ describe('TeamNewsService poll create', () => {
         { provide: getModelToken(User.name), useValue: userModel },
         { provide: TeamsService, useValue: teams },
         { provide: TeamNewsAttachmentsService, useValue: attachments },
+        {
+          provide: GameIdentitiesService,
+          useValue: mockGameIdentities(),
+        },
       ],
     }).compile();
     service = moduleRef.get(TeamNewsService);
@@ -204,6 +221,14 @@ describe('TeamNewsService poll update', () => {
     updatedAt: new Date(),
   });
 
+  const newsReadStateModel = {
+    findOne: jest.fn().mockReturnValue({
+      lean: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue(null),
+      }),
+    }),
+  };
+
   const newsModel = {
     findOne: jest.fn().mockReturnValue({
       exec: jest.fn().mockResolvedValue(doc),
@@ -246,9 +271,17 @@ describe('TeamNewsService poll update', () => {
       providers: [
         TeamNewsService,
         { provide: getModelToken(TeamNews.name), useValue: newsModel },
+        {
+          provide: getModelToken(TeamNewsReadState.name),
+          useValue: newsReadStateModel,
+        },
         { provide: getModelToken(User.name), useValue: userModel },
         { provide: TeamsService, useValue: teams },
         { provide: TeamNewsAttachmentsService, useValue: attachments },
+        {
+          provide: GameIdentitiesService,
+          useValue: mockGameIdentities(),
+        },
       ],
     }).compile();
     service = moduleRef.get(TeamNewsService);
@@ -273,5 +306,95 @@ describe('TeamNewsService poll update', () => {
       text: 'Да (уточнено)',
     });
     expect(doc.save).toHaveBeenCalled();
+  });
+});
+
+describe('TeamNewsService poll voter display names', () => {
+  const teamId = '507f1f77bcf86cd799439011';
+  const userId = '507f1f77bcf86cd799439012';
+  const voterId = '507f1f77bcf86cd799439013';
+  const newsId = '507f1f77bcf86cd799439099';
+
+  const teams = {
+    getTeamIfMemberOrThrow: jest.fn().mockResolvedValue({
+      _id: teamId,
+      members: [{ userId, teamRole: 'R4' }],
+    }),
+    getSquadRoleForUser: jest.fn().mockReturnValue('R4'),
+  };
+
+  const newsModel = {
+    findOne: jest.fn().mockReturnValue({
+      lean: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue({
+          _id: { toString: () => newsId },
+          teamId: { toString: () => teamId },
+          authorUserId: userId,
+          title: 'Poll',
+          body: '',
+          imageAttachments: [],
+          poll: {
+            question: 'Q?',
+            options: [{ id: 'opt-a', text: 'Yes' }],
+            votes: [{ userId: voterId, optionId: 'opt-a' }],
+          },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
+      }),
+    }),
+  };
+
+  const userModel = {
+    find: jest.fn().mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue([
+            {
+              _id: userId,
+              username: 'author@example.com',
+              telegramUsername: null,
+              gameIdentities: [{ gameNickname: 'AuthorNick' }],
+            },
+            {
+              _id: voterId,
+              username: 'fedko@example.com',
+              telegramUsername: null,
+              gameIdentities: [{ gameNickname: 'Fedko' }],
+            },
+          ]),
+        }),
+      }),
+    }),
+  };
+
+  let service: TeamNewsService;
+
+  beforeEach(async () => {
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        TeamNewsService,
+        { provide: getModelToken(TeamNews.name), useValue: newsModel },
+        { provide: getModelToken(TeamNewsReadState.name), useValue: {} },
+        { provide: getModelToken(User.name), useValue: userModel },
+        { provide: TeamsService, useValue: teams },
+        {
+          provide: TeamNewsAttachmentsService,
+          useValue: { assertTeamImageSlots: jest.fn() },
+        },
+        {
+          provide: GameIdentitiesService,
+          useValue: mockGameIdentities(),
+        },
+      ],
+    }).compile();
+    service = moduleRef.get(TeamNewsService);
+  });
+
+  it('getOne uses game nickname instead of email login for poll voters and author', async () => {
+    const detail = await service.getOne(teamId, newsId, userId);
+    expect(detail.authorUsername).toBe('AuthorNick');
+    expect(detail.poll?.votes).toHaveLength(1);
+    expect(detail.poll?.votes[0].username).toBe('Fedko');
   });
 });

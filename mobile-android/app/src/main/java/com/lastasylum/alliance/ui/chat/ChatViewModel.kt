@@ -115,9 +115,6 @@ class ChatViewModel(
     private var deriveJob: Job? = null
     private val chatMutationLock = Any()
 
-    /** LazyColumn keys: pending id kept after server confirms (avoids row dispose blink). */
-    private val listCompositionKeyByMessageId = mutableMapOf<String, String>()
-
     /** Isolated from [state] so each keystroke does not recompose the whole chat list. */
     private val _draftMessage = MutableStateFlow("")
     val draftMessage: StateFlow<String> = _draftMessage.asStateFlow()
@@ -336,32 +333,11 @@ class ChatViewModel(
         scheduleBootstrap(preferAllianceHubRoom = true, force = true)
     }
 
-    /** Stable row key for [ChatScreen] — pending id survives in-place replace with server [_id]. */
+    /** Stable LazyColumn key — always [_id]; never alias server rows to pending ids (duplicate-key crash). */
     fun messageListCompositionKey(message: ChatMessage): String {
         val id = message._id?.trim().orEmpty()
-        if (id.isEmpty()) return chatMessageKey(message)
-        val linked = listCompositionKeyByMessageId[id]
-        if (linked != null && linked != id) {
-            // Guard: never reuse pending lazy key while that pending row still exists.
-            if (_state.value.messages.any { it._id?.trim() == linked }) {
-                return id
-            }
-            return linked
-        }
-        if (id.startsWith("pending-")) {
-            listCompositionKeyByMessageId[id] = id
-            return id
-        }
-        return id
-    }
-
-    private fun linkListCompositionKey(pendingId: String, serverId: String) {
-        val pending = pendingId.trim()
-        val server = serverId.trim()
-        if (pending.isEmpty() || server.isEmpty()) return
-        val stable = listCompositionKeyByMessageId[pending] ?: pending
-        listCompositionKeyByMessageId[server] = stable
-        listCompositionKeyByMessageId.remove(pending)
+        if (id.isNotEmpty()) return id
+        return chatMessageKey(message)
     }
 
     /** Splash: комнаты сразу; сообщения — из диска или фоном после UI. */
@@ -1501,7 +1477,6 @@ class ChatViewModel(
         if (!messagesAlreadyInState) {
             knownMessageIds.clear()
             messageIdIndex.clear()
-            listCompositionKeyByMessageId.clear()
             _draftMessage.value = ""
             _typingPeers.value = emptyMap()
         }
@@ -2447,7 +2422,6 @@ class ChatViewModel(
         if (id.isEmpty()) return
         knownMessageIds.remove(id)
         messageIdIndex.remove(id)
-        listCompositionKeyByMessageId.remove(id)
         val filtered = _state.value.messages.filter { it._id != id }
         _state.update { st -> st.copy(messages = filtered) }
         publishMessagesDerived(filtered)
@@ -2520,24 +2494,23 @@ class ChatViewModel(
                 val snapshot = _state.value
                 val previousMessages = snapshot.messages
                 val previousDerived = _listDerived.value
-                var idx = messageIdIndex[pending]
-                    ?: previousMessages.indexOfFirst { it._id == pending }
-                if (idx < 0) {
-                    val echoIdx = messageIdIndex[serverId]
-                        ?: previousMessages.indexOfFirst { it._id == serverId }
-                    if (echoIdx < 0) {
-                        return@synchronized null
+                var updated = previousMessages.filterNot { it._id?.trim() == pending }
+                val serverIdx = updated.indexOfFirst { it._id?.trim() == serverId }
+                updated = if (serverIdx >= 0) {
+                    updated.toMutableList().apply {
+                        this[serverIdx] = sent.mergePreservingAttachments(this[serverIdx])
                     }
-                    idx = echoIdx
+                } else {
+                    listOf(sent) + updated
                 }
-                val updated = previousMessages.toMutableList()
-                updated[idx] = sent.mergePreservingAttachments(previousMessages[idx])
                 knownMessageIds.remove(pending)
                 knownMessageIds.add(serverId)
                 messageIdIndex.remove(pending)
-                messageIdIndex[serverId] = idx
-                linkListCompositionKey(pending, serverId)
-                val capped = capMessagesForMemory(dedupeMessagesByIdNewestFirst(updated))
+                val capped = capMessagesForMemory(
+                    dedupeMessagesByIdNewestFirst(
+                        stripRedundantPendingOutgoing(updated, currentUserId),
+                    ),
+                )
                 rebuildMessageIdIndex(capped, messageIdIndex)
                 IncomingBatchWork(
                     previousMessages = previousMessages,
@@ -2629,7 +2602,6 @@ class ChatViewModel(
                         knownMessageIds.add(replacement.serverId)
                         messageIdIndex.remove(replacement.pendingId)
                         messageIdIndex[replacement.serverId] = replacement.replacedIndex
-                        linkListCompositionKey(replacement.pendingId, replacement.serverId)
                         newestFromPendingReplace = replacement.serverId
                         listDerived = buildChatMessagesListDerivedAfterReplaceNewest(
                             previousDerived = listDerived,
@@ -2640,6 +2612,9 @@ class ChatViewModel(
                         stillFresh.add(message)
                     }
                 }
+                messages = stripRedundantPendingOutgoing(messages, currentUserId)
+                messages = dedupeMessagesByIdNewestFirst(messages)
+                rebuildMessageIdIndex(messages, messageIdIndex)
                 if (stillFresh.isEmpty()) {
                     return@synchronized IncomingBatchWork(
                         previousMessages = snapshot.messages,
@@ -2657,9 +2632,14 @@ class ChatViewModel(
                     idIndex = messageIdIndex,
                     maxMessages = messageMemoryCap,
                 )
+                val cappedAfterUpsert = stripRedundantPendingOutgoing(
+                    update.messages,
+                    currentUserId,
+                ).let { dedupeMessagesByIdNewestFirst(it) }
+                rebuildMessageIdIndex(cappedAfterUpsert, messageIdIndex)
                 IncomingBatchWork(
                     previousMessages = messages,
-                    cappedMessages = update.messages,
+                    cappedMessages = cappedAfterUpsert,
                     newestMessageKey = update.newestMessageKey ?: newestFromPendingReplace,
                     previousDerived = listDerived,
                     precomputedDerived = null,

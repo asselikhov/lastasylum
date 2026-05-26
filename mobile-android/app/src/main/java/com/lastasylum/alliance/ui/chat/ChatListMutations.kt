@@ -23,6 +23,38 @@ internal fun capNewestFirst(messages: List<ChatMessage>, max: Int): List<ChatMes
 }
 
 /** Newest-first: keep first row per [_id] (socket echo + HTTP confirm can briefly duplicate). */
+internal fun normalizeOutgoingReplyToId(replyToMessageId: String?): String =
+    replyToMessageId?.trim().orEmpty()
+
+internal fun outgoingTextsMatch(a: ChatMessage, b: ChatMessage): Boolean =
+    a.text.trim() == b.text.trim() &&
+        normalizeOutgoingReplyToId(a.replyToMessageId) ==
+        normalizeOutgoingReplyToId(b.replyToMessageId)
+
+/** Removes optimistic rows when any confirmed server row from self matches the same outgoing. */
+internal fun stripRedundantPendingOutgoing(
+    messages: List<ChatMessage>,
+    currentUserId: String,
+): List<ChatMessage> {
+    val selfId = currentUserId.trim()
+    if (selfId.isEmpty() || messages.isEmpty()) return messages
+    val confirmedFingerprints = HashSet<String>()
+    for (msg in messages) {
+        val id = msg._id?.trim().orEmpty()
+        if (msg.senderId.trim() != selfId || id.isEmpty() || id.startsWith("pending-")) continue
+        confirmedFingerprints.add(
+            "${msg.text.trim()}\u0000${normalizeOutgoingReplyToId(msg.replyToMessageId)}",
+        )
+    }
+    if (confirmedFingerprints.isEmpty()) return messages
+    return messages.filter { msg ->
+        val id = msg._id?.trim().orEmpty()
+        if (!id.startsWith("pending-") || msg.senderId.trim() != selfId) return@filter true
+        val fp = "${msg.text.trim()}\u0000${normalizeOutgoingReplyToId(msg.replyToMessageId)}"
+        fp !in confirmedFingerprints
+    }
+}
+
 internal fun dedupeMessagesByIdNewestFirst(messages: List<ChatMessage>): List<ChatMessage> {
     if (messages.size <= 1) return messages
     val seen = HashSet<String>()
@@ -53,13 +85,11 @@ internal fun replaceMatchingPendingOutgoing(
     val serverId = incoming._id?.trim().orEmpty()
     if (selfId.isEmpty() || serverId.isEmpty() || serverId.startsWith("pending-")) return null
     if (incoming.senderId.trim() != selfId) return null
-    val incomingText = incoming.text.trim()
     val idx = current.indexOfFirst { msg ->
         val pendingId = msg._id?.trim().orEmpty()
         pendingId.startsWith("pending-") &&
             msg.senderId.trim() == selfId &&
-            msg.text.trim() == incomingText &&
-            msg.replyToMessageId == incoming.replyToMessageId
+            outgoingTextsMatch(msg, incoming)
     }
     if (idx < 0) return null
     val pendingId = current[idx]._id?.trim().orEmpty()
@@ -92,10 +122,7 @@ internal fun dropMatchingPendingOutgoing(
     return current.filter { msg ->
         val id = msg._id?.trim().orEmpty()
         if (!id.startsWith("pending-")) return@filter true
-        !confirmed.any { sent ->
-            sent.text.trim() == msg.text.trim() &&
-                sent.replyToMessageId == msg.replyToMessageId
-        }
+        !confirmed.any { sent -> outgoingTextsMatch(msg, sent) }
     }
 }
 

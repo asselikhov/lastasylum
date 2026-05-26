@@ -8,16 +8,17 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.exclude
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import com.lastasylum.alliance.ui.insets.LocalImeSnapState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -104,6 +105,7 @@ enum class AppTab(val route: String, val titleRes: Int) {
     ADMIN("admin", R.string.tab_admin),
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AppNavigation(
     userId: String,
@@ -249,7 +251,7 @@ fun AppNavigation(
         .collectAsStateWithLifecycle(0)
     val chatRouteActive =
         currentDestination?.hierarchy?.any { it.route == AppTab.CHAT.route } == true
-    val hideBottomBarForChatIme = chatRouteActive && LocalImeSnapState.current.isVisible
+    val hideBottomBarForChatIme = chatRouteActive && WindowInsets.isImeVisible
     DisposableEffect(chatRouteActive) {
         if (chatRouteActive) {
             chatViewModel.onChatTabResumed()

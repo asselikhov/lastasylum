@@ -1,11 +1,9 @@
 package com.lastasylum.alliance.ui.chat
 
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.composed
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import com.lastasylum.alliance.ui.insets.LocalImeSnapState
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 
 /**
@@ -16,19 +14,10 @@ fun Modifier.chatComposerOverlayDock(): Modifier =
     padding(bottom = SquadRelayDimens.composerBottomGap)
 
 /**
- * Приложение: подъём всего [com.lastasylum.alliance.ui.screens.ChatScreen] (как padding корня в оверлее).
- * Композер — только [chatComposerOverlayDock].
+ * Приложение: подъём всего [com.lastasylum.alliance.ui.screens.ChatScreen] над IME
+ * (аналог padding корня в оверлее). Композер — [chatComposerOverlayDock] (+8dp).
  */
-fun Modifier.chatScreenImeLift(): Modifier = composed {
-    val density = LocalDensity.current
-    val imeBottomPx = LocalImeSnapState.current.bottomPx
-    val bottom = if (imeBottomPx > 0) {
-        with(density) { imeBottomPx.toDp() }
-    } else {
-        0.dp
-    }
-    padding(bottom = bottom)
-}
+fun Modifier.chatScreenImeLift(): Modifier = imePadding()
 
 /** @deprecated IME на уровне экрана — [chatScreenImeLift] + [chatComposerOverlayDock]. */
 fun Modifier.chatComposerAppDock(): Modifier = chatComposerOverlayDock()

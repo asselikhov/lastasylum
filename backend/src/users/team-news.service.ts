@@ -11,7 +11,8 @@ import {
   isSquadOfficerRole,
   PlayerTeamMemberRole,
 } from '../common/enums/player-team-member-role.enum';
-import { User } from './schemas/user.schema';
+import { User, type UserDocument } from './schemas/user.schema';
+import { GameIdentitiesService } from './game-identities.service';
 import { TeamNews, TeamNewsDocument } from './schemas/team-news.schema';
 import {
   TeamNewsReadState,
@@ -69,6 +70,7 @@ export class TeamNewsService {
     @InjectModel(User.name) private readonly userModel: Model<User>,
     private readonly teams: TeamsService,
     private readonly attachments: TeamNewsAttachmentsService,
+    private readonly gameIdentities: GameIdentitiesService,
   ) {}
 
   private assertCanPublish(team: PlayerTeamDocument, userId: string): void {
@@ -196,15 +198,18 @@ export class TeamNewsService {
 
   private async usernamesFor(
     ids: string[],
+    teamId: string,
   ): Promise<Map<string, string>> {
-    const profiles = await this.userProfilesFor(ids);
+    const profiles = await this.userProfilesFor(ids, teamId);
     return new Map(
       [...profiles.entries()].map(([id, p]) => [id, p.username]),
     );
   }
 
+  /** Display nick for news author / poll voters (game nickname, not login email). */
   private async userProfilesFor(
     ids: string[],
+    teamId: string,
   ): Promise<
     Map<string, { username: string; telegramUsername: string | null }>
   > {
@@ -212,20 +217,17 @@ export class TeamNewsService {
     if (unique.length === 0) return new Map();
     const users = await this.userModel
       .find({ _id: { $in: unique.map((i) => new Types.ObjectId(i)) } })
-      .select('username telegramUsername')
-      .lean<
-        Array<{
-          _id: Types.ObjectId;
-          username: string;
-          telegramUsername?: string | null;
-        }>
-      >()
+      .select('username telegramUsername gameIdentities activeGameIdentityId')
+      .lean()
       .exec();
     return new Map(
       users.map((u) => [
         u._id.toString(),
         {
-          username: u.username,
+          username: this.gameIdentities.resolveMemberDisplayNickname(
+            u as UserDocument,
+            teamId,
+          ),
           telegramUsername: u.telegramUsername ?? null,
         },
       ]),
@@ -295,7 +297,7 @@ export class TeamNewsService {
       >()
       .exec();
     const authorIds = rows.map((r) => r.authorUserId);
-    const profiles = await this.userProfilesFor(authorIds);
+    const profiles = await this.userProfilesFor(authorIds, teamId);
     const items = rows.map((r) => this.toListRow(r, profiles, ''));
     return { items, nextCursor: null };
   }
@@ -426,7 +428,7 @@ export class TeamNewsService {
     const hasMore = rows.length > lim;
     const page = hasMore ? rows.slice(0, lim) : rows;
     const authorIds = page.map((r) => r.authorUserId);
-    const profiles = await this.userProfilesFor(authorIds);
+    const profiles = await this.userProfilesFor(authorIds, teamId);
     const items = page.map((r) => this.toListRow(r, profiles, userId));
     const nextCursor =
       hasMore && page.length > 0
@@ -459,10 +461,10 @@ export class TeamNewsService {
       .exec();
     if (!doc) throw new NotFoundException('News not found');
     const pollVoterIds = doc.poll?.votes.map((v) => v.userId) ?? [];
-    const profiles = await this.userProfilesFor([
-      doc.authorUserId,
-      ...pollVoterIds,
-    ]);
+    const profiles = await this.userProfilesFor(
+      [doc.authorUserId, ...pollVoterIds],
+      teamId,
+    );
     const base = this.toListRow(doc, profiles, userId);
     const teamIdStr = this.idString(doc.teamId);
     const images = doc.imageAttachments.map(
