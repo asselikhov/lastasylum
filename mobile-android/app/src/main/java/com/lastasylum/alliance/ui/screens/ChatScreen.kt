@@ -102,7 +102,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -201,9 +200,7 @@ import com.lastasylum.alliance.ui.chat.isAtReverseChatBottom
 import com.lastasylum.alliance.ui.chat.scrollReverseChatRevealLatest
 import com.lastasylum.alliance.ui.chat.scrollReverseChatToLatest
 import com.lastasylum.alliance.ui.chat.scrollTimelineItemToViewportCenter
-import com.lastasylum.alliance.ui.chat.CHAT_LIST_DERIVE_SYNC_MAX
 import com.lastasylum.alliance.ui.chat.buildChatMessagesListDerived
-import com.lastasylum.alliance.ui.chat.buildChatMessagesListDerivedAfterPrepend
 import com.lastasylum.alliance.ui.chat.ChatMessagesListDerived
 import com.lastasylum.alliance.ui.chat.clusterTopSpacingAt
 import com.lastasylum.alliance.ui.chat.chatTimelineDaySeparatorKey
@@ -405,37 +402,12 @@ fun ChatScreen(
         }
     }
     val messages = state.messages
-    var lastDerivedMessages by remember(state.selectedRoomId) {
-        mutableStateOf<List<ChatMessage>>(emptyList())
-    }
-    val listDerived by produceState(
-        initialValue = ChatMessagesListDerived.Empty,
-        state.selectedRoomId,
-        messages,
-    ) {
+    // Sync derive on composition — produceState left timeline empty while messages were loaded (blank feed).
+    val listDerived = remember(messages, state.selectedRoomId) {
         if (messages.isEmpty()) {
-            lastDerivedMessages = emptyList()
             ChatMessagesListDerived.Empty
         } else {
-            when {
-                messages.size == lastDerivedMessages.size + 1 &&
-                    messages.drop(1) == lastDerivedMessages &&
-                    value.timeline.isNotEmpty() -> {
-                    if (messages.size <= CHAT_LIST_DERIVE_SYNC_MAX) {
-                        buildChatMessagesListDerivedAfterPrepend(value, lastDerivedMessages, messages)
-                    } else {
-                        withContext(Dispatchers.Default) {
-                            buildChatMessagesListDerivedAfterPrepend(value, lastDerivedMessages, messages)
-                        }
-                    }
-                }
-                messages.size <= CHAT_LIST_DERIVE_SYNC_MAX ->
-                    buildChatMessagesListDerived(messages)
-                else ->
-                    withContext(Dispatchers.Default) {
-                        buildChatMessagesListDerived(messages)
-                    }
-            }.also { lastDerivedMessages = messages }
+            buildChatMessagesListDerived(messages)
         }
     }
     val listUiState = remember(
@@ -1173,7 +1145,7 @@ private fun ChatMessagesLazyList(
                 }
             }
 
-            listUiState.isLoading -> {
+            listUiState.isLoading && messages.isEmpty() -> {
                 item {
                     Box(
                         modifier = Modifier
@@ -1186,7 +1158,7 @@ private fun ChatMessagesLazyList(
                 }
             }
 
-            messages.isEmpty() -> {
+            messages.isEmpty() && !listUiState.isLoading -> {
                 item {
                     Box(
                         modifier = Modifier
@@ -1201,6 +1173,19 @@ private fun ChatMessagesLazyList(
                             modifier = Modifier.padding(horizontal = 24.dp),
                             textAlign = TextAlign.Center,
                         )
+                    }
+                }
+            }
+
+            timeline.isEmpty() && messages.isNotEmpty() -> {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = minSystemViewport),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                     }
                 }
             }
