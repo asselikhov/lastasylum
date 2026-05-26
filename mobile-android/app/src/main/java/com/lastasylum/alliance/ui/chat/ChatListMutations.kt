@@ -8,6 +8,16 @@ import com.lastasylum.alliance.data.chat.mergePreservingAttachments
 /** Newest-first in-memory cap to keep scroll/diff bounded for very long threads. */
 internal const val CHAT_MAX_MESSAGES_IN_MEMORY = 800
 
+/** Rows shown in a room list must match that room (guards stale UI when switching rooms). */
+internal fun filterMessagesForRoom(
+    messages: List<ChatMessage>,
+    roomId: String,
+): List<ChatMessage> {
+    val rid = roomId.trim()
+    if (rid.isEmpty()) return messages
+    return messages.filter { it.roomId.trim() == rid }
+}
+
 internal data class MessageUpsertResult(
     val messages: List<ChatMessage>,
     val newestMessageKey: String?,
@@ -27,6 +37,16 @@ internal fun capNewestFirst(messages: List<ChatMessage>, max: Int): List<ChatMes
 /** Newest-first: keep first row per [_id] (socket echo + HTTP confirm can briefly duplicate). */
 internal fun normalizeOutgoingReplyToId(replyToMessageId: String?): String =
     replyToMessageId?.trim().orEmpty()
+
+/** Tracks in-flight sends so socket echo can be ignored before optimistic row is visible. */
+internal fun outgoingMessageFingerprint(
+    roomId: String,
+    text: String,
+    replyToMessageId: String? = null,
+): String {
+    val rid = roomId.trim()
+    return "$rid\u0000${text.trim()}\u0000${normalizeOutgoingReplyToId(replyToMessageId)}"
+}
 
 internal fun outgoingTextsMatch(a: ChatMessage, b: ChatMessage): Boolean =
     a.text.trim() == b.text.trim() &&
@@ -67,11 +87,13 @@ internal fun mergeLoadedPageWithExisting(
     loaded: List<ChatMessage>,
     maxMessages: Int = CHAT_MAX_MESSAGES_IN_MEMORY,
     excludedMessageIds: Set<String> = emptySet(),
+    roomId: String? = null,
 ): List<ChatMessage> {
-    if (existing.isEmpty()) return capNewestFirst(loaded, maxMessages)
+    val scopedExisting = roomId?.let { filterMessagesForRoom(existing, it) } ?: existing
+    if (scopedExisting.isEmpty()) return capNewestFirst(loaded, maxMessages)
     if (loaded.isEmpty()) {
         // Server returned an empty page — room has no messages; do not resurrect disk/socket cache.
-        val pendingOnly = existing.filter { msg ->
+        val pendingOnly = scopedExisting.filter { msg ->
             val id = msg._id?.trim().orEmpty()
             id.startsWith("pending-") && id !in excludedMessageIds
         }
@@ -85,7 +107,7 @@ internal fun mergeLoadedPageWithExisting(
     val index = mutableMapOf<String, Int>()
     rebuildMessageIdIndex(loaded, index)
     var messages = loaded
-    for (msg in existing) {
+    for (msg in scopedExisting) {
         val id = msg._id?.trim().orEmpty()
         if (id.isEmpty() || id in excludedMessageIds) continue
         val keep = when {

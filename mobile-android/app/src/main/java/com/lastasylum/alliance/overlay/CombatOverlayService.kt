@@ -4381,8 +4381,6 @@ class CombatOverlayService : Service() {
             showOverlayShell()
             windowManager
         } ?: return
-        overlayStatusHudHost?.visibility = View.GONE
-        overlayTopRightHudHost?.visibility = View.GONE
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
@@ -4735,6 +4733,9 @@ class CombatOverlayService : Service() {
         }
 
         ViewCompat.requestApplyInsets(root)
+
+        overlayStatusHudHost?.visibility = View.GONE
+        overlayTopRightHudHost?.visibility = View.GONE
 
         overlayChatTeamRoot = root
         overlayChatTeamParams = params

@@ -551,6 +551,7 @@ private fun ChatScreenMessagesHost(
                     selectedRoomId = selectedRoomId,
                     onSelectRoom = onSelectRoom,
                     overlayUi = overlayUi,
+                    isRoomsLoading = chromePane.isRoomsLoading,
                 )
             }
             if (inSelectionMode) {
@@ -630,9 +631,14 @@ private fun ChatScreenComposerSection(
     onRetrySendFailure: () -> Unit,
     onDismissSendFailure: () -> Unit,
 ) {
-    if (composerPane.sendFailure == null &&
-        (selectedRoomId == null || chromePane.rooms.isEmpty())
-    ) {
+    val overlayUi = LocalOverlayUiMode.current
+    val hideComposer = composerPane.sendFailure == null && when {
+        selectedRoomId == null -> true
+        chromePane.rooms.isNotEmpty() -> false
+        overlayUi && chromePane.isRoomsLoading -> false
+        else -> chromePane.rooms.isEmpty()
+    }
+    if (hideComposer) {
         return
     }
     ChatComposerBar {
@@ -1557,8 +1563,25 @@ private fun ChatRoomsBar(
     selectedRoomId: String?,
     onSelectRoom: (String) -> Unit,
     overlayUi: Boolean = false,
+    isRoomsLoading: Boolean = false,
 ) {
-    if (rooms.isEmpty()) return
+    if (rooms.isEmpty()) {
+        if (overlayUi && isRoomsLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .padding(bottom = 4.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(22.dp),
+                    strokeWidth = 2.dp,
+                )
+            }
+        }
+        return
+    }
     val roomsKey = remember(rooms) {
         rooms.joinToString("|") { "${it.id}:${it.unreadCount}:${it.title}" }
     }

@@ -122,6 +122,9 @@ class ChatViewModel(
     private var deriveJob: Job? = null
     private var deriveDebounceJob: Job? = null
     private val chatMutationLock = Any()
+    /** HTTP in-flight sends — socket echo must not insert a second row before [confirmPendingOutgoingMessage]. */
+    private val inFlightOutgoingFingerprints =
+        java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<String, Boolean>())
 
     /** Isolated from [state] so each keystroke does not recompose the whole chat list. */
     private val _draftMessage = MutableStateFlow("")
@@ -333,7 +336,7 @@ class ChatViewModel(
             applyKnownChatMessageUpdate(message)
             return
         }
-        processRealtimeMessageForUnread(message)
+        onIncomingMessage(message)
     }
 
     fun applyOverlayChatDeletedFromSocket(event: ChatMessageDeletedEvent) {
@@ -363,7 +366,9 @@ class ChatViewModel(
         val selected = _state.value.selectedRoomId
         if (roomId == selected) {
             if (isRoomActivelyViewed(roomId)) {
-                applyIncomingMessage(message)
+                if (!shouldDeferOwnOutgoingSocketEcho(message)) {
+                    applyIncomingMessage(message)
+                }
             } else {
                 stashIncomingMessageForRoom(message)
             }
@@ -545,7 +550,10 @@ class ChatViewModel(
         allianceRaidRoomId(rooms)?.let { roomIdsToPrime.add(it) }
         for (rid in roomIdsToPrime) {
             launchDiskCache.loadRoomMessages(currentUserId, rid)?.let { disk ->
-                val scrubbed = messagesWithoutLocallyRemoved(disk.messages)
+                val scrubbed = filterMessagesForRoom(
+                    messagesWithoutLocallyRemoved(disk.messages),
+                    rid,
+                )
                 val capped = capNewestFirst(scrubbed, PAGE_SIZE)
                 roomMessageCache[rid] = RoomMessageCache(
                     messages = capped,
@@ -606,7 +614,9 @@ class ChatViewModel(
             val entry = roomMessageCache[selected]
             val raw = entry?.messages?.takeIf { it.isNotEmpty() }
                 ?: _state.value.messages.takeIf { it.isNotEmpty() }
-            val messages = raw?.let { messagesWithoutLocallyRemoved(it) }
+            val messages = raw
+                ?.let { messagesWithoutLocallyRemoved(it) }
+                ?.let { filterMessagesForRoom(it, selected) }
             if (!messages.isNullOrEmpty()) {
                 launchDiskCache.saveRoomMessages(
                     userId = currentUserId,
@@ -655,7 +665,10 @@ class ChatViewModel(
         if (currentUserId.isBlank() || roomId.isBlank()) return null
         val disk = launchDiskCache.loadRoomMessages(currentUserId, roomId) ?: return null
         if (disk.messages.isEmpty()) return null
-        val scrubbed = messagesWithoutLocallyRemoved(disk.messages)
+        val scrubbed = filterMessagesForRoom(
+            messagesWithoutLocallyRemoved(disk.messages),
+            roomId,
+        )
         val capped = capNewestFirst(scrubbed, PAGE_SIZE)
         return RoomMessageCache(
             messages = capped,
@@ -697,13 +710,19 @@ class ChatViewModel(
             rooms = rooms,
             preferOverlayRaidRoom = preferOverlayRaidRoom,
         ) ?: return
-        if (_state.value.selectedRoomId == roomId && _state.value.messages.isNotEmpty()) {
+        if (_state.value.selectedRoomId == roomId &&
+            _state.value.messages.isNotEmpty() &&
+            messagesBelongToRoom(_state.value.messages, roomId)
+        ) {
             _state.update { it.copy(isLoading = false, isRoomsLoading = false) }
             return
         }
         val cached = roomMessageCache[roomId]
             ?: ChatSessionCache.getFreshMessages(roomId)?.let { sessionMessages ->
-                val scrubbed = messagesWithoutLocallyRemoved(sessionMessages)
+                val scrubbed = filterMessagesForRoom(
+                    messagesWithoutLocallyRemoved(sessionMessages),
+                    roomId,
+                )
                 val capped = capNewestFirst(scrubbed, PAGE_SIZE)
                 RoomMessageCache(
                     messages = capped,
@@ -712,11 +731,19 @@ class ChatViewModel(
             }
             ?: primeRoomMessagesFromDisk(roomId)
         if (cached == null || cached.messages.isEmpty()) {
+            val switchingRoom = _state.value.selectedRoomId != roomId ||
+                !messagesBelongToRoom(_state.value.messages, roomId)
+            if (switchingRoom) {
+                knownMessageIds.clear()
+                messageIdIndex.clear()
+                _listDerived.value = ChatMessagesListDerived.Empty
+            }
             _state.update { st ->
                 st.copy(
-                    isLoading = st.messages.isEmpty(),
+                    isLoading = true,
                     isRoomsLoading = false,
                     selectedRoomId = roomId,
+                    messages = if (switchingRoom) emptyList() else st.messages,
                     rooms = if (st.rooms.isEmpty()) rooms else st.rooms,
                 )
             }
@@ -884,7 +911,8 @@ class ChatViewModel(
             !_state.value.isLoading &&
             _state.value.error.isNullOrBlank() &&
             _state.value.selectedRoomId == hubId &&
-            _state.value.messages.isNotEmpty()
+            _state.value.messages.isNotEmpty() &&
+            messagesBelongToRoom(_state.value.messages, hubId)
     }
 
     /** Overlay panel: hub room has messages to show without waiting on network. */
@@ -896,7 +924,8 @@ class ChatViewModel(
             !_state.value.isLoading &&
             _state.value.error.isNullOrBlank() &&
             _state.value.selectedRoomId == raidId &&
-            _state.value.messages.isNotEmpty()
+            _state.value.messages.isNotEmpty() &&
+            messagesBelongToRoom(_state.value.messages, raidId)
     }
 
     private suspend fun resolveRoomsForBootstrap(
@@ -1101,6 +1130,13 @@ class ChatViewModel(
         ChatRoomKindResolver.allianceRaidRoom(rooms)?.id
             ?: chatRoomPreferences.getRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }
 
+    private fun messagesBelongToRoom(messages: List<ChatMessage>, roomId: String): Boolean {
+        if (messages.isEmpty()) return true
+        val rid = roomId.trim()
+        if (rid.isEmpty()) return true
+        return messages.all { it.roomId.trim() == rid }
+    }
+
     private fun resolveOverlayPreferredRoomId(
         rooms: List<ChatRoomDto>,
         preferOverlayRaidRoom: Boolean,
@@ -1281,7 +1317,7 @@ class ChatViewModel(
             typingPeerJobs.values.forEach { it.cancel() }
             typingPeerJobs.clear()
         }
-        val cachedMessages = cached?.messages.orEmpty()
+        val cachedMessages = filterMessagesForRoom(cached?.messages.orEmpty(), roomId)
         val hasCachedMessages = cachedMessages.isNotEmpty()
         _state.value = _state.value.copy(
             selectedRoomId = roomId,
@@ -1823,6 +1859,7 @@ class ChatViewModel(
                             loaded = loaded,
                             maxMessages = messageMemoryCap,
                             excludedMessageIds = locallyRemovedMessageIds,
+                            roomId = roomId,
                         )
                     }
                     val unchanged = withContext(Dispatchers.Default) {
@@ -1866,7 +1903,7 @@ class ChatViewModel(
         pageSizeForHasMore: Int,
     ) {
         val current = if (_state.value.selectedRoomId == roomId) {
-            _state.value.messages
+            filterMessagesForRoom(_state.value.messages, roomId)
         } else {
             emptyList()
         }
@@ -1875,6 +1912,7 @@ class ChatViewModel(
             loaded = loaded,
             maxMessages = messageMemoryCap,
             excludedMessageIds = locallyRemovedMessageIds,
+            roomId = roomId,
         )
         ChatSessionCache.updateMessages(roomId, merged)
         knownMessageIds.clear()
@@ -2108,13 +2146,16 @@ class ChatViewModel(
         val optimistic = buildOptimisticOutgoingMessage(roomId, trimmed, replyToMessageId)
         val pendingId = optimistic._id
         _state.value = _state.value.copy(isSending = false, error = null, sendFailure = null)
+        registerInFlightOutgoing(roomId, trimmed, replyToMessageId)
         insertOptimisticOutgoingSynchronously(optimistic, clearComposer = true)
         viewModelScope.launch {
             repository.sendMessageWithRetries(trimmed, roomId, replyToMessageId)
                 .onSuccess { sent ->
+                    clearInFlightOutgoing(roomId, trimmed, replyToMessageId)
                     confirmPendingOutgoingMessage(pendingId, sent)
                 }
                 .onFailure { throwable ->
+                    clearInFlightOutgoing(roomId, trimmed, replyToMessageId)
                     removePendingOutgoingMessage(pendingId)
                     _state.value = _state.value.copy(
                         isSending = false,
@@ -2140,6 +2181,7 @@ class ChatViewModel(
             val optimistic = buildOptimisticOutgoingMessage(roomId, text, replyToMessageId)
             val pendingId = optimistic._id
             _state.value = _state.value.copy(isSending = false, error = null, sendFailure = null)
+            registerInFlightOutgoing(roomId, text, replyToMessageId)
             insertOptimisticOutgoingSynchronously(optimistic, clearComposer = true)
             viewModelScope.launch {
                 repository.sendMessageWithRetries(
@@ -2148,9 +2190,11 @@ class ChatViewModel(
                     replyToMessageId = replyToMessageId,
                 )
                     .onSuccess { sent ->
+                        clearInFlightOutgoing(roomId, text, replyToMessageId)
                         confirmPendingOutgoingMessage(pendingId, sent)
                     }
                     .onFailure { throwable ->
+                        clearInFlightOutgoing(roomId, text, replyToMessageId)
                         removePendingOutgoingMessage(pendingId)
                         _state.value = _state.value.copy(
                             isSending = false,
@@ -2862,12 +2906,30 @@ class ChatViewModel(
      * Пока в ленте есть optimistic `pending-*` с тем же текстом, не вставляем свой socket-echo —
      * иначе кратко видны две строки до [confirmPendingOutgoingMessage].
      */
+    private fun registerInFlightOutgoing(roomId: String, text: String, replyToMessageId: String?) {
+        inFlightOutgoingFingerprints.add(
+            outgoingMessageFingerprint(roomId, text, replyToMessageId),
+        )
+    }
+
+    private fun clearInFlightOutgoing(roomId: String, text: String, replyToMessageId: String?) {
+        inFlightOutgoingFingerprints.remove(
+            outgoingMessageFingerprint(roomId, text, replyToMessageId),
+        )
+    }
+
     private fun shouldDeferOwnOutgoingSocketEcho(message: ChatMessage): Boolean {
         val selfId = currentUserId.trim()
         val serverId = message._id?.trim().orEmpty()
         if (selfId.isEmpty() || serverId.isEmpty() || serverId.startsWith("pending-")) return false
         if (message.senderId.trim() != selfId) return false
         if (messageIdIndex.containsKey(serverId)) return false
+        val fingerprint = outgoingMessageFingerprint(
+            message.roomId,
+            message.text,
+            message.replyToMessageId,
+        )
+        if (fingerprint in inFlightOutgoingFingerprints) return true
         return _state.value.messages.any { msg ->
             val pendingId = msg._id?.trim().orEmpty()
             pendingId.startsWith("pending-") &&
@@ -3022,15 +3084,22 @@ class ChatViewModel(
     ) {
         if (batch.isEmpty()) return
         val roomId = _state.value.selectedRoomId
+        val selectedRoom = roomId?.trim().orEmpty()
+        val scopedBatch = if (selectedRoom.isEmpty()) {
+            batch
+        } else {
+            batch.filter { it.roomId.trim() == selectedRoom }
+        }
+        if (scopedBatch.isEmpty()) return
         viewModelScope.launch(Dispatchers.Default) {
             val work = synchronized(chatMutationLock) {
                 val snapshot = _state.value
                 val afterDrop = dropMatchingPendingOutgoing(
-                    current = snapshot.messages,
-                    incoming = batch,
+                    current = filterMessagesForRoom(snapshot.messages, selectedRoom),
+                    incoming = scopedBatch,
                     currentUserId = currentUserId,
                 )
-                val (echoes, fresh) = partitionOwnOutgoingEchoes(batch)
+                val (echoes, fresh) = partitionOwnOutgoingEchoes(scopedBatch)
                 var messages = afterDrop
                 var listDerived = _listDerived.value
                 if (echoes.isNotEmpty()) {
@@ -3117,13 +3186,13 @@ class ChatViewModel(
                     isSending = false,
                     error = null,
                 )
-                val clearedDeletingId = batch.mapNotNull { it._id }.toSet()
+                val clearedDeletingId = scopedBatch.mapNotNull { it._id }.toSet()
                 if (nextState.deletingMessageId in clearedDeletingId) {
                     nextState = nextState.copy(deletingMessageId = null)
                 }
                 val selfId = currentUserId.trim()
                 val ownOutgoing = selfId.isNotEmpty() &&
-                    batch.any { it.senderId.trim() == selfId }
+                    scopedBatch.any { it.senderId.trim() == selfId }
                 if (clearComposer) {
                     _draftMessage.value = ""
                     _pickedImageUris.value = emptyList()

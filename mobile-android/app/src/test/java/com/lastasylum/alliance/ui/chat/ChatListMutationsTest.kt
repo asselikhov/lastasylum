@@ -9,6 +9,7 @@ import com.lastasylum.alliance.data.chat.resolveFromSocketUpdate
 import com.lastasylum.alliance.data.chat.ChatMessageReplyPreview
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -156,6 +157,30 @@ class ChatListMutationsTest {
         val existing = listOf(msg("stale-1", "old"), msg("pending-1", "sending"))
         val merged = mergeLoadedPageWithExisting(existing, loaded = emptyList())
         assertEquals(listOf("pending-1"), merged.map { it._id })
+    }
+
+    @Test
+    fun outgoingMessageFingerprint_includesRoomTextAndReply() {
+        val a = outgoingMessageFingerprint("room-a", "hi", "reply-1")
+        val b = outgoingMessageFingerprint("room-a", "hi", "reply-1")
+        val c = outgoingMessageFingerprint("room-b", "hi", "reply-1")
+        assertEquals(a, b)
+        assertNotEquals(a, c)
+    }
+
+    @Test
+    fun mergeLoadedPageWithExisting_dropsCrossRoomRowsFromExisting() {
+        val hub = "hub-room"
+        val raid = "raid-room"
+        val raidOnly = msg("507f1f77bcf86cd799439099", "raid").copy(roomId = raid)
+        val hubAnchor = msg("507f1f77bcf86cd799439011", "hub").copy(roomId = hub)
+        val loaded = listOf(hubAnchor)
+        val merged = mergeLoadedPageWithExisting(
+            existing = listOf(raidOnly, hubAnchor),
+            loaded = loaded,
+            roomId = hub,
+        )
+        assertEquals(listOf(hubAnchor._id), merged.map { it._id })
     }
 
     @Test
