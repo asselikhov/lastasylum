@@ -40,6 +40,7 @@ import com.lastasylum.alliance.data.users.UsersRepository
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import retrofit2.HttpException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.sync.Mutex
@@ -121,6 +122,8 @@ class ChatViewModel(
     val listDerived: StateFlow<ChatMessagesListDerived> = _listDerived.asStateFlow()
     private var deriveJob: Job? = null
     private var deriveDebounceJob: Job? = null
+    /** Cancels stale [applyIncomingBatch] work that could overwrite HTTP confirm. */
+    private var incomingApplyJob: Job? = null
     private val chatMutationLock = Any()
     /** HTTP in-flight sends — socket echo must not insert a second row before [confirmPendingOutgoingMessage]. */
     private val inFlightOutgoingFingerprints =
@@ -129,6 +132,9 @@ class ChatViewModel(
      * Stable LazyColumn keys: pending id → server id swap must not change Compose item identity.
      */
     private val lazyColumnKeyByMessageId = mutableMapOf<String, String>()
+    /** While set, only HTTP confirm may replace the optimistic row — no socket second row. */
+    @Volatile
+    private var activeOutgoingPendingId: String? = null
 
     /** Isolated from [state] so each keystroke does not recompose the whole chat list. */
     private val _draftMessage = MutableStateFlow("")
@@ -863,7 +869,7 @@ class ChatViewModel(
     private fun applyKnownChatMessageUpdate(message: ChatMessage) {
         val roomId = message.roomId.trim()
         if (roomId.isBlank()) return
-        if (shouldDeferOwnOutgoingSocketEcho(message)) return
+        if (shouldBlockOwnOutgoingRealtime(message)) return
         val selected = _state.value.selectedRoomId
         when {
             roomId == selected ->
@@ -2177,6 +2183,10 @@ class ChatViewModel(
         val pendingId = optimistic._id
         _state.value = _state.value.copy(isSending = false, error = null, sendFailure = null)
         registerInFlightOutgoing(roomId, trimmed, replyToMessageId)
+        activeOutgoingPendingId = pendingId
+        deriveJob?.cancel()
+        deriveDebounceJob?.cancel()
+        incomingApplyJob?.cancel()
         insertOptimisticOutgoingSynchronously(optimistic, clearComposer = true)
         viewModelScope.launch {
             repository.sendMessageWithRetriesForChatUi(trimmed, roomId, replyToMessageId)
@@ -2186,6 +2196,7 @@ class ChatViewModel(
                     }
                 }
                 .onFailure { throwable ->
+                    activeOutgoingPendingId = null
                     clearInFlightOutgoing(roomId, trimmed, replyToMessageId)
                     removePendingOutgoingMessage(pendingId)
                     _state.value = _state.value.copy(
@@ -2213,6 +2224,10 @@ class ChatViewModel(
             val pendingId = optimistic._id
             _state.value = _state.value.copy(isSending = false, error = null, sendFailure = null)
             registerInFlightOutgoing(roomId, text, replyToMessageId)
+            activeOutgoingPendingId = pendingId
+            deriveJob?.cancel()
+            deriveDebounceJob?.cancel()
+            incomingApplyJob?.cancel()
             insertOptimisticOutgoingSynchronously(optimistic, clearComposer = true)
             viewModelScope.launch {
                 repository.sendMessageWithRetriesForChatUi(
@@ -2226,6 +2241,7 @@ class ChatViewModel(
                         }
                     }
                     .onFailure { throwable ->
+                        activeOutgoingPendingId = null
                         clearInFlightOutgoing(roomId, text, replyToMessageId)
                         removePendingOutgoingMessage(pendingId)
                         _state.value = _state.value.copy(
@@ -2258,7 +2274,7 @@ class ChatViewModel(
                     }
                     uploadedIds.add(uploadedId)
                 }
-                repository.sendMessageWithRetries(
+                repository.sendMessageWithRetriesForChatUi(
                     text = text.trim(),
                     roomId = roomId,
                     replyToMessageId = replyToMessageId,
@@ -2645,16 +2661,34 @@ class ChatViewModel(
 
     /** Drop own socket/HTTP echo before the debounced channel — prevents a visible duplicate row. */
     fun shouldSuppressOwnOutgoingRealtimeEcho(message: ChatMessage): Boolean =
-        shouldDeferOwnOutgoingSocketEcho(message)
+        shouldBlockOwnOutgoingRealtime(message)
+
+    private fun shouldBlockOwnOutgoingRealtime(message: ChatMessage): Boolean {
+        val selfId = currentUserId.trim()
+        if (selfId.isEmpty() || message.senderId.trim() != selfId) return false
+        if (!activeOutgoingPendingId.isNullOrBlank()) return true
+        if (hasMatchingPendingOutgoing(_state.value.messages, message, currentUserId)) return true
+        val fingerprint = outgoingMessageFingerprint(
+            message.roomId,
+            message.text,
+            message.replyToMessageId,
+        )
+        if (inFlightOutgoingFingerprints.contains(fingerprint)) return true
+        return isDuplicateOwnOutgoingDelivery(
+            _state.value.messages,
+            message,
+            messageIdIndex,
+        )
+    }
 
     private fun onIncomingMessage(message: ChatMessage) {
-        if (shouldDeferOwnOutgoingSocketEcho(message)) return
+        if (shouldBlockOwnOutgoingRealtime(message)) return
         if (!incomingMessages.trySend(message).isSuccess) {
             if (BuildConfig.DEBUG) {
                 Log.w("ChatViewModel", "incomingMessages channel overflow; flushing on main")
             }
             viewModelScope.launch(Dispatchers.Main) {
-                if (shouldDeferOwnOutgoingSocketEcho(message)) return@launch
+                if (shouldBlockOwnOutgoingRealtime(message)) return@launch
                 dispatchIncomingBatch(listOf(message))
             }
         }
@@ -2897,6 +2931,7 @@ class ChatViewModel(
             Triple(snapshot, capped, update.newestMessageKey ?: message._id?.trim().orEmpty())
         }
         val (snapshot, capped, newestKey) = work
+        activeOutgoingPendingId = message._id
         message._id?.let { registerOutgoingLazyColumnKey(it) }
         var nextState = snapshot.copy(
             messages = capped,
@@ -2927,6 +2962,7 @@ class ChatViewModel(
     private fun removePendingOutgoingMessage(pendingId: String?) {
         val id = pendingId?.trim().orEmpty()
         if (id.isEmpty()) return
+        if (activeOutgoingPendingId == id) activeOutgoingPendingId = null
         dropOutgoingLazyColumnKey(id)
         knownMessageIds.remove(id)
         messageIdIndex.remove(id)
@@ -2957,30 +2993,8 @@ class ChatViewModel(
         )
     }
 
-    private fun shouldDeferOwnOutgoingSocketEcho(message: ChatMessage): Boolean {
-        val selfId = currentUserId.trim()
-        val serverId = message._id?.trim().orEmpty()
-        if (selfId.isEmpty() || serverId.isEmpty() || serverId.startsWith("pending-")) return false
-        if (message.senderId.trim() != selfId) return false
-        if (hasMatchingPendingOutgoing(_state.value.messages, message, selfId)) {
-            return true
-        }
-        if (messageIdIndex.containsKey(serverId)) {
-            return false
-        }
-        val fingerprint = outgoingMessageFingerprint(
-            message.roomId,
-            message.text,
-            message.replyToMessageId,
-        )
-        if (fingerprint in inFlightOutgoingFingerprints) return true
-        return _state.value.messages.any { msg ->
-            val pendingId = msg._id?.trim().orEmpty()
-            pendingId.startsWith("pending-") &&
-                msg.senderId.trim() == selfId &&
-                outgoingTextsMatch(msg, message)
-        }
-    }
+    private fun shouldDeferOwnOutgoingSocketEcho(message: ChatMessage): Boolean =
+        shouldBlockOwnOutgoingRealtime(message)
 
     private fun partitionOwnOutgoingEchoes(
         batch: List<ChatMessage>,
@@ -3038,6 +3052,7 @@ class ChatViewModel(
 
     /** Replace optimistic row in-place (no remove+insert, no extra scroll). */
     private fun confirmPendingOutgoingMessage(pendingId: String?, sent: ChatMessage) {
+        incomingApplyJob?.cancel()
         val pending = pendingId?.trim().orEmpty()
         val serverId = sent._id?.trim().orEmpty()
         if (pending.isEmpty() || serverId.isEmpty()) {
@@ -3096,6 +3111,7 @@ class ChatViewModel(
             )
         }
         if (roomId != null && _state.value.selectedRoomId != roomId) {
+            activeOutgoingPendingId = null
             clearInFlightOutgoing(sent.roomId, sent.text, sent.replyToMessageId)
             return
         }
@@ -3126,6 +3142,7 @@ class ChatViewModel(
             ),
         )
         _listDerived.value = derived
+        activeOutgoingPendingId = null
         clearInFlightOutgoing(sent.roomId, sent.text, sent.replyToMessageId)
         val rid = _state.value.selectedRoomId
         if (!rid.isNullOrBlank()) {
@@ -3142,6 +3159,7 @@ class ChatViewModel(
         message: ChatMessage,
         clearComposer: Boolean = false,
     ) {
+        if (shouldBlockOwnOutgoingRealtime(message)) return
         if (clearComposer && overlayChatPanelVisible) {
             runCatching { CombatOverlayService.extendInGameOverlayUiHold() }
         }
@@ -3159,9 +3177,10 @@ class ChatViewModel(
             batch
         } else {
             batch.filter { it.roomId.trim() == selectedRoom }
-        }
+        }.filterNot { shouldBlockOwnOutgoingRealtime(it) }
         if (scopedBatch.isEmpty()) return
-        viewModelScope.launch(Dispatchers.Default) {
+        incomingApplyJob?.cancel()
+        incomingApplyJob = viewModelScope.launch(Dispatchers.Default) {
             val work = synchronized(chatMutationLock) {
                 val snapshot = _state.value
                 val afterDrop = dropMatchingPendingOutgoing(
@@ -3240,22 +3259,32 @@ class ChatViewModel(
                 )
             }
             if (roomId != null && _state.value.selectedRoomId != roomId) return@launch
-            val derived = work.precomputedDerived ?: buildDerivedAfterUpsert(
-                messages = work.cappedMessages,
-                previousMessages = work.previousMessages,
-                previousDerived = work.previousDerived,
-            )
+            if (!isActive) return@launch
             withContext(Dispatchers.Main) {
+                if (!isActive) return@withContext
                 if (roomId != null && _state.value.selectedRoomId != roomId) return@withContext
+                val cappedMessages = sanitizeMessagesAfterRealtimeApply(
+                    work.cappedMessages,
+                    currentUserId,
+                    activeOutgoingPendingId,
+                )
                 val snapshot = _state.value
                 if (work.echoesOnly &&
                     !clearComposer &&
-                    chatMessagesListContentEqual(snapshot.messages, work.cappedMessages)
+                    chatMessagesListContentEqual(snapshot.messages, cappedMessages)
                 ) {
                     return@withContext
                 }
+                val derived = if (
+                    work.precomputedDerived != null &&
+                    chatMessagesListContentEqual(cappedMessages, work.cappedMessages)
+                ) {
+                    work.precomputedDerived
+                } else {
+                    buildChatMessagesListDerived(cappedMessages)
+                }
                 var nextState = snapshot.copy(
-                    messages = work.cappedMessages,
+                    messages = cappedMessages,
                     newestMessageKey = work.newestMessageKey ?: snapshot.newestMessageKey,
                     isSending = false,
                     error = null,
@@ -3285,13 +3314,13 @@ class ChatViewModel(
                 val rid = _state.value.selectedRoomId
                 if (!rid.isNullOrBlank()) {
                     roomMessageCache[rid] = RoomMessageCache(
-                        messages = work.cappedMessages,
+                        messages = cappedMessages,
                         hasMoreOlder = _state.value.hasMoreOlder,
                     )
-                    ChatSessionCache.updateMessages(rid, work.cappedMessages)
+                    ChatSessionCache.updateMessages(rid, cappedMessages)
                 }
                 if (shouldAutoMarkReadSelectedRoom() && !rid.isNullOrBlank()) {
-                    work.cappedMessages.firstOrNull()?._id?.let { newestId ->
+                    cappedMessages.firstOrNull()?._id?.let { newestId ->
                         viewModelScope.launch {
                             kotlinx.coroutines.yield()
                             markRoomReadUpTo(rid, newestId)

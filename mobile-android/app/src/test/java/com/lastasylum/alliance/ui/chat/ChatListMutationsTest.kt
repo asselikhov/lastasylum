@@ -209,6 +209,32 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun sanitizeMessagesAfterRealtimeApply_dropsServerRowRacingPendingConfirm() {
+        val pending = msg("pending-abc", "hi")
+        val server = msg("server-1", "hi")
+        val out = sanitizeMessagesAfterRealtimeApply(
+            messages = listOf(server, pending),
+            currentUserId = "u1",
+            activeOutgoingPendingId = "pending-abc",
+        )
+        assertEquals(listOf("pending-abc"), out.map { it._id })
+    }
+
+    @Test
+    fun isDuplicateOwnOutgoingDelivery_whenRowAlreadyInList() {
+        val server = msg("server-1", "hello")
+        val index = mapOf("server-1" to 0)
+        assertTrue(isDuplicateOwnOutgoingDelivery(listOf(server), server, index))
+        assertFalse(
+            isDuplicateOwnOutgoingDelivery(
+                listOf(server),
+                server.copy(text = "other"),
+                index,
+            ),
+        )
+    }
+
+    @Test
     fun hasMatchingPendingOutgoing_detectsOptimisticRow() {
         val pending = msg("pending-1", "hello")
         val server = msg("server-1", "hello")

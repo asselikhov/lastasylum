@@ -53,6 +53,49 @@ internal fun outgoingTextsMatch(a: ChatMessage, b: ChatMessage): Boolean =
         normalizeOutgoingReplyToId(a.replyToMessageId) ==
         normalizeOutgoingReplyToId(b.replyToMessageId)
 
+/**
+ * Last line of defense before UI apply: strip pending+server pairs and rows that raced
+ * ahead of [confirmPendingOutgoingMessage] while [activeOutgoingPendingId] is set.
+ */
+internal fun sanitizeMessagesAfterRealtimeApply(
+    messages: List<ChatMessage>,
+    currentUserId: String,
+    activeOutgoingPendingId: String?,
+): List<ChatMessage> {
+    var out = messages
+    val pendingId = activeOutgoingPendingId?.trim().orEmpty()
+    if (pendingId.isNotEmpty()) {
+        val pending = out.find { it._id?.trim() == pendingId }
+        if (pending != null) {
+            val selfId = currentUserId.trim()
+            out = out.filterNot { msg ->
+                val id = msg._id?.trim().orEmpty()
+                id != pendingId &&
+                    id.isNotEmpty() &&
+                    !id.startsWith("pending-") &&
+                    msg.senderId.trim() == selfId &&
+                    outgoingTextsMatch(msg, pending)
+            }
+        }
+    }
+    out = stripRedundantPendingOutgoing(out, currentUserId)
+    return dedupeMessagesByIdNewestFirst(out)
+}
+
+/** Same server [message:new] already shown — drop delayed socket fan-out after HTTP confirm. */
+internal fun isDuplicateOwnOutgoingDelivery(
+    messages: List<ChatMessage>,
+    incoming: ChatMessage,
+    idIndex: Map<String, Int>,
+): Boolean {
+    val serverId = incoming._id?.trim().orEmpty()
+    if (serverId.isEmpty()) return false
+    val idx = idIndex[serverId] ?: return false
+    if (idx !in messages.indices) return false
+    val row = messages[idx]
+    return row._id?.trim() == serverId && outgoingTextsMatch(row, incoming)
+}
+
 /** True while optimistic row is still waiting for HTTP confirm (blocks socket duplicate row). */
 internal fun hasMatchingPendingOutgoing(
     messages: List<ChatMessage>,
