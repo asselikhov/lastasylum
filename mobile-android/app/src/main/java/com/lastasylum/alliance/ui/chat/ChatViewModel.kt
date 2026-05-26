@@ -1748,8 +1748,9 @@ class ChatViewModel(
             delay(CHAT_DERIVE_DEBOUNCE_MS)
             deriveJob = launch(Dispatchers.Default) {
                 val derived = buildChatMessagesListDerived(expected)
-                if (!chatMessagesListContentEqual(expected, _state.value.messages)) return@launch
-                _listDerived.value = derived
+                if (chatMessagesListContentEqual(expected, _state.value.messages)) {
+                    _listDerived.value = derived
+                }
             }
         }
     }
