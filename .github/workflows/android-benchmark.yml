@@ -35,11 +35,7 @@ jobs:
           force-avd-creation: true
           emulator-boot-timeout: 1200
           emulator-options: -no-window -no-snapshot -noaudio -gpu swiftshader_indirect -partition-size 6144 -memory 4096
-          script: |
-            cd mobile-android
-            chmod +x gradlew
-            adb shell pm uninstall com.lastasylum.alliance || true
-            ./gradlew :benchmark:connectedDevBenchmarkAndroidTest --no-daemon
+          script: cd mobile-android && chmod +x gradlew && (adb shell pm uninstall com.lastasylum.alliance || true) && ./gradlew :benchmark:connectedDevBenchmarkAndroidTest --no-daemon
 
       - name: Parse benchmark results and compare baseline
         if: always()
