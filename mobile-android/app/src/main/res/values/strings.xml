@@ -528,6 +528,7 @@
     <string name="team_news_change_vote">Изменить голос</string>
     <string name="team_news_votes_count">Голосов: %1$d</string>
     <string name="team_news_poll_option_votes">%1$d голосов</string>
+    <string name="team_news_poll_more_options">+%1$d</string>
     <string name="team_news_poll_voters">Участники: %1$s</string>
     <string name="team_news_gallery_label">Галерея</string>
     <string name="team_news_gallery_image_cd">Фотография к новости</string>
@@ -725,6 +726,15 @@
     <string name="chat_composer_paste_empty">Буфер обмена пуст</string>
     <string name="overlay_reaction_meme_cd">Мем</string>
     <string name="overlay_reactions_recipient_preview_cd">Выбранная реакция</string>
+    <string name="overlay_reactions_recipient_hint">Выберите одного или нескольких участников</string>
+    <string name="overlay_reactions_search_hint">Поиск по нику</string>
+    <string name="overlay_reactions_select_all">Выбрать всех</string>
+    <string name="overlay_reactions_clear_selection">Снять выбор</string>
+    <string name="overlay_reactions_send_selected">Отправить · %1$d</string>
+    <string name="overlay_reaction_sent_selected">Реакция отправлена %1$d участникам</string>
+    <string name="overlay_reactions_send_all_broadcast_hint">Одна вспышка для всех в игре с оверлеем</string>
+    <string name="overlay_reactions_member_row_cd">%1$s, роль %2$s</string>
+    <string name="overlay_reactions_member_selected_cd">Выбран: %1$s</string>
     <string name="overlay_reaction_sent">Реакция отправлена: %s</string>
     <string name="overlay_reactions_send_all">Всем</string>
     <string name="overlay_reactions_send_all_subtitle">%1$d в игре с оверлеем</string>
@@ -747,12 +757,6 @@
     <string name="overlay_cmd_excavation_notify">Оповестить</string>
     <string name="overlay_cmd_excavation_hint">Push союзникам вне игры</string>
     <string name="overlay_coord_dialog_subtitle">Введите координаты цели</string>
-    <string name="overlay_cmd_tab_share_target">Цель</string>
-    <string name="overlay_cmd_column_share_target">Поделиться целью</string>
-    <string name="overlay_share_target_dialog_subtitle">Имя цели и координаты в канал «Рейд»</string>
-    <string name="overlay_coord_target_name_label">Имя цели</string>
-    <string name="overlay_coord_target_name_required">Введите имя цели</string>
-    <string name="overlay_coord_share_send">Поделиться</string>
     <string name="map_coord_go_to_map">На карте</string>
     <string name="map_coord_opened_game">Открыта игра</string>
     <string name="map_coord_copied_fallback">Координаты в буфере — вставьте в поиск на карте</string>

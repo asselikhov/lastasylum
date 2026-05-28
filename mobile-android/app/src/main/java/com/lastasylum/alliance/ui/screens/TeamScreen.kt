@@ -92,6 +92,7 @@ import com.lastasylum.alliance.overlay.OverlayModalScope
 import com.lastasylum.alliance.ui.components.GlassSurface
 import com.lastasylum.alliance.ui.components.TeamSectionTabAccents
 import com.lastasylum.alliance.ui.components.TeamSectionTabBar
+import com.lastasylum.alliance.ui.LocalMainTabActive
 import com.lastasylum.alliance.ui.components.TeamRetainedSection
 import com.lastasylum.alliance.ui.components.TeamSectionTabSpec
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
@@ -213,10 +214,13 @@ fun TeamScreen(
         }
     }
 
+    val mainTabActive = LocalMainTabActive.current
+    val activeSection = TeamMainSection.entries[mainSectionOrdinal]
+
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, mainTabActive) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
+            if (event == Lifecycle.Event.ON_RESUME && mainTabActive) {
                 teamViewModel.refreshSectionBadges()
                 if (teamData.profile == null) {
                     teamViewModel.reloadProfileAndTeam(res)
@@ -227,7 +231,8 @@ fun TeamScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    LaunchedEffect(profile?.playerTeamId, mainSectionOrdinal) {
+    LaunchedEffect(profile?.playerTeamId, mainSectionOrdinal, mainTabActive) {
+        if (!mainTabActive) return@LaunchedEffect
         if (!profile?.playerTeamId.isNullOrBlank()) {
             teamViewModel.refreshSectionBadges()
         }
@@ -267,8 +272,8 @@ fun TeamScreen(
     val pending = profile?.pendingPlayerTeamJoinRequests ?: 0
     val overlayUi = LocalOverlayUiMode.current
 
-    LaunchedEffect(overlayUi, mainSectionOrdinal) {
-        if (!overlayUi) return@LaunchedEffect
+    LaunchedEffect(overlayUi, mainSectionOrdinal, mainTabActive) {
+        if (!overlayUi || !mainTabActive) return@LaunchedEffect
         if (mainSectionOrdinal != TeamMainSection.Members.ordinal) return@LaunchedEffect
         while (true) {
             delay(45_000L)
@@ -411,7 +416,6 @@ fun TeamScreen(
                                         }
                                     },
                                 )
-                                val activeSection = TeamMainSection.entries[mainSectionOrdinal]
                                 TeamSectionPills(
                                     selectedSection = activeSection,
                                     newsUnread = sectionBadges.newsUnread,
@@ -450,6 +454,8 @@ fun TeamScreen(
                                             myTeamRole = myTeamRole,
                                             canPublishNews = canPublishNews,
                                             teamsRepository = teamsRepository,
+                                            sectionActive = mainTabActive &&
+                                                activeSection == TeamMainSection.News,
                                             modifier = Modifier.fillMaxSize(),
                                             onNewsInboxChanged = {
                                                 teamViewModel.refreshSectionBadges()
@@ -470,6 +476,8 @@ fun TeamScreen(
                                             teamsRepository = teamsRepository,
                                             forumSocket = app.teamForumSocket,
                                             tokenStore = app.tokenStore,
+                                            sectionActive = mainTabActive &&
+                                                activeSection == TeamMainSection.Forum,
                                             forumTabReselectSignal = forumTabReselectSignal,
                                             enabledStickerPackKeys = enabledStickerPackKeys,
                                             modifier = Modifier.fillMaxSize(),

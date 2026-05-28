@@ -335,7 +335,7 @@ private fun OverlayChatStripMessage(
 
     Surface(
         shape = shape,
-        color = Color.Transparent,
+        color = bubbleBg,
         border = BorderStroke(1.dp, border),
         tonalElevation = 0.dp,
         shadowElevation = if (lightStrip) 0.dp else 3.dp,

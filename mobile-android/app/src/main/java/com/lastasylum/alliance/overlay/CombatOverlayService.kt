@@ -162,66 +162,30 @@ class CombatOverlayService : Service() {
             mainHandler = mainHandler,
             scope = serviceScope,
             dp = { dp(it) },
-            sendCoords = { label, targetName, x, y, excavation ->
-                val repo = AppContainer.from(this@CombatOverlayService).chatRepository
-                val roomId = resolveOverlayRaidRoomId()
-                    ?: repo.ensureRaidRoomId()?.also { rememberOverlayRaidRoomId(it) }
-                    ?: return@OverlayCommandsPopover Result.failure(IllegalStateException("no_raid"))
-                rememberOverlayRaidRoomId(roomId)
-                val text = if (excavation) {
-                    getString(R.string.overlay_excavation_message, x, y)
-                } else {
-                    com.lastasylum.alliance.game.MapCoordinateFormatter.format(
-                        label = label,
-                        targetName = targetName,
-                        x = x,
-                        y = y,
-                    )
-                }
-                mainHandler.post {
-                    ensureOverlayRaidRealtimeIfNeeded()
-                    applyLocalSentMessageToStrip(
-                        buildOptimisticRaidCommandMessage(roomId, text),
-                        trustedRaidRoomId = roomId,
-                        displayText = text,
-                    )
-                }
-                val result = repo.sendOverlayRaidCommandWithRetries(
-                    text = text,
-                    roomId = roomId,
+            sendCoords = { label, x, y, excavation ->
+                sendOverlayRaidQuickCommandHttp(
+                    text = formatOverlayRaidQuickCommandText(label, x, y, excavation),
                     excavationAlert = excavation,
                 )
-                result.onSuccess { sent ->
-                    mainHandler.post {
-                        publishQuickCommandToStrip(sent, roomId, text)
-                    }
-                }
-                result
             },
             notifyExcavation = {
-                val repo = AppContainer.from(this@CombatOverlayService).chatRepository
-                val roomId = resolveOverlayRaidRoomId()
-                    ?: repo.ensureRaidRoomId()?.also { rememberOverlayRaidRoomId(it) }
-                    ?: return@OverlayCommandsPopover Result.failure(IllegalStateException("no_raid"))
-                rememberOverlayRaidRoomId(roomId)
-                val text = getString(R.string.overlay_excavation_notify_message)
-                mainHandler.post {
-                    ensureOverlayRaidRealtimeIfNeeded()
-                    applyLocalSentMessageToStrip(
-                        buildOptimisticRaidCommandMessage(roomId, text),
-                        trustedRaidRoomId = roomId,
-                        displayText = text,
-                    )
-                }
-                repo.sendOverlayRaidCommandWithRetries(text, roomId, excavationAlert = true)
-                    .also { result ->
-                        result.onSuccess { sent ->
-                            mainHandler.post {
-                                publishQuickCommandToStrip(sent, roomId, text)
-                            }
-                        }
-                    }
+                sendOverlayRaidQuickCommandHttp(
+                    text = getString(R.string.overlay_excavation_notify_message),
+                    excavationAlert = true,
+                )
             },
+            warmupOverlayRaid = { warmupOverlayRaidForQuickCommands() },
+            prepareOptimisticRaidQuickCommand = { label, x, y, excavation ->
+                postOptimisticOverlayRaidQuickCommand(
+                    formatOverlayRaidQuickCommandText(label, x, y, excavation),
+                )
+            },
+            prepareOptimisticRaidNotify = {
+                postOptimisticOverlayRaidQuickCommand(
+                    getString(R.string.overlay_excavation_notify_message),
+                )
+            },
+            removeOptimisticRaidSend = { pendingId -> removeStripMessageByKey(pendingId) },
             emitOverlayReaction = { targetUserId, reactionId ->
                 AppContainer.from(this@CombatOverlayService).chatRepository.emitOverlayReaction(targetUserId, reactionId)
             },
@@ -3474,7 +3438,7 @@ class CombatOverlayService : Service() {
                     displayText = text,
                 )
             }
-            val result = repo.sendOverlayRaidCommandWithRetries(text = text, roomId = roomId)
+            val result = repo.sendOverlayRaidCommandFast(text = text, roomId = roomId)
             mainHandler.post {
                 result.onSuccess { sent ->
                     publishQuickCommandToStrip(sent, roomId, text)
@@ -3496,6 +3460,71 @@ class CombatOverlayService : Service() {
                 }
             }
         }
+    }
+
+    private fun warmupOverlayRaidForQuickCommands() {
+        ensureOverlayRaidRealtimeIfNeeded()
+        prefetchOverlayRaidRoomForStrip()
+    }
+
+    private fun formatOverlayRaidQuickCommandText(
+        label: String,
+        x: Int,
+        y: Int,
+        excavation: Boolean,
+    ): String =
+        if (excavation) {
+            getString(R.string.overlay_excavation_message, x, y)
+        } else {
+            com.lastasylum.alliance.game.MapCoordinateFormatter.format(
+                label = label,
+                targetName = null,
+                x = x,
+                y = y,
+            )
+        }
+
+    /** Optimistic card before HTTP (popover closes immediately; call from main). */
+    private fun postOptimisticOverlayRaidQuickCommand(text: String): String? {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { postOptimisticOverlayRaidQuickCommand(text) }
+            return null
+        }
+        val body = text.trim()
+        if (body.isEmpty()) return null
+        val roomId = resolveOverlayRaidRoomId() ?: trustedOverlayRaidRoomId
+        if (roomId.isNullOrBlank()) return null
+        ensureOverlayRaidRealtimeIfNeeded()
+        val optimistic = buildOptimisticRaidCommandMessage(roomId, body)
+        applyLocalSentMessageToStrip(
+            optimistic,
+            trustedRaidRoomId = roomId,
+            displayText = body,
+        )
+        return optimistic._id
+    }
+
+    private suspend fun sendOverlayRaidQuickCommandHttp(
+        text: String,
+        excavationAlert: Boolean,
+    ): Result<ChatMessage> {
+        val repo = AppContainer.from(this@CombatOverlayService).chatRepository
+        val roomId = resolveOverlayRaidRoomId()
+            ?: repo.ensureRaidRoomId()?.also { rememberOverlayRaidRoomId(it) }
+            ?: return Result.failure(IllegalStateException("no_raid"))
+        rememberOverlayRaidRoomId(roomId)
+        ensureOverlayRaidRealtimeIfNeeded()
+        val result = repo.sendOverlayRaidCommandFast(
+            text = text,
+            roomId = roomId,
+            excavationAlert = excavationAlert,
+        )
+        result.onSuccess { sent ->
+            mainHandler.post {
+                publishQuickCommandToStrip(sent, roomId, text)
+            }
+        }
+        return result
     }
 
     private fun buildOptimisticRaidCommandMessage(roomId: String, text: String): ChatMessage {
@@ -3719,10 +3748,20 @@ class CombatOverlayService : Service() {
             return
         }
         // Не копим карточки вне матча — иначе при входе в игру всплывает старый рейд-чат.
-        if (!forceIngest && !isOverlayRaidStripEligible()) return
+        if (!forceIngest && !isOverlayRaidStripEligible()) {
+            if (BuildConfig.DEBUG) {
+                Log.d(OVERLAY_DIAG_TAG, "stripDrop reason=not_eligible id=${msg._id}")
+            }
+            return
+        }
         val raidId = resolveOverlayRaidRoomId() ?: trustedOverlayRaidRoomId
         val normalized = normalizeStripRaidMessage(msg, raidId)
-        if (!forceIngest && isStaleOverlayStripMessage(normalized)) return
+        if (!forceIngest && isStaleOverlayStripMessage(normalized)) {
+            if (BuildConfig.DEBUG) {
+                Log.d(OVERLAY_DIAG_TAG, "stripDrop reason=stale id=${normalized._id}")
+            }
+            return
+        }
         normalized._id?.trim()?.takeIf { it.isNotEmpty() }?.let { existingId ->
             if (stripBuffer.containsMessageId(existingId)) {
                 refreshExistingStripMessage(normalized, refreshNow)
@@ -3754,7 +3793,7 @@ class CombatOverlayService : Service() {
             if (BuildConfig.DEBUG) {
                 Log.d(
                     OVERLAY_DIAG_TAG,
-                    "stripSkip room=${normalized.roomId} raid=$raidId trusted=$trustedOverlayRaidRoomId id=${normalized._id} retry=$retryIndex",
+                    "stripDrop reason=no_room room=${normalized.roomId} raid=$raidId trusted=$trustedOverlayRaidRoomId id=${normalized._id} retry=$retryIndex",
                 )
             }
             if (retryIndex < STRIP_INGEST_RETRY_DELAYS_MS.size) {
@@ -4125,13 +4164,28 @@ class CombatOverlayService : Service() {
                     return@post
                 }
                 val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
+                val isSelf = selfId.isNotEmpty() && msg.senderId.trim() == selfId
                 if (isRaid) {
-                    ingestOverlayRaidMessage(normalized, refreshNow = true)
-                    ensureOverlayMessageStripIfNeeded()
-                    if (selfId.isNotEmpty() &&
-                        msg.senderId.trim() != selfId &&
-                        !activityChatViewModelHandlesUnread()
-                    ) {
+                    val stripEligible = isOverlayRaidStripEligible()
+                    val forceInboundStrip = !isSelf &&
+                        !stripEligible &&
+                        isOverlayChatRoutingActive() &&
+                        shouldIngestForRaidStrip(normalized) &&
+                        (isInGameOverlayUiActive() || overlayInGameProbeActive)
+                    if (stripEligible || forceInboundStrip || isSelf) {
+                        ingestOverlayRaidMessage(
+                            normalized,
+                            refreshNow = true,
+                            forceIngest = forceInboundStrip,
+                        )
+                        ensureOverlayMessageStripIfNeeded()
+                    } else if (BuildConfig.DEBUG) {
+                        Log.d(
+                            OVERLAY_DIAG_TAG,
+                            "stripDrop reason=not_eligible_inbound id=${normalized._id} self=$isSelf",
+                        )
+                    }
+                    if (!isSelf && !activityChatViewModelHandlesUnread()) {
                         resolveChatViewModel()?.recordRealtimeUnreadHint(msg)
                     }
                 } else if (isHub) {
@@ -4184,7 +4238,10 @@ class CombatOverlayService : Service() {
                 }
                 raidId = container.chatRepository.ensureRaidRoomId()
             }
-            raidId?.let { rememberOverlayRaidRoomId(it) }
+            raidId?.let {
+                rememberOverlayRaidRoomId(it)
+                mainHandler.post { syncOverlayRaidRoomSubscription() }
+            }
             if (raidId == null) {
                 mainHandler.post {
                     setStripPlainMessage(

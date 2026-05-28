@@ -1,4 +1,4 @@
-package com.lastasylum.alliance.overlay
+﻿package com.lastasylum.alliance.overlay
 
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
@@ -39,23 +39,29 @@ import androidx.core.graphics.drawable.DrawableCompat
 import com.airbnb.lottie.LottieAnimationView
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
-import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
+import androidx.compose.ui.platform.ComposeView
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.ui.theme.SquadRelayTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Компактное меню быстрых команд: вкладки типов, мелкие чипы варианта, лаконичный ввод координат.
+ * РљРѕРјРїР°РєС‚РЅРѕРµ РјРµРЅСЋ Р±С‹СЃС‚СЂС‹С… РєРѕРјР°РЅРґ: РІРєР»Р°РґРєРё С‚РёРїРѕРІ, РјРµР»РєРёРµ С‡РёРїС‹ РІР°СЂРёР°РЅС‚Р°, Р»Р°РєРѕРЅРёС‡РЅС‹Р№ РІРІРѕРґ РєРѕРѕСЂРґРёРЅР°С‚.
  */
 class OverlayCommandsPopover(
     private val context: Context,
     private val mainHandler: Handler,
     private val scope: CoroutineScope,
     private val dp: (Int) -> Int,
-    private val sendCoords: suspend (label: String, targetName: String?, x: Int, y: Int, excavation: Boolean) -> Result<ChatMessage>,
+    private val sendCoords: suspend (label: String, x: Int, y: Int, excavation: Boolean) -> Result<ChatMessage>,
     private val notifyExcavation: suspend () -> Result<ChatMessage>,
+    private val warmupOverlayRaid: () -> Unit = {},
+    private val prepareOptimisticRaidQuickCommand: (label: String, x: Int, y: Int, excavation: Boolean) -> String? =
+        { _, _, _, _ -> null },
+    private val prepareOptimisticRaidNotify: () -> String? = { null },
+    private val removeOptimisticRaidSend: (pendingId: String) -> Unit = {},
     private val emitOverlayReaction: (targetUserId: String, reactionId: String) -> Unit = { _, _ -> },
     private val emitOverlayReactionBroadcast: (reactionId: String) -> Unit = {},
 ) {
@@ -72,9 +78,9 @@ class OverlayCommandsPopover(
     private var reactionTilesAdapter: OverlayReactionTilesAdapter? = null
     private var reactionPreviewKeepAliveRunnable: Runnable? = null
     private var attachedWindowManager: WindowManager? = null
-    /** Парные acquire/release: меню, picker, координаты, входящий burst. */
+    /** РџР°СЂРЅС‹Рµ acquire/release: РјРµРЅСЋ, picker, РєРѕРѕСЂРґРёРЅР°С‚С‹, РІС…РѕРґСЏС‰РёР№ burst. */
     private var gameGateSuppressDepth = 0
-    /** Между сменой scrim (меню → picker) [isShowing] иначе на мгновение false и game gate снимает HUD. */
+    /** РњРµР¶РґСѓ СЃРјРµРЅРѕР№ scrim (РјРµРЅСЋ в†’ picker) [isShowing] РёРЅР°С‡Рµ РЅР° РјРіРЅРѕРІРµРЅРёРµ false Рё game gate СЃРЅРёРјР°РµС‚ HUD. */
     @Volatile
     private var surfaceTransitionDepth = 0
     private var pendingSuppressRelease: Runnable? = null
@@ -86,7 +92,7 @@ class OverlayCommandsPopover(
             reactionPickScrim != null ||
             reactionBurstPresenter.isActive()
 
-    /** True while меню/реакции/координаты открыты или идёт смена scrim (для game gate на main). */
+    /** True while РјРµРЅСЋ/СЂРµР°РєС†РёРё/РєРѕРѕСЂРґРёРЅР°С‚С‹ РѕС‚РєСЂС‹С‚С‹ РёР»Рё РёРґС‘С‚ СЃРјРµРЅР° scrim (РґР»СЏ game gate РЅР° main). */
     fun isBlockingGameGateDismiss(): Boolean = isShowing()
 
     private inline fun withPopoverSurfaceTransition(block: () -> Unit) {
@@ -128,7 +134,7 @@ class OverlayCommandsPopover(
         releasePopoverSuppressAfterUiClosed()
     }
 
-    /** Держим suppress, пока открыто любое окно команд/реакций (иначе game gate снимает FAB на части ROM). */
+    /** Р”РµСЂР¶РёРј suppress, РїРѕРєР° РѕС‚РєСЂС‹С‚Рѕ Р»СЋР±РѕРµ РѕРєРЅРѕ РєРѕРјР°РЅРґ/СЂРµР°РєС†РёР№ (РёРЅР°С‡Рµ game gate СЃРЅРёРјР°РµС‚ FAB РЅР° С‡Р°СЃС‚Рё ROM). */
     private fun ensurePopoverSuppressHeld() {
         if (gameGateSuppressDepth == 0) {
             acquireGameGateSuppress()
@@ -136,9 +142,9 @@ class OverlayCommandsPopover(
     }
 
     /**
-     * Сбрасываем suppress только когда UI попапа полностью закрыт.
-     * Не вызываем [OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction] — он снимает
-     * счётчик Hold без [gameGateSuppressDepth] и даёт ложный tick game gate.
+     * РЎР±СЂР°СЃС‹РІР°РµРј suppress С‚РѕР»СЊРєРѕ РєРѕРіРґР° UI РїРѕРїР°РїР° РїРѕР»РЅРѕСЃС‚СЊСЋ Р·Р°РєСЂС‹С‚.
+     * РќРµ РІС‹Р·С‹РІР°РµРј [OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction] вЂ” РѕРЅ СЃРЅРёРјР°РµС‚
+     * СЃС‡С‘С‚С‡РёРє Hold Р±РµР· [gameGateSuppressDepth] Рё РґР°С‘С‚ Р»РѕР¶РЅС‹Р№ tick game gate.
      */
     private fun releasePopoverSuppressAfterUiClosed() {
         pendingSuppressRelease?.let { mainHandler.removeCallbacks(it) }
@@ -180,8 +186,8 @@ class OverlayCommandsPopover(
     }
 
     /**
-     * Закрытие по scrim только при отпускании пальца вне [card].
-     * Иначе после пересборки сетки реакций (смена вкладки) UP уходит на scrim → [hide] и game gate снимает HUD.
+     * Р—Р°РєСЂС‹С‚РёРµ РїРѕ scrim С‚РѕР»СЊРєРѕ РїСЂРё РѕС‚РїСѓСЃРєР°РЅРёРё РїР°Р»СЊС†Р° РІРЅРµ [card].
+     * РРЅР°С‡Рµ РїРѕСЃР»Рµ РїРµСЂРµСЃР±РѕСЂРєРё СЃРµС‚РєРё СЂРµР°РєС†РёР№ (СЃРјРµРЅР° РІРєР»Р°РґРєРё) UP СѓС…РѕРґРёС‚ РЅР° scrim в†’ [hide] Рё game gate СЃРЅРёРјР°РµС‚ HUD.
      */
     private fun FrameLayout.setDismissOnOutsideCardTouch(card: View, onDismiss: () -> Unit) {
         isClickable = true
@@ -212,7 +218,7 @@ class OverlayCommandsPopover(
         reactionPreviewKeepAliveRunnable = null
     }
 
-    /** Lottie в overlay-окнах на части OEM перестаёт крутиться — поднимаем снова, пока меню открыто. */
+    /** Lottie РІ overlay-РѕРєРЅР°С… РЅР° С‡Р°СЃС‚Рё OEM РїРµСЂРµСЃС‚Р°С‘С‚ РєСЂСѓС‚РёС‚СЊСЃСЏ вЂ” РїРѕРґРЅРёРјР°РµРј СЃРЅРѕРІР°, РїРѕРєР° РјРµРЅСЋ РѕС‚РєСЂС‹С‚Рѕ. */
     private fun ensureReactionPreviewLottiesPlaying() {
         reactionTilesAdapter?.activePreviewLotties()?.forEach { lottie ->
             if (!lottie.isAttachedToWindow) return@forEach
@@ -281,10 +287,11 @@ class OverlayCommandsPopover(
             return
         }
         ensurePopoverSuppressHeld()
+        warmupOverlayRaid()
         showMenu(windowManager)
     }
 
-    /** Показать вспышку реакции от сокомандника (пришла по сокету). */
+    /** РџРѕРєР°Р·Р°С‚СЊ РІСЃРїС‹С€РєСѓ СЂРµР°РєС†РёРё РѕС‚ СЃРѕРєРѕРјР°РЅРґРЅРёРєР° (РїСЂРёС€Р»Р° РїРѕ СЃРѕРєРµС‚Сѓ). */
     fun showIncomingReactionBurst(
         windowManager: WindowManager,
         fromUsername: String,
@@ -437,7 +444,6 @@ class OverlayCommandsPopover(
         val hintRes: Int? = null,
         val excavation: Boolean = false,
         val isReactions: Boolean = false,
-        val isShareTarget: Boolean = false,
     )
 
     private fun labelText(
@@ -523,7 +529,7 @@ class OverlayCommandsPopover(
 
     private fun iconCloseButton(): TextView =
         TextView(context).apply {
-            text = "✕"
+            text = "вњ•"
             contentDescription = context.getString(R.string.overlay_online_close_cd)
             setTextColor(Color.parseColor("#99A8B4CC"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
@@ -536,7 +542,7 @@ class OverlayCommandsPopover(
 
     private fun iconBackButton(): TextView =
         TextView(context).apply {
-            text = "←"
+            text = "в†ђ"
             contentDescription = context.getString(R.string.overlay_reactions_back_cd)
             setTextColor(Color.parseColor("#99A8B4CC"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
@@ -556,7 +562,7 @@ class OverlayCommandsPopover(
         }
     }
 
-    private fun openCoordsFromMenu(commandLabel: String, excavation: Boolean, shareTarget: Boolean = false) {
+    private fun openCoordsFromMenu(commandLabel: String, excavation: Boolean) {
         val wm = attachedWindowManager ?: return
         hideCoordOnly()
         removeShell(menuScrim)
@@ -565,13 +571,12 @@ class OverlayCommandsPopover(
             windowManager = wm,
             commandLabel = commandLabel,
             excavation = excavation,
-            showTargetNameField = shareTarget,
-            requireTargetName = shareTarget,
         )
     }
 
     private fun showMenu(windowManager: WindowManager) {
         ensurePopoverSuppressHeld()
+        warmupOverlayRaid()
         val screenW = context.resources.displayMetrics.widthPixels
         val popoverW = minOf(dp(328), screenW - dp(16))
 
@@ -613,13 +618,6 @@ class OverlayCommandsPopover(
                 accentColor = Color.parseColor("#FF7E57C2"),
                 hintRes = R.string.overlay_cmd_excavation_hint,
                 excavation = true,
-            ),
-            CommandCategory(
-                titleRes = R.string.overlay_cmd_column_share_target,
-                shortLabelRes = R.string.overlay_cmd_tab_share_target,
-                iconRes = R.drawable.ic_overlay_cmd_coords,
-                accentColor = Color.parseColor("#FF4FC3F7"),
-                isShareTarget = true,
             ),
             CommandCategory(
                 titleRes = R.string.overlay_cmd_column_reactions,
@@ -1106,6 +1104,27 @@ class OverlayCommandsPopover(
             }
         }
 
+        fun refreshPrimaryAction(cat: CommandCategory) {
+            when {
+                cat.excavation -> {
+                    coordsLabel.text = context.getString(R.string.overlay_cmd_excavation_notify)
+                    coordsIcon.setImageDrawable(
+                        AppCompatResources.getDrawable(context, R.drawable.ic_overlay_send)?.mutate()?.also { d ->
+                            DrawableCompat.setTint(d, Color.parseColor("#FF8FAEFF"))
+                        },
+                    )
+                }
+                else -> {
+                    coordsLabel.text = context.getString(R.string.overlay_cmd_column_open_coords)
+                    coordsIcon.setImageDrawable(
+                        AppCompatResources.getDrawable(context, R.drawable.ic_overlay_cmd_coords)?.mutate()?.also { d ->
+                            DrawableCompat.setTint(d, Color.parseColor("#FF8FAEFF"))
+                        },
+                    )
+                }
+            }
+        }
+
         fun rebuildOptionsForCategory(cat: CommandCategory) {
             optionsRow.removeAllViews()
             optionChips.clear()
@@ -1136,35 +1155,6 @@ class OverlayCommandsPopover(
             }
         }
 
-        fun refreshPrimaryAction(cat: CommandCategory) {
-            when {
-                cat.excavation -> {
-                    coordsLabel.text = context.getString(R.string.overlay_cmd_excavation_notify)
-                    coordsIcon.setImageDrawable(
-                        AppCompatResources.getDrawable(context, R.drawable.ic_overlay_send)?.mutate()?.also { d ->
-                            DrawableCompat.setTint(d, Color.parseColor("#FF8FAEFF"))
-                        },
-                    )
-                }
-                cat.isShareTarget -> {
-                    coordsLabel.text = context.getString(R.string.overlay_coord_share_send)
-                    coordsIcon.setImageDrawable(
-                        AppCompatResources.getDrawable(context, R.drawable.ic_overlay_cmd_coords)?.mutate()?.also { d ->
-                            DrawableCompat.setTint(d, Color.parseColor("#FF8FAEFF"))
-                        },
-                    )
-                }
-                else -> {
-                    coordsLabel.text = context.getString(R.string.overlay_cmd_column_open_coords)
-                    coordsIcon.setImageDrawable(
-                        AppCompatResources.getDrawable(context, R.drawable.ic_overlay_cmd_coords)?.mutate()?.also { d ->
-                            DrawableCompat.setTint(d, Color.parseColor("#FF8FAEFF"))
-                        },
-                    )
-                }
-            }
-        }
-
         fun applyCategory(index: Int) {
             selectedCategoryIndex = index.coerceIn(0, categories.lastIndex)
             val cat = categories[selectedCategoryIndex]
@@ -1177,11 +1167,7 @@ class OverlayCommandsPopover(
             } else {
                 categoryHint.visibility = View.GONE
             }
-            if (cat.isShareTarget) {
-                optionsRow.visibility = View.GONE
-            } else {
-                rebuildOptionsForCategory(cat)
-            }
+            rebuildOptionsForCategory(cat)
             if (cat.isReactions) {
                 ensurePopoverSuppressHeld()
                 OverlayReactionBitmapCache.preloadOverlayStickerPack(context)
@@ -1252,14 +1238,14 @@ class OverlayCommandsPopover(
         coordsAction.setOnClickListener {
             val cat = categories[selectedCategoryIndex]
             if (cat.excavation) {
-                coordsAction.isEnabled = false
+                val pendingId = prepareOptimisticRaidNotify()
+                CombatOverlayService.extendInGameOverlayUiHold()
+                hide()
                 scope.launch {
                     val result = notifyExcavation()
                     mainHandler.post {
-                        coordsAction.isEnabled = true
-                        result.onSuccess {
-                            hide()
-                        }.onFailure { e ->
+                        result.onFailure { e ->
+                            pendingId?.let(removeOptimisticRaidSend)
                             val msg = when (e.message) {
                                 "no_room" -> context.getString(R.string.overlay_strip_no_room)
                                 "no_raid" -> context.getString(R.string.overlay_strip_no_raid)
@@ -1276,21 +1262,13 @@ class OverlayCommandsPopover(
                 }
                 return@setOnClickListener
             }
-            if (cat.isShareTarget) {
-                openCoordsFromMenu(
-                    commandLabel = context.getString(cat.titleRes),
-                    excavation = false,
-                    shareTarget = true,
-                )
-                return@setOnClickListener
-            }
             val label = if (cat.options != null) {
                 val idx = selectedOptionIndex.coerceIn(0, cat.options.lastIndex)
                 context.getString(cat.options[idx].labelCommandRes)
             } else {
                 context.getString(cat.titleRes)
             }
-            openCoordsFromMenu(label, excavation = false, shareTarget = false)
+            openCoordsFromMenu(label, excavation = false)
         }
 
         applyCategory(0)
@@ -1362,21 +1340,14 @@ class OverlayCommandsPopover(
         windowManager: WindowManager,
         commandLabel: String,
         excavation: Boolean,
-        showTargetNameField: Boolean = false,
-        requireTargetName: Boolean = false,
     ) {
         ensurePopoverSuppressHeld()
         CombatOverlayService.extendInGameOverlayUiHold()
 
         val close = iconCloseButton()
         val title = labelText(commandLabel, 14f, Color.parseColor("#FFF4F7FF"), bold = true)
-        val subtitleText = if (showTargetNameField) {
-            context.getString(R.string.overlay_share_target_dialog_subtitle)
-        } else {
-            context.getString(R.string.overlay_coord_dialog_subtitle)
-        }
         val subtitle = labelText(
-            subtitleText,
+            context.getString(R.string.overlay_coord_dialog_subtitle),
             10.5f,
             Color.parseColor("#7A90A4B8"),
         )
@@ -1425,22 +1396,6 @@ class OverlayCommandsPopover(
         val (colX, editX) = coordField(context.getString(R.string.overlay_coord_x_label))
         val (colY, editY) = coordField(context.getString(R.string.overlay_coord_y_label))
 
-        val targetNameCol: LinearLayout?
-        val editTargetName: EditText?
-        if (showTargetNameField) {
-            val pair = coordField(context.getString(R.string.overlay_coord_target_name_label))
-            val edit = pair.second.apply {
-                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-                setHint(context.getString(R.string.overlay_coord_target_name_label))
-                gravity = Gravity.START or Gravity.CENTER_VERTICAL
-            }
-            targetNameCol = pair.first
-            editTargetName = edit
-        } else {
-            targetNameCol = null
-            editTargetName = null
-        }
-
         val coordsRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             val gap = dp(8)
@@ -1454,9 +1409,7 @@ class OverlayCommandsPopover(
         }
 
         val sendBtn = TextView(context).apply {
-            text = context.getString(
-                if (showTargetNameField) R.string.overlay_coord_share_send else R.string.overlay_coord_send,
-            )
+            text = context.getString(R.string.overlay_coord_send)
             setTextColor(Color.parseColor("#FFF8FAFF"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
             typeface = Typeface.DEFAULT_BOLD
@@ -1493,15 +1446,6 @@ class OverlayCommandsPopover(
         val body = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), 0, dp(14), dp(12))
-            if (targetNameCol != null) {
-                addView(
-                    targetNameCol,
-                    LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                    ).apply { bottomMargin = dp(8) },
-                )
-            }
             addView(coordsRow)
             addView(
                 buttonsRow,
@@ -1586,11 +1530,6 @@ class OverlayCommandsPopover(
         }
 
         sendBtn.setOnClickListener {
-            val targetName = editTargetName?.text?.toString()?.trim().orEmpty()
-            if (requireTargetName && targetName.isEmpty()) {
-                Toast.makeText(context, R.string.overlay_coord_target_name_required, Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
             val xv = editX.text?.toString()?.trim()?.toIntOrNull()
             val yv = editY.text?.toString()?.trim()?.toIntOrNull()
             if (xv == null || yv == null) {
@@ -1599,24 +1538,14 @@ class OverlayCommandsPopover(
             }
             hideKeyboard(editX)
             hideKeyboard(editY)
-            editTargetName?.let { hideKeyboard(it) }
-            sendBtn.isEnabled = false
-            cancelBtn.isEnabled = false
+            val pendingId = prepareOptimisticRaidQuickCommand(commandLabel, xv, yv, excavation)
+            CombatOverlayService.extendInGameOverlayUiHold()
+            hideCoordOnly()
             scope.launch {
-                val result = sendCoords(
-                    commandLabel,
-                    targetName.takeIf { it.isNotEmpty() },
-                    xv,
-                    yv,
-                    excavation,
-                )
+                val result = sendCoords(commandLabel, xv, yv, excavation)
                 mainHandler.post {
-                    sendBtn.isEnabled = true
-                    cancelBtn.isEnabled = true
-                    result.onSuccess {
-                        CombatOverlayService.extendInGameOverlayUiHold()
-                        hideCoordOnly()
-                    }.onFailure { e ->
+                    result.onFailure { e ->
+                        pendingId?.let(removeOptimisticRaidSend)
                         val msg = when (e.message) {
                             "no_room" -> context.getString(R.string.overlay_strip_no_room)
                             "no_raid" -> context.getString(R.string.overlay_strip_no_raid)
@@ -1631,96 +1560,9 @@ class OverlayCommandsPopover(
         }
 
         mainHandler.post {
-            if (editTargetName != null) {
-                editTargetName.requestFocus()
-                showKeyboard(editTargetName)
-            } else {
-                editX.requestFocus()
-                showKeyboard(editX)
-            }
+            editX.requestFocus()
+            showKeyboard(editX)
         }
-    }
-
-    private fun reactionSendAllRow(memberCount: Int, onPick: () -> Unit): LinearLayout {
-        val row = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-            background = rippleOn(
-                roundedRect(
-                    fillColor = Color.parseColor("#2A1E2838"),
-                    strokeColor = Color.parseColor("#55FFB74D"),
-                    cornerDp = 12,
-                ),
-            )
-            isClickable = true
-            setOnClickListener { onPick() }
-        }
-        val name = labelText(
-            context.getString(R.string.overlay_reactions_send_all),
-            13.5f,
-            Color.parseColor("#FFFFE082"),
-            bold = true,
-        )
-        val subtitle = labelText(
-            context.getString(R.string.overlay_reactions_send_all_subtitle, memberCount),
-            10f,
-            Color.parseColor("#9AB0C4D8"),
-        )
-        val textCol = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(name)
-            addView(subtitle)
-        }
-        row.addView(
-            textCol,
-            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
-        )
-        row.layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-        ).apply { bottomMargin = dp(10) }
-        return row
-    }
-
-    private fun memberPickRow(
-        member: PlayerTeamMemberDto,
-        onPick: () -> Unit,
-    ): LinearLayout {
-        val row = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-            background = rippleOn(
-                roundedRect(
-                    fillColor = Color.parseColor("#22182533"),
-                    strokeColor = Color.parseColor("#33445566"),
-                    cornerDp = 12,
-                ),
-            )
-            isClickable = true
-            setOnClickListener { onPick() }
-        }
-        val name = labelText(member.username, 13.5f, Color.parseColor("#FFF4F7FF"), bold = true)
-        val role = labelText(
-            member.teamRole.trim().ifBlank { "R1" },
-            10f,
-            Color.parseColor("#7A90A4B8"),
-        )
-        val textCol = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(name)
-            addView(role)
-        }
-        row.addView(
-            textCol,
-            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
-        )
-        row.layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-        ).apply { bottomMargin = dp(8) }
-        return row
     }
 
     private fun showReactionRecipientPicker(windowManager: WindowManager, reactionId: String) {
@@ -1733,141 +1575,69 @@ class OverlayCommandsPopover(
         val previousPick = reactionPickScrim
         ensurePopoverSuppressHeld()
         attachedWindowManager = windowManager
-        // Сначала новый scrim, потом снимаем меню — иначе [isShowing] на мгновение false.
+        // РЎРЅР°С‡Р°Р»Р° РЅРѕРІС‹Р№ scrim, РїРѕС‚РѕРј СЃРЅРёРјР°РµРј РјРµРЅСЋ вЂ” РёРЅР°С‡Рµ [isShowing] РЅР° РјРіРЅРѕРІРµРЅРёРµ false.
         val menuToRemove = menuScrim
 
-        val selectedReaction = overlayQuickReactionById(context, reactionId)
         val container = AppContainer.from(context)
-        val back = iconBackButton()
-        val close = iconCloseButton()
-        val title = labelText(
-            context.getString(R.string.overlay_reactions_recipient_title),
-            14f,
-            Color.parseColor("#FFF4F7FF"),
-            bold = true,
-        )
-        val reactionPreviewSize = dp(72)
-        val textPreview = decodeTextReactionId(reactionId)
-        val reactionPreview: View = if (textPreview != null) {
-            TextView(context).apply {
-                text = textPreview
-                contentDescription = context.getString(R.string.overlay_reactions_recipient_preview_cd)
-                setTextColor(Color.parseColor("#FFFFF8F0"))
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-                typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD)
-                gravity = Gravity.CENTER
-                maxLines = OverlayReactionBurstLayout.TEXT_LINES_MAX
-                ellipsize = android.text.TextUtils.TruncateAt.END
-                setPadding(dp(8), dp(8), dp(8), dp(8))
-            }
-        } else {
-            createOverlayReactionTileIcon(
-                context,
-                selectedReaction,
-                playAnimatedPreview = true,
-            ).apply {
-                contentDescription = context.getString(R.string.overlay_reactions_recipient_preview_cd)
-                when (this) {
-                    is LottieAnimationView -> {
-                        configureOverlayReactionLottie(this, playLoop = true)
-                        playAnimation()
-                    }
-                    else -> {
-                        val anim = drawable
-                        if (anim is android.graphics.drawable.Animatable && !anim.isRunning) {
-                            anim.start()
-                        }
-                    }
+        val cardW = minOf(dp(340), context.resources.displayMetrics.widthPixels - dp(16))
+        val composeHost = FrameLayout(context).apply {
+            consumeTouchesInSubtree()
+        }
+        val compose = ComposeView(context).apply {
+            setContent {
+                SquadRelayTheme {
+                    OverlayReactionRecipientSheet(
+                        reactionId = reactionId,
+                        onBack = { returnToReactionsList(windowManager) },
+                        onDismiss = { hideReactionPickOnly() },
+                        onSendToUserIds = { userIds ->
+                            if (userIds.isEmpty()) return@OverlayReactionRecipientSheet
+                            if (!emitReactionIfConnected {
+                                    userIds.forEach { uid ->
+                                        emitOverlayReaction(uid, reactionId)
+                                    }
+                                }
+                            ) {
+                                return@OverlayReactionRecipientSheet
+                            }
+                            hideReactionPickOnly()
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.overlay_reaction_sent_selected, userIds.size),
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        },
+                        onSendBroadcastAll = { count ->
+                            hideReactionPickOnly()
+                            if (emitReactionIfConnected({ emitOverlayReactionBroadcast(reactionId) })) {
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.overlay_reaction_sent_all, count),
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        },
+                        loadMembers = {
+                            loadOverlayIngameReactionRecipients(
+                                usersRepository = container.usersRepository,
+                                teamsRepository = container.teamsRepository,
+                            )
+                        },
+                    )
                 }
             }
         }
-        val reactionPreviewRow = FrameLayout(context).apply {
-            setPadding(0, dp(8), 0, dp(4))
-            addView(
-                reactionPreview,
-                if (textPreview != null) {
-                    FrameLayout.LayoutParams(
-                        FrameLayout.LayoutParams.MATCH_PARENT,
-                        FrameLayout.LayoutParams.WRAP_CONTENT,
-                        Gravity.CENTER,
-                    )
-                } else {
-                    FrameLayout.LayoutParams(reactionPreviewSize, reactionPreviewSize, Gravity.CENTER)
-                },
-            )
-        }
-        val loading = labelText(
-            context.getString(R.string.overlay_reactions_loading),
-            12f,
-            Color.parseColor("#8A9AA8B8"),
-            paddingH = dp(14),
-            paddingV = dp(10),
+        composeHost.addView(
+            compose,
+            FrameLayout.LayoutParams(cardW, ViewGroup.LayoutParams.WRAP_CONTENT),
         )
-
-        val listColumn = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        val scroll = ScrollView(context).apply {
-            isFillViewport = true
-            addView(
-                listColumn,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            )
-        }
-
-        val headerRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14), dp(10), dp(8), dp(6))
-            addView(back)
-            addView(
-                title,
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    marginStart = dp(4)
-                },
-            )
-            addView(close)
-        }
-
-        val divider = View(context).apply {
-            setBackgroundColor(Color.parseColor("#288899AA"))
-        }
-
-        val card = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            background = panelShellBackground()
-            elevation = dp(10).toFloat()
-            addView(headerRow)
-            addView(reactionPreviewRow)
-            addView(
-                divider,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    dp(1),
-                ).apply {
-                    marginStart = dp(12)
-                    marginEnd = dp(12)
-                },
-            )
-            addView(loading)
-            addView(
-                scroll,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    dp(320),
-                ),
-            )
-            consumeTouchesInSubtree()
-        }
 
         val scrim = FrameLayout(context).apply {
             setBackgroundColor(Color.argb(110, 4, 8, 16))
-            setDismissOnOutsideCardTouch(card) { hideReactionPickOnly() }
+            setDismissOnOutsideCardTouch(composeHost) { hideReactionPickOnly() }
         }
-        val cardW = minOf(dp(340), context.resources.displayMetrics.widthPixels - dp(16))
         scrim.addView(
-            card,
+            composeHost,
             FrameLayout.LayoutParams(cardW, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 gravity = Gravity.CENTER
             },
@@ -1897,97 +1667,8 @@ class OverlayCommandsPopover(
         if (previousPick != null && previousPick !== scrim) {
             removeShell(previousPick)
         }
-        back.setOnClickListener { returnToReactionsList(windowManager) }
-        close.setOnClickListener { hideReactionPickOnly() }
-
-        scope.launch {
-            val loadResult = withContext(Dispatchers.IO) {
-                runCatching {
-                    val ctx = OverlayTeamContextCache.load(
-                        usersRepository = container.usersRepository,
-                        teamsRepository = container.teamsRepository,
-                    ).getOrThrow()
-                    val self = ctx.currentUserId
-                    OverlayTeamPresenceCache.load(
-                        teamId = ctx.teamId,
-                        teamsRepository = container.teamsRepository,
-                    ).getOrThrow()
-                        .ingame
-                        .filter { it.userId != self }
-                }
-            }
-            mainHandler.post {
-                if (reactionPickScrim == null) return@post
-                listColumn.removeAllViews()
-                loading.visibility = View.GONE
-                loadResult.fold(
-                    onFailure = { e ->
-                        val msg = when (e.message) {
-                            "no_team" -> context.getString(R.string.overlay_reactions_no_team)
-                            else ->
-                                e.message?.takeIf { it.isNotBlank() }
-                                    ?: context.getString(
-                                        R.string.overlay_history_send_failed,
-                                        e.javaClass.simpleName,
-                                    )
-                        }
-                        listColumn.addView(
-                            labelText(
-                                msg,
-                                12f,
-                                Color.parseColor("#FFFF8A80"),
-                                paddingH = dp(14),
-                                paddingV = dp(10),
-                            ),
-                        )
-                    },
-                    onSuccess = { members ->
-                        if (members.isEmpty()) {
-                            listColumn.addView(
-                                labelText(
-                                    context.getString(R.string.overlay_reactions_none_ingame),
-                                    12f,
-                                    Color.parseColor("#9AB0C4D8"),
-                                    paddingH = dp(14),
-                                    paddingV = dp(10),
-                                ),
-                            )
-                        } else {
-                            listColumn.addView(
-                                reactionSendAllRow(members.size) {
-                                    hideReactionPickOnly()
-                                    if (emitReactionIfConnected({ emitOverlayReactionBroadcast(reactionId) })) {
-                                        Toast.makeText(
-                                            context,
-                                            context.getString(
-                                                R.string.overlay_reaction_sent_all,
-                                                members.size,
-                                            ),
-                                            Toast.LENGTH_LONG,
-                                        ).show()
-                                    }
-                                },
-                            )
-                            members.forEach { m ->
-                                listColumn.addView(
-                                    memberPickRow(m) {
-                                        hideReactionPickOnly()
-                                        if (emitReactionIfConnected({ emitOverlayReaction(m.userId, reactionId) })) {
-                                            Toast.makeText(
-                                                context,
-                                                context.getString(R.string.overlay_reaction_sent, m.username),
-                                                Toast.LENGTH_LONG,
-                                            ).show()
-                                        }
-                                    },
-                                )
-                            }
-                        }
-                    },
-                )
-            }
-        }
     }
+
 
     private fun hideKeyboard(edit: EditText) {
         val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager ?: return
@@ -2013,7 +1694,7 @@ class OverlayCommandsPopover(
     private companion object {
         /** Delay suppress release after coord dialog closes so game gate does not tear down HUD. */
         private const val POPOVER_SUPPRESS_RELEASE_DELAY_MS = 500L
-        /** Реже будить Lottie-превью — на главном потоке только до [MAX_REACTION_LOTTIE_PREVIEWS_PLAYING] штук. */
+        /** Р РµР¶Рµ Р±СѓРґРёС‚СЊ Lottie-РїСЂРµРІСЊСЋ вЂ” РЅР° РіР»Р°РІРЅРѕРј РїРѕС‚РѕРєРµ С‚РѕР»СЊРєРѕ РґРѕ [MAX_REACTION_LOTTIE_PREVIEWS_PLAYING] С€С‚СѓРє. */
         const val REACTION_PREVIEW_KEEP_ALIVE_MS = 5_000L
     }
 }

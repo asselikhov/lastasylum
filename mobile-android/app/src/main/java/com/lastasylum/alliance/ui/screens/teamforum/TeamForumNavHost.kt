@@ -4,6 +4,8 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -157,6 +159,7 @@ import com.lastasylum.alliance.ui.chat.formatChatDaySeparator
 import com.lastasylum.alliance.ui.chat.formatChatTime
 import com.lastasylum.alliance.ui.components.PremiumEmptyState
 import com.lastasylum.alliance.ui.components.premium.PremiumGradientIconFab
+import com.lastasylum.alliance.ui.components.CenteredScreenLoading
 import com.lastasylum.alliance.ui.components.team.ForumTopicFeedCard
 import com.lastasylum.alliance.ui.components.team.TeamFeedCardTokens
 import com.lastasylum.alliance.ui.components.team.ForumTopicGhostIconButton
@@ -186,6 +189,7 @@ fun TeamForumNavHost(
     forumSocket: TeamForumSocketManager,
     tokenStore: TokenStore,
     modifier: Modifier = Modifier,
+    sectionActive: Boolean = true,
     forumTabReselectSignal: Int = 0,
     /** Wire keys of sticker packs the current user may send. */
     enabledStickerPackKeys: Set<String> = emptySet(),
@@ -197,20 +201,24 @@ fun TeamForumNavHost(
     LaunchedEffect(listRefreshNonce) {
         if (listRefreshNonce > 0) onForumInboxChanged()
     }
-    DisposableEffect(teamId) {
-        val onTopicActivity: (com.lastasylum.alliance.data.teams.TeamForumTopicActivityEvent) -> Unit =
-            { event ->
-                if (event.senderUserId.trim() != currentUserId.trim()) {
-                    listRefreshNonce++
+    DisposableEffect(teamId, sectionActive) {
+        if (!sectionActive) {
+            onDispose { }
+        } else {
+            val onTopicActivity: (com.lastasylum.alliance.data.teams.TeamForumTopicActivityEvent) -> Unit =
+                { event ->
+                    if (event.senderUserId.trim() != currentUserId.trim()) {
+                        listRefreshNonce++
+                    }
                 }
+            forumSocket.addTopicActivityListener(onTopicActivity)
+            forumSocket.connectTeamInbox(
+                com.lastasylum.alliance.BuildConfig.API_BASE_URL,
+                teamId,
+            ) { tokenStore.getAccessToken() }
+            onDispose {
+                forumSocket.removeTopicActivityListener(onTopicActivity)
             }
-        forumSocket.addTopicActivityListener(onTopicActivity)
-        forumSocket.connectTeamInbox(
-            com.lastasylum.alliance.BuildConfig.API_BASE_URL,
-            teamId,
-        ) { tokenStore.getAccessToken() }
-        onDispose {
-            forumSocket.removeTopicActivityListener(onTopicActivity)
         }
     }
     LaunchedEffect(forumTabReselectSignal) {
@@ -222,6 +230,10 @@ fun TeamForumNavHost(
         navController = nav,
         startDestination = ForumRoutes.LIST,
         modifier = modifier,
+        enterTransition = { EnterTransition.None },
+        exitTransition = { ExitTransition.None },
+        popEnterTransition = { EnterTransition.None },
+        popExitTransition = { ExitTransition.None },
     ) {
         composable(ForumRoutes.LIST) {
             TeamForumListRoute(
@@ -264,6 +276,7 @@ fun TeamForumNavHost(
                 teamsRepository = teamsRepository,
                 forumSocket = forumSocket,
                 tokenStore = tokenStore,
+                sectionActive = sectionActive,
                 enabledStickerPackKeys = enabledStickerPackKeys,
                 onBack = {
                     nav.popBackStack()
@@ -412,10 +425,7 @@ private fun TeamForumListRoute(
         Box(Modifier.fillMaxSize()) {
             when {
                 loading && topics.isEmpty() -> {
-                    CircularProgressIndicator(
-                        Modifier.align(Alignment.Center),
-                        strokeWidth = 2.dp,
-                    )
+                    CenteredScreenLoading()
                 }
                 topics.isEmpty() -> {
                     PremiumEmptyState(
@@ -438,7 +448,11 @@ private fun TeamForumListRoute(
                         ),
                         verticalArrangement = Arrangement.spacedBy(TeamFeedCardTokens.listSpacing),
                     ) {
-                        itemsIndexed(topics, key = { _, t -> t.id }) { index, t ->
+                        itemsIndexed(
+                            topics,
+                            key = { _, t -> t.id },
+                            contentType = { _, _ -> "forum_topic" },
+                        ) { index, t ->
                             ForumTopicFeedCard(
                                 topic = t,
                                 listIndex = index,
@@ -639,6 +653,7 @@ private fun TeamForumTopicChatRoute(
     teamsRepository: TeamsRepository,
     forumSocket: TeamForumSocketManager,
     tokenStore: TokenStore,
+    sectionActive: Boolean = true,
     onBack: () -> Unit,
     enabledStickerPackKeys: Set<String> = emptySet(),
 ) {
@@ -874,34 +889,38 @@ private fun TeamForumTopicChatRoute(
         if (typingHint == hint) typingHint = null
     }
 
-    DisposableEffect(teamId, topicId) {
-        val onNew: (TeamForumMessageDto) -> Unit = { mergeNew(it) }
-        val onEdited: (TeamForumMessageDto) -> Unit = { applyEdited(it) }
-        val onDeleted: (TeamForumMessageDeletedEvent) -> Unit = { applyDeleted(it) }
-        val onTyping: (TeamForumTypingEvent) -> Unit = { ev ->
-            if (ev.userId != currentUserId) {
-                typingHint = context.getString(R.string.team_forum_typing, ev.username)
+    DisposableEffect(teamId, topicId, sectionActive) {
+        if (!sectionActive) {
+            onDispose { }
+        } else {
+            val onNew: (TeamForumMessageDto) -> Unit = { mergeNew(it) }
+            val onEdited: (TeamForumMessageDto) -> Unit = { applyEdited(it) }
+            val onDeleted: (TeamForumMessageDeletedEvent) -> Unit = { applyDeleted(it) }
+            val onTyping: (TeamForumTypingEvent) -> Unit = { ev ->
+                if (ev.userId != currentUserId) {
+                    typingHint = context.getString(R.string.team_forum_typing, ev.username)
+                }
             }
-        }
-        forumSocket.addMessageListener(onNew)
-        forumSocket.addMessageEditedListener(onEdited)
-        forumSocket.addMessageDeletedListener(onDeleted)
-        forumSocket.addTypingListener(onTyping)
-        forumSocket.connect(
-            BuildConfig.API_BASE_URL,
-            teamId,
-            topicId,
-        ) { tokenStore.getAccessToken() }
-        onDispose {
-            markTopicReadToLatest(forceSync = true)
-            forumSocket.removeMessageListener(onNew)
-            forumSocket.removeMessageEditedListener(onEdited)
-            forumSocket.removeMessageDeletedListener(onDeleted)
-            forumSocket.removeTypingListener(onTyping)
-            forumSocket.connectTeamInbox(
+            forumSocket.addMessageListener(onNew)
+            forumSocket.addMessageEditedListener(onEdited)
+            forumSocket.addMessageDeletedListener(onDeleted)
+            forumSocket.addTypingListener(onTyping)
+            forumSocket.connect(
                 BuildConfig.API_BASE_URL,
                 teamId,
+                topicId,
             ) { tokenStore.getAccessToken() }
+            onDispose {
+                markTopicReadToLatest(forceSync = true)
+                forumSocket.removeMessageListener(onNew)
+                forumSocket.removeMessageEditedListener(onEdited)
+                forumSocket.removeMessageDeletedListener(onDeleted)
+                forumSocket.removeTypingListener(onTyping)
+                forumSocket.connectTeamInbox(
+                    BuildConfig.API_BASE_URL,
+                    teamId,
+                ) { tokenStore.getAccessToken() }
+            }
         }
     }
 
@@ -971,15 +990,15 @@ private fun TeamForumTopicChatRoute(
             )
         }
         Box(
-            Modifier.weight(1f),
+            Modifier
+                .weight(1f)
+                .fillMaxWidth(),
         ) {
             if (loading && messages.isEmpty()) {
-                CircularProgressIndicator(
-                    Modifier.align(Alignment.Center),
-                    strokeWidth = 2.dp,
-                )
+                CenteredScreenLoading()
             } else {
                 ForumTopicMessagesLazyList(
+                    modifier = Modifier.fillMaxSize(),
                     messages = stableMessages,
                     listDerived = listDerived,
                     listState = listState,

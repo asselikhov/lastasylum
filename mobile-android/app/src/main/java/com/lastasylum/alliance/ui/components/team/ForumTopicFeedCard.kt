@@ -59,11 +59,13 @@ fun ForumTopicFeedCard(
     val accent = ForumTopicCardTokens.accentForIndex(listIndex)
     val unreadCount = displayUnreadCount ?: topic.unreadCount
     val hasUnread = unreadCount > 0
-    val metaDesc = buildString {
-        append(topic.title)
-        if (topic.messageCount > 0) append(", ${topic.messageCount} сообщений")
-        if (hasUnread) append(", непрочитано: $unreadCount")
-        if (messageMeta.isNotBlank()) append(", $messageMeta")
+    val metaDesc = remember(topic.id, topic.title, topic.messageCount, unreadCount, messageMeta) {
+        buildString {
+            append(topic.title)
+            if (topic.messageCount > 0) append(", ${topic.messageCount} сообщений")
+            if (hasUnread) append(", непрочитано: $unreadCount")
+            if (messageMeta.isNotBlank()) append(", $messageMeta")
+        }
     }
 
     PremiumFeedCardShell(

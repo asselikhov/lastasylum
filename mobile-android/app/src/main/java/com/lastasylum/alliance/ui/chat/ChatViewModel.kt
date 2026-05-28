@@ -1067,7 +1067,9 @@ class ChatViewModel(
 
     /** Sync tab badges from API (e.g. after overlay chat or app resume). */
     fun syncRoomsFromServer(reconfirmVisibleRoom: Boolean = true) {
+        if (!isChatTabActive && !overlayChatPanelVisible) return
         viewModelScope.launch {
+            if (!isChatTabActive && !overlayChatPanelVisible) return@launch
             repository.listRooms()
                 .onSuccess { raw ->
                     val next = applyRoomsFromServer(raw)

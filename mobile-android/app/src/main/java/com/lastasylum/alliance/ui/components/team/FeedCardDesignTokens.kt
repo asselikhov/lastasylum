@@ -3,6 +3,7 @@ package com.lastasylum.alliance.ui.components.team
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.ui.theme.premium.PremiumColors
+import com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces
 
 /** Shared dimensions and accents for team feed cards (news, poll, forum, members). */
 object FeedCardDesignTokens {
@@ -21,10 +22,10 @@ object FeedCardDesignTokens {
     val unreadDotColor: Color = PremiumColors.accentCyanBright
     val liveRingColor: Color = PremiumColors.liveIndicator
 
-    val layerAlphaDefault = 0.58f
-    val layerAlphaUnread = 0.62f
-    val layerAlphaIngame = 0.64f
-    val layerAlphaOffline = 0.48f
+    val layerAlphaDefault = PremiumSurfaces.listCardAlpha
+    val layerAlphaUnread = 0.92f
+    val layerAlphaIngame = 0.91f
+    val layerAlphaOffline = 0.86f
 
     val shadowRest = 6.dp
     val shadowUnread = 10.dp

@@ -36,8 +36,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -48,6 +46,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -62,12 +61,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavDestination.Companion.hierarchy
-import androidx.navigation.NavGraph.Companion.findStartDestination
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
 import androidx.compose.foundation.BorderStroke
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
@@ -204,9 +197,15 @@ fun AppNavigation(
         }
     }
 
-    val navController = rememberNavController()
-    val navBackStackEntry = navController.currentBackStackEntryAsState()
-    val currentDestination = navBackStackEntry.value?.destination
+    var currentTabRoute by rememberSaveable { mutableStateOf(AppTab.TEAM.route) }
+    var retainedTabRoutes by remember { mutableStateOf(setOf(AppTab.TEAM.route)) }
+
+    fun selectTab(route: String) {
+        if (route !in retainedTabRoutes) {
+            retainedTabRoutes = retainedTabRoutes + route
+        }
+        currentTabRoute = route
+    }
 
     val visibleTabs = remember(role, overlayTabVisible) {
         AppTab.entries.filter { tab ->
@@ -231,12 +230,12 @@ fun AppNavigation(
             else -> null
         } ?: return@LaunchedEffect
         if (visibleTabs.none { it.route == route }) return@LaunchedEffect
-        navController.navigate(route) {
-            popUpTo(navController.graph.startDestinationId) {
-                saveState = true
-            }
-            launchSingleTop = true
-            restoreState = true
+        selectTab(route)
+    }
+
+    LaunchedEffect(overlayTabVisible) {
+        if (!overlayTabVisible && currentTabRoute == AppTab.OVERLAY.route) {
+            selectTab(AppTab.CHAT.route)
         }
     }
 
@@ -253,8 +252,7 @@ fun AppNavigation(
         .map { it.tabUnreadBadge }
         .distinctUntilChanged()
         .collectAsStateWithLifecycle(0)
-    val chatRouteActive =
-        currentDestination?.hierarchy?.any { it.route == AppTab.CHAT.route } == true
+    val chatRouteActive = currentTabRoute == AppTab.CHAT.route
     val imeVisible = WindowInsets.isImeVisible
     // Скрываем навбар сразу при IME; показываем с задержкой после закрытия — без «дёрганья».
     var chatNavBarVisible by remember { mutableStateOf(true) }
@@ -310,8 +308,7 @@ fun AppNavigation(
                         horizontalArrangement = Arrangement.SpaceEvenly,
                     ) {
                         visibleTabs.forEach { tab ->
-                            val isSelected =
-                                currentDestination?.hierarchy?.any { it.route == tab.route } == true
+                            val isSelected = currentTabRoute == tab.route
                             val tint = if (isSelected) {
                                 PremiumColors.accentCyan
                             } else {
@@ -331,15 +328,7 @@ fun AppNavigation(
                                             Color.Transparent
                                         },
                                     )
-                                    .clickable {
-                                        navController.navigate(tab.route) {
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
-                                            }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    },
+                                    .clickable { selectTab(tab.route) },
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Column(
@@ -421,18 +410,21 @@ fun AppNavigation(
         Box(
             modifier = Modifier
                 .padding(contentPadding)
-                .fillMaxSize(),
+                .fillMaxSize()
+                .background(PremiumColors.voidMid),
         ) {
-            NavHost(
-            navController = navController,
-            startDestination = AppTab.TEAM.route,
-            modifier = Modifier.fillMaxSize(),
-            enterTransition = { EnterTransition.None },
-            exitTransition = { ExitTransition.None },
-            popEnterTransition = { EnterTransition.None },
-            popExitTransition = { ExitTransition.None },
-        ) {
-            composable(AppTab.CHAT.route) {
+            val tabsToCompose = retainedTabRoutes.intersect(visibleTabs.map { it.route }.toSet())
+            tabsToCompose.forEach { route ->
+                val active = route == currentTabRoute
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .mainTabSlot(active),
+                ) {
+                    CompositionLocalProvider(LocalMainTabActive provides active) {
+                    when (route) {
+                        AppTab.CHAT.route -> {
+                if (active) {
                 LaunchedEffect(Unit) {
                     chatViewModel.refreshTeamProfileGateLight()
                 }
@@ -496,39 +488,35 @@ fun AppNavigation(
                     onConsumeTransientNotice = chatViewModel::consumeTransientNotice,
                     messageListKey = chatViewModel::messageListCompositionKey,
                 )
-            }
-            composable(AppTab.OVERLAY.route) {
-                LaunchedEffect(overlayTabVisible) {
-                    if (!overlayTabVisible) {
-                        navController.navigate(AppTab.CHAT.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = false
-                            }
-                            launchSingleTop = true
+                }
                         }
-                    }
-                }
-                if (overlayTabVisible) {
-                    OverlayControlScreen()
-                }
-            }
-            composable(AppTab.PROFILE.route) {
-                ProfileScreen(
-                    username = username,
-                    onLogout = onLogout,
-                )
-            }
-            composable(AppTab.TEAM.route) {
-                TeamScreen(
-                    currentUserId = userId,
-                    teamsRepository = app.teamsRepository,
-                    usersRepository = app.usersRepository,
-                )
-            }
-            composable(AppTab.ADMIN.route) {
-                val adminViewModel: AdminViewModel = viewModel(factory = adminViewModelFactory)
-                val adminState by adminViewModel.state.collectAsStateWithLifecycle()
-                AdminScreen(
+                        AppTab.OVERLAY.route -> {
+                            if (active && overlayTabVisible) {
+                                OverlayControlScreen()
+                            }
+                        }
+                        AppTab.PROFILE.route -> {
+                            if (active) {
+                            ProfileScreen(
+                                username = username,
+                                onLogout = onLogout,
+                            )
+                            }
+                        }
+                        AppTab.TEAM.route -> {
+                            if (active) {
+                            TeamScreen(
+                                currentUserId = userId,
+                                teamsRepository = app.teamsRepository,
+                                usersRepository = app.usersRepository,
+                            )
+                            }
+                        }
+                        AppTab.ADMIN.route -> {
+                            if (active) {
+                            val adminViewModel: AdminViewModel = viewModel(factory = adminViewModelFactory)
+                            val adminState by adminViewModel.state.collectAsStateWithLifecycle()
+                            AdminScreen(
                     currentUserId = userId,
                     state = adminState,
                     onNavigateBack = adminViewModel::navigateBack,
@@ -592,9 +580,13 @@ fun AppNavigation(
                     onRequestClearAllChatHistory = adminViewModel::requestClearAllChatHistoryConfirm,
                     onDismissClearAllChatHistoryConfirm = adminViewModel::dismissClearAllChatHistoryConfirm,
                     onConfirmClearAllChatHistory = adminViewModel::confirmClearAllChatHistory,
-                )
+                            )
+                            }
+                        }
+                    }
+                    }
+                }
             }
-        }
         }
     }
 }

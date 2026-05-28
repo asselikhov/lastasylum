@@ -61,6 +61,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -112,7 +114,6 @@ import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import com.lastasylum.alliance.ui.components.team.TeamFeedCardTokens
 import com.lastasylum.alliance.ui.components.team.TeamNewsFeedCard
 import com.lastasylum.alliance.ui.util.formatTeamFeedDateRu
-import com.lastasylum.alliance.ui.components.team.TeamPollPreviewBlock
 import com.lastasylum.alliance.ui.components.team.TeamPollQuestionHeader
 import com.lastasylum.alliance.ui.components.team.TeamPollVoteOptionSurface
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
@@ -372,6 +373,7 @@ fun TeamNewsNavHost(
     canPublishNews: Boolean,
     teamsRepository: TeamsRepository,
     modifier: Modifier = Modifier,
+    sectionActive: Boolean = true,
     onNewsInboxChanged: () -> Unit = {},
 ) {
     val overlayUi = LocalOverlayUiMode.current
@@ -381,6 +383,10 @@ fun TeamNewsNavHost(
             navController = nav,
             startDestination = TeamNewsRoutes.LIST,
             modifier = Modifier.fillMaxSize(),
+            enterTransition = { EnterTransition.None },
+            exitTransition = { ExitTransition.None },
+            popEnterTransition = { EnterTransition.None },
+            popExitTransition = { ExitTransition.None },
         ) {
         composable(TeamNewsRoutes.LIST) {
             TeamNewsListRoute(
@@ -389,6 +395,7 @@ fun TeamNewsNavHost(
                 myTeamRole = myTeamRole,
                 canPublishNews = canPublishNews,
                 teamsRepository = teamsRepository,
+                sectionActive = sectionActive,
                 onOpenDetail = { nav.navigate(TeamNewsRoutes.detail(it)) },
                 onCreate = { nav.navigate(TeamNewsRoutes.CREATE) },
                 onEditFromList = { nav.navigate(TeamNewsRoutes.edit(it)) },
@@ -461,6 +468,7 @@ private fun TeamNewsListRoute(
     myTeamRole: String,
     canPublishNews: Boolean,
     teamsRepository: TeamsRepository,
+    sectionActive: Boolean = true,
     onOpenDetail: (String) -> Unit,
     onCreate: () -> Unit,
     onEditFromList: (String) -> Unit,
@@ -505,7 +513,8 @@ private fun TeamNewsListRoute(
             }
     }
 
-    LaunchedEffect(teamId) {
+    LaunchedEffect(teamId, sectionActive) {
+        if (!sectionActive) return@LaunchedEffect
         loadNewsPage(cursor = null, append = false)
     }
 
@@ -588,6 +597,7 @@ private fun TeamNewsListRoute(
                         items(
                             items = newsItems,
                             key = { it.id },
+                            contentType = { "team_news" },
                         ) { item ->
                             TeamNewsFeedCard(
                                 item = item,

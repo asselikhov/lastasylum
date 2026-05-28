@@ -79,6 +79,16 @@ class ChatRepository(
         onHttpSuccess = null,
     )
 
+    suspend fun sendOverlayRaidCommandFast(
+        text: String,
+        roomId: String,
+        excavationAlert: Boolean = false,
+    ): Result<ChatMessage> = rest.sendOverlayRaidCommandFast(
+        text = text,
+        roomId = roomId,
+        excavationAlert = excavationAlert,
+    )
+
     suspend fun uploadImageFile(roomId: String, file: File, mimeType: String): Result<UploadChatAttachmentResponse> =
         rest.uploadImageFile(roomId, file, mimeType)
 

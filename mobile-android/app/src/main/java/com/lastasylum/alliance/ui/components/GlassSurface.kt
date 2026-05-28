@@ -28,7 +28,7 @@ fun GlassSurface(
         shape = resolvedShape,
         shadowElevation = shadowElevation,
         showInnerGlow = showInnerGlow,
-        layerAlpha = layerAlpha ?: com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces.layer1Alpha,
+        layerAlpha = layerAlpha ?: com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces.listCardAlpha,
         highlightCornerRadius = TeamFeedCardTokens.cardRadius,
         content = content,
     )

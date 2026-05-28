@@ -21,9 +21,13 @@ object PremiumGlow {
 
     fun cardInnerTop(height: Float): Brush =
         Brush.verticalGradient(
-            colors = listOf(PremiumColors.innerHighlight, Color.Transparent),
+            colors = listOf(
+                PremiumColors.innerHighlight,
+                Color.White.copy(alpha = 0.04f),
+                Color.Transparent,
+            ),
             startY = 0f,
-            endY = height * 0.22f,
+            endY = height.coerceAtLeast(1f),
         )
 
     fun pollProgress(): Brush =

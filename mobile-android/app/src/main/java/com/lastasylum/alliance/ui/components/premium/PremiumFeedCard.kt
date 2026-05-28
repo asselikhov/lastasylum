@@ -48,11 +48,16 @@ fun PremiumFeedCardShell(
     footer: @Composable () -> Unit = {},
 ) {
     val pressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (pressed) TeamFeedCardTokens.pressScale else 1f,
-        animationSpec = TeamFeedCardTokens.pressAnimSpec,
-        label = "feedCardScale",
-    )
+    val scaleTarget = if (pressed) TeamFeedCardTokens.pressScale else 1f
+    val scale = if (listMode) {
+        scaleTarget
+    } else {
+        animateFloatAsState(
+            targetValue = scaleTarget,
+            animationSpec = TeamFeedCardTokens.pressAnimSpec,
+            label = "feedCardScale",
+        ).value
+    }
     val restElevation = if (listMode) {
         FeedCardDesignTokens.listShadowElevation
     } else {
@@ -85,7 +90,7 @@ fun PremiumFeedCardShell(
     }
     val border = when {
         isUnread -> BorderStroke(1.5.dp, FeedCardDesignTokens.unreadBorderColor.copy(alpha = 0.5f))
-        else -> PremiumSurfaces.panelBorder()
+        else -> PremiumSurfaces.cardBorder()
     }
     val clickModifier = if (onClick != null) {
         Modifier.clickable(
@@ -112,7 +117,6 @@ fun PremiumFeedCardShell(
             shadowElevation = elevation,
             layerAlpha = layerAlpha,
             border = border,
-            showInnerGlow = !listMode,
         ) {
             Box(Modifier.fillMaxWidth()) {
                 if (accent != null) {

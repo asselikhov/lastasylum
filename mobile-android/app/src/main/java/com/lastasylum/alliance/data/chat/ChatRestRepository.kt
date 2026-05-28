@@ -73,6 +73,22 @@ class ChatRestRepository(
         return Result.failure(last ?: IllegalStateException("send_failed"))
     }
 
+    /** Overlay quick commands: fewer retries, shorter backoff than [sendMessageWithRetries]. */
+    suspend fun sendOverlayRaidCommandFast(
+        text: String,
+        roomId: String,
+        excavationAlert: Boolean = false,
+    ): Result<ChatMessage> {
+        var last: Throwable? = null
+        repeat(2) { attempt ->
+            val r = sendMessage(text, roomId, excavationAlert = excavationAlert)
+            if (r.isSuccess) return r
+            last = r.exceptionOrNull()
+            if (attempt < 1) delay(80L)
+        }
+        return Result.failure(last ?: IllegalStateException("send_failed"))
+    }
+
     suspend fun uploadImageFile(
         roomId: String,
         file: File,
