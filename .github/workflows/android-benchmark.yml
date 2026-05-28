@@ -2,16 +2,6 @@ name: Android Benchmark
 
 on:
   workflow_dispatch:
-    inputs:
-      gate_mode:
-        description: "Benchmark gate mode"
-        required: true
-        default: "report-only"
-        type: choice
-        options:
-          - report-only
-          - soft
-          - hard
   pull_request:
     paths:
       - "mobile-android/**"
@@ -40,9 +30,6 @@ jobs:
       - name: Resolve benchmark gate mode
         run: |
           MODE="report-only"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.gate_mode }}" ]; then
-            MODE="${{ github.event.inputs.gate_mode }}"
-          fi
           echo "BENCHMARK_GATE_MODE=$MODE" >> "$GITHUB_ENV"
           echo "Resolved BENCHMARK_GATE_MODE=$MODE"
 
