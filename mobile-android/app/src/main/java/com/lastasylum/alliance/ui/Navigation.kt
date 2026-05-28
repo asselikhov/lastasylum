@@ -435,7 +435,6 @@ fun AppNavigation(
                 .padding(contentPadding)
                 .fillMaxSize(),
         ) {
-            AtmosphericBackground(Modifier.fillMaxSize())
             NavHost(
             navController = navController,
             startDestination = AppTab.TEAM.route,
