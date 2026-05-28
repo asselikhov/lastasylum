@@ -822,9 +822,18 @@ private fun TeamForumTopicChatRoute(
         }
     }
 
+    var initialScrollApplied by remember(teamId, topicId) { mutableStateOf(false) }
     LaunchedEffect(stableMessages.lastOrNull()?.id) {
-        if (stableMessages.isNotEmpty()) {
-            val lastIndex = 1 + stableMessages.lastIndex
+        if (stableMessages.isEmpty()) return@LaunchedEffect
+        val lastIndex = 1 + stableMessages.lastIndex
+        if (!initialScrollApplied) {
+            initialScrollApplied = true
+            runCatching { listState.scrollToItem(lastIndex) }
+            return@LaunchedEffect
+        }
+        val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+        val nearBottom = lastVisible >= lastIndex - 2
+        if (nearBottom) {
             runCatching { listState.animateScrollToItem(lastIndex) }
         }
     }
