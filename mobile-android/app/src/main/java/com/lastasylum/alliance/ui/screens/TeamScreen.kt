@@ -91,7 +91,11 @@ import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.overlay.OverlayModalScope
 import com.lastasylum.alliance.ui.components.GlassSurface
 import com.lastasylum.alliance.ui.components.TeamSectionTabAccents
-import com.lastasylum.alliance.ui.components.TeamRetainedSection
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import com.lastasylum.alliance.ui.theme.premium.PremiumMotion
 import com.lastasylum.alliance.ui.components.TeamSectionTabBar
 import com.lastasylum.alliance.ui.components.TeamSectionTabSpec
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
@@ -185,22 +189,12 @@ fun TeamScreen(
     var mainSectionOrdinal by rememberSaveable {
         mutableIntStateOf(initialMainSection?.ordinal ?: TeamMainSection.News.ordinal)
     }
-    var visitedSectionOrdinals by remember {
-        mutableStateOf(
-            buildSet {
-                add(TeamMainSection.News.ordinal)
-                add(mainSectionOrdinal)
-                initialMainSection?.let { add(it.ordinal) }
-            },
-        )
-    }
     var forumTabReselectSignal by remember { mutableStateOf(0) }
 
     LaunchedEffect(mainSectionOrdinal) {
         if (mainSectionOrdinal !in TeamMainSection.entries.indices) {
             mainSectionOrdinal = TeamMainSection.News.ordinal
         }
-        visitedSectionOrdinals = visitedSectionOrdinals + mainSectionOrdinal
     }
 
     fun reloadProfileAndTeam() {
@@ -428,7 +422,6 @@ fun TeamScreen(
                                     forumUnread = sectionBadges.forumUnread,
                                     pendingJoinRequests = if (isLeader) pending else 0,
                                     onSelect = { section ->
-                                        visitedSectionOrdinals = visitedSectionOrdinals + section.ordinal
                                         if (section == TeamMainSection.Forum &&
                                             activeSection == TeamMainSection.Forum
                                         ) {
@@ -447,12 +440,17 @@ fun TeamScreen(
                                 val sectionModifier = Modifier
                                     .weight(1f, fill = true)
                                     .fillMaxWidth()
-                                Box(sectionModifier) {
-                                    if (TeamMainSection.News.ordinal in visitedSectionOrdinals) {
-                                        TeamRetainedSection(
-                                            visible = activeSection == TeamMainSection.News,
-                                            modifier = Modifier.fillMaxSize(),
-                                        ) {
+                                AnimatedContent(
+                                    targetState = activeSection,
+                                    modifier = sectionModifier,
+                                    transitionSpec = {
+                                        fadeIn(PremiumMotion.fadeTween(PremiumMotion.fadeFastMs)) togetherWith
+                                            fadeOut(PremiumMotion.fadeTween(PremiumMotion.fadeFastMs))
+                                    },
+                                    label = "teamMainSection",
+                                ) { section ->
+                                    when (section) {
+                                        TeamMainSection.News -> {
                                             TeamNewsNavHost(
                                                 teamId = team.id,
                                                 currentUserId = currentUserId,
@@ -467,12 +465,7 @@ fun TeamScreen(
                                                 },
                                             )
                                         }
-                                    }
-                                    if (TeamMainSection.Forum.ordinal in visitedSectionOrdinals) {
-                                        TeamRetainedSection(
-                                            visible = activeSection == TeamMainSection.Forum,
-                                            modifier = Modifier.fillMaxSize(),
-                                        ) {
+                                        TeamMainSection.Forum -> {
                                             TeamForumNavHost(
                                                 teamId = team.id,
                                                 currentUserId = currentUserId,
@@ -491,12 +484,7 @@ fun TeamScreen(
                                                 },
                                             )
                                         }
-                                    }
-                                    if (TeamMainSection.Members.ordinal in visitedSectionOrdinals) {
-                                        TeamRetainedSection(
-                                            visible = activeSection == TeamMainSection.Members,
-                                            modifier = Modifier.fillMaxSize(),
-                                        ) {
+                                        TeamMainSection.Members -> {
                                             SquadTeamRoster(
                                                 members = team.members,
                                                 isSquadLeader = isLeader,

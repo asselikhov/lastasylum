@@ -195,6 +195,7 @@ import com.lastasylum.alliance.ui.components.ChatRoomVisualKind
 import com.lastasylum.alliance.ui.components.ChatRoomsSwitcher
 import com.lastasylum.alliance.ui.chat.ChatViewModel
 import com.lastasylum.alliance.ui.chat.ChatBubbleAuthorHeader
+import com.lastasylum.alliance.ui.chat.ChatMessengerStyle
 import com.lastasylum.alliance.ui.chat.ChatMessageBodyText
 import com.lastasylum.alliance.ui.chat.chatBubbleSurfaceWidth
 import com.lastasylum.alliance.ui.chat.ChatMessageTimeOverlayChip
@@ -1654,22 +1655,9 @@ private fun ChatBubbleInnerColumn(
     downloadingFileUrl: String? = null,
 ) {
     val openRemoteChatImagePreview = LocalOpenRemoteChatImagePreview.current
-    val bubblePadH = when {
-        stickerStem != null -> 8.dp
-        overlayUi -> 14.dp
-        else -> 12.dp
-    }
-    val bubblePadBottom = when {
-        stickerStem != null -> 8.dp
-        overlayUi -> 11.dp
-        else -> 10.dp
-    }
-    val bubblePadTop = when {
-        tightClusterTop -> if (stickerStem != null) 5.dp else 6.dp
-        stickerStem != null -> 8.dp
-        overlayUi -> 11.dp
-        else -> 10.dp
-    }
+    val bubblePadH = ChatMessengerStyle.bubbleHorizontalPadding(stickerStem)
+    val bubblePadBottom = ChatMessengerStyle.bubbleBottomPadding(stickerStem)
+    val bubblePadTop = ChatMessengerStyle.bubbleTopPadding(stickerStem, tightClusterTop)
     val messageImageTapLabel = stringResource(R.string.cd_chat_message_image)
     val timeLabel = remember(formattedTime, message.editedAt, message.createdAt) {
         if (formattedTime.isBlank()) "" else {
@@ -1804,11 +1792,7 @@ private fun ChatBubbleInnerColumn(
                             messageId = message._id,
                             otherReadUptoMessageId = otherReadUptoMessageId,
                             timeMuted = timeMuted,
-                            textStyle = if (overlayUi) {
-                                MaterialTheme.typography.bodyLarge
-                            } else {
-                                MaterialTheme.typography.bodyMedium
-                            },
+                            textStyle = ChatMessengerStyle.messageTextStyle(MaterialTheme.typography),
                             fadeBaseColor = bubbleBg,
                         )
                     } else if (timeLabel.isNotBlank()) {
@@ -1902,11 +1886,7 @@ private fun ChatBubbleInnerColumn(
                     messageId = message._id,
                     otherReadUptoMessageId = otherReadUptoMessageId,
                     timeMuted = timeMuted,
-                    textStyle = if (overlayUi) {
-                        MaterialTheme.typography.bodyLarge
-                    } else {
-                        MaterialTheme.typography.bodyMedium
-                    },
+                    textStyle = ChatMessengerStyle.messageTextStyle(MaterialTheme.typography),
                     fadeBaseColor = bubbleBg,
                 )
             }
@@ -2183,12 +2163,8 @@ private fun ChatAlbumRow(
         clusterTopSpacing = clusterTopSpacing,
         inSelectionMode = inSelectionMode,
         canDelete = canDelete,
-        bubbleWidthFraction = if (overlayUi) {
-            ChatOverlayBubbleMaxWidthFraction
-        } else {
-            ChatBubbleMaxWidthFraction
-        },
-        bubbleWidthCap = if (overlayUi) ChatOverlayBubbleMaxWidthCap else ChatBubbleMaxWidthCap,
+        bubbleWidthFraction = ChatMessengerStyle.bubbleWidthFraction,
+        bubbleWidthCap = ChatMessengerStyle.bubbleWidthCap,
         showIncomingAvatar = !isMine && isChainBottom,
         reserveIncomingAvatarSpace = !isMine && !isChainBottom,
         leadingAvatar = {
@@ -2299,39 +2275,17 @@ internal fun ChatMessageBubble(
         message.replyTo == null
     val senderAccent = roleAccentColor(message.senderRole)
     val scheme = MaterialTheme.colorScheme
-    val baseBubbleBg = when {
-        overlayUi && isMine -> ChatTelegramOutgoingBubble
-        overlayUi -> ChatTelegramIncomingBubble
-        isMine -> lerp(scheme.primary, scheme.surface, 0.28f).copy(alpha = 0.82f)
-        else -> scheme.surface.copy(alpha = 0.52f)
-    }
     val highlightTint = scheme.primary.copy(alpha = 0.35f)
-    val bubbleBg = if (highlighted) {
-        lerp(baseBubbleBg, highlightTint, 0.55f)
-    } else {
-        baseBubbleBg
-    }
-    val onBubble = when {
-        overlayUi && isMine -> ChatTelegramOutgoingOnBubble
-        overlayUi -> ChatTelegramIncomingOnBubble
-        isMine -> Color.White
-        else -> scheme.onSurface
-    }
-    val timeMuted = when {
-        overlayUi && isMine -> ChatTelegramTimeMuted
-        overlayUi -> ChatTelegramTimeMutedIncoming
-        isMine -> Color.White.copy(alpha = 0.72f)
-        else -> scheme.onSurfaceVariant.copy(alpha = 0.88f)
-    }
+    val bubbleBg = ChatMessengerStyle.bubbleBackground(isMine, highlighted, highlightTint)
+    val onBubble = ChatMessengerStyle.bubbleContentColor(isMine)
+    val timeMuted = ChatMessengerStyle.timeMutedColor(isMine)
     val bubbleBorder = BorderStroke(
         1.dp,
-        when {
-            highlighted -> scheme.primary.copy(alpha = 0.55f)
-            overlayUi && isMine -> Color.White.copy(alpha = 0.1f)
-            overlayUi -> Color.White.copy(alpha = 0.06f)
-            isMine -> Color.White.copy(alpha = 0.14f)
-            else -> scheme.outline.copy(alpha = 0.2f)
-        },
+        ChatMessengerStyle.bubbleBorderColor(
+            isMine = isMine,
+            highlighted = highlighted,
+            highlightBorder = scheme.primary.copy(alpha = 0.55f),
+        ),
     )
     val stemTag = message.senderTeamTag?.trim()?.takeIf { it.isNotEmpty() }
     val displayName = message.senderUsername.trim().ifBlank { senderLine }
@@ -2424,12 +2378,8 @@ internal fun ChatMessageBubble(
         clusterTopSpacing = clusterTopSpacing,
         inSelectionMode = inSelectionMode,
         canDelete = canDelete,
-        bubbleWidthFraction = if (overlayUi) {
-            ChatOverlayBubbleMaxWidthFraction
-        } else {
-            ChatBubbleMaxWidthFraction
-        },
-        bubbleWidthCap = if (overlayUi) ChatOverlayBubbleMaxWidthCap else ChatBubbleMaxWidthCap,
+        bubbleWidthFraction = ChatMessengerStyle.bubbleWidthFraction,
+        bubbleWidthCap = ChatMessengerStyle.bubbleWidthCap,
         showIncomingAvatar = !isMine && isChainBottom,
         reserveIncomingAvatarSpace = !isMine && !isChainBottom,
         leadingAvatar = {
@@ -2621,7 +2571,11 @@ internal fun ChatMessageBubble(
                         shape = bubbleShape,
                         color = bubbleBg,
                         tonalElevation = 0.dp,
-                        shadowElevation = if (overlayUi) 2.dp else if (isMine) 4.dp else 3.dp,
+                        shadowElevation = if (isMine) {
+                            ChatMessengerStyle.bubbleElevationMine
+                        } else {
+                            ChatMessengerStyle.bubbleElevationOther
+                        },
                         border = bubbleBorder,
                     ) {
                         ChatBubbleInnerColumn(

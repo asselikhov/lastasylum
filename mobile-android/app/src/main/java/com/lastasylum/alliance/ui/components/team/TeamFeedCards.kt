@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -39,6 +40,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -52,7 +55,17 @@ import com.lastasylum.alliance.data.teams.TeamNewsListItemDto
 import com.lastasylum.alliance.data.teams.TeamNewsPollOptionDto
 import com.lastasylum.alliance.data.teams.TeamNewsPollTallyDto
 import com.lastasylum.alliance.ui.screens.teamnews.teamNewsAuthedImageRequest
+import com.lastasylum.alliance.ui.components.premium.FeedCardHero
+import com.lastasylum.alliance.ui.components.premium.FeedCardMetaRow
+import com.lastasylum.alliance.ui.components.premium.FeedCardPollHeaderStrip
+import com.lastasylum.alliance.ui.components.premium.FeedCardTypePill
+import com.lastasylum.alliance.ui.components.premium.FeedCardUnreadDot
+import com.lastasylum.alliance.ui.components.premium.PremiumFeedCardShell
+import com.lastasylum.alliance.ui.components.premium.PremiumGlassBar
+import com.lastasylum.alliance.ui.components.premium.PremiumGlassSurface
 import com.lastasylum.alliance.ui.components.premium.PremiumProgressBar
+import com.lastasylum.alliance.ui.theme.premium.PremiumColors
+import com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces
 import com.lastasylum.alliance.ui.theme.SquadRelayAtmosphericPurple
 import com.lastasylum.alliance.ui.theme.SquadRelayAtmosphericSky
 import com.lastasylum.alliance.ui.theme.SquadRelayPrimary
@@ -149,6 +162,7 @@ private fun PollResultOptionRow(
         PremiumProgressBar(
             progress = share.coerceIn(0f, 1f),
             modifier = Modifier.fillMaxWidth(),
+            barHeight = 6.dp,
         )
         Text(
             text = stringResource(R.string.team_news_poll_option_votes, voteCount),
@@ -185,6 +199,17 @@ fun TeamPollQuestionHeader(
     }
 }
 
+private fun leadingPollOptions(
+    options: List<TeamNewsPollOptionDto>,
+    tallies: List<TeamNewsPollTallyDto>,
+    max: Int,
+): List<TeamNewsPollOptionDto> {
+    if (options.size <= max) return options
+    return options
+        .sortedByDescending { opt -> tallies.find { it.optionId == opt.id }?.count ?: 0 }
+        .take(max)
+}
+
 @Composable
 fun TeamPollPreviewBlock(
     question: String,
@@ -192,56 +217,104 @@ fun TeamPollPreviewBlock(
     tallies: List<TeamNewsPollTallyDto>,
     myVoteOptionId: String?,
     modifier: Modifier = Modifier,
+    maxOptions: Int = Int.MAX_VALUE,
+    compact: Boolean = false,
+    showHeader: Boolean = true,
 ) {
     val totalVotes = tallies.sumOf { it.count }
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        PollBadge(
-            votesLabel = if (totalVotes > 0) {
-                stringResource(R.string.team_news_votes_count, totalVotes)
-            } else {
-                null
-            },
-        )
-        Text(
-            text = question,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            lineHeight = 24.sp,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            options.forEach { opt ->
-                val cnt = tallies.find { it.optionId == opt.id }?.count ?: 0
-                val share = if (totalVotes > 0) cnt.toFloat() / totalVotes else 0f
-                Surface(
-                    shape = innerShape,
-                    color = if (myVoteOptionId == opt.id) {
-                        SquadRelayPrimary.copy(alpha = 0.10f)
-                    } else {
-                        SquadRelaySurfaces.subtleColor(0.32f)
-                    },
-                    border = BorderStroke(
-                        1.dp,
-                        if (myVoteOptionId == opt.id) {
-                            SquadRelayPrimary.copy(alpha = 0.42f)
+    val previewOptions = if (maxOptions < Int.MAX_VALUE) {
+        leadingPollOptions(options, tallies, maxOptions)
+    } else {
+        options
+    }
+    val remaining = (options.size - previewOptions.size).coerceAtLeast(0)
+    val votesLabel = if (totalVotes > 0) {
+        stringResource(R.string.team_news_votes_count, totalVotes)
+    } else {
+        null
+    }
+
+    val body = @Composable {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 14.dp),
+        ) {
+            if (showHeader) {
+                PollBadge(votesLabel = votesLabel)
+            }
+            Text(
+                text = question,
+                style = if (compact) {
+                    MaterialTheme.typography.headlineSmall
+                } else {
+                    MaterialTheme.typography.titleMedium
+                },
+                fontWeight = FontWeight.SemiBold,
+                lineHeight = if (compact) 26.sp else 24.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = if (compact) 3 else Int.MAX_VALUE,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                previewOptions.forEach { opt ->
+                    val cnt = tallies.find { it.optionId == opt.id }?.count ?: 0
+                    val share = if (totalVotes > 0) cnt.toFloat() / totalVotes else 0f
+                    val selected = myVoteOptionId == opt.id
+                    Surface(
+                        shape = innerShape,
+                        color = if (selected) {
+                            PremiumColors.accentPurple.copy(alpha = 0.10f)
                         } else {
-                            Color.White.copy(alpha = 0.06f)
+                            SquadRelaySurfaces.subtleColor(0.32f)
                         },
-                    ),
-                ) {
-                    PollResultOptionRow(
-                        text = opt.text,
-                        voteCount = cnt,
-                        share = share,
-                        selected = myVoteOptionId == opt.id,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        border = BorderStroke(
+                            1.dp,
+                            if (selected) {
+                                PremiumColors.accentPurple.copy(alpha = 0.45f)
+                            } else {
+                                Color.White.copy(alpha = 0.06f)
+                            },
+                        ),
+                    ) {
+                        PollResultOptionRow(
+                            text = opt.text,
+                            voteCount = cnt,
+                            share = share,
+                            selected = selected,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        )
+                    }
+                }
+                if (remaining > 0) {
+                    Text(
+                        text = "+$remaining",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
+            if (compact && totalVotes > 0) {
+                Text(
+                    text = stringResource(R.string.team_news_votes_count, totalVotes),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
+    }
+
+    if (compact) {
+        PremiumGlassSurface(
+            modifier = modifier.fillMaxWidth(),
+            shape = innerShape,
+            shadowElevation = 0.dp,
+            layerAlpha = 0.45f,
+            showInnerGlow = false,
+        ) {
+            Box(Modifier.padding(12.dp)) { body() }
+        }
+    } else {
+        Column(modifier = modifier.fillMaxWidth()) { body() }
     }
 }
 
@@ -293,51 +366,6 @@ fun TeamPollVoteOptionSurface(
 }
 
 @Composable
-private fun AuthorChip(username: String, telegramUsername: String? = null) {
-    val avatarUrl = telegramAvatarUrl(telegramUsername)
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        if (avatarUrl != null) {
-            ChatSenderAvatar(
-                telegramUrl = avatarUrl,
-                size = 28.dp,
-                fallbackName = username,
-            )
-        } else {
-            val initial = username.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.linearGradient(
-                            listOf(SquadRelayPrimary.copy(0.85f), SquadRelaySecondary.copy(0.75f)),
-                        ),
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = initial,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                )
-            }
-        }
-        Text(
-            text = username,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.primary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-@Composable
 fun TeamNewsFeedCard(
     item: TeamNewsListItemDto,
     onClick: () -> Unit,
@@ -353,175 +381,85 @@ fun TeamNewsFeedCard(
     val pollOptions = item.pollOptions.orEmpty()
     val showPollPreview = item.hasPoll && pollQuestion.isNotEmpty() && pollOptions.size >= 2
     val pollOnly = item.pollOnly
+    val totalVotes = item.pollTallies.sumOf { it.count }
+    val pollVotesLabel = if (totalVotes > 0) {
+        stringResource(R.string.team_news_votes_count, totalVotes)
+    } else {
+        null
+    }
+    val context = LocalContext.current
+    val heroRequest = remember(item.firstImageRelativeUrl, context) {
+        teamNewsAuthedImageRequest(context, item.firstImageRelativeUrl)
+    }
+    val pollBadge = stringResource(R.string.team_news_poll_badge)
+    val cardDesc = buildString {
+        append(item.title)
+        if (isUnread) append(", ${stringResource(R.string.team_news_unread_badge)}")
+        append(", $formattedCreatedAt")
+    }
 
-    Card(
+    PremiumFeedCardShell(
         onClick = onClick,
-        modifier = modifier
-            .fillMaxWidth()
-            .border(
-                width = if (isUnread) 1.5.dp else 1.dp,
-                brush = Brush.linearGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = if (isUnread) 0.2f else 0.12f),
-                        if (isUnread) {
-                            Color(0xFFFF5252).copy(alpha = 0.45f)
-                        } else {
-                            SquadRelayPrimary.copy(alpha = 0.22f)
-                        },
-                        Color.White.copy(alpha = 0.06f),
-                    ),
-                ),
-                shape = cardShape,
-            ),
-        shape = cardShape,
-        colors = CardDefaults.cardColors(
-            containerColor = com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces.layer1(0.58f),
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp, pressedElevation = 2.dp),
-    ) {
-        Column {
-            if (showPollPreview && !hasHero) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                        .background(
-                            Brush.horizontalGradient(
-                                colors = listOf(
-                                    SquadRelayPrimary.copy(alpha = 0.28f),
-                                    SquadRelaySecondary.copy(alpha = 0.14f),
-                                    Color.Transparent,
-                                ),
-                            ),
-                        ),
-                ) {
-                    Row(
-                        Modifier
-                            .align(Alignment.CenterStart)
-                            .padding(horizontal = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Icon(
-                            Icons.Outlined.Poll,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.9f),
-                            modifier = Modifier.size(22.dp),
-                        )
-                        Text(
-                            text = if (pollOnly) {
-                                stringResource(R.string.team_news_poll_badge)
-                            } else {
-                                stringResource(R.string.team_news_poll_badge)
-                            },
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.White.copy(alpha = 0.92f),
-                        )
-                    }
-                }
-            }
-
-            if (hasHero) {
-                val context = LocalContext.current
-                val heroRequest = remember(item.firstImageRelativeUrl, context) {
-                    teamNewsAuthedImageRequest(context, item.firstImageRelativeUrl)
-                }
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(172.dp),
-                ) {
-                    heroRequest?.let { req ->
-                        AsyncImage(
-                            model = req,
-                            contentDescription = item.title,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Transparent,
-                                        Color.Black.copy(alpha = 0.55f),
-                                        Color.Black.copy(alpha = 0.78f),
-                                    ),
-                                ),
-                            ),
+        modifier = modifier.semantics { contentDescription = cardDesc },
+        variant = if (pollOnly) FeedCardVariant.PollOnly else FeedCardVariant.News,
+        isUnread = isUnread,
+        contentPadding = PaddingValues(0.dp),
+        topContent = {
+            when {
+                showPollPreview && pollOnly && !hasHero -> {
+                    FeedCardPollHeaderStrip(
+                        pollLabel = pollBadge,
+                        votesLabel = pollVotesLabel,
                     )
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (isUnread) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = Color(0xFFFF5252),
-                                ) {
-                                    Text(
-                                        text = stringResource(R.string.team_news_unread_badge),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White,
-                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
-                                    )
-                                }
-                            }
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = Color.Black.copy(alpha = 0.38f),
-                                border = glassBorder(0.12f),
+                }
+                showPollPreview && !hasHero && !pollOnly -> {
+                    FeedCardPollHeaderStrip(pollLabel = pollBadge, votesLabel = null)
+                }
+                hasHero -> {
+                    FeedCardHero(
+                        imageRequest = heroRequest,
+                        title = item.title,
+                        contentDescription = item.title,
+                        topOverlay = {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text(
-                                    text = formattedCreatedAt,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White.copy(alpha = 0.9f),
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                )
-                            }
-                            if (item.hasPoll) {
+                                if (isUnread) FeedCardUnreadDot()
                                 Surface(
                                     shape = RoundedCornerShape(8.dp),
-                                    color = SquadRelayPrimary.copy(alpha = 0.45f),
+                                    color = Color.Black.copy(alpha = 0.38f),
+                                    border = glassBorder(0.12f),
                                 ) {
                                     Text(
-                                        text = stringResource(R.string.team_news_poll_badge),
+                                        text = formattedCreatedAt,
                                         style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = Color.White,
+                                        color = Color.White.copy(alpha = 0.9f),
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                     )
                                 }
+                                if (item.hasPoll) {
+                                    FeedCardTypePill(
+                                        label = pollBadge,
+                                        icon = Icons.Outlined.Poll,
+                                    )
+                                }
                             }
-                        }
-                        Text(
-                            text = item.title,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.White,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
+                        },
+                    )
+                    HorizontalDivider(
+                        thickness = 1.dp,
+                        color = Color.White.copy(alpha = 0.06f),
+                    )
                 }
-                HorizontalDivider(
-                    thickness = 1.dp,
-                    color = Color.White.copy(alpha = 0.06f),
-                )
             }
-
+        },
+        content = {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                    .padding(FeedCardDesignTokens.contentPadding),
+                verticalArrangement = Arrangement.spacedBy(FeedCardDesignTokens.sectionGap),
             ) {
                 if (showPollPreview) {
                     TeamPollPreviewBlock(
@@ -529,17 +467,27 @@ fun TeamNewsFeedCard(
                         options = pollOptions,
                         tallies = item.pollTallies,
                         myVoteOptionId = item.myVoteOptionId,
+                        maxOptions = 2,
+                        compact = hasHero,
+                        showHeader = false,
                     )
                 } else {
                     if (!hasHero) {
-                        Text(
-                            text = item.title,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            lineHeight = 26.sp,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            if (isUnread) FeedCardUnreadDot()
+                            Text(
+                                text = item.title,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                lineHeight = 26.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
                     }
                     if (item.excerpt.isNotBlank()) {
                         Text(
@@ -552,41 +500,25 @@ fun TeamNewsFeedCard(
                         )
                     }
                 }
-
+            }
+        },
+        footer = {
+            PremiumGlassBar(
+                modifier = Modifier.fillMaxWidth(),
+            ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = FeedCardDesignTokens.contentPadding, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    FeedCardMetaRow(
+                        username = item.authorUsername,
+                        telegramUsername = item.authorTelegramUsername,
+                        trailingMeta = if (hasHero) "" else formattedCreatedAt,
                         modifier = Modifier.weight(1f),
-                    ) {
-                        AuthorChip(item.authorUsername, item.authorTelegramUsername)
-                        if (isUnread && !hasHero) {
-                            Surface(
-                                shape = CircleShape,
-                                color = Color(0xFFFF5252),
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.team_news_unread_badge),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
-                                )
-                            }
-                        }
-                        if (!hasHero) {
-                            Text(
-                                text = formattedCreatedAt,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = scheme.onSurfaceVariant,
-                                maxLines = 1,
-                            )
-                        }
-                    }
+                    )
                     if (showEdit) {
                         IconButton(onClick = onEdit, modifier = Modifier.size(40.dp)) {
                             Icon(
@@ -598,7 +530,7 @@ fun TeamNewsFeedCard(
                     }
                 }
             }
-        }
-    }
+        },
+    )
 }
 

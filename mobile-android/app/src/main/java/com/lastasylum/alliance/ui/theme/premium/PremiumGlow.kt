@@ -19,7 +19,7 @@ object PremiumGlow {
             radius = radius,
         )
 
-    fun cardInnerTop(width: Float, height: Float): Brush =
+    fun cardInnerTop(height: Float): Brush =
         Brush.verticalGradient(
             colors = listOf(PremiumColors.innerHighlight, Color.Transparent),
             startY = 0f,

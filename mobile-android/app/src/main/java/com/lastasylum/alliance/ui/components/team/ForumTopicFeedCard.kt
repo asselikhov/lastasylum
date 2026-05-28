@@ -1,31 +1,27 @@
 package com.lastasylum.alliance.ui.components.team
 
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Forum
-import androidx.compose.material.icons.outlined.MarkChatUnread
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Surface
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -33,9 +29,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -47,6 +40,10 @@ import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
+import com.lastasylum.alliance.ui.components.premium.FeedCardStatChip
+import com.lastasylum.alliance.ui.components.premium.FeedCardUnreadCountPill
+import com.lastasylum.alliance.ui.components.premium.PremiumFeedCardShell
+import com.lastasylum.alliance.ui.theme.premium.PremiumTypography
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 
 @Composable
@@ -62,19 +59,6 @@ fun ForumTopicFeedCard(
     val accent = ForumTopicCardTokens.accentForIndex(listIndex)
     val unreadCount = displayUnreadCount ?: topic.unreadCount
     val hasUnread = unreadCount > 0
-    val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (pressed) ForumTopicCardTokens.pressScale else 1f,
-        animationSpec = ForumTopicCardTokens.pressAnimSpec,
-        label = "forumCardScale",
-    )
-    val elevation by animateDpAsState(
-        targetValue = if (pressed) ForumTopicCardTokens.elevationPressed else ForumTopicCardTokens.elevationRest,
-        animationSpec = ForumTopicCardTokens.pressElevationAnimSpec,
-        label = "forumCardElevation",
-    )
-    val cardShape = RoundedCornerShape(ForumTopicCardTokens.cardRadius)
     val metaDesc = buildString {
         append(topic.title)
         if (topic.messageCount > 0) append(", ${topic.messageCount} сообщений")
@@ -82,31 +66,23 @@ fun ForumTopicFeedCard(
         if (messageMeta.isNotBlank()) append(", $messageMeta")
     }
 
-    Surface(
+    PremiumFeedCardShell(
         onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
-            .scale(scale)
             .semantics { contentDescription = metaDesc },
-        shape = cardShape,
-        color = Color.Transparent,
-        shadowElevation = elevation,
-        interactionSource = interactionSource,
-    ) {
-        ForumTopicCardBackground(
-            accent = accent,
-            hasUnread = hasUnread,
-            shape = cardShape,
-        ) {
+        variant = FeedCardVariant.ForumTopic,
+        isUnread = hasUnread,
+        accentColor = accent.primary,
+        contentPadding = PaddingValues(
+            horizontal = FeedCardDesignTokens.contentPadding,
+            vertical = 14.dp,
+        ),
+        content = {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        horizontal = ForumTopicCardTokens.cardPaddingH,
-                        vertical = ForumTopicCardTokens.cardPaddingV,
-                    ),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ForumTopicCardTokens.rowGap),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 ForumTopicAvatar(
                     topic = topic,
@@ -115,7 +91,7 @@ fun ForumTopicFeedCard(
                 )
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(ForumTopicCardTokens.titleMetaGap),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -124,9 +100,8 @@ fun ForumTopicFeedCard(
                     ) {
                         Text(
                             text = topic.title,
-                            style = ForumTopicCardTokens.titleStyle.copy(
-                                color = ForumTopicCardTokens.titleColor(),
-                            ),
+                            style = PremiumTypography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f),
@@ -140,8 +115,8 @@ fun ForumTopicFeedCard(
                     )
                 }
             }
-        }
-    }
+        },
+    )
 }
 
 @Composable
@@ -155,17 +130,17 @@ fun ForumTopicGhostIconButton(
     val pressed by interactionSource.collectIsPressedAsState()
     val bg by animateFloatAsState(
         targetValue = if (pressed) 1f else 0f,
-        animationSpec = ForumTopicCardTokens.pressAnimSpec,
+        animationSpec = TeamFeedCardTokens.pressAnimSpec,
         label = "ghostBtnBg",
     )
     val bgColor = androidx.compose.ui.graphics.lerp(
-        ForumTopicCardTokens.ghostBgRest,
-        ForumTopicCardTokens.ghostBgPressed,
+        Color.Transparent,
+        Color.White.copy(alpha = 0.08f),
         bg,
     )
-    Surface(
+    androidx.compose.material3.Surface(
         onClick = onClick,
-        modifier = modifier.size(ForumTopicCardTokens.ghostButtonSize),
+        modifier = modifier.size(40.dp),
         shape = CircleShape,
         color = bgColor,
         interactionSource = interactionSource,
@@ -174,58 +149,11 @@ fun ForumTopicGhostIconButton(
             Icon(
                 imageVector = icon,
                 contentDescription = contentDescription,
-                modifier = Modifier.size(ForumTopicCardTokens.ghostIconSize),
+                modifier = Modifier.size(20.dp),
                 tint = Color.White.copy(alpha = 0.62f),
             )
         }
     }
-}
-
-@Composable
-private fun ForumTopicCardBackground(
-    accent: ForumTopicCardTokens.Accent,
-    hasUnread: Boolean,
-    shape: RoundedCornerShape,
-    content: @Composable () -> Unit,
-) {
-    val shapeRadius = ForumTopicCardTokens.cardRadius
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .drawBehind {
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            ForumTopicCardTokens.cardBaseTop.copy(alpha = 0.84f),
-                            ForumTopicCardTokens.cardBaseBottom.copy(alpha = 0.78f),
-                        ),
-                    ),
-                )
-                if (hasUnread) {
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                accent.primary.copy(alpha = 0.14f),
-                                accent.secondary.copy(alpha = 0.04f),
-                                Color.Transparent,
-                            ),
-                            center = Offset(size.width * 0.12f, size.height * 0.2f),
-                            radius = size.maxDimension * 0.55f,
-                        ),
-                        radius = size.maxDimension * 0.55f,
-                        center = Offset(size.width * 0.12f, size.height * 0.2f),
-                    )
-                }
-                drawLine(
-                    color = ForumTopicCardTokens.topHighlight,
-                    start = Offset(shapeRadius.toPx() * 0.5f, 1f),
-                    end = Offset(size.width - shapeRadius.toPx() * 0.5f, 1f),
-                    strokeWidth = 1f,
-                )
-            },
-        content = { content() },
-    )
 }
 
 @Composable
@@ -235,17 +163,29 @@ private fun ForumTopicAvatar(
     hasUnread: Boolean,
 ) {
     val creatorAvatarUrl = telegramAvatarUrl(topic.createdByTelegramUsername)
-    Box {
+    val innerSize = if (hasUnread) 36.dp else FeedCardDesignTokens.avatarList
+    Box(
+        modifier = Modifier.size(FeedCardDesignTokens.avatarList),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (hasUnread) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(CircleShape)
+                    .border(2.dp, FeedCardDesignTokens.unreadBorderColor, CircleShape),
+            )
+        }
         if (creatorAvatarUrl != null) {
             ChatSenderAvatar(
                 telegramUrl = creatorAvatarUrl,
-                size = ForumTopicCardTokens.avatarSize,
+                size = innerSize,
                 fallbackName = topic.title,
             )
         } else {
             Box(
                 modifier = Modifier
-                    .size(ForumTopicCardTokens.avatarSize)
+                    .size(innerSize)
                     .clip(CircleShape)
                     .background(
                         Brush.linearGradient(
@@ -265,54 +205,6 @@ private fun ForumTopicAvatar(
                 )
             }
         }
-        if (hasUnread) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .offset(x = 2.dp, y = (-2).dp)
-                    .size(ForumTopicCardTokens.unreadDotSize)
-                    .clip(CircleShape)
-                    .background(ForumTopicCardTokens.unreadDotColor),
-            )
-        }
-    }
-}
-
-@Composable
-private fun ForumTopicMetaChip(
-    label: String,
-    leadingIcon: ImageVector?,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(ForumTopicCardTokens.chipRadius),
-        color = ForumTopicCardTokens.chipFill,
-        border = BorderStroke(0.5.dp, ForumTopicCardTokens.chipBorder),
-    ) {
-        Row(
-            modifier = Modifier.padding(
-                horizontal = ForumTopicCardTokens.chipPaddingH,
-                vertical = ForumTopicCardTokens.chipPaddingV,
-            ),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            if (leadingIcon != null) {
-                Icon(
-                    imageVector = leadingIcon,
-                    contentDescription = null,
-                    modifier = Modifier.size(12.dp),
-                    tint = Color.White.copy(alpha = 0.55f),
-                )
-            }
-            Text(
-                text = label,
-                style = ForumTopicCardTokens.chipStyle,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
     }
 }
 
@@ -325,34 +217,28 @@ private fun ForumTopicMetaChipsRow(
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ForumTopicCardTokens.chipGap),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         if (messageCount > 0) {
-            ForumTopicMetaChip(
+            FeedCardStatChip(
                 label = stringResource(R.string.team_forum_chip_messages, messageCount),
                 leadingIcon = Icons.Outlined.ChatBubbleOutline,
             )
         } else {
-            ForumTopicMetaChip(
+            FeedCardStatChip(
                 label = stringResource(R.string.team_forum_no_messages),
                 leadingIcon = null,
             )
         }
         val activity = activityLabel.trim()
         if (activity.isNotBlank() && activity != "—") {
-            ForumTopicMetaChip(
+            FeedCardStatChip(
                 label = activity,
                 leadingIcon = Icons.Outlined.AccessTime,
             )
         }
         if (unreadCount > 0) {
-            ForumTopicMetaChip(
-                label = stringResource(
-                    R.string.team_forum_chip_unread,
-                    if (unreadCount > 99) 99 else unreadCount,
-                ),
-                leadingIcon = Icons.Outlined.MarkChatUnread,
-            )
+            FeedCardUnreadCountPill(count = unreadCount)
         }
     }
 }

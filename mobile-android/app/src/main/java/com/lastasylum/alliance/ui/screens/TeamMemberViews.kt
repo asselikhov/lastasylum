@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.PersonRemove
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import com.lastasylum.alliance.ui.components.team.TeamFeedCardTokens
 import com.lastasylum.alliance.ui.components.team.TeamMemberPresenceCard
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
@@ -446,7 +447,7 @@ private fun SquadMemberCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 20.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(TeamFeedCardTokens.memberListSpacing),
                 ) {
                     Text(
                         text = stringResource(R.string.team_member_actions_title, member.username),

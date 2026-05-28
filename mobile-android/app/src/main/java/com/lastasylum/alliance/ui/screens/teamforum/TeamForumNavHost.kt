@@ -302,9 +302,6 @@ private fun TeamForumListRoute(
     var editTitle by remember { mutableStateOf("") }
     var editBusy by remember { mutableStateOf(false) }
     var deleteTopic by remember { mutableStateOf<TeamForumTopicDto?>(null) }
-    var searchQuery by remember { mutableStateOf("") }
-    var listFilter by remember { mutableStateOf(ForumTopicListFilter.All) }
-
     fun mergeTopicReadCursor(topicId: String, messageId: String) {
         if (messageId.isBlank()) return
         val current = lastReadByTopic[topicId]
@@ -376,19 +373,6 @@ private fun TeamForumListRoute(
         }
     }
 
-    val displayedTopics = remember(topics.size, searchQuery, listFilter, lastReadByTopic.size) {
-        val q = searchQuery.trim()
-        topics.filter { topic ->
-            val matchesSearch = q.isEmpty() || topic.title.contains(q, ignoreCase = true)
-            val matchesFilter = when (listFilter) {
-                ForumTopicListFilter.All -> true
-                ForumTopicListFilter.Unread -> effectiveTopicUnread(topic) > 0
-                ForumTopicListFilter.Recent -> !topic.lastMessageAt.isNullOrBlank()
-            }
-            matchesSearch && matchesFilter
-        }
-    }
-
     LaunchedEffect(teamId, refreshNonce, currentUserId) {
         val uid = currentUserId.trim()
         if (uid.isNotEmpty()) {
@@ -424,39 +408,6 @@ private fun TeamForumListRoute(
                 )
             }
         }
-        if (!overlayUi) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal, vertical = 8.dp),
-                placeholder = { Text(stringResource(R.string.team_forum_search_hint)) },
-                singleLine = true,
-            )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                FilterChip(
-                    selected = listFilter == ForumTopicListFilter.All,
-                    onClick = { listFilter = ForumTopicListFilter.All },
-                    label = { Text(stringResource(R.string.team_forum_filter_all)) },
-                )
-                FilterChip(
-                    selected = listFilter == ForumTopicListFilter.Unread,
-                    onClick = { listFilter = ForumTopicListFilter.Unread },
-                    label = { Text(stringResource(R.string.team_forum_filter_unread)) },
-                )
-                FilterChip(
-                    selected = listFilter == ForumTopicListFilter.Recent,
-                    onClick = { listFilter = ForumTopicListFilter.Recent },
-                    label = { Text(stringResource(R.string.team_forum_filter_recent)) },
-                )
-            }
-        }
         Box(Modifier.fillMaxSize()) {
             when {
                 loading && topics.isEmpty() -> {
@@ -475,16 +426,6 @@ private fun TeamForumListRoute(
                             .padding(24.dp),
                     )
                 }
-                displayedTopics.isEmpty() -> {
-                    PremiumEmptyState(
-                        icon = Icons.Outlined.Forum,
-                        title = stringResource(R.string.team_forum_search_hint),
-                        body = "",
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .padding(24.dp),
-                    )
-                }
                 else -> {
                     val listTopPad = if (overlayUi) 0.dp else 8.dp
                     LazyColumn(
@@ -496,7 +437,7 @@ private fun TeamForumListRoute(
                         ),
                         verticalArrangement = Arrangement.spacedBy(TeamFeedCardTokens.listSpacing),
                     ) {
-                        itemsIndexed(displayedTopics, key = { _, t -> t.id }) { index, t ->
+                        itemsIndexed(topics, key = { _, t -> t.id }) { index, t ->
                             ForumTopicFeedCard(
                                 topic = t,
                                 listIndex = index,
@@ -1770,10 +1711,3 @@ private fun ForumMessageActionsSheet(
         }
     }
 }
-
-private enum class ForumTopicListFilter {
-    All,
-    Unread,
-    Recent,
-}
-

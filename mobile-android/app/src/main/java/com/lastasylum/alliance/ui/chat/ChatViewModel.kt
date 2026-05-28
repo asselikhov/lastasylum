@@ -1097,8 +1097,11 @@ class ChatViewModel(
     fun onChatTabResumed() {
         isChatTabActive = true
         syncReadStateFromPreferences()
-        refreshStickerPackAccess()
         viewModelScope.launch {
+            // Let the tab compose and draw once before room sync / cache hydration.
+            delay(32)
+            if (!isChatTabActive) return@launch
+            refreshStickerPackAccess()
             val cachedRooms = ChatSessionCache.getFreshRooms()
             if (cachedRooms != null && _state.value.rooms.isEmpty()) {
                 val next = applyRoomsFromServer(cachedRooms)

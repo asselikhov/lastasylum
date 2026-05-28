@@ -26,6 +26,7 @@ fun PremiumGlassSurface(
     shadowElevation: Dp = 8.dp,
     layerAlpha: Float = PremiumSurfaces.layer1Alpha,
     showInnerGlow: Boolean = true,
+    border: BorderStroke? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     Surface(
@@ -33,7 +34,7 @@ fun PremiumGlassSurface(
             if (showInnerGlow) {
                 Modifier.drawBehind {
                     drawRect(
-                        brush = PremiumGlow.cardInnerTop(size.width, size.height),
+                        brush = PremiumGlow.cardInnerTop(size.height),
                     )
                 }
             } else {
@@ -44,7 +45,7 @@ fun PremiumGlassSurface(
         color = PremiumSurfaces.layer1(layerAlpha),
         tonalElevation = 0.dp,
         shadowElevation = shadowElevation,
-        border = PremiumSurfaces.panelBorder(),
+        border = border ?: PremiumSurfaces.panelBorder(),
     ) {
         Box(content = content)
     }

@@ -16,7 +16,9 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.lastasylum.alliance.ui.components.team.FeedCardDesignTokens
 import com.lastasylum.alliance.ui.theme.premium.PremiumColors
 import com.lastasylum.alliance.ui.theme.premium.PremiumGlow
 import com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces
@@ -26,16 +28,19 @@ fun PremiumProgressBar(
     progress: Float,
     modifier: Modifier = Modifier,
     animate: Boolean = true,
+    barHeight: Dp = 10.dp,
+    minVisibleFraction: Float = FeedCardDesignTokens.minPollBarProgress,
 ) {
     val clamped = progress.coerceIn(0f, 1f)
+    val visible = if (clamped > 0f) clamped.coerceAtLeast(minVisibleFraction) else 0f
     val animated by animateFloatAsState(
-        targetValue = clamped,
+        targetValue = visible,
         animationSpec = if (animate) tween(420, easing = androidx.compose.animation.core.FastOutSlowInEasing) else tween(0),
         label = "pollProgress",
     )
     Box(
         modifier = modifier
-            .height(10.dp)
+            .height(barHeight)
             .clip(RoundedCornerShape(8.dp))
             .background(PremiumSurfaces.layer2(0.45f)),
     ) {

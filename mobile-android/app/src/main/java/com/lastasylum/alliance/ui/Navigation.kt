@@ -40,10 +40,8 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -291,14 +289,8 @@ fun AppNavigation(
         bottomBar = {
             AnimatedVisibility(
                 visible = showBottomNav,
-                enter = fadeIn(tween(navBarImeAnimMs)) + expandVertically(
-                    animationSpec = tween(navBarImeAnimMs, easing = FastOutSlowInEasing),
-                    expandFrom = Alignment.Bottom,
-                ),
-                exit = fadeOut(tween(100)) + shrinkVertically(
-                    animationSpec = tween(navBarImeAnimMs, easing = FastOutSlowInEasing),
-                    shrinkTowards = Alignment.Bottom,
-                ),
+                enter = fadeIn(tween(navBarImeAnimMs)),
+                exit = fadeOut(tween(navBarImeAnimMs)),
             ) {
             Box(
                 modifier = Modifier

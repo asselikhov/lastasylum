@@ -58,7 +58,7 @@ internal fun ForumTopicMessagesLazyList(
     loadingOlder: Boolean,
     onLoadOlder: () -> Unit,
     modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+    contentPadding: PaddingValues = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
     messageContent: @Composable (message: TeamForumMessageDto, messageIndex: Int) -> Unit,
 ) {
     LazyColumn(
