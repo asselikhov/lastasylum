@@ -141,9 +141,9 @@ fun TeamScreen(
         factory = TeamViewModelFactory(
             usersRepository,
             teamsRepository,
-            AppContainer.from(context).userSettingsPreferences,
-            AppContainer.from(context).teamForumPreferences,
-            AppContainer.from(context).launchDiskCache,
+            app.userSettingsPreferences,
+            app.teamForumPreferences,
+            app.launchDiskCache,
             currentUserId,
         ),
     )

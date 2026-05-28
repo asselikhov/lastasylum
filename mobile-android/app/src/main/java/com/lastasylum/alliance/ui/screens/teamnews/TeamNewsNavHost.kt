@@ -462,8 +462,9 @@ private fun TeamNewsListRoute(
     val res = context.resources
     val overlayUi = LocalOverlayUiMode.current
     val scope = rememberCoroutineScope()
-    val newsPrefs = remember { AppContainer.from(context).userSettingsPreferences }
-    val launchDiskCache = remember { AppContainer.from(context).launchDiskCache }
+    val app = remember(context) { AppContainer.from(context.applicationContext) }
+    val newsPrefs = remember(app) { app.userSettingsPreferences }
+    val launchDiskCache = remember(app) { app.launchDiskCache }
     val cachedPage = remember(teamId, currentUserId) {
         if (currentUserId.isNotBlank()) {
             launchDiskCache.loadTeamNews(currentUserId, teamId)
@@ -649,6 +650,7 @@ private fun TeamNewsDetailRoute(
 ) {
     val context = LocalContext.current
     val res = context.resources
+    val app = remember(context) { AppContainer.from(context.applicationContext) }
     val overlayUi = LocalOverlayUiMode.current
     var detail by remember { mutableStateOf<TeamNewsDetailDto?>(null) }
     var loading by remember { mutableStateOf(true) }
@@ -663,7 +665,6 @@ private fun TeamNewsDetailRoute(
         teamsRepository.getTeamNews(teamId, newsId)
             .onSuccess { doc ->
                 detail = doc
-                val app = AppContainer.from(context)
                 TeamNewsReadCursorSync.markNewsSeen(
                     app.teamsRepository,
                     app.userSettingsPreferences,
@@ -995,6 +996,7 @@ private fun TeamNewsEditorRoute(
 ) {
     val context = LocalContext.current
     val res = context.resources
+    val app = remember(context) { AppContainer.from(context.applicationContext) }
     val scope = rememberCoroutineScope()
     var editorMode by remember { mutableStateOf(TeamNewsEditorMode.News) }
     var title by remember { mutableStateOf("") }
@@ -1273,7 +1275,6 @@ private fun TeamNewsEditorRoute(
                                 ),
                             )
                                 .onSuccess { created ->
-                                    val app = AppContainer.from(context)
                                     TeamNewsReadCursorSync.markNewsSeen(
                                         app.teamsRepository,
                                         app.userSettingsPreferences,
