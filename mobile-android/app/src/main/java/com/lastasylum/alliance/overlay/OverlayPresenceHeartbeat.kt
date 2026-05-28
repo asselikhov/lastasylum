@@ -1,7 +1,9 @@
 package com.lastasylum.alliance.overlay
 
-import android.os.Handler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
@@ -9,26 +11,24 @@ import kotlinx.coroutines.launch
  * Main-app [Navigation] already pings "online" on a timer; this path marks "ingame" for allies.
  */
 class OverlayPresenceHeartbeat(
-    private val mainHandler: Handler,
     private val scope: CoroutineScope,
     private val intervalMs: Long,
     private val ping: suspend () -> Unit,
 ) {
-    private val tickRunnable = Runnable { tick() }
-
-    private fun tick() {
-        scope.launch {
-            runCatching { ping() }
-            mainHandler.postDelayed(tickRunnable, intervalMs)
-        }
-    }
+    private var heartbeatJob: Job? = null
 
     fun start() {
         stop()
-        mainHandler.post(tickRunnable)
+        heartbeatJob = scope.launch {
+            while (isActive) {
+                runCatching { ping() }
+                delay(intervalMs)
+            }
+        }
     }
 
     fun stop() {
-        mainHandler.removeCallbacks(tickRunnable)
+        heartbeatJob?.cancel()
+        heartbeatJob = null
     }
 }

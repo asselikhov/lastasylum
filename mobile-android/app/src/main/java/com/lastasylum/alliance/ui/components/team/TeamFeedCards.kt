@@ -366,6 +366,7 @@ fun TeamNewsFeedCard(
     isUnread: Boolean = false,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val formattedCreatedAt = remember(item.createdAt) { formatTeamFeedDateRu(item.createdAt) }
     val hasHero = !item.firstImageRelativeUrl.isNullOrBlank()
     val pollQuestion = item.pollQuestion?.trim().orEmpty()
     val pollOptions = item.pollOptions.orEmpty()
@@ -496,7 +497,7 @@ fun TeamNewsFeedCard(
                                 border = glassBorder(0.12f),
                             ) {
                                 Text(
-                                    text = formatTeamFeedDateRu(item.createdAt),
+                                    text = formattedCreatedAt,
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Color.White.copy(alpha = 0.9f),
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -596,7 +597,7 @@ fun TeamNewsFeedCard(
                         }
                         if (!hasHero) {
                             Text(
-                                text = formatTeamFeedDateRu(item.createdAt),
+                                text = formattedCreatedAt,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = scheme.onSurfaceVariant,
                                 maxLines = 1,

@@ -278,6 +278,12 @@ private fun TeamNewsPollVoteBlock(
     modifier: Modifier = Modifier,
 ) {
     val totalVotes = poll.tallies.sumOf { it.count }
+    val tallyByOption = remember(poll.tallies) {
+        poll.tallies.associate { it.optionId to it.count }
+    }
+    val votersByOption = remember(poll.votes) {
+        poll.votes.groupBy { it.optionId }
+    }
     var selected by remember(poll.myVoteOptionId, poll.options) {
         mutableStateOf(poll.myVoteOptionId)
     }
@@ -287,9 +293,9 @@ private fun TeamNewsPollVoteBlock(
     ) {
         TeamPollQuestionHeader(question = poll.question, totalVotes = totalVotes)
         poll.options.forEach { opt ->
-            val cnt = poll.tallies.find { it.optionId == opt.id }?.count ?: 0
+            val cnt = tallyByOption[opt.id] ?: 0
             val share = if (totalVotes > 0) cnt.toFloat() / totalVotes else 0f
-            val optionVoters = pollVotersForOption(poll.votes, opt.id)
+            val optionVoters = votersByOption[opt.id].orEmpty()
             val isSelected = selected == opt.id
             TeamPollVoteOptionSurface(
                 text = opt.text,
@@ -738,18 +744,28 @@ private fun TeamNewsDetailRoute(
                 Text(err ?: "", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(pad))
             }
             d != null -> {
-                Column(
-                    Modifier
-                        .padding(pad)
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState()),
-                ) {
-                    val pagePad = 14.dp
-                    val hero: String? = d.imageRelativeUrls.firstOrNull() ?: d.firstImageRelativeUrl
-                    val heroRequest = remember(hero, context) {
-                        teamNewsAuthedImageRequest(context, hero)
+                val pagePad = 14.dp
+                val hero: String? = d.imageRelativeUrls.firstOrNull() ?: d.firstImageRelativeUrl
+                val heroRequest = remember(hero, context) {
+                    teamNewsAuthedImageRequest(context, hero)
+                }
+                val showArticleBody = d.body.trim().isNotEmpty() || hero != null
+                val galleryPaths = remember(d.imageRelativeUrls, d.firstImageRelativeUrl) {
+                    val base = if (d.imageRelativeUrls.isNotEmpty()) {
+                        d.imageRelativeUrls
+                    } else {
+                        d.firstImageRelativeUrl?.let { listOf(it) } ?: emptyList()
                     }
-                    heroRequest?.let { imgReq: ImageRequest ->
+                    if (base.size <= 1) emptyList() else base.drop(1)
+                }
+                LazyColumn(
+                    modifier = Modifier
+                        .padding(pad)
+                        .fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 20.dp),
+                ) {
+                    heroRequest?.let { imgReq ->
+                        item(key = "news_detail_hero") {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -803,131 +819,134 @@ private fun TeamNewsDetailRoute(
                                     )
                                 }
                             }
+                        }
                     }
-
-                    val showArticleBody = d.body.trim().isNotEmpty() || hero != null
                     if (showArticleBody) {
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = pagePad)
-                                .padding(bottom = 16.dp)
-                                .border(
-                                    1.dp,
-                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f),
-                                    RoundedCornerShape(26.dp),
-                                ),
-                            shape = RoundedCornerShape(26.dp),
-                        colors = SquadRelaySurfaces.cardColors(),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-                        ) {
-                            Row(Modifier.height(IntrinsicSize.Min)) {
-                                Box(
-                                    modifier = Modifier
-                                        .width(5.dp)
-                                        .fillMaxHeight()
-                                        .background(
-                                            Brush.verticalGradient(
-                                                colors = listOf(
-                                                    MaterialTheme.colorScheme.primary,
-                                                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.85f),
+                        item(key = "news_detail_body") {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = pagePad)
+                                    .padding(bottom = 16.dp)
+                                    .border(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f),
+                                        RoundedCornerShape(26.dp),
+                                    ),
+                                shape = RoundedCornerShape(26.dp),
+                                colors = SquadRelaySurfaces.cardColors(),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                            ) {
+                                Row(Modifier.height(IntrinsicSize.Min)) {
+                                    Box(
+                                        modifier = Modifier
+                                            .width(5.dp)
+                                            .fillMaxHeight()
+                                            .background(
+                                                Brush.verticalGradient(
+                                                    colors = listOf(
+                                                        MaterialTheme.colorScheme.primary,
+                                                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.85f),
+                                                    ),
                                                 ),
                                             ),
-                                        ),
-                                )
-                                Column(
-                                    Modifier
-                                        .weight(1f)
-                                        .padding(horizontal = 18.dp, vertical = 16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                                ) {
-                                    if (hero == null) {
-                                        Text(
-                                            d.title,
-                                            style = MaterialTheme.typography.headlineSmall,
-                                            fontWeight = FontWeight.SemiBold,
-                                        )
-                                        Text(
-                                            "${d.authorUsername} · ${formatTeamFeedDateRu(d.createdAt)}",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                    if (d.body.trim().isNotEmpty()) {
-                                        Text(
-                                            d.body,
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            lineHeight = 24.sp,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                        )
+                                    )
+                                    Column(
+                                        Modifier
+                                            .weight(1f)
+                                            .padding(horizontal = 18.dp, vertical = 16.dp),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                                    ) {
+                                        if (hero == null) {
+                                            Text(
+                                                d.title,
+                                                style = MaterialTheme.typography.headlineSmall,
+                                                fontWeight = FontWeight.SemiBold,
+                                            )
+                                            Text(
+                                                "${d.authorUsername} · ${formatTeamFeedDateRu(d.createdAt)}",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                        if (d.body.trim().isNotEmpty()) {
+                                            Text(
+                                                d.body,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                lineHeight = 24.sp,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
                     } else if (poll == null) {
-                        Column(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = pagePad, vertical = 8.dp),
-                        ) {
-                            Text(
-                                "${d.authorUsername} · ${formatTeamFeedDateRu(d.createdAt)}",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                        item(key = "news_detail_meta") {
+                            Column(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = pagePad, vertical = 8.dp),
+                            ) {
+                                Text(
+                                    "${d.authorUsername} · ${formatTeamFeedDateRu(d.createdAt)}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
-                    }
-                    val galleryPaths = remember(d.imageRelativeUrls, d.firstImageRelativeUrl) {
-                        val base = if (d.imageRelativeUrls.isNotEmpty()) {
-                            d.imageRelativeUrls
-                        } else {
-                            d.firstImageRelativeUrl?.let { listOf(it) } ?: emptyList()
-                        }
-                        if (base.size <= 1) emptyList() else base.drop(1)
                     }
                     if (galleryPaths.isNotEmpty()) {
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            stringResource(R.string.team_news_gallery_label),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(horizontal = pagePad),
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            contentPadding = PaddingValues(horizontal = pagePad, vertical = 2.dp),
-                        ) {
-                            items(galleryPaths, key = { it }) { rawPath ->
-                                val galleryReq = remember(rawPath, context) {
-                                    teamNewsAuthedImageRequest(context, rawPath)
-                                }
-                                galleryReq?.let { imgReq ->
-                                    AsyncImage(
-                                        model = imgReq,
-                                        contentDescription = stringResource(R.string.team_news_gallery_image_cd),
-                                        modifier = Modifier
-                                            .width(168.dp)
-                                            .height(120.dp)
-                                            .clip(RoundedCornerShape(12.dp)),
-                                        contentScale = ContentScale.Crop,
-                                    )
+                        item(key = "news_detail_gallery_title") {
+                            Column {
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    stringResource(R.string.team_news_gallery_label),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.padding(horizontal = pagePad),
+                                )
+                                Spacer(Modifier.height(8.dp))
+                            }
+                        }
+                        item(key = "news_detail_gallery_row") {
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                contentPadding = PaddingValues(horizontal = pagePad, vertical = 2.dp),
+                            ) {
+                                items(galleryPaths, key = { it }) { rawPath ->
+                                    val galleryReq = remember(rawPath, context) {
+                                        teamNewsAuthedImageRequest(context, rawPath)
+                                    }
+                                    galleryReq?.let { imgReq ->
+                                        AsyncImage(
+                                            model = imgReq,
+                                            contentDescription = stringResource(R.string.team_news_gallery_image_cd),
+                                            modifier = Modifier
+                                                .width(168.dp)
+                                                .height(120.dp)
+                                                .clip(RoundedCornerShape(12.dp)),
+                                            contentScale = ContentScale.Crop,
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                     if (poll != null) {
-                        Spacer(Modifier.height(if (showArticleBody) 8.dp else 16.dp))
-                        key(d.updatedAt) {
+                        item(key = "news_detail_poll_gap") {
+                            Spacer(Modifier.height(if (showArticleBody) 8.dp else 16.dp))
+                        }
+                        item(key = "news_detail_poll_${d.updatedAt}") {
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = pagePad)
                                     .padding(bottom = 20.dp),
                                 shape = RoundedCornerShape(22.dp),
-                        colors = SquadRelaySurfaces.cardColors(),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                                colors = SquadRelaySurfaces.cardColors(),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
                                 border = BorderStroke(
                                     1.dp,
                                     MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f),

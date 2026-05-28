@@ -227,7 +227,6 @@ class CombatOverlayService : Service() {
     }
     private val presenceHeartbeat by lazy {
         OverlayPresenceHeartbeat(
-            mainHandler = mainHandler,
             scope = serviceScope,
             intervalMs = 60_000L,
             ping = {
@@ -955,7 +954,9 @@ class CombatOverlayService : Service() {
     private var cachedAllianceHubRoomId: String? = null
     private var lastGateBlockReason: OverlayGateUserNotifier.BlockReason? = null
 
-    private var hubHudRefreshPosted: Boolean = false
+    private var hudBadgeRefreshPosted: Boolean = false
+    private var pendingHubHudRefresh: Boolean = false
+    private var pendingForumHudRefresh: Boolean = false
 
     /** Optimistic hub badge from socket before [listRooms] / cache catch up. */
     @Volatile
@@ -967,16 +968,14 @@ class CombatOverlayService : Service() {
     @Volatile
     private var overlayUiHoldUntilMs: Long = 0L
 
-    private val hubHudRefreshRunnable = Runnable {
-        hubHudRefreshPosted = false
-        refreshOverlayHubUnreadOnly()
-    }
-
-    private var forumHudRefreshPosted: Boolean = false
-
-    private val forumHudRefreshRunnable = Runnable {
-        forumHudRefreshPosted = false
-        refreshOverlayForumBadgeOnly()
+    private val hudBadgeRefreshRunnable = Runnable {
+        hudBadgeRefreshPosted = false
+        val doHub = pendingHubHudRefresh
+        val doForum = pendingForumHudRefresh
+        pendingHubHudRefresh = false
+        pendingForumHudRefresh = false
+        if (doHub) refreshOverlayHubUnreadOnly()
+        if (doForum) refreshOverlayForumBadgeOnly()
     }
 
     @Volatile
@@ -1777,10 +1776,10 @@ class CombatOverlayService : Service() {
         hudRefreshPending = false
         mainHandler.removeCallbacks(statusHudRefreshRunnable)
         statusHudRefreshPosted = false
-        mainHandler.removeCallbacks(hubHudRefreshRunnable)
-        hubHudRefreshPosted = false
-        mainHandler.removeCallbacks(forumHudRefreshRunnable)
-        forumHudRefreshPosted = false
+        mainHandler.removeCallbacks(hudBadgeRefreshRunnable)
+        hudBadgeRefreshPosted = false
+        pendingHubHudRefresh = false
+        pendingForumHudRefresh = false
         mainHandler.removeCallbacks(overlayCloseHudRefreshRunnable)
     }
 
@@ -2244,8 +2243,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun scheduleDebouncedHubHudRefresh() {
-        hubHudRefreshPosted = true
-        mainHandler.removeCallbacks(hubHudRefreshRunnable)
+        pendingHubHudRefresh = true
         val delayMs = if (hubUnreadOptimisticFloor > 0) {
             maxOf(
                 HUB_UNREAD_RECONCILE_GRACE_MS,
@@ -2254,12 +2252,11 @@ class CombatOverlayService : Service() {
         } else {
             HUB_HUD_REFRESH_DEBOUNCE_MS
         }
-        mainHandler.postDelayed(hubHudRefreshRunnable, delayMs)
+        scheduleDebouncedHudBadgeRefresh(delayMs)
     }
 
     private fun scheduleDebouncedForumHudRefresh() {
-        forumHudRefreshPosted = true
-        mainHandler.removeCallbacks(forumHudRefreshRunnable)
+        pendingForumHudRefresh = true
         val delayMs = if (inboxBadgeCoordinator.forumOptimisticFloor > 0) {
             maxOf(
                 OverlayInboxBadgeCoordinator.RECONCILE_GRACE_MS,
@@ -2268,7 +2265,13 @@ class CombatOverlayService : Service() {
         } else {
             HUB_HUD_REFRESH_DEBOUNCE_MS
         }
-        mainHandler.postDelayed(forumHudRefreshRunnable, delayMs)
+        scheduleDebouncedHudBadgeRefresh(delayMs)
+    }
+
+    private fun scheduleDebouncedHudBadgeRefresh(delayMs: Long) {
+        mainHandler.removeCallbacks(hudBadgeRefreshRunnable)
+        hudBadgeRefreshPosted = true
+        mainHandler.postDelayed(hudBadgeRefreshRunnable, delayMs)
     }
 
     /** Only this user's read cursor clears the hub badge — not other members' room:read events. */

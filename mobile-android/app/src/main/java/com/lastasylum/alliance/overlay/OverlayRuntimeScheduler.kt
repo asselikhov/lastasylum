@@ -20,7 +20,10 @@ object OverlayRuntimeScheduler {
     private const val REQUEST_CODE = 41_021
     private const val INTERVAL_SERVICE_UP_MS = 90 * 1000L
     private const val INTERVAL_SERVICE_DOWN_MS = 15 * 1000L
+    private const val INTERVAL_SERVICE_DOWN_MAX_MS = 5 * 60 * 1000L
     private const val RETRY_AFTER_KILL_MS = 5_000L
+    @Volatile
+    private var downBackoffMs: Long = INTERVAL_SERVICE_DOWN_MS
 
     fun syncSchedule(context: Context) {
         val app = context.applicationContext
@@ -28,22 +31,28 @@ object OverlayRuntimeScheduler {
             cancel(app)
             return
         }
-        schedule(app, delayMs = if (CombatOverlayService.isServiceInstanceActive) {
+        val delayMs = if (CombatOverlayService.isServiceInstanceActive) {
+            downBackoffMs = INTERVAL_SERVICE_DOWN_MS
             INTERVAL_SERVICE_UP_MS
         } else {
-            INTERVAL_SERVICE_DOWN_MS
-        })
+            val current = downBackoffMs
+            downBackoffMs = (current * 2).coerceAtMost(INTERVAL_SERVICE_DOWN_MAX_MS)
+            current
+        }
+        schedule(app, delayMs = delayMs)
     }
 
     fun scheduleImmediateRetry(context: Context, delayMs: Long = RETRY_AFTER_KILL_MS) {
         val app = context.applicationContext
         if (!shouldKeepWatchdog(app)) return
+        downBackoffMs = INTERVAL_SERVICE_DOWN_MS
         schedule(app, delayMs = delayMs.coerceAtLeast(3_000L))
     }
 
     fun cancel(context: Context) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
         runCatching { am.cancel(watchdogPendingIntent(context.applicationContext)) }
+        downBackoffMs = INTERVAL_SERVICE_DOWN_MS
     }
 
     internal fun scheduleNextWatchdog(context: Context) {
