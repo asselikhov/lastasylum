@@ -84,6 +84,8 @@ import com.lastasylum.alliance.ui.util.toUserMessageRu
 import com.lastasylum.alliance.ui.util.formatPresenceTimestampRu
 import com.lastasylum.alliance.ui.util.isOverlayIngameNow
 import java.util.Locale
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 private val squadRoleOrder = listOf("R5", "R4", "R3", "R2", "R1")
@@ -162,7 +164,6 @@ fun SquadTeamRoster(
     }
     val grouped = remember(filteredMembers) { groupMembersBySquadRole(filteredMembers) }
     var expandedRoles by remember { mutableStateOf(setOf<String>()) }
-    val voicePeers by TeamVoicePresenceStore.peers.collectAsStateWithLifecycle()
     val overlayVisible by CombatOverlayService.overlayVisible.collectAsStateWithLifecycle()
 
     TeamVoiceRosterPresenceBinding(
@@ -213,6 +214,13 @@ fun SquadTeamRoster(
                         subMembers,
                         key = { "${roleCode}_${it.userId}" },
                     ) { member ->
+                        // Observe only this row's peer state; avoids recomposing the whole roster on any peer update.
+                        val voicePeerFlow = remember(member.userId) {
+                            TeamVoicePresenceStore.peers
+                                .map { it[member.userId] }
+                                .distinctUntilChanged()
+                        }
+                        val voicePeer by voicePeerFlow.collectAsStateWithLifecycle(null)
                         SquadMemberCard(
                             member = member,
                             isSquadLeader = isSquadLeader,
@@ -225,7 +233,7 @@ fun SquadTeamRoster(
                             onError = onError,
                             teamsRepository = teamsRepository,
                             onRequestEditMemberRole = onRequestEditMemberRole,
-                            voicePeer = voicePeers[member.userId],
+                            voicePeer = voicePeer,
                             overlayVisible = overlayVisible,
                         )
                     }
