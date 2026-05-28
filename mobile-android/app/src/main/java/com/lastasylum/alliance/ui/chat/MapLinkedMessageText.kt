@@ -1,6 +1,5 @@
 package com.lastasylum.alliance.ui.chat
 
-import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -11,11 +10,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withLink
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.game.GameMapNavigator
 import com.lastasylum.alliance.game.MapCoordinateParser
@@ -66,33 +68,40 @@ fun MapLinkedMessageText(
         return
     }
 
-    val annotated = remember(text, coordRange, linkColor) {
-        buildAnnotatedString {
-            append(text)
-            addStyle(
-                SpanStyle(
-                    color = linkColor,
-                    textDecoration = TextDecoration.Underline,
-                ),
-                coordRange.first,
-                coordRange.last + 1,
-            )
-            addStringAnnotation(
-                tag = MAP_COORD_LINK_TAG,
-                annotation = MAP_COORD_LINK_TAG,
-                start = coordRange.first,
-                end = coordRange.last + 1,
-            )
-        }
-    }
-
     val onOpenMap: () -> Unit = {
         GameMapNavigator.openFromMessage(context, text)
     }
 
-    ClickableText(
+    val annotated = remember(text, coordRange, linkColor) {
+        buildAnnotatedString {
+            if (coordRange.first > 0) {
+                append(text.substring(0, coordRange.first))
+            }
+            withLink(
+                LinkAnnotation.Clickable(
+                    tag = MAP_COORD_LINK_TAG,
+                    styles = TextLinkStyles(
+                        style = SpanStyle(
+                            color = linkColor,
+                            textDecoration = TextDecoration.Underline,
+                        ),
+                    ),
+                    linkInteractionListener = { onOpenMap() },
+                ),
+            ) {
+                append(text.substring(coordRange.first, coordRange.last + 1))
+            }
+            val after = coordRange.last + 1
+            if (after < text.length) {
+                append(text.substring(after))
+            }
+        }
+    }
+
+    Text(
         text = annotated,
-        style = style.copy(color = color),
+        style = style,
+        color = color,
         maxLines = maxLines,
         overflow = overflow,
         modifier = modifier.semantics {
@@ -102,11 +111,6 @@ fun MapLinkedMessageText(
                     true
                 },
             )
-        },
-        onClick = { offset ->
-            annotated.getStringAnnotations(MAP_COORD_LINK_TAG, offset, offset)
-                .firstOrNull()
-                ?.let { onOpenMap() }
         },
     )
 }
