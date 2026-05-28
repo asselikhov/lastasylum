@@ -148,9 +148,9 @@ fun TeamScreen(
         ),
     )
     val teamData by teamViewModel.data.collectAsStateWithLifecycle()
+    val sectionBadges by teamViewModel.sectionBadges.collectAsStateWithLifecycle()
     val profile = teamData.profile
     val teamDetail = teamData.teamDetail
-    val sectionBadges = teamData.sectionBadges
     val loading = teamData.loading
     val loadError = teamData.error
     var actionError by remember { mutableStateOf<String?>(null) }

@@ -35,7 +35,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -45,8 +44,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -163,6 +160,7 @@ fun AppNavigation(
             when (event) {
                 Lifecycle.Event.ON_START -> {
                     chatViewModel.setAppInForeground(true)
+                    CombatOverlayService.setMainAppUiInForeground(true)
                     CombatOverlayService.requestGateRecheckIfRunning(appContext)
                     if (userId.isNotBlank()) {
                         CombatOverlayService.ensureRuntimeIfUserEnabled(appContext)
@@ -178,6 +176,7 @@ fun AppNavigation(
                 }
                 Lifecycle.Event.ON_STOP -> {
                     chatViewModel.setAppInForeground(false)
+                    CombatOverlayService.setMainAppUiInForeground(false)
                     if (userId.isNotBlank()) {
                         CombatOverlayService.ensureRuntimeIfUserEnabled(appContext)
                     }
@@ -205,7 +204,6 @@ fun AppNavigation(
         }
     }
 
-    val tabMotionDisabled = rememberTabMotionDisabled()
     val navController = rememberNavController()
     val navBackStackEntry = navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry.value?.destination
@@ -439,22 +437,10 @@ fun AppNavigation(
             navController = navController,
             startDestination = AppTab.TEAM.route,
             modifier = Modifier.fillMaxSize(),
-            enterTransition = {
-                if (tabMotionDisabled) EnterTransition.None
-                else fadeIn(tween(180)) + slideInHorizontally(tween(180)) { w -> w / 10 }
-            },
-            exitTransition = {
-                if (tabMotionDisabled) ExitTransition.None
-                else fadeOut(tween(140)) + slideOutHorizontally(tween(140)) { w -> -w / 12 }
-            },
-            popEnterTransition = {
-                if (tabMotionDisabled) EnterTransition.None
-                else fadeIn(tween(180)) + slideInHorizontally(tween(180)) { w -> -w / 10 }
-            },
-            popExitTransition = {
-                if (tabMotionDisabled) ExitTransition.None
-                else fadeOut(tween(140)) + slideOutHorizontally(tween(140)) { w -> w / 12 }
-            },
+            enterTransition = { EnterTransition.None },
+            exitTransition = { ExitTransition.None },
+            popEnterTransition = { EnterTransition.None },
+            popExitTransition = { ExitTransition.None },
         ) {
             composable(AppTab.CHAT.route) {
                 LaunchedEffect(Unit) {
@@ -623,14 +609,3 @@ fun AppNavigation(
     }
 }
 
-@Composable
-private fun rememberTabMotionDisabled(): Boolean {
-    val context = LocalContext.current
-    return remember(context) {
-        Settings.Global.getFloat(
-            context.contentResolver,
-            Settings.Global.ANIMATOR_DURATION_SCALE,
-            1f,
-        ) == 0f
-    }
-}

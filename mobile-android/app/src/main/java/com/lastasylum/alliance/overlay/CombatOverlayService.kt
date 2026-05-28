@@ -1398,6 +1398,18 @@ class CombatOverlayService : Service() {
             }
             return
         }
+        // Main app UI is open and overlay HUD is not shown — skip UsageStats heuristics.
+        if (mainAppForegroundActive &&
+            !isInGameOverlayUiActive() &&
+            !isOverlayShellActive() &&
+            !overlayChatTeamPanelVisible &&
+            !OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible
+        ) {
+            overlayInGameProbeActive = false
+            syncOverlayIngamePresence(inGameProbe = false)
+            scheduleGameGateTick(GAME_GATE_POLL_MAIN_APP_FOREGROUND_MS)
+            return
+        }
         if (gateCheckInFlight) {
             scheduleGameGateTick(nextGameGateDelayMs())
             return
@@ -1565,6 +1577,9 @@ class CombatOverlayService : Service() {
     }
 
     private fun nextGameGateDelayMs(): Long {
+        if (mainAppForegroundActive && !isInGameOverlayUiActive() && !isOverlayShellActive()) {
+            return GAME_GATE_POLL_MAIN_APP_FOREGROUND_MS
+        }
         if (overlayCommandsPopover.isBlockingGameGateDismiss() ||
             overlayChatTeamPanelVisible ||
             OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible
@@ -5022,6 +5037,26 @@ class CombatOverlayService : Service() {
                         roomId = roomId,
                     ),
                 )
+            }
+        }
+
+        /** Main app in foreground — rare gate polls, no UsageStats churn while browsing UI. */
+        private const val GAME_GATE_POLL_MAIN_APP_FOREGROUND_MS = 45_000L
+
+        @Volatile
+        var mainAppForegroundActive: Boolean = false
+
+        fun setMainAppUiInForeground(inForeground: Boolean) {
+            mainAppForegroundActive = inForeground
+            val service = runningInstance ?: return
+            if (!inForeground) {
+                service.mainHandler.post { service.scheduleGameGateTick(service.nextGameGateDelayMs()) }
+                return
+            }
+            if (!service.isInGameOverlayUiActive() && !service.isOverlayShellActive()) {
+                service.mainHandler.post {
+                    service.scheduleGameGateTick(GAME_GATE_POLL_MAIN_APP_FOREGROUND_MS)
+                }
             }
         }
 

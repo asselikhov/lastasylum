@@ -16,8 +16,12 @@ import com.lastasylum.alliance.data.users.UsersRepository
 import com.lastasylum.alliance.overlay.OverlayGameStatusHudRefresh
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -44,6 +48,12 @@ class TeamViewModel(
 ) : ViewModel() {
     private val _data = MutableStateFlow(TeamScreenData())
     val data: StateFlow<TeamScreenData> = _data.asStateFlow()
+
+    /** Tab badges only — avoids recomposing roster/news/forum on badge tick. */
+    val sectionBadges: StateFlow<TeamSectionBadges> = _data
+        .map { it.sectionBadges }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TeamSectionBadges())
 
     fun setError(message: String?) {
         _data.update { it.copy(error = message) }
