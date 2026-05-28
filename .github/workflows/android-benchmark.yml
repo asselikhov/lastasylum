@@ -32,9 +32,11 @@ jobs:
       - name: Run benchmark tests on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: 34
           arch: x86_64
           profile: pixel_6
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -no-snapshot -noaudio -gpu swiftshader_indirect
           script: cd mobile-android && ./gradlew :benchmark:connectedDevDebugAndroidTest --no-daemon
 
       - name: Parse benchmark results and compare baseline
