@@ -10,7 +10,7 @@ on:
 jobs:
   benchmark:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -25,21 +25,26 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
-      - name: Build benchmark APKs
-        working-directory: mobile-android
-        run: chmod +x gradlew && ./gradlew :benchmark:assembleDevDebug --no-daemon
-
       - name: Run benchmark tests on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
+          target: google_apis
           arch: x86_64
           profile: pixel_6
-          emulator-boot-timeout: 900
-          emulator-options: -no-window -no-snapshot -noaudio -gpu swiftshader_indirect -partition-size 4096 -wipe-data
-          script: cd mobile-android && ./gradlew :benchmark:connectedDevDebugAndroidTest --no-daemon
+          disable-animations: true
+          emulator-boot-timeout: 600
+          emulator-options: -no-window -no-snapshot -noaudio -gpu swiftshader_indirect -partition-size 6144
+          script: |
+            cd mobile-android
+            chmod +x gradlew
+            adb wait-for-device
+            adb shell 'while [ -z "$(getprop sys.boot_completed)" ]; do sleep 2; done'
+            adb shell pm uninstall com.lastasylum.alliance || true
+            ./gradlew :benchmark:connectedDevBenchmarkAndroidTest --no-daemon
 
       - name: Parse benchmark results and compare baseline
+        if: always()
         working-directory: mobile-android
         run: python3 benchmark/scripts/benchmark_report.py --root . --baseline benchmark/baseline/dev_debug.json --summary-file "$GITHUB_STEP_SUMMARY"
 

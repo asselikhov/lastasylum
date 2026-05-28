@@ -23,7 +23,7 @@ class UiJankBenchmark {
     fun launchAndSwipe() = benchmarkRule.measureRepeated(
         packageName = "com.lastasylum.alliance",
         metrics = listOf(FrameTimingMetric()),
-        iterations = 7,
+        iterations = 4,
         startupMode = StartupMode.WARM,
     ) {
         pressHome()

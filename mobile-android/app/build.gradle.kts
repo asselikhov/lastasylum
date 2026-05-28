@@ -180,6 +180,14 @@ android {
             // No applicationIdSuffix: one Firebase Android app (google-services.json) + FCM on devDebug.
             versionNameSuffix = "-debug"
         }
+        create("benchmark") {
+            // Macrobenchmark target must not be debuggable; keep dev API config from debug.
+            initWith(getByName("debug"))
+            isDebuggable = false
+            isMinifyEnabled = false
+            matchingFallbacks += listOf("debug")
+            versionNameSuffix = "-benchmark"
+        }
     }
 
     compileOptions {

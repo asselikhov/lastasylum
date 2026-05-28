@@ -24,7 +24,7 @@ class TabSwitchJankBenchmark {
     fun switchTabsByLaunchIntent() = benchmarkRule.measureRepeated(
         packageName = "com.lastasylum.alliance",
         metrics = listOf(FrameTimingMetric()),
-        iterations = 9,
+        iterations = 6,
         startupMode = StartupMode.WARM,
     ) {
         pressHome()

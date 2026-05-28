@@ -9,7 +9,7 @@
 
 ```bash
 cd mobile-android
-./gradlew :benchmark:connectedDevDebugAndroidTest
+./gradlew :benchmark:connectedDevBenchmarkAndroidTest
 ```
 
 Модуль `:benchmark`:
@@ -21,7 +21,7 @@ cd mobile-android
 
 ```bash
 cd mobile-android
-./gradlew :benchmark:connectedDevDebugAndroidTest \
+./gradlew :benchmark:connectedDevBenchmarkAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.class=com.lastasylum.alliance.benchmark.UiJankBenchmark
 ```
 
@@ -47,7 +47,7 @@ cd mobile-android
 ## Мини-чеклист перед релизом
 
 1. `:app:testDevDebugUnitTest` — регрессия логики.
-2. `:benchmark:connectedDevDebugAndroidTest` на одном и том же девайсе/эмуляторе.
+2. `:benchmark:connectedDevBenchmarkAndroidTest` на одном и том же девайсе/эмуляторе.
 3. Проверить, что нет деградации в:
    - startup `timeToInitialDisplayMs`
    - frame timing (`p95`) в `UiJankBenchmark`.
@@ -58,7 +58,7 @@ cd mobile-android
 1. Перезапустить benchmark workflow (исключить одноразовый шум эмулятора).
 2. Сравнить `benchmark/results/latest_metrics.json` с baseline.
 3. Если деградация воспроизводится:
-   - локально прогнать `:benchmark:connectedDevDebugAndroidTest`,
+   - локально прогнать `:benchmark:connectedDevBenchmarkAndroidTest`,
    - сузить диапазон коммитов (git bisect по perf-изменениям),
    - проверить горячие сценарии: startup, tab switch, swipe.
 4. После стабилизации обновить baseline на новой норме (только после нескольких стабильных прогонов).

@@ -33,6 +33,13 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    buildTypes {
+        create("benchmark") {
+            isDebuggable = false
+            matchingFallbacks += listOf("debug")
+        }
+    }
 }
 
 dependencies {

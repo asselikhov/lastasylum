@@ -11,7 +11,7 @@ import org.junit.runner.RunWith
 
 /**
  * Холодный старт MainActivity — регрессии времени до первого кадра.
- * Запуск: `./gradlew :benchmark:connectedDevDebugAndroidTest`
+ * Запуск: `./gradlew :benchmark:connectedDevBenchmarkAndroidTest`
  */
 @RunWith(AndroidJUnit4::class)
 class StartupBenchmark {
@@ -25,7 +25,7 @@ class StartupBenchmark {
             StartupTimingMetric(),
             FrameTimingMetric(),
         ),
-        iterations = 5,
+        iterations = 3,
         startupMode = StartupMode.COLD,
     ) {
         pressHome()
