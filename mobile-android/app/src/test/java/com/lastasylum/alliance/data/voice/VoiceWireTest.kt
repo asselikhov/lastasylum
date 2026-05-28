@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.data.voice
 
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -33,5 +34,15 @@ class VoiceWireTest {
     @Test
     fun asByteArray_rejectsPartialList() {
         assertNull(VoiceWire.asByteArray(listOf(1, "x")))
+    }
+
+    @Test
+    fun packUpstream_opusConfigCodec() {
+        val payload = byteArrayOf(0x4F, 0x70, 0x75, 0x73)
+        val packed = VoiceWire.packUpstream(0, VoiceWire.CODEC_OPUS_CONFIG, payload)
+        assertEquals(VoiceWire.CODEC_OPUS_CONFIG, packed[0])
+        val len = ((packed[3].toInt() and 0xff) shl 8) or (packed[4].toInt() and 0xff)
+        assertEquals(payload.size, len)
+        assertArrayEquals(payload, packed.copyOfRange(5, packed.size))
     }
 }

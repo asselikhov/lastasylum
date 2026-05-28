@@ -31,6 +31,8 @@ class OverlayChatStripBuffer(
         visibleSince = Instant.now()
     }
 
+    fun hasVisibleSession(): Boolean = visibleSince != null
+
     fun clear() {
         messages.clear()
         receivedAt.clear()

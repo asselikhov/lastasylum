@@ -2,6 +2,8 @@
 
 export const VOICE_CODEC_OPUS = 0;
 export const VOICE_CODEC_PCM = 1;
+/** Opus decoder config (csd-0) from sender MediaCodec — required before playback on other devices. */
+export const VOICE_CODEC_OPUS_CONFIG = 2;
 
 export const MAX_VOICE_USER_ID_BYTES = 64;
 export const MAX_VOICE_FRAME_BYTES = 4_096;
@@ -42,7 +44,11 @@ export function parseUpstreamFrame(data: Buffer): ParsedUpstreamFrame | null {
     return null;
   }
   const codec = data[0];
-  if (codec !== VOICE_CODEC_OPUS && codec !== VOICE_CODEC_PCM) {
+  if (
+    codec !== VOICE_CODEC_OPUS &&
+    codec !== VOICE_CODEC_PCM &&
+    codec !== VOICE_CODEC_OPUS_CONFIG
+  ) {
     return null;
   }
   const seq = data.readUInt16BE(1);
@@ -91,7 +97,13 @@ export function parseDownstreamFrame(
   if (data.length < headerLen) return null;
   const userId = data.subarray(1, 1 + userLen).toString('utf8');
   const codec = data[1 + userLen];
-  if (codec !== VOICE_CODEC_OPUS && codec !== VOICE_CODEC_PCM) return null;
+  if (
+    codec !== VOICE_CODEC_OPUS &&
+    codec !== VOICE_CODEC_PCM &&
+    codec !== VOICE_CODEC_OPUS_CONFIG
+  ) {
+    return null;
+  }
   const seq = data.readUInt16BE(1 + userLen + 1);
   const len = data.readUInt16BE(1 + userLen + 3);
   if (len <= 0 || len > MAX_VOICE_FRAME_BYTES) return null;

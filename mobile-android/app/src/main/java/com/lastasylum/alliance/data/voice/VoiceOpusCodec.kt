@@ -4,12 +4,15 @@ import android.media.MediaCodec
 import android.media.MediaFormat
 import android.os.Build
 import android.util.Log
+import java.nio.ByteBuffer
 
 /** Opus encode/decode via MediaCodec (API 29+). */
 class VoiceOpusCodec {
     private var encoder: MediaCodec? = null
     private var decoder: MediaCodec? = null
     private var decoderConfigured = false
+    private var encoderConfigBytes: ByteArray? = null
+    private var encoderConfigSent = false
 
     val isSupported: Boolean
         get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
@@ -40,9 +43,40 @@ class VoiceOpusCodec {
         }
     }
 
+    /**
+     * Apply sender Opus identification header (csd-0) before decoding their frames.
+     * Required when encoder runs on a different device than the decoder.
+     */
+    fun applyRemoteDecoderConfig(csd: ByteArray): Boolean {
+        if (!isSupported || csd.isEmpty()) return false
+        releaseDecoder()
+        return try {
+            val format = MediaFormat.createAudioFormat(
+                MediaFormat.MIMETYPE_AUDIO_OPUS,
+                VoiceAudioPipeline.SAMPLE_RATE_HZ,
+                1,
+            ).apply {
+                setByteBuffer("csd-0", ByteBuffer.wrap(csd))
+            }
+            val dec = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_AUDIO_OPUS).also {
+                decoder = it
+            }
+            dec.configure(format, null, null, 0)
+            dec.start()
+            decoderConfigured = true
+            true
+        } catch (e: Throwable) {
+            Log.e(TAG, "Opus decoder config failed", e)
+            releaseDecoder()
+            false
+        }
+    }
+
     fun startEncoder() {
         if (!isSupported) return
         if (encoder != null) return
+        encoderConfigBytes = null
+        encoderConfigSent = false
         try {
             val encFormat = MediaFormat.createAudioFormat(
                 MediaFormat.MIMETYPE_AUDIO_OPUS,
@@ -69,7 +103,16 @@ class VoiceOpusCodec {
         ensureDecoder()
     }
 
+    /** Pending encoder csd-0 to send once before the first Opus payload. */
+    fun takePendingEncoderConfig(): EncodedFrame? {
+        if (encoderConfigSent) return null
+        val config = encoderConfigBytes ?: return null
+        encoderConfigSent = true
+        return EncodedFrame(codec = CODEC_OPUS_CONFIG, payload = config.copyOf())
+    }
+
     fun encodePcmFrame(pcm: ByteArray): EncodedFrame? {
+        takePendingEncoderConfig()?.let { return it }
         val enc = encoder ?: return null
         return try {
             val info = MediaCodec.BufferInfo()
@@ -89,7 +132,14 @@ class VoiceOpusCodec {
     }
 
     fun decodeToPcm(codec: String, payload: ByteArray): ByteArray? {
-        if (codec != CODEC_OPUS) return null
+        when (codec) {
+            CODEC_OPUS_CONFIG -> {
+                applyRemoteDecoderConfig(payload)
+                return null
+            }
+            CODEC_OPUS -> Unit
+            else -> return null
+        }
         if (!isSupported) return null
         if (!ensureDecoder()) return null
         val dec = decoder ?: return null
@@ -110,6 +160,19 @@ class VoiceOpusCodec {
         }
     }
 
+    private fun captureEncoderConfig(enc: MediaCodec) {
+        runCatching {
+            val format = enc.outputFormat
+            val csd = format.getByteBuffer("csd-0") ?: return@runCatching
+            val bytes = ByteArray(csd.remaining())
+            csd.get(bytes)
+            csd.rewind()
+            if (bytes.isNotEmpty()) {
+                encoderConfigBytes = bytes
+            }
+        }
+    }
+
     private fun drainEncoderOutputs(
         enc: MediaCodec,
         info: MediaCodec.BufferInfo,
@@ -118,6 +181,7 @@ class VoiceOpusCodec {
         while (true) {
             var outIndex = enc.dequeueOutputBuffer(info, ENCODE_TIMEOUT_US)
             while (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                captureEncoderConfig(enc)
                 outIndex = enc.dequeueOutputBuffer(info, ENCODE_TIMEOUT_US)
             }
             when {
@@ -125,7 +189,17 @@ class VoiceOpusCodec {
                 outIndex < 0 -> return latest
                 else -> {
                     try {
-                        if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) continue
+                        if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
+                            val outBuf = enc.getOutputBuffer(outIndex) ?: continue
+                            val bytes = ByteArray(info.size)
+                            outBuf.position(info.offset)
+                            outBuf.limit(info.offset + info.size)
+                            outBuf.get(bytes)
+                            if (bytes.isNotEmpty()) {
+                                encoderConfigBytes = bytes
+                            }
+                            continue
+                        }
                         if (info.size <= 0) continue
                         val outBuf = enc.getOutputBuffer(outIndex) ?: continue
                         val bytes = ByteArray(info.size)
@@ -180,12 +254,16 @@ class VoiceOpusCodec {
     fun release() {
         releaseEncoder()
         releaseDecoder()
+        encoderConfigBytes = null
+        encoderConfigSent = false
     }
 
     private fun releaseEncoder() {
         runCatching { encoder?.stop() }
         runCatching { encoder?.release() }
         encoder = null
+        encoderConfigBytes = null
+        encoderConfigSent = false
     }
 
     private fun releaseDecoder() {
@@ -200,6 +278,7 @@ class VoiceOpusCodec {
     companion object {
         const val CODEC_OPUS = "opus"
         const val CODEC_PCM = "pcm"
+        const val CODEC_OPUS_CONFIG = "opus-config"
         private const val TAG = "VoiceOpusCodec"
         private const val ENCODE_TIMEOUT_US = 10_000L
         private const val DECODE_TIMEOUT_US = 10_000L

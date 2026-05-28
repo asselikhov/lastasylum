@@ -22,6 +22,7 @@ import {
   packDownstreamFrame,
   parseUpstreamFrame,
   VOICE_CODEC_OPUS,
+  VOICE_CODEC_OPUS_CONFIG,
   VOICE_CODEC_PCM,
 } from './voice-wire.util';
 
@@ -212,7 +213,11 @@ export class VoiceGateway {
     if (!parsed) {
       throw new WsException('Invalid voice frame');
     }
-    if (parsed.codec !== VOICE_CODEC_OPUS && parsed.codec !== VOICE_CODEC_PCM) {
+    if (
+      parsed.codec !== VOICE_CODEC_OPUS &&
+      parsed.codec !== VOICE_CODEC_PCM &&
+      parsed.codec !== VOICE_CODEC_OPUS_CONFIG
+    ) {
       throw new WsException('Unsupported codec');
     }
     if (parsed.payload.length > MAX_VOICE_FRAME_BYTES) {

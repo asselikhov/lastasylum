@@ -12,6 +12,8 @@ import org.json.JSONArray
 object VoiceWire {
     const val CODEC_OPUS: Byte = 0
     const val CODEC_PCM: Byte = 1
+    /** Opus MediaCodec csd-0 — peers must apply before decoding uplink audio. */
+    const val CODEC_OPUS_CONFIG: Byte = 2
     const val MAX_USER_ID_BYTES = 64
     const val MAX_PAYLOAD_BYTES = 4096
     private const val UP_HEADER_BYTES = 5
@@ -39,6 +41,7 @@ object VoiceWire {
         val codec = when (codecByte) {
             CODEC_OPUS -> VoiceOpusCodec.CODEC_OPUS
             CODEC_PCM -> VoiceOpusCodec.CODEC_PCM
+            CODEC_OPUS_CONFIG -> VoiceOpusCodec.CODEC_OPUS_CONFIG
             else -> return null
         }
         val seq = ((data[1 + userLen + 1].toInt() and 0xff) shl 8) or

@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.data.teams
 
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
+import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.OverlayGameStatusHudRefresh
 import java.time.Instant
 
@@ -49,6 +50,7 @@ object TeamNewsReadCursorSync {
         createdAt: String?,
     ) {
         OverlayGameStatusHudRefresh.markTeamNewsSeenAt(createdAt, prefs)
+        CombatOverlayService.notifyOverlayTeamInboxChanged(news = true)
         val iso = createdAt?.trim().orEmpty()
         val tid = teamId.trim()
         if (iso.isEmpty() || tid.isEmpty()) return
@@ -62,6 +64,7 @@ object TeamNewsReadCursorSync {
         if (prev == null || incoming.isAfter(prev)) {
             prefs.setLastSeenTeamNewsCreatedAt(iso)
             OverlayGameStatusHudRefresh.invalidateNewsCache()
+            CombatOverlayService.notifyOverlayTeamInboxChanged(news = true)
         }
     }
 }

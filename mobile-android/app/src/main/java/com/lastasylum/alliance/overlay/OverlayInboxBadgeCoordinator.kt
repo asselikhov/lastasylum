@@ -156,7 +156,7 @@ internal class OverlayInboxBadgeCoordinator {
         shouldDeferNewsReconcile() ->
             maxOf(authoritative, prevDisplayed, newsOptimisticFloor)
         useAuthoritative -> mergeNewsDisplayed(authoritative, prevDisplayed)
-        else -> maxOf(authoritative, prevDisplayed, newsOptimisticFloor)
+        else -> mergeNewsDisplayed(authoritative, prevDisplayed)
     }
 
     fun mergeHudForum(
@@ -167,7 +167,7 @@ internal class OverlayInboxBadgeCoordinator {
         isForumOptimisticActive() || shouldDeferForumReconcile() ->
             maxOf(authoritative, prevDisplayed, forumOptimisticFloor)
         useAuthoritative -> mergeForumDisplayed(authoritative, prevDisplayed)
-        else -> maxOf(authoritative, prevDisplayed, forumOptimisticFloor)
+        else -> mergeForumDisplayed(authoritative, prevDisplayed)
     }
 
     fun cacheNewsForum(teamId: String, news: Int, forum: Int) {

@@ -114,9 +114,11 @@ class VoiceChatSession(
             socketManager.emitState(micOn, soundOn)
         }
         notifyState()
-        applyMicCapture()
-        if (micOn) onMicForegroundChanged(true)
         publishVoiceStateToServer()
+        socketManager.whenJoined {
+            applyMicCapture()
+            if (micOn) onMicForegroundChanged(true)
+        }
     }
 
     fun stop() {

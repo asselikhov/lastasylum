@@ -120,14 +120,6 @@ private fun PollResultOptionRow(
 ) {
     val scheme = MaterialTheme.colorScheme
     val pct = if (share > 0f) (share * 100f).roundToInt() else 0
-    val barColors = if (selected) {
-        listOf(SquadRelayPrimary, SquadRelayAtmosphericSky)
-    } else {
-        listOf(
-            scheme.primary.copy(alpha = 0.55f),
-            scheme.tertiary.copy(alpha = 0.45f),
-        )
-    }
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp),

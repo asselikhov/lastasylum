@@ -462,6 +462,8 @@ fun TeamScreen(
                                                 modifier = Modifier.fillMaxSize(),
                                                 onNewsInboxChanged = {
                                                     teamViewModel.refreshSectionBadges()
+                                                    com.lastasylum.alliance.overlay.CombatOverlayService
+                                                        .notifyOverlayTeamInboxChanged(news = true)
                                                 },
                                             )
                                         }
@@ -484,6 +486,8 @@ fun TeamScreen(
                                                 modifier = Modifier.fillMaxSize(),
                                                 onForumInboxChanged = {
                                                     teamViewModel.refreshSectionBadges()
+                                                    com.lastasylum.alliance.overlay.CombatOverlayService
+                                                        .notifyOverlayTeamInboxChanged(forum = true)
                                                 },
                                             )
                                         }

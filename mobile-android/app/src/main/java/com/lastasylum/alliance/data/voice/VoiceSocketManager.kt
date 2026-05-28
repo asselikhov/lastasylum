@@ -144,6 +144,7 @@ class VoiceSocketManager {
         if (roomId == null) return
         val codecByte = when (codec) {
             VoiceOpusCodec.CODEC_OPUS -> VoiceWire.CODEC_OPUS
+            VoiceOpusCodec.CODEC_OPUS_CONFIG -> VoiceWire.CODEC_OPUS_CONFIG
             else -> return
         }
         val packet = VoiceWire.packUpstream(frameSeq++, codecByte, payload)
@@ -283,6 +284,9 @@ class VoiceSocketManager {
         if (payload == null || payload.optString("roomId", "").trim().isBlank()) {
             failJoin("Invalid voice join response")
             return
+        }
+        payload.optString("roomId", "").trim().takeIf { it.isNotEmpty() }?.let { resolved ->
+            roomId = resolved
         }
         if (!voiceJoined) {
             cancelJoinTimeout()

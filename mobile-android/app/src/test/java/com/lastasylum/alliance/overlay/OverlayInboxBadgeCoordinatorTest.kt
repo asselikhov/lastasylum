@@ -17,6 +17,28 @@ class OverlayInboxBadgeCoordinatorTest {
     }
 
     @Test
+    fun mergeHudForum_authoritativeZero_clearsDisplayedWithoutOptimistic() {
+        val coordinator = OverlayInboxBadgeCoordinator()
+        val merged = coordinator.mergeHudForum(
+            authoritative = 0,
+            prevDisplayed = 5,
+            useAuthoritative = true,
+        )
+        assertEquals(0, merged)
+    }
+
+    @Test
+    fun mergeHudNews_partialRefresh_allowsDecrease() {
+        val coordinator = OverlayInboxBadgeCoordinator()
+        val merged = coordinator.mergeHudNews(
+            authoritative = 0,
+            prevDisplayed = 4,
+            useAuthoritative = false,
+        )
+        assertEquals(0, merged)
+    }
+
+    @Test
     fun mergeHudNews_authoritativeDoesNotUseForumFloor() {
         val coordinator = OverlayInboxBadgeCoordinator()
         coordinator.bumpForumOptimistic(5)

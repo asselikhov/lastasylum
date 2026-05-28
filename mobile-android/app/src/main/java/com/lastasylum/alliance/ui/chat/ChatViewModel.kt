@@ -2982,6 +2982,22 @@ class ChatViewModel(
             createdAt = java.time.Instant.now().toString(),
         )
 
+    private fun publishRaidMessageToOverlayStrip(message: ChatMessage) {
+        val roomId = message.roomId.trim().ifBlank { _state.value.selectedRoomId?.trim().orEmpty() }
+        if (roomId.isEmpty()) return
+        val prefsRaid = chatRoomPreferences.getRaidRoomId()?.trim()
+        val isRaid = when {
+            !prefsRaid.isNullOrEmpty() && prefsRaid == roomId -> true
+            else -> {
+                val room = _state.value.rooms.find { it.id == roomId } ?: return
+                ChatRaidRoomSync.isAllianceRaidRoom(room)
+            }
+        }
+        if (!isRaid) return
+        runCatching { CombatOverlayService.publishRaidMessageToStripFromApp(message) }
+        runCatching { CombatOverlayService.extendInGameOverlayUiHold() }
+    }
+
     /** Pending row must exist before HTTP/socket echo to avoid a brief duplicate at the list head. */
     private fun insertOptimisticOutgoingSynchronously(
         message: ChatMessage,
@@ -3033,6 +3049,7 @@ class ChatViewModel(
             )
             ChatSessionCache.updateMessages(rid, capped)
         }
+        publishRaidMessageToOverlayStrip(message)
     }
 
     private fun removePendingOutgoingMessage(pendingId: String?) {
@@ -3233,6 +3250,7 @@ class ChatViewModel(
             ChatSessionCache.updateMessages(rid, work.cappedMessages)
             schedulePersistChatSnapshot()
         }
+        publishRaidMessageToOverlayStrip(sent)
     }
 
     private fun applyIncomingMessage(

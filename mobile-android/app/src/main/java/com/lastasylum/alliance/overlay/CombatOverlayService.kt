@@ -884,6 +884,8 @@ class CombatOverlayService : Service() {
     private var lastStripRenderSignature: Int = 0
     /** Increments on each live strip publish so Compose/refresh never skip repeat sends. */
     private var stripLiveRevision: Int = 0
+    /** After gate «not in game» cleared strip session; restart visibleSince on next in-game tick. */
+    private var stripSessionNeedsRestart = false
     private var lastAppliedGateShouldShow: Boolean? = null
     private var stableGatePollTicks = 0
     @Volatile
@@ -1824,6 +1826,7 @@ class CombatOverlayService : Service() {
 
     private fun refreshOverlayNewsBadgeOnly() {
         if (!isInGameOverlayUiActive()) return
+        inboxBadgeCoordinator.clearNewsOptimistic()
         if (inboxBadgeCoordinator.shouldDeferNewsReconcile()) return
         serviceScope.launch(Dispatchers.IO) {
             val container = AppContainer.from(this@CombatOverlayService)
@@ -1893,6 +1896,7 @@ class CombatOverlayService : Service() {
 
     private fun refreshOverlayForumBadgeOnly() {
         if (!isInGameOverlayUiActive()) return
+        inboxBadgeCoordinator.clearForumOptimistic()
         if (inboxBadgeCoordinator.shouldDeferForumReconcile()) return
         serviceScope.launch(Dispatchers.IO) {
             val container = AppContainer.from(this@CombatOverlayService)
@@ -2336,9 +2340,17 @@ class CombatOverlayService : Service() {
     }
 
     private fun clearOverlayStripForOffline() {
+        stripSessionNeedsRestart = true
         stripBuffer.clear()
         lastStripRenderSignature = 0
         chatStripPreviewFlow.value = emptyList()
+    }
+
+    private fun ensureOverlayStripVisibleSession() {
+        if (!stripBuffer.hasVisibleSession()) {
+            stripBuffer.resetVisibleSession()
+        }
+        stripSessionNeedsRestart = false
     }
 
     /** Пустой буфер + новая видимая сессия: только трафик после входа в игру. */
@@ -2446,10 +2458,9 @@ class CombatOverlayService : Service() {
 
     private fun refreshOverlayTopRightHudState() {
         val session = voiceSession
-        val prefs = AppContainer.from(this).userSettingsPreferences
         overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
-            micOn = session?.micOn ?: prefs.isOverlayVoiceMicEnabled(),
-            soundOn = session?.soundOn ?: prefs.isOverlayVoiceSoundEnabled(),
+            micOn = session?.micOn == true,
+            soundOn = session?.soundOn == true,
         )
     }
 
@@ -2467,24 +2478,24 @@ class CombatOverlayService : Service() {
         ensureOverlayIfPermitted()
         ensureOverlayRaidRealtimeIfNeeded()
         prefetchOverlayRaidRoomForStrip()
-        val mgr = windowManager ?: systemWindowManager() ?: return
+        val mgr = windowManager ?: systemWindowManager()
+        if (mgr == null) {
+            OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(isOverlayUi = true)
+            return
+        }
+        val wasShowing = overlayCommandsPopover.isShowing()
         overlayCommandsPopover.toggle(mgr)
+        if (!wasShowing && !overlayCommandsPopover.isShowing()) {
+            OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(isOverlayUi = true)
+        }
         if (isOverlayChatStripEnabled() && chatStripHost?.isAttachedToWindow != true) {
             repairDetachedOverlayShellIfNeeded()
         }
     }
 
-    private fun overlayVoiceMicDisplayedOn(): Boolean {
-        val session = voiceSession
-        val prefs = AppContainer.from(this).userSettingsPreferences
-        return session?.micOn ?: prefs.isOverlayVoiceMicEnabled()
-    }
+    private fun overlayVoiceMicDisplayedOn(): Boolean = voiceSession?.micOn == true
 
-    private fun overlayVoiceSoundDisplayedOn(): Boolean {
-        val session = voiceSession
-        val prefs = AppContainer.from(this).userSettingsPreferences
-        return session?.soundOn ?: prefs.isOverlayVoiceSoundEnabled()
-    }
+    private fun overlayVoiceSoundDisplayedOn(): Boolean = voiceSession?.soundOn == true
 
     private fun toggleOverlayVoiceMicFromHud() {
         if (!overlayVoiceController.isMicSupportedOnDevice()) {
@@ -2523,7 +2534,6 @@ class CombatOverlayService : Service() {
     }
 
     private fun showOverlayHudPane(pane: OverlayHudPane) {
-        OverlayChatInteractionHold.prepareOverlayModalInteraction(isOverlayUi = true)
         extendOverlayUiHold(OVERLAY_UI_HOLD_PANEL_TRANSITION_MS)
         if (overlayChatTeamPanelVisible && currentOverlayHudPane == pane) return
         if (overlayChatTeamPanelVisible) {
@@ -2822,6 +2832,9 @@ class CombatOverlayService : Service() {
         if (shouldShow && !wasInGame) {
             stableGatePollTicks = HUD_STABLE_TICKS_BEFORE_ATTACH
             beginOverlayStripGameSession()
+            stripSessionNeedsRestart = false
+        } else if (shouldShow && stripSessionNeedsRestart) {
+            ensureOverlayStripVisibleSession()
             resetOverlayVoiceForGameEntry()
             ensureOverlayRaidRealtimeIfNeeded()
             ensureOverlayForumInboxRealtimeIfNeeded()
@@ -3358,6 +3371,9 @@ class CombatOverlayService : Service() {
             if (selfId.isNotBlank() && event.senderUserId.trim() == selfId) return@listener
             mainHandler.post {
                 if (!isInGameOverlayUiActive()) return@post
+                if (overlayChatTeamPanelVisible && currentOverlayHudPane == OverlayHudPane.Forum) {
+                    return@post
+                }
                 OverlayGameStatusHudRefresh.invalidateForumCache()
                 val current = overlayStatusHudFlow.value.forumUnread
                 val next = (current + 1).coerceAtMost(999)
@@ -3443,6 +3459,9 @@ class CombatOverlayService : Service() {
         trustedRaidRoomId: String? = null,
         displayText: String? = null,
     ) {
+        if (isOverlayChatStripEnabled()) {
+            ensureOverlayStripVisibleSession()
+        }
         extendOverlayUiHold()
         val raid = trustedRaidRoomId?.trim()?.takeIf { it.isNotEmpty() }
             ?: resolveOverlayRaidRoomId()
@@ -4431,7 +4450,12 @@ class CombatOverlayService : Service() {
         val manager = windowManager ?: run {
             showOverlayShell()
             windowManager
-        } ?: return
+        }
+        if (manager == null) {
+            OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = false
+            OverlayChatInteractionHold.releaseGameForegroundSuppress()
+            return
+        }
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
@@ -4772,7 +4796,9 @@ class CombatOverlayService : Service() {
             overlayChatTeamParams = null
             overlayChatTeamPanelVisible = false
             OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = false
+            OverlayChatInteractionHold.releaseGameForegroundSuppress()
             OverlayChatInteractionHold.clearSuppressUnlessFullscreenPanel()
+            restoreOverlayHudChromeAfterPanel()
             runCatching { unregisterReceiver(overlaySystemResultReceiver) }
             overlayChatTeamComposeOwner?.destroy()
             overlayChatTeamComposeOwner = null
@@ -5024,6 +5050,23 @@ class CombatOverlayService : Service() {
             val service = runningInstance ?: return
             service.mainHandler.post {
                 service.applyLocalSentMessageToStrip(message)
+            }
+        }
+
+        /** Main app read news/forum — refresh overlay HUD chips (mirrors hub badge sync). */
+        fun notifyOverlayTeamInboxChanged(news: Boolean = false, forum: Boolean = false) {
+            val service = runningInstance ?: return
+            service.mainHandler.post {
+                if (news) {
+                    OverlayGameStatusHudRefresh.invalidateNewsCache()
+                    service.inboxBadgeCoordinator.clearNewsOptimistic()
+                    service.refreshOverlayNewsBadgeOnly()
+                }
+                if (forum) {
+                    OverlayGameStatusHudRefresh.invalidateForumCache()
+                    service.inboxBadgeCoordinator.clearForumOptimistic()
+                    service.refreshOverlayForumBadgeOnly()
+                }
             }
         }
 
