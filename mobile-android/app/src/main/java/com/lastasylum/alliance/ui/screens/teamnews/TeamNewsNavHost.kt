@@ -745,8 +745,10 @@ private fun TeamNewsDetailRoute(
                 ) {
                     val pagePad = 14.dp
                     val hero: String? = d.imageRelativeUrls.firstOrNull() ?: d.firstImageRelativeUrl
-                    hero?.let { rawPath: String ->
-                        teamNewsAuthedImageRequest(context, rawPath)?.let { imgReq: ImageRequest ->
+                    val heroRequest = remember(hero, context) {
+                        teamNewsAuthedImageRequest(context, hero)
+                    }
+                    heroRequest?.let { imgReq: ImageRequest ->
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -800,7 +802,6 @@ private fun TeamNewsDetailRoute(
                                     )
                                 }
                             }
-                        }
                     }
 
                     val showArticleBody = d.body.trim().isNotEmpty() || hero != null
@@ -898,7 +899,10 @@ private fun TeamNewsDetailRoute(
                             contentPadding = PaddingValues(horizontal = pagePad, vertical = 2.dp),
                         ) {
                             items(galleryPaths, key = { it }) { rawPath ->
-                                teamNewsAuthedImageRequest(context, rawPath)?.let { imgReq ->
+                                val galleryReq = remember(rawPath, context) {
+                                    teamNewsAuthedImageRequest(context, rawPath)
+                                }
+                                galleryReq?.let { imgReq ->
                                     AsyncImage(
                                         model = imgReq,
                                         contentDescription = stringResource(R.string.team_news_gallery_image_cd),

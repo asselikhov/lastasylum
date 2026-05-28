@@ -30,6 +30,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -438,20 +439,22 @@ fun TeamNewsFeedCard(
             }
 
             if (hasHero) {
+                val context = LocalContext.current
+                val heroRequest = remember(item.firstImageRelativeUrl, context) {
+                    teamNewsAuthedImageRequest(context, item.firstImageRelativeUrl)
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(172.dp),
                 ) {
-                    item.firstImageRelativeUrl?.let { raw ->
-                        teamNewsAuthedImageRequest(LocalContext.current, raw)?.let { req ->
-                            AsyncImage(
-                                model = req,
-                                contentDescription = item.title,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop,
-                            )
-                        }
+                    heroRequest?.let { req ->
+                        AsyncImage(
+                            model = req,
+                            contentDescription = item.title,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
                     }
                     Box(
                         modifier = Modifier
