@@ -905,6 +905,24 @@ class CombatOverlayService : Service() {
     /** FGS notification visible while in-game overlay is active (hidden when idle outside game). */
     private var overlayForegroundPromoted: Boolean = false
 
+    @Volatile
+    private var cachedHasUsageAccess: Boolean? = null
+
+    @Volatile
+    private var cachedHasUsageAccessAtMs: Long = 0L
+
+    private fun hasUsageAccessCached(force: Boolean = false): Boolean {
+        val now = System.currentTimeMillis()
+        val cached = cachedHasUsageAccess
+        if (!force && cached != null && now - cachedHasUsageAccessAtMs <= USAGE_ACCESS_CACHE_MS) {
+            return cached
+        }
+        val fresh = GameForegroundGate.hasUsageStatsAccessForOverlay(this)
+        cachedHasUsageAccess = fresh
+        cachedHasUsageAccessAtMs = now
+        return fresh
+    }
+
     private var screenOnReceiverRegistered: Boolean = false
 
     private val screenOnReceiver = object : BroadcastReceiver() {
@@ -1390,9 +1408,7 @@ class CombatOverlayService : Service() {
         val activityTokens = prefs.getOverlayTargetGameActivityTokens()
         serviceScope.launch {
             try {
-                val hasUsageAccess = GameForegroundGate.hasUsageStatsAccessForOverlay(
-                    this@CombatOverlayService,
-                )
+                val hasUsageAccess = hasUsageAccessCached()
                 var hintedPkg: String? = lastForegroundHintPkg
                 val targetSet = targets.toSet()
                 val stableInGameUi = lastAppliedGateShouldShow == true &&
@@ -1486,6 +1502,9 @@ class CombatOverlayService : Service() {
                     lastOverlayInGameAtMs = nowMs
                 }
                 mainHandler.post {
+                    if (!hasUsageAccess && shouldKeepUsageAccessDiag()) {
+                        Log.i(TAG, "overlayGate: usage access missing (cached), idlePollMs=$GAME_GATE_POLL_IDLE_MS")
+                    }
                     // Попап команд/реакций — только на main: иначе на части ROM гонка снимает HUD.
                     // HUD только в игре (или при системном пикере). Попап/чат не держат кнопки после minimize.
                     val shouldShowInGameOverlayUi = when {
@@ -1553,7 +1572,14 @@ class CombatOverlayService : Service() {
         ) {
             return GAME_GATE_POLL_MODAL_UI_MS
         }
-        if (!isInGameOverlayUiActive()) return GAME_GATE_POLL_IDLE_MS
+        if (!isInGameOverlayUiActive()) {
+            val last = lastOverlayInGameAtMs
+            return if (last > 0L && System.currentTimeMillis() - last <= GAME_GATE_RECENT_INGAME_WINDOW_MS) {
+                GAME_GATE_POLL_WARM_MS
+            } else {
+                GAME_GATE_POLL_IDLE_MS
+            }
+        }
         if (isOverlayShellActive() &&
             stableGatePollTicks >= GATE_STABLE_TICKS_FOR_SLOW_POLL
         ) {
@@ -1561,6 +1587,12 @@ class CombatOverlayService : Service() {
         }
         if (isOverlayShellActive()) return GAME_GATE_POLL_ACTIVE_MS
         return GAME_GATE_POLL_IDLE_MS
+    }
+
+    private fun shouldKeepUsageAccessDiag(): Boolean {
+        val now = System.currentTimeMillis()
+        if (now - lastGateDiagLogMs < 25_000L) return false
+        return true
     }
 
     private fun scheduleOverlayStatusHudRefresh() {
@@ -5001,9 +5033,11 @@ class CombatOverlayService : Service() {
         /** Недавно были в игре / открыт чат — чаще, чем в простое. */
         private const val GAME_GATE_POLL_WARM_MS = 1_800L
         /** FGS включён, оверлей скрыт: редкий опрос usage stats. */
-        private const val GAME_GATE_POLL_IDLE_MS = 2_000L
+        private const val GAME_GATE_POLL_IDLE_MS = 6_000L
         /** Fallback poll for news/forum when no socket activity (realtime is primary). */
         private const val STATUS_HUD_REFRESH_MS = 20_000L
+        private const val USAGE_ACCESS_CACHE_MS = 30_000L
+        private const val GAME_GATE_RECENT_INGAME_WINDOW_MS = 45_000L
         /** Краткий grace при ложном «не в игре» во время чата/пикера; не применяется при явном лаунчере/другом приложении. */
         private const val OVERLAY_INGAME_GRACE_MS = 3_500L
         /** Sustained «not in game» (краткий лаг usage-stats) перед снятием окон. */
