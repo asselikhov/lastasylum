@@ -15,6 +15,7 @@ cd mobile-android
 Модуль `:benchmark`:
 - `StartupBenchmark` — cold start + frame timing.
 - `UiJankBenchmark` — launch + swipe probe (frame timing) для быстрой проверки jank на auth/основном UI.
+- `TabSwitchJankBenchmark` — frame timing при запуске с `EXTRA_START_TAB` (`chat/team/profile`).
 
 Для запуска конкретного класса:
 
