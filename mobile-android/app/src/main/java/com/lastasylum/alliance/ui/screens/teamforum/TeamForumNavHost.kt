@@ -822,7 +822,7 @@ private fun TeamForumTopicChatRoute(
         }
     }
 
-    LaunchedEffect(stableMessages.size, stableMessages.lastOrNull()?.id) {
+    LaunchedEffect(stableMessages.lastOrNull()?.id) {
         if (stableMessages.isNotEmpty()) {
             val lastIndex = 1 + stableMessages.lastIndex
             runCatching { listState.animateScrollToItem(lastIndex) }
