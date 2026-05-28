@@ -27,7 +27,7 @@ jobs:
 
       - name: Build benchmark APKs
         working-directory: mobile-android
-        run: chmod +x gradlew && ./gradlew :benchmark:assembleDevDebug :benchmark:assembleDevDebugAndroidTest --no-daemon
+        run: chmod +x gradlew && ./gradlew :benchmark:assembleDevDebug --no-daemon
 
       - name: Run benchmark tests on emulator
         uses: reactivecircus/android-emulator-runner@v2
