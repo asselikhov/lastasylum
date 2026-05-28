@@ -117,6 +117,7 @@ import com.lastasylum.alliance.ui.components.team.TeamPollVoteOptionSurface
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import kotlinx.coroutines.launch
+import java.time.Instant
 private object TeamNewsRoutes {
     const val LIST = "news_list"
     const val CREATE = "news_create"
@@ -500,6 +501,26 @@ private fun TeamNewsListRoute(
         loadNewsPage(cursor = null, append = false)
     }
 
+    val unreadNewsIds = remember(newsItems, currentUserId) {
+        val currentUser = currentUserId.trim()
+        val lastSeen = newsPrefs.getLastSeenTeamNewsCreatedAt()
+            ?.let { runCatching { Instant.parse(it) }.getOrNull() }
+        if (lastSeen == null) {
+            newsItems.asSequence()
+                .filterNot { item -> currentUser.isNotBlank() && item.authorUserId.trim() == currentUser }
+                .map { it.id }
+                .toSet()
+        } else {
+            newsItems.asSequence()
+                .filterNot { item -> currentUser.isNotBlank() && item.authorUserId.trim() == currentUser }
+                .filter { item ->
+                    runCatching { Instant.parse(item.createdAt) }.getOrNull()?.isAfter(lastSeen) == true
+                }
+                .map { it.id }
+                .toSet()
+        }
+    }
+
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize()) {
             when {
@@ -562,11 +583,7 @@ private fun TeamNewsListRoute(
                         ) { item ->
                             TeamNewsFeedCard(
                                 item = item,
-                                isUnread = TeamInboxUnread.isNewsItemUnread(
-                                    item,
-                                    newsPrefs,
-                                    currentUserId,
-                                ),
+                                isUnread = item.id in unreadNewsIds,
                                 onClick = { onOpenDetail(item.id) },
                                 onEdit = {
                                     val isAuthor = item.authorUserId == currentUserId
