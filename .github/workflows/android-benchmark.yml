@@ -43,6 +43,28 @@ jobs:
         working-directory: mobile-android
         run: python3 benchmark/scripts/benchmark_report.py --root . --baseline benchmark/baseline/dev_debug.json --summary-file "$GITHUB_STEP_SUMMARY"
 
+      - name: Soft-gate regression warning
+        if: always()
+        working-directory: mobile-android
+        run: |
+          if [ ! -f "benchmark/results/summary_flags.json" ]; then
+            echo "::warning title=Android benchmark::summary_flags.json not found; soft-gate skipped"
+            exit 0
+          fi
+          WARN_COUNT=$(python3 - <<'PY'
+import json
+from pathlib import Path
+f = Path("benchmark/results/summary_flags.json")
+data = json.loads(f.read_text(encoding="utf-8"))
+print(int(data.get("warningCount", 0)))
+PY
+          )
+          if [ "$WARN_COUNT" -gt 0 ]; then
+            echo "::warning title=Android benchmark regression::Detected $WARN_COUNT report-only regression warning(s). See Step Summary."
+          else
+            echo "No report-only benchmark warnings detected."
+          fi
+
       - name: Upload benchmark artifacts
         if: always()
         uses: actions/upload-artifact@v4

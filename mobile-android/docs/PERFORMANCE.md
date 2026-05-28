@@ -30,10 +30,12 @@ cd mobile-android
 - Workflow: [`.github/workflows/android-benchmark.yml`](../../.github/workflows/android-benchmark.yml)
 - Режим по умолчанию: **report-only** (не фейлит CI).
 - В PR/Run summary выводятся ключевые метрики startup/frame + предупреждения при деградации.
+- Soft-gate: workflow публикует `warning`, если baseline-сравнение нашло деградацию (без fail job).
 - Артефакты:
   - `benchmark/build/outputs/**`
   - `**/outputs/connected_android_test_additional_output/**`
   - `benchmark/results/latest_metrics.json`
+  - `benchmark/results/summary_flags.json`
 - Для `schedule` и `workflow_dispatch` дополнительно публикуется baseline-candidate артефакт:
   - `android-benchmark-baseline-candidate-<run_id>`
 - Baseline файл: [`benchmark/baseline/dev_debug.json`](../benchmark/baseline/dev_debug.json)

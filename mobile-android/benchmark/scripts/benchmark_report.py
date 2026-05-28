@@ -206,6 +206,18 @@ def main() -> int:
         json.dumps({"metrics": current}, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
+    (out_dir / "summary_flags.json").write_text(
+        json.dumps(
+            {
+                "warningCount": len(warnings),
+                "hasWarnings": len(warnings) > 0,
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     return 0
 
 
