@@ -2,6 +2,16 @@ name: Android Benchmark
 
 on:
   workflow_dispatch:
+    inputs:
+      gate_mode:
+        description: "Benchmark gate mode"
+        required: true
+        default: "report-only"
+        type: choice
+        options:
+          - report-only
+          - soft
+          - hard
   pull_request:
     paths:
       - "mobile-android/**"
@@ -13,6 +23,9 @@ jobs:
   benchmark:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      # Default mode for PR/scheduled runs. workflow_dispatch can override via input.
+      BENCHMARK_GATE_MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.gate_mode || 'report-only' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -64,6 +77,33 @@ PY
           else
             echo "No report-only benchmark warnings detected."
           fi
+          echo "Benchmark gate mode: $BENCHMARK_GATE_MODE"
+
+      - name: Hard-gate regression fail
+        if: always()
+        working-directory: mobile-android
+        run: |
+          if [ "$BENCHMARK_GATE_MODE" != "hard" ]; then
+            echo "Hard-gate disabled (mode=$BENCHMARK_GATE_MODE)."
+            exit 0
+          fi
+          if [ ! -f "benchmark/results/summary_flags.json" ]; then
+            echo "::error title=Android benchmark hard-gate::summary_flags.json not found; cannot evaluate hard-gate."
+            exit 1
+          fi
+          WARN_COUNT=$(python3 - <<'PY'
+import json
+from pathlib import Path
+f = Path("benchmark/results/summary_flags.json")
+data = json.loads(f.read_text(encoding="utf-8"))
+print(int(data.get("warningCount", 0)))
+PY
+          )
+          if [ "$WARN_COUNT" -gt 0 ]; then
+            echo "::error title=Android benchmark hard-gate::Detected $WARN_COUNT regression warning(s) against baseline."
+            exit 1
+          fi
+          echo "Hard-gate passed: no regressions detected."
 
       - name: Upload benchmark artifacts
         if: always()

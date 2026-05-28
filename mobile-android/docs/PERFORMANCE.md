@@ -31,6 +31,10 @@ cd mobile-android
 - Режим по умолчанию: **report-only** (не фейлит CI).
 - В PR/Run summary выводятся ключевые метрики startup/frame + предупреждения при деградации.
 - Soft-gate: workflow публикует `warning`, если baseline-сравнение нашло деградацию (без fail job).
+- `workflow_dispatch` поддерживает `gate_mode`:
+  - `report-only` — только отчёт;
+  - `soft` — отчёт + warning;
+  - `hard` — fail job при наличии regression warnings.
 - Артефакты:
   - `benchmark/build/outputs/**`
   - `**/outputs/connected_android_test_additional_output/**`
@@ -64,6 +68,7 @@ cd mobile-android
 - **Stage 1 (текущий):** report-only 1-2 недели, сбор baseline.
 - **Stage 2:** soft-gate (warning/check-run) при повторяемой деградации.
 - **Stage 3:** hard-gate только на откалиброванных метриках (обычно startup/frame p95).
+- Для ручной проверки hard-гейта без изменения workflow используйте `workflow_dispatch` с `gate_mode=hard`.
 
 ## Logcat (оверлей)
 
