@@ -28,18 +28,16 @@ jobs:
       - name: Run benchmark tests on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
-          target: google_apis
+          api-level: 30
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          emulator-boot-timeout: 600
-          emulator-options: -no-window -no-snapshot -noaudio -gpu swiftshader_indirect -partition-size 6144
+          force-avd-creation: true
+          emulator-boot-timeout: 1200
+          emulator-options: -no-window -no-snapshot -noaudio -gpu swiftshader_indirect -partition-size 6144 -memory 4096
           script: |
             cd mobile-android
             chmod +x gradlew
-            adb wait-for-device
-            adb shell 'while [ -z "$(getprop sys.boot_completed)" ]; do sleep 2; done'
             adb shell pm uninstall com.lastasylum.alliance || true
             ./gradlew :benchmark:connectedDevBenchmarkAndroidTest --no-daemon
 
