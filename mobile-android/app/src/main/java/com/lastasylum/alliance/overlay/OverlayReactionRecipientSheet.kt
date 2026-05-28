@@ -13,8 +13,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -53,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -155,11 +154,13 @@ fun OverlayReactionRecipientSheet(
     }
 
     val selectedCount = selectedIds.size
+    val maxSheetHeight = (LocalConfiguration.current.screenHeightDp * 0.85f).dp
+    val listMaxHeight = (maxSheetHeight - 300.dp).coerceAtLeast(140.dp)
 
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .fillMaxHeight(0.85f)
+            .heightIn(max = maxSheetHeight)
             .clip(RoundedCornerShape(16.dp))
             .border(1.dp, OverlaySheetStroke, RoundedCornerShape(16.dp)),
         color = Color.Transparent,
@@ -168,7 +169,7 @@ fun OverlayReactionRecipientSheet(
     ) {
         Box(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
                 .background(
                     Brush.verticalGradient(
                         listOf(OverlaySheetBgTop, OverlaySheetBgBottom),
@@ -177,7 +178,7 @@ fun OverlayReactionRecipientSheet(
         ) {
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .fillMaxWidth()
                     .padding(bottom = 4.dp),
             ) {
                 RecipientSheetHeader(onBack = onBack, onDismiss = onDismiss)
@@ -200,8 +201,8 @@ fun OverlayReactionRecipientSheet(
                     loading -> {
                         Box(
                             modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
+                                .fillMaxWidth()
+                                .heightIn(min = 120.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             CircularProgressIndicator(
@@ -213,8 +214,8 @@ fun OverlayReactionRecipientSheet(
                     error != null -> {
                         Box(
                             modifier = Modifier
-                                .weight(1f)
                                 .fillMaxWidth()
+                                .heightIn(min = 120.dp)
                                 .padding(16.dp),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -228,8 +229,8 @@ fun OverlayReactionRecipientSheet(
                     members.isEmpty() -> {
                         Box(
                             modifier = Modifier
-                                .weight(1f)
                                 .fillMaxWidth()
+                                .heightIn(min = 120.dp)
                                 .padding(16.dp),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -264,8 +265,8 @@ fun OverlayReactionRecipientSheet(
 
                         LazyColumn(
                             modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
+                                .fillMaxWidth()
+                                .heightIn(max = listMaxHeight),
                             contentPadding = PaddingValues(
                                 start = 14.dp,
                                 end = 14.dp,

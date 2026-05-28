@@ -346,6 +346,7 @@ class CombatOverlayService : Service() {
     private var deferredHideOverlayClearStrip = true
     /** Владелец Compose для ленты сообщений (отдельное окно). */
     private var overlayStripComposeOwner: OverlayChatComposeOwner? = null
+    private var overlayPopoverComposeOwner: OverlayChatComposeOwner? = null
 
     private val overlayStatusHudFlow = MutableStateFlow(OverlayGameStatusHudState())
     private var overlayStatusHudHost: FrameLayout? = null
@@ -817,6 +818,16 @@ class CombatOverlayService : Service() {
             lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
             store.clear()
         }
+    }
+
+    /** Compose in overlay popups/HUD windows needs ViewTree owners or LaunchedEffect crashes. */
+    internal fun attachOverlayComposeTree(target: View) {
+        val owner = overlayPopoverComposeOwner
+            ?: OverlayChatComposeOwner().also { overlayPopoverComposeOwner = it }
+        target.setViewTreeLifecycleOwner(owner)
+        target.setViewTreeViewModelStoreOwner(owner)
+        target.setViewTreeSavedStateRegistryOwner(owner)
+        target.setViewTreeOnBackPressedDispatcherOwner(owner)
     }
 
     private val stripTickRunnable = Runnable {
@@ -3013,6 +3024,8 @@ class CombatOverlayService : Service() {
         stopOverlayVoice()
         overlayTicker.hideTicker()
         runCatching { hideOverlayChatTeamPanel() }
+        overlayPopoverComposeOwner?.destroy()
+        overlayPopoverComposeOwner = null
         fcmRegistrationJob?.cancel()
         fcmRegistrationJob = null
         stopOverlayIngamePresence(markAway = true)

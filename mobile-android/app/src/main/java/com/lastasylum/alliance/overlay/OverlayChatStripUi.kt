@@ -59,7 +59,7 @@ object OverlayChatStripUi {
             dp(context, 4f).toInt(),
             dp(context, 2f).toInt(),
         )
-        root.setBackgroundColor(Color.parseColor("#E6141820"))
+        root.background = null
     }
 
     fun createLinesContainer(context: Context): LinearLayout {

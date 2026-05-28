@@ -1582,6 +1582,7 @@ class OverlayCommandsPopover(
         val cardW = minOf(dp(340), context.resources.displayMetrics.widthPixels - dp(16))
         val composeHost = FrameLayout(context).apply {
             consumeTouchesInSubtree()
+            (context as? CombatOverlayService)?.attachOverlayComposeTree(this)
         }
         val compose = ComposeView(context).apply {
             setContent {
@@ -1629,7 +1630,10 @@ class OverlayCommandsPopover(
         }
         composeHost.addView(
             compose,
-            FrameLayout.LayoutParams(cardW, ViewGroup.LayoutParams.WRAP_CONTENT),
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+            ),
         )
 
         val scrim = FrameLayout(context).apply {
@@ -1667,6 +1671,7 @@ class OverlayCommandsPopover(
         if (previousPick != null && previousPick !== scrim) {
             removeShell(previousPick)
         }
+        compose.post { compose.requestLayout() }
     }
 
 
