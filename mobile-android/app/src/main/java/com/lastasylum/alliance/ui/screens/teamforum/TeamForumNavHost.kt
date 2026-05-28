@@ -657,10 +657,9 @@ private fun TeamForumTopicChatRoute(
     var downloadingForumFileUrl by remember { mutableStateOf<String?>(null) }
     var sending by remember { mutableStateOf(false) }
     var typingHint by remember { mutableStateOf<String?>(null) }
-    val sortedMessages by remember {
-        derivedStateOf { messages.sortedBy { it.createdAt } }
-    }
-    val forumClusterFlags = rememberForumMessageClusterFlags(sortedMessages)
+    // messages is maintained oldest-first; avoid per-update sorting allocations (jank/GC).
+    val stableMessages = messages
+    val forumClusterFlags = rememberForumMessageClusterFlags(stableMessages)
 
     fun trimForumMessagesInMemory() {
         capForumMessagesOldestFirst(messages)
@@ -720,7 +719,7 @@ private fun TeamForumTopicChatRoute(
     }
 
     fun markTopicReadToLatest(forceSync: Boolean = false) {
-        val newestId = sortedMessages.lastOrNull()?.id ?: return
+        val newestId = stableMessages.lastOrNull()?.id ?: return
         val prev = lastReadCursor
         if (!forceSync && prev != null && !isObjectIdNewer(newestId, prev)) return
         scope.launch {
@@ -817,15 +816,15 @@ private fun TeamForumTopicChatRoute(
         lastReadCursor = forumPrefs.getLastReadMessageId(teamId, topicId)
     }
 
-    LaunchedEffect(sortedMessages.lastOrNull()?.id) {
-        if (sortedMessages.isNotEmpty()) {
+    LaunchedEffect(stableMessages.lastOrNull()?.id) {
+        if (stableMessages.isNotEmpty()) {
             markTopicReadToLatest()
         }
     }
 
-    LaunchedEffect(sortedMessages.size, sortedMessages.lastOrNull()?.id) {
-        if (sortedMessages.isNotEmpty()) {
-            val lastIndex = 1 + sortedMessages.lastIndex
+    LaunchedEffect(stableMessages.size, stableMessages.lastOrNull()?.id) {
+        if (stableMessages.isNotEmpty()) {
+            val lastIndex = 1 + stableMessages.lastIndex
             runCatching { listState.animateScrollToItem(lastIndex) }
         }
     }
@@ -951,7 +950,7 @@ private fun TeamForumTopicChatRoute(
                         item(key = "forum_load_older") {
                             OutlinedButton(
                                 onClick = {
-                                    val oldestId = sortedMessages.firstOrNull()?.id
+                                    val oldestId = stableMessages.firstOrNull()?.id
                                     if (oldestId != null) {
                                         loadForumMessages(before = oldestId, appendOlder = true)
                                     }
@@ -972,10 +971,10 @@ private fun TeamForumTopicChatRoute(
                         }
                     }
                     itemsIndexed(
-                        sortedMessages,
+                        stableMessages,
                         key = { _, m -> m.id },
                     ) { idx, msg ->
-                        val prev = sortedMessages.getOrNull(idx - 1)
+                        val prev = stableMessages.getOrNull(idx - 1)
                         val dayCurr = chatDayKey(msg.createdAt)
                         val dayPrev = chatDayKey(prev?.createdAt)
                         if (idx == 0 || dayCurr != dayPrev) {
@@ -1020,7 +1019,7 @@ private fun TeamForumTopicChatRoute(
                             isSelected = isSelected,
                             highlighted = highlightMessageId == msg.id,
                             onJumpToMessage = { targetId ->
-                                val targetIndex = sortedMessages.indexOfFirst { it.id == targetId }
+                                val targetIndex = stableMessages.indexOfFirst { it.id == targetId }
                                 if (targetIndex >= 0) {
                                     scope.launch {
                                         runCatching { listState.animateScrollToItem(targetIndex) }
