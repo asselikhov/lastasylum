@@ -1,0 +1,5 @@
+{
+  "mode": "report-only",
+  "notes": "Bootstrap baseline file. Replace metrics with stable CI medians/p95/p99 after 1-2 weeks of runs.",
+  "metrics": {}
+}

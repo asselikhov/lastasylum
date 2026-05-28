@@ -25,6 +25,17 @@ cd mobile-android
   -Pandroid.testInstrumentationRunnerArguments.class=com.lastasylum.alliance.benchmark.UiJankBenchmark
 ```
 
+## CI benchmark (report-only)
+
+- Workflow: [`.github/workflows/android-benchmark.yml`](../../.github/workflows/android-benchmark.yml)
+- Режим по умолчанию: **report-only** (не фейлит CI).
+- В PR/Run summary выводятся ключевые метрики startup/frame + предупреждения при деградации.
+- Артефакты:
+  - `benchmark/build/outputs/**`
+  - `**/outputs/connected_android_test_additional_output/**`
+  - `benchmark/results/latest_metrics.json`
+- Baseline файл: [`benchmark/baseline/dev_debug.json`](../benchmark/baseline/dev_debug.json)
+
 ## Мини-чеклист перед релизом
 
 1. `:app:testDevDebugUnitTest` — регрессия логики.
@@ -33,6 +44,22 @@ cd mobile-android
    - startup `timeToInitialDisplayMs`
    - frame timing (`p95`) в `UiJankBenchmark`.
 4. Ручной smoke: скролл TeamNews/Forum, переходы вкладок, idle 3-5 минут с включенным overlay.
+
+## Runbook при регрессии в CI benchmark
+
+1. Перезапустить benchmark workflow (исключить одноразовый шум эмулятора).
+2. Сравнить `benchmark/results/latest_metrics.json` с baseline.
+3. Если деградация воспроизводится:
+   - локально прогнать `:benchmark:connectedDevDebugAndroidTest`,
+   - сузить диапазон коммитов (git bisect по perf-изменениям),
+   - проверить горячие сценарии: startup, tab switch, swipe.
+4. После стабилизации обновить baseline на новой норме (только после нескольких стабильных прогонов).
+
+## Rollout политики гейтов
+
+- **Stage 1 (текущий):** report-only 1-2 недели, сбор baseline.
+- **Stage 2:** soft-gate (warning/check-run) при повторяемой деградации.
+- **Stage 3:** hard-gate только на откалиброванных метриках (обычно startup/frame p95).
 
 ## Logcat (оверлей)
 
