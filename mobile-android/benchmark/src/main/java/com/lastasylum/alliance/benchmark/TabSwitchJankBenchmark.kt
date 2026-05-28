@@ -28,7 +28,8 @@ class TabSwitchJankBenchmark {
         startupMode = StartupMode.WARM,
     ) {
         pressHome()
-        val tab = when (iteration % 3) {
+        val tabIndex = (iteration ?: 0) % 3
+        val tab = when (tabIndex) {
             0 -> "chat"
             1 -> "team"
             else -> "profile"
