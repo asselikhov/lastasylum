@@ -14,43 +14,46 @@ import androidx.compose.ui.unit.dp
  * один базовый тон, согласованные альфы — без резких скачков между блоками.
  */
 object SquadRelaySurfaces {
-    /** База «стекла» (близко к void, не к яркому M3 surface). */
-    val glassBase = Color(0xFF0A0F1A)
+    /** База «стекла» — delegates to [com.lastasylum.alliance.ui.theme.premium.PremiumColors]. */
+    val glassBase = com.lastasylum.alliance.ui.theme.premium.PremiumColors.glassLayer1
 
     const val subtleAlpha = 0.40f
-    const val panelAlpha = 0.58f
-    const val barAlpha = 0.68f
-    const val dialogAlpha = 0.90f
-    const val borderAlpha = 0.16f
+    const val panelAlpha = com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces.layer1Alpha
+    const val barAlpha = com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces.barAlpha
+    const val dialogAlpha = com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces.dialogAlpha
+    const val borderAlpha = com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces.borderAlpha
 
     @Composable
     @ReadOnlyComposable
-    fun subtleColor(alpha: Float = subtleAlpha): Color = glassBase.copy(alpha = alpha)
+    fun subtleColor(alpha: Float = subtleAlpha): Color =
+        com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces.layer1(alpha)
 
     @Composable
     @ReadOnlyComposable
-    fun panelColor(alpha: Float = panelAlpha): Color = glassBase.copy(alpha = alpha)
+    fun panelColor(alpha: Float = panelAlpha): Color =
+        com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces.layer1(alpha)
 
     @Composable
     @ReadOnlyComposable
-    fun barColor(alpha: Float = barAlpha): Color = glassBase.copy(alpha = alpha)
+    fun barColor(alpha: Float = barAlpha): Color =
+        com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces.bar(alpha)
 
     @Composable
     @ReadOnlyComposable
-    fun dialogColor(alpha: Float = dialogAlpha): Color = glassBase.copy(alpha = alpha)
+    fun dialogColor(alpha: Float = dialogAlpha): Color =
+        com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces.dialog(alpha)
 
     @Composable
     @ReadOnlyComposable
     fun borderColor(alpha: Float = borderAlpha): Color =
-        MaterialTheme.colorScheme.outline.copy(alpha = alpha)
+        com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces.borderColor(alpha)
 
     @Composable
     @ReadOnlyComposable
     fun panelBorder(width: Dp = 1.dp, alpha: Float = borderAlpha): BorderStroke =
-        BorderStroke(width, borderColor(alpha))
+        com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces.panelBorder(width, alpha)
 
     @Composable
-    fun cardColors(alpha: Float = panelAlpha) = CardDefaults.cardColors(
-        containerColor = panelColor(alpha),
-    )
+    fun cardColors(alpha: Float = panelAlpha) =
+        com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces.cardColors(alpha)
 }

@@ -7,6 +7,7 @@ import com.lastasylum.alliance.data.teams.TeamForumMessageDto
 import com.lastasylum.alliance.ui.chat.ForumMessageClusterFlags
 import com.lastasylum.alliance.ui.chat.toChatClusterFlags
 import com.lastasylum.alliance.ui.chat.toDisplayChatMessage
+import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.ui.screens.ChatMessageBubble
 
 /**
@@ -30,6 +31,7 @@ internal fun ForumMessageBubble(
     downloadingForumFileUrl: String? = null,
     onDownloadForumFile: (TeamForumMessageDto) -> Unit = {},
 ) {
+    val overlayUi = LocalOverlayUiMode.current
     val chatMessage = remember(message) { message.toDisplayChatMessage(teamId, topicId) }
     ChatMessageBubble(
         message = chatMessage,
@@ -41,7 +43,7 @@ internal fun ForumMessageBubble(
         deleting = false,
         inSelectionMode = inSelectionMode,
         isSelected = isSelected,
-        overlayUi = false,
+        overlayUi = overlayUi,
         otherReadUptoMessageId = null,
         onToggleReaction = null,
         onOpenActions = {

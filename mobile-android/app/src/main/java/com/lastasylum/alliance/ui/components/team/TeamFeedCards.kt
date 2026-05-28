@@ -52,6 +52,7 @@ import com.lastasylum.alliance.data.teams.TeamNewsListItemDto
 import com.lastasylum.alliance.data.teams.TeamNewsPollOptionDto
 import com.lastasylum.alliance.data.teams.TeamNewsPollTallyDto
 import com.lastasylum.alliance.ui.screens.teamnews.teamNewsAuthedImageRequest
+import com.lastasylum.alliance.ui.components.premium.PremiumProgressBar
 import com.lastasylum.alliance.ui.theme.SquadRelayAtmosphericPurple
 import com.lastasylum.alliance.ui.theme.SquadRelayAtmosphericSky
 import com.lastasylum.alliance.ui.theme.SquadRelayPrimary
@@ -60,7 +61,7 @@ import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.util.formatTeamFeedDateRu
 import kotlin.math.roundToInt
 
-private val cardShape = RoundedCornerShape(22.dp)
+private val cardShape = TeamFeedCardTokens.cardShape
 private val innerShape = RoundedCornerShape(16.dp)
 private fun glassBorder(alpha: Float = 0.14f) =
     BorderStroke(1.dp, Color.White.copy(alpha = alpha))
@@ -153,22 +154,10 @@ private fun PollResultOptionRow(
                 color = if (selected) SquadRelayPrimary else scheme.onSurfaceVariant,
             )
         }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(8.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(scheme.surfaceVariant.copy(alpha = 0.45f)),
-        ) {
-            if (share > 0f) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .fillMaxWidth(share.coerceIn(0.02f, 1f))
-                        .background(Brush.horizontalGradient(barColors)),
-                )
-            }
-        }
+        PremiumProgressBar(
+            progress = share.coerceIn(0f, 1f),
+            modifier = Modifier.fillMaxWidth(),
+        )
         Text(
             text = stringResource(R.string.team_news_poll_option_votes, voteCount),
             style = MaterialTheme.typography.labelSmall,
@@ -393,7 +382,9 @@ fun TeamNewsFeedCard(
                 shape = cardShape,
             ),
         shape = cardShape,
-        colors = CardDefaults.cardColors(containerColor = SquadRelaySurfaces.panelColor(0.56f)),
+        colors = CardDefaults.cardColors(
+            containerColor = com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces.layer1(0.58f),
+        ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp, pressedElevation = 2.dp),
     ) {
         Column {

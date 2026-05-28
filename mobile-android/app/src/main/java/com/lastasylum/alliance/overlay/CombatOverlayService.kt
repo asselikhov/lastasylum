@@ -4475,7 +4475,7 @@ class CombatOverlayService : Service() {
                             BackHandler { hideOverlayChatTeamPanel() }
                             Surface(
                                 modifier = Modifier.fillMaxSize(),
-                                color = MaterialTheme.colorScheme.surface,
+                                color = com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces.layer1(),
                             ) {
                                 Column(Modifier.fillMaxSize()) {
                                     when (overlayPane) {
@@ -4591,7 +4591,7 @@ class CombatOverlayService : Service() {
                         if (userId.isBlank()) {
                             Surface(
                                 modifier = Modifier.fillMaxSize(),
-                                color = MaterialTheme.colorScheme.surface,
+                                color = com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces.layer1(),
                             ) {
                                 Box(
                                     modifier = Modifier
@@ -4610,7 +4610,7 @@ class CombatOverlayService : Service() {
                         if (chatVm == null) {
                             Surface(
                                 modifier = Modifier.fillMaxSize(),
-                                color = MaterialTheme.colorScheme.surface,
+                                color = com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces.layer1(),
                             ) {
                                 Box(
                                     modifier = Modifier.fillMaxSize(),
@@ -4638,7 +4638,7 @@ class CombatOverlayService : Service() {
                         }
                         Surface(
                             modifier = Modifier.fillMaxSize(),
-                            color = MaterialTheme.colorScheme.surface,
+                            color = com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces.layer1(),
                         ) {
                             Column(Modifier.fillMaxSize()) {
                                 Row(

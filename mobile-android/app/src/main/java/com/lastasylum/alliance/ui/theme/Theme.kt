@@ -52,8 +52,8 @@ private val SquadRelayColorScheme = darkColorScheme(
 fun SquadRelayTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = SquadRelayColorScheme,
-        typography = SquadRelayTypography,
-        shapes = SquadRelayShapes,
+        typography = com.lastasylum.alliance.ui.theme.premium.PremiumTypography,
+        shapes = com.lastasylum.alliance.ui.theme.premium.PremiumShapes,
         content = content,
     )
 }

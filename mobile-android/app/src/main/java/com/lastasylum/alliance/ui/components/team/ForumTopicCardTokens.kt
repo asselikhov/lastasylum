@@ -22,7 +22,7 @@ import com.lastasylum.alliance.ui.theme.SquadRelayOnSurfaceVariant
 import com.lastasylum.alliance.ui.theme.SquadRelayPrimary
 import com.lastasylum.alliance.ui.theme.SquadRelaySecondary
 object ForumTopicCardTokens {
-    val cardRadius = 16.dp
+    val cardRadius = TeamFeedCardTokens.cardRadius
     val cardPaddingH = 14.dp
     val cardPaddingV = 12.dp
     val avatarSize = 36.dp

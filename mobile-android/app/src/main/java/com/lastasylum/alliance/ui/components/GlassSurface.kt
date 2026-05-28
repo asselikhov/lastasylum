@@ -12,23 +12,18 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 
-/** Frosted-style panel: единый тон с остальным UI (no backdrop blur; stable on API 28+). */
+/** Frosted-style panel — delegates to premium glass layer. */
 @Composable
 fun GlassSurface(
     modifier: Modifier = Modifier,
     shape: Shape? = null,
-    shadowElevation: Dp = 3.dp,
+    shadowElevation: Dp = 8.dp,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    val resolvedShape = shape ?: MaterialTheme.shapes.large
-    Surface(
+    com.lastasylum.alliance.ui.components.premium.PremiumGlassSurface(
         modifier = modifier,
-        shape = resolvedShape,
-        color = SquadRelaySurfaces.barColor(),
-        tonalElevation = 0.dp,
+        shape = shape ?: MaterialTheme.shapes.large,
         shadowElevation = shadowElevation,
-        border = SquadRelaySurfaces.panelBorder(),
-    ) {
-        Box(content = content)
-    }
+        content = content,
+    )
 }

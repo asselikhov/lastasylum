@@ -34,7 +34,7 @@ import com.lastasylum.alliance.ui.chat.chatComposerAppDock
 import com.lastasylum.alliance.ui.chat.stabilizeComposerImageUris
 import com.lastasylum.alliance.ui.chat.capForumMessagesOldestFirst
 import com.lastasylum.alliance.ui.chat.mergePreservingForumMedia
-import com.lastasylum.alliance.ui.chat.rememberForumMessageClusterFlags
+import com.lastasylum.alliance.ui.chat.ChatScrollToLatestFab
 import com.lastasylum.alliance.ui.chat.LocalOpenRemoteChatImagePreview
 import com.lastasylum.alliance.ui.chat.MessengerImagesPreviewHost
 import com.lastasylum.alliance.ui.chat.toDisplayChatMessage
@@ -57,6 +57,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.CardDefaults
@@ -65,7 +66,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -152,7 +154,10 @@ import com.lastasylum.alliance.ui.chat.ChatStickerFormat
 import com.lastasylum.alliance.ui.chat.chatDayKey
 import com.lastasylum.alliance.ui.chat.formatChatDaySeparator
 import com.lastasylum.alliance.ui.chat.formatChatTime
+import com.lastasylum.alliance.ui.components.PremiumEmptyState
+import com.lastasylum.alliance.ui.components.premium.PremiumGradientIconFab
 import com.lastasylum.alliance.ui.components.team.ForumTopicFeedCard
+import com.lastasylum.alliance.ui.components.team.TeamFeedCardTokens
 import com.lastasylum.alliance.ui.components.team.ForumTopicGhostIconButton
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
@@ -297,6 +302,8 @@ private fun TeamForumListRoute(
     var editTitle by remember { mutableStateOf("") }
     var editBusy by remember { mutableStateOf(false) }
     var deleteTopic by remember { mutableStateOf<TeamForumTopicDto?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
+    var listFilter by remember { mutableStateOf(ForumTopicListFilter.All) }
 
     fun mergeTopicReadCursor(topicId: String, messageId: String) {
         if (messageId.isBlank()) return
@@ -369,6 +376,19 @@ private fun TeamForumListRoute(
         }
     }
 
+    val displayedTopics = remember(topics.size, searchQuery, listFilter, lastReadByTopic.size) {
+        val q = searchQuery.trim()
+        topics.filter { topic ->
+            val matchesSearch = q.isEmpty() || topic.title.contains(q, ignoreCase = true)
+            val matchesFilter = when (listFilter) {
+                ForumTopicListFilter.All -> true
+                ForumTopicListFilter.Unread -> effectiveTopicUnread(topic) > 0
+                ForumTopicListFilter.Recent -> !topic.lastMessageAt.isNullOrBlank()
+            }
+            matchesSearch && matchesFilter
+        }
+    }
+
     LaunchedEffect(teamId, refreshNonce, currentUserId) {
         val uid = currentUserId.trim()
         if (uid.isNotEmpty()) {
@@ -404,6 +424,39 @@ private fun TeamForumListRoute(
                 )
             }
         }
+        if (!overlayUi) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal, vertical = 8.dp),
+                placeholder = { Text(stringResource(R.string.team_forum_search_hint)) },
+                singleLine = true,
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FilterChip(
+                    selected = listFilter == ForumTopicListFilter.All,
+                    onClick = { listFilter = ForumTopicListFilter.All },
+                    label = { Text(stringResource(R.string.team_forum_filter_all)) },
+                )
+                FilterChip(
+                    selected = listFilter == ForumTopicListFilter.Unread,
+                    onClick = { listFilter = ForumTopicListFilter.Unread },
+                    label = { Text(stringResource(R.string.team_forum_filter_unread)) },
+                )
+                FilterChip(
+                    selected = listFilter == ForumTopicListFilter.Recent,
+                    onClick = { listFilter = ForumTopicListFilter.Recent },
+                    label = { Text(stringResource(R.string.team_forum_filter_recent)) },
+                )
+            }
+        }
         Box(Modifier.fillMaxSize()) {
             when {
                 loading && topics.isEmpty() -> {
@@ -413,10 +466,20 @@ private fun TeamForumListRoute(
                     )
                 }
                 topics.isEmpty() -> {
-                    Text(
-                        text = stringResource(R.string.team_forum_empty),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    PremiumEmptyState(
+                        icon = Icons.Outlined.Forum,
+                        title = stringResource(R.string.team_forum_empty),
+                        body = "",
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(24.dp),
+                    )
+                }
+                displayedTopics.isEmpty() -> {
+                    PremiumEmptyState(
+                        icon = Icons.Outlined.Forum,
+                        title = stringResource(R.string.team_forum_search_hint),
+                        body = "",
                         modifier = Modifier
                             .align(Alignment.Center)
                             .padding(24.dp),
@@ -431,9 +494,9 @@ private fun TeamForumListRoute(
                             top = listTopPad,
                             bottom = 88.dp,
                         ),
-                        verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.forumTopicListSpacing),
+                        verticalArrangement = Arrangement.spacedBy(TeamFeedCardTokens.listSpacing),
                     ) {
-                        itemsIndexed(topics, key = { _, t -> t.id }) { index, t ->
+                        itemsIndexed(displayedTopics, key = { _, t -> t.id }) { index, t ->
                             ForumTopicFeedCard(
                                 topic = t,
                                 listIndex = index,
@@ -482,19 +545,21 @@ private fun TeamForumListRoute(
                 }
             }
             if (canManageTopics) {
-                FloatingActionButton(
+                PremiumGradientIconFab(
                     onClick = {
                         OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
                         createTitle = ""
                         showCreate = true
                     },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(16.dp),
                 ) {
-                    Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.team_forum_new_topic_cd))
+                    Icon(
+                        Icons.Filled.Add,
+                        contentDescription = stringResource(R.string.team_forum_new_topic_cd),
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                    )
                 }
             }
         }
@@ -659,7 +724,23 @@ private fun TeamForumTopicChatRoute(
     var typingHint by remember { mutableStateOf<String?>(null) }
     // messages is maintained oldest-first; avoid per-update sorting allocations (jank/GC).
     val stableMessages = messages
-    val forumClusterFlags = rememberForumMessageClusterFlags(stableMessages)
+    val listDerived = rememberForumMessagesListDerived(stableMessages)
+    var newMessagesWhileScrolledUp by remember(teamId, topicId) { mutableIntStateOf(0) }
+    var lastCountedNewestId by remember(teamId, topicId) { mutableStateOf<String?>(null) }
+    val isNearBottom by remember(listState, listDerived, hasMoreOlder) {
+        derivedStateOf {
+            val bottomIdx = listDerived.bottomLazyIndex(hasMoreOlder) ?: return@derivedStateOf true
+            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            lastVisible >= bottomIdx - 2
+        }
+    }
+    val showScrollToLatestFab by remember(listState, listDerived, hasMoreOlder, stableMessages.size, loading) {
+        derivedStateOf {
+            !isNearBottom &&
+                stableMessages.isNotEmpty() &&
+                !loading
+        }
+    }
 
     fun trimForumMessagesInMemory() {
         capForumMessagesOldestFirst(messages)
@@ -823,18 +904,25 @@ private fun TeamForumTopicChatRoute(
     }
 
     var initialScrollApplied by remember(teamId, topicId) { mutableStateOf(false) }
-    LaunchedEffect(stableMessages.lastOrNull()?.id) {
+    LaunchedEffect(stableMessages.lastOrNull()?.id, isNearBottom) {
+        val newestId = stableMessages.lastOrNull()?.id ?: return@LaunchedEffect
+        if (newestId != lastCountedNewestId) {
+            lastCountedNewestId = newestId
+            if (!isNearBottom && initialScrollApplied) {
+                newMessagesWhileScrolledUp = (newMessagesWhileScrolledUp + 1).coerceAtMost(999)
+            }
+        }
+    }
+    LaunchedEffect(stableMessages.lastOrNull()?.id, listDerived.timeline.size, hasMoreOlder) {
         if (stableMessages.isEmpty()) return@LaunchedEffect
-        val lastIndex = 1 + stableMessages.lastIndex
+        val bottomIdx = listDerived.bottomLazyIndex(hasMoreOlder) ?: return@LaunchedEffect
         if (!initialScrollApplied) {
             initialScrollApplied = true
-            runCatching { listState.scrollToItem(lastIndex) }
+            runCatching { listState.scrollToItem(bottomIdx) }
             return@LaunchedEffect
         }
-        val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-        val nearBottom = lastVisible >= lastIndex - 2
-        if (nearBottom) {
-            runCatching { listState.animateScrollToItem(lastIndex) }
+        if (isNearBottom) {
+            runCatching { listState.animateScrollToItem(bottomIdx) }
         }
     }
 
@@ -949,131 +1037,94 @@ private fun TeamForumTopicChatRoute(
                     strokeWidth = 2.dp,
                 )
             } else {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(0.dp),
-                ) {
-                    if (hasMoreOlder) {
-                        item(key = "forum_load_older") {
-                            OutlinedButton(
-                                onClick = {
-                                    val oldestId = stableMessages.firstOrNull()?.id
-                                    if (oldestId != null) {
-                                        loadForumMessages(before = oldestId, appendOlder = true)
-                                    }
-                                },
-                                enabled = !loadingOlder,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 8.dp),
-                            ) {
-                                Text(
-                                    if (loadingOlder) {
-                                        stringResource(R.string.team_forum_loading_older)
-                                    } else {
-                                        stringResource(R.string.team_forum_load_older)
-                                    },
-                                )
-                            }
+                ForumTopicMessagesLazyList(
+                    messages = stableMessages,
+                    listDerived = listDerived,
+                    listState = listState,
+                    hasMoreOlder = hasMoreOlder,
+                    loadingOlder = loadingOlder,
+                    onLoadOlder = {
+                        val oldestId = stableMessages.firstOrNull()?.id
+                        if (oldestId != null) {
+                            loadForumMessages(before = oldestId, appendOlder = true)
                         }
-                    }
-                    itemsIndexed(
-                        stableMessages,
-                        key = { _, m -> m.id },
-                    ) { idx, msg ->
-                        val prev = stableMessages.getOrNull(idx - 1)
-                        val dayCurr = chatDayKey(msg.createdAt)
-                        val dayPrev = chatDayKey(prev?.createdAt)
-                        if (idx == 0 || dayCurr != dayPrev) {
-                            val sep = formatChatDaySeparator(msg.createdAt)
-                            if (sep.isNotBlank()) {
-                                Box(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 10.dp),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    val sch = MaterialTheme.colorScheme
-                                    Surface(
-                                        shape = RoundedCornerShape(999.dp),
-                                        color = SquadRelaySurfaces.subtleColor(0.48f),
-                                        tonalElevation = 0.dp,
-                                        shadowElevation = 4.dp,
-                                        border = BorderStroke(1.dp, sch.outline.copy(alpha = 0.18f)),
-                                    ) {
-                                        Text(
-                                            text = sep,
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                                        )
-                                    }
+                    },
+                ) { msg, idx ->
+                    val mine = msg.senderUserId == currentUserId
+                    val inSelectionMode = selectedMessageIds.isNotEmpty()
+                    val isSelected = msg.id in selectedMessageIds
+                    val canDeleteMsg = canDeleteForumMessage(msg)
+                    ForumMessageBubble(
+                        message = msg,
+                        teamId = teamId,
+                        topicId = topicId,
+                        cluster = listDerived.clusterFlags.getOrNull(idx),
+                        isMine = mine,
+                        canDelete = canDeleteMsg,
+                        inSelectionMode = inSelectionMode,
+                        isSelected = isSelected,
+                        highlighted = highlightMessageId == msg.id,
+                        onJumpToMessage = { targetId ->
+                            val lazyIdx = listDerived.fullLazyIndexForMessageId(targetId, hasMoreOlder)
+                            if (lazyIdx != null) {
+                                scope.launch {
+                                    runCatching { listState.animateScrollToItem(lazyIdx) }
+                                    highlightMessageId = targetId
+                                    delay(900)
+                                    if (highlightMessageId == targetId) highlightMessageId = null
                                 }
                             }
-                        }
-                        val mine = msg.senderUserId == currentUserId
-                        val inSelectionMode = selectedMessageIds.isNotEmpty()
-                        val isSelected = msg.id in selectedMessageIds
-                        val canDeleteMsg = canDeleteForumMessage(msg)
-                        ForumMessageBubble(
-                            message = msg,
-                            teamId = teamId,
-                            topicId = topicId,
-                            cluster = forumClusterFlags.getOrNull(idx),
-                            isMine = mine,
-                            canDelete = canDeleteMsg,
-                            inSelectionMode = inSelectionMode,
-                            isSelected = isSelected,
-                            highlighted = highlightMessageId == msg.id,
-                            onJumpToMessage = { targetId ->
-                                val targetIndex = stableMessages.indexOfFirst { it.id == targetId }
-                                if (targetIndex >= 0) {
-                                    scope.launch {
-                                        runCatching { listState.animateScrollToItem(targetIndex) }
-                                        highlightMessageId = targetId
-                                        delay(900)
-                                        if (highlightMessageId == targetId) highlightMessageId = null
+                        },
+                        onToggleSelection = {
+                            selectedMessageIds =
+                                if (isSelected) selectedMessageIds - msg.id else selectedMessageIds + msg.id
+                        },
+                        onSwipeReply = {
+                            if (msg.deletedAt.isNullOrBlank()) {
+                                replyToMessage = msg
+                            }
+                        },
+                        onOpenActions = {
+                            if (msg.deletedAt.isNullOrBlank()) {
+                                OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
+                                activeActionMessageId = msg.id
+                            }
+                        },
+                        downloadingForumFileUrl = downloadingForumFileUrl,
+                        onDownloadForumFile = { forumMsg ->
+                            val url = forumMsg.fileRelativeUrl?.trim().orEmpty()
+                            if (url.isNotBlank() && downloadingForumFileUrl == null) {
+                                downloadingForumFileUrl = url
+                                scope.launch {
+                                    downloadAndInstallForumApk(
+                                        context,
+                                        url,
+                                        forumMsg.fileFilename,
+                                    ).onFailure { e ->
+                                        error = e.message
+                                            ?: res.getString(R.string.chat_apk_download_failed)
                                     }
+                                    downloadingForumFileUrl = null
                                 }
-                            },
-                            onToggleSelection = {
-                                selectedMessageIds =
-                                    if (isSelected) selectedMessageIds - msg.id else selectedMessageIds + msg.id
-                            },
-                            onSwipeReply = {
-                                if (msg.deletedAt.isNullOrBlank()) {
-                                    replyToMessage = msg
-                                }
-                            },
-                            onOpenActions = {
-                                if (msg.deletedAt.isNullOrBlank()) {
-                                    OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
-                                    activeActionMessageId = msg.id
-                                }
-                            },
-                            downloadingForumFileUrl = downloadingForumFileUrl,
-                            onDownloadForumFile = { forumMsg ->
-                                val url = forumMsg.fileRelativeUrl?.trim().orEmpty()
-                                if (url.isNotBlank() && downloadingForumFileUrl == null) {
-                                    downloadingForumFileUrl = url
-                                    scope.launch {
-                                        downloadAndInstallForumApk(
-                                            context,
-                                            url,
-                                            forumMsg.fileFilename,
-                                        ).onFailure { e ->
-                                            error = e.message
-                                                ?: res.getString(R.string.chat_apk_download_failed)
-                                        }
-                                        downloadingForumFileUrl = null
-                                    }
-                                }
-                            },
-                        )
-                    }
+                            }
+                        },
+                    )
                 }
+                ChatScrollToLatestFab(
+                    visible = showScrollToLatestFab,
+                    newMessageCount = newMessagesWhileScrolledUp,
+                    onClick = {
+                        newMessagesWhileScrolledUp = 0
+                        lastCountedNewestId = stableMessages.lastOrNull()?.id
+                        scope.launch {
+                            val bottomIdx = listDerived.bottomLazyIndex(hasMoreOlder) ?: return@launch
+                            runCatching { listState.animateScrollToItem(bottomIdx) }
+                        }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 12.dp, bottom = 12.dp),
+                )
             }
         }
     }
@@ -1720,4 +1771,9 @@ private fun ForumMessageActionsSheet(
     }
 }
 
+private enum class ForumTopicListFilter {
+    All,
+    Unread,
+    Recent,
+}
 

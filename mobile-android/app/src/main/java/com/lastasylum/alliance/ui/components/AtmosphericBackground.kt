@@ -8,14 +8,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.drawWithCache
-import com.lastasylum.alliance.ui.theme.SquadRelayAtmosphericSky
-import com.lastasylum.alliance.ui.theme.SquadRelayBackground
-import com.lastasylum.alliance.ui.theme.SquadRelayAtmosphericPurple
-import com.lastasylum.alliance.ui.theme.SquadRelayVoidBottom
-import com.lastasylum.alliance.ui.theme.SquadRelayVoidTop
+import com.lastasylum.alliance.ui.theme.premium.PremiumColors
+import com.lastasylum.alliance.ui.theme.premium.PremiumGlow
 
 /**
- * Layered void + radial accents (AAA shell). Solid paints only — works on minSdk 28.
+ * AMOLED-friendly void with ambient radial glows and depth (API 28+ solid paints).
  */
 @Composable
 fun AtmosphericBackground(modifier: Modifier = Modifier) {
@@ -31,46 +28,39 @@ fun AtmosphericBackground(modifier: Modifier = Modifier) {
                     val max = w.coerceAtLeast(h)
                     val base = Brush.verticalGradient(
                         colors = listOf(
-                            SquadRelayVoidTop,
-                            SquadRelayBackground,
-                            SquadRelayBackground,
-                            SquadRelayVoidBottom,
+                            PremiumColors.voidTop,
+                            PremiumColors.voidMid,
+                            PremiumColors.voidMid,
+                            PremiumColors.voidBottom,
                         ),
                         startY = 0f,
                         endY = h,
                     )
-                    val accent1Center = Offset(w * 0.1f, h * 0.12f)
-                    val accent1Radius = max * 0.72f
-                    val accent1 = Brush.radialGradient(
-                        colors = listOf(
-                            SquadRelayAtmosphericPurple.copy(alpha = 0.22f),
-                            Color.Transparent,
-                        ),
-                        center = accent1Center,
-                        radius = accent1Radius,
-                    )
-                    val accent2Center = Offset(w * 0.88f, h * 0.88f)
-                    val accent2Radius = max * 0.55f
-                    val accent2 = Brush.radialGradient(
-                        colors = listOf(
-                            SquadRelayAtmosphericSky.copy(alpha = 0.12f),
-                            Color.Transparent,
-                        ),
-                        center = accent2Center,
-                        radius = accent2Radius,
+                    val accent1Center = Offset(w * 0.12f, h * 0.08f)
+                    val accent1Radius = max * 0.78f
+                    val accent1 = PremiumGlow.ambientPurple(accent1Center, accent1Radius)
+                    val accent2Center = Offset(w * 0.9f, h * 0.92f)
+                    val accent2Radius = max * 0.62f
+                    val accent2 = PremiumGlow.ambientCyan(accent2Center, accent2Radius)
+                    val accent3Center = Offset(w * 0.5f, h * 0.45f)
+                    val accent3 = Brush.radialGradient(
+                        colors = listOf(PremiumColors.glowBlue, Color.Transparent),
+                        center = accent3Center,
+                        radius = max * 0.55f,
                     )
                     val topFade = Brush.verticalGradient(
                         colors = listOf(
-                            SquadRelayVoidTop.copy(alpha = 0.55f),
+                            PremiumColors.voidTop.copy(alpha = 0.65f),
                             Color.Transparent,
                         ),
                         startY = 0f,
-                        endY = h * 0.14f,
+                        endY = h * 0.18f,
                     )
                     onDrawBehind {
                         drawRect(brush = base)
                         drawCircle(brush = accent1, radius = accent1Radius, center = accent1Center)
                         drawCircle(brush = accent2, radius = accent2Radius, center = accent2Center)
+                        drawCircle(brush = accent3, radius = max * 0.55f, center = accent3Center)
                         drawRect(brush = topFade)
                     }
                 }

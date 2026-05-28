@@ -76,8 +76,10 @@ import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
 import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.components.AtmosphericBackground
+import com.lastasylum.alliance.ui.components.premium.PremiumGlassBar
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
-import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
+import com.lastasylum.alliance.ui.theme.premium.PremiumColors
+import com.lastasylum.alliance.ui.theme.premium.PremiumMotion
 import android.content.Intent
 import com.lastasylum.alliance.MainActivity
 import com.lastasylum.alliance.di.ChatViewModelRegistry
@@ -271,7 +273,7 @@ fun AppNavigation(
         }
     }
     val showBottomNav = !chatRouteActive || chatNavBarVisible
-    val navBarImeAnimMs = 200
+    val navBarImeAnimMs = PremiumMotion.fadeFastMs
     DisposableEffect(chatRouteActive) {
         if (chatRouteActive) {
             chatViewModel.onChatTabResumed()
@@ -304,13 +306,9 @@ fun AppNavigation(
                     .navigationBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 10.dp),
             ) {
-                Surface(
+                PremiumGlassBar(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(SquadRelayDimens.bottomNavigationBarCornerRadius),
-                    color = SquadRelaySurfaces.barColor(),
-                    tonalElevation = 0.dp,
-                    shadowElevation = 4.dp,
-                    border = SquadRelaySurfaces.panelBorder(),
                 ) {
                     Row(
                         modifier = Modifier
@@ -323,7 +321,7 @@ fun AppNavigation(
                             val isSelected =
                                 currentDestination?.hierarchy?.any { it.route == tab.route } == true
                             val tint = if (isSelected) {
-                                MaterialTheme.colorScheme.primary
+                                PremiumColors.accentCyan
                             } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             }
@@ -336,7 +334,7 @@ fun AppNavigation(
                                     .clip(RoundedCornerShape(SquadRelayDimens.bottomNavigationBarCornerRadius))
                                     .background(
                                         if (isSelected) {
-                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                                            PremiumColors.accentPurple.copy(alpha = 0.28f)
                                         } else {
                                             Color.Transparent
                                         },
