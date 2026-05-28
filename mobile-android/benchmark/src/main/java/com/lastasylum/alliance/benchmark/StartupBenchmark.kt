@@ -2,6 +2,7 @@ package com.lastasylum.alliance.benchmark
 
 import androidx.benchmark.macro.StartupMode
 import androidx.benchmark.macro.StartupTimingMetric
+import androidx.benchmark.macro.FrameTimingMetric
 import androidx.benchmark.macro.junit4.MacrobenchmarkRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Rule
@@ -20,7 +21,10 @@ class StartupBenchmark {
     @Test
     fun coldStart() = benchmarkRule.measureRepeated(
         packageName = "com.lastasylum.alliance",
-        metrics = listOf(StartupTimingMetric()),
+        metrics = listOf(
+            StartupTimingMetric(),
+            FrameTimingMetric(),
+        ),
         iterations = 5,
         startupMode = StartupMode.COLD,
     ) {

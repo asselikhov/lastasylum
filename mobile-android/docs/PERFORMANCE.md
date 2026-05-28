@@ -12,7 +12,26 @@ cd mobile-android
 ./gradlew :benchmark:connectedDevDebugAndroidTest
 ```
 
-Модуль `:benchmark` — холодный старт MainActivity (метрика `StartupTimingMetric`).
+Модуль `:benchmark`:
+- `StartupBenchmark` — cold start + frame timing.
+- `UiJankBenchmark` — launch + swipe probe (frame timing) для быстрой проверки jank на auth/основном UI.
+
+Для запуска конкретного класса:
+
+```bash
+cd mobile-android
+./gradlew :benchmark:connectedDevDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.lastasylum.alliance.benchmark.UiJankBenchmark
+```
+
+## Мини-чеклист перед релизом
+
+1. `:app:testDevDebugUnitTest` — регрессия логики.
+2. `:benchmark:connectedDevDebugAndroidTest` на одном и том же девайсе/эмуляторе.
+3. Проверить, что нет деградации в:
+   - startup `timeToInitialDisplayMs`
+   - frame timing (`p95`) в `UiJankBenchmark`.
+4. Ручной smoke: скролл TeamNews/Forum, переходы вкладок, idle 3-5 минут с включенным overlay.
 
 ## Logcat (оверлей)
 
