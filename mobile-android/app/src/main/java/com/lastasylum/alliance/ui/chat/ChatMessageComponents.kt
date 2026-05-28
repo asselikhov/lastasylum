@@ -204,13 +204,14 @@ fun ChatMessageBodyText(
     }
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.width(maxWidth)) {
-            CollapsibleMessageText(
+            MapLinkedMessageText(
                 text = text,
                 style = textStyle,
                 color = onBubble,
                 expandStateKey = messageId,
                 expandLinkColor = expandLinkColor,
                 fadeBaseColor = fadeBaseColor,
+                linkColor = expandLinkColor,
             )
             if (timeLabel.isNotBlank() || (isMine && isChainBottom)) {
                 ChatMessageTimeWithReadStatus(
@@ -254,7 +255,7 @@ fun TelegramImageCaptionBar(
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
-        CollapsibleMessageText(
+        MapLinkedMessageText(
             text = caption,
             style = MaterialTheme.typography.bodyMedium,
             color = onBubble,
@@ -262,6 +263,7 @@ fun TelegramImageCaptionBar(
             expandStateKey = captionExpandKey?.let { "cap_$it" },
             expandLinkColor = expandLinkColor,
             fadeBaseColor = fadeBaseColor,
+            linkColor = expandLinkColor,
         )
         if (formattedTime.isNotBlank()) {
             Spacer(modifier = Modifier.width(8.dp))

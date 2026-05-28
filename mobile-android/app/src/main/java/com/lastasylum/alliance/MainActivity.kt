@@ -3,6 +3,8 @@ package com.lastasylum.alliance
 import android.graphics.Color
 import android.content.Intent
 import android.os.Bundle
+import android.widget.Toast
+import com.lastasylum.alliance.overlay.CombatOverlayService
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -15,6 +17,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        handleIncomingShareIntent(intent)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -34,6 +37,23 @@ class MainActivity : ComponentActivity() {
         setContent {
             SquadRelayApp()
         }
+        handleIncomingShareIntent(intent)
+    }
+
+    private fun handleIncomingShareIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_SEND) return
+        if (intent.type != "text/plain") return
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim().orEmpty()
+        if (text.isEmpty()) return
+        if (com.lastasylum.alliance.game.MapCoordinateParser.parseSharedText(text) == null) {
+            Toast.makeText(this, R.string.share_coord_parse_failed, Toast.LENGTH_LONG).show()
+            setIntent(Intent(this, MainActivity::class.java).apply { action = Intent.ACTION_MAIN })
+            return
+        }
+        if (!CombatOverlayService.shareMapCoordinatesFromExternal(this, text)) {
+            Toast.makeText(this, R.string.share_coord_need_overlay, Toast.LENGTH_LONG).show()
+        }
+        setIntent(Intent(this, MainActivity::class.java).apply { action = Intent.ACTION_MAIN })
     }
 
     companion object {

@@ -126,6 +126,7 @@ import com.lastasylum.alliance.data.teams.TeamForumTypingEvent
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
@@ -1289,6 +1290,10 @@ private fun TeamForumTopicChatRoute(
             OverlayModalScope(preparedByCaller = true) {
             ForumMessageActionsSheet(
                 message = msg,
+                onGoToMap = {
+                    com.lastasylum.alliance.game.GameMapNavigator.openFromMessage(context, msg.text)
+                    activeActionMessageId = null
+                },
                 canEdit = (msg.senderUserId == currentUserId || canModerateMessages) &&
                     msg.deletedAt.isNullOrBlank() &&
                     (
@@ -1598,10 +1603,14 @@ private fun ForumMessageActionsSheet(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onForward: () -> Unit,
+    onGoToMap: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val stickerStem = remember(message.text) { StickerPacks.stemForMessage(message.text) }
     val canCopy = forumMessageHasCopyableContent(message)
+    val hasMapCoordinate = remember(message.text) {
+        com.lastasylum.alliance.game.MapCoordinateParser.parse(message.text) != null
+    }
     OverlayAwareBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -1682,6 +1691,12 @@ private fun ForumMessageActionsSheet(
                     onDismiss()
                 },
                 enabled = canCopy,
+            )
+            MessageSheetActionRow(
+                icon = Icons.Outlined.Place,
+                label = stringResource(R.string.chat_action_go_to_map),
+                onClick = onGoToMap,
+                enabled = hasMapCoordinate,
             )
             MessageSheetActionRow(
                 icon = Icons.AutoMirrored.Outlined.Reply,

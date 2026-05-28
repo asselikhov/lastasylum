@@ -67,6 +67,7 @@ import com.lastasylum.alliance.data.chat.chatImageAttachments
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
+import com.lastasylum.alliance.ui.chat.MapLinkedMessageText
 import com.lastasylum.alliance.ui.chat.RoleBadge
 import com.lastasylum.alliance.ui.chat.chatMessageIsClusterChainBottomOldestFirst
 import com.lastasylum.alliance.ui.chat.chatMessageShowsClusterHeaderOldestFirst
@@ -474,10 +475,18 @@ private fun OverlayChatStripMessage(
                         )
                     }
                     if (hasText) {
-                        Text(
-                            text = msg.text.trimEnd(),
+                        val body = msg.text.trimEnd()
+                        val linkColor = if (isMine) {
+                            Color(0xFF8FD3FF)
+                        } else {
+                            Color(0xFF5EB3F6)
+                        }
+                        MapLinkedMessageText(
+                            text = body,
                             style = MaterialTheme.typography.bodyMedium,
                             color = onBubble,
+                            fadeBaseColor = bubbleBg,
+                            linkColor = linkColor,
                             maxLines = if (compactStickers) 2 else 3,
                             overflow = TextOverflow.Ellipsis,
                         )

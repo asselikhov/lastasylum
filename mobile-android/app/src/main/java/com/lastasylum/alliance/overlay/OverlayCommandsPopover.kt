@@ -54,7 +54,7 @@ class OverlayCommandsPopover(
     private val mainHandler: Handler,
     private val scope: CoroutineScope,
     private val dp: (Int) -> Int,
-    private val sendCoords: suspend (label: String, x: Int, y: Int, excavation: Boolean) -> Result<ChatMessage>,
+    private val sendCoords: suspend (label: String, targetName: String?, x: Int, y: Int, excavation: Boolean) -> Result<ChatMessage>,
     private val notifyExcavation: suspend () -> Result<ChatMessage>,
     private val emitOverlayReaction: (targetUserId: String, reactionId: String) -> Unit = { _, _ -> },
     private val emitOverlayReactionBroadcast: (reactionId: String) -> Unit = {},
@@ -437,6 +437,7 @@ class OverlayCommandsPopover(
         val hintRes: Int? = null,
         val excavation: Boolean = false,
         val isReactions: Boolean = false,
+        val isShareTarget: Boolean = false,
     )
 
     private fun labelText(
@@ -555,12 +556,18 @@ class OverlayCommandsPopover(
         }
     }
 
-    private fun openCoordsFromMenu(commandLabel: String, excavation: Boolean) {
+    private fun openCoordsFromMenu(commandLabel: String, excavation: Boolean, shareTarget: Boolean = false) {
         val wm = attachedWindowManager ?: return
         hideCoordOnly()
         removeShell(menuScrim)
         menuScrim = null
-        showCoordinateDialog(wm, commandLabel, excavation)
+        showCoordinateDialog(
+            windowManager = wm,
+            commandLabel = commandLabel,
+            excavation = excavation,
+            showTargetNameField = shareTarget,
+            requireTargetName = shareTarget,
+        )
     }
 
     private fun showMenu(windowManager: WindowManager) {
@@ -606,6 +613,13 @@ class OverlayCommandsPopover(
                 accentColor = Color.parseColor("#FF7E57C2"),
                 hintRes = R.string.overlay_cmd_excavation_hint,
                 excavation = true,
+            ),
+            CommandCategory(
+                titleRes = R.string.overlay_cmd_column_share_target,
+                shortLabelRes = R.string.overlay_cmd_tab_share_target,
+                iconRes = R.drawable.ic_overlay_cmd_coords,
+                accentColor = Color.parseColor("#FF4FC3F7"),
+                isShareTarget = true,
             ),
             CommandCategory(
                 titleRes = R.string.overlay_cmd_column_reactions,
@@ -1123,20 +1137,31 @@ class OverlayCommandsPopover(
         }
 
         fun refreshPrimaryAction(cat: CommandCategory) {
-            if (cat.excavation) {
-                coordsLabel.text = context.getString(R.string.overlay_cmd_excavation_notify)
-                coordsIcon.setImageDrawable(
-                    AppCompatResources.getDrawable(context, R.drawable.ic_overlay_send)?.mutate()?.also { d ->
-                        DrawableCompat.setTint(d, Color.parseColor("#FF8FAEFF"))
-                    },
-                )
-            } else {
-                coordsLabel.text = context.getString(R.string.overlay_cmd_column_open_coords)
-                coordsIcon.setImageDrawable(
-                    AppCompatResources.getDrawable(context, R.drawable.ic_overlay_cmd_coords)?.mutate()?.also { d ->
-                        DrawableCompat.setTint(d, Color.parseColor("#FF8FAEFF"))
-                    },
-                )
+            when {
+                cat.excavation -> {
+                    coordsLabel.text = context.getString(R.string.overlay_cmd_excavation_notify)
+                    coordsIcon.setImageDrawable(
+                        AppCompatResources.getDrawable(context, R.drawable.ic_overlay_send)?.mutate()?.also { d ->
+                            DrawableCompat.setTint(d, Color.parseColor("#FF8FAEFF"))
+                        },
+                    )
+                }
+                cat.isShareTarget -> {
+                    coordsLabel.text = context.getString(R.string.overlay_coord_share_send)
+                    coordsIcon.setImageDrawable(
+                        AppCompatResources.getDrawable(context, R.drawable.ic_overlay_cmd_coords)?.mutate()?.also { d ->
+                            DrawableCompat.setTint(d, Color.parseColor("#FF8FAEFF"))
+                        },
+                    )
+                }
+                else -> {
+                    coordsLabel.text = context.getString(R.string.overlay_cmd_column_open_coords)
+                    coordsIcon.setImageDrawable(
+                        AppCompatResources.getDrawable(context, R.drawable.ic_overlay_cmd_coords)?.mutate()?.also { d ->
+                            DrawableCompat.setTint(d, Color.parseColor("#FF8FAEFF"))
+                        },
+                    )
+                }
             }
         }
 
@@ -1152,7 +1177,11 @@ class OverlayCommandsPopover(
             } else {
                 categoryHint.visibility = View.GONE
             }
-            rebuildOptionsForCategory(cat)
+            if (cat.isShareTarget) {
+                optionsRow.visibility = View.GONE
+            } else {
+                rebuildOptionsForCategory(cat)
+            }
             if (cat.isReactions) {
                 ensurePopoverSuppressHeld()
                 OverlayReactionBitmapCache.preloadOverlayStickerPack(context)
@@ -1247,13 +1276,21 @@ class OverlayCommandsPopover(
                 }
                 return@setOnClickListener
             }
+            if (cat.isShareTarget) {
+                openCoordsFromMenu(
+                    commandLabel = context.getString(cat.titleRes),
+                    excavation = false,
+                    shareTarget = true,
+                )
+                return@setOnClickListener
+            }
             val label = if (cat.options != null) {
                 val idx = selectedOptionIndex.coerceIn(0, cat.options.lastIndex)
                 context.getString(cat.options[idx].labelCommandRes)
             } else {
                 context.getString(cat.titleRes)
             }
-            openCoordsFromMenu(label, excavation = false)
+            openCoordsFromMenu(label, excavation = false, shareTarget = false)
         }
 
         applyCategory(0)
@@ -1325,14 +1362,21 @@ class OverlayCommandsPopover(
         windowManager: WindowManager,
         commandLabel: String,
         excavation: Boolean,
+        showTargetNameField: Boolean = false,
+        requireTargetName: Boolean = false,
     ) {
         ensurePopoverSuppressHeld()
         CombatOverlayService.extendInGameOverlayUiHold()
 
         val close = iconCloseButton()
         val title = labelText(commandLabel, 14f, Color.parseColor("#FFF4F7FF"), bold = true)
+        val subtitleText = if (showTargetNameField) {
+            context.getString(R.string.overlay_share_target_dialog_subtitle)
+        } else {
+            context.getString(R.string.overlay_coord_dialog_subtitle)
+        }
         val subtitle = labelText(
-            context.getString(R.string.overlay_coord_dialog_subtitle),
+            subtitleText,
             10.5f,
             Color.parseColor("#7A90A4B8"),
         )
@@ -1381,6 +1425,22 @@ class OverlayCommandsPopover(
         val (colX, editX) = coordField(context.getString(R.string.overlay_coord_x_label))
         val (colY, editY) = coordField(context.getString(R.string.overlay_coord_y_label))
 
+        val targetNameCol: LinearLayout?
+        val editTargetName: EditText?
+        if (showTargetNameField) {
+            val pair = coordField(context.getString(R.string.overlay_coord_target_name_label))
+            val edit = pair.second.apply {
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+                setHint(context.getString(R.string.overlay_coord_target_name_label))
+                gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            }
+            targetNameCol = pair.first
+            editTargetName = edit
+        } else {
+            targetNameCol = null
+            editTargetName = null
+        }
+
         val coordsRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             val gap = dp(8)
@@ -1394,7 +1454,9 @@ class OverlayCommandsPopover(
         }
 
         val sendBtn = TextView(context).apply {
-            text = context.getString(R.string.overlay_coord_send)
+            text = context.getString(
+                if (showTargetNameField) R.string.overlay_coord_share_send else R.string.overlay_coord_send,
+            )
             setTextColor(Color.parseColor("#FFF8FAFF"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
             typeface = Typeface.DEFAULT_BOLD
@@ -1431,6 +1493,15 @@ class OverlayCommandsPopover(
         val body = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), 0, dp(14), dp(12))
+            if (targetNameCol != null) {
+                addView(
+                    targetNameCol,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { bottomMargin = dp(8) },
+                )
+            }
             addView(coordsRow)
             addView(
                 buttonsRow,
@@ -1515,6 +1586,11 @@ class OverlayCommandsPopover(
         }
 
         sendBtn.setOnClickListener {
+            val targetName = editTargetName?.text?.toString()?.trim().orEmpty()
+            if (requireTargetName && targetName.isEmpty()) {
+                Toast.makeText(context, R.string.overlay_coord_target_name_required, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             val xv = editX.text?.toString()?.trim()?.toIntOrNull()
             val yv = editY.text?.toString()?.trim()?.toIntOrNull()
             if (xv == null || yv == null) {
@@ -1523,10 +1599,17 @@ class OverlayCommandsPopover(
             }
             hideKeyboard(editX)
             hideKeyboard(editY)
+            editTargetName?.let { hideKeyboard(it) }
             sendBtn.isEnabled = false
             cancelBtn.isEnabled = false
             scope.launch {
-                val result = sendCoords(commandLabel, xv, yv, excavation)
+                val result = sendCoords(
+                    commandLabel,
+                    targetName.takeIf { it.isNotEmpty() },
+                    xv,
+                    yv,
+                    excavation,
+                )
                 mainHandler.post {
                     sendBtn.isEnabled = true
                     cancelBtn.isEnabled = true
@@ -1548,8 +1631,13 @@ class OverlayCommandsPopover(
         }
 
         mainHandler.post {
-            editX.requestFocus()
-            showKeyboard(editX)
+            if (editTargetName != null) {
+                editTargetName.requestFocus()
+                showKeyboard(editTargetName)
+            } else {
+                editX.requestFocus()
+                showKeyboard(editX)
+            }
         }
     }
 

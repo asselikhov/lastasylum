@@ -747,6 +747,20 @@
     <string name="overlay_cmd_excavation_notify">Оповестить</string>
     <string name="overlay_cmd_excavation_hint">Push союзникам вне игры</string>
     <string name="overlay_coord_dialog_subtitle">Введите координаты цели</string>
+    <string name="overlay_cmd_tab_share_target">Цель</string>
+    <string name="overlay_cmd_column_share_target">Поделиться целью</string>
+    <string name="overlay_share_target_dialog_subtitle">Имя цели и координаты в канал «Рейд»</string>
+    <string name="overlay_coord_target_name_label">Имя цели</string>
+    <string name="overlay_coord_target_name_required">Введите имя цели</string>
+    <string name="overlay_coord_share_send">Поделиться</string>
+    <string name="map_coord_go_to_map">На карте</string>
+    <string name="map_coord_opened_game">Открыта игра</string>
+    <string name="map_coord_copied_fallback">Координаты в буфере — вставьте в поиск на карте</string>
+    <string name="map_coord_link_cd">Перейти к координатам на карте</string>
+    <string name="chat_action_go_to_map">На карте</string>
+    <string name="share_coord_sent_raid">Координаты отправлены в «Рейд»</string>
+    <string name="share_coord_parse_failed">Не удалось распознать координаты в тексте</string>
+    <string name="share_coord_need_overlay">Откройте игру с оверлеем Squad Relay для отправки в «Рейд»</string>
 
     <!-- API / network (ViewModel) -->
     <string name="err_invalid_credentials">Неверная почта или пароль.</string>

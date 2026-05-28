@@ -162,7 +162,7 @@ class CombatOverlayService : Service() {
             mainHandler = mainHandler,
             scope = serviceScope,
             dp = { dp(it) },
-            sendCoords = { label, x, y, excavation ->
+            sendCoords = { label, targetName, x, y, excavation ->
                 val repo = AppContainer.from(this@CombatOverlayService).chatRepository
                 val roomId = resolveOverlayRaidRoomId()
                     ?: repo.ensureRaidRoomId()?.also { rememberOverlayRaidRoomId(it) }
@@ -171,7 +171,12 @@ class CombatOverlayService : Service() {
                 val text = if (excavation) {
                     getString(R.string.overlay_excavation_message, x, y)
                 } else {
-                    "$label X:${x} Y:${y}"
+                    com.lastasylum.alliance.game.MapCoordinateFormatter.format(
+                        label = label,
+                        targetName = targetName,
+                        x = x,
+                        y = y,
+                    )
                 }
                 mainHandler.post {
                     ensureOverlayRaidRealtimeIfNeeded()
@@ -3002,6 +3007,13 @@ class CombatOverlayService : Service() {
                 tickGameGate()
                 return START_STICKY
             }
+            ACTION_SHARE_MAP_COORD -> {
+                val raw = intent.getStringExtra(EXTRA_SHARE_TEXT).orEmpty()
+                if (raw.isNotBlank()) {
+                    shareMapTextToRaid(raw)
+                }
+                return START_STICKY
+            }
             else -> {
                 if (!prefs.isOverlayPanelEnabled()) {
                     runCatching { removeOverlayControl() }
@@ -3428,6 +3440,64 @@ class CombatOverlayService : Service() {
      * Локальная отправка (быстрые команды, HTTP-эхо) — пишем в буфер ленты напрямую,
      * не полагаясь только на [shouldIngestForRaidStrip] и сокет.
      */
+    private fun shareMapTextToRaid(raw: String) {
+        val coord = com.lastasylum.alliance.game.MapCoordinateParser.parseSharedText(raw.trim())
+        if (coord == null) {
+            mainHandler.post {
+                Toast.makeText(this, R.string.share_coord_parse_failed, Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
+        val text = coord.fullMessageText()
+        serviceScope.launch {
+            val container = AppContainer.from(this@CombatOverlayService)
+            if (!container.authRepository.hasSession()) return@launch
+            val repo = container.chatRepository
+            val roomId = resolveOverlayRaidRoomId()
+                ?: repo.ensureRaidRoomId()?.also { rememberOverlayRaidRoomId(it) }
+            if (roomId == null) {
+                mainHandler.post {
+                    Toast.makeText(
+                        this@CombatOverlayService,
+                        R.string.overlay_strip_no_raid,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+                return@launch
+            }
+            rememberOverlayRaidRoomId(roomId)
+            mainHandler.post {
+                ensureOverlayRaidRealtimeIfNeeded()
+                applyLocalSentMessageToStrip(
+                    buildOptimisticRaidCommandMessage(roomId, text),
+                    trustedRaidRoomId = roomId,
+                    displayText = text,
+                )
+            }
+            val result = repo.sendOverlayRaidCommandWithRetries(text = text, roomId = roomId)
+            mainHandler.post {
+                result.onSuccess { sent ->
+                    publishQuickCommandToStrip(sent, roomId, text)
+                    extendInGameOverlayUiHold()
+                    Toast.makeText(
+                        this@CombatOverlayService,
+                        R.string.share_coord_sent_raid,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }.onFailure { e ->
+                    val msg = when (e.message) {
+                        "no_room" -> getString(R.string.overlay_strip_no_room)
+                        "no_raid" -> getString(R.string.overlay_strip_no_raid)
+                        else ->
+                            e.message?.takeIf { it.isNotBlank() }
+                                ?: getString(R.string.overlay_history_send_failed, e.javaClass.simpleName)
+                    }
+                    Toast.makeText(this@CombatOverlayService, msg, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
     private fun buildOptimisticRaidCommandMessage(roomId: String, text: String): ChatMessage {
         val rid = roomId.trim()
         val body = text.trim()
@@ -5045,6 +5115,27 @@ class CombatOverlayService : Service() {
             service.mainHandler.post { service.extendOverlayUiHold(durationMs) }
         }
 
+        /**
+         * Системный Share / внешний текст с координатами → канал «Рейд».
+         * @return false если текст не распознан или нет сессии/оверлея.
+         */
+        fun shareMapCoordinatesFromExternal(context: Context, rawText: String): Boolean {
+            val app = context.applicationContext
+            val trimmed = rawText.trim()
+            if (trimmed.isEmpty()) return false
+            if (com.lastasylum.alliance.game.MapCoordinateParser.parseSharedText(trimmed) == null) {
+                return false
+            }
+            if (!AppContainer.from(app).authRepository.hasSession()) return false
+            ensureRuntimeIfUserEnabled(app, showErrorToast = false)
+            val intent = Intent(app, CombatOverlayService::class.java).apply {
+                action = ACTION_SHARE_MAP_COORD
+                putExtra(EXTRA_SHARE_TEXT, trimmed)
+            }
+            runCatching { app.startService(intent) }
+            return true
+        }
+
         /** HTTP/VM path: карточка в ленте «Рейд» сразу (в т.ч. при открытой панели чата). */
         fun publishRaidMessageToStripFromApp(message: ChatMessage) {
             val service = runningInstance ?: return
@@ -5166,6 +5257,8 @@ class CombatOverlayService : Service() {
         const val ACTION_REBUILD_OVERLAY = "com.squadrelay.action.REBUILD_OVERLAY"
         const val ACTION_REFRESH_NOTIFICATION = "com.squadrelay.action.REFRESH_NOTIFICATION"
         const val ACTION_TICK_GAME_GATE = "com.squadrelay.action.TICK_GAME_GATE"
+        const val ACTION_SHARE_MAP_COORD = "com.squadrelay.action.SHARE_MAP_COORD"
+        private const val EXTRA_SHARE_TEXT = "share_text"
         private const val EXTRA_ENABLED = "enabled"
 
         @Volatile

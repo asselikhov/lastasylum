@@ -73,6 +73,7 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Tag
@@ -960,6 +961,10 @@ fun ChatScreen(
                     sheetCanModerate &&
                     message.text.isNotBlank(),
                 onDismiss = onDismissMessageActions,
+                onGoToMap = {
+                    com.lastasylum.alliance.game.GameMapNavigator.openFromMessage(context, message.text)
+                    onDismissMessageActions()
+                },
                 onReply = {
                     message._id?.let(onReplyToMessage)
                     onDismissMessageActions()
@@ -2642,6 +2647,7 @@ private fun ChatMessageActionsSheet(
     onDelete: () -> Unit,
     onSelect: () -> Unit,
     onPasteToInput: () -> Unit,
+    onGoToMap: () -> Unit = {},
 ) {
     OverlayAwareBottomSheet(onDismissRequest = onDismiss) {
         val sheetScroll = rememberScrollState()
@@ -2658,6 +2664,9 @@ private fun ChatMessageActionsSheet(
             val sheetStickerStem = remember(message.text) { StickerPacks.stemForMessage(message.text) }
             val sheetContext = LocalContext.current
             val canCopy = chatMessageHasCopyableContent(message)
+            val hasMapCoordinate = remember(message.text) {
+                com.lastasylum.alliance.game.MapCoordinateParser.parse(message.text) != null
+            }
             MessageSheetPreviewSurface {
                 Text(
                     text = chatSenderDisplayWithTag(message.senderTeamTag, message.senderUsername, message.senderServerNumber),
@@ -2722,6 +2731,12 @@ private fun ChatMessageActionsSheet(
                     onDismiss()
                 },
                 enabled = canCopy,
+            )
+            MessageSheetActionRow(
+                icon = Icons.Outlined.Place,
+                label = stringResource(R.string.chat_action_go_to_map),
+                onClick = onGoToMap,
+                enabled = hasMapCoordinate,
             )
             MessageSheetActionRow(
                 icon = Icons.Outlined.ContentPaste,
