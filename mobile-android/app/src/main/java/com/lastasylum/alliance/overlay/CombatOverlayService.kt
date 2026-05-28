@@ -731,7 +731,7 @@ class CombatOverlayService : Service() {
         }
     }
 
-    private inner class OverlayChatComposeOwner :
+    internal inner class OverlayChatComposeOwner :
         LifecycleOwner,
         ViewModelStoreOwner,
         SavedStateRegistryOwner,
@@ -820,14 +820,19 @@ class CombatOverlayService : Service() {
         }
     }
 
-    /** Compose in overlay popups/HUD windows needs ViewTree owners or LaunchedEffect crashes. */
-    internal fun attachOverlayComposeTree(target: View) {
-        val owner = overlayPopoverComposeOwner
+    internal fun obtainOverlayPopoverComposeOwner(): OverlayChatComposeOwner =
+        overlayPopoverComposeOwner
             ?: OverlayChatComposeOwner().also { overlayPopoverComposeOwner = it }
-        target.setViewTreeLifecycleOwner(owner)
-        target.setViewTreeViewModelStoreOwner(owner)
-        target.setViewTreeSavedStateRegistryOwner(owner)
-        target.setViewTreeOnBackPressedDispatcherOwner(owner)
+
+    /** Compose in overlay popups/HUD windows needs ViewTree owners or LaunchedEffect crashes. */
+    internal fun attachOverlayComposeTree(vararg targets: View) {
+        val owner = obtainOverlayPopoverComposeOwner()
+        targets.forEach { target ->
+            target.setViewTreeLifecycleOwner(owner)
+            target.setViewTreeViewModelStoreOwner(owner)
+            target.setViewTreeSavedStateRegistryOwner(owner)
+            target.setViewTreeOnBackPressedDispatcherOwner(owner)
+        }
     }
 
     private val stripTickRunnable = Runnable {

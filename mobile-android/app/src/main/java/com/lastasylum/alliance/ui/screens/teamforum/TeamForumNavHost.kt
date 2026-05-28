@@ -160,8 +160,8 @@ import com.lastasylum.alliance.ui.chat.formatChatTime
 import com.lastasylum.alliance.ui.components.PremiumEmptyState
 import com.lastasylum.alliance.ui.components.premium.PremiumGradientIconFab
 import com.lastasylum.alliance.ui.components.CenteredScreenLoading
+import com.lastasylum.alliance.ui.components.team.ForumTopicCardTokens
 import com.lastasylum.alliance.ui.components.team.ForumTopicFeedCard
-import com.lastasylum.alliance.ui.components.team.TeamFeedCardTokens
 import com.lastasylum.alliance.ui.components.team.ForumTopicGhostIconButton
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
@@ -446,7 +446,7 @@ private fun TeamForumListRoute(
                             top = listTopPad,
                             bottom = 88.dp,
                         ),
-                        verticalArrangement = Arrangement.spacedBy(TeamFeedCardTokens.listSpacing),
+                        verticalArrangement = Arrangement.spacedBy(ForumTopicCardTokens.listSpacing),
                     ) {
                         itemsIndexed(
                             topics,

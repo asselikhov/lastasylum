@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -266,7 +267,7 @@ fun OverlayReactionRecipientSheet(
                         LazyColumn(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(max = listMaxHeight),
+                                .height(listMaxHeight),
                             contentPadding = PaddingValues(
                                 start = 14.dp,
                                 end = 14.dp,
@@ -610,7 +611,7 @@ private fun OverlayReactionRecipientPreview(
                         val icon = createOverlayReactionTileIcon(
                             ctx,
                             reaction,
-                            playAnimatedPreview = true,
+                            playAnimatedPreview = false,
                         )
                         FrameLayout(ctx).apply {
                             layoutParams = ViewGroup.LayoutParams(
@@ -627,10 +628,6 @@ private fun OverlayReactionRecipientPreview(
                             )
                             tag = icon
                         }
-                    },
-                    update = { host ->
-                        val icon = host.tag as? ImageView ?: return@AndroidView
-                        resumeOverlayReactionTilePreview(icon)
                     },
                     onRelease = { host ->
                         (host.tag as? ImageView)?.let { stopOverlayReactionTileAnimation(it) }

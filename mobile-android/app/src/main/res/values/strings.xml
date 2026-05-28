@@ -469,6 +469,7 @@
     <string name="team_forum_messages_pill">%1$d сообщ.</string>
     <string name="team_forum_chip_messages">%1$d сообщений</string>
     <string name="team_forum_chip_unread">%1$d новых</string>
+    <string name="team_forum_topic_active">Активна</string>
     <string name="team_forum_no_messages">Нет сообщений</string>
     <string name="team_forum_topic_menu_cd">Меню темы</string>
     <string name="team_forum_edit_topic">Переименовать тему</string>

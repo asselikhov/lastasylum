@@ -39,7 +39,12 @@ import androidx.core.graphics.drawable.DrawableCompat
 import com.airbnb.lottie.LottieAnimationView
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalSavedStateRegistryOwner
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.theme.SquadRelayTheme
 import kotlinx.coroutines.CoroutineScope
@@ -527,25 +532,12 @@ class OverlayCommandsPopover(
         }
     }
 
-    private fun iconCloseButton(): TextView =
-        TextView(context).apply {
-            text = "вњ•"
+    private fun iconCloseButton(): ImageView =
+        ImageView(context).apply {
+            setImageResource(R.drawable.ic_overlay_close)
+            imageTintList = ColorStateList.valueOf(Color.parseColor("#99A8B4CC"))
+            scaleType = ImageView.ScaleType.CENTER
             contentDescription = context.getString(R.string.overlay_online_close_cd)
-            setTextColor(Color.parseColor("#99A8B4CC"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            setPadding(dp(8), dp(4), dp(8), dp(4))
-            background = rippleOn(
-                roundedRect(fillColor = Color.parseColor("#12000000"), cornerDp = 999),
-            )
-            isClickable = true
-        }
-
-    private fun iconBackButton(): TextView =
-        TextView(context).apply {
-            text = "в†ђ"
-            contentDescription = context.getString(R.string.overlay_reactions_back_cd)
-            setTextColor(Color.parseColor("#99A8B4CC"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
             setPadding(dp(8), dp(4), dp(8), dp(4))
             background = rippleOn(
                 roundedRect(fillColor = Color.parseColor("#12000000"), cornerDp = 999),
@@ -1575,17 +1567,61 @@ class OverlayCommandsPopover(
         val previousPick = reactionPickScrim
         ensurePopoverSuppressHeld()
         attachedWindowManager = windowManager
-        // РЎРЅР°С‡Р°Р»Р° РЅРѕРІС‹Р№ scrim, РїРѕС‚РѕРј СЃРЅРёРјР°РµРј РјРµРЅСЋ вЂ” РёРЅР°С‡Рµ [isShowing] РЅР° РјРіРЅРѕРІРµРЅРёРµ false.
+        // Сначала новый scrim, потом снимаем меню — иначе [isShowing] на мгновение false.
         val menuToRemove = menuScrim
 
         val container = AppContainer.from(context)
         val cardW = minOf(dp(340), context.resources.displayMetrics.widthPixels - dp(16))
+        val overlayService = context as CombatOverlayService
+        val composeOwner = overlayService.obtainOverlayPopoverComposeOwner()
+
         val composeHost = FrameLayout(context).apply {
             consumeTouchesInSubtree()
-            (context as? CombatOverlayService)?.attachOverlayComposeTree(this)
         }
-        val compose = ComposeView(context).apply {
-            setContent {
+        val compose = ComposeView(context)
+        composeHost.addView(
+            compose,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+
+        val scrim = FrameLayout(context).apply {
+            setBackgroundColor(Color.argb(110, 4, 8, 16))
+            setDismissOnOutsideCardTouch(composeHost) { hideReactionPickOnly() }
+        }
+        scrim.addView(
+            composeHost,
+            FrameLayout.LayoutParams(cardW, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                gravity = Gravity.CENTER
+            },
+        )
+
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            overlayWindowType(),
+            OverlayWindowLayout.popupWindowFlags(),
+            android.graphics.PixelFormat.TRANSLUCENT,
+        ).apply {
+            OverlayWindowLayout.applyFullscreenOverlayWindow(context, this)
+        }
+
+        if (runCatching { windowManager.addView(scrim, params) }.isFailure) {
+            releasePopoverSuppressAfterUiClosed()
+            return
+        }
+        reactionPickScrim = scrim
+
+        overlayService.attachOverlayComposeTree(scrim, composeHost, compose)
+        compose.setContent {
+            CompositionLocalProvider(
+                LocalLifecycleOwner provides composeOwner,
+                LocalViewModelStoreOwner provides composeOwner,
+                LocalSavedStateRegistryOwner provides composeOwner,
+                LocalOnBackPressedDispatcherOwner provides composeOwner,
+            ) {
                 SquadRelayTheme {
                     OverlayReactionRecipientSheet(
                         reactionId = reactionId,
@@ -1628,48 +1664,17 @@ class OverlayCommandsPopover(
                 }
             }
         }
-        composeHost.addView(
-            compose,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-            ),
-        )
 
-        val scrim = FrameLayout(context).apply {
-            setBackgroundColor(Color.argb(110, 4, 8, 16))
-            setDismissOnOutsideCardTouch(composeHost) { hideReactionPickOnly() }
-        }
-        scrim.addView(
-            composeHost,
-            FrameLayout.LayoutParams(cardW, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                gravity = Gravity.CENTER
-            },
-        )
-
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
-            overlayWindowType(),
-            OverlayWindowLayout.popupWindowFlags(),
-            android.graphics.PixelFormat.TRANSLUCENT,
-        ).apply {
-            OverlayWindowLayout.applyFullscreenOverlayWindow(context, this)
-        }
-
-        if (runCatching { windowManager.addView(scrim, params) }.isFailure) {
-            releasePopoverSuppressAfterUiClosed()
-            return
-        }
-        reactionPickScrim = scrim
-        if (menuToRemove != null) {
-            removeShell(menuToRemove)
-            if (menuScrim === menuToRemove) {
-                menuScrim = null
+        mainHandler.post {
+            if (menuToRemove != null) {
+                removeShell(menuToRemove)
+                if (menuScrim === menuToRemove) {
+                    menuScrim = null
+                }
             }
-        }
-        if (previousPick != null && previousPick !== scrim) {
-            removeShell(previousPick)
+            if (previousPick != null && previousPick !== scrim) {
+                removeShell(previousPick)
+            }
         }
         compose.post { compose.requestLayout() }
     }

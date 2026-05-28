@@ -42,6 +42,7 @@ import com.lastasylum.alliance.data.teams.TeamNewsListItemDto
 import com.lastasylum.alliance.ui.admin.AdminTeamDetailTab
 import com.lastasylum.alliance.ui.admin.AdminUiState
 import com.lastasylum.alliance.ui.admin.toAdminPlayerRow
+import com.lastasylum.alliance.ui.components.team.ForumTopicCardTokens
 import com.lastasylum.alliance.ui.components.team.ForumTopicFeedCard
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
@@ -285,7 +286,7 @@ private fun AdminTeamForumTab(
         empty = state.teamForumTopics.isEmpty(),
         emptyText = stringResource(R.string.admin_team_forum_empty),
         error = state.teamForumError,
-        itemSpacing = SquadRelayDimens.forumTopicListSpacing,
+        itemSpacing = ForumTopicCardTokens.listSpacing,
     ) {
         itemsIndexed(state.teamForumTopics, key = { _, topic -> topic.id }) { index, topic ->
             val messageMeta = topic.lastMessageAt?.let { formatForumTopicTimeRu(it) }
