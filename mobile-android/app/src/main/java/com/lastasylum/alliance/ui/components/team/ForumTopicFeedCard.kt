@@ -74,6 +74,7 @@ fun ForumTopicFeedCard(
         variant = FeedCardVariant.ForumTopic,
         isUnread = hasUnread,
         accentColor = accent.primary,
+        listMode = true,
         contentPadding = PaddingValues(
             horizontal = FeedCardDesignTokens.contentPadding,
             vertical = 14.dp,

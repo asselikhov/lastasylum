@@ -818,7 +818,7 @@ private fun TeamForumTopicChatRoute(
                         messages.addAll(visible)
                         trimForumMessagesInMemory()
                     }
-                    hasMoreOlder = page.size >= 50
+                    hasMoreOlder = page.size >= 50 && messages.isNotEmpty()
                 }
                 .onFailure { e ->
                     if (!appendOlder) error = e.toUserMessageRu(res)

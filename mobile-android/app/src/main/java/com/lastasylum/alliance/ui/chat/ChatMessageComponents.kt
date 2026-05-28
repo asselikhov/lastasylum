@@ -192,7 +192,7 @@ fun ChatMessageBodyText(
     isMine: Boolean,
     isChainBottom: Boolean,
     messageId: String?,
-    otherReadUptoMessageId: String?,
+    readByPeer: Boolean,
     timeMuted: Color,
     textStyle: TextStyle = MaterialTheme.typography.bodyMedium,
     fadeBaseColor: Color = MaterialTheme.colorScheme.surface,
@@ -218,7 +218,7 @@ fun ChatMessageBodyText(
                     isMine = isMine,
                     isChainBottom = isChainBottom,
                     messageId = messageId,
-                    otherReadUptoMessageId = otherReadUptoMessageId,
+                    readByPeer = readByPeer,
                     timeColor = timeMuted,
                     modifier = Modifier
                         .align(Alignment.End)

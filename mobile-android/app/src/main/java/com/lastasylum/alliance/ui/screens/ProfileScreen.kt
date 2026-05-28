@@ -62,6 +62,7 @@ import com.lastasylum.alliance.data.users.GameIdentityDto
 import com.lastasylum.alliance.data.users.MyProfileDto
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.components.GlassSurface
+import com.lastasylum.alliance.ui.components.team.FeedCardDesignTokens
 import com.lastasylum.alliance.ui.components.PremiumEmptyState
 import com.lastasylum.alliance.ui.components.SquadRelaySkeletonHero
 import androidx.compose.material.icons.outlined.PersonOutline
@@ -217,8 +218,8 @@ fun ProfileScreen(
 
         GlassSurface(
             modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.large,
-            shadowElevation = 4.dp,
+            shadowElevation = FeedCardDesignTokens.listShadowElevation,
+            showInnerGlow = false,
         ) {
             Box(Modifier.fillMaxWidth()) {
                 Row(
@@ -313,8 +314,8 @@ fun ProfileScreen(
 
         GlassSurface(
             modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.large,
-            shadowElevation = 4.dp,
+            shadowElevation = FeedCardDesignTokens.listShadowElevation,
+            showInnerGlow = false,
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(

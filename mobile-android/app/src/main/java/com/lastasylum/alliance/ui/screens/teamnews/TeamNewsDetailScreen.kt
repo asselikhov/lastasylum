@@ -48,6 +48,7 @@ import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.teams.TeamNewsDetailDto
 import com.lastasylum.alliance.data.teams.TeamNewsPollDetailDto
 import com.lastasylum.alliance.ui.components.premium.PremiumGlassSurface
+import com.lastasylum.alliance.ui.components.team.FeedCardDesignTokens
 import com.lastasylum.alliance.ui.theme.premium.PremiumCardShape
 import com.lastasylum.alliance.ui.util.formatTeamFeedDateRu
 
@@ -198,7 +199,9 @@ internal fun TeamNewsDetailScrollContent(
                         .fillMaxWidth()
                         .padding(horizontal = pageHorizontalPad, vertical = 8.dp),
                     shape = detailCardShape,
-                    shadowElevation = 8.dp,
+                    shadowElevation = FeedCardDesignTokens.detailShadowElevation,
+                    showInnerGlow = false,
+                    layerAlpha = 0.62f,
                 ) {
                     Column(
                         modifier = Modifier
@@ -307,8 +310,9 @@ internal fun TeamNewsDetailPollCard(
     PremiumGlassSurface(
         modifier = modifier.fillMaxWidth(),
         shape = detailCardShape,
-        shadowElevation = if (pollOnly) 10.dp else 8.dp,
-        layerAlpha = if (pollOnly) 0.64f else 0.58f,
+        shadowElevation = FeedCardDesignTokens.detailShadowElevation,
+        showInnerGlow = false,
+        layerAlpha = if (pollOnly) 0.64f else 0.62f,
     ) {
         TeamNewsPollVoteBlock(
             poll = poll,

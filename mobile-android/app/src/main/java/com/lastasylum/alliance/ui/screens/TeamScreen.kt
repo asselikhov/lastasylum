@@ -91,12 +91,8 @@ import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.overlay.OverlayModalScope
 import com.lastasylum.alliance.ui.components.GlassSurface
 import com.lastasylum.alliance.ui.components.TeamSectionTabAccents
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
-import com.lastasylum.alliance.ui.theme.premium.PremiumMotion
 import com.lastasylum.alliance.ui.components.TeamSectionTabBar
+import com.lastasylum.alliance.ui.components.TeamRetainedSection
 import com.lastasylum.alliance.ui.components.TeamSectionTabSpec
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
@@ -440,69 +436,71 @@ fun TeamScreen(
                                 val sectionModifier = Modifier
                                     .weight(1f, fill = true)
                                     .fillMaxWidth()
-                                AnimatedContent(
-                                    targetState = activeSection,
-                                    modifier = sectionModifier,
-                                    transitionSpec = {
-                                        fadeIn(PremiumMotion.fadeTween(PremiumMotion.fadeFastMs)) togetherWith
-                                            fadeOut(PremiumMotion.fadeTween(PremiumMotion.fadeFastMs))
-                                    },
-                                    label = "teamMainSection",
-                                ) { section ->
-                                    when (section) {
-                                        TeamMainSection.News -> {
-                                            TeamNewsNavHost(
-                                                teamId = team.id,
-                                                currentUserId = currentUserId,
-                                                myTeamRole = myTeamRole,
-                                                canPublishNews = canPublishNews,
-                                                teamsRepository = teamsRepository,
-                                                modifier = Modifier.fillMaxSize(),
-                                                onNewsInboxChanged = {
-                                                    teamViewModel.refreshSectionBadges()
-                                                    com.lastasylum.alliance.overlay.CombatOverlayService
-                                                        .notifyOverlayTeamInboxChanged(news = true)
-                                                },
-                                            )
-                                        }
-                                        TeamMainSection.Forum -> {
-                                            TeamForumNavHost(
-                                                teamId = team.id,
-                                                currentUserId = currentUserId,
-                                                canManageTopics = canManageForumTopics,
-                                                canModerateForumMessages = canModerateForumMessages,
-                                                teamsRepository = teamsRepository,
-                                                forumSocket = app.teamForumSocket,
-                                                tokenStore = app.tokenStore,
-                                                forumTabReselectSignal = forumTabReselectSignal,
-                                                enabledStickerPackKeys = enabledStickerPackKeys,
-                                                modifier = Modifier.fillMaxSize(),
-                                                onForumInboxChanged = {
-                                                    teamViewModel.refreshSectionBadges()
-                                                    com.lastasylum.alliance.overlay.CombatOverlayService
-                                                        .notifyOverlayTeamInboxChanged(forum = true)
-                                                },
-                                            )
-                                        }
-                                        TeamMainSection.Members -> {
-                                            SquadTeamRoster(
-                                                members = team.members,
-                                                isSquadLeader = isLeader,
-                                                myTeamRole = myTeamRole,
-                                                currentUserId = currentUserId,
-                                                teamId = team.id,
-                                                busy = membersBusy,
-                                                onBusyChange = { membersBusy = it },
-                                                onReload = { reloadProfileAndTeam() },
-                                                onError = { msg -> actionError = msg },
-                                                teamsRepository = teamsRepository,
-                                                onRequestEditMemberRole = { m ->
-                                                    OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
-                                                    roleEditMember = m
-                                                },
-                                                modifier = Modifier.fillMaxSize(),
-                                            )
-                                        }
+                                Box(
+                                    sectionModifier
+                                        .clip(androidx.compose.ui.graphics.RectangleShape),
+                                ) {
+                                    TeamRetainedSection(
+                                        visible = activeSection == TeamMainSection.News,
+                                        modifier = Modifier.fillMaxSize(),
+                                    ) {
+                                        TeamNewsNavHost(
+                                            teamId = team.id,
+                                            currentUserId = currentUserId,
+                                            myTeamRole = myTeamRole,
+                                            canPublishNews = canPublishNews,
+                                            teamsRepository = teamsRepository,
+                                            modifier = Modifier.fillMaxSize(),
+                                            onNewsInboxChanged = {
+                                                teamViewModel.refreshSectionBadges()
+                                                com.lastasylum.alliance.overlay.CombatOverlayService
+                                                    .notifyOverlayTeamInboxChanged(news = true)
+                                            },
+                                        )
+                                    }
+                                    TeamRetainedSection(
+                                        visible = activeSection == TeamMainSection.Forum,
+                                        modifier = Modifier.fillMaxSize(),
+                                    ) {
+                                        TeamForumNavHost(
+                                            teamId = team.id,
+                                            currentUserId = currentUserId,
+                                            canManageTopics = canManageForumTopics,
+                                            canModerateForumMessages = canModerateForumMessages,
+                                            teamsRepository = teamsRepository,
+                                            forumSocket = app.teamForumSocket,
+                                            tokenStore = app.tokenStore,
+                                            forumTabReselectSignal = forumTabReselectSignal,
+                                            enabledStickerPackKeys = enabledStickerPackKeys,
+                                            modifier = Modifier.fillMaxSize(),
+                                            onForumInboxChanged = {
+                                                teamViewModel.refreshSectionBadges()
+                                                com.lastasylum.alliance.overlay.CombatOverlayService
+                                                    .notifyOverlayTeamInboxChanged(forum = true)
+                                            },
+                                        )
+                                    }
+                                    TeamRetainedSection(
+                                        visible = activeSection == TeamMainSection.Members,
+                                        modifier = Modifier.fillMaxSize(),
+                                    ) {
+                                        SquadTeamRoster(
+                                            members = team.members,
+                                            isSquadLeader = isLeader,
+                                            myTeamRole = myTeamRole,
+                                            currentUserId = currentUserId,
+                                            teamId = team.id,
+                                            busy = membersBusy,
+                                            onBusyChange = { membersBusy = it },
+                                            onReload = { reloadProfileAndTeam() },
+                                            onError = { msg -> actionError = msg },
+                                            teamsRepository = teamsRepository,
+                                            onRequestEditMemberRole = { m ->
+                                                OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
+                                                roleEditMember = m
+                                            },
+                                            modifier = Modifier.fillMaxSize(),
+                                        )
                                     }
                                 }
                             }

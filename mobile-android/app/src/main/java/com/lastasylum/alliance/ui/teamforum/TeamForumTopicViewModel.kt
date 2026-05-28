@@ -113,7 +113,7 @@ class TeamForumTopicViewModel(
                 capForumMessagesOldestFirst(messages)
                 _uiState.update {
                     it.copy(
-                        hasMoreOlder = page.size >= 50,
+                        hasMoreOlder = page.size >= 50 && messages.isNotEmpty(),
                         error = if (appendOlder) it.error else null,
                     )
                 }

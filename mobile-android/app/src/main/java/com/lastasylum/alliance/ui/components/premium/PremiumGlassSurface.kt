@@ -8,7 +8,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.ui.theme.premium.PremiumCardShape
@@ -27,14 +29,18 @@ fun PremiumGlassSurface(
     layerAlpha: Float = PremiumSurfaces.layer1Alpha,
     showInnerGlow: Boolean = true,
     border: BorderStroke? = null,
+    highlightCornerRadius: Dp = 26.dp,
     content: @Composable BoxScope.() -> Unit,
 ) {
+    val cornerPx = with(LocalDensity.current) { highlightCornerRadius.toPx() }
     Surface(
         modifier = modifier.then(
             if (showInnerGlow) {
                 Modifier.drawBehind {
-                    drawRect(
+                    drawRoundRect(
                         brush = PremiumGlow.cardInnerTop(size.height),
+                        cornerRadius = CornerRadius(cornerPx, cornerPx),
+                        size = size,
                     )
                 }
             } else {

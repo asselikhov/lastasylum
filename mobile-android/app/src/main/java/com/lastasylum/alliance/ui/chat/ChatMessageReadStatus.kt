@@ -22,15 +22,12 @@ fun isChatMessageReadByPeer(messageId: String?, otherReadUptoMessageId: String?)
 
 @Composable
 fun ChatMessageReadStatus(
-    messageId: String?,
-    otherReadUptoMessageId: String?,
+    readByPeer: Boolean,
     modifier: Modifier = Modifier,
     mutedColor: Color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
     readColor: Color = Color(0xFF5EB3F6),
 ) {
-    val mid = messageId?.trim().orEmpty()
-    if (mid.isEmpty() || mid.startsWith("pending-")) return
-    val read = isChatMessageReadByPeer(mid, otherReadUptoMessageId)
+    val read = readByPeer
     Text(
         text = if (read) "✓✓" else "✓",
         style = MaterialTheme.typography.labelSmall,
@@ -45,7 +42,7 @@ fun ChatMessageTimeWithReadStatus(
     isMine: Boolean,
     isChainBottom: Boolean,
     messageId: String?,
-    otherReadUptoMessageId: String?,
+    readByPeer: Boolean,
     timeColor: Color,
     modifier: Modifier = Modifier,
     readMutedColor: Color = timeColor.copy(alpha = 0.72f),
@@ -66,8 +63,7 @@ fun ChatMessageTimeWithReadStatus(
         if (isMine && isChainBottom && !messageId.isNullOrBlank()) {
             if (time.isNotBlank()) Spacer(Modifier.width(4.dp))
             ChatMessageReadStatus(
-                messageId = messageId,
-                otherReadUptoMessageId = otherReadUptoMessageId,
+                readByPeer = readByPeer,
                 mutedColor = readMutedColor,
                 readColor = readColor,
             )
@@ -81,7 +77,7 @@ fun ChatMessageTimeOverlayChip(
     isMine: Boolean,
     isChainBottom: Boolean,
     messageId: String?,
-    otherReadUptoMessageId: String?,
+    readByPeer: Boolean,
     modifier: Modifier = Modifier,
 ) {
     if (time.isBlank() && (!isMine || !isChainBottom || messageId.isNullOrBlank())) return
@@ -97,7 +93,7 @@ fun ChatMessageTimeOverlayChip(
             isMine = isMine,
             isChainBottom = isChainBottom,
             messageId = messageId,
-            otherReadUptoMessageId = otherReadUptoMessageId,
+            readByPeer = readByPeer,
             timeColor = Color.White,
             readMutedColor = Color.White.copy(alpha = 0.72f),
             readColor = Color(0xFF8FD4FF),

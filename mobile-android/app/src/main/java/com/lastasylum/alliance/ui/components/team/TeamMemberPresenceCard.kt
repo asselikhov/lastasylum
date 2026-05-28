@@ -1,7 +1,5 @@
 package com.lastasylum.alliance.ui.components.team
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -66,17 +64,12 @@ fun TeamMemberPresenceCard(
     val statusCd = stringResource(
         if (inGameNow) R.string.team_member_in_game_cd else R.string.team_member_not_in_game_cd,
     )
-    val ringPulse by animateFloatAsState(
-        targetValue = if (inGameNow && showIngameAvatarRing) 1f else 0.55f,
-        animationSpec = tween(900),
-        label = "ingameRingPulse",
-    )
-
     PremiumFeedCardShell(
         onClick = null,
         modifier = modifier.fillMaxWidth(),
         variant = FeedCardVariant.Member,
         showLiveAccent = inGameNow,
+        listMode = true,
         accentColor = if (inGameNow) PremiumColors.liveIndicator else null,
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
             horizontal = 14.dp,
@@ -96,7 +89,7 @@ fun TeamMemberPresenceCard(
                                 Modifier
                                     .clip(CircleShape)
                                     .background(
-                                        PremiumColors.liveIndicator.copy(alpha = 0.22f + 0.18f * ringPulse),
+                                        PremiumColors.liveIndicator.copy(alpha = 0.28f),
                                     )
                                     .padding(2.dp)
                             } else {

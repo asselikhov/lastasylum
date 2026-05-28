@@ -61,8 +61,6 @@ import com.lastasylum.alliance.ui.components.premium.FeedCardPollHeaderStrip
 import com.lastasylum.alliance.ui.components.premium.FeedCardTypePill
 import com.lastasylum.alliance.ui.components.premium.FeedCardUnreadDot
 import com.lastasylum.alliance.ui.components.premium.PremiumFeedCardShell
-import com.lastasylum.alliance.ui.components.premium.PremiumGlassBar
-import com.lastasylum.alliance.ui.components.premium.PremiumGlassSurface
 import com.lastasylum.alliance.ui.components.premium.PremiumProgressBar
 import com.lastasylum.alliance.ui.theme.premium.PremiumColors
 import com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces
@@ -303,18 +301,30 @@ fun TeamPollPreviewBlock(
         }
     }
 
-    if (compact) {
-        PremiumGlassSurface(
-            modifier = modifier.fillMaxWidth(),
-            shape = innerShape,
-            shadowElevation = 0.dp,
-            layerAlpha = 0.45f,
-            showInnerGlow = false,
-        ) {
-            Box(Modifier.padding(12.dp)) { body() }
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(
+                if (compact) {
+                    Modifier.padding(top = 4.dp)
+                } else {
+                    Modifier
+                },
+            ),
+    ) {
+        if (compact) {
+            HorizontalDivider(
+                thickness = 1.dp,
+                color = Color.White.copy(alpha = FeedCardDesignTokens.footerDividerAlpha),
+            )
         }
-    } else {
-        Column(modifier = modifier.fillMaxWidth()) { body() }
+        Box(
+            Modifier.padding(
+                top = if (compact) 12.dp else 0.dp,
+            ),
+        ) {
+            body()
+        }
     }
 }
 
@@ -403,6 +413,7 @@ fun TeamNewsFeedCard(
         modifier = modifier.semantics { contentDescription = cardDesc },
         variant = if (pollOnly) FeedCardVariant.PollOnly else FeedCardVariant.News,
         isUnread = isUnread,
+        listMode = true,
         contentPadding = PaddingValues(0.dp),
         topContent = {
             when {
@@ -503,9 +514,11 @@ fun TeamNewsFeedCard(
             }
         },
         footer = {
-            PremiumGlassBar(
-                modifier = Modifier.fillMaxWidth(),
-            ) {
+            Column(Modifier.fillMaxWidth()) {
+                HorizontalDivider(
+                    thickness = 1.dp,
+                    color = Color.White.copy(alpha = FeedCardDesignTokens.footerDividerAlpha),
+                )
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()

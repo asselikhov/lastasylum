@@ -5,10 +5,17 @@ import com.lastasylum.alliance.data.teams.TeamForumMessageDto
 /** Oldest-first in-memory cap (forum thread UI). */
 internal const val FORUM_MAX_MESSAGES_IN_MEMORY = 800
 
+/** API returns newest-first; UI thread is oldest-first (index 0 = oldest). */
+internal fun sortForumMessagesOldestFirst(messages: MutableList<TeamForumMessageDto>) {
+    if (messages.size < 2) return
+    messages.sortBy { it.id }
+}
+
 internal fun capForumMessagesOldestFirst(
     messages: MutableList<TeamForumMessageDto>,
     max: Int = FORUM_MAX_MESSAGES_IN_MEMORY,
 ) {
+    sortForumMessagesOldestFirst(messages)
     val overflow = messages.size - max
     if (overflow <= 0) return
     repeat(overflow) { messages.removeAt(0) }

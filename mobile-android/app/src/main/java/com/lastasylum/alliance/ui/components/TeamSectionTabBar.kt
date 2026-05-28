@@ -31,8 +31,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -209,6 +211,9 @@ fun TeamSectionTabBar(
 /**
  * Раздел остаётся в дереве композиции (состояние списков/навигации сохраняется),
  * но скрыт и не принимает касания, пока не активен.
+ *
+ * Скрытие через [drawWithContent], а не alpha=0: полупрозрачный glass иначе
+ * продолжает рисоваться под активной вкладкой («два кадра» при переключении).
  */
 @Composable
 fun TeamRetainedSection(
@@ -219,8 +224,11 @@ fun TeamRetainedSection(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .zIndex(if (visible) 1f else 0f)
-            .graphicsLayer { alpha = if (visible) 1f else 0f }
+            .clip(RectangleShape)
+            .zIndex(if (visible) 1f else -1f)
+            .drawWithContent {
+                if (visible) drawContent()
+            }
             .then(
                 if (visible) {
                     Modifier

@@ -29,6 +29,9 @@ object FeedCardDesignTokens {
     val shadowRest = 6.dp
     val shadowUnread = 10.dp
     val shadowPressed = 4.dp
+    val listShadowElevation = 4.dp
+    val detailShadowElevation = 8.dp
+    val footerDividerAlpha = 0.06f
 }
 
 enum class FeedCardVariant {

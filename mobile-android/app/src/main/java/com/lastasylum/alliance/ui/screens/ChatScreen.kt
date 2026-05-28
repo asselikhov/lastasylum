@@ -200,6 +200,7 @@ import com.lastasylum.alliance.ui.chat.ChatMessageBodyText
 import com.lastasylum.alliance.ui.chat.chatBubbleSurfaceWidth
 import com.lastasylum.alliance.ui.chat.ChatMessageTimeOverlayChip
 import com.lastasylum.alliance.ui.chat.ChatMessageTimeWithReadStatus
+import com.lastasylum.alliance.ui.chat.isChatMessageReadByPeer
 import com.lastasylum.alliance.ui.chat.ChatQuickReactions
 import com.lastasylum.alliance.ui.chat.ChatScrollToLatestFab
 import com.lastasylum.alliance.ui.chat.isAtReverseChatBottom
@@ -1631,7 +1632,7 @@ private fun ChatBubbleInnerColumn(
     message: ChatMessage,
     isMine: Boolean,
     isChainBottom: Boolean,
-    otherReadUptoMessageId: String?,
+    readByPeer: Boolean,
     showClusterHeader: Boolean,
     tightClusterTop: Boolean,
     stickerStem: String?,
@@ -1641,7 +1642,6 @@ private fun ChatBubbleInnerColumn(
     onBubble: Color,
     timeMuted: Color,
     formattedTime: String,
-    overlayUi: Boolean,
     swipeModifier: Modifier,
     bubbleContext: Context,
     replyQuoteInteraction: MutableInteractionSource,
@@ -1790,7 +1790,7 @@ private fun ChatBubbleInnerColumn(
                             isMine = isMine,
                             isChainBottom = isChainBottom,
                             messageId = message._id,
-                            otherReadUptoMessageId = otherReadUptoMessageId,
+                            readByPeer = readByPeer,
                             timeMuted = timeMuted,
                             textStyle = ChatMessengerStyle.messageTextStyle(MaterialTheme.typography),
                             fadeBaseColor = bubbleBg,
@@ -1884,7 +1884,7 @@ private fun ChatBubbleInnerColumn(
                     isMine = isMine,
                     isChainBottom = isChainBottom,
                     messageId = message._id,
-                    otherReadUptoMessageId = otherReadUptoMessageId,
+                    readByPeer = readByPeer,
                     timeMuted = timeMuted,
                     textStyle = ChatMessengerStyle.messageTextStyle(MaterialTheme.typography),
                     fadeBaseColor = bubbleBg,
@@ -1902,7 +1902,7 @@ private fun ChatBubbleInnerColumn(
                     isMine = isMine,
                     isChainBottom = isChainBottom,
                     messageId = message._id,
-                    otherReadUptoMessageId = otherReadUptoMessageId,
+                    readByPeer = readByPeer,
                     timeColor = timeMuted,
                 )
             }
@@ -1932,7 +1932,7 @@ private fun ChatFloatingImageAttachmentsBlock(
     senderAccent: Color,
     message: ChatMessage,
     isChainBottom: Boolean,
-    otherReadUptoMessageId: String?,
+    readByPeer: Boolean,
     highlighted: Boolean = false,
     formattedTime: String,
     caption: String? = null,
@@ -2014,7 +2014,7 @@ private fun ChatFloatingImageAttachmentsBlock(
                             isMine = isMine,
                             isChainBottom = isChainBottom,
                             messageId = message._id,
-                            otherReadUptoMessageId = otherReadUptoMessageId,
+                            readByPeer = readByPeer,
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
                                 .padding(6.dp),
@@ -2065,6 +2065,10 @@ private fun ChatAlbumRow(
     onSwipeReply: (String) -> Unit,
 ) {
     val messageId = message._id
+    val isChainBottom = cluster?.isChainBottom ?: true
+    val readByPeer = remember(message._id, otherReadUptoMessageId, isMine, isChainBottom) {
+        isMine && isChainBottom && isChatMessageReadByPeer(message._id, otherReadUptoMessageId)
+    }
     val haptics = LocalHapticFeedback.current
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
@@ -2085,8 +2089,9 @@ private fun ChatAlbumRow(
     val displayName = message.senderUsername.trim().ifBlank { senderLine }
     val nickname = message.senderUsername.trim().ifBlank { displayName }
     val showClusterHeader = cluster?.showHeader ?: true
-    val isChainBottom = cluster?.isChainBottom ?: true
-    val formattedTime = formatChatTime(message.createdAt)
+    val formattedTime = remember(message.createdAt, message.editedAt) {
+        formatChatTime(message.createdAt)
+    }
     val scheme = MaterialTheme.colorScheme
     val onBubble = if (isMine) Color.White else scheme.onSurface
     val timeMuted = if (isMine) Color.White.copy(alpha = 0.72f) else scheme.onSurfaceVariant.copy(alpha = 0.88f)
@@ -2197,7 +2202,7 @@ private fun ChatAlbumRow(
             senderAccent = senderAccent,
             message = message,
             isChainBottom = isChainBottom,
-            otherReadUptoMessageId = otherReadUptoMessageId,
+            readByPeer = readByPeer,
             highlighted = highlighted,
             formattedTime = formattedTime,
             caption = caption,
@@ -2299,7 +2304,12 @@ internal fun ChatMessageBubble(
         chatBubbleShapeIncoming(isChainBottom)
     }
     val bubbleContext = LocalContext.current
-    val formattedTime = formatChatTime(message.createdAt)
+    val formattedTime = remember(message.createdAt, message.editedAt) {
+        formatChatTime(message.createdAt)
+    }
+    val readByPeer = remember(message._id, otherReadUptoMessageId, isMine, isChainBottom) {
+        isMine && isChainBottom && isChatMessageReadByPeer(message._id, otherReadUptoMessageId)
+    }
 
     val swipeModifier = if (messageId != null && !isDeleted) {
         Modifier.pointerInput(messageId, layoutDirection, swipePx) {
@@ -2498,7 +2508,7 @@ internal fun ChatMessageBubble(
                                 isMine = isMine,
                                 isChainBottom = isChainBottom,
                                 messageId = message._id,
-                                otherReadUptoMessageId = otherReadUptoMessageId,
+                                readByPeer = readByPeer,
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
                                     .padding(6.dp),
@@ -2533,7 +2543,7 @@ internal fun ChatMessageBubble(
                     senderAccent = senderAccent,
                     message = message,
                     isChainBottom = isChainBottom,
-                    otherReadUptoMessageId = otherReadUptoMessageId,
+                    readByPeer = readByPeer,
                     highlighted = highlighted,
                     formattedTime = formattedTime,
                     bubbleClickModifier = bubbleClickModifier,
@@ -2582,7 +2592,7 @@ internal fun ChatMessageBubble(
                             message = message,
                             isMine = isMine,
                             isChainBottom = isChainBottom,
-                            otherReadUptoMessageId = otherReadUptoMessageId,
+                            readByPeer = readByPeer,
                             showClusterHeader = showClusterHeader,
                             tightClusterTop = tightClusterTop,
                             stickerStem = stickerStem,
@@ -2592,7 +2602,6 @@ internal fun ChatMessageBubble(
                             onBubble = onBubble,
                             timeMuted = timeMuted,
                             formattedTime = formattedTime,
-                            overlayUi = overlayUi,
                             swipeModifier = Modifier,
                             bubbleContext = bubbleContext,
                             replyQuoteInteraction = replyQuoteInteraction,

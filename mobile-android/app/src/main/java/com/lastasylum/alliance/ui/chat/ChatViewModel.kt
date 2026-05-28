@@ -75,6 +75,8 @@ private const val PROFILE_GATE_TTL_MS = 5 * 60_000L
 private const val BACKGROUND_MESSAGE_REFRESH_DEFER_MS = 400L
 /** Coalesce listRooms после socket unread — не дергать сеть на каждый bump. */
 private const val UNREAD_SYNC_DEBOUNCE_MS = 450L
+/** Min interval between full listRooms() on chat tab resume. */
+private const val ROOMS_SYNC_ON_RESUME_TTL_MS = 45_000L
 
 private data class RoomMessageCache(
     val messages: List<ChatMessage>,
@@ -178,6 +180,7 @@ class ChatViewModel(
     private val pendingUnreadBumps = ArrayDeque<Pair<String, String>>()
     /** Socket bump not yet reflected in listRooms / rooms:unread — do not zero tab badge. */
     private val optimisticUnreadFloorByRoom = mutableMapOf<String, Int>()
+    private var lastRoomsSyncedAtMs: Long = 0L
     private val markReadInFlight = CopyOnWriteArrayList<Job>()
     private var unreadSyncJob: Job? = null
     /** False when user left the Chat tab — must not auto mark-read or zero selected-room badge. */
@@ -1076,6 +1079,7 @@ class ChatViewModel(
                         reconfirmReadForVisibleRoom()
                     }
                     syncOverlayAllianceHubBadge(next)
+                    lastRoomsSyncedAtMs = System.currentTimeMillis()
                 }
         }
     }
@@ -1103,13 +1107,19 @@ class ChatViewModel(
             if (!isChatTabActive) return@launch
             refreshStickerPackAccess()
             val cachedRooms = ChatSessionCache.getFreshRooms()
-            if (cachedRooms != null && _state.value.rooms.isEmpty()) {
-                val next = applyRoomsFromServer(cachedRooms)
-                _state.update { it.copy(rooms = next) }
-            } else if (cachedRooms == null) {
-                syncRoomsFromServer(reconfirmVisibleRoom = false)
-            } else {
-                recomputeRoomUnreadBadges()
+            val roomsStale = System.currentTimeMillis() - lastRoomsSyncedAtMs > ROOMS_SYNC_ON_RESUME_TTL_MS
+            when {
+                cachedRooms != null && _state.value.rooms.isEmpty() -> {
+                    val next = applyRoomsFromServer(cachedRooms)
+                    _state.update { it.copy(rooms = next) }
+                    lastRoomsSyncedAtMs = System.currentTimeMillis()
+                }
+                _state.value.rooms.isNotEmpty() && !roomsStale -> {
+                    recomputeRoomUnreadBadges()
+                }
+                else -> {
+                    syncRoomsFromServer(reconfirmVisibleRoom = false)
+                }
             }
             val roomId = _state.value.selectedRoomId?.trim().orEmpty()
             if (roomId.isEmpty()) return@launch

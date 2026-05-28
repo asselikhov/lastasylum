@@ -70,11 +70,8 @@ object ForumTopicCardTokens {
         platformStyle = platformStyle,
     )
 
-    val cardBaseTop = Color(0xFF0A0F1A)
-    val cardBaseBottom = Color(0xFF0E1424)
     val chipFill = Color.White.copy(alpha = 0.07f)
     val chipBorder = Color.White.copy(alpha = 0.10f)
-    val topHighlight = Color.White.copy(alpha = 0.05f)
     val ghostBgRest = Color.Transparent
     val ghostBgPressed = Color.White.copy(alpha = 0.08f)
 
