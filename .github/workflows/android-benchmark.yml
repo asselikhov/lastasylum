@@ -23,9 +23,6 @@ jobs:
   benchmark:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    env:
-      # Default mode for PR/scheduled runs. workflow_dispatch can override via input.
-      BENCHMARK_GATE_MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.gate_mode || 'report-only' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -39,6 +36,15 @@ jobs:
           python-version: "3.11"
 
       - uses: android-actions/setup-android@v3
+
+      - name: Resolve benchmark gate mode
+        run: |
+          MODE="report-only"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.gate_mode }}" ]; then
+            MODE="${{ github.event.inputs.gate_mode }}"
+          fi
+          echo "BENCHMARK_GATE_MODE=$MODE" >> "$GITHUB_ENV"
+          echo "Resolved BENCHMARK_GATE_MODE=$MODE"
 
       - name: Build benchmark APKs
         working-directory: mobile-android
