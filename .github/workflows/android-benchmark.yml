@@ -36,7 +36,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           emulator-boot-timeout: 900
-          emulator-options: -no-window -no-snapshot -noaudio -gpu swiftshader_indirect
+          emulator-options: -no-window -no-snapshot -noaudio -gpu swiftshader_indirect -partition-size 4096 -wipe-data
           script: cd mobile-android && ./gradlew :benchmark:connectedDevDebugAndroidTest --no-daemon
 
       - name: Parse benchmark results and compare baseline
