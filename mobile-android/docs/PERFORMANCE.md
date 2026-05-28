@@ -34,6 +34,8 @@ cd mobile-android
   - `benchmark/build/outputs/**`
   - `**/outputs/connected_android_test_additional_output/**`
   - `benchmark/results/latest_metrics.json`
+- Для `schedule` и `workflow_dispatch` дополнительно публикуется baseline-candidate артефакт:
+  - `android-benchmark-baseline-candidate-<run_id>`
 - Baseline файл: [`benchmark/baseline/dev_debug.json`](../benchmark/baseline/dev_debug.json)
 
 ## Мини-чеклист перед релизом
