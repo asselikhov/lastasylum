@@ -2,18 +2,17 @@ package com.lastasylum.alliance.ui.components.team
 
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.dp
 import kotlin.math.PI
 import kotlin.math.sin
 
-private val FireAmber = Color(0xFFE8A030)
-private val FireOrange = Color(0xFFFF6B35)
-private val FireDeep = Color(0xFFC45C20)
-private val FireCoal = Color(0xFF8B2500)
-private val FireSmoke = Color(0xFF2A1810)
+private val palette get() = ForumTopicCardTokens.FirePalette
 
 private data class FlameLobeSpec(
     val baseX: Float,
@@ -23,11 +22,26 @@ private data class FlameLobeSpec(
 )
 
 private val flameLobes = listOf(
-    FlameLobeSpec(0.14f, 0.22f, 0.42f, 0f),
-    FlameLobeSpec(0.32f, 0.18f, 0.48f, 1.2f),
-    FlameLobeSpec(0.50f, 0.24f, 0.55f, 2.4f),
-    FlameLobeSpec(0.68f, 0.20f, 0.46f, 0.8f),
-    FlameLobeSpec(0.84f, 0.22f, 0.40f, 1.9f),
+    FlameLobeSpec(0.10f, 0.20f, 0.44f, 0f),
+    FlameLobeSpec(0.24f, 0.16f, 0.50f, 1.1f),
+    FlameLobeSpec(0.40f, 0.22f, 0.58f, 2.3f),
+    FlameLobeSpec(0.56f, 0.18f, 0.52f, 0.7f),
+    FlameLobeSpec(0.72f, 0.20f, 0.48f, 1.8f),
+    FlameLobeSpec(0.86f, 0.17f, 0.42f, 3.1f),
+    FlameLobeSpec(0.50f, 0.14f, 0.36f, 4.0f),
+)
+
+private data class SmokeVeilSpec(
+    val baseX: Float,
+    val baseY: Float,
+    val radiusFrac: Float,
+    val phaseOffset: Float,
+)
+
+private val smokeVeils = listOf(
+    SmokeVeilSpec(0.22f, 0.62f, 0.28f, 0.4f),
+    SmokeVeilSpec(0.55f, 0.58f, 0.32f, 1.8f),
+    SmokeVeilSpec(0.78f, 0.65f, 0.24f, 3.2f),
 )
 
 private data class EmberSpec(
@@ -35,18 +49,72 @@ private data class EmberSpec(
     val baseY: Float,
     val phaseOffset: Float,
     val radius: Float,
+    val riseSpeed: Float,
 )
 
 private val emberSpecs = listOf(
-    EmberSpec(0.18f, 0.78f, 0.3f, 2.2f),
-    EmberSpec(0.42f, 0.82f, 1.1f, 1.8f),
-    EmberSpec(0.61f, 0.76f, 2.0f, 2.5f),
-    EmberSpec(0.75f, 0.80f, 0.7f, 1.6f),
-    EmberSpec(0.28f, 0.70f, 2.6f, 1.4f),
-    EmberSpec(0.55f, 0.72f, 3.4f, 2.0f),
-    EmberSpec(0.88f, 0.74f, 1.5f, 1.7f),
-    EmberSpec(0.08f, 0.85f, 4.1f, 1.5f),
+    EmberSpec(0.15f, 0.84f, 0.3f, 2.4f, 1.0f),
+    EmberSpec(0.38f, 0.86f, 1.2f, 1.9f, 1.15f),
+    EmberSpec(0.58f, 0.80f, 2.1f, 2.6f, 0.95f),
+    EmberSpec(0.74f, 0.83f, 0.8f, 1.7f, 1.25f),
+    EmberSpec(0.26f, 0.74f, 2.7f, 1.5f, 1.1f),
+    EmberSpec(0.52f, 0.76f, 3.5f, 2.1f, 0.88f),
+    EmberSpec(0.90f, 0.78f, 1.6f, 1.8f, 1.05f),
+    EmberSpec(0.06f, 0.88f, 4.2f, 1.6f, 1.2f),
 )
+
+/** Animated flame lobe height from slow phase and fast flicker pulse. */
+internal fun flameLobeHeight(baseHeight: Float, phase: Float, pulse: Float): Float {
+    val sway = sin(phase * 1.35f) * 0.12f
+    val intensity = 0.72f + pulse.coerceIn(0f, 1f) * 0.28f
+    return baseHeight * (0.88f + sway) * intensity
+}
+
+/** Ember alpha fades as it rises (0 = base, 1 = apex). */
+internal fun emberOpacityAtRise(riseFraction: Float): Float {
+    val t = riseFraction.coerceIn(0f, 1f)
+    return (1f - t) * (0.35f + (1f - t) * 0.45f)
+}
+
+private fun buildFlamePath(
+    cx: Float,
+    baseY: Float,
+    halfWidth: Float,
+    topY: Float,
+    lean: Float,
+): Path {
+    val path = Path()
+    val left = cx - halfWidth
+    val right = cx + halfWidth
+    val midY = (baseY + topY) * 0.52f
+    path.moveTo(left, baseY)
+    path.quadraticTo(
+        cx + lean - halfWidth * 0.35f,
+        midY,
+        cx + lean * 0.55f,
+        topY,
+    )
+    path.quadraticTo(
+        cx + lean + halfWidth * 0.35f,
+        midY,
+        right,
+        baseY,
+    )
+    path.close()
+    return path
+}
+
+private fun buildCorePath(
+    cx: Float,
+    baseY: Float,
+    halfWidth: Float,
+    topY: Float,
+    lean: Float,
+): Path {
+    val coreHalf = halfWidth * 0.42f
+    val coreTop = topY + (baseY - topY) * 0.18f
+    return buildFlamePath(cx, baseY, coreHalf, coreTop, lean * 0.7f)
+}
 
 /**
  * Animated fire layer for forum topic cards with unread messages (Hot).
@@ -55,92 +123,224 @@ fun DrawScope.drawForumFireBackground(
     accent: ForumTopicCardTokens.Accent,
     drift: Float,
     flicker: Float,
+    heatPhase: Float,
 ) {
     val w = size.width
     val h = size.height
     val corner = 20.dp.toPx()
     val pulse = 0.72f + flicker * 0.28f
+    val heatAngle = heatPhase * 2f * PI.toFloat()
 
+    drawCoalBed(w, h, corner, pulse, heatAngle, flicker)
+    drawSmokeVeils(w, h, heatPhase, heatAngle, pulse)
+    drawFlameBodies(w, h, accent, drift, flicker, pulse)
+    drawEmberField(w, h, drift, flicker)
+    drawRimGlow(w, h, corner, accent, pulse, flicker)
+}
+
+private fun DrawScope.drawCoalBed(
+    w: Float,
+    h: Float,
+    corner: Float,
+    pulse: Float,
+    heatAngle: Float,
+    flicker: Float,
+) {
+    val shimmer = sin(heatAngle) * 0.04f
     drawRoundRect(
         brush = Brush.verticalGradient(
             colors = listOf(
                 Color.Transparent,
-                FireSmoke.copy(alpha = 0.12f + flicker * 0.06f),
-                FireCoal.copy(alpha = 0.22f * pulse),
-                FireDeep.copy(alpha = 0.38f * pulse),
+                palette.smoke.copy(alpha = 0.10f + flicker * 0.05f),
+                palette.coal.copy(alpha = 0.20f * pulse + shimmer),
+                palette.deep.copy(alpha = 0.36f * pulse),
             ),
-            startY = h * 0.35f,
+            startY = h * 0.32f,
             endY = h,
         ),
         size = size,
         cornerRadius = CornerRadius(corner),
     )
-
-    val baseY = h * 0.92f
-    flameLobes.forEach { lobe ->
-        val phase = drift * 2f * PI.toFloat() + lobe.phaseOffset
-        val sway = sin(phase) * w * 0.025f
-        val cx = w * lobe.baseX + sway
-        val flameH = h * lobe.heightFrac * (0.88f + sin(phase * 1.35f) * 0.12f) * pulse
-        val flameW = w * lobe.widthFrac * (0.9f + flicker * 0.15f)
-        val bottom = baseY
-        val top = (bottom - flameH).coerceAtLeast(h * 0.08f)
-
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(
-                    FireAmber.copy(alpha = 0.55f * pulse),
-                    FireOrange.copy(alpha = 0.42f * pulse),
-                    accent.primary.copy(alpha = 0.28f * pulse),
-                    Color.Transparent,
-                ),
-                center = Offset(cx, (top + bottom) * 0.45f),
-                radius = flameW * 0.95f,
+    drawRoundRect(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                palette.orange.copy(alpha = 0.28f * pulse),
+                palette.deep.copy(alpha = 0.18f * pulse),
+                Color.Transparent,
             ),
-            radius = flameW,
-            center = Offset(cx, (top + bottom) * 0.5f),
-        )
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(
-                    Color.White.copy(alpha = 0.12f * flicker),
-                    FireAmber.copy(alpha = 0.35f * pulse),
-                    Color.Transparent,
-                ),
-                center = Offset(cx + sway * 0.3f, top + flameH * 0.25f),
-                radius = flameW * 0.45f,
-            ),
-            radius = flameW * 0.5f,
-            center = Offset(cx, top + flameH * 0.3f),
-        )
-    }
-
+            center = Offset(w * (0.5f + sin(heatAngle * 0.7f) * 0.08f), h * 0.94f),
+            radius = w * 0.55f,
+        ),
+        size = size,
+        cornerRadius = CornerRadius(corner),
+    )
     drawRoundRect(
         brush = Brush.horizontalGradient(
             colors = listOf(
                 Color.Transparent,
-                FireOrange.copy(alpha = 0.18f * pulse),
-                FireAmber.copy(alpha = 0.24f * pulse),
-                FireOrange.copy(alpha = 0.18f * pulse),
+                palette.orange.copy(alpha = 0.16f * pulse),
+                palette.amber.copy(alpha = 0.22f * pulse),
+                palette.orange.copy(alpha = 0.16f * pulse),
                 Color.Transparent,
             ),
             startX = 0f,
             endX = w,
         ),
-        topLeft = Offset(0f, h - 6.dp.toPx()),
-        size = androidx.compose.ui.geometry.Size(w, 6.dp.toPx()),
-        cornerRadius = CornerRadius(3.dp.toPx()),
+        topLeft = Offset(0f, h - 7.dp.toPx()),
+        size = Size(w, 7.dp.toPx()),
+        cornerRadius = CornerRadius(3.5.dp.toPx()),
     )
+}
+
+private fun DrawScope.drawSmokeVeils(
+    w: Float,
+    h: Float,
+    heatPhase: Float,
+    heatAngle: Float,
+    pulse: Float,
+) {
+    smokeVeils.forEach { veil ->
+        val phase = heatPhase * 2f * PI.toFloat() + veil.phaseOffset
+        val rise = (sin(phase) * 0.5f + 0.5f) * h * 0.14f
+        val cx = w * veil.baseX + sin(phase * 1.3f) * w * 0.03f
+        val cy = h * veil.baseY - rise
+        val radius = w * veil.radiusFrac * (0.92f + sin(heatAngle + veil.phaseOffset) * 0.08f)
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    palette.smoke.copy(alpha = 0.14f * pulse),
+                    palette.deep.copy(alpha = 0.08f * pulse),
+                    Color.Transparent,
+                ),
+                center = Offset(cx, cy),
+                radius = radius,
+            ),
+            radius = radius,
+            center = Offset(cx, cy),
+        )
+    }
+}
+
+private fun DrawScope.drawFlameBodies(
+    w: Float,
+    h: Float,
+    accent: ForumTopicCardTokens.Accent,
+    drift: Float,
+    flicker: Float,
+    pulse: Float,
+) {
+    val baseY = h * 0.92f
+    val driftAngle = drift * 2f * PI.toFloat()
+
+    flameLobes.forEach { lobe ->
+        val phase = driftAngle + lobe.phaseOffset
+        val sway = sin(phase) * w * 0.028f
+        val cx = w * lobe.baseX + sway
+        val baseHeight = h * lobe.heightFrac
+        val flameH = flameLobeHeight(baseHeight, phase, flicker)
+        val halfWidth = w * lobe.widthFrac * 0.5f * (0.9f + flicker * 0.12f)
+        val topY = (baseY - flameH).coerceAtLeast(h * 0.06f)
+        val lean = sway * 0.85f
+
+        val bodyPath = buildFlamePath(cx, baseY, halfWidth, topY, lean)
+        drawPath(
+            path = bodyPath,
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    Color.Transparent,
+                    accent.primary.copy(alpha = 0.12f * pulse),
+                    palette.amber.copy(alpha = 0.48f * pulse),
+                    palette.orange.copy(alpha = 0.55f * pulse),
+                    palette.deep.copy(alpha = 0.42f * pulse),
+                ),
+                startY = topY,
+                endY = baseY,
+            ),
+        )
+
+        val corePath = buildCorePath(cx, baseY, halfWidth, topY, lean)
+        drawPath(
+            path = corePath,
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    palette.core.copy(alpha = 0.22f * flicker),
+                    palette.amber.copy(alpha = 0.55f * pulse),
+                    palette.orange.copy(alpha = 0.35f * pulse),
+                    Color.Transparent,
+                ),
+                startY = topY,
+                endY = baseY - (baseY - topY) * 0.35f,
+            ),
+            blendMode = BlendMode.Plus,
+        )
+    }
+}
+
+private fun DrawScope.drawEmberField(
+    w: Float,
+    h: Float,
+    drift: Float,
+    flicker: Float,
+) {
+    val driftAngle = drift * 2f * PI.toFloat()
+    val maxRise = h * 0.26f
 
     emberSpecs.forEach { ember ->
-        val phase = drift * 2f * PI.toFloat() + ember.phaseOffset
-        val rise = (sin(phase) * 0.5f + 0.5f) * h * 0.22f
-        val x = w * ember.baseX + sin(phase * 1.7f) * w * 0.04f
+        val phase = driftAngle + ember.phaseOffset
+        val riseNorm = (sin(phase * ember.riseSpeed) * 0.5f + 0.5f)
+        val rise = riseNorm * maxRise
+        val x = w * ember.baseX + sin(phase * 1.65f) * w * 0.045f
         val y = h * ember.baseY - rise
+        val alpha = emberOpacityAtRise(riseNorm) * (0.65f + flicker * 0.35f)
+        val radius = ember.radius * (0.75f + flicker * 0.35f)
         drawCircle(
-            color = FireAmber.copy(alpha = 0.35f + flicker * 0.25f),
-            radius = ember.radius * (0.8f + flicker * 0.4f),
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    palette.core.copy(alpha = alpha * 0.85f),
+                    palette.amber.copy(alpha = alpha),
+                    Color.Transparent,
+                ),
+                center = Offset(x, y),
+                radius = radius * 1.8f,
+            ),
+            radius = radius,
             center = Offset(x, y),
         )
     }
+}
+
+private fun DrawScope.drawRimGlow(
+    w: Float,
+    h: Float,
+    corner: Float,
+    accent: ForumTopicCardTokens.Accent,
+    pulse: Float,
+    flicker: Float,
+) {
+    drawRoundRect(
+        brush = Brush.verticalGradient(
+            colors = listOf(
+                palette.amber.copy(alpha = 0.06f + pulse * 0.04f),
+                Color.Transparent,
+            ),
+            startY = 0f,
+            endY = h * 0.22f,
+        ),
+        size = size,
+        cornerRadius = CornerRadius(corner),
+    )
+    drawRoundRect(
+        brush = Brush.horizontalGradient(
+            colors = listOf(
+                accent.primary.copy(alpha = 0.15f * flicker),
+                Color.Transparent,
+                Color.Transparent,
+                accent.primary.copy(alpha = 0.15f * flicker),
+            ),
+            startX = 0f,
+            endX = w,
+        ),
+        size = size,
+        cornerRadius = CornerRadius(corner),
+    )
 }

@@ -124,8 +124,7 @@ class ChatViewModel(
     val listDerived: StateFlow<ChatMessagesListDerived> = _listDerived.asStateFlow()
     private var deriveJob: Job? = null
     private var deriveDebounceJob: Job? = null
-    /** Cancels stale [applyIncomingBatch] work that could overwrite HTTP confirm. */
-    private var incomingApplyJob: Job? = null
+    private val incomingApplyMutex = Mutex()
     private val chatMutationLock = Any()
     /** HTTP in-flight sends — socket echo must not insert a second row before [confirmPendingOutgoingMessage]. */
     private val inFlightOutgoingFingerprints =
@@ -849,6 +848,9 @@ class ChatViewModel(
         if (inForeground) {
             syncReadStateFromPreferences()
             applyLocallyRemovedFilterToLoadedCaches()
+            if (isChatTabActive || overlayChatPanelVisible) {
+                rehydrateSelectedRoomMessagesFromCache()
+            }
         } else {
             persistSnapshotJob?.cancel()
             viewModelScope.launch(Dispatchers.IO) { persistChatSnapshot() }
@@ -1112,6 +1114,7 @@ class ChatViewModel(
     /** Returning to the Chat tab: refresh badges; read cursor only when room is visible. */
     fun onChatTabResumed() {
         isChatTabActive = true
+        reconnectRealtimeIfNeeded()
         syncReadStateFromPreferences()
         viewModelScope.launch {
             // Let the tab compose and draw once before room sync / cache hydration.
@@ -1135,27 +1138,7 @@ class ChatViewModel(
             }
             val roomId = _state.value.selectedRoomId?.trim().orEmpty()
             if (roomId.isEmpty()) return@launch
-            roomMessageCache[roomId]?.let { cached ->
-                val filtered = messagesWithoutLocallyRemoved(cached.messages)
-                if (filtered.size != cached.messages.size) {
-                    val updated = cached.copy(messages = capMessagesForMemory(filtered))
-                    roomMessageCache[roomId] = updated
-                    ChatSessionCache.updateMessages(roomId, updated.messages)
-                }
-                _state.update { st ->
-                    val messages = if (st.messages.isEmpty()) {
-                        filtered
-                    } else {
-                        messagesWithoutLocallyRemoved(st.messages)
-                    }
-                    st.copy(
-                        messages = messages,
-                        hasMoreOlder = cached.hasMoreOlder,
-                        isLoading = false,
-                    )
-                }
-                publishMessagesDerived(_state.value.messages)
-            }
+            rehydrateSelectedRoomMessagesFromCache()
             if (_state.value.selectedRoomId.isNullOrBlank()) {
                 ensureAllianceHubRoomSelected()
             }
@@ -1646,16 +1629,61 @@ class ChatViewModel(
         }
     }
 
-    private fun shouldSkipBackgroundMessageRefresh(roomId: String): Boolean {
-        val fresh = ChatSessionCache.getFreshMessages(roomId) ?: return false
-        val current = _state.value.messages
-        if (current.isEmpty()) return false
-        // Неполная страница в RAM-кэше — всегда догружаем с API (типичный кейс оверлея «Рейд»).
-        if (fresh.size < PAGE_SIZE || current.size < PAGE_SIZE) return false
-        val head = current.firstOrNull()?._id?.trim().orEmpty()
-        val cachedHead = fresh.firstOrNull()?._id?.trim().orEmpty()
-        if (head.isEmpty() || cachedHead.isEmpty() || head != cachedHead) return false
-        return fresh.size >= current.size
+    private fun shouldSkipBackgroundMessageRefreshForRoom(roomId: String): Boolean {
+        val rid = roomId.trim()
+        if (rid.isEmpty()) return false
+        val visible = filterMessagesForRoom(_state.value.messages, rid)
+        val sessionCache = ChatSessionCache.getFreshMessages(rid)
+        val roomCache = roomMessageCache[rid]?.messages?.let {
+            messagesWithoutLocallyRemoved(filterMessagesForRoom(it, rid))
+        }
+        return shouldSkipBackgroundMessageRefresh(
+            visible = visible,
+            sessionCache = sessionCache,
+            roomCache = roomCache,
+            pageSize = PAGE_SIZE,
+        )
+    }
+
+    /** Pull peer rows from [roomMessageCache] into visible UI after tab/foreground resume. */
+    private fun rehydrateSelectedRoomMessagesFromCache(): Boolean {
+        val roomId = _state.value.selectedRoomId?.trim().orEmpty()
+        if (roomId.isEmpty()) return false
+        val cachedEntry = roomMessageCache[roomId] ?: return false
+        val cached = messagesWithoutLocallyRemoved(
+            filterMessagesForRoom(cachedEntry.messages, roomId),
+        )
+        val visible = messagesWithoutLocallyRemoved(
+            filterMessagesForRoom(_state.value.messages, roomId),
+        )
+        val merged = mergeVisibleMessagesWithRoomCache(
+            visible = visible,
+            cached = cached,
+            roomId = roomId,
+            maxMessages = messageMemoryCap,
+            excludedMessageIds = locallyRemovedMessageIds,
+        )
+        if (chatMessagesListContentEqual(visible, merged)) return false
+        knownMessageIds.clear()
+        messageIdIndex.clear()
+        knownMessageIds.addAll(merged.mapNotNull { it._id })
+        rebuildMessageIdIndex(merged, messageIdIndex)
+        val hasMoreOlder = cachedEntry.hasMoreOlder
+        roomMessageCache[roomId] = RoomMessageCache(
+            messages = merged,
+            hasMoreOlder = hasMoreOlder,
+        )
+        ChatSessionCache.updateMessages(roomId, merged)
+        _state.update { st ->
+            st.copy(
+                messages = merged,
+                hasMoreOlder = hasMoreOlder,
+                isLoading = false,
+                newestMessageKey = merged.firstOrNull()?._id ?: st.newestMessageKey,
+            )
+        }
+        publishMessagesDerived(merged)
+        return true
     }
 
     private suspend fun reconfirmReadForVisibleRoom() {
@@ -1944,7 +1972,7 @@ class ChatViewModel(
                     markRoomReadUpTo(roomId, newestId)
                 }
             }
-            if (!shouldSkipBackgroundMessageRefresh(roomId)) {
+            if (!shouldSkipBackgroundMessageRefreshForRoom(roomId)) {
                 refreshMessagesInBackground(roomId)
             } else if (filteredCache.size < PAGE_SIZE) {
                 refreshMessagesInBackground(roomId, force = true)
@@ -1976,7 +2004,7 @@ class ChatViewModel(
     }
 
     private fun refreshMessagesInBackground(roomId: String, force: Boolean = false) {
-        if (!force && shouldSkipBackgroundMessageRefresh(roomId)) return
+        if (!force && shouldSkipBackgroundMessageRefreshForRoom(roomId)) return
         val deferMs = if (ChatSessionCache.getFreshMessages(roomId) != null) {
             BACKGROUND_MESSAGE_REFRESH_DEFER_MS
         } else {
@@ -2287,7 +2315,6 @@ class ChatViewModel(
         activeOutgoingPendingId = pendingId
         deriveJob?.cancel()
         deriveDebounceJob?.cancel()
-        incomingApplyJob?.cancel()
         insertOptimisticOutgoingSynchronously(optimistic, clearComposer = true)
         viewModelScope.launch {
             repository.sendMessageWithRetriesForChatUi(trimmed, roomId, replyToMessageId)
@@ -2328,7 +2355,6 @@ class ChatViewModel(
             activeOutgoingPendingId = pendingId
             deriveJob?.cancel()
             deriveDebounceJob?.cancel()
-            incomingApplyJob?.cancel()
             insertOptimisticOutgoingSynchronously(optimistic, clearComposer = true)
             viewModelScope.launch {
                 repository.sendMessageWithRetriesForChatUi(
@@ -3185,7 +3211,6 @@ class ChatViewModel(
 
     /** Replace optimistic row in-place (no remove+insert, no extra scroll). */
     private fun confirmPendingOutgoingMessage(pendingId: String?, sent: ChatMessage) {
-        incomingApplyJob?.cancel()
         val pending = pendingId?.trim().orEmpty()
         val serverId = sent._id?.trim().orEmpty()
         if (pending.isEmpty() || serverId.isEmpty()) {
@@ -3317,8 +3342,8 @@ class ChatViewModel(
             batch.filter { it.roomId.trim() == selectedRoom }
         }.filterNot { shouldBlockOwnOutgoingRealtime(it) }
         if (scopedBatch.isEmpty()) return
-        incomingApplyJob?.cancel()
-        incomingApplyJob = viewModelScope.launch(Dispatchers.Default) {
+        viewModelScope.launch(Dispatchers.Default) {
+            incomingApplyMutex.withLock {
             val work = synchronized(chatMutationLock) {
                 val snapshot = _state.value
                 val afterDrop = dropMatchingPendingOutgoing(
@@ -3396,10 +3421,8 @@ class ChatViewModel(
                     echoesOnly = false,
                 )
             }
-            if (roomId != null && _state.value.selectedRoomId != roomId) return@launch
-            if (!isActive) return@launch
+            if (roomId != null && _state.value.selectedRoomId != roomId) return@withLock
             withContext(Dispatchers.Main) {
-                if (!isActive) return@withContext
                 if (roomId != null && _state.value.selectedRoomId != roomId) return@withContext
                 val cappedMessages = sanitizeMessagesAfterRealtimeApply(
                     work.cappedMessages,
@@ -3458,6 +3481,7 @@ class ChatViewModel(
                     ChatSessionCache.updateMessages(rid, cappedMessages)
                 }
                 scheduleMarkReadAfterIncomingBatch(rid, scopedBatch, cappedMessages)
+            }
             }
         }
     }

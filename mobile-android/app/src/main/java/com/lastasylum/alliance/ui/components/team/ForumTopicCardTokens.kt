@@ -40,7 +40,18 @@ object ForumTopicCardTokens {
     val ghostButtonSize = 36.dp
     val ghostIconSize = 18.dp
     val activityStripHeight = 2.dp
+    val activityStripHeightHot = 3.dp
     val activityDotSize = 7.dp
+
+    /** Shared fire colors for Hot card border + flame layers. */
+    object FirePalette {
+        val amber = Color(0xFFE8A030)
+        val orange = Color(0xFFFF6B35)
+        val deep = Color(0xFFC45C20)
+        val coal = Color(0xFF8B2500)
+        val smoke = Color(0xFF2A1810)
+        val core = Color(0xFFFFF3D4)
+    }
 
     val pressScale = 0.982f
     val pressAnimSpec = tween<Float>(durationMillis = 140, easing = FastOutSlowInEasing)
@@ -118,9 +129,9 @@ object ForumTopicCardTokens {
         if (level == ActivityLevel.Hot) {
             val warmA = 0.78f * boost
             return listOf(
-                Color(0xFFE8A030).copy(alpha = warmA),
-                Color(0xFFFF6B35).copy(alpha = warmA * 0.92f),
-                Color(0xFFC45C20).copy(alpha = warmA * 0.82f),
+                FirePalette.amber.copy(alpha = warmA),
+                FirePalette.orange.copy(alpha = warmA * 0.92f),
+                FirePalette.deep.copy(alpha = warmA * 0.82f),
                 accent.primary.copy(alpha = warmA * 0.45f),
             )
         }

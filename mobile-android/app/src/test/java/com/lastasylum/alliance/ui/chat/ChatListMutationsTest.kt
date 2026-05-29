@@ -193,6 +193,57 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun mergeVisibleMessagesWithRoomCache_addsCachedPeerRowsWhileVisibleStale() {
+        val oldA = msg("507f1f77bcf86cd799439011", "old")
+        val newB = msg("507f1f77bcf86cd799439013", "from peer")
+        val visible = listOf(oldA)
+        val cached = listOf(newB, oldA)
+        val merged = mergeVisibleMessagesWithRoomCache(
+            visible = visible,
+            cached = cached,
+            roomId = "room",
+        )
+        assertEquals(listOf("507f1f77bcf86cd799439013", "507f1f77bcf86cd799439011"), merged.map { it._id })
+    }
+
+    @Test
+    fun shouldSkipBackgroundMessageRefresh_falseWhenRoomCacheAheadOfVisible() {
+        val visible = listOf(msg("507f1f77bcf86cd799439011", "old"))
+        val session = listOf(
+            msg("507f1f77bcf86cd799439011", "old"),
+            msg("507f1f77bcf86cd799439010", "older"),
+        )
+        val room = listOf(
+            msg("507f1f77bcf86cd799439013", "peer"),
+            msg("507f1f77bcf86cd799439011", "old"),
+        )
+        assertFalse(
+            shouldSkipBackgroundMessageRefresh(
+                visible = visible,
+                sessionCache = session,
+                roomCache = room,
+                pageSize = 30,
+            ),
+        )
+    }
+
+    @Test
+    fun shouldSkipBackgroundMessageRefresh_trueWhenCachesMatchVisible() {
+        val visible = listOf(
+            msg("507f1f77bcf86cd799439013", "new"),
+            msg("507f1f77bcf86cd799439011", "old"),
+        )
+        assertTrue(
+            shouldSkipBackgroundMessageRefresh(
+                visible = visible,
+                sessionCache = visible,
+                roomCache = visible,
+                pageSize = 2,
+            ),
+        )
+    }
+
+    @Test
     fun stripRedundantPendingOutgoing_removesPendingWhenServerEchoExists() {
         val pending = msg("pending-1", "hello")
         val server = msg("server-1", "hello")

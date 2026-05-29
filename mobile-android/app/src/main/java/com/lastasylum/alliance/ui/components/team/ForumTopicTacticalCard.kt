@@ -61,7 +61,7 @@ fun ForumTopicTacticalCardShell(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(12_000, easing = LinearEasing),
+            animation = tween(14_000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart,
         ),
         label = "forumTacticalDrift",
@@ -70,7 +70,7 @@ fun ForumTopicTacticalCardShell(
         initialValue = 0.55f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(2_400, easing = FastOutSlowInEasing),
+            animation = tween(2_800, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "forumTacticalPulse",
@@ -84,6 +84,15 @@ fun ForumTopicTacticalCardShell(
         ),
         label = "forumFireFlicker",
     )
+    val heatPhase by infinite.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(9_000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "forumFireHeatPhase",
+    )
 
     val isHot = activityLevel == ForumTopicCardTokens.ActivityLevel.Hot
     val isWarm = activityLevel == ForumTopicCardTokens.ActivityLevel.Warm
@@ -92,6 +101,7 @@ fun ForumTopicTacticalCardShell(
     val outerShape = ForumTopicCardTokens.cardShape
     val innerShape = ForumTopicCardTokens.cardInnerShape
     val showActivityStrip = activityLevel != ForumTopicCardTokens.ActivityLevel.Calm
+    val firePalette = ForumTopicCardTokens.FirePalette
 
     Box(
         modifier = modifier
@@ -101,7 +111,7 @@ fun ForumTopicTacticalCardShell(
                 scaleY = scale
             }
             .drawBehind {
-                drawTacticalCardShadow(activityLevel, accent, glowBoost)
+                drawTacticalCardShadow(activityLevel, accent, glowBoost, flicker)
             }
             .clip(outerShape)
             .background(Brush.linearGradient(borderColors), outerShape)
@@ -110,7 +120,7 @@ fun ForumTopicTacticalCardShell(
             .background(ForumTopicCardTokens.glassFill(glassAlpha), innerShape)
             .drawWithContent {
                 when {
-                    isHot -> drawForumFireBackground(accent, drift, flicker)
+                    isHot -> drawForumFireBackground(accent, drift, flicker, heatPhase)
                     isWarm -> drawTacticalFogParticles(drift, accent)
                 }
                 drawTacticalInnerEdgeGlow(accent, activityLevel, pulse)
@@ -123,29 +133,51 @@ fun ForumTopicTacticalCardShell(
             ),
     ) {
         if (showActivityStrip) {
-            val stripColors = if (isHot) {
-                listOf(
-                    Color.Transparent,
-                    Color(0xFFC45C20).copy(alpha = 0.22f + pulse * 0.38f),
-                    Color(0xFFE8A030).copy(alpha = 0.32f + flicker * 0.28f),
-                    Color(0xFFFF6B35).copy(alpha = 0.24f + pulse * 0.3f),
-                    Color.Transparent,
+            val stripHeight = if (isHot) {
+                ForumTopicCardTokens.activityStripHeightHot
+            } else {
+                ForumTopicCardTokens.activityStripHeight
+            }
+            if (isHot) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(stripHeight)
+                        .drawBehind {
+                            val w = size.width
+                            val shift = drift * w * 0.35f
+                            drawRect(
+                                brush = Brush.horizontalGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        firePalette.amber.copy(alpha = 0.20f + pulse * 0.35f),
+                                        firePalette.orange.copy(alpha = 0.32f + flicker * 0.28f),
+                                        accent.primary.copy(alpha = 0.18f + pulse * 0.22f),
+                                        firePalette.orange.copy(alpha = 0.28f + pulse * 0.3f),
+                                        firePalette.amber.copy(alpha = 0.20f + flicker * 0.25f),
+                                        Color.Transparent,
+                                    ),
+                                    startX = -shift,
+                                    endX = w * 1.45f - shift,
+                                ),
+                            )
+                        },
                 )
             } else {
-                listOf(
+                val stripColors = listOf(
                     Color.Transparent,
                     accent.primary.copy(alpha = 0.15f + pulse * 0.35f),
                     accent.secondary.copy(alpha = 0.22f + pulse * 0.28f),
                     PremiumColors.accentCyan.copy(alpha = 0.18f + pulse * 0.22f),
                     Color.Transparent,
                 )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(stripHeight)
+                        .background(Brush.horizontalGradient(colors = stripColors)),
+                )
             }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(ForumTopicCardTokens.activityStripHeight)
-                    .background(Brush.horizontalGradient(colors = stripColors)),
-            )
         }
         Box(
             modifier = Modifier
@@ -163,9 +195,11 @@ private fun DrawScope.drawTacticalCardShadow(
     activityLevel: ForumTopicCardTokens.ActivityLevel,
     accent: ForumTopicCardTokens.Accent,
     glowBoost: Float,
+    flicker: Float,
 ) {
+    val firePalette = ForumTopicCardTokens.FirePalette
     val baseAlpha = when (activityLevel) {
-        ForumTopicCardTokens.ActivityLevel.Hot -> 0.34f
+        ForumTopicCardTokens.ActivityLevel.Hot -> 0.38f
         ForumTopicCardTokens.ActivityLevel.Warm -> 0.24f
         ForumTopicCardTokens.ActivityLevel.Calm -> 0.16f
     } * glowBoost.coerceAtMost(1.4f)
@@ -176,14 +210,17 @@ private fun DrawScope.drawTacticalCardShadow(
         cornerRadius = CornerRadius(22.dp.toPx()),
     )
     val glowCenter = if (activityLevel == ForumTopicCardTokens.ActivityLevel.Hot) {
-        Offset(size.width * 0.5f, size.height * 0.88f)
+        Offset(
+            size.width * (0.5f + sin(flicker * 6.28f) * 0.04f),
+            size.height * (0.88f + flicker * 0.02f),
+        )
     } else {
         Offset(size.width * 0.18f, size.height * 0.12f)
     }
     val glowColors = if (activityLevel == ForumTopicCardTokens.ActivityLevel.Hot) {
         listOf(
-            Color(0xFFFF6B35).copy(alpha = baseAlpha * 1.1f),
-            Color(0xFFC45C20).copy(alpha = baseAlpha * 0.55f),
+            firePalette.orange.copy(alpha = baseAlpha * 1.15f),
+            firePalette.deep.copy(alpha = baseAlpha * 0.62f),
             Color.Transparent,
         )
     } else {
@@ -197,11 +234,30 @@ private fun DrawScope.drawTacticalCardShadow(
         brush = Brush.radialGradient(
             colors = glowColors,
             center = glowCenter,
-            radius = size.maxDimension * 0.95f,
+            radius = size.maxDimension * 0.98f,
         ),
         size = size,
         cornerRadius = CornerRadius(22.dp.toPx()),
     )
+    if (activityLevel == ForumTopicCardTokens.ActivityLevel.Hot) {
+        val secondaryCenter = Offset(
+            size.width * 0.5f,
+            size.height * 0.96f,
+        )
+        drawRoundRect(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    firePalette.amber.copy(alpha = 0.22f * flicker),
+                    firePalette.orange.copy(alpha = 0.12f * flicker),
+                    Color.Transparent,
+                ),
+                center = secondaryCenter,
+                radius = size.width * 0.65f,
+            ),
+            size = size,
+            cornerRadius = CornerRadius(22.dp.toPx()),
+        )
+    }
 }
 
 private fun DrawScope.drawTacticalFogParticles(drift: Float, accent: ForumTopicCardTokens.Accent) {

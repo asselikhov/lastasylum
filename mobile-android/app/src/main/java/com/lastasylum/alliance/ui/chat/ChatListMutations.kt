@@ -203,6 +203,58 @@ internal fun mergeLoadedPageWithExisting(
     return dedupeMessagesByIdNewestFirst(capNewestFirst(messages, maxMessages))
 }
 
+/** Merge [roomMessageCache] rows into visible UI after tab/foreground resume. */
+internal fun mergeVisibleMessagesWithRoomCache(
+    visible: List<ChatMessage>,
+    cached: List<ChatMessage>,
+    roomId: String,
+    maxMessages: Int = CHAT_MAX_MESSAGES_IN_MEMORY,
+    excludedMessageIds: Set<String> = emptySet(),
+): List<ChatMessage> =
+    mergeLoadedPageWithExisting(
+        existing = cached,
+        loaded = visible,
+        maxMessages = maxMessages,
+        excludedMessageIds = excludedMessageIds,
+        roomId = roomId,
+    )
+
+/**
+ * Skip REST refresh when session RAM cache matches visible UI — unless room stash or session
+ * cache is ahead of what the user sees (peer messages received while inactive).
+ */
+internal fun shouldSkipBackgroundMessageRefresh(
+    visible: List<ChatMessage>,
+    sessionCache: List<ChatMessage>?,
+    roomCache: List<ChatMessage>?,
+    pageSize: Int,
+): Boolean {
+    if (sessionCache == null) return false
+    if (visible.isEmpty()) return false
+    if (sessionCache.size < pageSize || visible.size < pageSize) return false
+    if (!roomCache.isNullOrEmpty()) {
+        val visibleHead = visible.firstOrNull()?._id?.trim().orEmpty()
+        val roomHead = roomCache.firstOrNull()?._id?.trim().orEmpty()
+        when {
+            roomHead.isNotEmpty() && visibleHead.isNotEmpty() &&
+                isObjectIdNewer(roomHead, visibleHead) -> return false
+            roomHead == visibleHead && roomCache.size > visible.size -> return false
+            roomHead.isNotEmpty() && visibleHead.isEmpty() -> return false
+        }
+    }
+    if (roomCache != null) {
+        val sessionHead = sessionCache.firstOrNull()?._id?.trim().orEmpty()
+        val roomHead = roomCache.firstOrNull()?._id?.trim().orEmpty()
+        if (sessionHead != roomHead || sessionCache.size != roomCache.size) {
+            if (roomCache.size > visible.size || sessionCache.size > visible.size) return false
+        }
+    }
+    val head = visible.firstOrNull()?._id?.trim().orEmpty()
+    val cachedHead = sessionCache.firstOrNull()?._id?.trim().orEmpty()
+    if (head.isEmpty() || cachedHead.isEmpty() || head != cachedHead) return false
+    return sessionCache.size >= visible.size
+}
+
 internal fun dedupeMessagesByIdNewestFirst(messages: List<ChatMessage>): List<ChatMessage> {
     if (messages.size <= 1) return messages
     val seen = HashSet<String>()

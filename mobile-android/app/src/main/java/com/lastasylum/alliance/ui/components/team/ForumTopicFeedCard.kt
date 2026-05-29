@@ -229,17 +229,28 @@ private fun ForumTopicActivityPulseDot(
         initialValue = 0.45f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(if (hot) 900 else 1_400),
+            animation = tween(if (hot) 750 else 1_400),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "forumTopicPulseAlpha",
     )
-    val dotPrimary = if (hot) Color(0xFFFF6B35) else accent.primary
-    val dotSecondary = if (hot) Color(0xFFE8A030) else accent.secondary
+    val firePalette = ForumTopicCardTokens.FirePalette
+    val dotPrimary = if (hot) firePalette.orange else accent.primary
+    val dotSecondary = if (hot) firePalette.amber else accent.secondary
     Box(
         modifier = Modifier
             .size(ForumTopicCardTokens.activityDotSize)
             .drawBehind {
+                if (hot) {
+                    drawCircle(
+                        color = firePalette.orange.copy(alpha = 0.28f * pulse),
+                        radius = size.minDimension * 1.55f,
+                    )
+                    drawCircle(
+                        color = firePalette.amber.copy(alpha = 0.18f * pulse),
+                        radius = size.minDimension * 1.15f,
+                    )
+                }
                 drawCircle(
                     color = dotPrimary.copy(alpha = if (hot) 0.42f * pulse else 0.18f * pulse),
                     radius = size.minDimension * 0.95f,
