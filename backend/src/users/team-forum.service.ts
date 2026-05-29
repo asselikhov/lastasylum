@@ -38,6 +38,10 @@ export type TeamForumTopicRow = {
   unreadCount: number;
   lastReadMessageId: string | null;
   lastMessageAt: string | null;
+  /** Author of the newest non-deleted message in the topic (for list avatars). */
+  lastMessageSenderUserId: string | null;
+  lastMessageSenderUsername: string | null;
+  lastMessageSenderTelegramUsername: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -112,17 +116,65 @@ export class TeamForumService {
     }));
   }
 
-  private async enrichTopicsWithCreatorTelegram(
+  private async enrichTopicsWithTelegram(
     rows: TeamForumTopicRow[],
   ): Promise<TeamForumTopicRow[]> {
     if (rows.length === 0) return rows;
-    const creatorIds = [...new Set(rows.map((r) => r.createdByUserId))];
-    const telegramMap =
-      await this.usersService.findTelegramUsernamesByIds(creatorIds);
+    const userIds = new Set<string>();
+    for (const row of rows) {
+      userIds.add(row.createdByUserId);
+      const lastId = row.lastMessageSenderUserId?.trim();
+      if (lastId) userIds.add(lastId);
+    }
+    const telegramMap = await this.usersService.findTelegramUsernamesByIds([
+      ...userIds,
+    ]);
     return rows.map((r) => ({
       ...r,
       createdByTelegramUsername: telegramMap.get(r.createdByUserId) ?? null,
+      lastMessageSenderTelegramUsername: r.lastMessageSenderUserId
+        ? (telegramMap.get(r.lastMessageSenderUserId) ?? null)
+        : null,
     }));
+  }
+
+  private async lastMessageSendersByTopicIds(
+    teamId: Types.ObjectId,
+    topicIds: Types.ObjectId[],
+  ): Promise<
+    Map<string, { senderUserId: string; senderUsername: string }>
+  > {
+    if (topicIds.length === 0) return new Map();
+    const agg = await this.messageModel.aggregate<{
+      _id: Types.ObjectId;
+      senderUserId: string;
+      senderUsername: string;
+    }>([
+      {
+        $match: {
+          teamId,
+          topicId: { $in: topicIds },
+          deletedAt: null,
+        },
+      },
+      { $sort: { createdAt: -1 } },
+      {
+        $group: {
+          _id: '$topicId',
+          senderUserId: { $first: '$senderUserId' },
+          senderUsername: { $first: '$senderUsername' },
+        },
+      },
+    ]);
+    return new Map(
+      agg.map((row) => [
+        row._id.toString(),
+        {
+          senderUserId: row.senderUserId,
+          senderUsername: row.senderUsername,
+        },
+      ]),
+    );
   }
 
   private async assertCanManageTopicsAsync(
@@ -144,6 +196,8 @@ export class TeamForumService {
       messageCount?: number;
       unreadCount?: number;
       lastReadMessageId?: string | null;
+      lastMessageSenderUserId?: string | null;
+      lastMessageSenderUsername?: string | null;
     },
   ): TeamForumTopicRow {
     return {
@@ -156,6 +210,9 @@ export class TeamForumService {
       unreadCount: extras?.unreadCount ?? 0,
       lastReadMessageId: extras?.lastReadMessageId ?? null,
       lastMessageAt: doc.lastMessageAt ? doc.lastMessageAt.toISOString() : null,
+      lastMessageSenderUserId: extras?.lastMessageSenderUserId ?? null,
+      lastMessageSenderUsername: extras?.lastMessageSenderUsername ?? null,
+      lastMessageSenderTelegramUsername: null,
       createdAt: doc.createdAt?.toISOString() ?? new Date().toISOString(),
       updatedAt: doc.updatedAt?.toISOString() ?? new Date().toISOString(),
     };
@@ -412,15 +469,19 @@ export class TeamForumService {
       { $group: { _id: '$topicId', count: { $sum: 1 } } },
     ]);
     const countMap = new Map(countAgg.map((c) => [c._id.toString(), c.count]));
-    return this.enrichTopicsWithCreatorTelegram(
+    const lastSenderMap = await this.lastMessageSendersByTopicIds(tid, topicIds);
+    return this.enrichTopicsWithTelegram(
       rows.map((r) => {
         const doc = r as unknown as TeamForumTopicDocument;
         const id = doc._id.toString();
         const actualCount = countMap.get(id) ?? doc.messageCount ?? 0;
+        const last = lastSenderMap.get(id);
         return this.topicRow(doc, {
           messageCount: actualCount,
           unreadCount: 0,
           lastReadMessageId: null,
+          lastMessageSenderUserId: last?.senderUserId ?? null,
+          lastMessageSenderUsername: last?.senderUsername ?? null,
         });
       }),
     );
@@ -485,15 +546,19 @@ export class TeamForumService {
       userId,
       topicIds,
     );
-    return this.enrichTopicsWithCreatorTelegram(
+    const lastSenderMap = await this.lastMessageSendersByTopicIds(tid, topicIds);
+    return this.enrichTopicsWithTelegram(
       rows.map((r) => {
         const doc = r as unknown as TeamForumTopicDocument;
         const id = doc._id.toString();
         const actualCount = countMap.get(id) ?? doc.messageCount ?? 0;
+        const last = lastSenderMap.get(id);
         return this.topicRow(doc, {
           messageCount: actualCount,
           unreadCount: unreadMap.get(id) ?? 0,
           lastReadMessageId: lastReadMap.get(id) ?? null,
+          lastMessageSenderUserId: last?.senderUserId ?? null,
+          lastMessageSenderUsername: last?.senderUsername ?? null,
         });
       }),
     );

@@ -263,6 +263,17 @@ private fun ForumTopicTacticalAvatar(
     activityLevel: ForumTopicCardTokens.ActivityLevel,
 ) {
     val creatorAvatarUrl = telegramAvatarUrl(topic.createdByTelegramUsername)
+    val showLastSenderAvatar = topic.messageCount > 0
+    val avatarUrl = if (showLastSenderAvatar) {
+        telegramAvatarUrl(topic.lastMessageSenderTelegramUsername)
+    } else {
+        creatorAvatarUrl
+    }
+    val avatarFallbackName = if (showLastSenderAvatar) {
+        topic.lastMessageSenderUsername?.trim()?.takeIf { it.isNotEmpty() } ?: topic.title
+    } else {
+        topic.title
+    }
     val ringAlpha = when (activityLevel) {
         ForumTopicCardTokens.ActivityLevel.Hot -> 0.92f
         ForumTopicCardTokens.ActivityLevel.Warm -> 0.72f
@@ -303,11 +314,11 @@ private fun ForumTopicTacticalAvatar(
                     CircleShape,
                 ),
         )
-        if (creatorAvatarUrl != null) {
+        if (showLastSenderAvatar || avatarUrl != null) {
             ChatSenderAvatar(
-                telegramUrl = creatorAvatarUrl,
+                telegramUrl = avatarUrl,
                 size = ForumTopicCardTokens.avatarInner,
-                fallbackName = topic.title,
+                fallbackName = avatarFallbackName,
             )
         } else {
             Box(
