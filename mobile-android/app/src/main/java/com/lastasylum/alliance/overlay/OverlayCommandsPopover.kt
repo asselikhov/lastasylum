@@ -825,6 +825,9 @@ class OverlayCommandsPopover(
                 val wmUse = attachedWindowManager ?: return@OverlayReactionTilesAdapter
                 reopenReactionSubcategory = selectedReactionSubcategory
                 stopHeartPreviewPulse()
+                overlayQuickReactionById(context, reaction.id).stickerAssetStem?.let { stem ->
+                    OverlayReactionBitmapCache.preloadSticker(context, stem)
+                }
                 showReactionRecipientPicker(wmUse, reaction.id)
             },
             onFavoritesChanged = { scheduleReactionTilesRebuild() },

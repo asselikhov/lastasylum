@@ -23,6 +23,26 @@ internal object OverlayTeamPresenceCache {
         cachedAtMs = 0L
     }
 
+    internal fun isCacheValid(
+        teamId: String,
+        nowMs: Long = System.currentTimeMillis(),
+    ): Boolean {
+        val tid = teamId.trim()
+        if (tid.isEmpty()) return false
+        if (cachedPresence == null) return false
+        return cachedTeamId == tid && nowMs - cachedAtMs < TTL_MS
+    }
+
+    internal fun seedCacheForTest(
+        teamId: String,
+        presence: TeamOverlayPresenceDto,
+        atMs: Long = System.currentTimeMillis(),
+    ) {
+        cachedTeamId = teamId.trim()
+        cachedPresence = presence
+        cachedAtMs = atMs
+    }
+
     suspend fun ingameCount(
         teamId: String,
         teamsRepository: TeamsRepository,

@@ -52,6 +52,12 @@ internal object OverlayReactionBitmapCache {
         inFlight.clear()
     }
 
+    /** Прогрев одного стикера (например перед вспышкой реакции). */
+    fun preloadSticker(context: Context, stem: String) {
+        if (stem.isBlank()) return
+        loadAsync(context, stem) { }
+    }
+
     /** Прогрев части стикеров вкладки «Стикеры» до отрисовки сетки. */
     fun preloadOverlayStickerPack(context: Context, maxEntries: Int = PRELOAD_MAX_STICKERS) {
         val app = context.applicationContext

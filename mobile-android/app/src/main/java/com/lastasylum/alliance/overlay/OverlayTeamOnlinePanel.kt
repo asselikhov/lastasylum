@@ -43,6 +43,7 @@ import com.lastasylum.alliance.data.voice.TeamVoicePresenceStore
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.screens.TeamLeaderDialogsHost
 import com.lastasylum.alliance.ui.screens.rememberTeamLeaderOverlayState
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
 @Composable
@@ -63,7 +64,6 @@ fun OverlayTeamOnlinePanel(
     val res = context.resources
     val scope = rememberCoroutineScope()
     val leaderUi = rememberTeamLeaderOverlayState()
-    val voicePeers by TeamVoicePresenceStore.peers.collectAsState()
     val voiceSession = AppContainer.from(context).overlayVoiceSession
 
     val controller = remember(teamsRepository, usersRepository, teamPresenceSocket) {
@@ -88,6 +88,13 @@ fun OverlayTeamOnlinePanel(
 
     val uiState by controller.state.collectAsState()
     var longPressMember by remember { mutableStateOf<OverlayOnlineMemberUiModel?>(null) }
+    val voicePeers by remember(uiState.activeFilterChip) {
+        if (uiState.activeFilterChip == OverlayOnlineFilterChip.WithMic) {
+            TeamVoicePresenceStore.peers
+        } else {
+            flowOf(emptyMap())
+        }
+    }.collectAsState(initial = emptyMap())
 
     LaunchedEffect(openJoinInboxInitially) {
         if (!openJoinInboxInitially) return@LaunchedEffect

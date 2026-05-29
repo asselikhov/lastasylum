@@ -269,6 +269,3 @@ internal fun overlayReactionsForCategory(
     val (fav, rest) = inTab.partition { it.id in favIds }
     return fav.sortedBy { it.id } + rest.sortedBy { it.id }
 }
-
-internal fun loadStickerReactionBitmap(context: Context, stem: String): android.graphics.Bitmap? =
-    OverlayReactionBitmapCache.loadSync(context, stem)

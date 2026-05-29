@@ -52,6 +52,7 @@ class OverlayTeamOnlineController(
     val state: StateFlow<OverlayTeamOnlineUiState> = _state.asStateFlow()
 
     private var pollJob: Job? = null
+    private var freshnessJob: Job? = null
     private var teamId: String? = null
     private var started = false
 
@@ -92,6 +93,12 @@ class OverlayTeamOnlineController(
                 if (started) refreshPresenceOnly(showRefreshing = false)
             }
         }
+        freshnessJob = scope.launch {
+            while (isActive && started) {
+                delay(FRESHNESS_REBUILD_MS)
+                if (started) refreshPresenceFreshness()
+            }
+        }
     }
 
     fun stop() {
@@ -99,6 +106,8 @@ class OverlayTeamOnlineController(
         started = false
         pollJob?.cancel()
         pollJob = null
+        freshnessJob?.cancel()
+        freshnessJob = null
         teamPresenceSocket.removePresenceListener(presenceSocketListener)
         teamPresenceSocket.disconnect()
     }
@@ -227,12 +236,20 @@ class OverlayTeamOnlineController(
         }
     }
 
+    private fun refreshPresenceFreshness() {
+        val s = _state.value
+        if (s.ingameRaw.isEmpty() && s.recentRaw.isEmpty()) return
+        applyPresenceLists(s.ingameRaw, s.recentRaw, forceRebuild = true)
+    }
+
     private fun applyPresenceLists(
         ingame: List<PlayerTeamMemberDto>,
         recentlyActive: List<PlayerTeamMemberDto>,
+        forceRebuild: Boolean = false,
     ) {
         val current = _state.value
-        if (overlayPresenceMemberListsEqual(current.ingameRaw, ingame) &&
+        if (!forceRebuild &&
+            overlayPresenceMemberListsEqual(current.ingameRaw, ingame) &&
             overlayPresenceMemberListsEqual(current.recentRaw, recentlyActive)
         ) {
             return
@@ -263,4 +280,8 @@ class OverlayTeamOnlineController(
         val ingame: List<PlayerTeamMemberDto>,
         val recentlyActive: List<PlayerTeamMemberDto>,
     )
+
+    private companion object {
+        private const val FRESHNESS_REBUILD_MS = 30_000L
+    }
 }
