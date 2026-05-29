@@ -115,10 +115,19 @@ object ForumTopicCardTokens {
         glowBoost: Float,
     ): List<Color> {
         val boost = glowBoost.coerceIn(1f, 1.4f)
+        if (level == ActivityLevel.Hot) {
+            val warmA = 0.78f * boost
+            return listOf(
+                Color(0xFFE8A030).copy(alpha = warmA),
+                Color(0xFFFF6B35).copy(alpha = warmA * 0.92f),
+                Color(0xFFC45C20).copy(alpha = warmA * 0.82f),
+                accent.primary.copy(alpha = warmA * 0.45f),
+            )
+        }
         val cyanA = when (level) {
-            ActivityLevel.Hot -> 0.72f
             ActivityLevel.Warm -> 0.52f
             ActivityLevel.Calm -> 0.34f
+            ActivityLevel.Hot -> 0.72f
         } * boost
         return listOf(
             accent.primary.copy(alpha = cyanA),

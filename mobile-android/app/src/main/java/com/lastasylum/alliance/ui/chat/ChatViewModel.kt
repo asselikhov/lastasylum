@@ -445,7 +445,13 @@ class ChatViewModel(
     }
 
     private fun syncOverlayAllianceHubBadge(rooms: List<ChatRoomDto> = _state.value.rooms) {
-        val displayed = ChatUnreadCounts.allianceHubDisplayUnread(rooms)
+        val localRead = chatRoomPreferences.loadAllLastReadMessageIds()
+        val displayed = ChatUnreadCounts.overlayAllianceHubBadge(
+            rooms = rooms,
+            localReadByRoom = localRead,
+            optimisticFloor = 0,
+            previouslyDisplayed = 0,
+        )
         CombatOverlayService.syncHubBadgeFromSharedReadState(displayed)
     }
 
@@ -2802,7 +2808,6 @@ class ChatViewModel(
         val eventRoomId = event.roomId.trim()
         if (eventRoomId.isBlank()) return
         val selected = _state.value.selectedRoomId?.trim().orEmpty()
-        if (selected.isNotEmpty() && eventRoomId != selected) return
         val cur = otherReadUptoByRoom[eventRoomId]
         if (isObjectIdNewer(event.messageId, cur)) {
             otherReadUptoByRoom[eventRoomId] = event.messageId

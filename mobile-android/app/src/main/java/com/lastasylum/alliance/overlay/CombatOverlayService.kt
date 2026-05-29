@@ -1910,18 +1910,24 @@ class CombatOverlayService : Service() {
         }
     }
 
-    /** App/VM merged hub chip — authoritative displayed count from read cursors + optimistic floor. */
+    /** App/VM hub chip sync — does not set [hubUnreadOptimisticFloor] (realtime bumps only). */
     private fun pushAllianceHubUnreadFromApp(displayed: Int) {
         val clamped = displayed.coerceIn(0, 999)
-        if (clamped > 0) {
-            hubUnreadLastBumpAtMs = System.currentTimeMillis()
-            hubUnreadOptimisticFloor = clamped
-            applyAllianceHubUnreadCount(clamped)
+        if (clamped <= 0) {
+            clearHubUnreadOptimisticState()
+            applyAllianceHubUnreadCount(0)
+            patchHubUnreadInSessionCacheAfterLocalRead()
             return
         }
+        applyAllianceHubUnreadCount(clamped)
+    }
+
+    private fun clearHubUnreadOptimisticState() {
         hubUnreadOptimisticFloor = 0
-        applyAllianceHubUnreadCount(0)
-        patchHubUnreadInSessionCacheAfterLocalRead()
+        hubUnreadBumpedMessageIds.clear()
+        mainHandler.removeCallbacks(hudBadgeRefreshRunnable)
+        hudBadgeRefreshPosted = false
+        pendingHubHudRefresh = false
     }
 
     /** Pair(effective unread, raw server unread) for hub badge merge. */
@@ -2327,7 +2333,7 @@ class CombatOverlayService : Service() {
         val messageId = event.messageId.trim()
         if (messageId.isBlank()) return
         AppContainer.from(this).chatRoomPreferences.setLastReadMessageId(hubId, messageId)
-        hubUnreadOptimisticFloor = 0
+        clearHubUnreadOptimisticState()
         applyAllianceHubUnreadCount(0)
         patchHubUnreadInSessionCache(0, messageId)
         activityScopedChatViewModel?.let { vm ->
@@ -5304,8 +5310,7 @@ class CombatOverlayService : Service() {
         fun clearHubUnreadState() {
             val service = runningInstance ?: return
             service.mainHandler.post {
-                service.hubUnreadOptimisticFloor = 0
-                service.hubUnreadBumpedMessageIds.clear()
+                service.clearHubUnreadOptimisticState()
                 service.applyAllianceHubUnreadCount(0)
             }
         }
@@ -5327,7 +5332,7 @@ class CombatOverlayService : Service() {
                     if (clamped > 0) {
                         service.pushAllianceHubUnreadFromApp(clamped)
                     } else {
-                        service.hubUnreadOptimisticFloor = 0
+                        service.clearHubUnreadOptimisticState()
                         service.syncOverlayHubBadgeFromAppReadState()
                     }
                     return@post

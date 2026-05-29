@@ -233,12 +233,14 @@ private fun ForumTopicActivityPulseDot(
         ),
         label = "forumTopicPulseAlpha",
     )
+    val dotPrimary = if (hot) Color(0xFFFF6B35) else accent.primary
+    val dotSecondary = if (hot) Color(0xFFE8A030) else accent.secondary
     Box(
         modifier = Modifier
             .size(ForumTopicCardTokens.activityDotSize)
             .drawBehind {
                 drawCircle(
-                    color = accent.primary.copy(alpha = if (hot) 0.35f * pulse else 0.18f * pulse),
+                    color = dotPrimary.copy(alpha = if (hot) 0.42f * pulse else 0.18f * pulse),
                     radius = size.minDimension * 0.95f,
                 )
             }
@@ -246,8 +248,8 @@ private fun ForumTopicActivityPulseDot(
             .background(
                 Brush.radialGradient(
                     colors = listOf(
-                        accent.primary.copy(alpha = 0.85f + pulse * 0.15f),
-                        accent.secondary.copy(alpha = 0.55f),
+                        dotPrimary.copy(alpha = 0.85f + pulse * 0.15f),
+                        dotSecondary.copy(alpha = 0.55f),
                     ),
                 ),
             ),

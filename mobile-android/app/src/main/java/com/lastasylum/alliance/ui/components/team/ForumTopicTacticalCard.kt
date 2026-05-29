@@ -75,7 +75,18 @@ fun ForumTopicTacticalCardShell(
         ),
         label = "forumTacticalPulse",
     )
+    val flicker by infinite.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(520, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "forumFireFlicker",
+    )
 
+    val isHot = activityLevel == ForumTopicCardTokens.ActivityLevel.Hot
+    val isWarm = activityLevel == ForumTopicCardTokens.ActivityLevel.Warm
     val glassAlpha = ForumTopicCardTokens.glassAlpha(activityLevel)
     val borderColors = ForumTopicCardTokens.gradientBorderColors(accent, activityLevel, glowBoost)
     val outerShape = ForumTopicCardTokens.cardShape
@@ -98,7 +109,10 @@ fun ForumTopicTacticalCardShell(
             .clip(innerShape)
             .background(ForumTopicCardTokens.glassFill(glassAlpha), innerShape)
             .drawWithContent {
-                drawTacticalFogParticles(drift, accent)
+                when {
+                    isHot -> drawForumFireBackground(accent, drift, flicker)
+                    isWarm -> drawTacticalFogParticles(drift, accent)
+                }
                 drawTacticalInnerEdgeGlow(accent, activityLevel, pulse)
                 drawContent()
             }
@@ -109,21 +123,28 @@ fun ForumTopicTacticalCardShell(
             ),
     ) {
         if (showActivityStrip) {
+            val stripColors = if (isHot) {
+                listOf(
+                    Color.Transparent,
+                    Color(0xFFC45C20).copy(alpha = 0.22f + pulse * 0.38f),
+                    Color(0xFFE8A030).copy(alpha = 0.32f + flicker * 0.28f),
+                    Color(0xFFFF6B35).copy(alpha = 0.24f + pulse * 0.3f),
+                    Color.Transparent,
+                )
+            } else {
+                listOf(
+                    Color.Transparent,
+                    accent.primary.copy(alpha = 0.15f + pulse * 0.35f),
+                    accent.secondary.copy(alpha = 0.22f + pulse * 0.28f),
+                    PremiumColors.accentCyan.copy(alpha = 0.18f + pulse * 0.22f),
+                    Color.Transparent,
+                )
+            }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(ForumTopicCardTokens.activityStripHeight)
-                    .background(
-                        Brush.horizontalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                accent.primary.copy(alpha = 0.15f + pulse * 0.35f),
-                                accent.secondary.copy(alpha = 0.22f + pulse * 0.28f),
-                                PremiumColors.accentCyan.copy(alpha = 0.18f + pulse * 0.22f),
-                                Color.Transparent,
-                            ),
-                        ),
-                    ),
+                    .background(Brush.horizontalGradient(colors = stripColors)),
             )
         }
         Box(
@@ -154,14 +175,28 @@ private fun DrawScope.drawTacticalCardShadow(
         size = size,
         cornerRadius = CornerRadius(22.dp.toPx()),
     )
+    val glowCenter = if (activityLevel == ForumTopicCardTokens.ActivityLevel.Hot) {
+        Offset(size.width * 0.5f, size.height * 0.88f)
+    } else {
+        Offset(size.width * 0.18f, size.height * 0.12f)
+    }
+    val glowColors = if (activityLevel == ForumTopicCardTokens.ActivityLevel.Hot) {
+        listOf(
+            Color(0xFFFF6B35).copy(alpha = baseAlpha * 1.1f),
+            Color(0xFFC45C20).copy(alpha = baseAlpha * 0.55f),
+            Color.Transparent,
+        )
+    } else {
+        listOf(
+            accent.primary.copy(alpha = baseAlpha),
+            accent.secondary.copy(alpha = baseAlpha * 0.45f),
+            Color.Transparent,
+        )
+    }
     drawRoundRect(
         brush = Brush.radialGradient(
-            colors = listOf(
-                accent.primary.copy(alpha = baseAlpha),
-                accent.secondary.copy(alpha = baseAlpha * 0.45f),
-                Color.Transparent,
-            ),
-            center = Offset(size.width * 0.18f, size.height * 0.12f),
+            colors = glowColors,
+            center = glowCenter,
             radius = size.maxDimension * 0.95f,
         ),
         size = size,

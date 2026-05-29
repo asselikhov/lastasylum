@@ -93,6 +93,30 @@ class ChatUnreadCountsTest {
     }
 
     @Test
+    fun overlayAllianceHubBadge_appSyncPath_zeroWhenLocallyRead_despiteStaleDtoUnread() {
+        val rooms = listOf(
+            room(
+                id = "hub",
+                sortOrder = 1,
+                allianceId = "pt:team1",
+                unread = 8,
+                lastRead = "000000000000000000000040",
+            ),
+        )
+        val local = mapOf("hub" to "000000000000000000000100")
+        assertEquals(
+            0,
+            ChatUnreadCounts.overlayAllianceHubBadge(
+                rooms = rooms,
+                localReadByRoom = local,
+                optimisticFloor = 0,
+                previouslyDisplayed = 0,
+            ),
+        )
+        assertEquals(8, ChatUnreadCounts.allianceHubDisplayUnread(rooms))
+    }
+
+    @Test
     fun hubClear_mustNotUseReconcileDisplayedUnread() {
         assertEquals(
             0,
