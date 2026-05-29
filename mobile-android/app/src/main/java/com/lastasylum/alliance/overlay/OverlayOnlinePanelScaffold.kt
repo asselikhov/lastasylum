@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -15,15 +16,13 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -61,7 +60,6 @@ fun OverlayOnlinePanelScaffold(
     onMemberLongClick: (OverlayOnlineMemberUiModel) -> Unit,
     modifier: Modifier = Modifier,
     topBar: @Composable () -> Unit = {},
-    toolbarTrailing: @Composable RowScope.() -> Unit = {},
 ) {
     val tokens = OverlayOnlineMemberTokens
     val totalVisible = displaySections.sumOf { it.items.size }
@@ -79,21 +77,6 @@ fun OverlayOnlinePanelScaffold(
                 searchQuery = searchQuery,
                 onFilterChip = onFilterChip,
                 onSearchQuery = onSearchQuery,
-                trailing = {
-                    IconButton(
-                        onClick = onRefresh,
-                        enabled = !refreshing,
-                        modifier = Modifier.size(40.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Refresh,
-                            contentDescription = stringResource(R.string.overlay_online_refresh_cd),
-                            tint = tokens.titleColor,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                    toolbarTrailing()
-                },
             )
         }
         when {
@@ -176,6 +159,8 @@ fun OverlayOnlinePanelScaffold(
     }
 }
 
+private val OnlinePanelFieldHeight = 40.dp
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun OnlinePanelFilterSearchRow(
@@ -183,7 +168,6 @@ private fun OnlinePanelFilterSearchRow(
     searchQuery: String,
     onFilterChip: (OverlayOnlineFilterChip) -> Unit,
     onSearchQuery: (String) -> Unit,
-    trailing: @Composable RowScope.() -> Unit = {},
 ) {
     val tokens = OverlayOnlineMemberTokens
     var filterExpanded by remember { mutableStateOf(false) }
@@ -215,8 +199,9 @@ private fun OnlinePanelFilterSearchRow(
                 readOnly = true,
                 singleLine = true,
                 modifier = Modifier
-                    .menuAnchor()
-                    .fillMaxWidth(),
+                    .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                    .fillMaxWidth()
+                    .height(OnlinePanelFieldHeight),
                 trailingIcon = {
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = filterExpanded)
                 },
@@ -247,7 +232,9 @@ private fun OnlinePanelFilterSearchRow(
         OutlinedTextField(
             value = searchQuery,
             onValueChange = onSearchQuery,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .height(OnlinePanelFieldHeight),
             singleLine = true,
             placeholder = {
                 Text(
@@ -268,7 +255,6 @@ private fun OnlinePanelFilterSearchRow(
             shape = fieldShape,
             textStyle = MaterialTheme.typography.labelSmall,
         )
-        trailing()
     }
 }
 

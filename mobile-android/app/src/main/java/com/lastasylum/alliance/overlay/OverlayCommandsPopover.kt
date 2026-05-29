@@ -1660,16 +1660,6 @@ class OverlayCommandsPopover(
                                 Toast.LENGTH_LONG,
                             ).show()
                         },
-                        onSendBroadcastAll = { count ->
-                            hideReactionPickOnly()
-                            if (emitReactionIfConnected({ emitOverlayReactionBroadcast(reactionId) })) {
-                                Toast.makeText(
-                                    context,
-                                    context.getString(R.string.overlay_reaction_sent_all, count),
-                                    Toast.LENGTH_LONG,
-                                ).show()
-                            }
-                        },
                         loadMembers = {
                             loadOverlayIngameReactionRecipients(
                                 usersRepository = container.usersRepository,

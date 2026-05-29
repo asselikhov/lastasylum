@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -212,6 +213,7 @@ fun OverlayTeamOnlinePanel(
         onRefresh = { controller.refresh(force = true) },
         onMemberLongClick = { longPressMember = it },
         topBar = {
+            val tokens = OverlayOnlineMemberTokens
             OverlayHudPanelHeader(
                 title = stringResource(R.string.overlay_online_title),
                 subtitle = stringResource(
@@ -219,38 +221,50 @@ fun OverlayTeamOnlinePanel(
                     uiState.ingameCount,
                 ),
                 onClose = onClose,
-            )
-        },
-        toolbarTrailing = {
-            if (team != null && isLeader) {
-                OverlayOnlineLeaderToolbarActions(
-                    pendingJoinRequests = pending,
-                    membersBusy = leaderUi.membersBusy,
-                    editNameBusy = leaderUi.editNameBusy,
-                    onAddMember = {
-                        leaderUi.addNameDraft = ""
-                        leaderUi.showAddMember = true
-                    },
-                    onEditTeam = {
-                        leaderUi.editTeamNameDraft = team.displayName.trim()
-                        leaderUi.editTeamTagDraft = team.tag.trim()
-                        leaderUi.showEditTeam = true
-                    },
-                    onOpenInbox = {
-                        leaderUi.inboxFeedback = null
-                        leaderUi.showJoinInbox = true
-                        scope.launch {
-                            leaderUi.inboxBusy = true
-                            teamsRepository.listPendingJoinRequests()
-                                .onSuccess { leaderUi.inboxRequests = it }
-                                .onFailure { _ ->
-                                    leaderUi.inboxRequests = emptyList()
+                subtitleTrailing = {
+                    IconButton(
+                        onClick = { controller.refresh(force = true) },
+                        enabled = !uiState.refreshing,
+                        modifier = Modifier.size(40.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Refresh,
+                            contentDescription = stringResource(R.string.overlay_online_refresh_cd),
+                            tint = tokens.borderLive,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    if (team != null && isLeader) {
+                        OverlayOnlineLeaderToolbarActions(
+                            pendingJoinRequests = pending,
+                            membersBusy = leaderUi.membersBusy,
+                            editNameBusy = leaderUi.editNameBusy,
+                            onAddMember = {
+                                leaderUi.addNameDraft = ""
+                                leaderUi.showAddMember = true
+                            },
+                            onEditTeam = {
+                                leaderUi.editTeamNameDraft = team.displayName.trim()
+                                leaderUi.editTeamTagDraft = team.tag.trim()
+                                leaderUi.showEditTeam = true
+                            },
+                            onOpenInbox = {
+                                leaderUi.inboxFeedback = null
+                                leaderUi.showJoinInbox = true
+                                scope.launch {
+                                    leaderUi.inboxBusy = true
+                                    teamsRepository.listPendingJoinRequests()
+                                        .onSuccess { leaderUi.inboxRequests = it }
+                                        .onFailure { _ ->
+                                            leaderUi.inboxRequests = emptyList()
+                                        }
+                                    leaderUi.inboxBusy = false
                                 }
-                            leaderUi.inboxBusy = false
-                        }
-                    },
-                )
-            }
+                            },
+                        )
+                    }
+                },
+            )
         },
     )
 }

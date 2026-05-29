@@ -2,6 +2,7 @@ package com.lastasylum.alliance.overlay
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -27,6 +28,7 @@ fun OverlayHudPanelHeader(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
+    subtitleTrailing: @Composable (RowScope.() -> Unit)? = null,
     onRefresh: (() -> Unit)? = null,
     refreshing: Boolean = false,
 ) {
@@ -38,7 +40,7 @@ fun OverlayHudPanelHeader(
                 end = 4.dp,
                 top = 2.dp,
             ),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.Top,
     ) {
         Column(
             modifier = Modifier.weight(1f),
@@ -51,18 +53,29 @@ fun OverlayHudPanelHeader(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (!subtitle.isNullOrBlank()) {
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
+            val showSubtitleRow = !subtitle.isNullOrBlank() || subtitleTrailing != null
+            if (showSubtitleRow) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (!subtitle.isNullOrBlank()) {
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                    }
+                    subtitleTrailing?.invoke(this)
+                }
             }
         }
-        if (onRefresh != null) {
+        if (onRefresh != null && subtitleTrailing == null) {
             IconButton(
                 onClick = onRefresh,
                 enabled = !refreshing,

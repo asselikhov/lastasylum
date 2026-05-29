@@ -18,9 +18,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -41,7 +40,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -103,7 +101,6 @@ fun OverlayReactionRecipientSheet(
     onBack: () -> Unit,
     onDismiss: () -> Unit,
     onSendToUserIds: (List<String>) -> Unit,
-    onSendBroadcastAll: (memberCount: Int) -> Unit,
     loadMembers: suspend () -> Result<List<PlayerTeamMemberDto>>,
     modifier: Modifier = Modifier,
     initialSelectedUserIds: Set<String> = emptySet(),
@@ -184,14 +181,7 @@ fun OverlayReactionRecipientSheet(
                 OverlayReactionRecipientPreview(
                     reactionId = reactionId,
                     modifier = Modifier
-                        .padding(horizontal = 16.dp, vertical = 2.dp),
-                )
-
-                Text(
-                    text = stringResource(R.string.overlay_reactions_recipient_hint),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = OverlayMuted,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
                 )
 
                 when {
@@ -245,7 +235,6 @@ fun OverlayReactionRecipientSheet(
                             onSearchChange = { searchQuery = it },
                             allSelected = allFilteredSelected,
                             hasFiltered = filteredMembers.isNotEmpty(),
-                            memberCount = members.size,
                             onToggleSelectAll = {
                                 selectedIds = if (allFilteredSelected) {
                                     selectedIds - filteredMembers.map { it.userId }.toSet()
@@ -253,7 +242,6 @@ fun OverlayReactionRecipientSheet(
                                     selectedIds + filteredMembers.map { it.userId }
                                 }
                             },
-                            onSendBroadcastAll = { onSendBroadcastAll(members.size) },
                         )
 
                         if (filteredMembers.isEmpty()) {
@@ -271,8 +259,7 @@ fun OverlayReactionRecipientSheet(
                                 )
                             }
                         } else {
-                            LazyVerticalGrid(
-                                columns = GridCells.Fixed(2),
+                            LazyColumn(
                                 modifier = Modifier
                                     .weight(1f)
                                     .fillMaxWidth(),
@@ -282,17 +269,13 @@ fun OverlayReactionRecipientSheet(
                                     top = 4.dp,
                                     bottom = 4.dp,
                                 ),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
                                 items(filteredMembers, key = { it.userId }) { member ->
-                                    OverlayOnlineMemberGridCellFromDto(
-                                        member = member,
-                                        micOn = false,
-                                        soundOn = false,
-                                        mode = OverlayOnlineMemberCellMode.Selectable,
+                                    OverlayReactionRecipientMemberRow(
+                                        username = member.username,
                                         selected = member.userId in selectedIds,
-                                        onToggleSelect = {
+                                        onToggle = {
                                             selectedIds = if (member.userId in selectedIds) {
                                                 selectedIds - member.userId
                                             } else {
@@ -361,15 +344,62 @@ private fun RecipientSheetHeader(
 }
 
 @Composable
+private fun OverlayReactionRecipientMemberRow(
+    username: String,
+    selected: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val rowCd = if (selected) {
+        stringResource(R.string.overlay_reactions_member_selected_cd, username)
+    } else {
+        username
+    }
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 44.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xFF141C28).copy(alpha = 0.85f))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onToggle,
+            )
+            .semantics { contentDescription = rowCd }
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Checkbox(
+            checked = selected,
+            onCheckedChange = { onToggle() },
+            colors = CheckboxDefaults.colors(
+                checkedColor = OverlayCyan,
+                uncheckedColor = OverlayMuted,
+                checkmarkColor = Color.White,
+            ),
+        )
+        Text(
+            text = username,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            color = Color(0xFFF4F7FF),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
 private fun RecipientCompactToolbar(
     showSearch: Boolean,
     searchQuery: String,
     onSearchChange: (String) -> Unit,
     allSelected: Boolean,
     hasFiltered: Boolean,
-    memberCount: Int,
     onToggleSelectAll: () -> Unit,
-    onSendBroadcastAll: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -411,48 +441,30 @@ private fun RecipientCompactToolbar(
                 textStyle = MaterialTheme.typography.labelSmall,
             )
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            if (hasFiltered) {
-                FilterChip(
-                    selected = allSelected,
-                    onClick = onToggleSelectAll,
-                    label = {
-                        Text(
-                            text = stringResource(
-                                if (allSelected) {
-                                    R.string.overlay_reactions_clear_selection
-                                } else {
-                                    R.string.overlay_reactions_select_all
-                                },
-                            ),
-                            style = MaterialTheme.typography.labelSmall,
-                        )
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Color(0xFF2A4558),
-                        containerColor = Color(0xFF1A2836),
-                        labelColor = Color(0xFFE8F4FF),
-                        selectedLabelColor = Color(0xFFE8F4FF),
-                    ),
-                    modifier = Modifier.heightIn(min = 32.dp),
-                )
-            }
-            TextButton(
-                onClick = onSendBroadcastAll,
+        if (hasFiltered) {
+            FilterChip(
+                selected = allSelected,
+                onClick = onToggleSelectAll,
+                label = {
+                    Text(
+                        text = stringResource(
+                            if (allSelected) {
+                                R.string.overlay_reactions_clear_selection
+                            } else {
+                                R.string.overlay_reactions_select_all
+                            },
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = Color(0xFF2A4558),
+                    containerColor = Color(0xFF1A2836),
+                    labelColor = Color(0xFFE8F4FF),
+                    selectedLabelColor = Color(0xFFE8F4FF),
+                ),
                 modifier = Modifier.heightIn(min = 32.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.overlay_reactions_send_all_short, memberCount),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = OverlayCyan,
-                )
-            }
+            )
         }
     }
 }
@@ -519,7 +531,7 @@ private fun OverlayReactionRecipientPreview(
             AndroidView(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 48.dp, max = 56.dp),
+                    .heightIn(min = 64.dp, max = 80.dp),
                 factory = { ctx ->
                     OverlayReactionTextBurstUi.createMessageTextView(
                         ctx,
@@ -530,7 +542,7 @@ private fun OverlayReactionRecipientPreview(
             )
         } else {
             AndroidView(
-                modifier = Modifier.size(60.dp),
+                modifier = Modifier.size(92.dp),
                 factory = { ctx ->
                     val icon = createOverlayReactionTileIcon(
                         ctx,
