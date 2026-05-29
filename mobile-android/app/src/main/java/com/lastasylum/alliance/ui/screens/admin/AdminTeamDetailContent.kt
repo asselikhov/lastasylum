@@ -295,6 +295,7 @@ private fun AdminTeamForumTab(
                 topic = topic,
                 listIndex = index,
                 messageMeta = messageMeta,
+                displayUnreadCount = topic.unreadCount,
                 onClick = { onTopicClick(topic) },
             )
         }

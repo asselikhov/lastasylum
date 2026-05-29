@@ -58,7 +58,8 @@ fun displayedUnreadCount(
         // Do not resurrect cleared badges from [previouslyDisplayed] when leaving/re-entering chat.
         return floor
     }
-    return maxOf(effective, previous, floor)
+    // Trust server effective count only — do not stack with a previously cleared badge.
+    return maxOf(effective, floor)
 }
 
 /** @see displayedUnreadCount */

@@ -2,6 +2,8 @@ package com.lastasylum.alliance.ui.screens.teamnews
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -111,9 +113,10 @@ import com.lastasylum.alliance.data.teams.TeamInboxUnread
 import com.lastasylum.alliance.overlay.OverlayGameStatusHudRefresh
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
-import com.lastasylum.alliance.ui.components.team.TeamFeedCardTokens
+import com.lastasylum.alliance.ui.components.team.PremiumJournalFeedTokens
 import com.lastasylum.alliance.ui.components.team.TeamNewsFeedCard
 import com.lastasylum.alliance.ui.util.formatTeamFeedDateRu
+import com.lastasylum.alliance.ui.components.team.JournalVoteButton
 import com.lastasylum.alliance.ui.components.team.TeamPollQuestionHeader
 import com.lastasylum.alliance.ui.components.team.TeamPollVoteOptionSurface
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
@@ -313,30 +316,20 @@ internal fun TeamNewsPollVoteBlock(
                 },
             )
         }
-        Button(
-            onClick = {
-                val oid = selected ?: return@Button
-                onVote(oid)
+        JournalVoteButton(
+            label = if (poll.myVoteOptionId == null) {
+                stringResource(R.string.team_news_vote)
+            } else {
+                stringResource(R.string.team_news_change_vote)
             },
             enabled = !voteBusy && selected != null,
+            loading = voteBusy,
+            onClick = {
+                val oid = selected ?: return@JournalVoteButton
+                onVote(oid)
+            },
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-        ) {
-            if (voteBusy) {
-                CircularProgressIndicator(
-                    Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                )
-            } else {
-                Text(
-                    if (poll.myVoteOptionId == null) {
-                        stringResource(R.string.team_news_vote)
-                    } else {
-                        stringResource(R.string.team_news_change_vote)
-                    },
-                )
-            }
-        }
+        )
     }
 }
 
@@ -461,6 +454,7 @@ fun TeamNewsNavHost(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TeamNewsListRoute(
     teamId: String,
@@ -592,7 +586,7 @@ private fun TeamNewsListRoute(
                             top = listTopPad,
                             bottom = 88.dp,
                         ),
-                        verticalArrangement = Arrangement.spacedBy(TeamFeedCardTokens.listSpacing),
+                        verticalArrangement = Arrangement.spacedBy(PremiumJournalFeedTokens.listSpacing),
                     ) {
                         items(
                             items = newsItems,
@@ -611,6 +605,11 @@ private fun TeamNewsListRoute(
                                 },
                                 showEdit = item.authorUserId == currentUserId ||
                                     myTeamRole == "R4" || myTeamRole == "R5",
+                                modifier = Modifier.animateItem(
+                                    fadeInSpec = tween(PremiumJournalFeedTokens.listEnterAnimMs),
+                                    placementSpec = tween(PremiumJournalFeedTokens.listEnterAnimMs),
+                                    fadeOutSpec = tween(PremiumJournalFeedTokens.listEnterAnimMs),
+                                ),
                             )
                         }
                         if (!newsNextCursor.isNullOrBlank()) {

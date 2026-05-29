@@ -78,6 +78,7 @@ class OverlayCommandsPopover(
     private var reactionPickScrim: FrameLayout? = null
     private var reopenMenuOnReactionsTab = false
     private var reopenReactionSubcategory = OverlayReactionCategory.ANIMATIONS
+    private var preselectedReactionUserIds: Set<String> = emptySet()
     private val reactionBurstPresenter = OverlayReactionBurstPresenter(context, mainHandler, dp)
     private var heartPreviewAnimator: Animator? = null
     private var reactionTilesAdapter: OverlayReactionTilesAdapter? = null
@@ -291,6 +292,18 @@ class OverlayCommandsPopover(
             hide()
             return
         }
+        ensurePopoverSuppressHeld()
+        warmupOverlayRaid()
+        showMenu(windowManager)
+    }
+
+    /** Opens quick commands on the reactions tab; next recipient picker preselects [userId]. */
+    fun openReactionsPreselectUser(windowManager: WindowManager, userId: String) {
+        val id = userId.trim()
+        if (id.isEmpty()) return
+        preselectedReactionUserIds = setOf(id)
+        reopenMenuOnReactionsTab = true
+        if (isShowing()) hide()
         ensurePopoverSuppressHeld()
         warmupOverlayRaid()
         showMenu(windowManager)
@@ -1571,9 +1584,11 @@ class OverlayCommandsPopover(
         val menuToRemove = menuScrim
 
         val container = AppContainer.from(context)
-        val cardW = minOf(dp(340), context.resources.displayMetrics.widthPixels - dp(16))
+        val cardW = minOf(dp(360), context.resources.displayMetrics.widthPixels - dp(16))
         val overlayService = context as CombatOverlayService
         val composeOwner = overlayService.obtainOverlayPopoverComposeOwner()
+        val initialSelected = preselectedReactionUserIds
+        preselectedReactionUserIds = emptySet()
 
         val composeHost = FrameLayout(context).apply {
             consumeTouchesInSubtree()
@@ -1625,6 +1640,7 @@ class OverlayCommandsPopover(
                 SquadRelayTheme {
                     OverlayReactionRecipientSheet(
                         reactionId = reactionId,
+                        initialSelectedUserIds = initialSelected,
                         onBack = { returnToReactionsList(windowManager) },
                         onDismiss = { hideReactionPickOnly() },
                         onSendToUserIds = { userIds ->

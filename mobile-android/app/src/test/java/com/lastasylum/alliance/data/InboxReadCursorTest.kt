@@ -77,6 +77,18 @@ class InboxReadCursorTest {
     }
 
     @Test
+    fun displayedUnread_doesNotStackWithPreviouslyClearedBadge() {
+        assertEquals(
+            1,
+            displayedUnreadCount(
+                effectiveUnread = 1,
+                previouslyDisplayed = 9,
+                rawServerUnread = 1,
+            ),
+        )
+    }
+
+    @Test
     fun displayedUnread_keepsOptimisticBumpUntilServerCatchedUp() {
         assertEquals(
             1,

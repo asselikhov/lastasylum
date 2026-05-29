@@ -11,7 +11,7 @@ object TeamFeedCardTokens {
     val cardShape = PremiumCardShape
     val chipShape = PremiumChipShape
     val cardRadius = 26.dp
-    val listSpacing = 12.dp
+    val listSpacing = 14.dp
     val memberListSpacing = 10.dp
     val pressScale = 0.985f
     val shadowRest = 8.dp

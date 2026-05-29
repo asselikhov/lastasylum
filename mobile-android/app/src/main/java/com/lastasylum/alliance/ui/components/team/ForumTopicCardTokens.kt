@@ -132,4 +132,13 @@ object ForumTopicCardTokens {
     @ReadOnlyComposable
     fun chipTextColor(hot: Boolean = false): Color =
         if (hot) PremiumColors.accentCyanBright.copy(alpha = 0.92f) else metaText
+
+    /** Dark gold — readable on light and dark surfaces (overlay news / polls). */
+    val feedTitleColor = Color(0xFFC4A035)
+    val feedTitleColorDark = Color(0xFFD4AF37)
+
+    val feedTitleStyle = titleStyle.copy(
+        color = feedTitleColor,
+        fontWeight = FontWeight.Bold,
+    )
 }

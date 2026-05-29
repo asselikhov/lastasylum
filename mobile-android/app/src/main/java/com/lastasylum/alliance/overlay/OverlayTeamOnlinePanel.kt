@@ -1,19 +1,24 @@
 package com.lastasylum.alliance.overlay
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Inbox
+import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -27,39 +32,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
-import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
-import com.lastasylum.alliance.data.teams.TeamDetailDto
 import com.lastasylum.alliance.data.teams.TeamPresenceSocketManager
 import com.lastasylum.alliance.data.teams.TeamsRepository
-import com.lastasylum.alliance.data.users.MyProfileDto
 import com.lastasylum.alliance.data.users.UsersRepository
 import com.lastasylum.alliance.data.voice.TeamVoicePresenceStore
-import com.lastasylum.alliance.data.voice.VoicePeerState
 import com.lastasylum.alliance.di.AppContainer
-import com.lastasylum.alliance.ui.components.team.TeamMemberPresenceCard
 import com.lastasylum.alliance.ui.screens.TeamLeaderDialogsHost
-import com.lastasylum.alliance.ui.screens.TeamLeaderToolbar
 import com.lastasylum.alliance.ui.screens.rememberTeamLeaderOverlayState
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
-import com.lastasylum.alliance.ui.util.OVERLAY_ONLINE_PANEL_POLL_MS
-import com.lastasylum.alliance.ui.util.formatOverlayPresenceAgeRu
-import com.lastasylum.alliance.ui.util.isOverlayIngameNow
-import com.lastasylum.alliance.ui.util.toUserMessageRu
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-
-private data class PresenceListItem(
-    val member: PlayerTeamMemberDto,
-    val inGameNow: Boolean,
-    val key: String,
-)
 
 @Composable
 fun OverlayTeamOnlinePanel(
@@ -70,6 +54,9 @@ fun OverlayTeamOnlinePanel(
     openJoinInboxInitially: Boolean = false,
     onOpenJoinInboxConsumed: () -> Unit = {},
     onHudRefresh: () -> Unit,
+    onClose: () -> Unit = {},
+    onIngameCountChanged: (Int) -> Unit = {},
+    onSendReactionToUser: (userId: String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -79,122 +66,28 @@ fun OverlayTeamOnlinePanel(
     val voicePeers by TeamVoicePresenceStore.peers.collectAsState()
     val voiceSession = AppContainer.from(context).overlayVoiceSession
 
-    var loading by remember { mutableStateOf(true) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var profile by remember { mutableStateOf<MyProfileDto?>(null) }
-    var team by remember { mutableStateOf<TeamDetailDto?>(null) }
-    var teamId by remember { mutableStateOf<String?>(null) }
-    var onlineMembers by remember { mutableStateOf<List<PlayerTeamMemberDto>>(emptyList()) }
-    var recentlyActive by remember { mutableStateOf<List<PlayerTeamMemberDto>>(emptyList()) }
-
-    fun applyBootstrap(forceTeamRefresh: Boolean, showBlockingSpinner: Boolean) {
-        scope.launch {
-            if (showBlockingSpinner || team == null) {
-                loading = true
-            }
-            error = null
-            val loaded = withContext(Dispatchers.IO) {
-                runCatching {
-                    val ctx = OverlayTeamContextCache.load(
-                        usersRepository = usersRepository,
-                        teamsRepository = teamsRepository,
-                        forceRefresh = forceTeamRefresh,
-                    ).getOrThrow()
-                    if (forceTeamRefresh) {
-                        OverlayTeamPresenceCache.invalidate()
-                    }
-                    val t = OverlayTeamContextCache.loadTeamDetail(
-                        teamId = ctx.teamId,
-                        teamsRepository = teamsRepository,
-                        forceRefresh = forceTeamRefresh,
-                    ).getOrThrow()
-                    val presence = OverlayTeamPresenceCache.load(
-                        teamId = ctx.teamId,
-                        teamsRepository = teamsRepository,
-                        forceRefresh = forceTeamRefresh,
-                    ).getOrThrow()
-                    val p = usersRepository.getMyProfile().getOrThrow()
-                    PresenceLoadResult(
-                        profile = p,
-                        team = t,
-                        teamId = ctx.teamId,
-                        ingame = presence.ingame,
-                        recentlyActive = presence.recentlyActive,
-                    )
-                }
-            }
-            loaded.onSuccess { result ->
-                profile = result.profile
-                team = result.team
-                teamId = result.teamId
-                onlineMembers = result.ingame
-                recentlyActive = result.recentlyActive
-            }.onFailure { e ->
-                error = e.toUserMessageRu(res)
-                if (team == null) {
-                    profile = null
-                    teamId = null
-                    onlineMembers = emptyList()
-                    recentlyActive = emptyList()
-                }
-            }
-            loading = false
-        }
-    }
-
-    fun refreshPresenceOnly() {
-        val tid = teamId?.trim().orEmpty()
-        if (tid.isEmpty()) return
-        scope.launch {
-            val loaded = withContext(Dispatchers.IO) {
-                OverlayTeamPresenceCache.load(
-                    teamId = tid,
-                    teamsRepository = teamsRepository,
-                    forceRefresh = false,
-                )
-            }
-            loaded.onSuccess { presence ->
-                onlineMembers = presence.ingame
-                recentlyActive = presence.recentlyActive
-                error = null
-            }
-        }
-    }
-
-    val presenceSocketListener: (com.lastasylum.alliance.data.teams.TeamPresenceSocketEvent) -> Unit =
-        remember {
-            { event ->
-                if (!isOverlayIngameNow(event.presenceStatus, event.lastPresenceAt)) {
-                    onlineMembers = onlineMembers.filter { it.userId != event.userId }
-                } else {
-                    refreshPresenceOnly()
-                }
-            }
-        }
-
-    LaunchedEffect(teamId) {
-        val tid = teamId ?: return@LaunchedEffect
-        teamPresenceSocket.connect(
-            baseUrl = BuildConfig.API_BASE_URL,
-            teamId = tid,
+    val controller = remember(teamsRepository, usersRepository, teamPresenceSocket) {
+        OverlayTeamOnlineController(
+            scope = scope,
+            teamsRepository = teamsRepository,
+            usersRepository = usersRepository,
+            teamPresenceSocket = teamPresenceSocket,
             tokenProvider = tokenProvider,
+            baseUrl = BuildConfig.API_BASE_URL,
+            resources = res,
+            onIngameCountChanged = onIngameCountChanged,
         )
     }
 
-    DisposableEffect(teamId, presenceSocketListener) {
-        teamPresenceSocket.addPresenceListener(presenceSocketListener)
-        onDispose {
-            teamPresenceSocket.removePresenceListener(presenceSocketListener)
-        }
+    LaunchedEffect(controller) {
+        controller.start()
+    }
+    DisposableEffect(controller) {
+        onDispose { controller.stop() }
     }
 
-    LaunchedEffect(Unit) {
-        applyBootstrap(forceTeamRefresh = false, showBlockingSpinner = team == null)
-        while (isActive) {
-            delay(OVERLAY_ONLINE_PANEL_POLL_MS)
-            refreshPresenceOnly()
-        }
-    }
+    val uiState by controller.state.collectAsState()
+    var longPressMember by remember { mutableStateOf<OverlayOnlineMemberUiModel?>(null) }
 
     LaunchedEffect(openJoinInboxInitially) {
         if (!openJoinInboxInitially) return@LaunchedEffect
@@ -209,37 +102,43 @@ fun OverlayTeamOnlinePanel(
         onOpenJoinInboxConsumed()
     }
 
-    val t = team
-    val p = profile
-    val isLeader = p?.isPlayerTeamLeader == true
-    val pending = p?.pendingPlayerTeamJoinRequests ?: 0
+    val selfId = uiState.profile?.id
+    val memberIds = remember(uiState.baseSections) {
+        uiState.baseSections.flatMap { it.items }.map { it.userId }
+    }
+    val voiceFlagsByUserId = remember(voicePeers, voiceSession?.micOn, voiceSession?.soundOn, selfId, memberIds) {
+        buildVoiceFlagsMap(
+            memberUserIds = memberIds,
+            voicePeers = voicePeers,
+            selfUserId = selfId,
+            localMicOn = voiceSession?.micOn,
+            localSoundOn = voiceSession?.soundOn,
+        )
+    }
+    val displaySections = remember(
+        uiState.baseSections,
+        uiState.searchQuery,
+        uiState.activeFilterChip,
+        uiState.recentSectionCollapsed,
+        voiceFlagsByUserId,
+    ) {
+        applyOnlinePanelFilters(
+            baseSections = uiState.baseSections,
+            query = uiState.searchQuery,
+            chip = uiState.activeFilterChip,
+            recentCollapsed = uiState.recentSectionCollapsed,
+            voiceFlagsByUserId = voiceFlagsByUserId,
+        )
+    }
+
+    val team = uiState.team
+    val profile = uiState.profile
+    val isLeader = profile?.isPlayerTeamLeader == true
+    val pending = profile?.pendingPlayerTeamJoinRequests ?: 0
     val selfLabel = stringResource(R.string.overlay_online_self)
-    val ingameItems = remember(onlineMembers, p?.id) {
-        onlineMembers
-            .filter { isOverlayIngameNow(it.presenceStatus, it.lastPresenceAt) }
-            .map { member ->
-                PresenceListItem(
-                    member = member,
-                    inGameNow = true,
-                    key = "ingame:${member.userId}",
-                )
-            }
-    }
-    val recentItems = remember(recentlyActive, p?.id) {
-        recentlyActive
-            .filter { !isOverlayIngameNow(it.presenceStatus, it.lastPresenceAt) }
-            .map { member ->
-            PresenceListItem(
-                member = member,
-                inGameNow = false,
-                key = "recent:${member.userId}",
-            )
-        }
-    }
-    val totalShown = onlineMembers.size + recentlyActive.size
 
     TeamLeaderDialogsHost(
-        teamId = t?.id,
+        teamId = team?.id,
         teamsRepository = teamsRepository,
         showAddMember = leaderUi.showAddMember,
         onShowAddMemberChange = { leaderUi.showAddMember = it },
@@ -266,51 +165,83 @@ fun OverlayTeamOnlinePanel(
         onReloadTeam = {
             OverlayTeamContextCache.invalidate()
             OverlayTeamPresenceCache.invalidate()
-            applyBootstrap(forceTeamRefresh = true, showBlockingSpinner = false)
+            controller.refresh(force = true)
             onHudRefresh()
         },
         onHudRefresh = onHudRefresh,
-        onError = { msg -> error = msg },
+        onError = { _ -> /* surfaced via controller on next refresh */ },
     )
 
-    Column(modifier.fillMaxSize()) {
-        when {
-            loading && t == null -> {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(strokeWidth = 2.dp)
-                }
+    longPressMember?.let { member ->
+        OverlayAwareBottomSheet(onDismissRequest = { longPressMember = null }) {
+            Text(
+                text = member.username,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            )
+            TextButton(
+                onClick = {
+                    longPressMember = null
+                    onSendReactionToUser(member.userId)
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.overlay_online_action_reaction))
             }
-            error != null && t == null -> {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .padding(SquadRelayDimens.contentPaddingHorizontal),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = error!!,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
+            TextButton(
+                onClick = {
+                    copyUsernameToClipboard(context, member.username)
+                    longPressMember = null
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.overlay_online_action_copy_nick))
             }
-            t != null -> {
-                TeamLeaderToolbar(
-                    team = t,
-                    activeServerNumber = profile?.activeServerNumber,
-                    subtitle = stringResource(R.string.overlay_team_online_count, onlineMembers.size),
-                    isLeader = isLeader,
+        }
+    }
+
+    OverlayOnlinePanelScaffold(
+        modifier = modifier,
+        displaySections = displaySections,
+        voiceFlagsByUserId = voiceFlagsByUserId,
+        ingameCount = uiState.ingameCount,
+        recentCount = uiState.recentCount,
+        searchQuery = uiState.searchQuery,
+        activeFilterChip = uiState.activeFilterChip,
+        recentSectionCollapsed = uiState.recentSectionCollapsed,
+        realtimeMode = uiState.realtimeMode,
+        loading = uiState.loading,
+        refreshing = uiState.refreshing,
+        error = uiState.error,
+        selfLabel = selfLabel,
+        onSearchQuery = controller::onSearchQuery,
+        onFilterChip = controller::onFilterChip,
+        onToggleRecentSection = controller::toggleRecentSection,
+        onRefresh = { controller.refresh(force = true) },
+        onMemberLongClick = { longPressMember = it },
+        topBar = {
+            OverlayHudPanelHeader(
+                title = stringResource(R.string.overlay_online_title),
+                subtitle = stringResource(
+                    R.string.overlay_online_summary_ingame,
+                    uiState.ingameCount,
+                ),
+                onClose = onClose,
+                onRefresh = { controller.refresh(force = true) },
+                refreshing = uiState.refreshing,
+            )
+            if (team != null && isLeader) {
+                OverlayOnlineLeaderActionBar(
                     pendingJoinRequests = pending,
                     membersBusy = leaderUi.membersBusy,
                     editNameBusy = leaderUi.editNameBusy,
-                    overlayUi = true,
                     onAddMember = {
                         leaderUi.addNameDraft = ""
                         leaderUi.showAddMember = true
                     },
                     onEditTeam = {
-                        leaderUi.editTeamNameDraft = t.displayName.trim()
-                        leaderUi.editTeamTagDraft = t.tag.trim()
+                        leaderUi.editTeamNameDraft = team.displayName.trim()
+                        leaderUi.editTeamTagDraft = team.tag.trim()
                         leaderUi.showEditTeam = true
                     },
                     onOpenInbox = {
@@ -320,137 +251,73 @@ fun OverlayTeamOnlinePanel(
                             leaderUi.inboxBusy = true
                             teamsRepository.listPendingJoinRequests()
                                 .onSuccess { leaderUi.inboxRequests = it }
-                                .onFailure { e ->
+                                .onFailure { _ ->
                                     leaderUi.inboxRequests = emptyList()
-                                    error = e.toUserMessageRu(res)
                                 }
                             leaderUi.inboxBusy = false
                         }
                     },
-                    onRefresh = {
-                        OverlayTeamPresenceCache.invalidate()
-                        refreshPresenceOnly()
-                        onHudRefresh()
-                    },
                 )
-                if (totalShown == 0) {
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.overlay_online_empty),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+            }
+        },
+    )
+}
+
+@Composable
+private fun OverlayOnlineLeaderActionBar(
+    pendingJoinRequests: Int,
+    membersBusy: Boolean,
+    editNameBusy: Boolean,
+    onAddMember: () -> Unit,
+    onEditTeam: () -> Unit,
+    onOpenInbox: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = SquadRelayDimens.contentPaddingHorizontal,
+                vertical = 2.dp,
+            ),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onAddMember, enabled = !membersBusy) {
+            Icon(
+                imageVector = Icons.Outlined.PersonAdd,
+                contentDescription = stringResource(R.string.team_cd_add_member),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
+        IconButton(onClick = onEditTeam, enabled = !membersBusy && !editNameBusy) {
+            Icon(
+                imageVector = Icons.Outlined.Edit,
+                contentDescription = stringResource(R.string.team_cd_edit_team_name),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
+        if (pendingJoinRequests > 0) {
+            BadgedBox(
+                badge = {
+                    Badge {
+                        Text(if (pendingJoinRequests > 9) "9+" else "$pendingJoinRequests")
                     }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(
-                            start = SquadRelayDimens.contentPaddingHorizontal,
-                            end = SquadRelayDimens.contentPaddingHorizontal,
-                            top = 8.dp,
-                            bottom = 16.dp,
-                        ),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        if (ingameItems.isNotEmpty()) {
-                            item(key = "hdr_ingame") {
-                                Text(
-                                    text = stringResource(R.string.overlay_online_section_ingame),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(bottom = 2.dp),
-                                )
-                            }
-                            items(ingameItems, key = { it.key }) { item ->
-                                PresenceMemberRow(
-                                    item = item,
-                                    selfUserId = p?.id,
-                                    selfLabel = selfLabel,
-                                    voicePeers = voicePeers,
-                                    localMicOn = voiceSession?.micOn,
-                                    localSoundOn = voiceSession?.soundOn,
-                                )
-                            }
-                        }
-                        if (recentItems.isNotEmpty()) {
-                            item(key = "hdr_recent") {
-                                Text(
-                                    text = stringResource(R.string.overlay_online_section_recent),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
-                                )
-                            }
-                            items(recentItems, key = { it.key }) { item ->
-                                PresenceMemberRow(
-                                    item = item,
-                                    selfUserId = p?.id,
-                                    selfLabel = selfLabel,
-                                    voicePeers = voicePeers,
-                                    localMicOn = voiceSession?.micOn,
-                                    localSoundOn = voiceSession?.soundOn,
-                                )
-                            }
-                        }
-                    }
+                },
+            ) {
+                IconButton(onClick = onOpenInbox) {
+                    Icon(
+                        imageVector = Icons.Outlined.Inbox,
+                        contentDescription = stringResource(R.string.profile_join_inbox_cd),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
                 }
             }
         }
     }
 }
 
-@Composable
-private fun PresenceMemberRow(
-    item: PresenceListItem,
-    selfUserId: String?,
-    selfLabel: String,
-    voicePeers: Map<String, VoicePeerState>,
-    localMicOn: Boolean?,
-    localSoundOn: Boolean?,
-) {
-    val member = item.member
-    val isSelf = member.userId == selfUserId
-    val squadRole = member.teamRole.trim().uppercase().ifBlank { "R1" }
-    val presenceAge = formatOverlayPresenceAgeRu(member.lastPresenceAt)
-    val inGameNow = item.inGameNow ||
-        isOverlayIngameNow(member.presenceStatus, member.lastPresenceAt)
-    val displayName = if (isSelf) {
-        "${member.username} ($selfLabel)"
-    } else {
-        member.username
-    }
-    val (micOn, soundOn) = TeamVoicePresenceStore.voiceFlagsForMember(
-        member.userId,
-        selfUserId,
-        voicePeers,
-        localMicOn,
-        localSoundOn,
-    )
-    TeamMemberPresenceCard(
-        username = member.username,
-        telegramUsername = member.telegramUsername,
-        squadRole = squadRole,
-        displayName = displayName,
-        presenceSubtitle = presenceAge,
-        inGameNow = inGameNow,
-        showIngameAvatarRing = inGameNow,
-        micOn = micOn,
-        soundOn = soundOn,
-        showVoiceBadges = inGameNow,
-    )
+private fun copyUsernameToClipboard(context: Context, username: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.setPrimaryClip(ClipData.newPlainText("username", username))
+    Toast.makeText(context, username, Toast.LENGTH_SHORT).show()
 }
-
-private data class PresenceLoadResult(
-    val profile: MyProfileDto,
-    val team: TeamDetailDto,
-    val teamId: String,
-    val ingame: List<PlayerTeamMemberDto>,
-    val recentlyActive: List<PlayerTeamMemberDto>,
-)

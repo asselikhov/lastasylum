@@ -1,33 +1,24 @@
 package com.lastasylum.alliance.ui.components.team
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ModeEditOutline
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -36,43 +27,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import com.lastasylum.alliance.R
-import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
-import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import com.lastasylum.alliance.data.teams.TeamNewsListItemDto
 import com.lastasylum.alliance.data.teams.TeamNewsPollOptionDto
 import com.lastasylum.alliance.data.teams.TeamNewsPollTallyDto
-import com.lastasylum.alliance.ui.screens.teamnews.teamNewsAuthedImageRequest
 import com.lastasylum.alliance.ui.components.premium.FeedCardHero
 import com.lastasylum.alliance.ui.components.premium.FeedCardMetaRow
 import com.lastasylum.alliance.ui.components.premium.FeedCardUnreadDot
-import com.lastasylum.alliance.ui.components.premium.PremiumFeedCardShell
-import com.lastasylum.alliance.ui.components.premium.PremiumProgressBar
-import com.lastasylum.alliance.ui.theme.premium.PremiumColors
-import com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces
-import com.lastasylum.alliance.ui.theme.SquadRelayAtmosphericPurple
-import com.lastasylum.alliance.ui.theme.SquadRelayAtmosphericSky
-import com.lastasylum.alliance.ui.theme.SquadRelayPrimary
-import com.lastasylum.alliance.ui.theme.SquadRelaySecondary
-import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
+import com.lastasylum.alliance.ui.screens.teamnews.teamNewsAuthedImageRequest
 import com.lastasylum.alliance.ui.util.formatTeamFeedDateRu
-import kotlin.math.roundToInt
-
-private val cardShape = TeamFeedCardTokens.cardShape
-private val innerShape = RoundedCornerShape(16.dp)
-private fun glassBorder(alpha: Float = 0.14f) =
-    BorderStroke(1.dp, Color.White.copy(alpha = alpha))
 
 @Composable
 fun PollMetaLine(
@@ -81,62 +50,42 @@ fun PollMetaLine(
     dateLabel: String?,
     modifier: Modifier = Modifier,
 ) {
-    val parts = buildList {
-        if (showPollLabel) add(stringResource(R.string.team_news_poll_badge))
-        if (totalVotes > 0) add(stringResource(R.string.team_news_votes_count, totalVotes))
-        if (!dateLabel.isNullOrBlank()) add(dateLabel)
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (showPollLabel) {
+            JournalPollBadge(
+                votesLabel = if (totalVotes > 0) {
+                    stringResource(R.string.team_news_votes_count, totalVotes)
+                } else {
+                    null
+                },
+            )
+        }
+        if (!dateLabel.isNullOrBlank()) {
+            JournalTimePill(label = dateLabel)
+        }
     }
-    if (parts.isEmpty()) return
-    Text(
-        text = parts.joinToString(" · "),
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = modifier,
-    )
 }
 
 @Composable
-private fun PollPreviewOptionCompact(
-    text: String,
-    share: Float,
-    selected: Boolean,
+fun JournalTimePill(
+    label: String,
     modifier: Modifier = Modifier,
 ) {
-    val scheme = MaterialTheme.colorScheme
-    val pct = if (share > 0f) (share * 100f).roundToInt() else 0
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                color = scheme.onSurface,
-                modifier = Modifier.weight(1f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = if (pct > 0) "$pct%" else "—",
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = if (selected) SquadRelayPrimary else scheme.onSurfaceVariant,
-            )
-        }
-        PremiumProgressBar(
-            progress = share.coerceIn(0f, 1f),
-            modifier = Modifier.fillMaxWidth(),
-            barHeight = 4.dp,
-        )
-    }
+    Text(
+        text = label,
+        style = PremiumJournalFeedTokens.metaStyle,
+        modifier = modifier
+            .clip(PremiumJournalFeedTokens.timePillShape)
+            .background(Color.White.copy(alpha = 0.07f))
+            .border(0.5.dp, Color.White.copy(alpha = 0.1f), PremiumJournalFeedTokens.timePillShape)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 @Composable
@@ -147,79 +96,13 @@ fun PollPreviewCompact(
     modifier: Modifier = Modifier,
     maxOptions: Int = 2,
 ) {
-    val totalVotes = tallies.sumOf { it.count }
-    val previewOptions = leadingPollOptions(options, tallies, maxOptions)
-    val remaining = (options.size - previewOptions.size).coerceAtLeast(0)
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        previewOptions.forEach { opt ->
-            val cnt = tallies.find { it.optionId == opt.id }?.count ?: 0
-            val share = if (totalVotes > 0) cnt.toFloat() / totalVotes else 0f
-            PollPreviewOptionCompact(
-                text = opt.text,
-                share = share,
-                selected = myVoteOptionId == opt.id,
-            )
-        }
-        if (remaining > 0) {
-            Text(
-                text = stringResource(R.string.team_news_poll_more_options, remaining),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@Composable
-private fun PollResultOptionRow(
-    text: String,
-    voteCount: Int,
-    share: Float,
-    selected: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val scheme = MaterialTheme.colorScheme
-    val pct = if (share > 0f) (share * 100f).roundToInt() else 0
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top,
-        ) {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                color = scheme.onSurface,
-                modifier = Modifier.weight(1f),
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = if (pct > 0) "$pct%" else "—",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                color = if (selected) SquadRelayPrimary else scheme.onSurfaceVariant,
-            )
-        }
-        PremiumProgressBar(
-            progress = share.coerceIn(0f, 1f),
-            modifier = Modifier.fillMaxWidth(),
-            barHeight = 6.dp,
-        )
-        Text(
-            text = stringResource(R.string.team_news_poll_option_votes, voteCount),
-            style = MaterialTheme.typography.labelSmall,
-            color = scheme.onSurfaceVariant.copy(alpha = 0.85f),
-        )
-    }
+    JournalPollPreviewBlock(
+        options = options,
+        tallies = tallies,
+        myVoteOptionId = myVoteOptionId,
+        modifier = modifier,
+        maxOptions = maxOptions,
+    )
 }
 
 @Composable
@@ -230,19 +113,18 @@ fun TeamPollQuestionHeader(
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        JournalPollBadge(
+            votesLabel = if (totalVotes > 0) {
+                stringResource(R.string.team_news_votes_count, totalVotes)
+            } else {
+                null
+            },
+        )
         Text(
             text = question,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
-            lineHeight = 28.sp,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        PollMetaLine(
-            showPollLabel = true,
-            totalVotes = totalVotes,
-            dateLabel = null,
+            style = PremiumJournalFeedTokens.headlineStyle,
         )
     }
 }
@@ -277,102 +159,61 @@ fun TeamPollPreviewBlock(
     }
     val remaining = (options.size - previewOptions.size).coerceAtLeast(0)
 
-    val body = @Composable {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 14.dp),
-        ) {
-            if (showHeader) {
-                PollMetaLine(
-                    showPollLabel = true,
-                    totalVotes = totalVotes,
-                    dateLabel = null,
-                )
-            }
-            Text(
-                text = question,
-                style = if (compact) {
-                    MaterialTheme.typography.headlineSmall
-                } else {
-                    MaterialTheme.typography.titleMedium
-                },
-                fontWeight = FontWeight.SemiBold,
-                lineHeight = if (compact) 26.sp else 24.sp,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = if (compact) 3 else Int.MAX_VALUE,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                previewOptions.forEach { opt ->
-                    val cnt = tallies.find { it.optionId == opt.id }?.count ?: 0
-                    val share = if (totalVotes > 0) cnt.toFloat() / totalVotes else 0f
-                    val selected = myVoteOptionId == opt.id
-                    Surface(
-                        shape = innerShape,
-                        color = if (selected) {
-                            PremiumColors.accentPurple.copy(alpha = 0.10f)
-                        } else {
-                            SquadRelaySurfaces.subtleColor(0.32f)
-                        },
-                        border = BorderStroke(
-                            1.dp,
-                            if (selected) {
-                                PremiumColors.accentPurple.copy(alpha = 0.45f)
-                            } else {
-                                Color.White.copy(alpha = 0.06f)
-                            },
-                        ),
-                    ) {
-                        PollResultOptionRow(
-                            text = opt.text,
-                            voteCount = cnt,
-                            share = share,
-                            selected = selected,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                        )
-                    }
-                }
-                if (remaining > 0) {
-                    Text(
-                        text = "+$remaining",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            if (compact && totalVotes > 0) {
-                Text(
-                    text = stringResource(R.string.team_news_votes_count, totalVotes),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .then(
-                if (compact) {
-                    Modifier.padding(top = 4.dp)
-                } else {
-                    Modifier
-                },
-            ),
+            .then(if (compact) Modifier.padding(top = 4.dp) else Modifier),
+        verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 14.dp),
     ) {
         if (compact) {
             HorizontalDivider(
                 thickness = 1.dp,
-                color = Color.White.copy(alpha = FeedCardDesignTokens.footerDividerAlpha),
+                color = Color.White.copy(alpha = 0.06f),
             )
         }
-        Box(
-            Modifier.padding(
-                top = if (compact) 12.dp else 0.dp,
-            ),
-        ) {
-            body()
+        if (showHeader) {
+            JournalPollBadge(
+                votesLabel = if (totalVotes > 0) {
+                    stringResource(R.string.team_news_votes_count, totalVotes)
+                } else {
+                    null
+                },
+            )
+        }
+        Text(
+            text = question,
+            style = if (compact) {
+                PremiumJournalFeedTokens.titleStyle
+            } else {
+                PremiumJournalFeedTokens.headlineStyle
+            },
+            maxLines = if (compact) 3 else Int.MAX_VALUE,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            previewOptions.forEach { opt ->
+                val cnt = tallies.find { it.optionId == opt.id }?.count ?: 0
+                val share = if (totalVotes > 0) cnt.toFloat() / totalVotes else 0f
+                JournalPollOptionTile(
+                    text = opt.text,
+                    share = share,
+                    voteCount = cnt,
+                    selected = myVoteOptionId == opt.id,
+                    showVoteCount = !compact,
+                )
+            }
+            if (remaining > 0) {
+                Text(
+                    text = "+$remaining",
+                    style = PremiumJournalFeedTokens.metaStyle,
+                )
+            }
+        }
+        if (compact && totalVotes > 0) {
+            Text(
+                text = stringResource(R.string.team_news_votes_count, totalVotes),
+                style = PremiumJournalFeedTokens.metaStyle,
+            )
         }
     }
 }
@@ -387,39 +228,92 @@ fun TeamPollVoteOptionSurface(
     modifier: Modifier = Modifier,
     contentBelow: @Composable (() -> Unit)? = null,
 ) {
-    Surface(
-        onClick = onSelect,
-        shape = innerShape,
-        color = if (selected) {
-            SquadRelayPrimary.copy(alpha = 0.12f)
-        } else {
-            SquadRelaySurfaces.subtleColor(0.36f)
-        },
-        border = BorderStroke(
-            1.dp,
-            if (selected) SquadRelayPrimary.copy(alpha = 0.48f) else Color.White.copy(alpha = 0.07f),
-        ),
-        modifier = modifier.fillMaxWidth(),
+    JournalPollOptionTile(
+        text = text,
+        share = share,
+        voteCount = voteCount,
+        selected = selected,
+        modifier = modifier,
+        interactive = true,
+        onSelect = onSelect,
+        showVoteCount = false,
+        contentBelow = contentBelow,
+    )
+}
+
+@Composable
+fun JournalVoteButton(
+    label: String,
+    enabled: Boolean,
+    loading: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(14.dp)
+    val interactionSource = remember { MutableInteractionSource() }
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(
+                if (enabled) {
+                    Brush.horizontalGradient(
+                        listOf(
+                            Color(0xFF38BDF8).copy(alpha = 0.28f),
+                            Color(0xFF818CF8).copy(alpha = 0.24f),
+                        ),
+                    )
+                } else {
+                    Brush.horizontalGradient(
+                        listOf(
+                            Color(0xFF2A3444).copy(alpha = 0.6f),
+                            Color(0xFF2A3444).copy(alpha = 0.5f),
+                        ),
+                    )
+                },
+            )
+            .border(
+                1.dp,
+                if (enabled) {
+                    Brush.horizontalGradient(
+                        listOf(
+                            Color(0xFF38BDF8).copy(alpha = 0.55f),
+                            Color(0xFF818CF8).copy(alpha = 0.45f),
+                        ),
+                    )
+                } else {
+                    Brush.linearGradient(
+                        listOf(Color.White.copy(alpha = 0.08f), Color.White.copy(alpha = 0.04f)),
+                    )
+                },
+                shape,
+            )
+            .then(
+                if (enabled && !loading) {
+                    Modifier.clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = onClick,
+                    )
+                } else {
+                    Modifier
+                },
+            )
+            .padding(vertical = 14.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(start = 4.dp, end = 14.dp, top = 8.dp, bottom = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Row(verticalAlignment = Alignment.Top) {
-                RadioButton(selected = selected, onClick = onSelect)
-                PollResultOptionRow(
-                    text = text,
-                    voteCount = voteCount,
-                    share = share,
-                    selected = selected,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            contentBelow?.let { below ->
-                Box(Modifier.padding(start = 48.dp)) { below() }
-            }
+        if (loading) {
+            androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                strokeWidth = 2.dp,
+                color = PremiumJournalFeedTokens.titleColor,
+            )
+        } else {
+            Text(
+                text = label,
+                style = PremiumJournalFeedTokens.optionLabelStyle,
+                color = if (enabled) PremiumJournalFeedTokens.titleColor else PremiumJournalFeedTokens.metaColor,
+            )
         }
     }
 }
@@ -433,7 +327,6 @@ fun TeamNewsFeedCard(
     modifier: Modifier = Modifier,
     isUnread: Boolean = false,
 ) {
-    val scheme = MaterialTheme.colorScheme
     val formattedCreatedAt = remember(item.createdAt) { formatTeamFeedDateRu(item.createdAt) }
     val hasHero = !item.firstImageRelativeUrl.isNullOrBlank()
     val pollQuestion = item.pollQuestion?.trim().orEmpty()
@@ -453,14 +346,19 @@ fun TeamNewsFeedCard(
             append(", $formattedCreatedAt")
         }
     }
+    val journalVariant = when {
+        pollOnly -> JournalFeedVariant.PollOnly
+        showPollPreview -> JournalFeedVariant.Poll
+        isUnread -> JournalFeedVariant.UnreadNews
+        else -> JournalFeedVariant.News
+    }
 
-    PremiumFeedCardShell(
+    PremiumJournalFeedShell(
         onClick = onClick,
         modifier = modifier.semantics { contentDescription = cardDesc },
-        variant = if (pollOnly) FeedCardVariant.PollOnly else FeedCardVariant.News,
+        variant = journalVariant,
         isUnread = isUnread,
-        listMode = true,
-        contentPadding = PaddingValues(0.dp),
+        contentTopPadding = if (hasHero) 12.dp else PremiumJournalFeedTokens.cardPaddingV,
         topContent = {
             if (hasHero) {
                 FeedCardHero(
@@ -473,33 +371,20 @@ fun TeamNewsFeedCard(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             if (isUnread) FeedCardUnreadDot()
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = Color.Black.copy(alpha = 0.38f),
-                                border = glassBorder(0.12f),
-                            ) {
-                                Text(
-                                    text = formattedCreatedAt,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White.copy(alpha = 0.9f),
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                )
-                            }
+                            JournalTimePill(label = formattedCreatedAt)
                         }
                     },
                 )
                 HorizontalDivider(
                     thickness = 1.dp,
-                    color = Color.White.copy(alpha = FeedCardDesignTokens.footerDividerAlpha),
+                    color = Color.White.copy(alpha = 0.06f),
                 )
             }
         },
         content = {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(FeedCardDesignTokens.contentPadding),
-                verticalArrangement = Arrangement.spacedBy(FeedCardDesignTokens.sectionGap),
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(PremiumJournalFeedTokens.sectionGap),
             ) {
                 if (showPollPreview) {
                     val displayTitle = when {
@@ -515,28 +400,33 @@ fun TeamNewsFeedCard(
                             if (!hasHero && isUnread) FeedCardUnreadDot()
                             Text(
                                 text = displayTitle,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                lineHeight = 24.sp,
+                                style = PremiumJournalFeedTokens.titleStyle,
                                 maxLines = if (pollOnly) 3 else 2,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f, fill = false),
                             )
                         }
                     }
+                    if (!hasHero) {
+                        JournalPollBadge(
+                            votesLabel = if (totalVotes > 0) {
+                                stringResource(R.string.team_news_votes_count, totalVotes)
+                            } else {
+                                null
+                            },
+                        )
+                    }
                     if (hasHero && !pollOnly && pollQuestion.isNotBlank() &&
                         pollQuestion != item.title.trim()
                     ) {
                         Text(
                             text = pollQuestion,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium,
-                            color = scheme.onSurfaceVariant,
+                            style = PremiumJournalFeedTokens.titleStyle,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    PollPreviewCompact(
+                    JournalPollPreviewBlock(
                         options = pollOptions,
                         tallies = item.pollTallies,
                         myVoteOptionId = item.myVoteOptionId,
@@ -544,7 +434,7 @@ fun TeamNewsFeedCard(
                     )
                     if (!hasHero) {
                         PollMetaLine(
-                            showPollLabel = true,
+                            showPollLabel = false,
                             totalVotes = totalVotes,
                             dateLabel = formattedCreatedAt,
                         )
@@ -558,9 +448,7 @@ fun TeamNewsFeedCard(
                             if (isUnread) FeedCardUnreadDot()
                             Text(
                                 text = item.title,
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.SemiBold,
-                                lineHeight = 26.sp,
+                                style = PremiumJournalFeedTokens.titleStyle,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f),
@@ -570,12 +458,13 @@ fun TeamNewsFeedCard(
                     if (item.excerpt.isNotBlank()) {
                         Text(
                             text = item.excerpt,
-                            style = MaterialTheme.typography.bodyMedium,
-                            lineHeight = 22.sp,
-                            color = scheme.onSurfaceVariant,
+                            style = PremiumJournalFeedTokens.excerptStyle,
                             maxLines = if (hasHero) 2 else 3,
                             overflow = TextOverflow.Ellipsis,
                         )
+                    }
+                    if (!hasHero) {
+                        JournalTimePill(label = formattedCreatedAt)
                     }
                 }
             }
@@ -584,12 +473,17 @@ fun TeamNewsFeedCard(
             Column(Modifier.fillMaxWidth()) {
                 HorizontalDivider(
                     thickness = 1.dp,
-                    color = Color.White.copy(alpha = FeedCardDesignTokens.footerDividerAlpha),
+                    color = Color.White.copy(alpha = 0.06f),
                 )
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = FeedCardDesignTokens.contentPadding, vertical = 10.dp),
+                        .padding(
+                            start = PremiumJournalFeedTokens.accentRailWidth + 10.dp,
+                            end = PremiumJournalFeedTokens.cardPaddingH,
+                            top = 10.dp,
+                            bottom = 10.dp,
+                        ),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
@@ -619,7 +513,7 @@ fun TeamNewsFeedCard(
                             Icon(
                                 Icons.Outlined.ModeEditOutline,
                                 contentDescription = stringResource(R.string.team_news_edit),
-                                tint = scheme.onSurfaceVariant,
+                                tint = PremiumJournalFeedTokens.metaColor,
                             )
                         }
                     }
@@ -628,4 +522,3 @@ fun TeamNewsFeedCard(
         },
     )
 }
-

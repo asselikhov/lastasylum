@@ -47,13 +47,12 @@ import coil.compose.AsyncImage
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.teams.TeamNewsDetailDto
 import com.lastasylum.alliance.data.teams.TeamNewsPollDetailDto
-import com.lastasylum.alliance.ui.components.premium.PremiumGlassSurface
-import com.lastasylum.alliance.ui.components.team.FeedCardDesignTokens
-import com.lastasylum.alliance.ui.theme.premium.PremiumCardShape
+import com.lastasylum.alliance.ui.components.team.JournalFeedVariant
+import com.lastasylum.alliance.ui.components.team.PremiumJournalFeedShell
+import com.lastasylum.alliance.ui.components.team.PremiumJournalFeedTokens
 import com.lastasylum.alliance.ui.util.formatTeamFeedDateRu
 
 private val detailHeroShape = RoundedCornerShape(20.dp)
-private val detailCardShape = PremiumCardShape
 private val pageHorizontalPad = 16.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -144,7 +143,12 @@ internal fun TeamNewsDetailScrollContent(
                         .clip(detailHeroShape)
                         .border(
                             1.dp,
-                            Color.White.copy(alpha = 0.1f),
+                            Brush.linearGradient(
+                                listOf(
+                                    Color.White.copy(alpha = 0.22f),
+                                    com.lastasylum.alliance.ui.theme.premium.PremiumColors.accentCyan.copy(alpha = 0.18f),
+                                ),
+                            ),
                             detailHeroShape,
                         ),
                 ) {
@@ -174,16 +178,15 @@ internal fun TeamNewsDetailScrollContent(
                     ) {
                         Text(
                             text = detail.title,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.White,
+                            style = PremiumJournalFeedTokens.titleStyle,
+                            color = PremiumJournalFeedTokens.metaOnHero,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
                             text = "${detail.authorUsername} · ${formatTeamFeedDateRu(detail.createdAt)}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = Color.White.copy(alpha = 0.88f),
+                            style = PremiumJournalFeedTokens.metaStyle,
+                            color = PremiumJournalFeedTokens.metaOnHero.copy(alpha = 0.88f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -194,50 +197,45 @@ internal fun TeamNewsDetailScrollContent(
 
         if (showArticleBody && !pollOnly) {
             item(key = "news_detail_body") {
-                PremiumGlassSurface(
+                PremiumJournalFeedShell(
+                    onClick = null,
+                    variant = JournalFeedVariant.News,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = pageHorizontalPad, vertical = 8.dp),
-                    shape = detailCardShape,
-                    shadowElevation = FeedCardDesignTokens.detailShadowElevation,
-                    showInnerGlow = false,
-                    layerAlpha = 0.62f,
-                ) {
+                    content = {
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 18.dp, vertical = 16.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         if (hero == null) {
                             Text(
                                 detail.title,
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.SemiBold,
+                                style = PremiumJournalFeedTokens.headlineStyle,
                             )
                             Text(
                                 "${detail.authorUsername} · ${formatTeamFeedDateRu(detail.createdAt)}",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = PremiumJournalFeedTokens.metaStyle,
                             )
                         }
                         if (detail.body.trim().isNotEmpty()) {
                             Text(
                                 detail.body,
-                                style = MaterialTheme.typography.bodyLarge,
-                                lineHeight = 24.sp,
-                                color = MaterialTheme.colorScheme.onSurface,
+                                style = PremiumJournalFeedTokens.excerptStyle.copy(
+                                    fontSize = 16.sp,
+                                    lineHeight = 24.sp,
+                                ),
                             )
                         }
                     }
-                }
+                    },
+                )
             }
         } else if (poll == null && hero == null) {
             item(key = "news_detail_meta") {
                 Text(
                     "${detail.authorUsername} · ${formatTeamFeedDateRu(detail.createdAt)}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = PremiumJournalFeedTokens.metaStyle,
                     modifier = Modifier.padding(horizontal = pageHorizontalPad, vertical = 8.dp),
                 )
             }
@@ -307,18 +305,16 @@ internal fun TeamNewsDetailPollCard(
     pollOnly: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    PremiumGlassSurface(
+    PremiumJournalFeedShell(
+        onClick = null,
+        variant = if (pollOnly) JournalFeedVariant.PollOnly else JournalFeedVariant.Poll,
         modifier = modifier.fillMaxWidth(),
-        shape = detailCardShape,
-        shadowElevation = FeedCardDesignTokens.detailShadowElevation,
-        showInnerGlow = false,
-        layerAlpha = if (pollOnly) 0.64f else 0.62f,
-    ) {
-        TeamNewsPollVoteBlock(
-            poll = poll,
-            voteBusy = voteBusy,
-            onVote = onVote,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-        )
-    }
+        content = {
+            TeamNewsPollVoteBlock(
+                poll = poll,
+                voteBusy = voteBusy,
+                onVote = onVote,
+            )
+        },
+    )
 }

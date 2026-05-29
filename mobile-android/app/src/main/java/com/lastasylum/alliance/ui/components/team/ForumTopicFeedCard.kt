@@ -20,9 +20,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -108,16 +108,58 @@ fun ForumTopicFeedCard(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
+                    if (hasUnread) {
+                        ForumTopicUnreadBadge(count = unreadCount)
+                    }
                     menu()
                 }
                 ForumTopicTacticalMetaRow(
                     messageCount = topic.messageCount,
-                    activityLabel = messageMeta,
                     unreadCount = unreadCount,
-                    activityLevel = activityLevel,
                 )
+                val activity = messageMeta.trim()
+                if (activity.isNotBlank() && activity != "—") {
+                    Text(
+                        text = activity,
+                        style = ForumTopicCardTokens.metaStyle,
+                        color = ForumTopicCardTokens.metaIcon,
+                        modifier = Modifier
+                            .align(Alignment.End)
+                            .padding(top = 2.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
+    }
+}
+
+@Composable
+fun ForumTopicUnreadBadge(
+    count: Int,
+    modifier: Modifier = Modifier,
+) {
+    if (count <= 0) return
+    val label = if (count > 99) "99+" else count.toString()
+    Surface(
+        modifier = modifier.widthIn(min = 22.dp),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+        color = PremiumColors.accentCyan.copy(alpha = 0.18f),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            PremiumColors.accentCyan.copy(alpha = 0.55f),
+        ),
+    ) {
+        Text(
+            text = label,
+            style = ForumTopicCardTokens.metaStyle.copy(
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                color = PremiumColors.accentCyanBright,
+            ),
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+            maxLines = 1,
+        )
     }
 }
 
@@ -295,9 +337,7 @@ private fun ForumTopicTacticalAvatar(
 @Composable
 private fun ForumTopicTacticalMetaRow(
     messageCount: Int,
-    activityLabel: String,
     unreadCount: Int,
-    activityLevel: ForumTopicCardTokens.ActivityLevel,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -308,7 +348,7 @@ private fun ForumTopicTacticalMetaRow(
             ForumTopicTacticalChip(
                 label = stringResource(R.string.team_forum_chip_messages, messageCount),
                 leadingIcon = Icons.Outlined.ChatBubbleOutline,
-                hot = activityLevel == ForumTopicCardTokens.ActivityLevel.Hot,
+                hot = unreadCount > 0,
             )
         } else {
             ForumTopicTacticalChip(
@@ -316,21 +356,9 @@ private fun ForumTopicTacticalMetaRow(
                 leadingIcon = null,
             )
         }
-        val activity = activityLabel.trim()
-        if (activity.isNotBlank() && activity != "—") {
-            ForumTopicTacticalChip(
-                label = activity,
-                leadingIcon = Icons.Outlined.AccessTime,
-            )
-        }
         if (unreadCount > 0) {
             ForumTopicTacticalChip(
                 label = stringResource(R.string.team_forum_chip_unread, unreadCount),
-                hot = true,
-            )
-        } else if (activityLevel == ForumTopicCardTokens.ActivityLevel.Warm) {
-            ForumTopicTacticalChip(
-                label = stringResource(R.string.team_forum_topic_active),
                 hot = true,
             )
         }

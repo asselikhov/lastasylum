@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
@@ -90,6 +91,8 @@ type AuthSocket = Socket<
   },
 })
 export class ChatGateway {
+  private readonly logger = new Logger(ChatGateway.name);
+
   @WebSocketServer()
   server: Namespace;
 
@@ -502,12 +505,11 @@ export class ChatGateway {
     payload: unknown,
     excludeUserId?: string,
   ): Promise<void> {
-    const inRoom = this.userIdsInChatRoom(roomId);
     const eligible = await this.listEligibleUserIdsForRoom(roomId);
     const exclude = excludeUserId?.trim();
     for (const userId of eligible) {
       if (exclude && userId === exclude) continue;
-      if (inRoom.has(userId)) continue;
+      // Also emit on personal socket — overlay FGS may miss `chat:room` join (read receipts, etc.).
       this.server?.to(`user:${userId}`).emit(event, payload);
     }
   }
@@ -565,18 +567,14 @@ export class ChatGateway {
     if (!room || room.title !== ALLIANCE_RAID_ROOM_TITLE) return;
     const teammateIds =
       await this.usersService.listOverlayIngameTeammateIds(uid);
-    const inRoomUserIds = new Set<string>();
-    if (this.server) {
-      const sockets = await this.server.in(`chat:${rid}`).fetchSockets();
-      for (const sock of sockets) {
-        const uid = (sock.data as SocketData | undefined)?.user?.userId?.trim();
-        if (uid) inRoomUserIds.add(uid);
-      }
-    }
+    let fanoutCount = 0;
     for (const teammateId of teammateIds) {
-      if (inRoomUserIds.has(teammateId)) continue;
       this.server?.to(`user:${teammateId}`).emit('message:new', message);
+      fanoutCount++;
     }
+    this.logger.debug(
+      `raid overlay fanout room=${rid} teammates=${teammateIds.length} emitted=${fanoutCount}`,
+    );
   }
 
   /** Per-user unread snapshot (personal `user:` socket room). */

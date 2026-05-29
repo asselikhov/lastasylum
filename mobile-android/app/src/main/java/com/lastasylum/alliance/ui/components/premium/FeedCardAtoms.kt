@@ -233,8 +233,8 @@ fun FeedCardHero(
     topOverlay: @Composable (() -> Unit)? = null,
 ) {
     val topShape = RoundedCornerShape(
-        topStart = 26.dp,
-        topEnd = 26.dp,
+        topStart = 20.dp,
+        topEnd = 20.dp,
         bottomStart = 0.dp,
         bottomEnd = 0.dp,
     )

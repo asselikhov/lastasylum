@@ -1,6 +1,5 @@
 package com.lastasylum.alliance.overlay
 
-import android.content.Context
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -13,13 +12,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -40,6 +41,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -62,23 +64,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.airbnb.lottie.LottieAnimationView
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.users.UsersRepository
-import com.lastasylum.alliance.ui.components.premium.PremiumFeedCardShell
-import com.lastasylum.alliance.ui.components.team.FeedCardVariant
-import com.lastasylum.alliance.ui.util.formatOverlayPresenceAgeRu
-import com.lastasylum.alliance.ui.components.team.TeamMemberPresenceCard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 private val OverlaySheetBgTop = Color(0xF2141C2A)
 private val OverlaySheetBgBottom = Color(0xEE0C1018)
 private val OverlaySheetStroke = Color(0x3D4A62AA)
-private val OverlayGoldAccent = Color(0xFFFFB74D)
 private val OverlayMuted = Color(0xFF9AB0C4D8)
+private val OverlayCyan = Color(0xFF38BDF8)
 
 internal suspend fun loadOverlayIngameReactionRecipients(
     usersRepository: UsersRepository,
@@ -109,12 +106,15 @@ fun OverlayReactionRecipientSheet(
     onSendBroadcastAll: (memberCount: Int) -> Unit,
     loadMembers: suspend () -> Result<List<PlayerTeamMemberDto>>,
     modifier: Modifier = Modifier,
+    initialSelectedUserIds: Set<String> = emptySet(),
 ) {
     val context = LocalContext.current
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var members by remember { mutableStateOf<List<PlayerTeamMemberDto>>(emptyList()) }
-    var selectedIds by remember { mutableStateOf(setOf<String>()) }
+    var selectedIds by remember(initialSelectedUserIds) {
+        mutableStateOf(initialSelectedUserIds)
+    }
     var searchQuery by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
@@ -155,13 +155,12 @@ fun OverlayReactionRecipientSheet(
     }
 
     val selectedCount = selectedIds.size
-    val maxSheetHeight = (LocalConfiguration.current.screenHeightDp * 0.85f).dp
-    val listMaxHeight = (maxSheetHeight - 300.dp).coerceAtLeast(140.dp)
+    val sheetHeight = (LocalConfiguration.current.screenHeightDp * 0.62f).dp
 
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(max = maxSheetHeight)
+            .height(sheetHeight)
             .clip(RoundedCornerShape(16.dp))
             .border(1.dp, OverlaySheetStroke, RoundedCornerShape(16.dp)),
         color = Color.Transparent,
@@ -170,7 +169,7 @@ fun OverlayReactionRecipientSheet(
     ) {
         Box(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
                         listOf(OverlaySheetBgTop, OverlaySheetBgBottom),
@@ -178,32 +177,29 @@ fun OverlayReactionRecipientSheet(
                 ),
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 4.dp),
+                modifier = Modifier.fillMaxSize(),
             ) {
                 RecipientSheetHeader(onBack = onBack, onDismiss = onDismiss)
 
                 OverlayReactionRecipientPreview(
                     reactionId = reactionId,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                        .padding(horizontal = 16.dp, vertical = 2.dp),
                 )
 
                 Text(
                     text = stringResource(R.string.overlay_reactions_recipient_hint),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.labelSmall,
                     color = OverlayMuted,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
                 )
 
                 when {
                     loading -> {
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 120.dp),
+                                .weight(1f)
+                                .fillMaxWidth(),
                             contentAlignment = Alignment.Center,
                         ) {
                             CircularProgressIndicator(
@@ -215,8 +211,8 @@ fun OverlayReactionRecipientSheet(
                     error != null -> {
                         Box(
                             modifier = Modifier
+                                .weight(1f)
                                 .fillMaxWidth()
-                                .heightIn(min = 120.dp)
                                 .padding(16.dp),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -230,8 +226,8 @@ fun OverlayReactionRecipientSheet(
                     members.isEmpty() -> {
                         Box(
                             modifier = Modifier
+                                .weight(1f)
                                 .fillMaxWidth()
-                                .heightIn(min = 120.dp)
                                 .padding(16.dp),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -243,12 +239,13 @@ fun OverlayReactionRecipientSheet(
                         }
                     }
                     else -> {
-                        RecipientToolbar(
-                            showSearch = members.size > 6,
+                        RecipientCompactToolbar(
+                            showSearch = members.size > 9,
                             searchQuery = searchQuery,
                             onSearchChange = { searchQuery = it },
                             allSelected = allFilteredSelected,
                             hasFiltered = filteredMembers.isNotEmpty(),
+                            memberCount = members.size,
                             onToggleSelectAll = {
                                 selectedIds = if (allFilteredSelected) {
                                     selectedIds - filteredMembers.map { it.userId }.toSet()
@@ -256,41 +253,46 @@ fun OverlayReactionRecipientSheet(
                                     selectedIds + filteredMembers.map { it.userId }
                                 }
                             },
+                            onSendBroadcastAll = { onSendBroadcastAll(members.size) },
                         )
 
-                        BroadcastAllRow(
-                            memberCount = members.size,
-                            onClick = { onSendBroadcastAll(members.size) },
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                        )
-
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(listMaxHeight),
-                            contentPadding = PaddingValues(
-                                start = 14.dp,
-                                end = 14.dp,
-                                top = 4.dp,
-                                bottom = 8.dp,
-                            ),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            if (filteredMembers.isEmpty()) {
-                                item(key = "search_empty") {
-                                    Text(
-                                        text = stringResource(R.string.overlay_reactions_none_ingame),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = OverlayMuted,
-                                        modifier = Modifier.padding(8.dp),
-                                    )
-                                }
-                            } else {
+                        if (filteredMembers.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.overlay_reactions_none_ingame),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = OverlayMuted,
+                                )
+                            }
+                        } else {
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(2),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth(),
+                                contentPadding = PaddingValues(
+                                    start = 12.dp,
+                                    end = 12.dp,
+                                    top = 4.dp,
+                                    bottom = 4.dp,
+                                ),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
                                 items(filteredMembers, key = { it.userId }) { member ->
-                                    RecipientMemberRow(
+                                    OverlayOnlineMemberGridCellFromDto(
                                         member = member,
+                                        micOn = false,
+                                        soundOn = false,
+                                        mode = OverlayOnlineMemberCellMode.Selectable,
                                         selected = member.userId in selectedIds,
-                                        onToggle = {
+                                        onToggleSelect = {
                                             selectedIds = if (member.userId in selectedIds) {
                                                 selectedIds - member.userId
                                             } else {
@@ -323,14 +325,14 @@ private fun RecipientSheetHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 4.dp, end = 4.dp, top = 6.dp, bottom = 2.dp),
+            .padding(start = 2.dp, end = 2.dp, top = 2.dp, bottom = 0.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(
             onClick = onBack,
-            modifier = Modifier.semantics {
-                contentDescription = backCd
-            },
+            modifier = Modifier
+                .size(40.dp)
+                .semantics { contentDescription = backCd },
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -340,12 +342,15 @@ private fun RecipientSheetHeader(
         }
         Text(
             text = stringResource(R.string.overlay_reactions_recipient_title),
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = Color(0xFFF4F7FF),
             modifier = Modifier.weight(1f),
         )
-        IconButton(onClick = onDismiss) {
+        IconButton(
+            onClick = onDismiss,
+            modifier = Modifier.size(40.dp),
+        ) {
             Icon(
                 imageVector = Icons.Default.Close,
                 contentDescription = stringResource(R.string.overlay_online_close_cd),
@@ -356,19 +361,21 @@ private fun RecipientSheetHeader(
 }
 
 @Composable
-private fun RecipientToolbar(
+private fun RecipientCompactToolbar(
     showSearch: Boolean,
     searchQuery: String,
     onSearchChange: (String) -> Unit,
     allSelected: Boolean,
     hasFiltered: Boolean,
+    memberCount: Int,
     onToggleSelectAll: () -> Unit,
+    onSendBroadcastAll: () -> Unit,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         if (showSearch) {
             OutlinedTextField(
@@ -380,6 +387,7 @@ private fun RecipientToolbar(
                     Text(
                         stringResource(R.string.overlay_reactions_search_hint),
                         color = OverlayMuted,
+                        style = MaterialTheme.typography.labelSmall,
                     )
                 },
                 leadingIcon = {
@@ -387,6 +395,7 @@ private fun RecipientToolbar(
                         Icons.Default.Search,
                         contentDescription = null,
                         tint = OverlayMuted,
+                        modifier = Modifier.size(18.dp),
                     )
                 },
                 colors = OutlinedTextFieldDefaults.colors(
@@ -398,131 +407,53 @@ private fun RecipientToolbar(
                     focusedContainerColor = Color(0xFF1A2836),
                     unfocusedContainerColor = Color(0xFF141C28),
                 ),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(10.dp),
+                textStyle = MaterialTheme.typography.labelSmall,
             )
         }
-        if (hasFiltered) {
-            FilterChip(
-                selected = allSelected,
-                onClick = onToggleSelectAll,
-                label = {
-                    Text(
-                        text = stringResource(
-                            if (allSelected) {
-                                R.string.overlay_reactions_clear_selection
-                            } else {
-                                R.string.overlay_reactions_select_all
-                            },
-                        ),
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = Color(0xFF2A4558),
-                    containerColor = Color(0xFF1A2836),
-                    labelColor = Color(0xFFE8F4FF),
-                    selectedLabelColor = Color(0xFFE8F4FF),
-                ),
-            )
-        }
-    }
-}
-
-@Composable
-private fun BroadcastAllRow(
-    memberCount: Int,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    PremiumFeedCardShell(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
-        variant = FeedCardVariant.Member,
-        showLiveAccent = false,
-        listMode = true,
-        accentColor = OverlayGoldAccent,
-        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
-        content = {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = stringResource(R.string.overlay_reactions_send_all),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = OverlayGoldAccent,
-                )
-                Text(
-                    text = stringResource(R.string.overlay_reactions_send_all_subtitle, memberCount),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = OverlayMuted,
-                )
-                Text(
-                    text = stringResource(R.string.overlay_reactions_send_all_broadcast_hint),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = OverlayMuted.copy(alpha = 0.85f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            if (hasFiltered) {
+                FilterChip(
+                    selected = allSelected,
+                    onClick = onToggleSelectAll,
+                    label = {
+                        Text(
+                            text = stringResource(
+                                if (allSelected) {
+                                    R.string.overlay_reactions_clear_selection
+                                } else {
+                                    R.string.overlay_reactions_select_all
+                                },
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Color(0xFF2A4558),
+                        containerColor = Color(0xFF1A2836),
+                        labelColor = Color(0xFFE8F4FF),
+                        selectedLabelColor = Color(0xFFE8F4FF),
+                    ),
+                    modifier = Modifier.heightIn(min = 32.dp),
                 )
             }
-        },
-    )
-}
-
-@Composable
-private fun RecipientMemberRow(
-    member: PlayerTeamMemberDto,
-    selected: Boolean,
-    onToggle: () -> Unit,
-) {
-    val squadRole = member.teamRole.trim().uppercase().ifBlank { "R1" }
-    val rowCd = stringResource(
-        if (selected) R.string.overlay_reactions_member_selected_cd else R.string.overlay_reactions_member_row_cd,
-        member.username,
-        squadRole,
-    )
-    val shape = RoundedCornerShape(14.dp)
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 48.dp)
-            .semantics { contentDescription = rowCd }
-            .then(
-                if (selected) {
-                    Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.75f), shape)
-                } else {
-                    Modifier
-                },
-            )
-            .clip(shape)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onToggle,
-            ),
-    ) {
-        TeamMemberPresenceCard(
-            username = member.username,
-            telegramUsername = member.telegramUsername,
-            squadRole = squadRole,
-            displayName = member.username,
-            presenceSubtitle = stringResource(R.string.team_member_in_game_cd),
-            inGameNow = true,
-            showIngameAvatarRing = true,
-            micOn = false,
-            soundOn = false,
-            showVoiceBadges = false,
-            trailingContent = {
-                Checkbox(
-                    checked = selected,
-                    onCheckedChange = { onToggle() },
-                    colors = CheckboxDefaults.colors(
-                        checkedColor = MaterialTheme.colorScheme.primary,
-                        uncheckedColor = OverlayMuted,
-                        checkmarkColor = Color.White,
-                    ),
+            TextButton(
+                onClick = onSendBroadcastAll,
+                modifier = Modifier.heightIn(min = 32.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.overlay_reactions_send_all_short, memberCount),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = OverlayCyan,
                 )
-            },
-        )
+            }
+        }
     }
 }
 
@@ -538,8 +469,8 @@ private fun RecipientSendBar(
         enabled = enabled,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 10.dp)
-            .heightIn(min = 48.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .heightIn(min = 44.dp),
         shape = RoundedCornerShape(12.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = Color(0xFF3D5AFE),
@@ -566,74 +497,72 @@ private fun OverlayReactionRecipientPreview(
     val previewCd = stringResource(R.string.overlay_reactions_recipient_preview_cd)
     val textPayload = remember(reactionId) { decodeTextReactionId(reactionId) }
     val reaction = remember(reactionId) { overlayQuickReactionById(context, reactionId) }
+    val playAnimated = reaction.lottieRawRes != null || reaction.gifDrawableRes != null
 
-    Surface(
+    Box(
         modifier = modifier
             .semantics { contentDescription = previewCd },
-        shape = RoundedCornerShape(14.dp),
-        color = Color(0xFF1A2434),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x334A62AA)),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 12.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (textPayload != null) {
-                val metrics = remember(context, density) {
-                    OverlayReactionBurstLayout.metrics(context) { dpValue ->
-                        (dpValue * density.density).toInt()
-                    }
+        if (textPayload != null) {
+            val metrics = remember(context, density) {
+                OverlayReactionBurstLayout.metrics(context) { dpValue ->
+                    (dpValue * density.density).toInt()
                 }
-                val maxTextWidthPx = remember(metrics, density) {
-                    OverlayReactionBurstLayout.textMessageMaxWidthPx(
-                        metrics,
-                        (148 * density.density).toInt(),
-                    )
-                }
-                AndroidView(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 72.dp),
-                    factory = { ctx ->
-                        OverlayReactionTextBurstUi.createMessageTextView(
-                            ctx,
-                            textPayload,
-                            maxTextWidthPx,
-                        )
-                    },
-                )
-            } else {
-                AndroidView(
-                    modifier = Modifier.size(112.dp),
-                    factory = { ctx ->
-                        val icon = createOverlayReactionTileIcon(
-                            ctx,
-                            reaction,
-                            playAnimatedPreview = false,
-                        )
-                        FrameLayout(ctx).apply {
-                            layoutParams = ViewGroup.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                            )
-                            addView(
-                                icon,
-                                FrameLayout.LayoutParams(
-                                    ViewGroup.LayoutParams.MATCH_PARENT,
-                                    ViewGroup.LayoutParams.MATCH_PARENT,
-                                    android.view.Gravity.CENTER,
-                                ),
-                            )
-                            tag = icon
-                        }
-                    },
-                    onRelease = { host ->
-                        (host.tag as? ImageView)?.let { stopOverlayReactionTileAnimation(it) }
-                    },
+            }
+            val maxTextWidthPx = remember(metrics, density) {
+                OverlayReactionBurstLayout.textMessageMaxWidthPx(
+                    metrics,
+                    (120 * density.density).toInt(),
                 )
             }
+            AndroidView(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp, max = 56.dp),
+                factory = { ctx ->
+                    OverlayReactionTextBurstUi.createMessageTextView(
+                        ctx,
+                        textPayload,
+                        maxTextWidthPx,
+                    )
+                },
+            )
+        } else {
+            AndroidView(
+                modifier = Modifier.size(60.dp),
+                factory = { ctx ->
+                    val icon = createOverlayReactionTileIcon(
+                        ctx,
+                        reaction,
+                        playAnimatedPreview = playAnimated,
+                    )
+                    FrameLayout(ctx).apply {
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                        )
+                        addView(
+                            icon,
+                            FrameLayout.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                android.view.Gravity.CENTER,
+                            ),
+                        )
+                        tag = icon
+                    }
+                },
+                update = { host ->
+                    val icon = host.tag as? ImageView ?: return@AndroidView
+                    if (playAnimated) {
+                        resumeOverlayReactionTilePreview(icon)
+                    }
+                },
+                onRelease = { host ->
+                    (host.tag as? ImageView)?.let { stopOverlayReactionTileAnimation(it) }
+                },
+            )
         }
     }
 }

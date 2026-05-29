@@ -157,6 +157,8 @@ class ChatViewModel(
     /** Isolated from [state] so read receipts do not recompose the whole chat screen. */
     private val _otherReadUptoMessageId = MutableStateFlow<String?>(null)
     val otherReadUptoMessageId: StateFlow<String?> = _otherReadUptoMessageId.asStateFlow()
+    /** Per-room peer read cursor — survives room switches (overlay + main app). */
+    private val otherReadUptoByRoom = mutableMapOf<String, String>()
 
     private val knownMessageIds = LinkedHashSet<String>()
   /** messageId → index in [ChatState.messages] (newest-first); cleared on room switch. */
@@ -257,6 +259,7 @@ class ChatViewModel(
         unreadBumpedMessageIds.clear()
         pendingUnreadBumps.clear()
         optimisticUnreadFloorByRoom.clear()
+        otherReadUptoByRoom.clear()
         lastMarkedReadByRoom.clear()
 
         val selected = _state.value.selectedRoomId
@@ -1603,15 +1606,21 @@ class ChatViewModel(
             val oldest = unreadBumpedMessageIds.first()
             unreadBumpedMessageIds.remove(oldest)
         }
-        optimisticUnreadFloorByRoom[roomId] =
-            ((optimisticUnreadFloorByRoom[roomId] ?: 0) + 1).coerceAtMost(999)
+        val room = _state.value.rooms.find { it.id == roomId }
+        val effectiveBase = room?.let { effectiveUnreadForRoom(it) } ?: 0
+        val prevDisplayed = room?.unreadCount ?: 0
+        val nextFloor = ((optimisticUnreadFloorByRoom[roomId] ?: 0) + 1).coerceAtMost(999)
+        optimisticUnreadFloorByRoom[roomId] = nextFloor
+        val displayed = displayedUnreadCount(
+            effectiveUnread = effectiveBase + 1,
+            previouslyDisplayed = prevDisplayed,
+            rawServerUnread = room?.unreadCount ?: 0,
+            optimisticFloor = nextFloor,
+        )
         _state.update { st ->
             st.copy(
-                rooms = st.rooms.map { room ->
-                    if (room.id != roomId) room
-                    else room.copy(
-                        unreadCount = (room.unreadCount + 1).coerceAtMost(999),
-                    )
+                rooms = st.rooms.map { r ->
+                    if (r.id != roomId) r else r.copy(unreadCount = displayed)
                 },
             )
         }
@@ -1875,10 +1884,10 @@ class ChatViewModel(
                 transientNotice = null,
                 sendFailure = null,
             )
-            _otherReadUptoMessageId.value = null
+            _otherReadUptoMessageId.value = otherReadUptoByRoom[roomId]
             _listDerived.value = ChatMessagesListDerived.Empty
         } else {
-            _otherReadUptoMessageId.value = null
+            _otherReadUptoMessageId.value = otherReadUptoByRoom[roomId]
             _state.value = _state.value.copy(
                 isRoomsLoading = false,
                 rooms = clearUnreadForRoomIfViewing(rooms, roomId, treatAsViewing = true),
@@ -2792,10 +2801,16 @@ class ChatViewModel(
             }
             return
         }
-        val roomId = _state.value.selectedRoomId
-        if (!roomId.isNullOrBlank() && event.roomId.isNotBlank() && event.roomId != roomId) return
-        _otherReadUptoMessageId.update { cur ->
-            if (isObjectIdNewer(event.messageId, cur)) event.messageId else cur
+        val eventRoomId = event.roomId.trim()
+        if (eventRoomId.isBlank()) return
+        val selected = _state.value.selectedRoomId?.trim().orEmpty()
+        if (selected.isNotEmpty() && eventRoomId != selected) return
+        val cur = otherReadUptoByRoom[eventRoomId]
+        if (isObjectIdNewer(event.messageId, cur)) {
+            otherReadUptoByRoom[eventRoomId] = event.messageId
+            if (selected == eventRoomId) {
+                _otherReadUptoMessageId.value = event.messageId
+            }
         }
     }
 

@@ -128,6 +128,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.lastasylum.alliance.push.FcmTokenManager
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -241,6 +242,9 @@ class CombatOverlayService : Service() {
         presenceHeartbeat.stop()
         overlayIngameMissStreak++
         if (overlayIngameMissStreak < OVERLAY_INGAME_AWAY_MISS_STREAK) {
+            return
+        }
+        if (overlaySessionActive && isInGameOverlayUiActive()) {
             return
         }
         stopOverlayIngamePresence(markAway = true)
@@ -1702,13 +1706,9 @@ class CombatOverlayService : Service() {
                     System.currentTimeMillis() - hubUnreadLastBumpAtMs < HUB_UNREAD_RECONCILE_GRACE_MS
                 val hubMerged = when {
                     hubBumpGraceActive || shouldDeferHubUnreadReconcile() ->
-                        maxOf(hubDisplayed, prevHud.allianceChatUnread, hubUnreadOptimisticFloor)
+                        maxOf(hubDisplayed, hubUnreadOptimisticFloor)
                     rooms != null -> hubDisplayed
-                    else -> maxOf(
-                        hubDisplayed,
-                        prevHud.allianceChatUnread,
-                        hubUnreadOptimisticFloor,
-                    )
+                    else -> maxOf(hubDisplayed, hubUnreadOptimisticFloor)
                 }
                 val mergedState = state.copy(
                     allianceChatUnread = hubMerged,
@@ -1898,19 +1898,18 @@ class CombatOverlayService : Service() {
         }
     }
 
-    /** App/VM merged hub chip — monotonic until server reconcile or explicit read. */
+    /** App/VM merged hub chip — authoritative displayed count from read cursors + optimistic floor. */
     private fun pushAllianceHubUnreadFromApp(displayed: Int) {
         val clamped = displayed.coerceIn(0, 999)
         if (clamped > 0) {
             hubUnreadLastBumpAtMs = System.currentTimeMillis()
-            hubUnreadOptimisticFloor = maxOf(hubUnreadOptimisticFloor, clamped)
-            applyAllianceHubUnreadCount(
-                maxOf(overlayStatusHudFlow.value.allianceChatUnread, clamped),
-            )
+            hubUnreadOptimisticFloor = clamped
+            applyAllianceHubUnreadCount(clamped)
             return
         }
         hubUnreadOptimisticFloor = 0
         applyAllianceHubUnreadCount(0)
+        patchHubUnreadInSessionCacheAfterLocalRead()
     }
 
     /** Pair(effective unread, raw server unread) for hub badge merge. */
@@ -2147,7 +2146,20 @@ class CombatOverlayService : Service() {
             hubUnreadBumpedMessageIds.remove(hubUnreadBumpedMessageIds.first())
         }
         hubUnreadLastBumpAtMs = System.currentTimeMillis()
-        val next = (overlayStatusHudFlow.value.allianceChatUnread + 1).coerceAtMost(999)
+        val container = AppContainer.from(this)
+        val rooms = ChatSessionCache.getFreshRooms()
+        val localRead = container.chatRoomPreferences.loadAllLastReadMessageIds()
+        val baseEffective = if (rooms != null) {
+            ChatUnreadCounts.overlayAllianceHubBadge(
+                rooms = rooms,
+                localReadByRoom = localRead,
+                optimisticFloor = 0,
+                previouslyDisplayed = 0,
+            )
+        } else {
+            overlayStatusHudFlow.value.allianceChatUnread
+        }
+        val next = (baseEffective + 1).coerceAtMost(999)
         hubUnreadOptimisticFloor = next
         applyAllianceHubUnreadCount(next)
         scheduleDebouncedHubHudRefresh()
@@ -2196,12 +2208,28 @@ class CombatOverlayService : Service() {
     private fun forwardOverlaySocketMessageToViewModel(msg: ChatMessage) {
         val vm = resolveChatViewModel() ?: return
         if (vm.shouldSuppressOwnOutgoingRealtimeEcho(msg)) return
-        if (!activityChatViewModelHandlesUnread()) {
+        if (isOverlayRaidStripSocketMessage(msg)) {
+            vm.stashOverlayRealtimeMessage(msg)
+        } else if (!activityChatViewModelHandlesUnread()) {
             vm.stashOverlayRealtimeMessage(msg)
         }
         if (!overlayChatTeamPanelVisible) return
         if (activityChatViewModelHandlesUnread()) return
         vm.applyOverlayChatMessageFromSocket(msg)
+    }
+
+    private fun forwardOverlayRaidMessageToViewModel(msg: ChatMessage) {
+        val vm = resolveChatViewModel() ?: return
+        if (vm.shouldSuppressOwnOutgoingRealtimeEcho(msg)) return
+        vm.stashOverlayRealtimeMessage(msg)
+    }
+
+    private fun isOverlayRaidStripSocketMessage(msg: ChatMessage): Boolean {
+        if (msg.isCompactReactionSocketUpdate()) {
+            return msg.roomId.trim().isNotEmpty()
+        }
+        val raidId = resolveOverlayRaidRoomId() ?: trustedOverlayRaidRoomId
+        return shouldIngestForRaidStrip(normalizeStripRaidMessage(msg, raidId))
     }
 
     private fun forwardOverlayTypingToViewModel(event: com.lastasylum.alliance.data.chat.ChatTypingEvent) {
@@ -3322,6 +3350,21 @@ class CombatOverlayService : Service() {
         return System.currentTimeMillis() - last < OVERLAY_INGAME_GRACE_MS
     }
 
+    private fun shouldIngestInboundRaidStrip(): Boolean =
+        OverlayRaidStripIngestPolicy.shouldIngestInbound(
+            overlayIngamePresenceActive = overlayIngamePresenceActive,
+            stripEligible = isOverlayRaidStripEligible(),
+        )
+
+    /** Показать ленту сразу при входящем raid-сообщении, не дожидаясь game-gate tick. */
+    private fun revealStripForInboundRaidIfNeeded() {
+        if (!isOverlayChatStripEnabled()) return
+        if (!shouldIngestInboundRaidStrip()) return
+        chatStripHost?.visibility = View.VISIBLE
+        applyOverlayStripVisibility(rebalanceZOrder = false)
+        publishStripAfterLocalRaidSend()
+    }
+
     private fun shouldForceShowRaidStrip(): Boolean =
         System.currentTimeMillis() < forceShowStripUntilMs
 
@@ -3435,8 +3478,7 @@ class CombatOverlayService : Service() {
             val container = AppContainer.from(this@CombatOverlayService)
             if (!container.authRepository.hasSession()) return@launch
             val repo = container.chatRepository
-            val roomId = resolveOverlayRaidRoomId()
-                ?: repo.ensureRaidRoomId()?.also { rememberOverlayRaidRoomId(it) }
+            val roomId = ensureOverlayRaidRoomReadyForSend()
             if (roomId == null) {
                 mainHandler.post {
                     Toast.makeText(
@@ -3449,7 +3491,6 @@ class CombatOverlayService : Service() {
             }
             rememberOverlayRaidRoomId(roomId)
             mainHandler.post {
-                ensureOverlayRaidRealtimeIfNeeded()
                 applyLocalSentMessageToStrip(
                     buildOptimisticRaidCommandMessage(roomId, text),
                     trustedRaidRoomId = roomId,
@@ -3481,8 +3522,9 @@ class CombatOverlayService : Service() {
     }
 
     private fun warmupOverlayRaidForQuickCommands() {
-        ensureOverlayRaidRealtimeIfNeeded()
-        prefetchOverlayRaidRoomForStrip()
+        serviceScope.launch {
+            ensureOverlayRaidRoomReadyForSend()
+        }
     }
 
     private fun formatOverlayRaidQuickCommandText(
@@ -3527,11 +3569,9 @@ class CombatOverlayService : Service() {
         excavationAlert: Boolean,
     ): Result<ChatMessage> {
         val repo = AppContainer.from(this@CombatOverlayService).chatRepository
-        val roomId = resolveOverlayRaidRoomId()
-            ?: repo.ensureRaidRoomId()?.also { rememberOverlayRaidRoomId(it) }
+        val roomId = ensureOverlayRaidRoomReadyForSend()
             ?: return Result.failure(IllegalStateException("no_raid"))
         rememberOverlayRaidRoomId(roomId)
-        ensureOverlayRaidRealtimeIfNeeded()
         val result = repo.sendOverlayRaidCommandFast(
             text = text,
             roomId = roomId,
@@ -3647,6 +3687,7 @@ class CombatOverlayService : Service() {
             trustedRaidRoomId = raid,
             displayText = fallbackText,
         )
+        forwardOverlayRaidMessageToViewModel(normalized)
     }
 
     private fun resolveOverlayReactionSenderDisplayName(event: OverlayReactionEvent): String {
@@ -3760,17 +3801,30 @@ class CombatOverlayService : Service() {
         refreshNow: Boolean,
         retryIndex: Int = 0,
         forceIngest: Boolean = false,
+        inbound: Boolean = false,
     ) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
-            mainHandler.post { ingestOverlayRaidMessage(msg, refreshNow, retryIndex, forceIngest) }
+            mainHandler.post {
+                ingestOverlayRaidMessage(msg, refreshNow, retryIndex, forceIngest, inbound)
+            }
             return
         }
         // Не копим карточки вне матча — иначе при входе в игру всплывает старый рейд-чат.
-        if (!forceIngest && !isOverlayRaidStripEligible()) {
-            if (BuildConfig.DEBUG) {
-                Log.d(OVERLAY_DIAG_TAG, "stripDrop reason=not_eligible id=${msg._id}")
+        if (!forceIngest) {
+            val allowed = if (inbound) {
+                shouldIngestInboundRaidStrip()
+            } else {
+                OverlayRaidStripIngestPolicy.shouldIngestOutbound(isOverlayRaidStripEligible())
             }
-            return
+            if (!allowed) {
+                if (BuildConfig.DEBUG) {
+                    Log.d(
+                        OVERLAY_DIAG_TAG,
+                        "stripDrop reason=not_eligible id=${msg._id} inbound=$inbound",
+                    )
+                }
+                return
+            }
         }
         val raidId = resolveOverlayRaidRoomId() ?: trustedOverlayRaidRoomId
         val normalized = normalizeStripRaidMessage(msg, raidId)
@@ -3817,7 +3871,15 @@ class CombatOverlayService : Service() {
             if (retryIndex < STRIP_INGEST_RETRY_DELAYS_MS.size) {
                 prefetchOverlayRaidRoomForStrip()
                 mainHandler.postDelayed(
-                    { ingestOverlayRaidMessage(msg, refreshNow, retryIndex + 1, forceIngest) },
+                    {
+                        ingestOverlayRaidMessage(
+                            msg,
+                            refreshNow,
+                            retryIndex + 1,
+                            forceIngest,
+                            inbound,
+                        )
+                    },
                     STRIP_INGEST_RETRY_DELAYS_MS[retryIndex],
                 )
             }
@@ -3835,11 +3897,12 @@ class CombatOverlayService : Service() {
         stripBuffer.touchReceivedNow(normalized)
         stripLiveRevision++
         val preview = stripBuffer.visibleForPreview().toList()
-        lastStripRenderSignature = overlayStripPreviewSignature(preview)
         chatStripPreviewFlow.value = preview
         if (refreshNow) {
+            lastStripRenderSignature = 0
             refreshOverlayChatStripNow()
         } else {
+            lastStripRenderSignature = overlayStripPreviewSignature(preview)
             scheduleRefreshOverlayChatStrip()
         }
         ensureOverlayMessageStripIfNeeded()
@@ -4047,16 +4110,38 @@ class CombatOverlayService : Service() {
     /** Подтянуть id «Рейд» до первого сообщения в ленту (оверлей мог стартовать без вкладки «Чат»). */
     private fun prefetchOverlayRaidRoomForStrip() {
         serviceScope.launch {
-            val container = AppContainer.from(this@CombatOverlayService)
-            val cached = com.lastasylum.alliance.data.chat.ChatSessionCache.getFreshRooms()
-            val rooms = cached ?: container.chatRepository.listRooms().getOrNull() ?: return@launch
-            if (cached == null) {
-                com.lastasylum.alliance.data.chat.ChatSessionCache.update(rooms)
-            }
-            container.chatRepository.applyOverlayRoomsFromRooms(rooms)
-            container.chatRepository.ensureRaidRoomId()?.let { rememberOverlayRaidRoomId(it) }
-            mainHandler.post { syncOverlayRaidRoomSubscription() }
+            ensureOverlayRaidRoomReadyForSend()
         }
+    }
+
+    /**
+     * Блокирующий prefetch raid room + socket join перед отправкой или ingest retry.
+     * @return resolved raid room id or null
+     */
+    private suspend fun ensureOverlayRaidRoomReadyForSend(): String? {
+        val container = AppContainer.from(this@CombatOverlayService)
+        var raidId = resolveOverlayRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: trustedOverlayRaidRoomId?.trim()?.takeIf { it.isNotEmpty() }
+            ?: container.chatRepository.ensureRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }
+        if (raidId == null) {
+            val cached = com.lastasylum.alliance.data.chat.ChatSessionCache.getFreshRooms()
+            val rooms = cached ?: container.chatRepository.listRooms().getOrNull()
+            if (rooms != null) {
+                if (cached == null) {
+                    com.lastasylum.alliance.data.chat.ChatSessionCache.update(rooms)
+                }
+                container.chatRepository.applyOverlayRoomsFromRooms(rooms)
+                raidId = container.chatRepository.ensureRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }
+            }
+        }
+        raidId?.let { id ->
+            rememberOverlayRaidRoomId(id)
+            withContext(Dispatchers.Main) {
+                ensureOverlayRaidRealtimeIfNeeded()
+                syncOverlayRaidRoomSubscription()
+            }
+        }
+        return raidId
     }
 
     private fun registerOverlayChatListenersOnMain(
@@ -4184,23 +4269,26 @@ class CombatOverlayService : Service() {
                 val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
                 val isSelf = selfId.isNotEmpty() && msg.senderId.trim() == selfId
                 if (isRaid) {
-                    val stripEligible = isOverlayRaidStripEligible()
-                    val forceInboundStrip = !isSelf &&
-                        !stripEligible &&
-                        isOverlayChatRoutingActive() &&
-                        shouldIngestForRaidStrip(normalized) &&
-                        (isInGameOverlayUiActive() || overlayInGameProbeActive)
-                    if (stripEligible || forceInboundStrip || isSelf) {
+                    val allowIngest = if (isSelf) {
+                        OverlayRaidStripIngestPolicy.shouldIngestOutbound(isOverlayRaidStripEligible())
+                    } else {
+                        shouldIngestInboundRaidStrip()
+                    }
+                    if (allowIngest) {
                         ingestOverlayRaidMessage(
                             normalized,
                             refreshNow = true,
-                            forceIngest = forceInboundStrip,
+                            inbound = !isSelf,
                         )
+                        if (!isSelf) {
+                            revealStripForInboundRaidIfNeeded()
+                        }
                         ensureOverlayMessageStripIfNeeded()
                     } else if (BuildConfig.DEBUG) {
                         Log.d(
                             OVERLAY_DIAG_TAG,
-                            "stripDrop reason=not_eligible_inbound id=${normalized._id} self=$isSelf",
+                            "stripDrop reason=not_eligible id=${normalized._id} self=$isSelf " +
+                                "ingamePresence=$overlayIngamePresenceActive",
                         )
                     }
                     if (!isSelf && !activityChatViewModelHandlesUnread()) {
@@ -4660,24 +4748,7 @@ class CombatOverlayService : Service() {
                                                 onClose = { hideOverlayChatTeamPanel() },
                                             )
                                         }
-                                        OverlayHudPane.Participants -> {
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(top = 2.dp, end = 4.dp),
-                                                horizontalArrangement = Arrangement.End,
-                                            ) {
-                                                IconButton(
-                                                    onClick = { hideOverlayChatTeamPanel() },
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Outlined.Close,
-                                                        contentDescription = getString(R.string.overlay_online_close_cd),
-                                                        tint = MaterialTheme.colorScheme.onSurface,
-                                                    )
-                                                }
-                                            }
-                                        }
+                                        OverlayHudPane.Participants -> Unit
                                         else -> Unit
                                     }
                                     Box(
@@ -4715,6 +4786,22 @@ class CombatOverlayService : Service() {
                                                     openJoinInboxInitially = pendingOpenJoinInboxOnParticipants,
                                                     onOpenJoinInboxConsumed = {
                                                         pendingOpenJoinInboxOnParticipants = false
+                                                    },
+                                                    onClose = { hideOverlayChatTeamPanel() },
+                                                    onIngameCountChanged = { count ->
+                                                        overlayTopRightHudFlow.value =
+                                                            overlayTopRightHudFlow.value.copy(
+                                                                onlineIngameCount = count,
+                                                            )
+                                                    },
+                                                    onSendReactionToUser = { userId ->
+                                                        val wm = windowManager ?: systemWindowManager()
+                                                        if (wm != null) {
+                                                            overlayCommandsPopover.openReactionsPreselectUser(
+                                                                wm,
+                                                                userId,
+                                                            )
+                                                        }
                                                     },
                                                     onHudRefresh = {
                                                         OverlayGameStatusHudRefresh.invalidateNewsForumCache()
