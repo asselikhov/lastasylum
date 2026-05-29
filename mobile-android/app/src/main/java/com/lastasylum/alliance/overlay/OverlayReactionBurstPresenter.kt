@@ -527,12 +527,13 @@ internal class OverlayReactionBurstPresenter(
     private fun createBurstAnimView(reaction: OverlayQuickReaction, maxSidePx: Int): View {
         val stickerStem = reaction.stickerAssetStem
         if (stickerStem != null) {
-            val bmp = loadStickerReactionBitmap(context, stickerStem)
-            if (bmp != null) {
-                return nonClippingImage(maxSidePx).apply {
-                    setImageBitmap(bmp)
+            val image = nonClippingImage(maxSidePx)
+            OverlayReactionBitmapCache.loadAsync(context, stickerStem) { bmp ->
+                if (bmp != null && image.isAttachedToWindow) {
+                    image.setImageBitmap(bmp)
                 }
             }
+            return image
         }
         reaction.gifDrawableRes?.let { gifRes ->
             return nonClippingImage(maxSidePx).apply {

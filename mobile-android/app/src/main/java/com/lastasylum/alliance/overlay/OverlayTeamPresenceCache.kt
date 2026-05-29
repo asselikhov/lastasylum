@@ -5,7 +5,8 @@ import com.lastasylum.alliance.data.teams.TeamsRepository
 
 /** Short TTL cache for overlay presence API (avoids 429 when panel polls / reaction picker opens). */
 internal object OverlayTeamPresenceCache {
-    private const val TTL_MS = 45_000L
+    /** Slightly below [OVERLAY_ONLINE_PANEL_POLL_MS] so panel poll usually hits cache. */
+    private const val TTL_MS = 55_000L
 
     @Volatile
     private var cachedTeamId: String? = null
@@ -21,6 +22,16 @@ internal object OverlayTeamPresenceCache {
         cachedPresence = null
         cachedAtMs = 0L
     }
+
+    suspend fun ingameCount(
+        teamId: String,
+        teamsRepository: TeamsRepository,
+        forceRefresh: Boolean = false,
+    ): Int = load(teamId, teamsRepository, forceRefresh)
+        .getOrNull()
+        ?.ingame
+        ?.size
+        ?: 0
 
     suspend fun load(
         teamId: String,

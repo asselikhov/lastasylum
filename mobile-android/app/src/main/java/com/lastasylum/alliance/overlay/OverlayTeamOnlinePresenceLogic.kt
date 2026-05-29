@@ -231,6 +231,23 @@ private fun squadRoleRank(role: String): Int {
     }
 }
 
+internal fun overlayPresenceMemberListsEqual(
+    a: List<PlayerTeamMemberDto>,
+    b: List<PlayerTeamMemberDto>,
+): Boolean {
+    if (a.size != b.size) return false
+    return a.indices.all { i ->
+        val lhs = a[i]
+        val rhs = b[i]
+        lhs.userId == rhs.userId &&
+            lhs.username == rhs.username &&
+            lhs.teamRole == rhs.teamRole &&
+            lhs.isLeader == rhs.isLeader &&
+            lhs.presenceStatus == rhs.presenceStatus &&
+            lhs.lastPresenceAt == rhs.lastPresenceAt
+    }
+}
+
 fun buildVoiceFlagsMap(
     memberUserIds: Collection<String>,
     voicePeers: Map<String, VoicePeerState>,

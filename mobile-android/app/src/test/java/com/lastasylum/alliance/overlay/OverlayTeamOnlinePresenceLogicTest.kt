@@ -4,6 +4,7 @@ import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
 import com.lastasylum.alliance.data.teams.TeamPresenceSocketEvent
 import com.lastasylum.alliance.ui.util.OVERLAY_INGAME_PRESENCE_STALE_MS
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
@@ -198,5 +199,26 @@ class OverlayTeamOnlinePresenceLogicTest {
             ),
         )
         assertEquals(1, rawRecentCount(ingame, recent))
+    }
+
+    @Test
+    fun overlayPresenceMemberListsEqual_sameMembers() {
+        val a = listOf(member("u1", "alice"), member("u2", "bob"))
+        val b = listOf(member("u1", "alice"), member("u2", "bob"))
+        assertTrue(overlayPresenceMemberListsEqual(a, b))
+    }
+
+    @Test
+    fun overlayPresenceMemberListsEqual_diffPresenceStatus() {
+        val a = listOf(member("u1", "alice", presenceStatus = "ingame"))
+        val b = listOf(member("u1", "alice", presenceStatus = "online"))
+        assertFalse(overlayPresenceMemberListsEqual(a, b))
+    }
+
+    @Test
+    fun overlayPresenceMemberListsEqual_diffSize() {
+        val a = listOf(member("u1", "alice"))
+        val b = emptyList<PlayerTeamMemberDto>()
+        assertFalse(overlayPresenceMemberListsEqual(a, b))
     }
 }

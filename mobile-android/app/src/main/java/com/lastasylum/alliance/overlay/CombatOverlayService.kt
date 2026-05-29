@@ -979,6 +979,8 @@ class CombatOverlayService : Service() {
 
     private var lastHudRefreshCompletedAtMs: Long = 0L
 
+    private var lastHudPresenceCountRefreshAtMs: Long = 0L
+
     @Volatile
     private var deferredDismissWhenPickerEnds: Boolean = false
 
@@ -1723,18 +1725,22 @@ class CombatOverlayService : Service() {
                         useAuthoritative = refreshTeamInboxBadges,
                     ),
                 )
-                val refreshPresenceCounts = force || refreshNewsForum
+                val nowMs = System.currentTimeMillis()
+                val refreshPresenceCounts = force ||
+                    nowMs - lastHudPresenceCountRefreshAtMs >= HUD_PRESENCE_COUNT_REFRESH_MS
                 val onlineIngameCount = if (refreshPresenceCounts) {
                     runCatching {
                         OverlayGameStatusHudRefresh.countTeamIngameOverlayMembers(
                             container.usersRepository,
                             container.teamsRepository,
                         )
-                    }.getOrDefault(0)
+                    }.getOrDefault(0).also {
+                        lastHudPresenceCountRefreshAtMs = nowMs
+                    }
                 } else {
                     overlayTopRightHudFlow.value.onlineIngameCount
                 }
-                val joinRequestCount = if (refreshPresenceCounts) {
+                val joinRequestCount = if (force || refreshNewsForum) {
                     runCatching {
                         OverlayGameStatusHudRefresh.loadTeamJoinRequestCount(this@CombatOverlayService)
                     }.getOrDefault(0)
@@ -1743,7 +1749,9 @@ class CombatOverlayService : Service() {
                 }
                 mainHandler.post {
                     if (!isInGameOverlayUiActive()) return@post
-                    overlayStatusHudFlow.value = mergedState
+                    if (mergedState != overlayStatusHudFlow.value) {
+                        overlayStatusHudFlow.value = mergedState
+                    }
                     val durationMs = android.os.SystemClock.elapsedRealtime() - startedAt
                     OverlayPerfDiag.logHudRefreshDone(
                         durationMs = durationMs,
@@ -1751,10 +1759,14 @@ class CombatOverlayService : Service() {
                         forumUnread = mergedState.forumUnread,
                         newsUnread = mergedState.teamNewsUnread,
                     )
-                    overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
+                    val prevTopRight = overlayTopRightHudFlow.value
+                    val nextTopRight = prevTopRight.copy(
                         onlineIngameCount = onlineIngameCount,
                         teamJoinRequestCount = joinRequestCount,
                     )
+                    if (nextTopRight != prevTopRight) {
+                        overlayTopRightHudFlow.value = nextTopRight
+                    }
                     attachOverlayHudWindowsIfNeeded()
                     logOverlayRuntimeSnapshot()
                 }
@@ -3071,6 +3083,7 @@ class CombatOverlayService : Service() {
         statusHudRefreshPosted = false
         serviceScope.cancel()
         unregisterScreenOnReceiver()
+        unregisterVoiceMicPermissionReceiver()
         if (AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled() &&
             AppContainer.from(this).authRepository.hasSession()
         ) {
@@ -5370,6 +5383,7 @@ class CombatOverlayService : Service() {
         private const val GAME_GATE_POLL_IDLE_MS = 6_000L
         /** Fallback poll for news/forum when no socket activity (realtime is primary). */
         private const val STATUS_HUD_REFRESH_MS = 20_000L
+        private const val HUD_PRESENCE_COUNT_REFRESH_MS = 60_000L
         private const val USAGE_ACCESS_CACHE_MS = 30_000L
         private const val GAME_GATE_RECENT_INGAME_WINDOW_MS = 45_000L
         /** Краткий grace при ложном «не в игре» во время чата/пикера; не применяется при явном лаунчере/другом приложении. */

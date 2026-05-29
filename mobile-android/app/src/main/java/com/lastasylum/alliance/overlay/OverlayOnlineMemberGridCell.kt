@@ -22,7 +22,9 @@ import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,6 +40,9 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
+import com.lastasylum.alliance.data.voice.TeamVoicePresenceStore
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import com.lastasylum.alliance.ui.components.OverlayMemberVoiceBadges
 import com.lastasylum.alliance.ui.theme.roleAccentColor
 import com.lastasylum.alliance.ui.util.formatOverlayPresenceAgeRu
@@ -52,17 +57,31 @@ enum class OverlayOnlineMemberCellMode {
 @Composable
 fun OverlayOnlineMemberGridCell(
     member: OverlayOnlineMemberUiModel,
-    micOn: Boolean,
-    soundOn: Boolean,
     modifier: Modifier = Modifier,
     mode: OverlayOnlineMemberCellMode = OverlayOnlineMemberCellMode.Presence,
     selected: Boolean = false,
     selfLabel: String = stringResource(R.string.overlay_online_self),
+    voiceSelfUserId: String? = null,
+    voiceLocalMicOn: Boolean? = null,
+    voiceLocalSoundOn: Boolean? = null,
+    micOn: Boolean = false,
+    soundOn: Boolean = false,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
     onToggleSelect: (() -> Unit)? = null,
 ) {
     val tokens = OverlayOnlineMemberTokens
+    val resolveVoiceInCell = mode == OverlayOnlineMemberCellMode.Presence && member.inGameNow
+    val voiceFlags = if (resolveVoiceInCell) {
+        rememberMemberVoiceFlags(
+            userId = member.userId,
+            selfUserId = voiceSelfUserId,
+            localMicOn = voiceLocalMicOn,
+            localSoundOn = voiceLocalSoundOn,
+        )
+    } else {
+        VoiceMemberFlags(micOn = micOn, soundOn = soundOn)
+    }
     val squadRole = member.teamRole
     val roleColor = roleAccentColor(squadRole)
     val roleCd = stringResource(R.string.overlay_member_squad_rank_cd, squadRole)
@@ -212,14 +231,38 @@ fun OverlayOnlineMemberGridCell(
         }
         if (member.inGameNow && mode == OverlayOnlineMemberCellMode.Presence) {
             OverlayMemberVoiceBadges(
-                micOn = micOn,
-                soundOn = soundOn,
+                micOn = voiceFlags.micOn,
+                soundOn = voiceFlags.soundOn,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(top = 6.dp, end = 6.dp),
             )
         }
     }
+}
+
+@Composable
+private fun rememberMemberVoiceFlags(
+    userId: String,
+    selfUserId: String?,
+    localMicOn: Boolean?,
+    localSoundOn: Boolean?,
+): VoiceMemberFlags {
+    val flagsFlow = remember(userId, selfUserId, localMicOn, localSoundOn) {
+        TeamVoicePresenceStore.peers.map { peers ->
+            val (micOn, soundOn) = TeamVoicePresenceStore.voiceFlagsForMember(
+                memberUserId = userId,
+                selfUserId = selfUserId,
+                peers = peers,
+                localMicOn = localMicOn,
+                localSoundOn = localSoundOn,
+            )
+            VoiceMemberFlags(micOn = micOn, soundOn = soundOn)
+        }.distinctUntilChanged()
+    }
+    return flagsFlow.collectAsState(
+        initial = VoiceMemberFlags(micOn = false, soundOn = false),
+    ).value
 }
 
 @Composable

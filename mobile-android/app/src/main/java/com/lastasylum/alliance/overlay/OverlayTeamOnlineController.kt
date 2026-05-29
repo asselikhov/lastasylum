@@ -64,8 +64,11 @@ class OverlayTeamOnlineController(
                 event = event,
                 fallbackMember = fallback,
             )
-            val needsFullRefresh = event.userId !in merged.ingame.map { it.userId } &&
-                event.userId !in merged.recentlyActive.map { it.userId } &&
+            val knownUserIds = buildSet {
+                merged.ingame.forEach { add(it.userId) }
+                merged.recentlyActive.forEach { add(it.userId) }
+            }
+            val needsFullRefresh = event.userId !in knownUserIds &&
                 fallback == null &&
                 isOverlayIngameNow(event.presenceStatus, event.lastPresenceAt)
             if (needsFullRefresh) {
@@ -97,6 +100,7 @@ class OverlayTeamOnlineController(
         pollJob?.cancel()
         pollJob = null
         teamPresenceSocket.removePresenceListener(presenceSocketListener)
+        teamPresenceSocket.disconnect()
     }
 
     fun refresh(force: Boolean = false) {
@@ -227,7 +231,13 @@ class OverlayTeamOnlineController(
         ingame: List<PlayerTeamMemberDto>,
         recentlyActive: List<PlayerTeamMemberDto>,
     ) {
-        val selfId = _state.value.profile?.id
+        val current = _state.value
+        if (overlayPresenceMemberListsEqual(current.ingameRaw, ingame) &&
+            overlayPresenceMemberListsEqual(current.recentRaw, recentlyActive)
+        ) {
+            return
+        }
+        val selfId = current.profile?.id
         val sections = buildPresenceSections(ingame, recentlyActive, selfId)
         val count = rawIngameCount(ingame)
         val recentCount = rawRecentCount(ingame, recentlyActive)
@@ -241,7 +251,9 @@ class OverlayTeamOnlineController(
                 loading = false,
             )
         }
-        onIngameCountChanged(count)
+        if (count != current.ingameCount) {
+            onIngameCountChanged(count)
+        }
     }
 
     private data class BootstrapResult(

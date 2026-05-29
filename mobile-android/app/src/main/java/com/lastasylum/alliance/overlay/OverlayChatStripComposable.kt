@@ -119,7 +119,7 @@ fun OverlayChatStrip(
 
     LaunchedEffect(Unit) {
         snapshotFlow { dismissRegions.values.toList() }
-            .debounce(48)
+            .debounce(120)
             .collect { rects -> onDismissRegionsChanged(rects) }
     }
 
@@ -215,12 +215,13 @@ fun OverlayChatStrip(
                     onDismiss = { onDismissMessage(msg) },
                     onReportDismissBounds = { mk, rect ->
                         if (latestMessages.none { keyOf(it) == mk }) return@OverlayChatStripMessage
+                        if (rect.isEmpty) return@OverlayChatStripMessage
                         val prev = dismissRegions[mk]
                         if (prev != null &&
-                            kotlin.math.abs(prev.left - rect.left) < 2 &&
-                            kotlin.math.abs(prev.top - rect.top) < 2 &&
-                            kotlin.math.abs(prev.right - rect.right) < 2 &&
-                            kotlin.math.abs(prev.bottom - rect.bottom) < 2
+                            kotlin.math.abs(prev.left - rect.left) < 6 &&
+                            kotlin.math.abs(prev.top - rect.top) < 6 &&
+                            kotlin.math.abs(prev.right - rect.right) < 6 &&
+                            kotlin.math.abs(prev.bottom - rect.bottom) < 6
                         ) {
                             return@OverlayChatStripMessage
                         }

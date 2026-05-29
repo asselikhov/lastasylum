@@ -171,11 +171,7 @@ internal object OverlayGameStatusHudRefresh {
     ): Int {
         val teamId = usersRepository.resolveMyProfilePreferCache()?.playerTeamId?.trim().orEmpty()
         if (teamId.isEmpty()) return 0
-        return teamsRepository.getTeamOverlayPresence(teamId)
-            .getOrNull()
-            ?.ingame
-            ?.size
-            ?: 0
+        return OverlayTeamPresenceCache.ingameCount(teamId, teamsRepository)
     }
 
     fun countUnreadNews(

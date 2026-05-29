@@ -47,13 +47,15 @@ import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 @Composable
 fun OverlayOnlinePanelScaffold(
     displaySections: List<OverlayOnlinePresenceSection>,
-    voiceFlagsByUserId: Map<String, VoiceMemberFlags>,
     searchQuery: String,
     activeFilterChip: OverlayOnlineFilterChip,
     loading: Boolean,
     refreshing: Boolean,
     error: String?,
     selfLabel: String,
+    voiceSelfUserId: String? = null,
+    voiceLocalMicOn: Boolean? = null,
+    voiceLocalSoundOn: Boolean? = null,
     onSearchQuery: (String) -> Unit,
     onFilterChip: (OverlayOnlineFilterChip) -> Unit,
     onRefresh: () -> Unit,
@@ -140,12 +142,12 @@ fun OverlayOnlinePanelScaffold(
                                 items = section.items,
                                 key = { "${section.kind}_${it.userId}" },
                             ) { member ->
-                                val flags = voiceFlagsByUserId[member.userId]
                                 OverlayOnlineMemberGridCell(
                                     member = member,
-                                    micOn = flags?.micOn == true,
-                                    soundOn = flags?.soundOn == true,
                                     selfLabel = selfLabel,
+                                    voiceSelfUserId = voiceSelfUserId,
+                                    voiceLocalMicOn = voiceLocalMicOn,
+                                    voiceLocalSoundOn = voiceLocalSoundOn,
                                     onLongClick = { onMemberLongClick(member) },
                                 )
                             }

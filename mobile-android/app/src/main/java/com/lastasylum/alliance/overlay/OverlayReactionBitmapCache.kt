@@ -7,15 +7,18 @@ import android.util.LruCache
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 
 internal object OverlayReactionBitmapCache {
     private const val MAX_ENTRIES = 24
+    private const val PRELOAD_MAX_STICKERS = 12
     private val cache = LruCache<String, Bitmap>(MAX_ENTRIES)
     private val inFlight = ConcurrentHashMap<String, Any>()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var scopeJob = SupervisorJob()
+    private var scope = CoroutineScope(scopeJob + Dispatchers.IO)
 
     fun get(stem: String): Bitmap? = cache.get(stem)
 
@@ -44,15 +47,17 @@ internal object OverlayReactionBitmapCache {
     }
 
     fun clear() {
+        scope.coroutineContext.cancelChildren()
         cache.evictAll()
         inFlight.clear()
     }
 
-    /** Прогрев стикеров вкладки «Стикеры» до отрисовки сетки. */
-    fun preloadOverlayStickerPack(context: Context) {
+    /** Прогрев части стикеров вкладки «Стикеры» до отрисовки сетки. */
+    fun preloadOverlayStickerPack(context: Context, maxEntries: Int = PRELOAD_MAX_STICKERS) {
         val app = context.applicationContext
+        val limit = maxEntries.coerceIn(1, PRELOAD_MAX_STICKERS)
         scope.launch {
-            listOverlayStickerStems(app).forEach { stem ->
+            listOverlayStickerStems(app).take(limit).forEach { stem ->
                 if (cache.get(stem) == null) {
                     decodeSticker(app, stem)?.let { cache.put(stem, it) }
                 }

@@ -106,14 +106,26 @@ fun OverlayTeamOnlinePanel(
     val memberIds = remember(uiState.baseSections) {
         uiState.baseSections.flatMap { it.items }.map { it.userId }
     }
-    val voiceFlagsByUserId = remember(voicePeers, voiceSession?.micOn, voiceSession?.soundOn, selfId, memberIds) {
-        buildVoiceFlagsMap(
-            memberUserIds = memberIds,
-            voicePeers = voicePeers,
-            selfUserId = selfId,
-            localMicOn = voiceSession?.micOn,
-            localSoundOn = voiceSession?.soundOn,
-        )
+    val needsVoiceFilter = uiState.activeFilterChip == OverlayOnlineFilterChip.WithMic
+    val voiceFlagsByUserId = remember(
+        voicePeers,
+        voiceSession?.micOn,
+        voiceSession?.soundOn,
+        selfId,
+        memberIds,
+        needsVoiceFilter,
+    ) {
+        if (!needsVoiceFilter) {
+            emptyMap()
+        } else {
+            buildVoiceFlagsMap(
+                memberUserIds = memberIds,
+                voicePeers = voicePeers,
+                selfUserId = selfId,
+                localMicOn = voiceSession?.micOn,
+                localSoundOn = voiceSession?.soundOn,
+            )
+        }
     }
     val displaySections = remember(
         uiState.baseSections,
@@ -201,8 +213,10 @@ fun OverlayTeamOnlinePanel(
     OverlayOnlinePanelScaffold(
         modifier = modifier,
         displaySections = displaySections,
-        voiceFlagsByUserId = voiceFlagsByUserId,
         searchQuery = uiState.searchQuery,
+        voiceSelfUserId = selfId,
+        voiceLocalMicOn = voiceSession?.micOn,
+        voiceLocalSoundOn = voiceSession?.soundOn,
         activeFilterChip = uiState.activeFilterChip,
         loading = uiState.loading,
         refreshing = uiState.refreshing,
