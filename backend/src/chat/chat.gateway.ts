@@ -548,6 +548,12 @@ export class ChatGateway {
     senderUserId: string,
   ): void {
     this.broadcastNewMessage(roomId, message);
+    void this.fanOutChatEventToEligibleUsersNotInRoom(
+      roomId,
+      'message:new',
+      message,
+      senderUserId,
+    );
     void this.fanOutRaidMessageToIngameOverlayTeammates(
       roomId,
       message,

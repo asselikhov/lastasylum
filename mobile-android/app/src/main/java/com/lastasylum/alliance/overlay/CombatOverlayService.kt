@@ -2920,6 +2920,7 @@ class CombatOverlayService : Service() {
         if (shouldShow && !wasInGame) {
             stableGatePollTicks = HUD_STABLE_TICKS_BEFORE_ATTACH
             beginOverlayStripGameSession()
+            prefetchOverlayRaidRoomForStrip()
             stripSessionNeedsRestart = false
         } else if (shouldShow && stripSessionNeedsRestart) {
             ensureOverlayStripVisibleSession()
@@ -3436,6 +3437,7 @@ class CombatOverlayService : Service() {
     private fun revealStripForInboundRaidIfNeeded() {
         if (!isOverlayChatStripEnabled()) return
         if (!shouldIngestInboundRaidStrip()) return
+        ensureOverlayStripVisibleSession()
         chatStripHost?.visibility = View.VISIBLE
         applyOverlayStripVisibility(rebalanceZOrder = false)
         publishStripAfterLocalRaidSend()
@@ -3628,9 +3630,12 @@ class CombatOverlayService : Service() {
         }
         val body = text.trim()
         if (body.isEmpty()) return null
-        val roomId = resolveOverlayRaidRoomId() ?: trustedOverlayRaidRoomId
-        if (roomId.isNullOrBlank()) return null
-        ensureOverlayRaidRealtimeIfNeeded()
+        val roomId = resolveCachedRaidRoomIdForSend()
+        if (roomId.isNullOrBlank()) {
+            warmupOverlayRaidForQuickCommands()
+            return null
+        }
+        scheduleOverlayRaidRealtimeWarm(roomId)
         val optimistic = buildOptimisticRaidCommandMessage(roomId, body)
         applyLocalSentMessageToStrip(
             optimistic,
@@ -3640,6 +3645,25 @@ class CombatOverlayService : Service() {
         return optimistic._id
     }
 
+    /** Cached raid room id (prefs / trusted / session cache) without network. */
+    private fun resolveCachedRaidRoomIdForSend(): String? =
+        resolveOverlayRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: trustedOverlayRaidRoomId?.trim()?.takeIf { it.isNotEmpty() }
+            ?: AppContainer.from(this).chatRoomPreferences.getRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }
+
+    private fun scheduleOverlayRaidRealtimeWarm(roomId: String) {
+        rememberOverlayRaidRoomId(roomId)
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            ensureOverlayRaidRealtimeIfNeeded()
+            syncOverlayRaidRoomSubscription()
+        } else {
+            mainHandler.post {
+                ensureOverlayRaidRealtimeIfNeeded()
+                syncOverlayRaidRoomSubscription()
+            }
+        }
+    }
+
     private suspend fun sendOverlayRaidQuickCommandHttp(
         text: String,
         excavationAlert: Boolean,
@@ -3647,7 +3671,6 @@ class CombatOverlayService : Service() {
         val repo = AppContainer.from(this@CombatOverlayService).chatRepository
         val roomId = ensureOverlayRaidRoomReadyForSend()
             ?: return Result.failure(IllegalStateException("no_raid"))
-        rememberOverlayRaidRoomId(roomId)
         val result = repo.sendOverlayRaidCommandFast(
             text = text,
             roomId = roomId,
@@ -3923,6 +3946,9 @@ class CombatOverlayService : Service() {
                     roomId = normalized.roomId.trim().ifBlank { forcedRaid },
                 )
                 rememberOverlayRaidRoomId(forcedRaid)
+                if (isOverlayChatStripEnabled()) {
+                    ensureOverlayStripVisibleSession()
+                }
                 stripBuffer.upsert(forced)
                 stripBuffer.mergeReceiveTimeline(forced, jwtSubFromAccessToken())
                 stripBuffer.touchReceivedNow(forced)
@@ -3966,6 +3992,9 @@ class CombatOverlayService : Service() {
                 OVERLAY_DIAG_TAG,
                 "stripIngest id=${normalized._id} room=${normalized.roomId} sender=${normalized.senderId} textLen=${normalized.text.length}",
             )
+        }
+        if (isOverlayChatStripEnabled()) {
+            ensureOverlayStripVisibleSession()
         }
         stripBuffer.removeOptimisticEchoesForServerMessage(normalized)
         stripBuffer.upsert(normalized)
@@ -4195,10 +4224,12 @@ class CombatOverlayService : Service() {
      * @return resolved raid room id or null
      */
     private suspend fun ensureOverlayRaidRoomReadyForSend(): String? {
+        resolveCachedRaidRoomIdForSend()?.let { id ->
+            scheduleOverlayRaidRealtimeWarm(id)
+            return id
+        }
         val container = AppContainer.from(this@CombatOverlayService)
-        var raidId = resolveOverlayRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }
-            ?: trustedOverlayRaidRoomId?.trim()?.takeIf { it.isNotEmpty() }
-            ?: container.chatRepository.ensureRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }
+        var raidId = container.chatRepository.ensureRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }
         if (raidId == null) {
             val cached = com.lastasylum.alliance.data.chat.ChatSessionCache.getFreshRooms()
             val rooms = cached ?: container.chatRepository.listRooms().getOrNull()
@@ -4210,13 +4241,7 @@ class CombatOverlayService : Service() {
                 raidId = container.chatRepository.ensureRaidRoomId()?.trim()?.takeIf { it.isNotEmpty() }
             }
         }
-        raidId?.let { id ->
-            rememberOverlayRaidRoomId(id)
-            withContext(Dispatchers.Main) {
-                ensureOverlayRaidRealtimeIfNeeded()
-                syncOverlayRaidRoomSubscription()
-            }
-        }
+        raidId?.let { scheduleOverlayRaidRealtimeWarm(it) }
         return raidId
     }
 

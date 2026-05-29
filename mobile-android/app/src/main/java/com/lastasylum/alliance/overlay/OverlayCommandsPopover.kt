@@ -1644,6 +1644,9 @@ class OverlayCommandsPopover(
             hideKeyboard(editX)
             hideKeyboard(editY)
             val pendingId = prepareOptimisticRaidQuickCommand(commandLabel, xv, yv, excavation)
+            if (pendingId == null) {
+                Toast.makeText(context, R.string.overlay_strip_no_raid, Toast.LENGTH_SHORT).show()
+            }
             CombatOverlayService.extendInGameOverlayUiHold()
             hideCoordOnly()
             scope.launch {

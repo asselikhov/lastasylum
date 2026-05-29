@@ -115,6 +115,27 @@ class OverlayChatStripBufferTest {
     }
 
     @Test
+    fun visibleForPreview_showsInboundAfterResetVisibleSession() {
+        val buffer = OverlayChatStripBuffer(messageTtlSeconds = 3600)
+        val msg = ChatMessage(
+            _id = "inbound-raid-1",
+            allianceId = "a",
+            roomId = "raid",
+            senderId = "ally-2",
+            senderUsername = "Ally",
+            senderRole = "R2",
+            text = "Атака",
+            createdAt = Instant.now().toString(),
+        )
+        buffer.upsert(msg)
+        buffer.mergeReceiveTimeline(msg, selfId = "me")
+        assertTrue(buffer.visibleForPreview().isEmpty())
+        buffer.resetVisibleSession()
+        buffer.mergeReceiveTimeline(msg, selfId = "me")
+        assertEquals(1, buffer.visibleForPreview().size)
+    }
+
+    @Test
     fun visibleForPreview_hidesChatUntilGameSessionStarted() {
         val buffer = OverlayChatStripBuffer(messageTtlSeconds = 3600)
         val msg = ChatMessage(
