@@ -722,6 +722,11 @@ class OverlayCommandsPopover(
         }
 
         var selectedReactionSubcategory = OverlayReactionCategory.ANIMATIONS
+        var selectedStickerPackKey = OVERLAY_REACTION_STICKER_PACK
+        var enabledStickerPackKeys = AppContainer.from(context).usersRepository.peekMyProfile()
+            ?.enabledStickerPacks
+            ?.toSet()
+            ?: emptySet()
         val reactionTileSize = dp(52)
         val reactionIconInner = dp(42)
         val reactionGridColumns = 5
@@ -771,6 +776,22 @@ class OverlayCommandsPopover(
                 ),
             )
         }
+        val reactionStickerPackTabsInner = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val reactionStickerPackTabsRow = HorizontalScrollView(context).apply {
+            isHorizontalScrollBarEnabled = false
+            isFillViewport = false
+            visibility = View.GONE
+            addView(
+                reactionStickerPackTabsInner,
+                ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+        }
 
         val reactionTabEmpty = labelText(
             context.getString(R.string.overlay_reactions_stickers_empty),
@@ -808,6 +829,59 @@ class OverlayCommandsPopover(
             }
         }
 
+        fun refreshStickerPackSubTabs() {
+            reactionStickerPackTabsInner.removeAllViews()
+            val tabs = overlayStickerPackTabs(enabledStickerPackKeys)
+            if (tabs.none { it.packKey == selectedStickerPackKey }) {
+                selectedStickerPackKey = OVERLAY_REACTION_STICKER_PACK
+            }
+            tabs.forEach { tab ->
+                val chip = choiceChip(
+                    context.getString(tab.titleRes),
+                    selected = tab.packKey == selectedStickerPackKey,
+                )
+                chip.setOnClickListener {
+                    if (selectedStickerPackKey == tab.packKey) return@setOnClickListener
+                    selectedStickerPackKey = tab.packKey
+                    OverlayReactionBitmapCache.preloadStickerPack(context, tab.packKey)
+                    refreshStickerPackSubTabs()
+                    scheduleReactionTilesRebuild()
+                }
+                reactionStickerPackTabsInner.addView(
+                    chip,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { marginEnd = dp(6) },
+                )
+            }
+        }
+
+        fun loadEnabledStickerPackKeys() {
+            enabledStickerPackKeys = AppContainer.from(context).usersRepository.peekMyProfile()
+                ?.enabledStickerPacks
+                ?.toSet()
+                ?: enabledStickerPackKeys
+            refreshStickerPackSubTabs()
+            val container = AppContainer.from(context)
+            scope.launch {
+                val keys = OverlayTeamContextCache.load(
+                    usersRepository = container.usersRepository,
+                    teamsRepository = container.teamsRepository,
+                ).getOrNull()?.enabledStickerPackKeys ?: enabledStickerPackKeys
+                withContext(Dispatchers.Main) {
+                    if (menuScrim == null) return@withContext
+                    if (keys != enabledStickerPackKeys) {
+                        enabledStickerPackKeys = keys
+                        refreshStickerPackSubTabs()
+                        if (selectedReactionSubcategory == OverlayReactionCategory.STICKERS) {
+                            scheduleReactionTilesRebuild()
+                        }
+                    }
+                }
+            }
+        }
+
         val reactionTilesRecycler = RecyclerView(context).apply {
             layoutManager = OverlayReactionTilesAdapter.gridLayoutManager(context, reactionGridColumns)
             itemAnimator = null
@@ -825,8 +899,10 @@ class OverlayCommandsPopover(
                 val wmUse = attachedWindowManager ?: return@OverlayReactionTilesAdapter
                 reopenReactionSubcategory = selectedReactionSubcategory
                 stopHeartPreviewPulse()
-                overlayQuickReactionById(context, reaction.id).stickerAssetStem?.let { stem ->
-                    OverlayReactionBitmapCache.preloadSticker(context, stem)
+                overlayQuickReactionById(context, reaction.id).let { resolved ->
+                    val stem = resolved.stickerAssetStem ?: return@let
+                    val packKey = resolved.stickerPackKey ?: OVERLAY_REACTION_STICKER_PACK
+                    OverlayReactionBitmapCache.preloadSticker(context, packKey, stem)
                 }
                 showReactionRecipientPicker(wmUse, reaction.id)
             },
@@ -1008,11 +1084,22 @@ class OverlayCommandsPopover(
                 return
             }
             hideKeyboard(reactionTextInput)
-            val items = overlayReactionsForCategory(
-                selectedReactionSubcategory,
-                reactionFavorites,
-                context,
-            )
+            val isStickersTab = selectedReactionSubcategory == OverlayReactionCategory.STICKERS
+            reactionStickerPackTabsRow.visibility =
+                if (isStickersTab) View.VISIBLE else View.GONE
+            val items = if (isStickersTab) {
+                overlayStickerReactionsForPack(
+                    context,
+                    selectedStickerPackKey,
+                    reactionFavorites,
+                )
+            } else {
+                overlayReactionsForCategory(
+                    selectedReactionSubcategory,
+                    reactionFavorites,
+                    context,
+                )
+            }
             reactionTabEmpty.visibility =
                 if (items.isEmpty()) View.VISIBLE else View.GONE
             reactionTilesAdapter?.submitList(items)
@@ -1026,7 +1113,9 @@ class OverlayCommandsPopover(
             selectedReactionSubcategory = cat
             reopenReactionSubcategory = cat
             if (cat == OverlayReactionCategory.STICKERS) {
-                OverlayReactionBitmapCache.preloadOverlayStickerPack(context)
+                selectedStickerPackKey = OVERLAY_REACTION_STICKER_PACK
+                loadEnabledStickerPackKeys()
+                OverlayReactionBitmapCache.preloadStickerPack(context, OVERLAY_REACTION_STICKER_PACK)
             }
             if (cat == OverlayReactionCategory.TEXT) {
                 stopReactionPreviewKeepAlive()
@@ -1040,6 +1129,7 @@ class OverlayCommandsPopover(
         reactionSubStickerChip.setOnClickListener { selectReactionSubcategory(OverlayReactionCategory.STICKERS) }
         reactionSubTextChip.setOnClickListener { selectReactionSubcategory(OverlayReactionCategory.TEXT) }
 
+        refreshStickerPackSubTabs()
         rebuildReactionTiles()
 
         val reactionRow = LinearLayout(context).apply {
@@ -1053,6 +1143,13 @@ class OverlayCommandsPopover(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                 ),
+            )
+            addView(
+                reactionStickerPackTabsRow,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(4) },
             )
             addView(
                 reactionTextPanel,

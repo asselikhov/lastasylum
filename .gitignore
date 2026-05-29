@@ -49,6 +49,7 @@ mobile-android/*.iml
 Thumbs.db
 
 # --- Personal / scratch (not for the repo) ---
+Last/
 На чем остановился.txt
 *.local.md
 notes.local.*

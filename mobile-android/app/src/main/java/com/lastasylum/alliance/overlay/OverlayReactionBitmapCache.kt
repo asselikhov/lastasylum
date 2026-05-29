@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
+import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -13,37 +14,46 @@ import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 
 internal object OverlayReactionBitmapCache {
-    private const val MAX_ENTRIES = 24
+    private const val MAX_ENTRIES = 48
     private const val PRELOAD_MAX_STICKERS = 12
     private val cache = LruCache<String, Bitmap>(MAX_ENTRIES)
     private val inFlight = ConcurrentHashMap<String, Any>()
     private var scopeJob = SupervisorJob()
     private var scope = CoroutineScope(scopeJob + Dispatchers.IO)
 
-    fun get(stem: String): Bitmap? = cache.get(stem)
+    internal fun cacheKey(packKey: String, stem: String): String = "$packKey/$stem"
 
-    fun loadAsync(context: Context, stem: String, onReady: (Bitmap?) -> Unit) {
-        cache.get(stem)?.let {
+    fun get(packKey: String, stem: String): Bitmap? = cache.get(cacheKey(packKey, stem))
+
+    fun loadAsync(
+        context: Context,
+        packKey: String,
+        stem: String,
+        onReady: (Bitmap?) -> Unit,
+    ) {
+        val key = cacheKey(packKey, stem)
+        cache.get(key)?.let {
             onReady(it)
             return
         }
-        val lock = inFlight.computeIfAbsent(stem) { Any() }
+        val lock = inFlight.computeIfAbsent(key) { Any() }
         scope.launch {
             val bmp = synchronized(lock) {
-                cache.get(stem) ?: decodeSticker(context.applicationContext, stem)?.also {
-                    cache.put(stem, it)
+                cache.get(key) ?: decodeSticker(context.applicationContext, packKey, stem)?.also {
+                    cache.put(key, it)
                 }
             }
-            inFlight.remove(stem)
+            inFlight.remove(key)
             withContext(Dispatchers.Main) {
                 onReady(bmp)
             }
         }
     }
 
-    fun loadSync(context: Context, stem: String): Bitmap? {
-        cache.get(stem)?.let { return it }
-        return decodeSticker(context.applicationContext, stem)?.also { cache.put(stem, it) }
+    fun loadSync(context: Context, packKey: String, stem: String): Bitmap? {
+        val key = cacheKey(packKey, stem)
+        cache.get(key)?.let { return it }
+        return decodeSticker(context.applicationContext, packKey, stem)?.also { cache.put(key, it) }
     }
 
     fun clear() {
@@ -53,19 +63,32 @@ internal object OverlayReactionBitmapCache {
     }
 
     /** Прогрев одного стикера (например перед вспышкой реакции). */
-    fun preloadSticker(context: Context, stem: String) {
-        if (stem.isBlank()) return
-        loadAsync(context, stem) { }
+    fun preloadSticker(context: Context, packKey: String, stem: String) {
+        if (packKey.isBlank() || stem.isBlank()) return
+        loadAsync(context, packKey, stem) { }
     }
 
     /** Прогрев части стикеров вкладки «Стикеры» до отрисовки сетки. */
     fun preloadOverlayStickerPack(context: Context, maxEntries: Int = PRELOAD_MAX_STICKERS) {
+        preloadStickerPack(context, OVERLAY_REACTION_STICKER_PACK, maxEntries)
+    }
+
+    fun preloadStickerPack(
+        context: Context,
+        packKey: String,
+        maxEntries: Int = PRELOAD_MAX_STICKERS,
+    ) {
         val app = context.applicationContext
         val limit = maxEntries.coerceIn(1, PRELOAD_MAX_STICKERS)
         scope.launch {
-            listOverlayStickerStems(app).take(limit).forEach { stem ->
-                if (cache.get(stem) == null) {
-                    decodeSticker(app, stem)?.let { cache.put(stem, it) }
+            val stems = when (packKey) {
+                OVERLAY_REACTION_STICKER_PACK -> listOverlayStickerStems(app)
+                else -> StickerPacks.listStems(app, packKey)
+            }
+            stems.take(limit).forEach { stem ->
+                val key = cacheKey(packKey, stem)
+                if (cache.get(key) == null) {
+                    decodeSticker(app, packKey, stem)?.let { cache.put(key, it) }
                 }
             }
         }
@@ -85,13 +108,8 @@ internal object OverlayReactionBitmapCache {
                 ?: emptyList()
         }.getOrElse { emptyList() }
 
-    private fun decodeSticker(context: Context, stem: String): Bitmap? = runCatching {
-        val pack = if (stem.startsWith("overlay_sticker_")) {
-            OVERLAY_REACTION_STICKER_PACK
-        } else {
-            "zlobyaka"
-        }
-        val base = "stickerpacks/$pack/$stem"
+    private fun decodeSticker(context: Context, packKey: String, stem: String): Bitmap? = runCatching {
+        val base = "stickerpacks/$packKey/$stem"
         for (ext in listOf(".png", ".webp")) {
             val bmp = runCatching {
                 context.assets.open(base + ext).use { stream ->

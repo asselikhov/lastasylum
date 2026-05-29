@@ -729,6 +729,7 @@
     <string name="overlay_reactions_sub_animations">Анимации</string>
     <string name="overlay_reactions_sub_memes">Мемы</string>
     <string name="overlay_reactions_sub_stickers">Стикеры</string>
+    <string name="overlay_reactions_sticker_pack_misc">Разное</string>
     <string name="overlay_reactions_sub_text">Текст</string>
     <string name="overlay_reactions_text_hint">Сообщение для вспышки на экране…</string>
     <string name="overlay_reactions_text_send">Отправить реакцию</string>

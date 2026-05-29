@@ -61,15 +61,17 @@ internal fun createOverlayReactionTileIcon(
 ): ImageView {
     val stickerStem = reaction.stickerAssetStem
     if (stickerStem != null) {
+        val packKey = reaction.stickerPackKey ?: OVERLAY_REACTION_STICKER_PACK
+        val bitmapKey = OverlayReactionBitmapCache.cacheKey(packKey, stickerStem)
         return ImageView(context).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
-            setTag(R.id.tag_overlay_reaction_stem, stickerStem)
-            OverlayReactionBitmapCache.get(stickerStem)?.let { setImageBitmap(it) }
+            setTag(R.id.tag_overlay_reaction_stem, bitmapKey)
+            OverlayReactionBitmapCache.get(packKey, stickerStem)?.let { setImageBitmap(it) }
                 ?: run {
                     setImageDrawable(null)
-                    OverlayReactionBitmapCache.loadAsync(context, stickerStem) { bmp ->
+                    OverlayReactionBitmapCache.loadAsync(context, packKey, stickerStem) { bmp ->
                         post {
-                            if (getTag(R.id.tag_overlay_reaction_stem) != stickerStem) return@post
+                            if (getTag(R.id.tag_overlay_reaction_stem) != bitmapKey) return@post
                             if (bmp != null) {
                                 setImageBitmap(bmp)
                             }

@@ -18,8 +18,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -259,7 +260,8 @@ fun OverlayReactionRecipientSheet(
                                 )
                             }
                         } else {
-                            LazyColumn(
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(2),
                                 modifier = Modifier
                                     .weight(1f)
                                     .fillMaxWidth(),
@@ -269,6 +271,7 @@ fun OverlayReactionRecipientSheet(
                                     top = 4.dp,
                                     bottom = 4.dp,
                                 ),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
                                 items(filteredMembers, key = { it.userId }) { member ->
@@ -282,6 +285,7 @@ fun OverlayReactionRecipientSheet(
                                                 selectedIds + member.userId
                                             }
                                         },
+                                        modifier = Modifier.fillMaxWidth(),
                                     )
                                 }
                             }
@@ -357,7 +361,6 @@ private fun OverlayReactionRecipientMemberRow(
     }
     Row(
         modifier = modifier
-            .fillMaxWidth()
             .heightIn(min = 44.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(Color(0xFF141C28).copy(alpha = 0.85f))
@@ -517,23 +520,18 @@ private fun OverlayReactionRecipientPreview(
         contentAlignment = Alignment.Center,
     ) {
         if (textPayload != null) {
-            val metrics = remember(context, density) {
-                OverlayReactionBurstLayout.metrics(context) { dpValue ->
-                    (dpValue * density.density).toInt()
-                }
-            }
-            val maxTextWidthPx = remember(metrics, density) {
-                OverlayReactionBurstLayout.textMessageMaxWidthPx(
-                    metrics,
-                    (120 * density.density).toInt(),
-                )
+            val screenWidthDp = LocalConfiguration.current.screenWidthDp
+            val maxTextWidthPx = remember(screenWidthDp, density) {
+                val sheetWidthDp = minOf(360f, screenWidthDp.toFloat()) - 32f
+                (sheetWidthDp.coerceAtLeast(120f) * density.density).toInt()
             }
             AndroidView(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 64.dp, max = 80.dp),
+                    .heightIn(min = 40.dp, max = 56.dp)
+                    .clip(RoundedCornerShape(10.dp)),
                 factory = { ctx ->
-                    OverlayReactionTextBurstUi.createMessageTextView(
+                    OverlayReactionTextBurstUi.createPreviewMessageTextView(
                         ctx,
                         textPayload,
                         maxTextWidthPx,

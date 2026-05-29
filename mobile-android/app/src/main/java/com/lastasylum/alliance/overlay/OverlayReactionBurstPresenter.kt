@@ -527,8 +527,9 @@ internal class OverlayReactionBurstPresenter(
     private fun createBurstAnimView(reaction: OverlayQuickReaction, maxSidePx: Int): View {
         val stickerStem = reaction.stickerAssetStem
         if (stickerStem != null) {
+            val packKey = reaction.stickerPackKey ?: OVERLAY_REACTION_STICKER_PACK
             val image = nonClippingImage(maxSidePx)
-            OverlayReactionBitmapCache.loadAsync(context, stickerStem) { bmp ->
+            OverlayReactionBitmapCache.loadAsync(context, packKey, stickerStem) { bmp ->
                 if (bmp != null && image.isAttachedToWindow) {
                     image.setImageBitmap(bmp)
                 }

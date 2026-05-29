@@ -17,6 +17,44 @@ import android.graphics.drawable.GradientDrawable
 
 internal object OverlayReactionTextBurstUi {
 
+    private const val TEXT_PREVIEW_SP = 14f
+    private const val TEXT_PREVIEW_LINES_MAX = 3
+
+    fun createPreviewMessageTextView(context: Context, message: String, maxWidthPx: Int): TextView {
+        val typeface = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            Typeface.create(Typeface.SANS_SERIF, 600, false)
+        } else {
+            Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+        }
+        val density = context.resources.displayMetrics.density
+        return TextView(context).apply {
+            text = message
+            gravity = Gravity.CENTER
+            textAlignment = View.TEXT_ALIGNMENT_CENTER
+            setTextColor(Color.parseColor("#FFFDF8F0"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, TEXT_PREVIEW_SP)
+            this.typeface = typeface
+            letterSpacing = 0.01f
+            setLineSpacing(0f, 1.15f)
+            maxLines = TEXT_PREVIEW_LINES_MAX
+            ellipsize = TextUtils.TruncateAt.END
+            setShadowLayer(8f, 0f, 2f, Color.parseColor("#CC000000"))
+            maxWidth = maxWidthPx
+            val padH = (density * 8).toInt()
+            val padV = (density * 6).toInt()
+            setPadding(padH, padV, padH, padV)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#CC0D1524"))
+                cornerRadius = density * 10f
+                setStroke(
+                    (density * 1f).toInt().coerceAtLeast(1),
+                    Color.parseColor("#55FFFFFF"),
+                )
+            }
+            disableOverlayTouchTarget(this)
+        }
+    }
+
     fun createMessageTextView(context: Context, message: String, maxWidthPx: Int): TextView {
         val typeface = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             Typeface.create(Typeface.SANS_SERIF, 600, false)

@@ -5,6 +5,8 @@ import androidx.annotation.DrawableRes
 import androidx.annotation.RawRes
 import androidx.annotation.StringRes
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.data.chat.stickers.ChatStickerPack
+import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 
 /** Asset pack for overlay-only sticker reactions (not chat Zlobyaka). */
 internal const val OVERLAY_REACTION_STICKER_PACK = "overlay"
@@ -30,6 +32,8 @@ internal data class OverlayQuickReaction(
     @DrawableRes val gifDrawableRes: Int? = null,
     @DrawableRes val memeDrawableRes: Int? = null,
     val stickerAssetStem: String? = null,
+    /** Папка assets/stickerpacks/{packKey}/ для [stickerAssetStem]. */
+    val stickerPackKey: String? = null,
     /** Для [OVERLAY_TEXT_REACTION_PREFIX] — текст вспышки (не в каталоге плиток). */
     val textPayload: String? = null,
     val burstAccentHex: String = "#CCFF5252",
@@ -203,7 +207,39 @@ internal fun overlayMemeReactions(): List<OverlayQuickReaction> =
         )
     }
 
-internal fun overlayStickerReactions(context: Context): List<OverlayQuickReaction> {
+internal data class OverlayStickerPackTab(
+    val packKey: String,
+    @StringRes val titleRes: Int,
+)
+
+private const val CHAT_STICKER_REACTION_ID_PREFIX = "sticker/"
+
+internal fun encodeChatStickerReactionId(packKey: String, stem: String): String =
+    "$CHAT_STICKER_REACTION_ID_PREFIX$packKey/$stem"
+
+internal fun decodeChatStickerReactionId(reactionId: String): Pair<String, String>? {
+    if (!reactionId.startsWith(CHAT_STICKER_REACTION_ID_PREFIX)) return null
+    val rest = reactionId.removePrefix(CHAT_STICKER_REACTION_ID_PREFIX)
+    val slash = rest.indexOf('/')
+    if (slash <= 0 || slash >= rest.lastIndex) return null
+    val packKey = rest.substring(0, slash).trim()
+    val stem = rest.substring(slash + 1).trim()
+    if (packKey.isEmpty() || stem.isEmpty()) return null
+    return packKey to stem
+}
+
+internal fun overlayStickerPackTabs(enabledKeys: Set<String>): List<OverlayStickerPackTab> {
+    val misc = OverlayStickerPackTab(
+        packKey = OVERLAY_REACTION_STICKER_PACK,
+        titleRes = R.string.overlay_reactions_sticker_pack_misc,
+    )
+    val chat = StickerPacks.enabledPacks(enabledKeys).map { pack ->
+        OverlayStickerPackTab(packKey = pack.packKey, titleRes = pack.titleRes)
+    }
+    return listOf(misc) + chat
+}
+
+internal fun overlayMiscStickerReactions(context: Context): List<OverlayQuickReaction> {
     val stems = OverlayReactionBitmapCache.listOverlayStickerStems(context)
         .ifEmpty { overlayStickerAssetStemsFallback.toList() }
     return stems.mapIndexed { index, stem ->
@@ -213,9 +249,44 @@ internal fun overlayStickerReactions(context: Context): List<OverlayQuickReactio
             labelRes = R.string.overlay_reaction_sticker_cd,
             tintHex = "#FFE8F0FF",
             stickerAssetStem = stem,
+            stickerPackKey = OVERLAY_REACTION_STICKER_PACK,
             burstAccentHex = "#CC90A4AE",
         )
     }
+}
+
+internal fun overlayChatStickerReactions(
+    context: Context,
+    pack: ChatStickerPack,
+): List<OverlayQuickReaction> =
+    pack.listStems(context).map { stem ->
+        OverlayQuickReaction(
+            id = encodeChatStickerReactionId(pack.packKey, stem),
+            category = OverlayReactionCategory.STICKERS,
+            labelRes = R.string.overlay_reaction_sticker_cd,
+            tintHex = "#FFE8F0FF",
+            stickerAssetStem = stem,
+            stickerPackKey = pack.packKey,
+            burstAccentHex = "#CC90A4AE",
+        )
+    }
+
+internal fun overlayStickerReactions(context: Context): List<OverlayQuickReaction> =
+    overlayMiscStickerReactions(context)
+
+internal fun overlayStickerReactionsForPack(
+    context: Context,
+    packKey: String,
+    favorites: OverlayReactionFavoritesStore,
+): List<OverlayQuickReaction> {
+    val inTab = when (packKey) {
+        OVERLAY_REACTION_STICKER_PACK -> overlayMiscStickerReactions(context)
+        else -> StickerPacks.forKey(packKey)?.let { overlayChatStickerReactions(context, it) }.orEmpty()
+    }
+    if (inTab.isEmpty()) return emptyList()
+    val favIds = favorites.favoriteIds()
+    val (fav, rest) = inTab.partition { it.id in favIds }
+    return fav.sortedBy { it.id } + rest.sortedBy { it.id }
 }
 
 internal fun reactionsInCategory(
@@ -230,7 +301,9 @@ internal fun reactionsInCategory(
     }
 
 internal fun overlayQuickReactionCatalog(context: Context): List<OverlayQuickReaction> =
-    overlayAnimationReactions() + overlayMemeReactions() + overlayStickerReactions(context)
+    overlayAnimationReactions() +
+        overlayMemeReactions() +
+        overlayMiscStickerReactions(context)
 
 internal fun overlayQuickReactionById(context: Context, reactionId: String): OverlayQuickReaction {
     decodeTextReactionId(reactionId)?.let { text ->
@@ -250,6 +323,17 @@ internal fun overlayQuickReactionById(context: Context, reactionId: String): Ove
             labelRes = R.string.overlay_reaction_gif_cd,
             tintHex = "#FFE8F0FF",
             gifDrawableRes = drawableRes,
+            burstAccentHex = "#CC90A4AE",
+        )
+    }
+    decodeChatStickerReactionId(reactionId)?.let { (packKey, stem) ->
+        return OverlayQuickReaction(
+            id = reactionId,
+            category = OverlayReactionCategory.STICKERS,
+            labelRes = R.string.overlay_reaction_sticker_cd,
+            tintHex = "#FFE8F0FF",
+            stickerAssetStem = stem,
+            stickerPackKey = packKey,
             burstAccentHex = "#CC90A4AE",
         )
     }
