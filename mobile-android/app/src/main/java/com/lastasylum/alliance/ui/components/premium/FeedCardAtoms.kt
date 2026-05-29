@@ -166,7 +166,7 @@ fun FeedCardMetaRow(
             color = MaterialTheme.colorScheme.primary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
+            modifier = Modifier.weight(1f),
         )
         if (trailingMeta.isNotBlank()) {
             Text(
@@ -174,6 +174,7 @@ fun FeedCardMetaRow(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         trailingContent?.invoke()

@@ -47,44 +47,16 @@ import com.lastasylum.alliance.ui.util.formatTeamFeedDateRu
 fun PollMetaLine(
     showPollLabel: Boolean,
     totalVotes: Int,
-    dateLabel: String?,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (showPollLabel) {
-            JournalPollBadge(
-                votesLabel = if (totalVotes > 0) {
-                    stringResource(R.string.team_news_votes_count, totalVotes)
-                } else {
-                    null
-                },
-            )
-        }
-        if (!dateLabel.isNullOrBlank()) {
-            JournalTimePill(label = dateLabel)
-        }
-    }
-}
-
-@Composable
-fun JournalTimePill(
-    label: String,
-    modifier: Modifier = Modifier,
-) {
-    Text(
-        text = label,
-        style = PremiumJournalFeedTokens.metaStyle,
-        modifier = modifier
-            .clip(PremiumJournalFeedTokens.timePillShape)
-            .background(Color.White.copy(alpha = 0.07f))
-            .border(0.5.dp, Color.White.copy(alpha = 0.1f), PremiumJournalFeedTokens.timePillShape)
-            .padding(horizontal = 8.dp, vertical = 3.dp),
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
+    if (!showPollLabel) return
+    JournalPollBadge(
+        votesLabel = if (totalVotes > 0) {
+            stringResource(R.string.team_news_votes_count, totalVotes)
+        } else {
+            null
+        },
+        modifier = modifier,
     )
 }
 
@@ -366,13 +338,7 @@ fun TeamNewsFeedCard(
                     title = item.title,
                     contentDescription = item.title,
                     topOverlay = {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            if (isUnread) FeedCardUnreadDot()
-                            JournalTimePill(label = formattedCreatedAt)
-                        }
+                        if (isUnread) FeedCardUnreadDot()
                     },
                 )
                 HorizontalDivider(
@@ -422,13 +388,6 @@ fun TeamNewsFeedCard(
                         myVoteOptionId = item.myVoteOptionId,
                         maxOptions = 2,
                     )
-                    if (!hasHero) {
-                        PollMetaLine(
-                            showPollLabel = false,
-                            totalVotes = totalVotes,
-                            dateLabel = formattedCreatedAt,
-                        )
-                    }
                 } else {
                     if (!hasHero) {
                         Row(
@@ -452,9 +411,6 @@ fun TeamNewsFeedCard(
                             maxLines = if (hasHero) 2 else 3,
                             overflow = TextOverflow.Ellipsis,
                         )
-                    }
-                    if (!hasHero) {
-                        JournalTimePill(label = formattedCreatedAt)
                     }
                 }
             }
@@ -485,17 +441,12 @@ fun TeamNewsFeedCard(
                             PollMetaLine(
                                 showPollLabel = true,
                                 totalVotes = totalVotes,
-                                dateLabel = formattedCreatedAt,
                             )
                         }
                         FeedCardMetaRow(
                             username = item.authorUsername,
                             telegramUsername = item.authorTelegramUsername,
-                            trailingMeta = when {
-                                showPollPreview && !hasHero -> ""
-                                hasHero -> ""
-                                else -> formattedCreatedAt
-                            },
+                            trailingMeta = formattedCreatedAt,
                         )
                     }
                     if (showEdit) {

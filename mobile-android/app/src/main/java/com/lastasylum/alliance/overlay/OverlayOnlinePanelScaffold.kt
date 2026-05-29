@@ -64,21 +64,20 @@ fun OverlayOnlinePanelScaffold(
     val tokens = OverlayOnlineMemberTokens
     val totalVisible = displaySections.sumOf { it.items.size }
 
-    Column(modifier = modifier.fillMaxSize()) {
+    Column(
+        modifier = modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(OnlinePanelSectionSpacing),
+    ) {
         topBar()
-        Column(
+        OnlinePanelFilterSearchRow(
+            activeChip = activeFilterChip,
+            searchQuery = searchQuery,
+            onFilterChip = onFilterChip,
+            onSearchQuery = onSearchQuery,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            OnlinePanelFilterSearchRow(
-                activeChip = activeFilterChip,
-                searchQuery = searchQuery,
-                onFilterChip = onFilterChip,
-                onSearchQuery = onSearchQuery,
-            )
-        }
+        )
         when {
             loading && totalVisible == 0 && error == null -> {
                 OnlinePanelSkeleton(
@@ -131,7 +130,6 @@ fun OverlayOnlinePanelScaffold(
                         contentPadding = PaddingValues(
                             start = SquadRelayDimens.contentPaddingHorizontal,
                             end = SquadRelayDimens.contentPaddingHorizontal,
-                            top = 4.dp,
                             bottom = 16.dp,
                         ),
                         horizontalArrangement = Arrangement.spacedBy(tokens.gridSpacing),
@@ -159,7 +157,8 @@ fun OverlayOnlinePanelScaffold(
     }
 }
 
-private val OnlinePanelFieldHeight = 40.dp
+private val OnlinePanelSectionSpacing = 8.dp
+private val OnlinePanelFieldHeight = 48.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -168,6 +167,7 @@ private fun OnlinePanelFilterSearchRow(
     searchQuery: String,
     onFilterChip: (OverlayOnlineFilterChip) -> Unit,
     onSearchQuery: (String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val tokens = OverlayOnlineMemberTokens
     var filterExpanded by remember { mutableStateOf(false) }
@@ -184,7 +184,7 @@ private fun OnlinePanelFilterSearchRow(
     val fieldShape = RoundedCornerShape(10.dp)
 
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {

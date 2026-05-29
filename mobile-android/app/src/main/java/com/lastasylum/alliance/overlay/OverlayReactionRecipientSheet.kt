@@ -542,7 +542,7 @@ private fun OverlayReactionRecipientPreview(
             )
         } else {
             AndroidView(
-                modifier = Modifier.size(92.dp),
+                modifier = Modifier.size(116.dp),
                 factory = { ctx ->
                     val icon = createOverlayReactionTileIcon(
                         ctx,

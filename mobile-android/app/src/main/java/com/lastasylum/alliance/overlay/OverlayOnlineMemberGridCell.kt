@@ -1,10 +1,5 @@
 package com.lastasylum.alliance.overlay
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -107,7 +102,7 @@ fun OverlayOnlineMemberGridCell(
         displayName
     }
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = tokens.cellMinHeight)
@@ -135,88 +130,93 @@ fun OverlayOnlineMemberGridCell(
                         onLongClick = { onLongClick?.invoke() },
                     )
                 },
-            )
-            .padding(horizontal = 10.dp, vertical = 10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+            ),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Top,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            if (mode == OverlayOnlineMemberCellMode.Selectable) {
-                Checkbox(
-                    checked = selected,
-                    onCheckedChange = { onToggleSelect?.invoke() },
-                    modifier = Modifier.size(28.dp),
-                    colors = CheckboxDefaults.colors(
-                        checkedColor = tokens.borderLive,
-                        uncheckedColor = tokens.metaColor,
-                        checkmarkColor = Color.White,
-                    ),
-                )
-            }
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Box(contentAlignment = Alignment.BottomCenter) {
-                    MemberAvatar(
-                        username = member.username,
-                        telegramUsername = member.telegramUsername,
-                        inGameNow = member.inGameNow,
-                        freshness = member.freshness,
-                    )
-                    RoleChip(
-                        role = squadRole,
-                        color = roleColor,
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .offset(y = 6.dp)
-                            .semantics { contentDescription = roleCd },
+                if (mode == OverlayOnlineMemberCellMode.Selectable) {
+                    Checkbox(
+                        checked = selected,
+                        onCheckedChange = { onToggleSelect?.invoke() },
+                        modifier = Modifier.size(28.dp),
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = tokens.borderLive,
+                            uncheckedColor = tokens.metaColor,
+                            checkmarkColor = Color.White,
+                        ),
                     )
                 }
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Box(contentAlignment = Alignment.BottomCenter) {
+                        MemberAvatar(
+                            username = member.username,
+                            telegramUsername = member.telegramUsername,
+                            inGameNow = member.inGameNow,
+                            freshness = member.freshness,
+                        )
+                        RoleChip(
+                            role = squadRole,
+                            color = roleColor,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .offset(y = 6.dp)
+                                .semantics { contentDescription = roleCd },
+                        )
+                    }
+                    Text(
+                        text = displayName,
+                        style = tokens.titleStyle,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+            Text(
+                text = statusLine,
+                style = tokens.metaStyle.copy(
+                    color = if (member.inGameNow) tokens.metaColor else tokens.mutedColor,
+                ),
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (member.inGameNow && member.freshness == PresenceFreshness.StaleSoon) {
                 Text(
-                    text = displayName,
-                    style = tokens.titleStyle,
+                    text = stringResource(R.string.overlay_online_stale_soon),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.borderStaleSoon,
                     textAlign = TextAlign.Center,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
+                    maxLines = 1,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
-        Text(
-            text = statusLine,
-            style = tokens.metaStyle.copy(
-                color = if (member.inGameNow) tokens.metaColor else tokens.mutedColor,
-            ),
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth(),
-        )
         if (member.inGameNow && mode == OverlayOnlineMemberCellMode.Presence) {
-            AnimatedVisibility(
-                visible = micOn || soundOn,
-                enter = fadeIn() + scaleIn(initialScale = 0.9f),
-                exit = fadeOut() + scaleOut(targetScale = 0.9f),
-            ) {
-                OverlayMemberVoiceBadges(micOn = micOn, soundOn = soundOn)
-            }
-        }
-        if (member.inGameNow && member.freshness == PresenceFreshness.StaleSoon) {
-            Text(
-                text = stringResource(R.string.overlay_online_stale_soon),
-                style = MaterialTheme.typography.labelSmall,
-                color = tokens.borderStaleSoon,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                modifier = Modifier.fillMaxWidth(),
+            OverlayMemberVoiceBadges(
+                micOn = micOn,
+                soundOn = soundOn,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 6.dp, end = 6.dp),
             )
         }
     }
