@@ -210,14 +210,21 @@ internal fun mergeVisibleMessagesWithRoomCache(
     roomId: String,
     maxMessages: Int = CHAT_MAX_MESSAGES_IN_MEMORY,
     excludedMessageIds: Set<String> = emptySet(),
-): List<ChatMessage> =
-    mergeLoadedPageWithExisting(
-        existing = cached,
-        loaded = visible,
-        maxMessages = maxMessages,
-        excludedMessageIds = excludedMessageIds,
-        roomId = roomId,
-    )
+): List<ChatMessage> {
+    val scopedVisible = filterMessagesForRoom(visible, roomId)
+    val scopedCached = filterMessagesForRoom(cached, roomId)
+    return when {
+        scopedVisible.isEmpty() -> capNewestFirst(scopedCached, maxMessages)
+        scopedCached.isEmpty() -> capNewestFirst(scopedVisible, maxMessages)
+        else -> mergeLoadedPageWithExisting(
+            existing = scopedCached,
+            loaded = scopedVisible,
+            maxMessages = maxMessages,
+            excludedMessageIds = excludedMessageIds,
+            roomId = roomId,
+        )
+    }
+}
 
 /**
  * Skip REST refresh when session RAM cache matches visible UI — unless room stash or session

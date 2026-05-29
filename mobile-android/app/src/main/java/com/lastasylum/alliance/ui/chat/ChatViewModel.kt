@@ -1114,6 +1114,7 @@ class ChatViewModel(
     /** User left the Chat tab — stop treating selected room as actively viewed. */
     fun onChatTabPaused() {
         isChatTabActive = false
+        snapshotSelectedRoomToMessageCache()
     }
 
     /** Returning to the Chat tab: refresh badges; read cursor only when room is visible. */
@@ -1144,6 +1145,7 @@ class ChatViewModel(
             val roomId = _state.value.selectedRoomId?.trim().orEmpty()
             if (roomId.isEmpty()) return@launch
             rehydrateSelectedRoomMessagesFromCache()
+            refreshMessagesInBackground(roomId, force = true)
             if (_state.value.selectedRoomId.isNullOrBlank()) {
                 ensureAllianceHubRoomSelected()
             }
@@ -1429,7 +1431,21 @@ class ChatViewModel(
             typingPeerJobs.values.forEach { it.cancel() }
             typingPeerJobs.clear()
         }
-        val cachedMessages = filterMessagesForRoom(cached?.messages.orEmpty(), roomId)
+        val cachedMessages = run {
+            val fromCache = messagesWithoutLocallyRemoved(
+                filterMessagesForRoom(cached?.messages.orEmpty(), roomId),
+            )
+            val visible = messagesWithoutLocallyRemoved(
+                filterMessagesForRoom(_state.value.messages, roomId),
+            )
+            mergeVisibleMessagesWithRoomCache(
+                visible = visible,
+                cached = fromCache,
+                roomId = roomId,
+                maxMessages = messageMemoryCap,
+                excludedMessageIds = locallyRemovedMessageIds,
+            )
+        }
         val hasCachedMessages = cachedMessages.isNotEmpty()
         _state.value = _state.value.copy(
             selectedRoomId = roomId,
@@ -1978,8 +1994,11 @@ class ChatViewModel(
         )
         val cached = roomMessageCache[roomId]
         if (hadCachedMessages && cached != null && cached.messages.isNotEmpty()) {
-            val filteredCache = messagesWithoutLocallyRemoved(cached.messages)
-            if (filteredCache.size != cached.messages.size) {
+            rehydrateRoomMessagesFromCache(roomId)
+            val filteredCache = messagesWithoutLocallyRemoved(
+                filterMessagesForRoom(roomMessageCache[roomId]?.messages.orEmpty(), roomId),
+            )
+            if (roomMessageCache[roomId]?.messages?.size != filteredCache.size) {
                 roomMessageCache[roomId] = cached.copy(messages = capMessagesForMemory(filteredCache))
                 ChatSessionCache.updateMessages(roomId, roomMessageCache[roomId]!!.messages)
             }

@@ -193,6 +193,18 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun mergeVisibleMessagesWithRoomCache_returnsCachedWhenVisibleEmpty() {
+        val peer = msg("507f1f77bcf86cd799439013", "from peer while away")
+        val cached = listOf(peer)
+        val merged = mergeVisibleMessagesWithRoomCache(
+            visible = emptyList(),
+            cached = cached,
+            roomId = "room",
+        )
+        assertEquals(listOf("507f1f77bcf86cd799439013"), merged.map { it._id })
+    }
+
+    @Test
     fun mergeVisibleMessagesWithRoomCache_addsCachedPeerRowsWhileVisibleStale() {
         val oldA = msg("507f1f77bcf86cd799439011", "old")
         val newB = msg("507f1f77bcf86cd799439013", "from peer")
