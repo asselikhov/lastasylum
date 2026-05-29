@@ -223,6 +223,9 @@ export class VoiceGateway {
     if (parsed.payload.length > MAX_VOICE_FRAME_BYTES) {
       throw new WsException('Invalid frame size');
     }
+    if (!(await this.overlayIngameNow(user.userId))) {
+      return;
+    }
     if (!this.tryRecordFrame(client.id)) {
       return;
     }

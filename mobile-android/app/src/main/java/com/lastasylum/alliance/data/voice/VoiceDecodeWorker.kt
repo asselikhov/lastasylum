@@ -4,11 +4,11 @@ import java.util.ArrayDeque
 
 /**
  * Decodes compressed voice frames off the socket thread.
- * Drops oldest queued frames when the bounded queue overflows.
+ * Per-user bounded queues with round-robin scheduling and config protection.
  */
 internal class VoiceDecodeWorker(
     private val onDecoded: (userId: String, codec: String, payload: ByteArray) -> Unit,
-    private val maxQueueSize: Int = 32,
+    private val maxFramesPerUser: Int = 8,
 ) {
     private data class CompressedFrame(
         val userId: String,
@@ -16,7 +16,9 @@ internal class VoiceDecodeWorker(
         val payload: ByteArray,
     )
 
-    private val queue = ArrayDeque<CompressedFrame>()
+    private val queuesByUser = HashMap<String, ArrayDeque<CompressedFrame>>()
+    private val rrOrder = ArrayDeque<String>()
+    private var rrIndex = 0
     private val lock = Object()
     @Volatile
     private var running = false
@@ -29,11 +31,11 @@ internal class VoiceDecodeWorker(
             {
                 while (running) {
                     val frame = synchronized(lock) {
-                        while (queue.isEmpty() && running) {
+                        while (!hasAnyFrameLocked() && running) {
                             lock.wait(50)
                         }
                         if (!running) return@Thread
-                        if (queue.isEmpty()) null else queue.removeFirst()
+                        pollNextFrameLocked()
                     } ?: continue
                     onDecoded(frame.userId, frame.codec, frame.payload)
                 }
@@ -48,11 +50,36 @@ internal class VoiceDecodeWorker(
     fun offer(userId: String, codec: String, payload: ByteArray) {
         if (!running) return
         synchronized(lock) {
-            while (queue.size >= maxQueueSize) {
-                queue.removeFirst()
+            val q = queuesByUser.getOrPut(userId) { ArrayDeque() }
+            val frame = CompressedFrame(userId, codec, payload.copyOf())
+            if (codec == VoiceOpusCodec.CODEC_OPUS_CONFIG) {
+                q.removeAll { it.codec == VoiceOpusCodec.CODEC_OPUS_CONFIG }
+                q.addFirst(frame)
+            } else {
+                while (q.size >= maxFramesPerUser && evictOldestOpus(q)) {
+                    // Drop oldest audio frames; never evict config.
+                }
+                if (q.size >= maxFramesPerUser) {
+                    return
+                }
+                q.addLast(frame)
             }
-            queue.addLast(CompressedFrame(userId, codec, payload.copyOf()))
+            if (!rrOrder.contains(userId)) {
+                rrOrder.addLast(userId)
+            }
             lock.notify()
+        }
+    }
+
+    fun removeUser(userId: String) {
+        synchronized(lock) {
+            queuesByUser.remove(userId)
+            rrOrder.remove(userId)
+            if (rrOrder.isEmpty()) {
+                rrIndex = 0
+            } else {
+                rrIndex %= rrOrder.size
+            }
         }
     }
 
@@ -60,10 +87,40 @@ internal class VoiceDecodeWorker(
         if (!running) return
         running = false
         synchronized(lock) {
-            queue.clear()
+            queuesByUser.clear()
+            rrOrder.clear()
+            rrIndex = 0
             lock.notifyAll()
         }
         thread?.join(400)
         thread = null
+    }
+
+    private fun hasAnyFrameLocked(): Boolean =
+        queuesByUser.values.any { it.isNotEmpty() }
+
+    private fun pollNextFrameLocked(): CompressedFrame? {
+        if (rrOrder.isEmpty()) return null
+        val size = rrOrder.size
+        for (i in 0 until size) {
+            val idx = (rrIndex + i) % rrOrder.size
+            val userId = rrOrder.elementAt(idx)
+            val q = queuesByUser[userId] ?: continue
+            if (q.isEmpty()) continue
+            rrIndex = (idx + 1) % rrOrder.size
+            return q.removeFirst()
+        }
+        return null
+    }
+
+    private fun evictOldestOpus(q: ArrayDeque<CompressedFrame>): Boolean {
+        val iter = q.iterator()
+        while (iter.hasNext()) {
+            if (iter.next().codec != VoiceOpusCodec.CODEC_OPUS_CONFIG) {
+                iter.remove()
+                return true
+            }
+        }
+        return false
     }
 }

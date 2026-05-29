@@ -39,11 +39,28 @@ class VoiceJitterBuffer(
         }
     }
 
+    /** True when audio is queued, pre-buffering, or PLC is still active. */
+    fun hasPendingAudio(): Boolean {
+        for ((userId, q) in queues) {
+            synchronized(q) {
+                if (q.isNotEmpty()) return true
+            }
+            if (playoutStarted[userId] == true &&
+                plcTicksByUser.getOrDefault(userId, 0) < PLC_MAX_TICKS &&
+                lastFrameByUser[userId] != null
+            ) {
+                return true
+            }
+        }
+        return false
+    }
+
     /**
      * Returns one mixed 20 ms frame, or null if still pre-buffering / no data.
      */
     fun pollMixedFrame(): ByteArray? {
         var anyReady = false
+        var activeSpeakers = 0
         val mix = ShortArray(VoiceAudioPipeline.FRAME_SAMPLES)
         for ((userId, q) in queues) {
             val frame = synchronized(q) {
@@ -68,6 +85,7 @@ class VoiceJitterBuffer(
                 }
             } ?: continue
             anyReady = true
+            activeSpeakers++
             var i = 0
             while (i + 1 < frame.size) {
                 val sample = (frame[i].toInt() and 0xff) or (frame[i + 1].toInt() shl 8)
@@ -84,6 +102,11 @@ class VoiceJitterBuffer(
             }
         }
         if (!anyReady) return null
+        if (activeSpeakers > 1) {
+            for (i in mix.indices) {
+                mix[i] = (mix[i].toInt() / activeSpeakers).toShort()
+            }
+        }
         val out = ByteArray(frameBytes)
         for (i in mix.indices) {
             val v = mix[i].toInt()

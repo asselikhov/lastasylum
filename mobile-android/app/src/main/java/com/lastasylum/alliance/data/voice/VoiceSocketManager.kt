@@ -30,7 +30,7 @@ class VoiceSocketManager {
     private var joinTimeoutRunnable: Runnable? = null
     @Volatile
     private var joinFailedListener: ((String) -> Unit)? = null
-    private val pendingUpstreamFrames = ArrayDeque<ByteArray>(8)
+    private val pendingUpstreamFrames = ArrayDeque<ByteArray>(16)
     /** Last toggles — included in voice:join on (re)connect so the server never stays at micOff/soundOff defaults. */
     private var lastMicOn: Boolean = false
     private var lastSoundOn: Boolean = false
@@ -149,15 +149,41 @@ class VoiceSocketManager {
         }
         val packet = VoiceWire.packUpstream(frameSeq++, codecByte, payload)
         if (!voiceJoined) {
-            synchronized(pendingUpstreamFrames) {
-                while (pendingUpstreamFrames.size >= 8) pendingUpstreamFrames.removeFirst()
-                pendingUpstreamFrames.addLast(packet)
-            }
+            enqueuePendingUpstream(packet)
             return
         }
         flushPendingUpstreamFrames()
         socket?.emit("voice:frame", packet)
     }
+
+    private fun enqueuePendingUpstream(packet: ByteArray) {
+        synchronized(pendingUpstreamFrames) {
+            if (isOpusConfigPacket(packet)) {
+                pendingUpstreamFrames.removeAll { isOpusConfigPacket(it) }
+                pendingUpstreamFrames.addLast(packet)
+                return
+            }
+            while (pendingUpstreamFrames.size >= PENDING_UPSTREAM_MAX && evictOldestPendingOpus()) {
+                // Drop oldest audio; keep config packets.
+            }
+            if (pendingUpstreamFrames.size >= PENDING_UPSTREAM_MAX) return
+            pendingUpstreamFrames.addLast(packet)
+        }
+    }
+
+    private fun evictOldestPendingOpus(): Boolean {
+        val iter = pendingUpstreamFrames.iterator()
+        while (iter.hasNext()) {
+            if (!isOpusConfigPacket(iter.next())) {
+                iter.remove()
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun isOpusConfigPacket(packet: ByteArray): Boolean =
+        packet.isNotEmpty() && packet[0] == VoiceWire.CODEC_OPUS_CONFIG
 
     private fun flushPendingUpstreamFrames() {
         val pending = synchronized(pendingUpstreamFrames) {
@@ -409,6 +435,7 @@ class VoiceSocketManager {
     companion object {
         private const val TAG = "VoiceSocket"
         private const val JOIN_TIMEOUT_MS = 15_000L
+        private const val PENDING_UPSTREAM_MAX = 16
     }
 }
 

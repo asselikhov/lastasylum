@@ -30,6 +30,7 @@ class VoiceAudioPipeline(
     private val captureRunning = AtomicBoolean(false)
     private var captureThread: Thread? = null
     private var audioRecord: AudioRecord? = null
+    private var captureEffects: VoiceCaptureEffects? = null
 
     private var audioTrack: AudioTrack? = null
     private val remoteMicOn = ConcurrentHashMap<String, Boolean>()
@@ -69,16 +70,24 @@ class VoiceAudioPipeline(
             record.release()
             return
         }
-        VoiceAudioEffects.attachToCapture(record)
+        captureEffects = VoiceAudioEffects.attachToCapture(record)
         audioRecord = record
         record.startRecording()
         captureThread = Thread(
             {
                 val frame = ByteArray(FRAME_BYTES_PCM)
                 var offset = 0
+                var emptyReads = 0
                 while (captureRunning.get()) {
                     val read = record.read(frame, offset, frame.size - offset)
-                    if (read <= 0) continue
+                    if (read <= 0) {
+                        emptyReads++
+                        if (emptyReads >= 3) {
+                            Thread.sleep(CAPTURE_READ_BACKOFF_MS)
+                        }
+                        continue
+                    }
+                    emptyReads = 0
                     offset += read
                     if (offset < frame.size) continue
                     offset = 0
@@ -104,6 +113,8 @@ class VoiceAudioPipeline(
         runCatching { audioRecord?.stop() }
         runCatching { audioRecord?.release() }
         audioRecord = null
+        captureEffects?.release()
+        captureEffects = null
         captureThread?.join(300)
         captureThread = null
     }
@@ -142,12 +153,15 @@ class VoiceAudioPipeline(
         } else {
             remoteMicOn.remove(userId)
             jitter.removeSpeaker(userId)
+            decodeWorker.removeUser(userId)
+            opus.removeDecoder(userId)
         }
     }
 
     fun removeRemotePeer(userId: String) {
         remoteMicOn.remove(userId)
         jitter.removeSpeaker(userId)
+        decodeWorker.removeUser(userId)
         opus.removeDecoder(userId)
     }
 
@@ -175,6 +189,17 @@ class VoiceAudioPipeline(
         audioTrack = null
         playThread?.join(400)
         playThread = null
+    }
+
+    private fun releasePlaybackFromThread(track: AudioTrack) {
+        playRunning.set(false)
+        runCatching { track.pause() }
+        runCatching { track.flush() }
+        runCatching { track.stop() }
+        runCatching { track.release() }
+        if (audioTrack === track) {
+            audioTrack = null
+        }
     }
 
     private fun ensurePlayback() {
@@ -224,9 +249,24 @@ class VoiceAudioPipeline(
                 val silence = ByteArray(FRAME_BYTES_PCM)
                 var nextFrameAtNs = System.nanoTime()
                 val resyncThresholdNs = FRAME_MS * 2L * 1_000_000L
+                var idleTicks = 0
                 while (playRunning.get()) {
-                    val mixed = jitter.pollMixedFrame() ?: silence
-                    track.write(mixed, 0, mixed.size)
+                    val polled = jitter.pollMixedFrame()
+                    if (polled == null && !jitter.hasPendingAudio()) {
+                        idleTicks++
+                        if (idleTicks >= IDLE_PLAYBACK_STOP_TICKS) {
+                            releasePlaybackFromThread(track)
+                            break
+                        }
+                    } else {
+                        idleTicks = 0
+                    }
+                    val mixed = polled ?: silence
+                    if (!writeFullTrack(track, mixed)) {
+                        Log.w(TAG, "AudioTrack write failed; will restart on next frame")
+                        releasePlaybackFromThread(track)
+                        break
+                    }
                     nextFrameAtNs += FRAME_MS * 1_000_000L
                     val now = System.nanoTime()
                     if (now - nextFrameAtNs > resyncThresholdNs) {
@@ -260,6 +300,8 @@ class VoiceAudioPipeline(
         const val FRAME_SAMPLES = SAMPLE_RATE_HZ * FRAME_MS / 1000
         const val FRAME_BYTES_PCM = FRAME_SAMPLES * 2
         private const val TAG = "VoiceAudioPipeline"
+        private const val CAPTURE_READ_BACKOFF_MS = 2L
+        private const val IDLE_PLAYBACK_STOP_TICKS = 75
 
         /** Pad/truncate decoder output to one 20 ms playout frame. */
         fun normalizePlayFrame(pcm: ByteArray, frameBytes: Int = FRAME_BYTES_PCM): ByteArray {
@@ -267,6 +309,22 @@ class VoiceAudioPipeline(
             val out = ByteArray(frameBytes)
             System.arraycopy(pcm, 0, out, 0, minOf(pcm.size, frameBytes))
             return out
+        }
+
+        fun writeFullTrack(track: AudioTrack, pcm: ByteArray): Boolean {
+            var offset = 0
+            while (offset < pcm.size) {
+                val written = track.write(pcm, offset, pcm.size - offset)
+                when {
+                    written > 0 -> offset += written
+                    written == 0 -> Thread.sleep(1)
+                    else -> {
+                        Log.w(TAG, "AudioTrack.write error: $written")
+                        return false
+                    }
+                }
+            }
+            return true
         }
     }
 }

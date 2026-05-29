@@ -270,8 +270,8 @@ class CombatOverlayService : Service() {
         isInGameOverlayUiActive() || overlayInGameProbeActive
 
     /**
-     * Голос на сервере ретранслируется только при свежем presence «ingame».
-     * Сначала дожидаемся HTTP-пинга и проверки player team, затем подключаем голос.
+     * Клиент шлёт presence «ingame» перед подключением; сервер дополнительно проверяет ingame у
+     * отправителя в relayFrame. Слушатели с soundOn могут быть вне игры.
      */
     private fun postOverlayVoiceAfterIngamePing(block: () -> Unit) {
         if (!canUseOverlayVoiceNow()) return
@@ -2493,12 +2493,18 @@ class CombatOverlayService : Service() {
     }
 
     private fun toggleOverlayTopRightVoiceExpanded() {
-        val expanding = !overlayTopRightHudFlow.value.voiceExpanded
-        overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
+        val cur = overlayTopRightHudFlow.value
+        val expanding = !cur.voiceExpanded
+        val session = voiceSession
+        val prefs = AppContainer.from(this).userSettingsPreferences
+        overlayTopRightHudFlow.value = cur.copy(
             voiceExpanded = expanding,
-            voiceSettingsVisible = if (expanding) overlayTopRightHudFlow.value.voiceSettingsVisible else false,
+            voiceSettingsVisible = if (expanding) cur.voiceSettingsVisible else false,
+            micOn = session?.micOn == true,
+            soundOn = session?.soundOn == true,
+            soundVolume = prefs.getOverlayVoiceSoundVolume(),
+            micVolume = prefs.getOverlayVoiceMicVolume(),
         )
-        refreshOverlayTopRightHudState()
     }
 
     private fun toggleOverlayVoiceSettingsFromHud() {

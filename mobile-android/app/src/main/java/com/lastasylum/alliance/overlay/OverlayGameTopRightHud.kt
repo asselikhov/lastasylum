@@ -1,8 +1,12 @@
 package com.lastasylum.alliance.overlay
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Mic
@@ -12,9 +16,15 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -46,53 +56,22 @@ fun OverlayGameTopRightHud(
     onVoiceSettingsDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    OverlayGameHudBar(
-        modifier = modifier,
-        horizontalAlignment = Alignment.End,
+    Box(
+        modifier = modifier
+            .widthIn(min = HudTopRightMinWidth)
+            .wrapContentSize(align = Alignment.TopEnd),
     ) {
-        OverlayGameHudChipRow {
-            OverlayGameHudChip(
-                icon = Icons.Outlined.Groups,
-                tint = Color(0xFF81C784),
-                badgeCount = state.teamJoinRequestCount,
-                contentDescription = if (state.teamJoinRequestCount > 0) {
-                    stringResource(
-                        R.string.overlay_hud_join_requests_cd,
-                        state.teamJoinRequestCount,
-                    )
-                } else {
-                    stringResource(
-                        R.string.overlay_hud_online_cd,
-                        state.onlineIngameCount,
-                    )
-                },
-                onClick = onOnlineClick,
-            )
-            OverlayGameHudChip(
-                painter = painterResource(R.drawable.ic_overlay_quick_commands),
-                tint = Color(0xFFFFB74D),
-                contentDescription = stringResource(R.string.overlay_cd_commands),
-                onClick = onQuickCommandsClick,
-            )
-            OverlayGameHudChip(
-                icon = Icons.Outlined.RecordVoiceOver,
-                tint = if (state.voiceExpanded || state.micOn || state.soundOn) {
-                    Color(0xFF7986CB)
-                } else {
-                    Color(0xFF9FA8DA)
-                },
-                contentDescription = stringResource(
-                    if (state.voiceExpanded) {
-                        R.string.overlay_voice_hub_collapse_cd
-                    } else {
-                        R.string.overlay_voice_hub_cd
-                    },
-                ),
-                onClick = onVoiceHubClick,
-            )
-        }
+        var mainBarHeightPx by remember { mutableIntStateOf(0) }
+        val density = LocalDensity.current
+        val voiceTopPadding = with(density) { mainBarHeightPx.toDp() } + HudRowSpacing
+
         if (state.voiceExpanded) {
-            Column(horizontalAlignment = Alignment.End) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = voiceTopPadding),
+                horizontalAlignment = Alignment.End,
+            ) {
                 OverlayGameHudChipColumn(horizontalAlignment = Alignment.End) {
                     OverlayGameHudChip(
                         icon = if (state.soundOn) {
@@ -141,6 +120,56 @@ fun OverlayGameTopRightHud(
                         onSoundVolumeChange = onSoundVolumeChange,
                         onMicVolumeChange = onMicVolumeChange,
                         onDismiss = onVoiceSettingsDismiss,
+                    )
+                }
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .onSizeChanged { mainBarHeightPx = it.height },
+        ) {
+            OverlayGameHudBar(horizontalAlignment = Alignment.End) {
+                OverlayGameHudChipRow {
+                    OverlayGameHudChip(
+                        icon = Icons.Outlined.Groups,
+                        tint = Color(0xFF81C784),
+                        badgeCount = state.teamJoinRequestCount,
+                        contentDescription = if (state.teamJoinRequestCount > 0) {
+                            stringResource(
+                                R.string.overlay_hud_join_requests_cd,
+                                state.teamJoinRequestCount,
+                            )
+                        } else {
+                            stringResource(
+                                R.string.overlay_hud_online_cd,
+                                state.onlineIngameCount,
+                            )
+                        },
+                        onClick = onOnlineClick,
+                    )
+                    OverlayGameHudChip(
+                        painter = painterResource(R.drawable.ic_overlay_quick_commands),
+                        tint = Color(0xFFFFB74D),
+                        contentDescription = stringResource(R.string.overlay_cd_commands),
+                        onClick = onQuickCommandsClick,
+                    )
+                    OverlayGameHudChip(
+                        icon = Icons.Outlined.RecordVoiceOver,
+                        tint = if (state.voiceExpanded || state.micOn || state.soundOn) {
+                            Color(0xFF7986CB)
+                        } else {
+                            Color(0xFF9FA8DA)
+                        },
+                        contentDescription = stringResource(
+                            if (state.voiceExpanded) {
+                                R.string.overlay_voice_hub_collapse_cd
+                            } else {
+                                R.string.overlay_voice_hub_cd
+                            },
+                        ),
+                        onClick = onVoiceHubClick,
                     )
                 }
             }

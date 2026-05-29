@@ -33,7 +33,9 @@ import androidx.compose.ui.unit.sp
 private val HudIconSize = 16.dp
 private val HudChipPaddingH = 6.dp
 private val HudChipPaddingV = 5.dp
-private val HudRowSpacing = 8.dp
+internal val HudRowSpacing = 8.dp
+/** Stable width for top-right HUD — matches voice settings panel so chips do not shift on expand. */
+internal val HudTopRightMinWidth = 280.dp
 private val HudChipBackground = Color(0xB310141E)
 private val HudChipCorner = 6.dp
 private val HudBadgeOverflowPaddingTop = 10.dp
