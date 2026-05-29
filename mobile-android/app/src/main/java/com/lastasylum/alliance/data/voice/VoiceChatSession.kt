@@ -61,7 +61,7 @@ class VoiceChatSession(
         audioPipeline.setRemotePeerMic(event.userId, true)
         remoteSpeechUntilMs[event.userId] = SystemClock.elapsedRealtime() + speechHoldMs
         scheduleSpeakerCountUpdate()
-        audioPipeline.enqueueRemoteFrame(event.userId, event.codec, event.payload)
+        audioPipeline.offerRemoteFrame(event.userId, event.codec, event.payload)
     }
 
     private val peerListener: (VoicePeerEvent) -> Unit = { event ->

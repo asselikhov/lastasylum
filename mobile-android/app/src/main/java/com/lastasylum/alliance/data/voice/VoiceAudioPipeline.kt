@@ -22,6 +22,11 @@ class VoiceAudioPipeline(
     private val opus = VoiceOpusCodec()
     private val vad = VoiceActivityDetector()
     private val jitter = VoiceJitterBuffer()
+    private val decodeWorker = VoiceDecodeWorker(
+        onDecoded = { userId, codec, payload ->
+            processRemoteFrame(userId, codec, payload)
+        },
+    )
     private val captureRunning = AtomicBoolean(false)
     private var captureThread: Thread? = null
     private var audioRecord: AudioRecord? = null
@@ -70,9 +75,13 @@ class VoiceAudioPipeline(
         captureThread = Thread(
             {
                 val frame = ByteArray(FRAME_BYTES_PCM)
+                var offset = 0
                 while (captureRunning.get()) {
-                    val read = record.read(frame, 0, frame.size)
-                    if (read < frame.size) continue
+                    val read = record.read(frame, offset, frame.size - offset)
+                    if (read <= 0) continue
+                    offset += read
+                    if (offset < frame.size) continue
+                    offset = 0
                     val speaking = vad.isSpeechEnergy(frame)
                     onLocalSpeechActivity(speaking)
                     // Mic toggle is the uplink gate; VAD is UI-only (AGC/quiet mics were dropping all speech).
@@ -103,8 +112,10 @@ class VoiceAudioPipeline(
         soundEnabled = enabled
         if (enabled) {
             if (opus.isSupported) opus.ensureDecoder()
+            decodeWorker.start()
             ensurePlayback()
         } else {
+            decodeWorker.stop()
             jitter.clear()
             stopPlayback()
         }
@@ -137,12 +148,18 @@ class VoiceAudioPipeline(
     fun removeRemotePeer(userId: String) {
         remoteMicOn.remove(userId)
         jitter.removeSpeaker(userId)
+        opus.removeDecoder(userId)
     }
 
-    fun enqueueRemoteFrame(userId: String, codec: String, payload: ByteArray) {
+    /** Enqueue compressed frame for async decode (socket thread safe). */
+    fun offerRemoteFrame(userId: String, codec: String, payload: ByteArray) {
         if (!soundEnabled) return
-        // Frames are only relayed when the sender has mic on; do not block on stale peer-state.
         remoteMicOn[userId] = true
+        decodeWorker.offer(userId, codec, payload)
+    }
+
+    private fun processRemoteFrame(userId: String, codec: String, payload: ByteArray) {
+        if (!soundEnabled) return
         val pcm = opus.decodeToPcm(userId, codec, payload) ?: return
         val frame = normalizePlayFrame(pcm)
         jitter.push(userId, VoicePcmGain.apply(frame, playbackGain))
@@ -169,6 +186,7 @@ class VoiceAudioPipeline(
             AudioFormat.CHANNEL_OUT_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
         )
+        val trackBufferBytes = max(minBuf, FRAME_BYTES_PCM * 3)
         val track = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             AudioTrack.Builder()
                 .setAudioAttributes(
@@ -185,7 +203,7 @@ class VoiceAudioPipeline(
                         .build(),
                 )
                 .setTransferMode(AudioTrack.MODE_STREAM)
-                .setBufferSizeInBytes(max(minBuf, FRAME_BYTES_PCM * 8))
+                .setBufferSizeInBytes(trackBufferBytes)
                 .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
                 .build()
         } else {
@@ -195,7 +213,7 @@ class VoiceAudioPipeline(
                 SAMPLE_RATE_HZ,
                 AudioFormat.CHANNEL_OUT_MONO,
                 AudioFormat.ENCODING_PCM_16BIT,
-                max(minBuf, FRAME_BYTES_PCM * 8),
+                trackBufferBytes,
                 AudioTrack.MODE_STREAM,
             )
         }
@@ -205,11 +223,16 @@ class VoiceAudioPipeline(
             {
                 val silence = ByteArray(FRAME_BYTES_PCM)
                 var nextFrameAtNs = System.nanoTime()
+                val resyncThresholdNs = FRAME_MS * 2L * 1_000_000L
                 while (playRunning.get()) {
                     val mixed = jitter.pollMixedFrame() ?: silence
                     track.write(mixed, 0, mixed.size)
                     nextFrameAtNs += FRAME_MS * 1_000_000L
-                    val waitMs = ((nextFrameAtNs - System.nanoTime()) / 1_000_000L).coerceIn(0L, FRAME_MS.toLong())
+                    val now = System.nanoTime()
+                    if (now - nextFrameAtNs > resyncThresholdNs) {
+                        nextFrameAtNs = now
+                    }
+                    val waitMs = ((nextFrameAtNs - now) / 1_000_000L).coerceIn(0L, FRAME_MS.toLong())
                     if (waitMs > 0L) {
                         Thread.sleep(waitMs)
                     }
@@ -224,6 +247,7 @@ class VoiceAudioPipeline(
 
     fun release() {
         stopCapture()
+        decodeWorker.stop()
         stopPlayback()
         jitter.clear()
         remoteMicOn.clear()

@@ -5,74 +5,21 @@ import android.media.MediaFormat
 import android.os.Build
 import android.util.Log
 import java.nio.ByteBuffer
+import java.util.concurrent.ConcurrentHashMap
 
 /** Opus encode/decode via MediaCodec (API 29+). */
 class VoiceOpusCodec {
     private var encoder: MediaCodec? = null
-    private var decoder: MediaCodec? = null
-    private var decoderConfigured = false
     private var encoderConfigBytes: ByteArray? = null
     private var encoderConfigSent = false
-    private val remoteConfigByUser = java.util.concurrent.ConcurrentHashMap<String, ByteArray>()
-    private var activeDecoderUserId: String? = null
+    private val remoteConfigByUser = ConcurrentHashMap<String, ByteArray>()
+    private val decodersByUser = ConcurrentHashMap<String, UserDecoder>()
 
     val isSupported: Boolean
         get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
 
-    /** Decoder for playback — works without a running mic / encoder. */
-    fun ensureDecoder(): Boolean {
-        if (!isSupported) return false
-        if (decoderConfigured && decoder != null) return true
-        return try {
-            val dec = decoder ?: MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_AUDIO_OPUS).also {
-                decoder = it
-            }
-            if (!decoderConfigured) {
-                val format = MediaFormat.createAudioFormat(
-                    MediaFormat.MIMETYPE_AUDIO_OPUS,
-                    VoiceAudioPipeline.SAMPLE_RATE_HZ,
-                    1,
-                )
-                dec.configure(format, null, null, 0)
-                dec.start()
-                decoderConfigured = true
-            }
-            true
-        } catch (e: Throwable) {
-            Log.e(TAG, "Opus decoder init failed", e)
-            releaseDecoder()
-            false
-        }
-    }
-
-    /**
-     * Apply sender Opus identification header (csd-0) before decoding their frames.
-     * Required when encoder runs on a different device than the decoder.
-     */
-    fun applyRemoteDecoderConfig(csd: ByteArray): Boolean {
-        if (!isSupported || csd.isEmpty()) return false
-        releaseDecoder()
-        return try {
-            val format = MediaFormat.createAudioFormat(
-                MediaFormat.MIMETYPE_AUDIO_OPUS,
-                VoiceAudioPipeline.SAMPLE_RATE_HZ,
-                1,
-            ).apply {
-                setByteBuffer("csd-0", ByteBuffer.wrap(csd))
-            }
-            val dec = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_AUDIO_OPUS).also {
-                decoder = it
-            }
-            dec.configure(format, null, null, 0)
-            dec.start()
-            decoderConfigured = true
-            true
-        } catch (e: Throwable) {
-            Log.e(TAG, "Opus decoder config failed", e)
-            releaseDecoder()
-            false
-        }
-    }
+    /** Playback works once remote Opus configs arrive; no global decoder needed. */
+    fun ensureDecoder(): Boolean = isSupported
 
     fun startEncoder() {
         if (!isSupported) return
@@ -99,7 +46,7 @@ class VoiceOpusCodec {
         }
     }
 
-    /** Starts encoder (capture) and ensures decoder is ready for playback. */
+    /** Starts encoder (capture) and marks decoder path ready for playback. */
     fun start() {
         startEncoder()
         ensureDecoder()
@@ -126,8 +73,7 @@ class VoiceOpusCodec {
             val info = MediaCodec.BufferInfo()
             drainEncoderOutputs(enc, info)?.let { return it }
 
-            val inIndex = enc.dequeueInputBuffer(ENCODE_TIMEOUT_US)
-            if (inIndex < 0) return null
+            val inIndex = dequeueInputWithRetry(enc, ENCODE_TIMEOUT_US) ?: return null
             val inBuf = enc.getInputBuffer(inIndex) ?: return null
             inBuf.clear()
             inBuf.put(pcm)
@@ -143,36 +89,61 @@ class VoiceOpusCodec {
         when (codec) {
             CODEC_OPUS_CONFIG -> {
                 remoteConfigByUser[userId] = payload.copyOf()
-                if (userId == activeDecoderUserId || activeDecoderUserId == null) {
-                    applyRemoteDecoderConfig(payload)
-                    activeDecoderUserId = userId
-                }
+                configureUserDecoder(userId, payload)
                 return null
             }
             CODEC_OPUS -> Unit
             else -> return null
         }
         if (!isSupported) return null
-        val config = remoteConfigByUser[userId]
-        if (config != null && activeDecoderUserId != userId) {
-            applyRemoteDecoderConfig(config)
-            activeDecoderUserId = userId
-        }
-        if (!ensureDecoder()) return null
-        val dec = decoder ?: return null
+        val dec = getOrCreateUserDecoder(userId) ?: return null
         return try {
             val info = MediaCodec.BufferInfo()
-            drainDecoderOutputs(dec, info)?.let { return it }
+            drainDecoderOutputs(dec.codec, info)?.let { return it }
 
-            val inIndex = dec.dequeueInputBuffer(DECODE_TIMEOUT_US)
-            if (inIndex < 0) return null
-            val inBuf = dec.getInputBuffer(inIndex) ?: return null
+            val inIndex = dequeueInputWithRetry(dec.codec, DECODE_TIMEOUT_US) ?: return null
+            val inBuf = dec.codec.getInputBuffer(inIndex) ?: return null
             inBuf.clear()
             inBuf.put(payload)
-            dec.queueInputBuffer(inIndex, 0, payload.size, 0, 0)
-            drainDecoderOutputs(dec, info)
+            dec.codec.queueInputBuffer(inIndex, 0, payload.size, 0, 0)
+            drainDecoderOutputs(dec.codec, info)
         } catch (e: Throwable) {
-            Log.w(TAG, "decode failed", e)
+            Log.w(TAG, "decode failed userId=$userId", e)
+            releaseUserDecoder(userId)
+            null
+        }
+    }
+
+    fun removeDecoder(userId: String) {
+        remoteConfigByUser.remove(userId)
+        releaseUserDecoder(userId)
+    }
+
+    private fun getOrCreateUserDecoder(userId: String): UserDecoder? {
+        decodersByUser[userId]?.let { return it }
+        val config = remoteConfigByUser[userId] ?: return null
+        return configureUserDecoder(userId, config)
+    }
+
+    private fun configureUserDecoder(userId: String, csd: ByteArray): UserDecoder? {
+        if (!isSupported || csd.isEmpty()) return null
+        releaseUserDecoder(userId)
+        return try {
+            val format = MediaFormat.createAudioFormat(
+                MediaFormat.MIMETYPE_AUDIO_OPUS,
+                VoiceAudioPipeline.SAMPLE_RATE_HZ,
+                1,
+            ).apply {
+                setByteBuffer("csd-0", ByteBuffer.wrap(csd))
+            }
+            val dec = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_AUDIO_OPUS)
+            dec.configure(format, null, null, 0)
+            dec.start()
+            UserDecoder(codec = dec, configured = true).also {
+                decodersByUser[userId] = it
+            }
+        } catch (e: Throwable) {
+            Log.e(TAG, "Opus decoder config failed userId=$userId", e)
             null
         }
     }
@@ -263,6 +234,14 @@ class VoiceOpusCodec {
         }
     }
 
+    private fun dequeueInputWithRetry(codec: MediaCodec, timeoutUs: Long): Int? {
+        var inIndex = codec.dequeueInputBuffer(timeoutUs)
+        if (inIndex < 0) {
+            inIndex = codec.dequeueInputBuffer(timeoutUs)
+        }
+        return if (inIndex < 0) null else inIndex
+    }
+
     private fun primeEncoder() {
         val silence = ByteArray(VoiceAudioPipeline.FRAME_BYTES_PCM)
         encodePcmFrame(silence)
@@ -270,11 +249,10 @@ class VoiceOpusCodec {
 
     fun release() {
         releaseEncoder()
-        releaseDecoder()
+        releaseAllDecoders()
         encoderConfigBytes = null
         encoderConfigSent = false
         remoteConfigByUser.clear()
-        activeDecoderUserId = null
     }
 
     private fun releaseEncoder() {
@@ -285,13 +263,22 @@ class VoiceOpusCodec {
         encoderConfigSent = false
     }
 
-    private fun releaseDecoder() {
-        runCatching { decoder?.stop() }
-        runCatching { decoder?.release() }
-        decoder = null
-        decoderConfigured = false
-        activeDecoderUserId = null
+    private fun releaseAllDecoders() {
+        for (userId in decodersByUser.keys.toList()) {
+            releaseUserDecoder(userId)
+        }
     }
+
+    private fun releaseUserDecoder(userId: String) {
+        val userDec = decodersByUser.remove(userId) ?: return
+        runCatching { userDec.codec.stop() }
+        runCatching { userDec.codec.release() }
+    }
+
+    private data class UserDecoder(
+        val codec: MediaCodec,
+        val configured: Boolean,
+    )
 
     data class EncodedFrame(val codec: String, val payload: ByteArray)
 
@@ -300,7 +287,7 @@ class VoiceOpusCodec {
         const val CODEC_PCM = "pcm"
         const val CODEC_OPUS_CONFIG = "opus-config"
         private const val TAG = "VoiceOpusCodec"
-        private const val ENCODE_TIMEOUT_US = 10_000L
-        private const val DECODE_TIMEOUT_US = 10_000L
+        private const val ENCODE_TIMEOUT_US = 25_000L
+        private const val DECODE_TIMEOUT_US = 25_000L
     }
 }

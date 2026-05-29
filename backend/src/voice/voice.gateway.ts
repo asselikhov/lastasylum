@@ -223,7 +223,9 @@ export class VoiceGateway {
     if (parsed.payload.length > MAX_VOICE_FRAME_BYTES) {
       throw new WsException('Invalid frame size');
     }
-    this.assertFrameRate(client.id);
+    if (!this.tryRecordFrame(client.id)) {
+      return;
+    }
 
     const downstream = packDownstreamFrame(
       user.userId,
@@ -389,14 +391,16 @@ export class VoiceGateway {
     };
   }
 
-  private assertFrameRate(socketId: string): void {
+  /** Returns false when the client exceeds the frame budget (frame is silently dropped). */
+  private tryRecordFrame(socketId: string): boolean {
     const now = Date.now();
     const prev = this.frameTimestamps.get(socketId) ?? [];
     const recent = prev.filter((t) => now - t < FRAME_WINDOW_MS);
     if (recent.length >= MAX_FRAMES_PER_WINDOW) {
-      throw new WsException('Voice frame rate exceeded');
+      return false;
     }
     recent.push(now);
     this.frameTimestamps.set(socketId, recent);
+    return true;
   }
 }

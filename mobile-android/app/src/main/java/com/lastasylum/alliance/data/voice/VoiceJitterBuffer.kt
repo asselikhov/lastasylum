@@ -1,26 +1,33 @@
 package com.lastasylum.alliance.data.voice
 
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.roundToInt
 
 /**
- * Per-speaker jitter queues with ~80 ms pre-buffer before playout starts.
+ * Per-speaker jitter queues with pre-buffer before playout starts.
  */
 class VoiceJitterBuffer(
     private val frameBytes: Int = VoiceAudioPipeline.FRAME_BYTES_PCM,
-    private val minFramesBeforeStart: Int = 3,
-    private val maxFramesPerSpeaker: Int = 8,
+    private val minFramesBeforeStart: Int = 2,
+    private val maxFramesPerSpeaker: Int = 12,
 ) {
     private val queues = ConcurrentHashMap<String, ArrayDeque<ByteArray>>()
     private val playoutStarted = ConcurrentHashMap<String, Boolean>()
+    private val lastFrameByUser = ConcurrentHashMap<String, ByteArray>()
+    private val plcTicksByUser = ConcurrentHashMap<String, Int>()
 
     fun clear() {
         queues.clear()
         playoutStarted.clear()
+        lastFrameByUser.clear()
+        plcTicksByUser.clear()
     }
 
     fun removeSpeaker(userId: String) {
         queues.remove(userId)
         playoutStarted.remove(userId)
+        lastFrameByUser.remove(userId)
+        plcTicksByUser.remove(userId)
     }
 
     fun push(userId: String, pcm: ByteArray) {
@@ -40,11 +47,25 @@ class VoiceJitterBuffer(
         val mix = ShortArray(VoiceAudioPipeline.FRAME_SAMPLES)
         for ((userId, q) in queues) {
             val frame = synchronized(q) {
-                if (q.isEmpty()) return@synchronized null
-                val started = playoutStarted[userId] == true
-                if (!started && q.size < minFramesBeforeStart) return@synchronized null
-                if (!started) playoutStarted[userId] = true
-                q.removeFirst()
+                if (q.isNotEmpty()) {
+                    val started = playoutStarted[userId] == true
+                    if (!started && q.size < minFramesBeforeStart) return@synchronized null
+                    if (!started) playoutStarted[userId] = true
+                    plcTicksByUser.remove(userId)
+                    q.removeFirst().also { lastFrameByUser[userId] = it.copyOf() }
+                } else if (playoutStarted[userId] == true) {
+                    val plcTick = plcTicksByUser.getOrDefault(userId, 0)
+                    if (plcTick < PLC_MAX_TICKS) {
+                        plcTicksByUser[userId] = plcTick + 1
+                        lastFrameByUser[userId]?.let { attenuateFrame(it) }
+                    } else {
+                        playoutStarted[userId] = false
+                        plcTicksByUser.remove(userId)
+                        null
+                    }
+                } else {
+                    null
+                }
             } ?: continue
             anyReady = true
             var i = 0
@@ -70,5 +91,24 @@ class VoiceJitterBuffer(
             out[i * 2 + 1] = ((v shr 8) and 0xff).toByte()
         }
         return out
+    }
+
+    private fun attenuateFrame(frame: ByteArray): ByteArray {
+        val out = frame.copyOf()
+        var i = 0
+        while (i + 1 < out.size) {
+            val sample = (out[i].toInt() and 0xff) or (out[i + 1].toInt() shl 8)
+            val attenuated = (sample * PLC_ATTENUATION).roundToInt()
+                .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+            out[i] = (attenuated and 0xff).toByte()
+            out[i + 1] = ((attenuated shr 8) and 0xff).toByte()
+            i += 2
+        }
+        return out
+    }
+
+    companion object {
+        private const val PLC_MAX_TICKS = 2
+        private const val PLC_ATTENUATION = 0.5f
     }
 }
