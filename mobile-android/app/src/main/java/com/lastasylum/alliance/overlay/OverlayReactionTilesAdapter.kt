@@ -24,6 +24,23 @@ internal class OverlayReactionTilesAdapter(
     private val items = mutableListOf<OverlayQuickReaction>()
     private val activeLotties = mutableListOf<LottieAnimationView>()
 
+    /** Cap looping Lottie/GIF previews in the grid — visible row can be 10+ tiles on 5 columns. */
+    private fun shouldPlayAnimatedPreview(position: Int): Boolean {
+        val reaction = items.getOrNull(position) ?: return false
+        if (reaction.lottieRawRes == null && reaction.gifDrawableRes == null) return false
+        var animatedRank = 0
+        for (i in 0..position) {
+            val item = items[i]
+            if (item.lottieRawRes != null || item.gifDrawableRes != null) {
+                if (i == position) {
+                    return animatedRank < MAX_CONCURRENT_TILE_ANIMATIONS
+                }
+                animatedRank++
+            }
+        }
+        return false
+    }
+
     fun submitList(next: List<OverlayQuickReaction>) {
         val diff = DiffUtil.calculateDiff(
             object : DiffUtil.Callback() {
@@ -72,12 +89,11 @@ internal class OverlayReactionTilesAdapter(
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
         val reaction = items[position]
-        val playLottie = reaction.lottieRawRes != null
-        val playGif = reaction.gifDrawableRes != null
+        val playAnimated = shouldPlayAnimatedPreview(position)
         holder.host.bindOverlayReactionTile(
             reaction = reaction,
             iconInnerPx = iconInnerPx,
-            playAnimatedPreview = playLottie || playGif,
+            playAnimatedPreview = playAnimated,
             onPick = { onPick(reaction) },
             onToggleFavorite = {
                 favorites.toggleFavorite(reaction.id)
@@ -91,7 +107,7 @@ internal class OverlayReactionTilesAdapter(
         )
         holder.host.background = cellBackground()
         val icon = holder.host.tag as? android.widget.ImageView
-        if (icon is LottieAnimationView && playLottie) {
+        if (icon is LottieAnimationView && playAnimated) {
             if (!activeLotties.contains(icon)) activeLotties.add(icon)
         }
         if (holder.host.isAttachedToWindow) {
@@ -121,6 +137,8 @@ internal class OverlayReactionTilesAdapter(
     class Holder(val host: FrameLayout) : RecyclerView.ViewHolder(host)
 
     companion object {
+        private const val MAX_CONCURRENT_TILE_ANIMATIONS = 4
+
         fun gridLayoutManager(context: Context, spanCount: Int): GridLayoutManager =
             GridLayoutManager(context, spanCount)
 

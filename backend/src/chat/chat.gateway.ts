@@ -26,6 +26,7 @@ import {
 import { Types } from 'mongoose';
 import { PushNotificationsService } from '../push/push-notifications.service';
 import { ChatAttachmentsService } from './chat-attachments.service';
+import { normalizeOverlayChatStickerReaction } from './overlay-sticker-reaction.util';
 
 /** Must match overlay reaction ids in Android OverlayQuickReactions.kt */
 const ALLOWED_OVERLAY_ANIMATION_REACTIONS = [
@@ -285,6 +286,8 @@ export class ChatGateway {
     if (r.startsWith(OVERLAY_TEXT_REACTION_PREFIX)) {
       return this.normalizeTextOverlayReaction(r) ?? 'heart';
     }
+    const chatSticker = normalizeOverlayChatStickerReaction(r);
+    if (chatSticker) return chatSticker;
     return ALLOWED_OVERLAY_REACTIONS.has(r) ? r : 'heart';
   }
 

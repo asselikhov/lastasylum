@@ -841,19 +841,26 @@ class CombatOverlayService : Service() {
 
     private val stripTickRunnable = Runnable {
         if (!isInGameOverlayUiActive() || !isOverlayShellActive()) {
+            cancelStripTick()
             return@Runnable
         }
-        val before = stripBuffer.visibleForPreview().size
-        if (before == 0) {
-            scheduleStripTick()
+        val previewBefore = stripBuffer.visibleForPreview().size
+        if (previewBefore == 0) {
+            stripBuffer.prune()
+            cancelStripTick()
             return@Runnable
         }
         stripBuffer.prune()
-        if (before != stripBuffer.visibleForPreview().size) {
+        val previewAfter = stripBuffer.visibleForPreview().size
+        if (previewBefore != previewAfter) {
             lastStripRenderSignature = 0
             scheduleRefreshOverlayChatStrip()
         }
-        scheduleStripTick()
+        if (previewAfter > 0) {
+            scheduleStripTick()
+        } else {
+            cancelStripTick()
+        }
     }
 
     private var stripUiCoalescePosted = false
@@ -1434,7 +1441,7 @@ class CombatOverlayService : Service() {
                         quickProbe == GameForegroundGate.QuickForegroundProbe.NEED_FULL_HEURISTICS -> true
                         quickProbe == null -> false
                         !stableInGameUi -> true
-                        stableGatePollTicks % 5 == 0 -> true
+                        stableGatePollTicks % 10 == 0 -> true
                         else -> false
                     }
                 val resumeComp = if (hasUsageAccess && targets.isNotEmpty()) {
@@ -3235,6 +3242,23 @@ class CombatOverlayService : Service() {
         )
     }
 
+    /** Prune TTL strip cards only while preview is non-empty (avoids 2.5s main-thread wakeups in idle match). */
+    private fun ensureStripPruneScheduled() {
+        if (!isOverlayChatStripEnabled()) {
+            cancelStripTick()
+            return
+        }
+        if (!isInGameOverlayUiActive() || !isOverlayShellActive()) {
+            cancelStripTick()
+            return
+        }
+        if (stripBuffer.visibleForPreview().isEmpty()) {
+            cancelStripTick()
+            return
+        }
+        scheduleStripTick()
+    }
+
     private fun scheduleStripTick() {
         mainHandler.removeCallbacks(stripTickRunnable)
         mainHandler.postDelayed(stripTickRunnable, STRIP_TICK_MS)
@@ -3265,6 +3289,7 @@ class CombatOverlayService : Service() {
         // Сразу снимаем зоны крестика, пока Compose не пересчитал ленту — иначе один кадр с «призрачными» rect блокирует игру.
         updateStripDismissScreenRects(emptyList())
         refreshOverlayChatStrip()
+        ensureStripPruneScheduled()
     }
 
     private fun handleOverlayMessageDeleted(event: com.lastasylum.alliance.data.chat.ChatMessageDeletedEvent) {
@@ -3962,6 +3987,7 @@ class CombatOverlayService : Service() {
                     scheduleRefreshOverlayChatStrip()
                 }
                 ensureStripWindowVisibleForRaidTraffic()
+                ensureStripPruneScheduled()
                 return
             }
             if (BuildConfig.DEBUG) {
@@ -4012,6 +4038,7 @@ class CombatOverlayService : Service() {
         }
         ensureOverlayMessageStripIfNeeded()
         ensureStripWindowVisibleForRaidTraffic()
+        ensureStripPruneScheduled()
     }
 
     private fun setStripPlainMessage(message: String, noticeId: String = OverlayStripNoticeIds.GENERIC) {
@@ -4041,6 +4068,7 @@ class CombatOverlayService : Service() {
         lastStripRenderSignature = 0
         refreshOverlayChatStripNow()
         ensureStripWindowVisibleForRaidTraffic()
+        ensureStripPruneScheduled()
     }
 
     private fun accessTokenOrNull(): String? =
@@ -4291,7 +4319,7 @@ class CombatOverlayService : Service() {
         refreshOverlayHubUnreadFromCache()
         refreshOverlayHubUnreadOnly()
         if (isOverlayChatStripEnabled()) {
-            scheduleStripTick()
+            ensureStripPruneScheduled()
         }
         resolveCachedAllianceHubRoomId()
     }

@@ -15,6 +15,11 @@ const STEM_CATALOGS: Record<string, ReadonlySet<string>> = {
   [STICKER_PACK_SOIDOW_CAT]: SOIDOW_CAT_STICKER_STEMS,
 };
 
+export function isKnownStickerStem(packKey: string, stem: string): boolean {
+  const catalog = STEM_CATALOGS[packKey];
+  return catalog?.has(stem) ?? false;
+}
+
 /** If the body is a sticker wire message, the stem must exist in that pack's catalog. */
 export function assertStickerPayload(text: string): void {
   const parsed = parseStickerOnlyMessage(text);

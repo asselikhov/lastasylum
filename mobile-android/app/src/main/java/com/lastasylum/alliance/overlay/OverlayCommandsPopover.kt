@@ -240,8 +240,14 @@ class OverlayCommandsPopover(
         val tick = object : Runnable {
             override fun run() {
                 if (menuScrim == null) return
-                ensureReactionPreviewLottiesPlaying()
-                mainHandler.postDelayed(this, REACTION_PREVIEW_KEEP_ALIVE_MS)
+                val lotties = reactionTilesAdapter?.activePreviewLotties().orEmpty()
+                val needsKick = lotties.any { it.isAttachedToWindow && !it.isAnimating }
+                if (needsKick) {
+                    ensureReactionPreviewLottiesPlaying()
+                }
+                if (menuScrim != null) {
+                    mainHandler.postDelayed(this, REACTION_PREVIEW_KEEP_ALIVE_MS)
+                }
             }
         }
         reactionPreviewKeepAliveRunnable = tick
@@ -776,22 +782,7 @@ class OverlayCommandsPopover(
                 ),
             )
         }
-        val reactionStickerPackTabsInner = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val reactionStickerPackTabsRow = HorizontalScrollView(context).apply {
-            isHorizontalScrollBarEnabled = false
-            isFillViewport = false
-            visibility = View.GONE
-            addView(
-                reactionStickerPackTabsInner,
-                ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                ),
-            )
-        }
+        val reactionStickerPackPicker = OverlayReactionStickerPackDropdown(context, dp)
 
         val reactionTabEmpty = labelText(
             context.getString(R.string.overlay_reactions_stickers_empty),
@@ -829,31 +820,20 @@ class OverlayCommandsPopover(
             }
         }
 
-        fun refreshStickerPackSubTabs() {
-            reactionStickerPackTabsInner.removeAllViews()
+        fun refreshStickerPackPicker() {
             val tabs = overlayStickerPackTabs(enabledStickerPackKeys)
             if (tabs.none { it.packKey == selectedStickerPackKey }) {
                 selectedStickerPackKey = OVERLAY_REACTION_STICKER_PACK
             }
-            tabs.forEach { tab ->
-                val chip = choiceChip(
-                    context.getString(tab.titleRes),
-                    selected = tab.packKey == selectedStickerPackKey,
-                )
-                chip.setOnClickListener {
-                    if (selectedStickerPackKey == tab.packKey) return@setOnClickListener
-                    selectedStickerPackKey = tab.packKey
-                    OverlayReactionBitmapCache.preloadStickerPack(context, tab.packKey)
-                    refreshStickerPackSubTabs()
-                    scheduleReactionTilesRebuild()
-                }
-                reactionStickerPackTabsInner.addView(
-                    chip,
-                    LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                    ).apply { marginEnd = dp(6) },
-                )
+            reactionStickerPackPicker.bind(tabs, selectedStickerPackKey)
+        }
+
+        reactionStickerPackPicker.onPackSelected = { packKey ->
+            if (selectedStickerPackKey != packKey) {
+                selectedStickerPackKey = packKey
+                OverlayReactionBitmapCache.preloadStickerPack(context, packKey)
+                refreshStickerPackPicker()
+                scheduleReactionTilesRebuild()
             }
         }
 
@@ -862,7 +842,7 @@ class OverlayCommandsPopover(
                 ?.enabledStickerPacks
                 ?.toSet()
                 ?: enabledStickerPackKeys
-            refreshStickerPackSubTabs()
+            refreshStickerPackPicker()
             val container = AppContainer.from(context)
             scope.launch {
                 val keys = OverlayTeamContextCache.load(
@@ -873,7 +853,7 @@ class OverlayCommandsPopover(
                     if (menuScrim == null) return@withContext
                     if (keys != enabledStickerPackKeys) {
                         enabledStickerPackKeys = keys
-                        refreshStickerPackSubTabs()
+                        refreshStickerPackPicker()
                         if (selectedReactionSubcategory == OverlayReactionCategory.STICKERS) {
                             scheduleReactionTilesRebuild()
                         }
@@ -1085,8 +1065,13 @@ class OverlayCommandsPopover(
             }
             hideKeyboard(reactionTextInput)
             val isStickersTab = selectedReactionSubcategory == OverlayReactionCategory.STICKERS
-            reactionStickerPackTabsRow.visibility =
-                if (isStickersTab) View.VISIBLE else View.GONE
+            if (isStickersTab) {
+                refreshStickerPackPicker()
+                reactionStickerPackPicker.root.visibility = View.VISIBLE
+            } else {
+                reactionStickerPackPicker.dismissPicker()
+                reactionStickerPackPicker.root.visibility = View.GONE
+            }
             val items = if (isStickersTab) {
                 overlayStickerReactionsForPack(
                     context,
@@ -1129,7 +1114,7 @@ class OverlayCommandsPopover(
         reactionSubStickerChip.setOnClickListener { selectReactionSubcategory(OverlayReactionCategory.STICKERS) }
         reactionSubTextChip.setOnClickListener { selectReactionSubcategory(OverlayReactionCategory.TEXT) }
 
-        refreshStickerPackSubTabs()
+        refreshStickerPackPicker()
         rebuildReactionTiles()
 
         val reactionRow = LinearLayout(context).apply {
@@ -1145,7 +1130,7 @@ class OverlayCommandsPopover(
                 ),
             )
             addView(
-                reactionStickerPackTabsRow,
+                reactionStickerPackPicker.root,
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -1814,6 +1799,6 @@ class OverlayCommandsPopover(
         /** Delay suppress release after coord dialog closes so game gate does not tear down HUD. */
         private const val POPOVER_SUPPRESS_RELEASE_DELAY_MS = 500L
         /** Р РµР¶Рµ Р±СѓРґРёС‚СЊ Lottie-РїСЂРµРІСЊСЋ вЂ” РЅР° РіР»Р°РІРЅРѕРј РїРѕС‚РѕРєРµ С‚РѕР»СЊРєРѕ РґРѕ [MAX_REACTION_LOTTIE_PREVIEWS_PLAYING] С€С‚СѓРє. */
-        const val REACTION_PREVIEW_KEEP_ALIVE_MS = 5_000L
+        const val REACTION_PREVIEW_KEEP_ALIVE_MS = 8_000L
     }
 }

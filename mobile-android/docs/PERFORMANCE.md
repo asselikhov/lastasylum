@@ -79,6 +79,14 @@ adb logcat -s CombatOverlayService OverlayRuntimeReceiver GameForegroundGate SR_
 - `overlayGate usage=false` — нет полного доступа к статистике в фоне.
 - `watchdog ensureStarted=false` — FGS не поднялся (батарея/OEM).
 
+## Оверлей в игре (ручная проверка FPS)
+
+1. **Матч без рейд-чата** — HUD/кнопки видны, лента пустая: не должно быть постоянных wakeups strip-tick (prune только при карточках).
+2. **Активный рейд-чат** — до 13 карточек Compose; при спаме смотреть jank; light strip в настройках снижает анимации.
+3. **Меню реакций открыто** — в сетке одновременно не более 4 looping Lottie/GIF; keep-alive 8s и только если анимация замерла (OEM).
+4. **Game gate** — в стабильном матче опрос ~3.5s; полный UsageStats refresh реже (каждый 10-й тик).
+5. Logcat `SR_OverlayDiag` (debug): gate/strip без частых `refreshOverlayChatStripNow` при неизменной сигнатуре.
+
 ## Чеклист OEM
 
 1. Поверх других приложений — SquadRelay  
