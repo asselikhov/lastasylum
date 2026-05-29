@@ -403,6 +403,12 @@ class ChatSocketManager {
                         messageId = payload.optString("messageId"),
                     )
                     if (event.userId.isBlank() || event.messageId.isBlank()) return@on
+                    if (com.lastasylum.alliance.BuildConfig.DEBUG) {
+                        android.util.Log.d(
+                            "ChatReadReceipt",
+                            "socket room:read user=${event.userId} room=${event.roomId} upto=${event.messageId}",
+                        )
+                    }
                     readListeners.forEach { l -> runCatching { l(event) } }
                 }
                 on("rooms:unread") { args ->

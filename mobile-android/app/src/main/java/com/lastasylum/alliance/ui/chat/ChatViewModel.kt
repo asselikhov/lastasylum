@@ -899,7 +899,8 @@ class ChatViewModel(
         if (overlayChatPanelVisible) {
             if (!CombatOverlayService.isOverlayChatTabActive()) return false
             return appInForeground ||
-                com.lastasylum.alliance.overlay.OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible
+                com.lastasylum.alliance.overlay.OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible ||
+                CombatOverlayService.isOverlayChatPanelOpenInGame()
         }
         if (!appInForeground) return false
         return isChatTabActive
@@ -2805,15 +2806,21 @@ class ChatViewModel(
             }
             return
         }
-        val eventRoomId = event.roomId.trim()
-        if (eventRoomId.isBlank()) return
-        val selected = _state.value.selectedRoomId?.trim().orEmpty()
-        val cur = otherReadUptoByRoom[eventRoomId]
-        if (isObjectIdNewer(event.messageId, cur)) {
-            otherReadUptoByRoom[eventRoomId] = event.messageId
-            if (selected == eventRoomId) {
-                _otherReadUptoMessageId.value = event.messageId
-            }
+        if (BuildConfig.DEBUG) {
+            android.util.Log.d(
+                "ChatReadReceipt",
+                "room:read peer=${event.userId} room=${event.roomId} upto=${event.messageId} " +
+                    "selected=${_state.value.selectedRoomId}",
+            )
+        }
+        val publishUpto = PeerReadCursorLogic.mergePeerReadEvent(
+            otherReadUptoByRoom = otherReadUptoByRoom,
+            selectedRoomId = _state.value.selectedRoomId,
+            event = event,
+            currentUserId = currentUserId,
+        )
+        if (publishUpto != null) {
+            _otherReadUptoMessageId.value = publishUpto
         }
     }
 

@@ -343,11 +343,7 @@ private fun TeamForumListRoute(
     fun applyTopicRows(rows: List<TeamForumTopicDto>) {
         topics.clear()
         hydrateReadCursorsFromTopics(rows)
-        topics.addAll(
-            rows.map { topic ->
-                topic.copy(unreadCount = effectiveTopicUnread(topic))
-            },
-        )
+        topics.addAll(rows)
         rows.forEach { t -> topicTitles[t.id] = t.title }
         rows.filter { topic ->
             topic.unreadCount > 0 && effectiveTopicUnread(topic) == 0

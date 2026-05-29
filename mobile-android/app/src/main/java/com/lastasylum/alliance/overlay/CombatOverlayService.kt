@@ -85,6 +85,7 @@ import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.displayedUnreadCount
 import com.lastasylum.alliance.data.effectiveUnreadCount
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.chat.isCompactReactionSocketUpdate
 import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
 import com.lastasylum.alliance.data.chat.ChatSessionCache
@@ -962,6 +963,30 @@ class CombatOverlayService : Service() {
 
     private var hubUnreadLastBumpAtMs: Long = 0L
 
+    private fun isAllianceHubLocallyReadSuppressedNow(): Boolean {
+        val rooms = ChatSessionCache.getFreshRooms() ?: return false
+        val localRead = AppContainer.from(this).chatRoomPreferences.loadAllLastReadMessageIds()
+        return ChatUnreadCounts.isAllianceHubLocallyReadSuppressed(rooms, localRead)
+    }
+
+    private fun allianceHubHudUnreadFromRooms(
+        rooms: List<ChatRoomDto>,
+        optimisticFloor: Int = hubUnreadOptimisticFloor,
+        previouslyDisplayed: Int = overlayStatusHudFlow.value.allianceChatUnread,
+    ): Int {
+        val localRead = AppContainer.from(this).chatRoomPreferences.loadAllLastReadMessageIds()
+        if (ChatUnreadCounts.isAllianceHubLocallyReadSuppressed(rooms, localRead)) {
+            hubUnreadOptimisticFloor = 0
+            return 0
+        }
+        return ChatUnreadCounts.overlayAllianceHubBadge(
+            rooms = rooms,
+            localReadByRoom = localRead,
+            optimisticFloor = optimisticFloor,
+            previouslyDisplayed = previouslyDisplayed,
+        )
+    }
+
     /** After raid send / quick commands — block game-gate dismiss that removes HUD windows. */
     @Volatile
     private var overlayUiHoldUntilMs: Long = 0L
@@ -1689,31 +1714,18 @@ class CombatOverlayService : Service() {
                     )
                 }.getOrElse { OverlayGameStatusHudState() }
                 val hubDisplayed = if (rooms != null) {
-                    val localRead = container.chatRoomPreferences.loadAllLastReadMessageIds()
-                    ChatUnreadCounts.overlayAllianceHubBadge(
-                        rooms = rooms,
-                        localReadByRoom = localRead,
-                        optimisticFloor = hubUnreadOptimisticFloor,
-                        previouslyDisplayed = overlayStatusHudFlow.value.allianceChatUnread,
-                    ).also { merged ->
-                        if (merged <= 0) {
-                            val locallyRead = ChatUnreadCounts.isAllianceHubLocallyReadSuppressed(
-                                rooms,
-                                localRead,
-                            )
-                            if (locallyRead) {
-                                hubUnreadOptimisticFloor = 0
-                            }
-                        }
-                    }
+                    allianceHubHudUnreadFromRooms(rooms)
                 } else {
                     state.allianceChatUnread
                 }
                 val prevHud = overlayStatusHudFlow.value
                 val refreshTeamInboxBadges = force || refreshNewsForum
-                val hubBumpGraceActive = hubUnreadOptimisticFloor > 0 &&
+                val hubLocallyRead = rooms != null && isAllianceHubLocallyReadSuppressedNow()
+                val hubBumpGraceActive = !hubLocallyRead &&
+                    hubUnreadOptimisticFloor > 0 &&
                     System.currentTimeMillis() - hubUnreadLastBumpAtMs < HUB_UNREAD_RECONCILE_GRACE_MS
                 val hubMerged = when {
+                    hubLocallyRead -> 0
                     hubBumpGraceActive || shouldDeferHubUnreadReconcile() ->
                         maxOf(hubDisplayed, hubUnreadOptimisticFloor)
                     rooms != null -> hubDisplayed
@@ -1805,6 +1817,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun shouldDeferHubUnreadReconcile(): Boolean {
+        if (isAllianceHubLocallyReadSuppressedNow()) return false
         if (hubUnreadOptimisticFloor <= 0) return false
         return System.currentTimeMillis() - hubUnreadLastBumpAtMs < HUB_UNREAD_RECONCILE_GRACE_MS
     }
@@ -1987,15 +2000,11 @@ class CombatOverlayService : Service() {
     ) {
         val effective = serverEffectiveCount.coerceAtLeast(0)
         if (effective <= 0) {
-            val rooms = ChatSessionCache.getFreshRooms()
-            if (rooms != null) {
-                val localRead = AppContainer.from(this).chatRoomPreferences.loadAllLastReadMessageIds()
-                if (ChatUnreadCounts.isAllianceHubLocallyReadSuppressed(rooms, localRead)) {
-                    hubUnreadOptimisticFloor = 0
-                    applyAllianceHubUnreadCount(0)
-                    patchHubUnreadInSessionCacheAfterLocalRead()
-                    return
-                }
+            if (isAllianceHubLocallyReadSuppressedNow()) {
+                hubUnreadOptimisticFloor = 0
+                applyAllianceHubUnreadCount(0)
+                patchHubUnreadInSessionCacheAfterLocalRead()
+                return
             }
             if (hubUnreadOptimisticFloor > 0) {
                 val displayed = maxOf(
@@ -2012,13 +2021,7 @@ class CombatOverlayService : Service() {
         }
         val rooms = ChatSessionCache.getFreshRooms()
         val merged = if (rooms != null) {
-            val localRead = AppContainer.from(this).chatRoomPreferences.loadAllLastReadMessageIds()
-            ChatUnreadCounts.overlayAllianceHubBadge(
-                rooms = rooms,
-                localReadByRoom = localRead,
-                optimisticFloor = hubUnreadOptimisticFloor,
-                previouslyDisplayed = overlayStatusHudFlow.value.allianceChatUnread,
-            )
+            allianceHubHudUnreadFromRooms(rooms)
         } else {
             displayedUnreadCount(
                 effectiveUnread = effective,
@@ -2052,6 +2055,12 @@ class CombatOverlayService : Service() {
         serviceScope.launch(Dispatchers.IO) {
             val counts = fetchAllianceHubUnreadCounts() ?: return@launch
             mainHandler.post {
+                if (isAllianceHubLocallyReadSuppressedNow()) {
+                    clearHubUnreadOptimisticState()
+                    applyAllianceHubUnreadCount(0)
+                    patchHubUnreadInSessionCacheAfterLocalRead()
+                    return@post
+                }
                 if (!isInGameOverlayUiActive() && counts.first > 0) {
                     hubUnreadOptimisticFloor = maxOf(hubUnreadOptimisticFloor, counts.first)
                     return@post
@@ -2135,12 +2144,7 @@ class CombatOverlayService : Service() {
 
         val rooms = ChatSessionCache.getFreshRooms()
         val displayed = if (rooms != null) {
-            ChatUnreadCounts.overlayAllianceHubBadge(
-                rooms = rooms,
-                localReadByRoom = container.chatRoomPreferences.loadAllLastReadMessageIds(),
-                optimisticFloor = hubUnreadOptimisticFloor,
-                previouslyDisplayed = overlayStatusHudFlow.value.allianceChatUnread,
-            )
+            allianceHubHudUnreadFromRooms(rooms)
         } else {
             displayedUnreadCount(
                 effectiveUnread = serverUnread,
@@ -2343,6 +2347,9 @@ class CombatOverlayService : Service() {
         clearHubUnreadOptimisticState()
         applyAllianceHubUnreadCount(0)
         patchHubUnreadInSessionCache(0, messageId)
+        mainHandler.removeCallbacks(hudBadgeRefreshRunnable)
+        hudBadgeRefreshPosted = false
+        pendingHubHudRefresh = false
         activityScopedChatViewModel?.let { vm ->
             mainHandler.post { vm.syncRoomsFromServer() }
         }
@@ -3454,6 +3461,8 @@ class CombatOverlayService : Service() {
 
     private fun shouldIngestInboundRaidStrip(): Boolean =
         OverlayRaidStripIngestPolicy.shouldIngestInbound(
+            overlayRealtimeListenerActive = overlayMessageListener != null,
+            overlayStripEnabled = isOverlayChatStripEnabled(),
             overlayIngamePresenceActive = overlayIngamePresenceActive,
             stripEligible = isOverlayRaidStripEligible(),
         )
@@ -4417,7 +4426,11 @@ class CombatOverlayService : Service() {
                         Log.d(
                             OVERLAY_DIAG_TAG,
                             "stripDrop reason=not_eligible id=${normalized._id} self=$isSelf " +
-                                "ingamePresence=$overlayIngamePresenceActive",
+                                "listener=${overlayMessageListener != null} " +
+                                "stripEnabled=${isOverlayChatStripEnabled()} " +
+                                "ingamePresence=$overlayIngamePresenceActive " +
+                                "stripEligible=${isOverlayRaidStripEligible()} " +
+                                "inGameUi=${isInGameOverlayUiActive()}",
                         )
                     }
                     if (!isSelf && !activityChatViewModelHandlesUnread()) {
@@ -5358,6 +5371,14 @@ class CombatOverlayService : Service() {
 
         /** True when overlay team panel is on the Chat tab (not Team news/forum). */
         fun isOverlayChatTabActive(): Boolean = runningInstance?.overlayChatTeamTabIndex == 0
+
+        /** Chat tab open in overlay HUD while in-game — enables mark-read and ✓✓ for senders. */
+        fun isOverlayChatPanelOpenInGame(): Boolean {
+            val service = runningInstance ?: return false
+            return service.overlayChatTeamPanelVisible &&
+                service.overlayChatTeamTabIndex == 0 &&
+                service.isInGameOverlayUiActive()
+        }
 
         /** Reset hub mail chip optimistic floor after admin chat wipe. */
         fun clearHubUnreadState() {

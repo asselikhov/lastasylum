@@ -58,14 +58,15 @@ fun ForumTopicFeedCard(
     menu: @Composable () -> Unit = {},
 ) {
     val accent = ForumTopicCardTokens.accentForIndex(listIndex)
-    val unreadCount = displayUnreadCount ?: topic.unreadCount
-    val hasUnread = unreadCount > 0
-    val activityLevel = ForumTopicCardTokens.activityLevel(unreadCount, topic.messageCount)
-    val metaDesc = remember(topic.id, topic.title, topic.messageCount, unreadCount, messageMeta) {
+    val badgeUnread = (displayUnreadCount ?: topic.unreadCount).coerceAtLeast(0)
+    val activityUnread = maxOf(topic.unreadCount.coerceAtLeast(0), badgeUnread)
+    val hasUnread = badgeUnread > 0
+    val activityLevel = ForumTopicCardTokens.activityLevel(activityUnread, topic.messageCount)
+    val metaDesc = remember(topic.id, topic.title, topic.messageCount, badgeUnread, messageMeta) {
         buildString {
             append(topic.title)
             if (topic.messageCount > 0) append(", ${topic.messageCount} сообщений")
-            if (hasUnread) append(", непрочитано: $unreadCount")
+            if (hasUnread) append(", непрочитано: $badgeUnread")
             if (messageMeta.isNotBlank()) append(", $messageMeta")
         }
     }
@@ -109,13 +110,13 @@ fun ForumTopicFeedCard(
                         modifier = Modifier.weight(1f),
                     )
                     if (hasUnread) {
-                        ForumTopicUnreadBadge(count = unreadCount)
+                        ForumTopicUnreadBadge(count = badgeUnread)
                     }
                     menu()
                 }
                 ForumTopicTacticalMetaRow(
                     messageCount = topic.messageCount,
-                    unreadCount = unreadCount,
+                    unreadCount = badgeUnread,
                 )
                 val activity = messageMeta.trim()
                 if (activity.isNotBlank() && activity != "—") {
