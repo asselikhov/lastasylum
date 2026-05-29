@@ -1,10 +1,14 @@
 package com.lastasylum.alliance.overlay
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MicOff
 import androidx.compose.material.icons.outlined.RecordVoiceOver
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.runtime.Composable
@@ -13,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
 
 data class OverlayGameTopRightHudState(
@@ -22,6 +27,9 @@ data class OverlayGameTopRightHudState(
     val micOn: Boolean = false,
     val soundOn: Boolean = false,
     val voiceExpanded: Boolean = false,
+    val voiceSettingsVisible: Boolean = false,
+    val soundVolume: Float = 1f,
+    val micVolume: Float = 1f,
 )
 
 @Composable
@@ -32,6 +40,10 @@ fun OverlayGameTopRightHud(
     onVoiceHubClick: () -> Unit,
     onMicClick: () -> Unit,
     onSoundClick: () -> Unit,
+    onVoiceSettingsClick: () -> Unit,
+    onSoundVolumeChange: (Float) -> Unit,
+    onMicVolumeChange: (Float) -> Unit,
+    onVoiceSettingsDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     OverlayGameHudBar(
@@ -80,35 +92,57 @@ fun OverlayGameTopRightHud(
             )
         }
         if (state.voiceExpanded) {
-            OverlayGameHudChipColumn(horizontalAlignment = Alignment.End) {
-                OverlayGameHudChip(
-                    icon = if (state.soundOn) {
-                        Icons.AutoMirrored.Outlined.VolumeUp
-                    } else {
-                        Icons.AutoMirrored.Outlined.VolumeOff
-                    },
-                    tint = if (state.soundOn) HudVoiceActiveGreen else HudVoiceInactiveTint,
-                    contentDescription = stringResource(
-                        if (state.soundOn) {
-                            R.string.overlay_voice_sound_on_cd
+            Column(horizontalAlignment = Alignment.End) {
+                OverlayGameHudChipColumn(horizontalAlignment = Alignment.End) {
+                    OverlayGameHudChip(
+                        icon = if (state.soundOn) {
+                            Icons.AutoMirrored.Outlined.VolumeUp
                         } else {
-                            R.string.overlay_voice_sound_off_cd
+                            Icons.AutoMirrored.Outlined.VolumeOff
                         },
-                    ),
-                    onClick = onSoundClick,
-                )
-                OverlayGameHudChip(
-                    icon = if (state.micOn) Icons.Outlined.Mic else Icons.Outlined.MicOff,
-                    tint = if (state.micOn) HudVoiceActiveGreen else HudVoiceInactiveTint,
-                    contentDescription = stringResource(
-                        if (state.micOn) {
-                            R.string.overlay_voice_mic_on_cd
+                        tint = if (state.soundOn) HudVoiceActiveGreen else HudVoiceInactiveTint,
+                        contentDescription = stringResource(
+                            if (state.soundOn) {
+                                R.string.overlay_voice_sound_on_cd
+                            } else {
+                                R.string.overlay_voice_sound_off_cd
+                            },
+                        ),
+                        onClick = onSoundClick,
+                    )
+                    OverlayGameHudChip(
+                        icon = if (state.micOn) Icons.Outlined.Mic else Icons.Outlined.MicOff,
+                        tint = if (state.micOn) HudVoiceActiveGreen else HudVoiceInactiveTint,
+                        contentDescription = stringResource(
+                            if (state.micOn) {
+                                R.string.overlay_voice_mic_on_cd
+                            } else {
+                                R.string.overlay_voice_mic_off_cd
+                            },
+                        ),
+                        onClick = onMicClick,
+                    )
+                    OverlayGameHudChip(
+                        icon = Icons.Outlined.Settings,
+                        tint = if (state.voiceSettingsVisible) {
+                            Color(0xFF7986CB)
                         } else {
-                            R.string.overlay_voice_mic_off_cd
+                            Color(0xFF9FA8DA)
                         },
-                    ),
-                    onClick = onMicClick,
-                )
+                        contentDescription = stringResource(R.string.overlay_voice_settings_cd),
+                        onClick = onVoiceSettingsClick,
+                    )
+                }
+                if (state.voiceSettingsVisible) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OverlayVoiceSettingsPanel(
+                        soundVolume = state.soundVolume,
+                        micVolume = state.micVolume,
+                        onSoundVolumeChange = onSoundVolumeChange,
+                        onMicVolumeChange = onMicVolumeChange,
+                        onDismiss = onVoiceSettingsDismiss,
+                    )
+                }
             }
         }
     }

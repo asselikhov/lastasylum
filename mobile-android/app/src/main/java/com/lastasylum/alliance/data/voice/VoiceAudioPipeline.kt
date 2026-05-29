@@ -32,6 +32,10 @@ class VoiceAudioPipeline(
     private val playRunning = AtomicBoolean(false)
     @Volatile
     private var soundEnabled = false
+    @Volatile
+    private var playbackGain = 1f
+    @Volatile
+    private var captureGain = 1f
 
     fun startCapture() {
         if (!opus.isSupported) {
@@ -72,6 +76,7 @@ class VoiceAudioPipeline(
                     val speaking = vad.isSpeechEnergy(frame)
                     onLocalSpeechActivity(speaking)
                     // Mic toggle is the uplink gate; VAD is UI-only (AGC/quiet mics were dropping all speech).
+                    VoicePcmGain.applyInPlace(frame, captureGain)
                     val encoded = opus.encodePcmFrame(frame) ?: continue
                     onEncodedFrame(encoded)
                 }
@@ -105,6 +110,14 @@ class VoiceAudioPipeline(
         }
     }
 
+    fun setPlaybackGain(gain: Float) {
+        playbackGain = gain.coerceIn(0f, 2f)
+    }
+
+    fun setCaptureGain(gain: Float) {
+        captureGain = gain.coerceIn(0f, 2f)
+    }
+
     fun setRemotePeerMic(userId: String, micOn: Boolean) {
         if (micOn) {
             remoteMicOn[userId] = true
@@ -124,7 +137,8 @@ class VoiceAudioPipeline(
         // Frames are only relayed when the sender has mic on; do not block on stale peer-state.
         remoteMicOn[userId] = true
         val pcm = opus.decodeToPcm(codec, payload) ?: return
-        jitter.push(userId, normalizePlayFrame(pcm))
+        val frame = normalizePlayFrame(pcm)
+        jitter.push(userId, VoicePcmGain.apply(frame, playbackGain))
         ensurePlayback()
     }
 

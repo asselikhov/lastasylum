@@ -2483,9 +2483,12 @@ class CombatOverlayService : Service() {
 
     private fun refreshOverlayTopRightHudState() {
         val session = voiceSession
+        val prefs = AppContainer.from(this).userSettingsPreferences
         overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
             micOn = session?.micOn == true,
             soundOn = session?.soundOn == true,
+            soundVolume = prefs.getOverlayVoiceSoundVolume(),
+            micVolume = prefs.getOverlayVoiceMicVolume(),
         )
     }
 
@@ -2493,8 +2496,36 @@ class CombatOverlayService : Service() {
         val expanding = !overlayTopRightHudFlow.value.voiceExpanded
         overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
             voiceExpanded = expanding,
+            voiceSettingsVisible = if (expanding) overlayTopRightHudFlow.value.voiceSettingsVisible else false,
         )
         refreshOverlayTopRightHudState()
+    }
+
+    private fun toggleOverlayVoiceSettingsFromHud() {
+        overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
+            voiceSettingsVisible = !overlayTopRightHudFlow.value.voiceSettingsVisible,
+        )
+    }
+
+    private fun dismissOverlayVoiceSettingsFromHud() {
+        if (!overlayTopRightHudFlow.value.voiceSettingsVisible) return
+        overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
+            voiceSettingsVisible = false,
+        )
+    }
+
+    private fun setOverlayVoiceSoundVolumeFromHud(level: Float) {
+        val prefs = AppContainer.from(this).userSettingsPreferences
+        prefs.setOverlayVoiceSoundVolume(level)
+        voiceSession?.setPlaybackVolume(level)
+        overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(soundVolume = level)
+    }
+
+    private fun setOverlayVoiceMicVolumeFromHud(level: Float) {
+        val prefs = AppContainer.from(this).userSettingsPreferences
+        prefs.setOverlayVoiceMicVolume(level)
+        voiceSession?.setCaptureVolume(level)
+        overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(micVolume = level)
     }
 
     private fun openOverlayQuickCommandsFromHud() {
@@ -2703,6 +2734,10 @@ class CombatOverlayService : Service() {
                         onVoiceHubClick = { toggleOverlayTopRightVoiceExpanded() },
                         onMicClick = { toggleOverlayVoiceMicFromHud() },
                         onSoundClick = { toggleOverlayVoiceSoundFromHud() },
+                        onVoiceSettingsClick = { toggleOverlayVoiceSettingsFromHud() },
+                        onSoundVolumeChange = { setOverlayVoiceSoundVolumeFromHud(it) },
+                        onMicVolumeChange = { setOverlayVoiceMicVolumeFromHud(it) },
+                        onVoiceSettingsDismiss = { dismissOverlayVoiceSettingsFromHud() },
                     )
                 }
             }
@@ -2757,6 +2792,7 @@ class CombatOverlayService : Service() {
         stopOverlayVoice()
         overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
             voiceExpanded = false,
+            voiceSettingsVisible = false,
         )
         refreshOverlayTopRightHudState()
     }
@@ -5123,7 +5159,10 @@ class CombatOverlayService : Service() {
         voiceSession?.stop()
         voiceSession = null
         AppContainer.from(this).overlayVoiceSession = null
-        overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(voiceExpanded = false)
+        overlayTopRightHudFlow.value = overlayTopRightHudFlow.value.copy(
+            voiceExpanded = false,
+            voiceSettingsVisible = false,
+        )
         refreshOverlayTopRightHudState()
         updateVoiceForegroundService(false)
     }

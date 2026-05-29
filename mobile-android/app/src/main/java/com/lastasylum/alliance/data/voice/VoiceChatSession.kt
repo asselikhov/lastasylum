@@ -101,6 +101,7 @@ class VoiceChatSession(
             socketManager.addFrameListener(frameListener)
             socketManager.addPeerListener(peerListener)
             audioPipeline.setSoundEnabled(soundOn)
+            applyVolumeFromPrefs()
             enterCommunicationAudioMode()
             socketManager.connect(
                 baseUrl = BuildConfig.API_BASE_URL,
@@ -162,6 +163,29 @@ class VoiceChatSession(
         audioPipeline.setSoundEnabled(soundOn)
         notifyState()
         publishVoiceStateToServer()
+    }
+
+    fun setPlaybackVolume(level: Float) {
+        val clamped = level.coerceIn(
+            UserSettingsPreferences.OVERLAY_VOICE_VOLUME_MIN,
+            UserSettingsPreferences.OVERLAY_VOICE_VOLUME_MAX,
+        )
+        userSettings.setOverlayVoiceSoundVolume(clamped)
+        audioPipeline.setPlaybackGain(clamped)
+    }
+
+    fun setCaptureVolume(level: Float) {
+        val clamped = level.coerceIn(
+            UserSettingsPreferences.OVERLAY_VOICE_VOLUME_MIN,
+            UserSettingsPreferences.OVERLAY_VOICE_VOLUME_MAX,
+        )
+        userSettings.setOverlayVoiceMicVolume(clamped)
+        audioPipeline.setCaptureGain(clamped)
+    }
+
+    private fun applyVolumeFromPrefs() {
+        audioPipeline.setPlaybackGain(userSettings.getOverlayVoiceSoundVolume())
+        audioPipeline.setCaptureGain(userSettings.getOverlayVoiceMicVolume())
     }
 
     fun whenVoiceReady(block: () -> Unit) {

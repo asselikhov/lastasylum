@@ -134,6 +134,33 @@ class UserSettingsPreferences(context: Context) {
         prefs.edit().putBoolean(KEY_OVERLAY_VOICE_MIC, value).apply()
     }
 
+    /** Громкость приёма голоса союзников (0…1.5, 1 = 100%). */
+    fun getOverlayVoiceSoundVolume(): Float =
+        clampOverlayVoiceVolume(
+            prefs.getFloat(KEY_OVERLAY_VOICE_SOUND_VOLUME, OVERLAY_VOICE_VOLUME_DEFAULT),
+        )
+
+    fun setOverlayVoiceSoundVolume(value: Float) {
+        prefs.edit()
+            .putFloat(KEY_OVERLAY_VOICE_SOUND_VOLUME, clampOverlayVoiceVolume(value))
+            .apply()
+    }
+
+    /** Громкость передачи микрофона (0…1.5, 1 = 100%). */
+    fun getOverlayVoiceMicVolume(): Float =
+        clampOverlayVoiceVolume(
+            prefs.getFloat(KEY_OVERLAY_VOICE_MIC_VOLUME, OVERLAY_VOICE_VOLUME_DEFAULT),
+        )
+
+    fun setOverlayVoiceMicVolume(value: Float) {
+        prefs.edit()
+            .putFloat(KEY_OVERLAY_VOICE_MIC_VOLUME, clampOverlayVoiceVolume(value))
+            .apply()
+    }
+
+    private fun clampOverlayVoiceVolume(value: Float): Float =
+        value.coerceIn(OVERLAY_VOICE_VOLUME_MIN, OVERLAY_VOICE_VOLUME_MAX)
+
     /** Push о координатах раскопок (сервер + локальный кэш). */
     fun isExcavationPushEnabled(): Boolean =
         prefs.getBoolean(KEY_EXCAVATION_PUSH, true)
@@ -300,6 +327,11 @@ class UserSettingsPreferences(context: Context) {
         private const val KEY_OVERLAY_PANEL_Y_TOP = "overlay_panel_y_top_gravity"
         private const val KEY_OVERLAY_VOICE_SOUND = "overlay_voice_sound"
         private const val KEY_OVERLAY_VOICE_MIC = "overlay_voice_mic"
+        private const val KEY_OVERLAY_VOICE_SOUND_VOLUME = "overlay_voice_sound_volume"
+        private const val KEY_OVERLAY_VOICE_MIC_VOLUME = "overlay_voice_mic_volume"
+        const val OVERLAY_VOICE_VOLUME_MIN = 0f
+        const val OVERLAY_VOICE_VOLUME_MAX = 1.5f
+        const val OVERLAY_VOICE_VOLUME_DEFAULT = 1f
         private const val KEY_EXCAVATION_PUSH = "excavation_push_enabled"
         private const val KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT = "last_seen_team_news_created_at"
         private const val KEY_OVERLAY_TARGET_LEGACY_MIGRATED = "overlay_target_legacy_migrated_v1"
