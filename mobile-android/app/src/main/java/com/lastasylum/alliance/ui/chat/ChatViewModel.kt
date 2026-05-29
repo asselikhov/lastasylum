@@ -1626,10 +1626,8 @@ class ChatViewModel(
         }
         ChatSessionCache.update(_state.value.rooms)
         syncTabUnreadBadge()
-        _state.value.rooms.find { it.id == roomId }?.let { room ->
-            if (ChatRoomKindResolver.isAllianceHubRoom(room)) {
-                syncOverlayAllianceHubBadge(_state.value.rooms)
-            }
+        if (room != null && ChatRoomKindResolver.isAllianceHubRoom(room)) {
+            syncOverlayAllianceHubBadge(_state.value.rooms)
         }
     }
 
