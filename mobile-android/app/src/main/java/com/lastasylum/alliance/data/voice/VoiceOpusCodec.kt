@@ -13,6 +13,8 @@ class VoiceOpusCodec {
     private var decoderConfigured = false
     private var encoderConfigBytes: ByteArray? = null
     private var encoderConfigSent = false
+    private val remoteConfigByUser = java.util.concurrent.ConcurrentHashMap<String, ByteArray>()
+    private var activeDecoderUserId: String? = null
 
     val isSupported: Boolean
         get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
@@ -111,6 +113,12 @@ class VoiceOpusCodec {
         return EncodedFrame(codec = CODEC_OPUS_CONFIG, payload = config.copyOf())
     }
 
+    /** Re-broadcast encoder csd-0 so late joiners can decode our uplink. */
+    fun buildEncoderConfigFrame(): EncodedFrame? {
+        val config = encoderConfigBytes ?: return null
+        return EncodedFrame(codec = CODEC_OPUS_CONFIG, payload = config.copyOf())
+    }
+
     fun encodePcmFrame(pcm: ByteArray): EncodedFrame? {
         takePendingEncoderConfig()?.let { return it }
         val enc = encoder ?: return null
@@ -131,16 +139,25 @@ class VoiceOpusCodec {
         }
     }
 
-    fun decodeToPcm(codec: String, payload: ByteArray): ByteArray? {
+    fun decodeToPcm(userId: String, codec: String, payload: ByteArray): ByteArray? {
         when (codec) {
             CODEC_OPUS_CONFIG -> {
-                applyRemoteDecoderConfig(payload)
+                remoteConfigByUser[userId] = payload.copyOf()
+                if (userId == activeDecoderUserId || activeDecoderUserId == null) {
+                    applyRemoteDecoderConfig(payload)
+                    activeDecoderUserId = userId
+                }
                 return null
             }
             CODEC_OPUS -> Unit
             else -> return null
         }
         if (!isSupported) return null
+        val config = remoteConfigByUser[userId]
+        if (config != null && activeDecoderUserId != userId) {
+            applyRemoteDecoderConfig(config)
+            activeDecoderUserId = userId
+        }
         if (!ensureDecoder()) return null
         val dec = decoder ?: return null
         return try {
@@ -256,6 +273,8 @@ class VoiceOpusCodec {
         releaseDecoder()
         encoderConfigBytes = null
         encoderConfigSent = false
+        remoteConfigByUser.clear()
+        activeDecoderUserId = null
     }
 
     private fun releaseEncoder() {
@@ -271,6 +290,7 @@ class VoiceOpusCodec {
         runCatching { decoder?.release() }
         decoder = null
         decoderConfigured = false
+        activeDecoderUserId = null
     }
 
     data class EncodedFrame(val codec: String, val payload: ByteArray)

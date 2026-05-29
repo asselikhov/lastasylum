@@ -136,7 +136,7 @@ class UserSettingsPreferences(context: Context) {
 
     /** Громкость приёма голоса союзников (0…1.5, 1 = 100%). */
     fun getOverlayVoiceSoundVolume(): Float =
-        clampOverlayVoiceVolume(
+        effectiveOverlayVoiceVolume(
             prefs.getFloat(KEY_OVERLAY_VOICE_SOUND_VOLUME, OVERLAY_VOICE_VOLUME_DEFAULT),
         )
 
@@ -148,7 +148,7 @@ class UserSettingsPreferences(context: Context) {
 
     /** Громкость передачи микрофона (0…1.5, 1 = 100%). */
     fun getOverlayVoiceMicVolume(): Float =
-        clampOverlayVoiceVolume(
+        effectiveOverlayVoiceVolume(
             prefs.getFloat(KEY_OVERLAY_VOICE_MIC_VOLUME, OVERLAY_VOICE_VOLUME_DEFAULT),
         )
 
@@ -160,6 +160,10 @@ class UserSettingsPreferences(context: Context) {
 
     private fun clampOverlayVoiceVolume(value: Float): Float =
         value.coerceIn(OVERLAY_VOICE_VOLUME_MIN, OVERLAY_VOICE_VOLUME_MAX)
+
+    /** Zero gain makes voice inaudible; treat as unset and use default. */
+    private fun effectiveOverlayVoiceVolume(stored: Float): Float =
+        if (stored <= 0f) OVERLAY_VOICE_VOLUME_DEFAULT else clampOverlayVoiceVolume(stored)
 
     /** Push о координатах раскопок (сервер + локальный кэш). */
     fun isExcavationPushEnabled(): Boolean =

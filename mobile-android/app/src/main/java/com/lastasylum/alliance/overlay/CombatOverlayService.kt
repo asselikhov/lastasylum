@@ -2549,9 +2549,15 @@ class CombatOverlayService : Service() {
         }
     }
 
-    private fun overlayVoiceMicDisplayedOn(): Boolean = voiceSession?.micOn == true
+    private fun overlayVoiceSoundDisplayedOn(): Boolean {
+        voiceSession?.let { return it.soundOn }
+        return AppContainer.from(this).userSettingsPreferences.isOverlayVoiceSoundEnabled()
+    }
 
-    private fun overlayVoiceSoundDisplayedOn(): Boolean = voiceSession?.soundOn == true
+    private fun overlayVoiceMicDisplayedOn(): Boolean {
+        voiceSession?.let { return it.micOn }
+        return AppContainer.from(this).userSettingsPreferences.isOverlayVoiceMicEnabled()
+    }
 
     private fun toggleOverlayVoiceMicFromHud() {
         if (!overlayVoiceController.isMicSupportedOnDevice()) {
@@ -2559,6 +2565,11 @@ class CombatOverlayService : Service() {
             return
         }
         val targetOn = !overlayVoiceMicDisplayedOn()
+        val prefs = AppContainer.from(this).userSettingsPreferences
+        prefs.setOverlayVoiceMicEnabled(targetOn)
+        if (targetOn) {
+            prefs.setOverlayVoiceSoundEnabled(true)
+        }
         runOverlayVoiceUserAction { session ->
             session.whenVoiceReady {
                 if (targetOn && !session.hasRecordAudioPermission()) {
@@ -2580,10 +2591,14 @@ class CombatOverlayService : Service() {
     }
 
     private fun toggleOverlayVoiceSoundFromHud() {
+        val prefs = AppContainer.from(this).userSettingsPreferences
         val targetOn = !overlayVoiceSoundDisplayedOn()
+        prefs.setOverlayVoiceSoundEnabled(targetOn)
         runOverlayVoiceUserAction { session ->
             session.whenVoiceReady {
-                session.setSoundEnabled(targetOn)
+                if (session.soundOn != targetOn) {
+                    session.setSoundEnabled(targetOn)
+                }
                 refreshOverlayTopRightHudState()
             }
         }

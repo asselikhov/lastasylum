@@ -118,6 +118,13 @@ class VoiceAudioPipeline(
         captureGain = gain.coerceIn(0f, 2f)
     }
 
+    /** Re-send Opus encoder config so peers who joined late can decode our voice. */
+    fun resendEncoderConfig(): Boolean {
+        val frame = opus.buildEncoderConfigFrame() ?: return false
+        onEncodedFrame(frame)
+        return true
+    }
+
     fun setRemotePeerMic(userId: String, micOn: Boolean) {
         if (micOn) {
             remoteMicOn[userId] = true
@@ -136,7 +143,7 @@ class VoiceAudioPipeline(
         if (!soundEnabled) return
         // Frames are only relayed when the sender has mic on; do not block on stale peer-state.
         remoteMicOn[userId] = true
-        val pcm = opus.decodeToPcm(codec, payload) ?: return
+        val pcm = opus.decodeToPcm(userId, codec, payload) ?: return
         val frame = normalizePlayFrame(pcm)
         jitter.push(userId, VoicePcmGain.apply(frame, playbackGain))
         ensurePlayback()

@@ -67,7 +67,12 @@ class VoiceChatSession(
     private val peerListener: (VoicePeerEvent) -> Unit = { event ->
         TeamVoicePresenceStore.apply(event)
         when (event) {
-            is VoicePeerEvent.Joined -> audioPipeline.setRemotePeerMic(event.peer.userId, event.peer.micOn)
+            is VoicePeerEvent.Joined -> {
+                audioPipeline.setRemotePeerMic(event.peer.userId, event.peer.micOn)
+                if (micOn) {
+                    audioPipeline.resendEncoderConfig()
+                }
+            }
             is VoicePeerEvent.State -> audioPipeline.setRemotePeerMic(event.peer.userId, event.peer.micOn)
             is VoicePeerEvent.Left -> {
                 audioPipeline.removeRemotePeer(event.userId)
@@ -226,6 +231,7 @@ class VoiceChatSession(
     private fun applyMicCapture() {
         if (micOn && hasRecordAudioPermission() && socketManager.isVoiceJoined()) {
             audioPipeline.startCapture()
+            audioPipeline.resendEncoderConfig()
         } else {
             audioPipeline.stopCapture()
         }
