@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.data.voice.VoicePeerState
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -56,6 +57,8 @@ fun OverlayOnlinePanelScaffold(
     voiceSelfUserId: String? = null,
     voiceLocalMicOn: Boolean? = null,
     voiceLocalSoundOn: Boolean? = null,
+    voicePeers: Map<String, VoicePeerState> = emptyMap(),
+    hasLocalVoiceSession: Boolean = false,
     onSearchQuery: (String) -> Unit,
     onFilterChip: (OverlayOnlineFilterChip) -> Unit,
     onRefresh: () -> Unit,
@@ -148,6 +151,8 @@ fun OverlayOnlinePanelScaffold(
                                     voiceSelfUserId = voiceSelfUserId,
                                     voiceLocalMicOn = voiceLocalMicOn,
                                     voiceLocalSoundOn = voiceLocalSoundOn,
+                                    voicePeers = voicePeers,
+                                    hasLocalVoiceSession = hasLocalVoiceSession,
                                     onLongClick = { onMemberLongClick(member) },
                                 )
                             }

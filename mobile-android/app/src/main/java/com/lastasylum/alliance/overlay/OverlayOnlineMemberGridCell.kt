@@ -64,6 +64,8 @@ fun OverlayOnlineMemberGridCell(
     voiceSelfUserId: String? = null,
     voiceLocalMicOn: Boolean? = null,
     voiceLocalSoundOn: Boolean? = null,
+    voicePeers: Map<String, com.lastasylum.alliance.data.voice.VoicePeerState> = emptyMap(),
+    hasLocalVoiceSession: Boolean = false,
     micOn: Boolean = false,
     soundOn: Boolean = false,
     onClick: (() -> Unit)? = null,
@@ -71,8 +73,15 @@ fun OverlayOnlineMemberGridCell(
     onToggleSelect: (() -> Unit)? = null,
 ) {
     val tokens = OverlayOnlineMemberTokens
-    val resolveVoiceInCell = mode == OverlayOnlineMemberCellMode.Presence && member.inGameNow
-    val voiceFlags = if (resolveVoiceInCell) {
+    val showVoiceBadges = mode == OverlayOnlineMemberCellMode.Presence &&
+        member.inGameNow &&
+        shouldShowVoiceBadgesForMember(
+            userId = member.userId,
+            selfUserId = voiceSelfUserId,
+            voicePeers = voicePeers,
+            hasLocalVoiceSession = hasLocalVoiceSession,
+        )
+    val voiceFlags = if (showVoiceBadges) {
         rememberMemberVoiceFlags(
             userId = member.userId,
             selfUserId = voiceSelfUserId,
@@ -229,7 +238,7 @@ fun OverlayOnlineMemberGridCell(
                 )
             }
         }
-        if (member.inGameNow && mode == OverlayOnlineMemberCellMode.Presence) {
+        if (showVoiceBadges) {
             OverlayMemberVoiceBadges(
                 micOn = voiceFlags.micOn,
                 soundOn = voiceFlags.soundOn,

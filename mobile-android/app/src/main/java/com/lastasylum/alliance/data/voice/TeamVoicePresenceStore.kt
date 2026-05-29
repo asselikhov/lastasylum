@@ -31,6 +31,9 @@ object TeamVoicePresenceStore {
         _peers.value = emptyMap()
     }
 
+    fun isInVoiceRoom(userId: String): Boolean =
+        userId.isNotBlank() && _peers.value.containsKey(userId)
+
     /** Mic/sound badges for a roster row; self prefers live session flags over stale peer map. */
     fun voiceFlagsForMember(
         memberUserId: String,

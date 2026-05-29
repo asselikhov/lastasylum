@@ -2,6 +2,7 @@ package com.lastasylum.alliance.overlay
 
 import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
 import com.lastasylum.alliance.data.teams.TeamPresenceSocketEvent
+import com.lastasylum.alliance.data.voice.VoicePeerState
 import com.lastasylum.alliance.ui.util.OVERLAY_INGAME_PRESENCE_STALE_MS
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -132,6 +133,43 @@ class OverlayTeamOnlinePresenceLogicTest {
         assertEquals(1, rawIngameCount(ingame))
         val sections = buildPresenceSections(ingame, emptyList(), null)
         assertEquals(1, ingameCountFromSections(sections))
+    }
+
+    @Test
+    fun shouldShowVoiceBadges_onlyForVoiceRoomMembersOrSelfWithSession() {
+        val peers = mapOf("u1" to VoicePeerState("u1", "a", micOn = true, soundOn = false))
+        assertTrue(
+            shouldShowVoiceBadgesForMember(
+                userId = "u1",
+                selfUserId = "self",
+                voicePeers = peers,
+                hasLocalVoiceSession = true,
+            ),
+        )
+        assertTrue(
+            shouldShowVoiceBadgesForMember(
+                userId = "self",
+                selfUserId = "self",
+                voicePeers = peers,
+                hasLocalVoiceSession = true,
+            ),
+        )
+        assertFalse(
+            shouldShowVoiceBadgesForMember(
+                userId = "u2",
+                selfUserId = "self",
+                voicePeers = peers,
+                hasLocalVoiceSession = true,
+            ),
+        )
+        assertFalse(
+            shouldShowVoiceBadgesForMember(
+                userId = "self",
+                selfUserId = "self",
+                voicePeers = peers,
+                hasLocalVoiceSession = false,
+            ),
+        )
     }
 
     @Test

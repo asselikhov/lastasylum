@@ -40,10 +40,10 @@ import com.lastasylum.alliance.data.teams.TeamPresenceSocketManager
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.users.UsersRepository
 import com.lastasylum.alliance.data.voice.TeamVoicePresenceStore
+import com.lastasylum.alliance.data.voice.VoicePresenceRosterSync
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.screens.TeamLeaderDialogsHost
 import com.lastasylum.alliance.ui.screens.rememberTeamLeaderOverlayState
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
 @Composable
@@ -64,7 +64,9 @@ fun OverlayTeamOnlinePanel(
     val res = context.resources
     val scope = rememberCoroutineScope()
     val leaderUi = rememberTeamLeaderOverlayState()
-    val voiceSession = AppContainer.from(context).overlayVoiceSession
+    val appContainer = remember(context) { AppContainer.from(context) }
+    val voiceSession = appContainer.overlayVoiceSession
+    val voiceRosterSync = remember(appContainer) { VoicePresenceRosterSync(appContainer) }
 
     val controller = remember(teamsRepository, usersRepository, teamPresenceSocket) {
         OverlayTeamOnlineController(
@@ -85,16 +87,15 @@ fun OverlayTeamOnlinePanel(
     DisposableEffect(controller) {
         onDispose { controller.stop() }
     }
+    DisposableEffect(voiceRosterSync) {
+        voiceRosterSync.acquire()
+        onDispose { voiceRosterSync.release() }
+    }
 
     val uiState by controller.state.collectAsState()
     var longPressMember by remember { mutableStateOf<OverlayOnlineMemberUiModel?>(null) }
-    val voicePeers by remember(uiState.activeFilterChip) {
-        if (uiState.activeFilterChip == OverlayOnlineFilterChip.WithMic) {
-            TeamVoicePresenceStore.peers
-        } else {
-            flowOf(emptyMap())
-        }
-    }.collectAsState(initial = emptyMap())
+    val voicePeers by TeamVoicePresenceStore.peers.collectAsState(initial = emptyMap())
+    val hasLocalVoiceSession = voiceSession != null
 
     LaunchedEffect(openJoinInboxInitially) {
         if (!openJoinInboxInitially) return@LaunchedEffect
@@ -224,6 +225,8 @@ fun OverlayTeamOnlinePanel(
         voiceSelfUserId = selfId,
         voiceLocalMicOn = voiceSession?.micOn,
         voiceLocalSoundOn = voiceSession?.soundOn,
+        voicePeers = voicePeers,
+        hasLocalVoiceSession = hasLocalVoiceSession,
         activeFilterChip = uiState.activeFilterChip,
         loading = uiState.loading,
         refreshing = uiState.refreshing,

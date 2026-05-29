@@ -248,6 +248,22 @@ internal fun overlayPresenceMemberListsEqual(
     }
 }
 
+/**
+ * Voice badges are shown only for users in the team voice room (or self with a live overlay session).
+ * Avoids stale mic/sound icons for teammates who are ingame but not connected to voice.
+ */
+internal fun shouldShowVoiceBadgesForMember(
+    userId: String,
+    selfUserId: String?,
+    voicePeers: Map<String, VoicePeerState>,
+    hasLocalVoiceSession: Boolean,
+): Boolean {
+    if (!selfUserId.isNullOrBlank() && userId == selfUserId && hasLocalVoiceSession) {
+        return true
+    }
+    return voicePeers.containsKey(userId)
+}
+
 fun buildVoiceFlagsMap(
     memberUserIds: Collection<String>,
     voicePeers: Map<String, VoicePeerState>,
