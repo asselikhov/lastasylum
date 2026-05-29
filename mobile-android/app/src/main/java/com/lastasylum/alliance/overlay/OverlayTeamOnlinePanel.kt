@@ -4,10 +4,10 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Inbox
@@ -42,7 +42,6 @@ import com.lastasylum.alliance.data.voice.TeamVoicePresenceStore
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.ui.screens.TeamLeaderDialogsHost
 import com.lastasylum.alliance.ui.screens.rememberTeamLeaderOverlayState
-import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import kotlinx.coroutines.launch
 
 @Composable
@@ -220,11 +219,11 @@ fun OverlayTeamOnlinePanel(
                     uiState.ingameCount,
                 ),
                 onClose = onClose,
-                onRefresh = { controller.refresh(force = true) },
-                refreshing = uiState.refreshing,
             )
+        },
+        toolbarTrailing = {
             if (team != null && isLeader) {
-                OverlayOnlineLeaderActionBar(
+                OverlayOnlineLeaderToolbarActions(
                     pendingJoinRequests = pending,
                     membersBusy = leaderUi.membersBusy,
                     editNameBusy = leaderUi.editNameBusy,
@@ -257,7 +256,7 @@ fun OverlayTeamOnlinePanel(
 }
 
 @Composable
-private fun OverlayOnlineLeaderActionBar(
+private fun RowScope.OverlayOnlineLeaderToolbarActions(
     pendingJoinRequests: Int,
     membersBusy: Boolean,
     editNameBusy: Boolean,
@@ -265,45 +264,49 @@ private fun OverlayOnlineLeaderActionBar(
     onEditTeam: () -> Unit,
     onOpenInbox: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(
-                horizontal = SquadRelayDimens.contentPaddingHorizontal,
-                vertical = 2.dp,
-            ),
-        horizontalArrangement = Arrangement.End,
-        verticalAlignment = Alignment.CenterVertically,
+    val tokens = OverlayOnlineMemberTokens
+    IconButton(
+        onClick = onAddMember,
+        enabled = !membersBusy,
+        modifier = Modifier.size(40.dp),
     ) {
-        IconButton(onClick = onAddMember, enabled = !membersBusy) {
-            Icon(
-                imageVector = Icons.Outlined.PersonAdd,
-                contentDescription = stringResource(R.string.team_cd_add_member),
-                tint = MaterialTheme.colorScheme.primary,
-            )
-        }
-        IconButton(onClick = onEditTeam, enabled = !membersBusy && !editNameBusy) {
-            Icon(
-                imageVector = Icons.Outlined.Edit,
-                contentDescription = stringResource(R.string.team_cd_edit_team_name),
-                tint = MaterialTheme.colorScheme.primary,
-            )
-        }
-        if (pendingJoinRequests > 0) {
-            BadgedBox(
-                badge = {
-                    Badge {
-                        Text(if (pendingJoinRequests > 9) "9+" else "$pendingJoinRequests")
-                    }
-                },
-            ) {
-                IconButton(onClick = onOpenInbox) {
-                    Icon(
-                        imageVector = Icons.Outlined.Inbox,
-                        contentDescription = stringResource(R.string.profile_join_inbox_cd),
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
+        Icon(
+            imageVector = Icons.Outlined.PersonAdd,
+            contentDescription = stringResource(R.string.team_cd_add_member),
+            tint = tokens.borderLive,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+    IconButton(
+        onClick = onEditTeam,
+        enabled = !membersBusy && !editNameBusy,
+        modifier = Modifier.size(40.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Edit,
+            contentDescription = stringResource(R.string.team_cd_edit_team_name),
+            tint = tokens.borderLive,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+    if (pendingJoinRequests > 0) {
+        BadgedBox(
+            badge = {
+                Badge {
+                    Text(if (pendingJoinRequests > 9) "9+" else "$pendingJoinRequests")
                 }
+            },
+        ) {
+            IconButton(
+                onClick = onOpenInbox,
+                modifier = Modifier.size(40.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Inbox,
+                    contentDescription = stringResource(R.string.profile_join_inbox_cd),
+                    tint = tokens.borderLive,
+                    modifier = Modifier.size(20.dp),
+                )
             }
         }
     }

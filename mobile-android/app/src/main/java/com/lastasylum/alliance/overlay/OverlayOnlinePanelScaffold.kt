@@ -15,9 +15,12 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -58,6 +61,7 @@ fun OverlayOnlinePanelScaffold(
     onMemberLongClick: (OverlayOnlineMemberUiModel) -> Unit,
     modifier: Modifier = Modifier,
     topBar: @Composable () -> Unit = {},
+    toolbarTrailing: @Composable RowScope.() -> Unit = {},
 ) {
     val tokens = OverlayOnlineMemberTokens
     val totalVisible = displaySections.sumOf { it.items.size }
@@ -75,6 +79,21 @@ fun OverlayOnlinePanelScaffold(
                 searchQuery = searchQuery,
                 onFilterChip = onFilterChip,
                 onSearchQuery = onSearchQuery,
+                trailing = {
+                    IconButton(
+                        onClick = onRefresh,
+                        enabled = !refreshing,
+                        modifier = Modifier.size(40.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Refresh,
+                            contentDescription = stringResource(R.string.overlay_online_refresh_cd),
+                            tint = tokens.titleColor,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    toolbarTrailing()
+                },
             )
         }
         when {
@@ -164,6 +183,7 @@ private fun OnlinePanelFilterSearchRow(
     searchQuery: String,
     onFilterChip: (OverlayOnlineFilterChip) -> Unit,
     onSearchQuery: (String) -> Unit,
+    trailing: @Composable RowScope.() -> Unit = {},
 ) {
     val tokens = OverlayOnlineMemberTokens
     var filterExpanded by remember { mutableStateOf(false) }
@@ -248,6 +268,7 @@ private fun OnlinePanelFilterSearchRow(
             shape = fieldShape,
             textStyle = MaterialTheme.typography.labelSmall,
         )
+        trailing()
     }
 }
 
