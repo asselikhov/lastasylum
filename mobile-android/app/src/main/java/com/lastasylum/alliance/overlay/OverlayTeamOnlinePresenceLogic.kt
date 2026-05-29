@@ -177,31 +177,15 @@ fun filterByChip(
     }
 }
 
-fun applyRecentCollapsed(
-    sections: List<OverlayOnlinePresenceSection>,
-    collapsed: Boolean,
-): List<OverlayOnlinePresenceSection> {
-    if (!collapsed) return sections
-    return sections.map { section ->
-        if (section.kind == PresenceSectionKind.Recent) {
-            section.copy(items = emptyList())
-        } else {
-            section
-        }
-    }
-}
-
 fun applyOnlinePanelFilters(
     baseSections: List<OverlayOnlinePresenceSection>,
     query: String,
     chip: OverlayOnlineFilterChip,
-    recentCollapsed: Boolean,
     voiceFlagsByUserId: Map<String, VoiceMemberFlags>,
 ): List<OverlayOnlinePresenceSection> {
     var sections = baseSections
     sections = filterByChip(sections, chip, voiceFlagsByUserId)
     sections = filterByQuery(sections, query)
-    sections = applyRecentCollapsed(sections, recentCollapsed)
     return sections
 }
 

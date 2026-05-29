@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -36,6 +37,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -68,6 +70,7 @@ fun OverlayOnlineMemberGridCell(
     val tokens = OverlayOnlineMemberTokens
     val squadRole = member.teamRole
     val roleColor = roleAccentColor(squadRole)
+    val roleCd = stringResource(R.string.overlay_member_squad_rank_cd, squadRole)
     val displayName = if (member.isSelf) {
         "${member.username} ($selfLabel)"
     } else {
@@ -134,12 +137,13 @@ fun OverlayOnlineMemberGridCell(
                 },
             )
             .padding(horizontal = 10.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             if (mode == OverlayOnlineMemberCellMode.Selectable) {
                 Checkbox(
@@ -153,32 +157,37 @@ fun OverlayOnlineMemberGridCell(
                     ),
                 )
             }
-            MemberAvatar(
-                username = member.username,
-                telegramUsername = member.telegramUsername,
-                inGameNow = member.inGameNow,
-                freshness = member.freshness,
-            )
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Box(contentAlignment = Alignment.BottomCenter) {
+                    MemberAvatar(
+                        username = member.username,
+                        telegramUsername = member.telegramUsername,
+                        inGameNow = member.inGameNow,
+                        freshness = member.freshness,
+                    )
+                    RoleChip(
+                        role = squadRole,
+                        color = roleColor,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .offset(y = 6.dp)
+                            .semantics { contentDescription = roleCd },
+                    )
+                }
                 Text(
                     text = displayName,
                     style = tokens.titleStyle,
-                    maxLines = 1,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(),
                 )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    RoleChip(role = squadRole, color = roleColor)
-                    if (member.isLeader) {
-                        Text(
-                            text = stringResource(R.string.overlay_online_leader_badge),
-                            style = tokens.chipStyle.copy(color = tokens.metaColor),
-                            maxLines = 1,
-                        )
-                    }
-                }
             }
         }
         Text(
@@ -186,8 +195,10 @@ fun OverlayOnlineMemberGridCell(
             style = tokens.metaStyle.copy(
                 color = if (member.inGameNow) tokens.metaColor else tokens.mutedColor,
             ),
+            textAlign = TextAlign.Center,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth(),
         )
         if (member.inGameNow && mode == OverlayOnlineMemberCellMode.Presence) {
             AnimatedVisibility(
@@ -203,7 +214,9 @@ fun OverlayOnlineMemberGridCell(
                 text = stringResource(R.string.overlay_online_stale_soon),
                 style = MaterialTheme.typography.labelSmall,
                 color = tokens.borderStaleSoon,
+                textAlign = TextAlign.Center,
                 maxLines = 1,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }
@@ -304,12 +317,16 @@ private fun MemberAvatar(
 }
 
 @Composable
-private fun RoleChip(role: String, color: Color) {
+private fun RoleChip(
+    role: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
     val tokens = OverlayOnlineMemberTokens
     Text(
         text = role,
         style = tokens.chipStyle.copy(color = color),
-        modifier = Modifier
+        modifier = modifier
             .clip(RoundedCornerShape(tokens.chipRadius))
             .background(color.copy(alpha = 0.14f))
             .border(0.5.dp, color.copy(alpha = 0.35f), RoundedCornerShape(tokens.chipRadius))

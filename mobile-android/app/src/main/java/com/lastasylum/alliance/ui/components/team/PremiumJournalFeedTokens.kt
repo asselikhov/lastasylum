@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lastasylum.alliance.ui.theme.premium.PremiumColors
@@ -23,17 +24,23 @@ enum class JournalFeedVariant {
 object PremiumJournalFeedTokens {
     val cardShape = RoundedCornerShape(22.dp)
     val cardInnerShape = RoundedCornerShape(20.dp)
-    val optionTileShape = RoundedCornerShape(14.dp)
+    val optionTileShape = RoundedCornerShape(12.dp)
     val chipShape = RoundedCornerShape(10.dp)
     val timePillShape = RoundedCornerShape(8.dp)
     val borderWidth = 1.25.dp
     val accentRailWidth = 4.dp
     val cardPaddingH = 18.dp
     val cardPaddingV = 16.dp
+    val pollCardPaddingV = 14.dp
     val listSpacing = 14.dp
     val sectionGap = 12.dp
-    val optionTilePaddingH = 14.dp
-    val optionTilePaddingV = 12.dp
+    val pollSectionGap = 8.dp
+    val optionTilePaddingH = 12.dp
+    val optionTilePaddingV = 8.dp
+    val optionTileMinHeight = 40.dp
+    val optionTileMinHeightFull = 48.dp
+    val pollPreviewBarHeight = 6.dp
+    val pollPreviewOptionSpacing = 6.dp
 
     val pressScale = 0.982f
     val pressAnimSpec = tween<Float>(durationMillis = 140, easing = FastOutSlowInEasing)
@@ -42,31 +49,27 @@ object PremiumJournalFeedTokens {
     val InterFamily = ForumTopicCardTokens.InterFamily
     private val platformStyle = PlatformTextStyle(includeFontPadding = false)
 
-    val titleColor = Color(0xFFF4F7FF)
+    val titleColor = Color(0xFFF8FAFF)
     val excerptColor = Color(0xFF94A8C0)
-    val metaColor = Color(0xFF7A8FA6)
+    val metaColor = Color(0xFF8FA4BC)
     val metaOnHero = Color(0xFFE8F0FA)
 
-    val glassTop = Color(0xFF4A5668)
-    val glassBottom = Color(0xFF2E3848)
-    val glassAlphaDefault = 0.88f
-    val glassAlphaUnread = 0.92f
+    val glassTop = Color(0xFF121A28)
+    val glassBottom = Color(0xFF0A101C)
+    val glassAlphaDefault = 0.90f
+    val glassAlphaUnread = 0.94f
 
-    val titleStyle = TextStyle(
-        fontFamily = InterFamily,
-        fontWeight = FontWeight.Bold,
-        fontSize = 20.sp,
-        lineHeight = 26.sp,
-        letterSpacing = 0.1.sp,
-        color = titleColor,
-        platformStyle = platformStyle,
-    )
+    val optionTileTop = Color(0xFF1A2434)
+    val optionTileBottom = Color(0xFF121A28)
+    val optionTrackColor = Color(0xFF1E2836)
+
+    val titleStyle: TextStyle = ForumTopicCardTokens.titleStyle
 
     val headlineStyle = TextStyle(
         fontFamily = InterFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 22.sp,
-        lineHeight = 28.sp,
+        fontSize = 19.sp,
+        lineHeight = 24.sp,
         letterSpacing = 0.12.sp,
         color = titleColor,
         platformStyle = platformStyle,
@@ -81,21 +84,13 @@ object PremiumJournalFeedTokens {
         platformStyle = platformStyle,
     )
 
-    val metaStyle = TextStyle(
-        fontFamily = InterFamily,
-        fontWeight = FontWeight.Medium,
-        fontSize = 11.5.sp,
-        lineHeight = 15.sp,
-        letterSpacing = 0.2.sp,
-        color = metaColor,
-        platformStyle = platformStyle,
-    )
+    val metaStyle: TextStyle = ForumTopicCardTokens.metaStyle.copy(color = metaColor)
 
     val optionLabelStyle = TextStyle(
         fontFamily = InterFamily,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 14.sp,
-        lineHeight = 18.sp,
+        fontSize = 13.sp,
+        lineHeight = 17.sp,
         color = titleColor,
         platformStyle = platformStyle,
     )
@@ -103,11 +98,24 @@ object PremiumJournalFeedTokens {
     val optionPctStyle = TextStyle(
         fontFamily = InterFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 13.sp,
-        lineHeight = 16.sp,
+        fontSize = 12.sp,
+        lineHeight = 15.sp,
         color = PremiumColors.accentCyanBright,
         platformStyle = platformStyle,
     )
+
+    fun sectionSpacing(variant: JournalFeedVariant): Dp = when (variant) {
+        JournalFeedVariant.Poll,
+        JournalFeedVariant.PollOnly,
+        -> pollSectionGap
+        else -> sectionGap
+    }
+
+    fun contentPaddingTop(hasHero: Boolean, variant: JournalFeedVariant): Dp = when {
+        hasHero -> 12.dp
+        variant == JournalFeedVariant.Poll || variant == JournalFeedVariant.PollOnly -> pollCardPaddingV
+        else -> cardPaddingV
+    }
 
     @Immutable
     data class Accent(val primary: Color, val secondary: Color)
@@ -125,7 +133,7 @@ object PremiumJournalFeedTokens {
         Brush.verticalGradient(
             colors = listOf(
                 glassTop.copy(alpha = alpha),
-                glassBottom.copy(alpha = alpha * 0.96f),
+                glassBottom.copy(alpha = alpha * 0.98f),
             ),
         )
 
@@ -135,12 +143,12 @@ object PremiumJournalFeedTokens {
         unread: Boolean,
     ): List<Color> {
         val boost = glowBoost.coerceIn(1f, 1.4f)
-        val edgeA = if (unread) 0.68f else 0.42f
+        val edgeA = if (unread) 0.58f else 0.36f
         return listOf(
-            Color.White.copy(alpha = edgeA * boost),
-            accent.primary.copy(alpha = edgeA * 0.85f * boost),
-            accent.secondary.copy(alpha = edgeA * 0.72f * boost),
-            PremiumColors.accentPurpleDeep.copy(alpha = edgeA * 0.45f * boost),
+            accent.primary.copy(alpha = edgeA * boost),
+            PremiumColors.accentCyan.copy(alpha = edgeA * 0.75f * boost),
+            accent.secondary.copy(alpha = edgeA * 0.62f * boost),
+            Color(0xFF0D1524).copy(alpha = edgeA * 0.35f * boost),
         )
     }
 

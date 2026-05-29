@@ -119,14 +119,12 @@ fun OverlayTeamOnlinePanel(
         uiState.baseSections,
         uiState.searchQuery,
         uiState.activeFilterChip,
-        uiState.recentSectionCollapsed,
         voiceFlagsByUserId,
     ) {
         applyOnlinePanelFilters(
             baseSections = uiState.baseSections,
             query = uiState.searchQuery,
             chip = uiState.activeFilterChip,
-            recentCollapsed = uiState.recentSectionCollapsed,
             voiceFlagsByUserId = voiceFlagsByUserId,
         )
     }
@@ -204,19 +202,14 @@ fun OverlayTeamOnlinePanel(
         modifier = modifier,
         displaySections = displaySections,
         voiceFlagsByUserId = voiceFlagsByUserId,
-        ingameCount = uiState.ingameCount,
-        recentCount = uiState.recentCount,
         searchQuery = uiState.searchQuery,
         activeFilterChip = uiState.activeFilterChip,
-        recentSectionCollapsed = uiState.recentSectionCollapsed,
-        realtimeMode = uiState.realtimeMode,
         loading = uiState.loading,
         refreshing = uiState.refreshing,
         error = uiState.error,
         selfLabel = selfLabel,
         onSearchQuery = controller::onSearchQuery,
         onFilterChip = controller::onFilterChip,
-        onToggleRecentSection = controller::toggleRecentSection,
         onRefresh = { controller.refresh(force = true) },
         onMemberLongClick = { longPressMember = it },
         topBar = {

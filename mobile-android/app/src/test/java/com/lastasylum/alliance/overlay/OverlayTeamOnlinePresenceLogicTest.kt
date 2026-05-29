@@ -165,26 +165,6 @@ class OverlayTeamOnlinePresenceLogicTest {
     }
 
     @Test
-    fun applyRecentCollapsed_hides_recent_items() {
-        val sections = buildPresenceSections(
-            ingame = listOf(member("u1", "a")),
-            recentlyActive = listOf(
-                member(
-                    "u2",
-                    "b",
-                    presenceStatus = "online",
-                    lastPresenceAt = freshIso(200),
-                ),
-            ),
-            selfUserId = null,
-        )
-        val collapsed = applyRecentCollapsed(sections, collapsed = true)
-        assertTrue(collapsed.first { it.kind == PresenceSectionKind.Recent }.items.isEmpty())
-        val expanded = applyRecentCollapsed(sections, collapsed = false)
-        assertEquals(1, expanded.first { it.kind == PresenceSectionKind.Recent }.items.size)
-    }
-
-    @Test
     fun combined_search_and_chip_filter() {
         val sections = buildPresenceSections(
             ingame = listOf(member("u1", "alice"), member("u2", "bob")),
@@ -199,7 +179,6 @@ class OverlayTeamOnlinePresenceLogicTest {
             baseSections = sections,
             query = "ali",
             chip = OverlayOnlineFilterChip.WithMic,
-            recentCollapsed = true,
             voiceFlagsByUserId = voice,
         )
         assertEquals(1, result.first().items.size)

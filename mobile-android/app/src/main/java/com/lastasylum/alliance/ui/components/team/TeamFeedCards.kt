@@ -358,7 +358,7 @@ fun TeamNewsFeedCard(
         modifier = modifier.semantics { contentDescription = cardDesc },
         variant = journalVariant,
         isUnread = isUnread,
-        contentTopPadding = if (hasHero) 12.dp else PremiumJournalFeedTokens.cardPaddingV,
+        contentTopPadding = PremiumJournalFeedTokens.contentPaddingTop(hasHero, journalVariant),
         topContent = {
             if (hasHero) {
                 FeedCardHero(
@@ -414,16 +414,6 @@ fun TeamNewsFeedCard(
                             } else {
                                 null
                             },
-                        )
-                    }
-                    if (hasHero && !pollOnly && pollQuestion.isNotBlank() &&
-                        pollQuestion != item.title.trim()
-                    ) {
-                        Text(
-                            text = pollQuestion,
-                            style = PremiumJournalFeedTokens.titleStyle,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                     JournalPollPreviewBlock(

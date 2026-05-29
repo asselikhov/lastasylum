@@ -5,7 +5,6 @@ import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
 import com.lastasylum.alliance.data.teams.TeamDetailDto
 import com.lastasylum.alliance.data.teams.TeamPresenceSocketEvent
 import com.lastasylum.alliance.data.teams.TeamPresenceSocketManager
-import com.lastasylum.alliance.data.teams.TeamPresenceSocketState
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.users.MyProfileDto
 import com.lastasylum.alliance.data.users.UsersRepository
@@ -35,8 +34,6 @@ data class OverlayTeamOnlineUiState(
     val recentRaw: List<PlayerTeamMemberDto> = emptyList(),
     val searchQuery: String = "",
     val activeFilterChip: OverlayOnlineFilterChip = OverlayOnlineFilterChip.All,
-    val recentSectionCollapsed: Boolean = true,
-    val realtimeMode: Boolean = false,
     val ingameCount: Int = 0,
     val recentCount: Int = 0,
 )
@@ -55,7 +52,6 @@ class OverlayTeamOnlineController(
     val state: StateFlow<OverlayTeamOnlineUiState> = _state.asStateFlow()
 
     private var pollJob: Job? = null
-    private var socketConnectionJob: Job? = null
     private var teamId: String? = null
     private var started = false
 
@@ -85,13 +81,6 @@ class OverlayTeamOnlineController(
         started = true
         teamPresenceSocket.addPresenceListener(presenceSocketListener)
         scope.launch {
-            teamPresenceSocket.connectionState.collect { socketState ->
-                _state.update {
-                    it.copy(realtimeMode = socketState == TeamPresenceSocketState.Connected)
-                }
-            }
-        }.also { socketConnectionJob = it }
-        scope.launch {
             bootstrap(forceTeamRefresh = false, showBlockingSpinner = _state.value.team == null)
         }
         pollJob = scope.launch {
@@ -107,8 +96,6 @@ class OverlayTeamOnlineController(
         started = false
         pollJob?.cancel()
         pollJob = null
-        socketConnectionJob?.cancel()
-        socketConnectionJob = null
         teamPresenceSocket.removePresenceListener(presenceSocketListener)
     }
 
@@ -131,17 +118,12 @@ class OverlayTeamOnlineController(
         _state.update { it.copy(activeFilterChip = chip) }
     }
 
-    fun toggleRecentSection() {
-        _state.update { it.copy(recentSectionCollapsed = !it.recentSectionCollapsed) }
-    }
-
     fun displaySections(voiceFlagsByUserId: Map<String, VoiceMemberFlags>): List<OverlayOnlinePresenceSection> {
         val s = _state.value
         return applyOnlinePanelFilters(
             baseSections = s.baseSections,
             query = s.searchQuery,
             chip = s.activeFilterChip,
-            recentCollapsed = s.recentSectionCollapsed,
             voiceFlagsByUserId = voiceFlagsByUserId,
         )
     }

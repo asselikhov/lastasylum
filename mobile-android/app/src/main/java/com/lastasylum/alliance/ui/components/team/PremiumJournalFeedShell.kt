@@ -132,16 +132,16 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawJournalCardShad
 ) {
     val boost = glowBoost.coerceAtMost(1.4f)
     drawRoundRect(
-        color = Color.Black.copy(alpha = 0.38f),
-        topLeft = Offset(0f, 8.dp.toPx()),
+        color = Color.Black.copy(alpha = 0.42f),
+        topLeft = Offset(0f, 6.dp.toPx()),
         size = size,
         cornerRadius = CornerRadius(22.dp.toPx()),
     )
     drawRoundRect(
         brush = Brush.radialGradient(
             colors = listOf(
-                accent.primary.copy(alpha = 0.22f * boost),
-                accent.secondary.copy(alpha = 0.10f * boost),
+                accent.primary.copy(alpha = 0.16f * boost),
+                accent.secondary.copy(alpha = 0.08f * boost),
                 Color.Transparent,
             ),
             center = Offset(size.width * 0.2f, size.height * 0.1f),

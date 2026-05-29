@@ -50,26 +50,21 @@ fun JournalPollBadge(
     Row(
         modifier = modifier
             .clip(PremiumJournalFeedTokens.chipShape)
-            .background(Color(0xFF818CF8).copy(alpha = 0.18f))
+            .background(Color(0xFF818CF8).copy(alpha = 0.14f))
             .border(
                 0.75.dp,
-                Brush.horizontalGradient(
-                    listOf(
-                        Color(0xFF818CF8).copy(alpha = 0.45f),
-                        PremiumColors.accentPurpleDeep.copy(alpha = 0.35f),
-                    ),
-                ),
+                Color(0xFF818CF8).copy(alpha = 0.32f),
                 PremiumJournalFeedTokens.chipShape,
             )
-            .padding(horizontal = 10.dp, vertical = 5.dp),
+            .padding(horizontal = 10.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         Icon(
             imageVector = Icons.Outlined.Poll,
             contentDescription = null,
             tint = Color(0xFFCBD5FF),
-            modifier = Modifier.size(14.dp),
+            modifier = Modifier.size(12.dp),
         )
         Text(
             text = stringResource(R.string.team_news_poll_badge),
@@ -128,7 +123,7 @@ fun PremiumJournalProgressBar(
         modifier = modifier
             .height(barHeight)
             .clip(trackShape)
-            .background(Color(0xFF1E2836).copy(alpha = 0.72f)),
+            .background(PremiumJournalFeedTokens.optionTrackColor.copy(alpha = 0.72f)),
     ) {
         Box(
             modifier = Modifier
@@ -147,11 +142,21 @@ fun JournalPollOptionTile(
     voteCount: Int,
     selected: Boolean,
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
     interactive: Boolean = false,
     onSelect: (() -> Unit)? = null,
     showVoteCount: Boolean = true,
     contentBelow: @Composable (() -> Unit)? = null,
 ) {
+    if (compact) {
+        JournalPollOptionCompactRow(
+            text = text,
+            share = share,
+            selected = selected,
+            modifier = modifier,
+        )
+        return
+    }
     val pct = if (share > 0f) (share * 100f).roundToInt() else 0
     val shape = PremiumJournalFeedTokens.optionTileShape
     val borderBrush = if (selected) {
@@ -164,20 +169,24 @@ fun JournalPollOptionTile(
     } else {
         Brush.linearGradient(
             listOf(
-                Color.White.copy(alpha = 0.12f),
-                Color.White.copy(alpha = 0.05f),
+                Color.White.copy(alpha = 0.10f),
+                Color.White.copy(alpha = 0.04f),
             ),
         )
     }
     val tileModifier = modifier
         .fillMaxWidth()
-        .heightIn(min = 52.dp)
+        .heightIn(min = PremiumJournalFeedTokens.optionTileMinHeightFull)
         .clip(shape)
         .background(
             Brush.verticalGradient(
                 listOf(
-                    Color(0xFF3A4658).copy(alpha = if (selected) 0.55f else 0.38f),
-                    Color(0xFF2A3444).copy(alpha = if (selected) 0.48f else 0.32f),
+                    PremiumJournalFeedTokens.optionTileTop.copy(
+                        alpha = if (selected) 0.72f else 0.55f,
+                    ),
+                    PremiumJournalFeedTokens.optionTileBottom.copy(
+                        alpha = if (selected) 0.65f else 0.48f,
+                    ),
                 ),
             ),
         )
@@ -200,7 +209,7 @@ fun JournalPollOptionTile(
 
     Column(
         modifier = tileModifier,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -251,12 +260,58 @@ fun JournalPollOptionTile(
 }
 
 @Composable
+private fun JournalPollOptionCompactRow(
+    text: String,
+    share: Float,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val pct = if (share > 0f) (share * 100f).roundToInt() else 0
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = PremiumJournalFeedTokens.optionTileMinHeight),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = text,
+                style = PremiumJournalFeedTokens.optionLabelStyle.copy(
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    fontSize = PremiumJournalFeedTokens.optionLabelStyle.fontSize,
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = if (pct > 0) "$pct%" else "—",
+                style = PremiumJournalFeedTokens.optionPctStyle.copy(
+                    color = if (selected) PremiumColors.accentCyanBright else PremiumJournalFeedTokens.metaColor,
+                ),
+            )
+        }
+        PremiumJournalProgressBar(
+            progress = share,
+            selected = selected,
+            barHeight = PremiumJournalFeedTokens.pollPreviewBarHeight,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
 fun JournalPollPreviewBlock(
     options: List<com.lastasylum.alliance.data.teams.TeamNewsPollOptionDto>,
     tallies: List<com.lastasylum.alliance.data.teams.TeamNewsPollTallyDto>,
     myVoteOptionId: String?,
     modifier: Modifier = Modifier,
     maxOptions: Int = 2,
+    compact: Boolean = true,
 ) {
     val totalVotes = tallies.sumOf { it.count }
     val previewOptions = if (options.size <= maxOptions) {
@@ -267,9 +322,14 @@ fun JournalPollPreviewBlock(
         }.take(maxOptions)
     }
     val remaining = (options.size - previewOptions.size).coerceAtLeast(0)
+    val spacing = if (compact) {
+        PremiumJournalFeedTokens.pollPreviewOptionSpacing
+    } else {
+        8.dp
+    }
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(spacing),
     ) {
         previewOptions.forEach { opt ->
             val cnt = tallies.find { it.optionId == opt.id }?.count ?: 0
@@ -280,6 +340,7 @@ fun JournalPollPreviewBlock(
                 voteCount = cnt,
                 selected = myVoteOptionId == opt.id,
                 showVoteCount = false,
+                compact = compact,
             )
         }
         if (remaining > 0) {

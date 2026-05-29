@@ -11,7 +11,7 @@ import com.lastasylum.alliance.ui.theme.premium.PremiumColors
 
 object OverlayOnlineMemberTokens {
     val cellShape = RoundedCornerShape(14.dp)
-    val cellMinHeight = 160.dp
+    val cellMinHeight = 120.dp
     val avatarOuter = 48.dp
     val avatarInner = 44.dp
     val avatarRingWidth = 2.dp
