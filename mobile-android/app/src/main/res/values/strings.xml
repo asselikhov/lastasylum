@@ -675,6 +675,8 @@
     <string name="overlay_online_action_copy_nick">Скопировать ник</string>
     <string name="overlay_hud_online_cd">Участники в игре: %1$d</string>
     <string name="overlay_hud_join_requests_cd">Заявки в команду: %1$d</string>
+    <string name="overlay_hud_app_update_cd">Обновить приложение</string>
+    <string name="overlay_app_update_downloading">Загрузка обновления…</string>
     <string name="overlay_hud_alliance_chat_cd">Чат альянса, непрочитанные: %1$d</string>
     <string name="overlay_hud_news_cd">Новости команды: %1$d</string>
     <string name="overlay_hud_forum_cd">Форум команды, непрочитанные: %1$d</string>

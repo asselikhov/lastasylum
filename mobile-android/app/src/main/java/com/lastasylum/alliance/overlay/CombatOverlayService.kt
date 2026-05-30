@@ -131,6 +131,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.lastasylum.alliance.push.FcmTokenManager
+import com.lastasylum.alliance.update.downloadAndInstallAppUpdate
+import com.lastasylum.alliance.update.fetchNewerApkDownloadUrl
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
@@ -1013,6 +1015,11 @@ class CombatOverlayService : Service() {
 
     private var lastHudPresenceCountRefreshAtMs: Long = 0L
 
+    private var lastOverlayAppUpdateCheckAtMs: Long = 0L
+
+    @Volatile
+    private var overlayAppUpdateDownloadInFlight: Boolean = false
+
     @Volatile
     private var deferredDismissWhenPickerEnds: Boolean = false
 
@@ -1766,6 +1773,14 @@ class CombatOverlayService : Service() {
                 } else {
                     overlayTopRightHudFlow.value.teamJoinRequestCount
                 }
+                val refreshAppUpdate = force ||
+                    nowMs - lastOverlayAppUpdateCheckAtMs >= APP_UPDATE_CHECK_MS
+                val appUpdateUrl = if (refreshAppUpdate) {
+                    lastOverlayAppUpdateCheckAtMs = nowMs
+                    runCatching { fetchNewerApkDownloadUrl() }.getOrNull()
+                } else {
+                    overlayTopRightHudFlow.value.appUpdateDownloadUrl
+                }
                 mainHandler.post {
                     if (!isInGameOverlayUiActive()) return@post
                     if (mergedState != overlayStatusHudFlow.value) {
@@ -1782,6 +1797,7 @@ class CombatOverlayService : Service() {
                     val nextTopRight = prevTopRight.copy(
                         onlineIngameCount = onlineIngameCount,
                         teamJoinRequestCount = joinRequestCount,
+                        appUpdateDownloadUrl = appUpdateUrl,
                     )
                     if (nextTopRight != prevTopRight) {
                         overlayTopRightHudFlow.value = nextTopRight
@@ -2512,6 +2528,41 @@ class CombatOverlayService : Service() {
         )
     }
 
+    private fun scheduleOverlayAppUpdateCheck(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastOverlayAppUpdateCheckAtMs < APP_UPDATE_CHECK_MS) return
+        lastOverlayAppUpdateCheckAtMs = now
+        serviceScope.launch(Dispatchers.IO) {
+            val url = runCatching { fetchNewerApkDownloadUrl() }.getOrNull()
+            mainHandler.post {
+                if (!isInGameOverlayUiActive()) return@post
+                val prev = overlayTopRightHudFlow.value
+                val next = prev.copy(appUpdateDownloadUrl = url)
+                if (next != prev) overlayTopRightHudFlow.value = next
+            }
+        }
+    }
+
+    private fun onOverlayAppUpdateClick() {
+        val url = overlayTopRightHudFlow.value.appUpdateDownloadUrl?.trim().orEmpty()
+        if (url.isEmpty() || overlayAppUpdateDownloadInFlight) return
+        overlayAppUpdateDownloadInFlight = true
+        Toast.makeText(this, getString(R.string.overlay_app_update_downloading), Toast.LENGTH_SHORT).show()
+        serviceScope.launch {
+            val result = downloadAndInstallAppUpdate(this@CombatOverlayService, url)
+            mainHandler.post {
+                overlayAppUpdateDownloadInFlight = false
+                if (result.isFailure) {
+                    Toast.makeText(
+                        this@CombatOverlayService,
+                        getString(R.string.chat_apk_download_failed),
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
+            }
+        }
+    }
+
     private fun toggleOverlayTopRightVoiceExpanded() {
         val cur = overlayTopRightHudFlow.value
         val expanding = !cur.voiceExpanded
@@ -2771,6 +2822,7 @@ class CombatOverlayService : Service() {
                             pendingOpenJoinInboxOnParticipants = false
                             showOverlayHudPane(OverlayHudPane.Participants)
                         },
+                        onAppUpdateClick = { onOverlayAppUpdateClick() },
                         onQuickCommandsClick = { openOverlayQuickCommandsFromHud() },
                         onVoiceHubClick = { toggleOverlayTopRightVoiceExpanded() },
                         onMicClick = { toggleOverlayVoiceMicFromHud() },
@@ -2836,6 +2888,7 @@ class CombatOverlayService : Service() {
             voiceSettingsVisible = false,
         )
         refreshOverlayTopRightHudState()
+        scheduleOverlayAppUpdateCheck(force = true)
     }
 
     private fun applyGameGateState(
@@ -5523,6 +5576,7 @@ class CombatOverlayService : Service() {
         /** Fallback poll for news/forum when no socket activity (realtime is primary). */
         private const val STATUS_HUD_REFRESH_MS = 20_000L
         private const val HUD_PRESENCE_COUNT_REFRESH_MS = 60_000L
+        private const val APP_UPDATE_CHECK_MS = 120_000L
         private const val USAGE_ACCESS_CACHE_MS = 30_000L
         private const val GAME_GATE_RECENT_INGAME_WINDOW_MS = 45_000L
         /** Краткий grace при ложном «не в игре» во время чата/пикера; не применяется при явном лаунчере/другом приложении. */

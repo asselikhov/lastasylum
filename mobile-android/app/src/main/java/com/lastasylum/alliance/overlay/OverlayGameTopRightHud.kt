@@ -13,6 +13,7 @@ import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MicOff
 import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.runtime.Composable
@@ -40,12 +41,15 @@ data class OverlayGameTopRightHudState(
     val voiceSettingsVisible: Boolean = false,
     val soundVolume: Float = 1f,
     val micVolume: Float = 1f,
+    /** Non-null when backend reports a newer APK; shows update chip in the top HUD row. */
+    val appUpdateDownloadUrl: String? = null,
 )
 
 @Composable
 fun OverlayGameTopRightHud(
     state: OverlayGameTopRightHudState,
     onOnlineClick: () -> Unit,
+    onAppUpdateClick: () -> Unit,
     onQuickCommandsClick: () -> Unit,
     onVoiceHubClick: () -> Unit,
     onMicClick: () -> Unit,
@@ -132,6 +136,14 @@ fun OverlayGameTopRightHud(
         ) {
             OverlayGameHudBar(horizontalAlignment = Alignment.End) {
                 OverlayGameHudChipRow {
+                    if (!state.appUpdateDownloadUrl.isNullOrBlank()) {
+                        OverlayGameHudChip(
+                            icon = Icons.Outlined.SystemUpdate,
+                            tint = Color(0xFF4FC3F7),
+                            contentDescription = stringResource(R.string.overlay_hud_app_update_cd),
+                            onClick = onAppUpdateClick,
+                        )
+                    }
                     OverlayGameHudChip(
                         icon = Icons.Outlined.Groups,
                         tint = Color(0xFF81C784),
