@@ -17,10 +17,13 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -30,12 +33,24 @@ import com.lastasylum.alliance.ui.chat.ForumMessagesListDerived
 import com.lastasylum.alliance.ui.chat.ForumTimelineEntry
 import com.lastasylum.alliance.ui.chat.buildForumMessagesListDerived
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
+private const val FORUM_DERIVE_DEBOUNCE_MS = 32L
+
+/**
+ * Rebuilds forum timeline off the main thread when [messagesGeneration] changes.
+ */
 @Composable
 internal fun rememberForumMessagesListDerived(
     messages: List<TeamForumMessageDto>,
+    messagesGeneration: Int,
 ): ForumMessagesListDerived {
-    val derived by remember {
-        derivedStateOf { buildForumMessagesListDerived(messages.toList()) }
+    var derived by remember { mutableStateOf(ForumMessagesListDerived.Empty) }
+    androidx.compose.runtime.LaunchedEffect(messagesGeneration) {
+        val snapshot = messages.toList()
+        kotlinx.coroutines.delay(FORUM_DERIVE_DEBOUNCE_MS)
+        val built = withContext(Dispatchers.Default) {
+            buildForumMessagesListDerived(snapshot)
+        }
+        derived = built
     }
     return derived
 }

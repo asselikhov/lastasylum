@@ -2183,6 +2183,37 @@ class ChatViewModel(
         }
     }
 
+    /** Reactions / single-row edits: keep timeline shape, patch one row off the UI thread. */
+    private fun publishMessagesDerivedAfterPatch(messages: List<ChatMessage>, messageIndex: Int) {
+        deriveJob?.cancel()
+        deriveDebounceJob?.cancel()
+        if (messages.isEmpty()) {
+            _listDerived.value = ChatMessagesListDerived.Empty
+            return
+        }
+        val previousDerived = _listDerived.value
+        if (messages.size <= CHAT_LIST_DERIVE_SYNC_MAX) {
+            _listDerived.value = buildChatMessagesListDerivedAfterPatchMessage(
+                previousDerived = previousDerived,
+                messages = messages,
+                messageIndex = messageIndex,
+            )
+            return
+        }
+        val expected = messages
+        val idx = messageIndex
+        deriveJob = viewModelScope.launch(Dispatchers.Default) {
+            val derived = buildChatMessagesListDerivedAfterPatchMessage(
+                previousDerived = previousDerived,
+                messages = expected,
+                messageIndex = idx,
+            )
+            if (chatMessagesListContentEqual(expected, _state.value.messages)) {
+                _listDerived.value = derived
+            }
+        }
+    }
+
     /** Мгновенная лента при переключении комнаты (кэш уже в памяти). */
     private fun publishMessagesDerivedImmediate(messages: List<ChatMessage>) {
         deriveJob?.cancel()
@@ -2647,6 +2678,7 @@ class ChatViewModel(
     fun toggleReaction(messageId: String, emoji: String) {
         if (messageId.isBlank() || emoji.isBlank()) return
         val previousMessages = _state.value.messages
+        val patchIndex = previousMessages.indexOfFirst { it._id == messageId }
         val optimistic = applyOptimisticReactionToggle(
             messages = previousMessages,
             messageId = messageId,
@@ -2654,7 +2686,11 @@ class ChatViewModel(
         )
         if (optimistic !== previousMessages) {
             _state.value = _state.value.copy(messages = optimistic)
-            publishMessagesDerived(optimistic)
+            if (patchIndex >= 0) {
+                publishMessagesDerivedAfterPatch(optimistic, patchIndex)
+            } else {
+                publishMessagesDerived(optimistic)
+            }
         }
         viewModelScope.launch {
             repository.toggleReaction(messageId, emoji)
@@ -2665,11 +2701,16 @@ class ChatViewModel(
                     }
                 }
                 .onFailure { e ->
+                    val rollbackIndex = previousMessages.indexOfFirst { it._id == messageId }
                     _state.value = _state.value.copy(
                         messages = previousMessages,
                         error = e.toUserMessageRu(res),
                     )
-                    publishMessagesDerived(previousMessages)
+                    if (rollbackIndex >= 0) {
+                        publishMessagesDerivedAfterPatch(previousMessages, rollbackIndex)
+                    } else {
+                        publishMessagesDerived(previousMessages)
+                    }
                 }
         }
     }

@@ -46,6 +46,35 @@ fun ChatMessageBubbleRow(
     bubbleWidthCap: Dp = ChatBubbleMaxWidthCap,
     bubble: @Composable (maxBubbleWidth: Dp) -> Unit,
 ) {
+    val listMaxBubble = LocalChatBubbleMaxWidth.current
+    if (listMaxBubble != null) {
+        val checkboxReserve =
+            if (inSelectionMode && canDelete) SelectionCheckboxReserve else 0.dp
+        val avatarReserve =
+            if (!isMine && (showIncomingAvatar || reserveIncomingAvatarSpace)) {
+                ChatIncomingAvatarSize + ChatIncomingAvatarEndPad
+            } else {
+                0.dp
+            }
+        val maxBubble = (listMaxBubble - checkboxReserve - avatarReserve).coerceAtLeast(120.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = clusterTopSpacing),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            ChatMessageBubbleRowInner(
+                isMine = isMine,
+                showIncomingAvatar = showIncomingAvatar,
+                reserveIncomingAvatarSpace = reserveIncomingAvatarSpace,
+                leadingAvatar = leadingAvatar,
+                selectionControl = selectionControl,
+                maxBubble = maxBubble,
+                bubble = bubble,
+            )
+        }
+        return
+    }
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
@@ -63,28 +92,49 @@ fun ChatMessageBubbleRow(
             (maxWidth - checkboxReserve - avatarReserve) * bubbleWidthFraction,
             bubbleWidthCap,
         )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            if (isMine) {
-                selectionControl()
-                Spacer(modifier = Modifier.weight(1f, fill = true))
-            } else {
-                selectionControl()
-                when {
-                    showIncomingAvatar -> leadingAvatar()
-                    reserveIncomingAvatarSpace -> {
-                        Spacer(
-                            modifier = Modifier.width(
-                                ChatIncomingAvatarSize + ChatIncomingAvatarEndPad,
-                            ),
-                        )
-                    }
+        ChatMessageBubbleRowInner(
+            isMine = isMine,
+            showIncomingAvatar = showIncomingAvatar,
+            reserveIncomingAvatarSpace = reserveIncomingAvatarSpace,
+            leadingAvatar = leadingAvatar,
+            selectionControl = selectionControl,
+            maxBubble = maxBubble,
+            bubble = bubble,
+        )
+    }
+}
+
+@Composable
+private fun ChatMessageBubbleRowInner(
+    isMine: Boolean,
+    showIncomingAvatar: Boolean,
+    reserveIncomingAvatarSpace: Boolean,
+    leadingAvatar: @Composable () -> Unit,
+    selectionControl: @Composable RowScope.() -> Unit,
+    maxBubble: Dp,
+    bubble: @Composable (maxBubbleWidth: Dp) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        if (isMine) {
+            selectionControl()
+            Spacer(modifier = Modifier.weight(1f, fill = true))
+        } else {
+            selectionControl()
+            when {
+                showIncomingAvatar -> leadingAvatar()
+                reserveIncomingAvatarSpace -> {
+                    Spacer(
+                        modifier = Modifier.width(
+                            ChatIncomingAvatarSize + ChatIncomingAvatarEndPad,
+                        ),
+                    )
                 }
             }
-            bubble(maxBubble)
         }
+        bubble(maxBubble)
     }
 }
 

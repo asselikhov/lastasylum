@@ -225,8 +225,11 @@ import com.lastasylum.alliance.ui.chat.AttachmentPreviewOverlay
 import com.lastasylum.alliance.ui.chat.ChatComposer
 import com.lastasylum.alliance.ui.chat.ChatComposerBar
 import com.lastasylum.alliance.ui.chat.ChatFileAttachmentCard
+import com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthCap
+import com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthFraction
 import com.lastasylum.alliance.ui.chat.ChatMessageBubbleRow
 import com.lastasylum.alliance.ui.chat.ChatMessageClusterFlags
+import com.lastasylum.alliance.ui.chat.LocalChatBubbleMaxWidth
 import com.lastasylum.alliance.ui.chat.LocalOpenRemoteChatImagePreview
 import com.lastasylum.alliance.ui.chat.ChatMessageReactionsRow
 import com.lastasylum.alliance.ui.chat.chatBubbleExpandsToRowWidth
@@ -474,6 +477,7 @@ private fun ChatScreenMessagesHost(
             .distinctUntilChanged()
             .debounce(48)
             .collect { sig ->
+                if (listStateRef.value.isScrollInProgress) return@collect
                 if (sig.totalItems > 4 &&
                     sig.lastVisibleIndex >= sig.totalItems - 2 &&
                     sig.hasMoreOlder &&
@@ -1319,6 +1323,27 @@ private fun ChatMessagesLazyList(
     val minSystemViewport = (LocalConfiguration.current.screenHeightDp * 0.55f).dp.coerceAtLeast(280.dp)
     val timeline = listDerived.timeline
     val messageClusterFlags = listDerived.clusterFlags
+    val configuration = LocalConfiguration.current
+    val listBubbleMaxWidth = remember(configuration.screenWidthDp, overlayUi) {
+        val rowWidth = configuration.screenWidthDp.dp
+        val fraction = if (overlayUi) {
+            com.lastasylum.alliance.ui.chat.ChatOverlayBubbleMaxWidthFraction
+        } else {
+            ChatBubbleMaxWidthFraction
+        }
+        val cap = if (overlayUi) {
+            com.lastasylum.alliance.ui.chat.ChatOverlayBubbleMaxWidthCap
+        } else {
+            ChatBubbleMaxWidthCap
+        }
+        minOf(rowWidth * fraction, cap)
+    }
+    val onOpenActionsRef = rememberUpdatedState(onOpenMessageActions)
+    val onToggleReactionRef = rememberUpdatedState(onToggleReaction)
+    val onReplyRef = rememberUpdatedState(onReplyToMessage)
+    val onToggleSelectionRef = rememberUpdatedState(onToggleMessageSelection)
+    val onJumpRef = rememberUpdatedState(jumpToQuotedMessage)
+    CompositionLocalProvider(LocalChatBubbleMaxWidth provides listBubbleMaxWidth) {
     LazyColumn(
         state = listState,
         modifier = modifier,
@@ -1465,30 +1490,38 @@ private fun ChatMessagesLazyList(
                                 isSelected = message._id != null && message._id in selectedMessageIds,
                                 otherReadUptoMessageId = otherReadUptoMessageId,
                                 overlayUi = overlayUi,
-                                onToggleReaction = onToggleReaction,
-                                onOpenActions = { id -> onOpenMessageActions(id) },
-                                onToggleSelection = onToggleMessageSelection,
-                                onSwipeReply = onReplyToMessage,
-                                onJumpToQuotedMessage = jumpToQuotedMessage,
+                                inMessageList = true,
+                                onToggleReaction = onToggleReactionRef.value,
+                                onOpenActions = onOpenActionsRef.value,
+                                onToggleSelection = onToggleSelectionRef.value,
+                                onSwipeReply = onReplyRef.value,
+                                onJumpToQuotedMessage = onJumpRef.value,
                             )
                         }
                         is ChatTimelineEntry.ChatAlbumItem -> {
                             val message = e.representativeMessage
                             val cluster = messageClusterFlags.getOrNull(e.firstMessageIndex)
                             val clusterTop = clusterTopSpacingAt(listDerived, idx).dp
+                            val albumHighlighted by remember(
+                                highlightMessageId,
+                                message._id,
+                                e.memberMessageIds,
+                            ) {
+                                derivedStateOf {
+                                    val hid = highlightMessageId
+                                    hid != null && (
+                                        hid == message._id ||
+                                            hid in e.memberMessageIds
+                                        )
+                                }
+                            }
                             ChatAlbumRow(
                                 message = message,
                                 cluster = cluster,
                                 resolvedImageUrls = e.resolvedImageUrls,
                                 caption = e.caption,
                                 isMine = chatMessageIsOwn(message, listUiState.currentUserId),
-                                highlighted = highlightMessageId != null &&
-                                    (
-                                        highlightMessageId == message._id ||
-                                            e.messageIndices.any { i ->
-                                                messages.getOrNull(i)?._id == highlightMessageId
-                                            }
-                                        ),
+                                highlighted = albumHighlighted,
                                 clusterTopSpacing = clusterTop,
                                 otherReadUptoMessageId = otherReadUptoMessageId,
                                 canDelete = canDeleteChatMessage(
@@ -1501,10 +1534,11 @@ private fun ChatMessagesLazyList(
                                 inSelectionMode = inSelectionMode,
                                 isSelected = message._id != null && message._id in selectedMessageIds,
                                 overlayUi = overlayUi,
-                                onToggleReaction = onToggleReaction,
-                                onOpenActions = { id -> onOpenMessageActions(id) },
-                                onToggleSelection = onToggleMessageSelection,
-                                onSwipeReply = onReplyToMessage,
+                                inMessageList = true,
+                                onToggleReaction = onToggleReactionRef.value,
+                                onOpenActions = onOpenActionsRef.value,
+                                onToggleSelection = onToggleSelectionRef.value,
+                                onSwipeReply = onReplyRef.value,
                             )
                         }
                     }
@@ -1556,6 +1590,7 @@ private fun ChatMessagesLazyList(
                 }
             }
         }
+    }
     }
 }
 
@@ -1658,6 +1693,7 @@ private fun ChatBubbleInnerColumn(
     bubbleBg: Color,
     onFileDownload: ((ChatMessage) -> Unit)? = null,
     downloadingFileUrl: String? = null,
+    inMessageList: Boolean = false,
 ) {
     val openRemoteChatImagePreview = LocalOpenRemoteChatImagePreview.current
     val bubblePadH = ChatMessengerStyle.bubbleHorizontalPadding(stickerStem)
@@ -1848,6 +1884,7 @@ private fun ChatBubbleInnerColumn(
                                 roundTileCorners = false,
                                 bottomRound = !hasCaption,
                                 onLongPress = onImageLongPress,
+                                inMessageList = inMessageList,
                             )
                             if (!hasCaption && timeLabel.isNotBlank()) {
                                 Surface(
@@ -1949,6 +1986,7 @@ private fun ChatFloatingImageAttachmentsBlock(
     deleting: Boolean,
     canDelete: Boolean,
     onImageLongPress: () -> Unit,
+    inMessageList: Boolean = false,
 ) {
     val openRemote = LocalOpenRemoteChatImagePreview.current
     val label = stringResource(R.string.cd_chat_message_image)
@@ -2012,6 +2050,7 @@ private fun ChatFloatingImageAttachmentsBlock(
                         roundTileCorners = true,
                         bottomRound = !hasCaption,
                         onLongPress = onImageLongPress,
+                        inMessageList = inMessageList,
                     )
                     if (!hasCaption && (formattedTime.isNotBlank() || (isMine && isChainBottom))) {
                         ChatMessageTimeOverlayChip(
@@ -2064,6 +2103,7 @@ private fun ChatAlbumRow(
     inSelectionMode: Boolean,
     isSelected: Boolean,
     overlayUi: Boolean,
+    inMessageList: Boolean = false,
     onToggleReaction: (String, String) -> Unit,
     onOpenActions: (String) -> Unit,
     onToggleSelection: (String) -> Unit,
@@ -2106,7 +2146,7 @@ private fun ChatAlbumRow(
         lerp(scheme.surface, Color.Black, 0.28f).copy(alpha = 0.82f)
     }
 
-    val swipeModifier = if (messageId != null) {
+    val swipeModifier = if (!inMessageList && messageId != null) {
         Modifier.pointerInput(messageId, layoutDirection, swipePx) {
             var accX = 0f
             detectHorizontalDragGestures(
@@ -2214,6 +2254,7 @@ private fun ChatAlbumRow(
             captionBarBg = captionBarBg,
             onBubble = onBubble,
             timeMuted = timeMuted,
+            inMessageList = inMessageList,
             bubbleClickModifier = bubbleClickModifier,
             swipeModifier = swipeModifier,
             deleting = deleting,
@@ -2242,6 +2283,8 @@ internal fun ChatMessageBubble(
     isSelected: Boolean,
     overlayUi: Boolean,
     otherReadUptoMessageId: String?,
+    /** Lazy list: skip horizontal swipe detector to reduce scroll jank. */
+    inMessageList: Boolean = false,
     onToggleReaction: ((String, String) -> Unit)?,
     onOpenActions: (String) -> Unit,
     onToggleSelection: (String) -> Unit,
@@ -2316,7 +2359,7 @@ internal fun ChatMessageBubble(
         isMine && isChainBottom && isChatMessageReadByPeer(message._id, otherReadUptoMessageId)
     }
 
-    val swipeModifier = if (messageId != null && !isDeleted) {
+    val swipeModifier = if (!inMessageList && messageId != null && !isDeleted) {
         Modifier.pointerInput(messageId, layoutDirection, swipePx) {
             var accX = 0f
             detectHorizontalDragGestures(
@@ -2551,6 +2594,7 @@ internal fun ChatMessageBubble(
                     readByPeer = readByPeer,
                     highlighted = highlighted,
                     formattedTime = formattedTime,
+                    inMessageList = inMessageList,
                     bubbleClickModifier = bubbleClickModifier,
                     swipeModifier = swipeModifier,
                     deleting = deleting,
@@ -2618,6 +2662,7 @@ internal fun ChatMessageBubble(
                             bubbleBg = bubbleBg,
                             onFileDownload = onFileDownload,
                             downloadingFileUrl = downloadingFileUrl,
+                            inMessageList = inMessageList,
                         )
                     }
                     if (onReactionChip != null) {

@@ -102,6 +102,7 @@ fun OverlayReactionRecipientSheet(
     onBack: () -> Unit,
     onDismiss: () -> Unit,
     onSendToUserIds: (List<String>) -> Unit,
+    onSendToAll: () -> Unit,
     loadMembers: suspend () -> Result<List<PlayerTeamMemberDto>>,
     modifier: Modifier = Modifier,
     initialSelectedUserIds: Set<String> = emptySet(),
@@ -142,13 +143,6 @@ fun OverlayReactionRecipientSheet(
             } else {
                 members.filter { it.username.contains(q, ignoreCase = true) }
             }
-        }
-    }
-
-    val allFilteredSelected by remember(filteredMembers, selectedIds) {
-        derivedStateOf {
-            filteredMembers.isNotEmpty() &&
-                filteredMembers.all { it.userId in selectedIds }
         }
     }
 
@@ -234,15 +228,8 @@ fun OverlayReactionRecipientSheet(
                             showSearch = members.size > 9,
                             searchQuery = searchQuery,
                             onSearchChange = { searchQuery = it },
-                            allSelected = allFilteredSelected,
-                            hasFiltered = filteredMembers.isNotEmpty(),
-                            onToggleSelectAll = {
-                                selectedIds = if (allFilteredSelected) {
-                                    selectedIds - filteredMembers.map { it.userId }.toSet()
-                                } else {
-                                    selectedIds + filteredMembers.map { it.userId }
-                                }
-                            },
+                            canSendToAll = members.isNotEmpty(),
+                            onSendToAll = onSendToAll,
                         )
 
                         if (filteredMembers.isEmpty()) {
@@ -400,9 +387,8 @@ private fun RecipientCompactToolbar(
     showSearch: Boolean,
     searchQuery: String,
     onSearchChange: (String) -> Unit,
-    allSelected: Boolean,
-    hasFiltered: Boolean,
-    onToggleSelectAll: () -> Unit,
+    canSendToAll: Boolean,
+    onSendToAll: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -444,27 +430,20 @@ private fun RecipientCompactToolbar(
                 textStyle = MaterialTheme.typography.labelSmall,
             )
         }
-        if (hasFiltered) {
+        if (canSendToAll) {
             FilterChip(
-                selected = allSelected,
-                onClick = onToggleSelectAll,
+                selected = false,
+                onClick = onSendToAll,
                 label = {
                     Text(
-                        text = stringResource(
-                            if (allSelected) {
-                                R.string.overlay_reactions_clear_selection
-                            } else {
-                                R.string.overlay_reactions_select_all
-                            },
-                        ),
+                        text = stringResource(R.string.overlay_reactions_send_to_all),
                         style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
                     )
                 },
                 colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = Color(0xFF2A4558),
-                    containerColor = Color(0xFF1A2836),
+                    containerColor = Color(0xFF2A4558),
                     labelColor = Color(0xFFE8F4FF),
-                    selectedLabelColor = Color(0xFFE8F4FF),
                 ),
                 modifier = Modifier.heightIn(min = 32.dp),
             )

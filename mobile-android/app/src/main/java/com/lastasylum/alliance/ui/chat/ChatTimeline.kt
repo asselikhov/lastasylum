@@ -13,6 +13,8 @@ sealed interface ChatTimelineEntry {
         val firstMessageIndex: Int,
         val representativeMessage: ChatMessage,
         val messageIndices: List<Int>,
+        /** Stable ids for highlight/selection without scanning the full messages list in items. */
+        val memberMessageIds: List<String>,
         val resolvedImageUrls: List<String>,
         val caption: String?,
     ) : ChatTimelineEntry
@@ -122,6 +124,7 @@ fun buildChatTimeline(messages: List<ChatMessage>): List<ChatTimelineEntry> {
                         firstMessageIndex = i,
                         representativeMessage = messages[repIndex],
                         messageIndices = indices,
+                        memberMessageIds = indices.mapNotNull { messages[it]._id },
                         resolvedImageUrls = urls,
                         caption = caption,
                     ),

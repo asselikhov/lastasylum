@@ -36,8 +36,12 @@ import com.lastasylum.alliance.ui.chat.chatComposerAppDock
 import com.lastasylum.alliance.ui.chat.stabilizeComposerImageUris
 import com.lastasylum.alliance.ui.chat.capForumMessagesOldestFirst
 import com.lastasylum.alliance.ui.chat.mergePreservingForumMedia
+import com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthCap
+import com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthFraction
 import com.lastasylum.alliance.ui.chat.ChatScrollToLatestFab
+import com.lastasylum.alliance.ui.chat.LocalChatBubbleMaxWidth
 import com.lastasylum.alliance.ui.chat.LocalOpenRemoteChatImagePreview
+import com.lastasylum.alliance.ui.chat.forumLazyListLoadOlderOffset
 import com.lastasylum.alliance.ui.chat.MessengerImagesPreviewHost
 import com.lastasylum.alliance.ui.chat.toDisplayChatMessage
 import com.lastasylum.alliance.ui.chat.queryDisplayName
@@ -92,8 +96,14 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.platform.LocalConfiguration
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -638,7 +648,18 @@ private fun TeamForumListRoute(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+private data class ForumScrollAnchor(
+    val firstVisibleItemIndex: Int,
+    val firstVisibleItemScrollOffset: Int,
+    val timelineSize: Int,
+)
+
+private data class ForumLoadOlderSignal(
+    val firstVisibleIndex: Int,
+    val totalItems: Int,
+)
+
+@OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
 @Composable
 private fun TeamForumTopicChatRoute(
     teamId: String,
@@ -677,7 +698,11 @@ private fun TeamForumTopicChatRoute(
     var typingHint by remember { mutableStateOf<String?>(null) }
     // messages is maintained oldest-first; avoid per-update sorting allocations (jank/GC).
     val stableMessages = messages
-    val listDerived = rememberForumMessagesListDerived(stableMessages)
+    var messagesGeneration by remember(teamId, topicId) { mutableIntStateOf(0) }
+    fun bumpMessagesGeneration() {
+        messagesGeneration++
+    }
+    val listDerived = rememberForumMessagesListDerived(stableMessages, messagesGeneration)
     var newMessagesWhileScrolledUp by remember(teamId, topicId) { mutableIntStateOf(0) }
     var lastCountedNewestId by remember(teamId, topicId) { mutableStateOf<String?>(null) }
     val isNearBottom by remember(listState, listDerived, hasMoreOlder) {
@@ -697,7 +722,13 @@ private fun TeamForumTopicChatRoute(
 
     fun trimForumMessagesInMemory() {
         capForumMessagesOldestFirst(messages)
+        bumpMessagesGeneration()
     }
+
+    var pendingForumScrollAnchor by remember(teamId, topicId) {
+        mutableStateOf<ForumScrollAnchor?>(null)
+    }
+    val timelineSize = listDerived.timeline.size
     val forumPrefs = remember { AppContainer.from(context).teamForumPreferences }
     var lastReadCursor by remember { mutableStateOf<String?>(null) }
 
@@ -730,10 +761,12 @@ private fun TeamForumTopicChatRoute(
             messages.add(msg)
             trimForumMessagesInMemory()
         }
+        bumpMessagesGeneration()
     }
 
     fun removeMessage(messageId: String) {
         messages.removeAll { it.id == messageId }
+        bumpMessagesGeneration()
         if (activeActionMessageId == messageId) activeActionMessageId = null
         selectedMessageIds = selectedMessageIds - messageId
         if (replyToMessage?.id == messageId) replyToMessage = null
@@ -770,6 +803,7 @@ private fun TeamForumTopicChatRoute(
             messages.add(msg)
             trimForumMessagesInMemory()
         }
+        bumpMessagesGeneration()
         markTopicReadToLatest()
     }
 
@@ -821,8 +855,8 @@ private fun TeamForumTopicChatRoute(
                             m.deletedAt.equals("null", ignoreCase = true)
                     }
                     if (appendOlder) {
-                        val existing = messages.map { it.id }.toSet()
-                        val older = visible.filter { it.id !in existing }
+                        val existingIds = messages.asSequence().map { it.id }.toHashSet()
+                        val older = visible.filter { it.id !in existingIds }
                         messages.addAll(0, older)
                         trimForumMessagesInMemory()
                     } else {
@@ -866,6 +900,58 @@ private fun TeamForumTopicChatRoute(
             }
         }
     }
+    LaunchedEffect(loadingOlder) {
+        if (loadingOlder && pendingForumScrollAnchor == null) {
+            pendingForumScrollAnchor = ForumScrollAnchor(
+                firstVisibleItemIndex = listState.firstVisibleItemIndex,
+                firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
+                timelineSize = timelineSize,
+            )
+        }
+    }
+
+    LaunchedEffect(loadingOlder, timelineSize) {
+        if (loadingOlder) return@LaunchedEffect
+        val anchor = pendingForumScrollAnchor ?: return@LaunchedEffect
+        pendingForumScrollAnchor = null
+        val delta = timelineSize - anchor.timelineSize
+        if (delta > 0) {
+            listState.scrollToItem(
+                anchor.firstVisibleItemIndex + delta,
+                anchor.firstVisibleItemScrollOffset,
+            )
+        }
+    }
+
+    val hasMoreOlderRef = rememberUpdatedState(hasMoreOlder)
+    val loadingOlderRef = rememberUpdatedState(loadingOlder)
+    val loadingRef = rememberUpdatedState(loading)
+
+    LaunchedEffect(listState, teamId, topicId) {
+        snapshotFlow {
+            val info = listState.layoutInfo
+            val firstIdx = info.visibleItemsInfo.firstOrNull()?.index ?: -1
+            val total = info.totalItemsCount
+            ForumLoadOlderSignal(firstIdx, total)
+        }
+            .distinctUntilChanged()
+            .debounce(48)
+            .collect { sig ->
+                if (listState.isScrollInProgress) return@collect
+                if (sig.totalItems > 2 &&
+                    sig.firstVisibleIndex <= forumLazyListLoadOlderOffset(hasMoreOlderRef.value) + 1 &&
+                    hasMoreOlderRef.value &&
+                    !loadingOlderRef.value &&
+                    !loadingRef.value
+                ) {
+                    val oldestId = stableMessages.firstOrNull()?.id
+                    if (oldestId != null) {
+                        loadForumMessages(before = oldestId, appendOlder = true)
+                    }
+                }
+            }
+    }
+
     LaunchedEffect(stableMessages.lastOrNull()?.id, listDerived.timeline.size, hasMoreOlder) {
         if (stableMessages.isEmpty()) return@LaunchedEffect
         val bottomIdx = listDerived.bottomLazyIndex(hasMoreOlder) ?: return@LaunchedEffect
@@ -874,8 +960,8 @@ private fun TeamForumTopicChatRoute(
             runCatching { listState.scrollToItem(bottomIdx) }
             return@LaunchedEffect
         }
-        if (isNearBottom) {
-            runCatching { listState.animateScrollToItem(bottomIdx) }
+        if (isNearBottom && !listState.isScrollInProgress) {
+            runCatching { listState.scrollToItem(bottomIdx) }
         }
     }
 
@@ -993,6 +1079,14 @@ private fun TeamForumTopicChatRoute(
             if (loading && messages.isEmpty()) {
                 CenteredScreenLoading()
             } else {
+                val configuration = LocalConfiguration.current
+                val listBubbleMaxWidth = remember(configuration.screenWidthDp) {
+                    minOf(
+                        configuration.screenWidthDp.dp * ChatBubbleMaxWidthFraction,
+                        ChatBubbleMaxWidthCap,
+                    )
+                }
+                CompositionLocalProvider(LocalChatBubbleMaxWidth provides listBubbleMaxWidth) {
                 ForumTopicMessagesLazyList(
                     modifier = Modifier.fillMaxSize(),
                     messages = stableMessages,
@@ -1067,6 +1161,7 @@ private fun TeamForumTopicChatRoute(
                         },
                     )
                 }
+                }
                 ChatScrollToLatestFab(
                     visible = showScrollToLatestFab,
                     newMessageCount = newMessagesWhileScrolledUp,
@@ -1075,7 +1170,7 @@ private fun TeamForumTopicChatRoute(
                         lastCountedNewestId = stableMessages.lastOrNull()?.id
                         scope.launch {
                             val bottomIdx = listDerived.bottomLazyIndex(hasMoreOlder) ?: return@launch
-                            runCatching { listState.animateScrollToItem(bottomIdx) }
+                            runCatching { listState.scrollToItem(bottomIdx) }
                         }
                     },
                     modifier = Modifier

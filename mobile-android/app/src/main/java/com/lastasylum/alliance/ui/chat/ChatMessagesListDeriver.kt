@@ -214,3 +214,46 @@ fun buildChatMessagesListDerivedAfterPrepend(
         clusterTopSpacingDp = clusterTopSpacingDp,
     )
 }
+
+/**
+ * In-place update when only one message row changed (reactions, edit text) — timeline shape unchanged.
+ */
+fun buildChatMessagesListDerivedAfterPatchMessage(
+    previousDerived: ChatMessagesListDerived,
+    messages: List<ChatMessage>,
+    messageIndex: Int,
+): ChatMessagesListDerived {
+    if (messages.isEmpty()) return ChatMessagesListDerived.Empty
+    if (messageIndex !in messages.indices) return buildChatMessagesListDerived(messages)
+    if (previousDerived.timeline.isEmpty() ||
+        previousDerived.clusterFlags.size != messages.size
+    ) {
+        return buildChatMessagesListDerived(messages)
+    }
+    var patched = false
+    val newTimeline = previousDerived.timeline.map { entry ->
+        when (entry) {
+            is ChatTimelineEntry.DaySeparator -> entry
+            is ChatTimelineEntry.ChatMessageItem -> {
+                if (entry.messageIndex == messageIndex) {
+                    patched = true
+                    entry.copy(message = messages[messageIndex])
+                } else {
+                    entry
+                }
+            }
+            is ChatTimelineEntry.ChatAlbumItem -> {
+                if (messageIndex in entry.messageIndices) {
+                    return buildChatMessagesListDerived(messages)
+                }
+                entry
+            }
+        }
+    }
+    if (!patched) return buildChatMessagesListDerived(messages)
+    return ChatMessagesListDerived(
+        timeline = newTimeline,
+        clusterFlags = previousDerived.clusterFlags,
+        clusterTopSpacingDp = previousDerived.clusterTopSpacingDp,
+    )
+}

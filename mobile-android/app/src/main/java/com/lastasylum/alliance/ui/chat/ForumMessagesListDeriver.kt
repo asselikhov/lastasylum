@@ -68,6 +68,20 @@ fun buildForumMessagesListDerived(
     )
 }
 
+/** Forum rows read [messages] by index — timeline unchanged when only DTO fields change. */
+fun forumDerivedAfterMessageContentPatch(
+    previousDerived: ForumMessagesListDerived,
+    messages: List<TeamForumMessageDto>,
+): ForumMessagesListDerived {
+    if (messages.isEmpty()) return ForumMessagesListDerived.Empty
+    if (previousDerived.timeline.isEmpty() ||
+        previousDerived.clusterFlags.size != messages.size
+    ) {
+        return buildForumMessagesListDerived(messages)
+    }
+    return previousDerived
+}
+
 private fun forumBubbleClusterTopSpacing(messages: List<TeamForumMessageDto>, index: Int): androidx.compose.ui.unit.Dp {
     if (index <= 0) return 10.dp
     val m = messages[index]

@@ -8,12 +8,18 @@ import coil.size.Size
  */
 object SquadRelayImageRequests {
     private const val CHAT_THUMB_PX = 512
+    /** Smaller decode for attachment tiles inside scrolling message lists. */
+    private const val CHAT_LIST_THUMB_PX = 384
     private const val CHAT_BUBBLE_MAX_PX = 720
     private const val AVATAR_PX = 128
     private const val STRIP_THUMB_PX = 320
 
     fun chatThumbnail(context: Context, url: String): ImageRequest =
         sizedAuthed(context, url, CHAT_THUMB_PX, CHAT_THUMB_PX, crossfade = true)
+
+    /** Lazy list tiles: no crossfade animation while flinging. */
+    fun chatThumbnailInList(context: Context, url: String): ImageRequest =
+        sizedAuthed(context, url, CHAT_LIST_THUMB_PX, CHAT_LIST_THUMB_PX, crossfade = false)
 
     fun chatBubbleImage(context: Context, url: String): ImageRequest =
         sizedAuthed(context, url, CHAT_BUBBLE_MAX_PX, CHAT_BUBBLE_MAX_PX, crossfade = true)

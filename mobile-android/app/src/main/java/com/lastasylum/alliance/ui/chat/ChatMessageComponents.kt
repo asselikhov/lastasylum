@@ -288,6 +288,8 @@ fun TelegramLikeAttachmentsGrid(
     bottomRound: Boolean = true,
     enabled: Boolean = true,
     onLongPress: (() -> Unit)? = null,
+    /** Use smaller decode + no crossfade when composed inside a scrolling message list. */
+    inMessageList: Boolean = false,
 ) {
     if (urls.isEmpty()) return
     // Telegram-like albums: show up to 6 tiles; for more, overlay +N on the last one.
@@ -370,7 +372,11 @@ fun TelegramLikeAttachmentsGrid(
         ) {
             val ctx = LocalContext.current
             AsyncImage(
-                model = SquadRelayImageRequests.chatThumbnail(ctx, u),
+                model = if (inMessageList) {
+                    SquadRelayImageRequests.chatThumbnailInList(ctx, u)
+                } else {
+                    SquadRelayImageRequests.chatThumbnail(ctx, u)
+                },
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
@@ -502,6 +508,7 @@ fun ChatBubbleAttachmentsWithCaption(
     formattedTime: String,
     onOpenRemoteImages: (List<String>, Int) -> Unit,
     modifier: Modifier = Modifier,
+    inMessageList: Boolean = false,
 ) {
     val messageImageTapLabel = LocalContext.current.getString(R.string.cd_chat_message_image)
     val imageAttachments = message.chatImageAttachments()
@@ -522,6 +529,7 @@ fun ChatBubbleAttachmentsWithCaption(
                 modifier = Modifier.fillMaxWidth(),
                 roundTileCorners = false,
                 bottomRound = !hasCaption,
+                inMessageList = inMessageList,
             )
             if (!hasCaption && formattedTime.isNotBlank()) {
                 Surface(

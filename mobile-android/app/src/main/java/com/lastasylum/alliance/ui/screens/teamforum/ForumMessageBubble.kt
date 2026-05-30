@@ -45,6 +45,7 @@ internal fun ForumMessageBubble(
         isSelected = isSelected,
         overlayUi = overlayUi,
         otherReadUptoMessageId = null,
+        inMessageList = true,
         onToggleReaction = null,
         onOpenActions = {
             if (inSelectionMode && canDelete) {
