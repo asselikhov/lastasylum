@@ -50,6 +50,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.ScrollableDefaults
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
@@ -229,7 +230,9 @@ import com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthCap
 import com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthFraction
 import com.lastasylum.alliance.ui.chat.ChatMessageBubbleRow
 import com.lastasylum.alliance.ui.chat.ChatMessageClusterFlags
+import com.lastasylum.alliance.ui.chat.ChatListImagePrefetchEffect
 import com.lastasylum.alliance.ui.chat.LocalChatBubbleMaxWidth
+import com.lastasylum.alliance.ui.chat.LocalChatHighlightMessageId
 import com.lastasylum.alliance.ui.chat.LocalOpenRemoteChatImagePreview
 import com.lastasylum.alliance.ui.chat.ChatMessageReactionsRow
 import com.lastasylum.alliance.ui.chat.chatBubbleExpandsToRowWidth
@@ -346,12 +349,20 @@ private fun ChatScreenMessagesHost(
     onConsumeScrollToMessage: () -> Unit,
     onClearHighlightMessage: () -> Unit,
     onConsumeTransientNotice: () -> Unit,
+    onMessageListScrollInProgress: (Boolean) -> Unit = {},
     messageListKey: (ChatMessage) -> String,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val listState = remember(listPane.selectedRoomId) {
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+    }
+
+    val onScrollProgressRef = rememberUpdatedState(onMessageListScrollInProgress)
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }
+            .distinctUntilChanged()
+            .collect { onScrollProgressRef.value(it) }
     }
     val messages = listPane.messages
     val selectedRoomId = listPane.selectedRoomId
@@ -795,6 +806,7 @@ fun ChatScreen(
     onConsumeScrollToMessage: () -> Unit = {},
     onClearHighlightMessage: () -> Unit = {},
     onConsumeTransientNotice: () -> Unit = {},
+    onMessageListScrollInProgress: (Boolean) -> Unit = {},
     messageListKey: (ChatMessage) -> String = { msg ->
         msg._id?.trim()?.takeIf { it.isNotEmpty() } ?: chatMessageKey(msg)
     },
@@ -896,6 +908,7 @@ fun ChatScreen(
                 onConsumeScrollToMessage = onConsumeScrollToMessage,
                 onClearHighlightMessage = onClearHighlightMessage,
                 onConsumeTransientNotice = onConsumeTransientNotice,
+                onMessageListScrollInProgress = onMessageListScrollInProgress,
                 messageListKey = messageListKey,
             )
             ChatScreenComposerSection(
@@ -1168,6 +1181,7 @@ fun ChatScreen(
     onConsumeScrollToMessage: () -> Unit = {},
     onClearHighlightMessage: () -> Unit = {},
     onConsumeTransientNotice: () -> Unit = {},
+    onMessageListScrollInProgress: (Boolean) -> Unit = {},
     messageListKey: (ChatMessage) -> String = { msg ->
         msg._id?.trim()?.takeIf { it.isNotEmpty() } ?: chatMessageKey(msg)
     },
@@ -1213,6 +1227,7 @@ fun ChatScreen(
     onConsumeScrollToMessage = onConsumeScrollToMessage,
     onClearHighlightMessage = onClearHighlightMessage,
     onConsumeTransientNotice = onConsumeTransientNotice,
+    onMessageListScrollInProgress = onMessageListScrollInProgress,
     messageListKey = messageListKey,
     compactOverlayMode = compactOverlayMode,
 )
@@ -1343,11 +1358,18 @@ private fun ChatMessagesLazyList(
     val onReplyRef = rememberUpdatedState(onReplyToMessage)
     val onToggleSelectionRef = rememberUpdatedState(onToggleMessageSelection)
     val onJumpRef = rememberUpdatedState(jumpToQuotedMessage)
-    CompositionLocalProvider(LocalChatBubbleMaxWidth provides listBubbleMaxWidth) {
+    CompositionLocalProvider(
+        LocalChatBubbleMaxWidth provides listBubbleMaxWidth,
+        LocalChatHighlightMessageId provides highlightMessageId?.trim()?.takeIf { it.isNotEmpty() },
+    ) {
+    if (timeline.isNotEmpty()) {
+        ChatListImagePrefetchEffect(listState = listState, timeline = timeline)
+    }
     LazyColumn(
         state = listState,
         modifier = modifier,
         reverseLayout = true,
+        flingBehavior = ScrollableDefaults.flingBehavior(),
         verticalArrangement = Arrangement.spacedBy(0.dp),
         contentPadding = PaddingValues(
             top = SquadRelayDimens.sectionGap,
@@ -1468,11 +1490,8 @@ private fun ChatMessagesLazyList(
                             val messageId = message._id
                             val cluster = messageClusterFlags.getOrNull(e.messageIndex)
                             val clusterTop = clusterTopSpacingAt(listDerived, idx).dp
-                            val highlighted by remember(messageId, highlightMessageId) {
-                                derivedStateOf {
-                                    messageId != null && highlightMessageId == messageId
-                                }
-                            }
+                            val highlightId = LocalChatHighlightMessageId.current
+                            val highlighted = messageId != null && highlightId == messageId
                             ChatMessageBubble(
                                 message = message,
                                 cluster = cluster,
@@ -1502,19 +1521,10 @@ private fun ChatMessagesLazyList(
                             val message = e.representativeMessage
                             val cluster = messageClusterFlags.getOrNull(e.firstMessageIndex)
                             val clusterTop = clusterTopSpacingAt(listDerived, idx).dp
-                            val albumHighlighted by remember(
-                                highlightMessageId,
-                                message._id,
-                                e.memberMessageIds,
-                            ) {
-                                derivedStateOf {
-                                    val hid = highlightMessageId
-                                    hid != null && (
-                                        hid == message._id ||
-                                            hid in e.memberMessageIds
-                                        )
-                                }
-                            }
+                            val highlightId = LocalChatHighlightMessageId.current
+                            val albumHighlighted = highlightId != null && (
+                                highlightId == message._id || highlightId in e.memberMessageIds
+                            )
                             ChatAlbumRow(
                                 message = message,
                                 cluster = cluster,

@@ -486,6 +486,7 @@ fun AppNavigation(
                     onConsumeScrollToMessage = chatViewModel::consumeScrollToMessage,
                     onClearHighlightMessage = chatViewModel::clearHighlightMessage,
                     onConsumeTransientNotice = chatViewModel::consumeTransientNotice,
+                    onMessageListScrollInProgress = chatViewModel::setMessageListScrollInProgress,
                     messageListKey = chatViewModel::messageListCompositionKey,
                 )
                 }

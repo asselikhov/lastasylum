@@ -8,3 +8,6 @@ import androidx.compose.ui.unit.Dp
  * [ChatMessageBubbleRow] skips per-item [androidx.compose.foundation.layout.BoxWithConstraints].
  */
 val LocalChatBubbleMaxWidth = compositionLocalOf<Dp?> { null }
+
+/** Jump-to-message highlight id; avoids per-row [derivedStateOf] in the lazy list. */
+val LocalChatHighlightMessageId = compositionLocalOf<String?> { null }

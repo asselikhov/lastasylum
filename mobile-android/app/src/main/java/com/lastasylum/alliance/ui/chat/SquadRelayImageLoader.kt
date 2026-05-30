@@ -9,6 +9,7 @@ import coil.memory.MemoryCache
 import android.os.Build
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.data.network.AuthInterceptor
+import kotlinx.coroutines.Dispatchers
 import okhttp3.OkHttpClient
 
 /**
@@ -45,6 +46,7 @@ object SquadRelayImageLoader {
                     .build()
             }
             .crossfade(false)
+            .dispatcher(Dispatchers.IO.limitedParallelism(6))
             .build()
     }
 }

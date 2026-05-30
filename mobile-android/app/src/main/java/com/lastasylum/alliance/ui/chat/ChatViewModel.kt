@@ -124,6 +124,7 @@ class ChatViewModel(
     val listDerived: StateFlow<ChatMessagesListDerived> = _listDerived.asStateFlow()
     private var deriveJob: Job? = null
     private var deriveDebounceJob: Job? = null
+    private val listDeriveDefer = ChatListDeriveDefer()
     private val incomingApplyMutex = Mutex()
     private val chatMutationLock = Any()
     /** HTTP in-flight sends — socket echo must not insert a second row before [confirmPendingOutgoingMessage]. */
@@ -2164,7 +2165,25 @@ class ChatViewModel(
         schedulePersistChatSnapshot()
     }
 
+    fun setMessageListScrollInProgress(inProgress: Boolean) {
+        val flush = listDeriveDefer.setScrollInProgress(inProgress)
+        if (flush != null) {
+            publishMessagesDerivedNow(flush)
+        }
+    }
+
     private fun publishMessagesDerived(messages: List<ChatMessage>) {
+        deriveJob?.cancel()
+        deriveDebounceJob?.cancel()
+        if (messages.isEmpty()) {
+            _listDerived.value = ChatMessagesListDerived.Empty
+            return
+        }
+        if (listDeriveDefer.deferFullDerive(messages)) return
+        publishMessagesDerivedNow(messages)
+    }
+
+    private fun publishMessagesDerivedNow(messages: List<ChatMessage>) {
         deriveJob?.cancel()
         deriveDebounceJob?.cancel()
         if (messages.isEmpty()) {
