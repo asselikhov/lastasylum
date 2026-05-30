@@ -21,18 +21,14 @@ data class ForumMessagesListDerived(
         )
     }
 
-    fun lazyIndexForMessageId(id: String): Int? = messageIdToLazyIndex[id]
+    fun timelineIndexForMessageId(id: String): Int? = messageIdToLazyIndex[id]
 
-    fun fullLazyIndexForMessageId(id: String, hasMoreOlder: Boolean): Int? =
-        lazyIndexForMessageId(id)?.let { forumLazyListLoadOlderOffset(hasMoreOlder) + it }
+    /** Lazy index under [reverseLayout] (0 = newest at visual bottom). */
+    fun fullLazyIndexForMessageId(id: String): Int? =
+        timelineIndexForMessageId(id)?.let { timeline.lastIndex - it }
 
-    fun bottomLazyIndex(hasMoreOlder: Boolean): Int? {
-        if (timeline.isEmpty()) return null
-        return forumLazyListLoadOlderOffset(hasMoreOlder) + timeline.lastIndex
-    }
+    fun bottomLazyIndex(): Int? = if (timeline.isEmpty()) null else 0
 }
-
-fun forumLazyListLoadOlderOffset(hasMoreOlder: Boolean): Int = if (hasMoreOlder) 1 else 0
 
 fun buildForumMessagesListDerived(
     messages: List<TeamForumMessageDto>,

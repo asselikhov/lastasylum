@@ -41,7 +41,10 @@ import com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthFraction
 import com.lastasylum.alliance.ui.chat.ChatScrollToLatestFab
 import com.lastasylum.alliance.ui.chat.LocalChatBubbleMaxWidth
 import com.lastasylum.alliance.ui.chat.LocalOpenRemoteChatImagePreview
-import com.lastasylum.alliance.ui.chat.forumLazyListLoadOlderOffset
+import com.lastasylum.alliance.ui.chat.isAtReverseChatBottom
+import com.lastasylum.alliance.ui.chat.scrollReverseChatRevealLatest
+import com.lastasylum.alliance.ui.chat.scrollTimelineItemToViewportCenter
+import com.lastasylum.alliance.ui.chat.LocalChatHighlightMessageId
 import com.lastasylum.alliance.ui.chat.MessengerImagesPreviewHost
 import com.lastasylum.alliance.ui.chat.toDisplayChatMessage
 import com.lastasylum.alliance.ui.chat.queryDisplayName
@@ -655,7 +658,7 @@ private data class ForumScrollAnchor(
 )
 
 private data class ForumLoadOlderSignal(
-    val firstVisibleIndex: Int,
+    val lastVisibleIndex: Int,
     val totalItems: Int,
 )
 
@@ -702,15 +705,11 @@ private fun TeamForumTopicChatRoute(
     fun bumpMessagesGeneration() {
         messagesGeneration++
     }
-    val listDerived = rememberForumMessagesListDerived(stableMessages, messagesGeneration)
+    val listDerived = rememberForumMessagesListDerived(stableMessages, messagesGeneration, listState)
     var newMessagesWhileScrolledUp by remember(teamId, topicId) { mutableIntStateOf(0) }
     var lastCountedNewestId by remember(teamId, topicId) { mutableStateOf<String?>(null) }
-    val isNearBottom by remember(listState, listDerived, hasMoreOlder) {
-        derivedStateOf {
-            val bottomIdx = listDerived.bottomLazyIndex(hasMoreOlder) ?: return@derivedStateOf true
-            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-            lastVisible >= bottomIdx - 2
-        }
+    val isNearBottom by remember(listState) {
+        derivedStateOf { listState.isAtReverseChatBottom() }
     }
     val showScrollToLatestFab by remember(listState, listDerived, hasMoreOlder, stableMessages.size, loading) {
         derivedStateOf {
@@ -930,16 +929,16 @@ private fun TeamForumTopicChatRoute(
     LaunchedEffect(listState, teamId, topicId) {
         snapshotFlow {
             val info = listState.layoutInfo
-            val firstIdx = info.visibleItemsInfo.firstOrNull()?.index ?: -1
+            val lastIdx = info.visibleItemsInfo.lastOrNull()?.index ?: -1
             val total = info.totalItemsCount
-            ForumLoadOlderSignal(firstIdx, total)
+            ForumLoadOlderSignal(lastIdx, total)
         }
             .distinctUntilChanged()
             .debounce(48)
             .collect { sig ->
                 if (listState.isScrollInProgress) return@collect
-                if (sig.totalItems > 2 &&
-                    sig.firstVisibleIndex <= forumLazyListLoadOlderOffset(hasMoreOlderRef.value) + 1 &&
+                if (sig.totalItems > 4 &&
+                    sig.lastVisibleIndex >= sig.totalItems - 2 &&
                     hasMoreOlderRef.value &&
                     !loadingOlderRef.value &&
                     !loadingRef.value
@@ -952,16 +951,19 @@ private fun TeamForumTopicChatRoute(
             }
     }
 
-    LaunchedEffect(stableMessages.lastOrNull()?.id, listDerived.timeline.size, hasMoreOlder) {
-        if (stableMessages.isEmpty()) return@LaunchedEffect
-        val bottomIdx = listDerived.bottomLazyIndex(hasMoreOlder) ?: return@LaunchedEffect
+    LaunchedEffect(stableMessages.lastOrNull()?.id, listDerived.timeline.size) {
+        if (stableMessages.isEmpty() || listDerived.timeline.isEmpty()) return@LaunchedEffect
         if (!initialScrollApplied) {
             initialScrollApplied = true
-            runCatching { listState.scrollToItem(bottomIdx) }
+            runCatching {
+                listState.scrollReverseChatRevealLatest(animate = false, adjustViewport = false)
+            }
             return@LaunchedEffect
         }
         if (isNearBottom && !listState.isScrollInProgress) {
-            runCatching { listState.scrollToItem(bottomIdx) }
+            runCatching {
+                listState.scrollReverseChatRevealLatest(animate = false, adjustViewport = false)
+            }
         }
     }
 
@@ -1094,12 +1096,7 @@ private fun TeamForumTopicChatRoute(
                     listState = listState,
                     hasMoreOlder = hasMoreOlder,
                     loadingOlder = loadingOlder,
-                    onLoadOlder = {
-                        val oldestId = stableMessages.firstOrNull()?.id
-                        if (oldestId != null) {
-                            loadForumMessages(before = oldestId, appendOlder = true)
-                        }
-                    },
+                    highlightMessageId = highlightMessageId,
                 ) { msg, idx ->
                     val mine = msg.senderUserId == currentUserId
                     val inSelectionMode = selectedMessageIds.isNotEmpty()
@@ -1114,12 +1111,13 @@ private fun TeamForumTopicChatRoute(
                         canDelete = canDeleteMsg,
                         inSelectionMode = inSelectionMode,
                         isSelected = isSelected,
-                        highlighted = highlightMessageId == msg.id,
+                        highlighted = LocalChatHighlightMessageId.current == msg.id,
                         onJumpToMessage = { targetId ->
-                            val lazyIdx = listDerived.fullLazyIndexForMessageId(targetId, hasMoreOlder)
+                            val lazyIdx = listDerived.fullLazyIndexForMessageId(targetId)
                             if (lazyIdx != null) {
                                 scope.launch {
-                                    runCatching { listState.animateScrollToItem(lazyIdx) }
+                                    runCatching { listState.scrollTimelineItemToViewportCenter(lazyIdx) }
+                                        .onFailure { listState.scrollToItem(lazyIdx) }
                                     highlightMessageId = targetId
                                     delay(900)
                                     if (highlightMessageId == targetId) highlightMessageId = null
@@ -1169,8 +1167,9 @@ private fun TeamForumTopicChatRoute(
                         newMessagesWhileScrolledUp = 0
                         lastCountedNewestId = stableMessages.lastOrNull()?.id
                         scope.launch {
-                            val bottomIdx = listDerived.bottomLazyIndex(hasMoreOlder) ?: return@launch
-                            runCatching { listState.scrollToItem(bottomIdx) }
+                            runCatching {
+                                listState.scrollReverseChatRevealLatest(animate = true)
+                            }
                         }
                     },
                     modifier = Modifier

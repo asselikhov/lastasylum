@@ -10,6 +10,7 @@ import android.os.Build
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.data.network.AuthInterceptor
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import okhttp3.OkHttpClient
 
 /**
@@ -17,6 +18,7 @@ import okhttp3.OkHttpClient
  * Registered as the app singleton through [com.lastasylum.alliance.SquadRelayApplication].
  */
 object SquadRelayImageLoader {
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun create(context: Context): ImageLoader {
         val appContext = context.applicationContext
         val tokenStore = AppContainer.from(appContext).tokenStore

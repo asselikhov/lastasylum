@@ -31,7 +31,7 @@ internal fun OverlayHudChatPane(
         draftMessage = draftMessage,
         pickedImageUris = pickedImageUris,
         otherReadUptoMessageId = otherReadUptoMessageId,
-        compactOverlayMode = true,
+        compactOverlayMode = false,
         onMessageListScrollInProgress = vm::setMessageListScrollInProgress,
         onSelectRoom = vm::selectRoom,
         onClearError = vm::clearError,
