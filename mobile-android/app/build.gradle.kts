@@ -1,3 +1,4 @@
+import com.android.build.gradle.internal.api.BaseVariantOutputImpl
 import groovy.json.JsonSlurper
 import java.util.Properties
 
@@ -99,6 +100,8 @@ fun gitCommitCount(): Int = runCatching {
 }.getOrNull() ?: 2
 
 val squadRelayGitCommit = gitCommitShort()
+/** Публичное имя версии (APK, релизы); без -debug/-benchmark — это только в UI приложения. */
+val squadRelayVersionName = "0.1.0"
 val squadRelayVersionCode = System.getenv("SQUADRELAY_VERSION_CODE")?.trim()?.toIntOrNull()
     ?.coerceAtLeast(1)
     ?: gitCommitCount()
@@ -117,7 +120,7 @@ android {
         // и ломает прохождение тапов в игру (стрелка «назад» в чате и т.п.).
         targetSdk = 35
         versionCode = squadRelayVersionCode
-        versionName = "0.1.0"
+        versionName = squadRelayVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -218,6 +221,15 @@ android {
         unitTests {
             isIncludeAndroidResources = true
         }
+    }
+}
+
+/** APK для раздачи: SquadRelay-0.1.0-552.apk (без суффиксов buildType). */
+@Suppress("DEPRECATION")
+android.applicationVariants.configureEach {
+    val apkFileName = "SquadRelay-$squadRelayVersionName-$versionCode.apk"
+    outputs.configureEach {
+        (this as BaseVariantOutputImpl).outputFileName = apkFileName
     }
 }
 
