@@ -18,9 +18,29 @@ import android.graphics.drawable.GradientDrawable
 internal object OverlayReactionTextBurstUi {
 
     private const val TEXT_PREVIEW_SP = 13f
+    private const val TEXT_MINI_SP = 9f
     private const val TEXT_PREVIEW_LINES_MAX = 2
 
-    fun createPreviewMessageTextView(context: Context, message: String, maxWidthPx: Int): TextView {
+    fun createTileTextView(
+        context: Context,
+        message: String,
+        tileSizePx: Int,
+        mini: Boolean = false,
+    ): TextView = createPreviewMessageTextView(
+        context = context,
+        message = message,
+        maxWidthPx = tileSizePx,
+        textSp = if (mini) TEXT_MINI_SP else TEXT_PREVIEW_SP,
+        maxLines = TEXT_PREVIEW_LINES_MAX,
+    )
+
+    fun createPreviewMessageTextView(
+        context: Context,
+        message: String,
+        maxWidthPx: Int,
+        textSp: Float = TEXT_PREVIEW_SP,
+        maxLines: Int = TEXT_PREVIEW_LINES_MAX,
+    ): TextView {
         val typeface = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             Typeface.create(Typeface.SANS_SERIF, 600, false)
         } else {
@@ -32,11 +52,11 @@ internal object OverlayReactionTextBurstUi {
             gravity = Gravity.CENTER
             textAlignment = View.TEXT_ALIGNMENT_CENTER
             setTextColor(Color.parseColor("#E6FDF8F0"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, TEXT_PREVIEW_SP)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, textSp)
             this.typeface = typeface
             letterSpacing = 0.01f
             setLineSpacing(0f, 1.15f)
-            maxLines = TEXT_PREVIEW_LINES_MAX
+            setMaxLines(maxLines)
             ellipsize = TextUtils.TruncateAt.END
             setShadowLayer(8f, 0f, 2f, Color.parseColor("#CC000000"))
             maxWidth = maxWidthPx

@@ -767,8 +767,9 @@
     <string name="overlay_reactions_send_all_subtitle">%1$d в игре с оверлеем</string>
     <string name="overlay_reaction_sent_all">Реакция отправлена %1$d участникам</string>
     <string name="overlay_reaction_sent_broadcast">Реакция отправлена всем</string>
-    <string name="overlay_reaction_burst_caption_private">Приватная</string>
+    <string name="overlay_reaction_burst_caption_private">Лично</string>
     <string name="overlay_reaction_burst_caption_broadcast">Всем</string>
+    <string name="overlay_reaction_burst_caption_line">%1$s · %2$s</string>
     <string name="overlay_reaction_burst_from">от %1$s</string>
     <string name="overlay_reaction_burst_from_with_caption">от %1$s (%2$s)</string>
     <string name="overlay_reaction_sender_unknown">Союзник</string>

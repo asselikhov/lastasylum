@@ -364,7 +364,7 @@ class OverlayCommandsPopover(
     }
 
     private fun resolveReactionBurstAnchor(): OverlayReactionAnchorRect? =
-        reactionBurstAnchor() ?: hudReactionAnchor()
+        hudReactionAnchor()
 
     fun invalidateReactionBurstAnchor() {
         reactionBurstPresenter.invalidateReactionBurstAnchor()

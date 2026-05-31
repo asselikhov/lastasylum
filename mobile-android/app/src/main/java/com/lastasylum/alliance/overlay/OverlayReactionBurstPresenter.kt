@@ -4,8 +4,6 @@ import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
 import android.content.Context
 import android.graphics.Color
-import android.graphics.PorterDuff
-import android.graphics.PorterDuffColorFilter
 import android.os.Build
 import android.os.Handler
 import android.view.Gravity
@@ -15,18 +13,8 @@ import android.view.WindowManager
 import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
-import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.TextView
-import androidx.appcompat.content.res.AppCompatResources
-import androidx.core.graphics.drawable.DrawableCompat
 import com.airbnb.lottie.LottieAnimationView
-import com.airbnb.lottie.LottieDrawable
-import com.airbnb.lottie.LottieProperty
-import com.airbnb.lottie.RenderMode
-import com.airbnb.lottie.model.KeyPath
-import com.airbnb.lottie.value.LottieValueCallback
-import com.lastasylum.alliance.R
 
 internal data class OverlayReactionBurstRequest(
     val fromUserId: String,
@@ -35,7 +23,7 @@ internal data class OverlayReactionBurstRequest(
     val broadcast: Boolean,
 )
 
-/** Incoming overlay reactions: anchored stack under reaction buttons / HUD. */
+/** Incoming overlay reactions: hero tile + history strip under top-right HUD. */
 internal class OverlayReactionBurstPresenter(
     private val context: Context,
     private val mainHandler: Handler,
@@ -44,10 +32,16 @@ internal class OverlayReactionBurstPresenter(
     private var anchorResolver: () -> OverlayReactionAnchorRect? = { null }
     private var safeTopMinYProvider: () -> Int? = { null }
 
-    private val slots = mutableListOf<IncomingReactionSlot>()
+    private val visualFactory = OverlayReactionVisualFactory(context) { configureBurstLottie(it) }
+    private val tileFactory = OverlayReactionTileFactory(context, dp, visualFactory)
+
+    private var heroSlot: IncomingReactionSlot? = null
+    private val historySlots = mutableListOf<IncomingReactionSlot>()
     private var slotIdSeq = 0L
     private var stageRoot: OverlayReactionBurstTouchRoot? = null
-    private var stackColumn: LinearLayout? = null
+    private var stageColumn: LinearLayout? = null
+    private var heroHost: FrameLayout? = null
+    private var historyRow: LinearLayout? = null
     private var stageParams: WindowManager.LayoutParams? = null
     private var attachedWindowManager: WindowManager? = null
     private var burstLottieKeepAliveRunnable: Runnable? = null
@@ -69,7 +63,8 @@ internal class OverlayReactionBurstPresenter(
         relayoutStagePosition()
     }
 
-    fun isActive(): Boolean = slots.isNotEmpty() || stageRoot != null
+    fun isActive(): Boolean =
+        heroSlot != null || historySlots.isNotEmpty() || stageRoot != null
 
     fun clear() {
         stopBurstLottieKeepAlive()
@@ -77,9 +72,13 @@ internal class OverlayReactionBurstPresenter(
         burstIdleRunnable = null
         burstMode = false
         recentEnqueueTimestamps.clear()
-        val copy = slots.toList()
-        slots.clear()
-        copy.forEach { removeSlot(it, animate = false) }
+        val all = buildList {
+            heroSlot?.let { add(it) }
+            addAll(historySlots)
+        }
+        heroSlot = null
+        historySlots.clear()
+        all.forEach { removeSlot(it, animate = false) }
         hideStageImmediate()
     }
 
@@ -95,16 +94,21 @@ internal class OverlayReactionBurstPresenter(
         }
         val now = System.currentTimeMillis()
         noteEnqueue(now)
-        val head = slots.firstOrNull()
-        if (head != null && OverlayReactionSlotMergePolicy.canMergeIntoHead(head.toMergeableHead(), request, now)) {
-            mergeIntoHead(head, request)
-            extendHeadExpiry()
+        val hero = heroSlot
+        if (hero != null && OverlayReactionSlotMergePolicy.canMergeIntoHead(hero.toMergeableHead(), request, now)) {
+            mergeIntoHero(hero, request)
+            extendHeroExpiry()
             relayoutStagePosition()
             return
         }
-        addSlot(request, onBurstFinished)
-        if (slots.size > 1) {
-            extendHeadExpiry()
+        val hadHero = heroSlot != null
+        demoteHeroToHistory()
+        installHero(request, onBurstFinished)
+        evictOldestHistory()
+        refreshLottiePlaybackBudget()
+        startBurstLottieKeepAlive()
+        if (hadHero) {
+            extendHeroExpiry()
         } else {
             OverlayReactionBurstHaptic.lightTap(context, stageRoot)
         }
@@ -120,47 +124,72 @@ internal class OverlayReactionBurstPresenter(
         var mergeCount: Int,
         val createdAtMs: Long,
         val onFinished: () -> Unit,
-        val card: FrameLayout,
-        val captionRow: LinearLayout,
-        val animHost: FrameLayout?,
-        var messageView: TextView?,
+        val tile: OverlayReactionBuiltTile,
         var hideRunnable: Runnable?,
-        var lottie: LottieAnimationView?,
     ) {
         fun toMergeableHead() = OverlayReactionMergeableHead(
             fromUserId = fromUserId,
             broadcast = broadcast,
             createdAtMs = createdAtMs,
         )
-    }
 
-    private data class BuiltSlotCard(
-        val card: FrameLayout,
-        val captionRow: LinearLayout,
-        val animHost: FrameLayout?,
-        val messageView: TextView?,
-    )
+        fun toRequest() = OverlayReactionBurstRequest(
+            fromUserId = fromUserId,
+            fromDisplayName = fromDisplayName,
+            reactionId = reactionId,
+            broadcast = broadcast,
+        )
+
+        fun currentLottie(): LottieAnimationView? = tile.card.findLottieInSubtree()
+    }
 
     private fun ensureStage(windowManager: WindowManager): Boolean {
         if (stageRoot != null) return true
         val layout = OverlayReactionBurstLayout.metrics(context, dp)
-        val maxH = OverlayReactionStackLayout.maxStageHeightPx(layout.screenHeightPx)
-        val stack = LinearLayout(context).apply {
+        val maxH = OverlayReactionStageLayout.maxStageHeightPx(layout.screenHeightPx)
+        val heroContainer = FrameLayout(context).apply {
+            clipChildren = false
+            clipToPadding = false
+        }
+        heroHost = heroContainer
+        val history = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+            clipChildren = false
+            clipToPadding = false
+        }
+        historyRow = history
+        val column = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
+            gravity = Gravity.END
             clipChildren = false
             clipToPadding = false
             setBackgroundColor(Color.TRANSPARENT)
+            addView(
+                heroContainer,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+            addView(
+                history,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(OverlayReactionStageLayout.HISTORY_GAP_DP) },
+            )
         }
-        stackColumn = stack
+        stageColumn = column
         val clipHost = FrameLayout(context).apply {
             clipChildren = true
             setBackgroundColor(Color.TRANSPARENT)
             addView(
-                stack,
+                column,
                 FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT,
-                    Gravity.CENTER_HORIZONTAL or Gravity.TOP,
+                    Gravity.END or Gravity.TOP,
                 ),
             )
         }
@@ -173,7 +202,7 @@ internal class OverlayReactionBurstPresenter(
                 FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT,
                     maxH,
-                    Gravity.CENTER_HORIZONTAL or Gravity.TOP,
+                    Gravity.END or Gravity.TOP,
                 ),
             )
         }
@@ -188,7 +217,9 @@ internal class OverlayReactionBurstPresenter(
             OverlayWindowLayout.applyReactionBurstWindowTouchPolicy(context, this)
         }
         if (runCatching { windowManager.addView(root, params) }.isFailure) {
-            stackColumn = null
+            stageColumn = null
+            heroHost = null
+            historyRow = null
             return false
         }
         stageRoot = root
@@ -209,13 +240,15 @@ internal class OverlayReactionBurstPresenter(
             runCatching { wm?.removeView(root) }
         }
         stageRoot = null
-        stackColumn = null
+        stageColumn = null
+        heroHost = null
+        historyRow = null
         stageParams = null
     }
 
-    private fun addSlot(request: OverlayReactionBurstRequest, onFinished: () -> Unit) {
-        val stack = stackColumn ?: return
-        val built = buildSlotCard(request, mergeCount = 1)
+    private fun installHero(request: OverlayReactionBurstRequest, onFinished: () -> Unit) {
+        val host = heroHost ?: return
+        val built = tileFactory.buildTile(request, OverlayReactionTileMode.HERO, mergeCount = 1, playLottie = true)
         val slot = IncomingReactionSlot(
             id = ++slotIdSeq,
             fromUserId = request.fromUserId,
@@ -225,160 +258,124 @@ internal class OverlayReactionBurstPresenter(
             mergeCount = 1,
             createdAtMs = System.currentTimeMillis(),
             onFinished = onFinished,
-            card = built.card,
-            captionRow = built.captionRow,
-            animHost = built.animHost,
-            messageView = built.messageView,
+            tile = built,
             hideRunnable = null,
-            lottie = built.card.findLottieInSubtree(),
         )
-        stack.addView(
-            built.card,
-            0,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { bottomMargin = dp(OverlayReactionStackLayout.SLOT_GAP_DP) },
-        )
-        slots.add(0, slot)
-        refreshLottiePlaybackBudget()
-        applyStackVisuals(animate = true)
-        evictOverflowSlots()
-        scheduleSlotExpiry(slot)
-        startBurstLottieKeepAlive()
-        playSlotEnter(built.card)
-    }
-
-    private fun buildSlotCard(request: OverlayReactionBurstRequest, mergeCount: Int): BuiltSlotCard {
-        val layout = OverlayReactionBurstLayout.metrics(context, dp)
-        val contentMax = contentMaxWidthPx(layout)
-        val card = FrameLayout(context).apply {
-            clipChildren = false
-            clipToPadding = false
-            background = OverlayReactionBurstLayout.slotCardBackground()
-            setPadding(dp(6), dp(6), dp(6), dp(6))
-        }
-        val column = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            clipChildren = false
-        }
-        val caption = OverlayReactionCaption.createSenderRow(
-            context = context,
-            displayName = request.fromDisplayName,
-            fromUserId = request.fromUserId,
-            broadcast = request.broadcast,
-            maxWidthPx = contentMax,
-            dp = dp,
-            mergeCount = mergeCount,
-        )
-        var animHost: FrameLayout? = null
-        var messageView: TextView? = null
-        val textPayload = decodeTextReactionId(request.reactionId)
-        if (textPayload != null) {
-            column.addView(caption, wrapContentLp())
-            messageView = OverlayReactionTextBurstUi.createPreviewMessageTextView(context, textPayload, contentMax)
-                .also { view ->
-                    view.setTag(R.id.tag_overlay_reaction_message, true)
-                    column.addView(view, wrapContentLp().apply { topMargin = dp(6) })
-                }
-        } else {
-            column.addView(caption, wrapContentLp())
-            val reaction = overlayQuickReactionById(context, request.reactionId)
-            val animSide = OverlayReactionBurstLayout.animSideForReaction(reaction, layout, dp)
-            animHost = FrameLayout(context).apply {
-                setTag(R.id.tag_overlay_reaction_anim_host, true)
-                clipChildren = false
-                setPadding(layout.animPadPx, layout.animPadPx, layout.animPadPx, layout.animPadPx)
-                addView(
-                    createBurstAnimView(reaction, animSide, playLottie = true),
-                    FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        Gravity.CENTER,
-                    ),
-                )
-            }
-            column.addView(
-                animHost,
-                LinearLayout.LayoutParams(contentMax, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                    topMargin = dp(OverlayReactionBurstLayout.SENDER_BELOW_ANIM_DP)
-                },
-            )
-        }
-        card.addView(column, FrameLayout.LayoutParams(wrapContent(), wrapContent(), Gravity.CENTER))
-        return BuiltSlotCard(card, caption, animHost, messageView)
-    }
-
-    private fun contentMaxWidthPx(layout: OverlayReactionBurstLayout.Metrics): Int {
-        val anchor = anchorResolver()
-        val clamped = OverlayReactionAnchorLayout.clampStackWidthPx(layout.maxTextWidthPx, anchor)
-        return OverlayReactionBurstLayout.textMessageMaxWidthPx(layout, dp(100), clamped)
-    }
-
-    private fun wrapContent() = ViewGroup.LayoutParams.WRAP_CONTENT
-
-    private fun wrapContentLp() = LinearLayout.LayoutParams(
-        LinearLayout.LayoutParams.WRAP_CONTENT,
-        LinearLayout.LayoutParams.WRAP_CONTENT,
-    )
-
-    private fun mergeIntoHead(head: IncomingReactionSlot, request: OverlayReactionBurstRequest) {
-        head.reactionId = request.reactionId
-        head.fromDisplayName = request.fromDisplayName
-        head.mergeCount++
-        OverlayReactionCaption.updateMergeCount(head.captionRow, head.mergeCount)
-        updateSlotContent(head, request)
-        playMergePulse(head.card)
-        refreshLottiePlaybackBudget()
-        applyStackVisuals(animate = true)
-    }
-
-    private fun updateSlotContent(head: IncomingReactionSlot, request: OverlayReactionBurstRequest) {
-        decodeTextReactionId(request.reactionId)?.let { text ->
-            head.messageView?.text = text
-            head.lottie?.cancelAnimation()
-            head.lottie = null
-            return
-        }
-        val host = head.animHost ?: return
-        host.removeAllViews()
-        val layout = OverlayReactionBurstLayout.metrics(context, dp)
-        val reaction = overlayQuickReactionById(context, request.reactionId)
-        val animSide = OverlayReactionBurstLayout.animSideForReaction(reaction, layout, dp)
-        val slotIndex = slots.indexOfFirst { it.id == head.id }.coerceAtLeast(0)
-        val playLottie = slotIndex < OverlayReactionStackLayout.MAX_PLAYING_LOTTIES
-        val animView = createBurstAnimView(reaction, animSide, playLottie)
         host.addView(
-            animView,
+            built.card,
             FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER,
             ),
         )
-        head.lottie = animView as? LottieAnimationView
-        head.messageView = null
+        heroSlot = slot
+        scheduleHeroExpiry(slot)
+        playHeroEnter(built.card)
+    }
+
+    private fun demoteHeroToHistory() {
+        val hero = heroSlot ?: return
+        hero.hideRunnable?.let { mainHandler.removeCallbacks(it) }
+        heroHost?.removeView(hero.tile.card)
+        val built = tileFactory.buildTile(
+            hero.toRequest(),
+            OverlayReactionTileMode.MINI,
+            mergeCount = hero.mergeCount,
+            playLottie = false,
+        )
+        val miniSlot = hero.copy(
+            id = hero.id,
+            tile = built,
+            hideRunnable = null,
+        )
+        historyRow?.addView(
+            built.card,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { marginEnd = dp(OverlayReactionStageLayout.HISTORY_GAP_DP) },
+        )
+        playMiniEnter(built.card)
+        historySlots.add(miniSlot)
+        scheduleMiniExpiry(miniSlot)
+        heroSlot = null
+    }
+
+    private fun mergeIntoHero(hero: IncomingReactionSlot, request: OverlayReactionBurstRequest) {
+        hero.reactionId = request.reactionId
+        hero.fromDisplayName = request.fromDisplayName
+        hero.mergeCount++
+        hero.tile.captionView?.let { caption ->
+            OverlayReactionCaption.updateMergeCount(
+                caption,
+                hero.fromDisplayName,
+                hero.broadcast,
+                hero.mergeCount,
+            )
+        }
+        tileFactory.rebuildVisual(hero.tile, request, OverlayReactionTileMode.HERO, playLottie = true)
+        playMergePulse(hero.tile.card)
+        refreshLottiePlaybackBudget()
+    }
+
+    private fun promoteNewestHistoryToHero() {
+        val mini = historySlots.removeLastOrNull() ?: return
+        mini.hideRunnable?.let { mainHandler.removeCallbacks(it) }
+        historyRow?.removeView(mini.tile.card)
+        val built = tileFactory.buildTile(
+            mini.toRequest(),
+            OverlayReactionTileMode.HERO,
+            mergeCount = mini.mergeCount,
+            playLottie = true,
+        )
+        val promoted = mini.copy(tile = built, hideRunnable = null)
+        heroHost?.addView(
+            built.card,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER,
+            ),
+        )
+        heroSlot = promoted
+        scheduleHeroExpiry(promoted)
+        refreshLottiePlaybackBudget()
+    }
+
+    private fun evictOldestHistory() {
+        while (OverlayReactionStageLayout.shouldEvictOldestHistory(historySlots.size)) {
+            val oldest = historySlots.firstOrNull() ?: break
+            removeSlot(oldest, animate = true)
+        }
     }
 
     private fun playMergePulse(card: FrameLayout) {
-        val sx = card.scaleX
-        val sy = card.scaleY
         card.animate()
-            .scaleX(sx * 1.05f)
-            .scaleY(sy * 1.05f)
+            .scaleX(1.05f)
+            .scaleY(1.05f)
             .setDuration(120L)
-            .withEndAction { applyStackVisuals(animate = true) }
+            .withEndAction {
+                card.animate().scaleX(1f).scaleY(1f).setDuration(120L).start()
+            }
             .start()
     }
 
-    private fun playSlotEnter(card: FrameLayout) {
-        val enterFrom = -dp(OverlayReactionStackLayout.ENTER_FROM_ANCHOR_Y_DP).toFloat()
-        val align = lastAnchor?.horizontalAlign ?: HorizontalAlign.END
-        val depthPx = dp(OverlayReactionStackLayout.SLOT_DEPTH_Y_DP)
-        val depthXPx = dp(OverlayReactionStackLayout.SLOT_DEPTH_X_DP)
-        val targetY = OverlayReactionStackLayout.slotTranslationYForIndex(0, depthPx)
-        val targetX = OverlayReactionStackLayout.slotTranslationXForIndex(0, depthXPx, align)
+    private fun playMiniEnter(card: FrameLayout) {
+        card.alpha = 0.6f
+        card.scaleX = 0.85f
+        card.scaleY = 0.85f
+        card.animate()
+            .alpha(1f)
+            .scaleX(1f)
+            .scaleY(1f)
+            .setDuration(OverlayReactionStageLayout.REFLOW_MS)
+            .setInterpolator(DecelerateInterpolator())
+            .start()
+    }
+
+    private fun playHeroEnter(card: FrameLayout) {
+        val enterFrom = -dp(OverlayReactionStageLayout.ENTER_FROM_ANCHOR_Y_DP).toFloat()
         card.alpha = 0f
         card.scaleX = 0.55f
         card.scaleY = 0.55f
@@ -396,11 +393,7 @@ internal class OverlayReactionBurstPresenter(
                     duration = 420
                     interpolator = pop
                 },
-                ObjectAnimator.ofFloat(card, View.TRANSLATION_Y, enterFrom, targetY).apply {
-                    duration = 320
-                    interpolator = DecelerateInterpolator()
-                },
-                ObjectAnimator.ofFloat(card, View.TRANSLATION_X, 0f, targetX).apply {
+                ObjectAnimator.ofFloat(card, View.TRANSLATION_Y, enterFrom, 0f).apply {
                     duration = 320
                     interpolator = DecelerateInterpolator()
                 },
@@ -409,107 +402,76 @@ internal class OverlayReactionBurstPresenter(
         }
     }
 
-    private fun applyStackVisuals(animate: Boolean) {
-        val duration = if (animate) OverlayReactionStackLayout.STACK_REFLOW_MS else 0L
-        val align = lastAnchor?.horizontalAlign ?: HorizontalAlign.END
-        val depthPx = dp(OverlayReactionStackLayout.SLOT_DEPTH_Y_DP)
-        val depthXPx = dp(OverlayReactionStackLayout.SLOT_DEPTH_X_DP)
-        slots.forEachIndexed { index, slot ->
-            val scale = OverlayReactionStackLayout.slotScaleForIndex(index)
-            val alpha = OverlayReactionStackLayout.slotAlphaForIndex(index, burstMode)
-            val targetY = OverlayReactionStackLayout.slotTranslationYForIndex(index, depthPx)
-            val targetX = OverlayReactionStackLayout.slotTranslationXForIndex(index, depthXPx, align)
-            val card = slot.card
-            if (animate) {
-                card.animate()
-                    .scaleX(scale).scaleY(scale).alpha(alpha)
-                    .translationY(targetY).translationX(targetX)
-                    .setDuration(duration)
-                    .setInterpolator(DecelerateInterpolator())
-                    .start()
-            } else {
-                card.scaleX = scale
-                card.scaleY = scale
-                card.alpha = alpha
-                card.translationY = targetY
-                card.translationX = targetX
-            }
-        }
-    }
-
-    private fun estimateStackHeightPx(): Int {
-        var total = 0
-        slots.forEachIndexed { index, slot ->
-            val h = slot.card.height.takeIf { it > 0 }
-                ?: dp(OverlayReactionBurstLayout.MIN_SLOT_ESTIMATE_HEIGHT_DP)
-            total += (h * OverlayReactionStackLayout.slotScaleForIndex(index)).toInt() +
-                dp(OverlayReactionStackLayout.SLOT_GAP_DP)
-        }
-        return total
-    }
-
-    private fun evictOverflowSlots() {
-        val layout = OverlayReactionBurstLayout.metrics(context, dp)
-        val maxH = OverlayReactionStackLayout.maxStageHeightPx(layout.screenHeightPx)
-        while (
-            OverlayReactionStackLayout.shouldEvictOldestSlot(
-                slots.size,
-                estimateStackHeightPx(),
-                maxH,
-            )
-        ) {
-            val oldest = slots.lastOrNull() ?: break
-            removeSlot(oldest, animate = true)
-        }
-    }
-
-    private fun scheduleSlotExpiry(slot: IncomingReactionSlot, headExtended: Boolean = false) {
+    private fun scheduleHeroExpiry(slot: IncomingReactionSlot, extended: Boolean = false) {
         slot.hideRunnable?.let { mainHandler.removeCallbacks(it) }
-        val index = slots.indexOfFirst { it.id == slot.id }
-        val duration = when {
-            index == 0 && headExtended -> OverlayReactionStackLayout.headExpiryMs(extended = true)
-            else -> OverlayReactionStackLayout.visibleDurationMsForIndex(
-                index.coerceAtLeast(0),
-                slots.size,
-                burstMode,
-            )
-        }
+        val duration = OverlayReactionStageLayout.heroExpiryMs(extended)
         val runnable = Runnable {
-            if (slots.any { it.id == slot.id }) removeSlot(slot, animate = true)
+            if (heroSlot?.id == slot.id) onHeroExpired()
         }
         slot.hideRunnable = runnable
         mainHandler.postDelayed(runnable, duration)
     }
 
-    private fun extendHeadExpiry() {
-        slots.firstOrNull()?.let { scheduleSlotExpiry(it, headExtended = true) }
+    private fun scheduleMiniExpiry(slot: IncomingReactionSlot) {
+        slot.hideRunnable?.let { mainHandler.removeCallbacks(it) }
+        val duration = OverlayReactionStageLayout.miniExpiryMs(burstMode)
+        val runnable = Runnable {
+            if (historySlots.any { it.id == slot.id }) removeSlot(slot, animate = true)
+        }
+        slot.hideRunnable = runnable
+        mainHandler.postDelayed(runnable, duration)
+    }
+
+    private fun extendHeroExpiry() {
+        heroSlot?.let { scheduleHeroExpiry(it, extended = true) }
+    }
+
+    private fun onHeroExpired() {
+        val hero = heroSlot ?: return
+        hero.hideRunnable = null
+        heroHost?.removeView(hero.tile.card)
+        heroSlot = null
+        hero.onFinished()
+        if (historySlots.isNotEmpty()) {
+            promoteNewestHistoryToHero()
+        } else {
+            hideStageImmediate()
+        }
+        refreshLottiePlaybackBudget()
     }
 
     private fun removeSlot(slot: IncomingReactionSlot, animate: Boolean) {
         slot.hideRunnable?.let { mainHandler.removeCallbacks(it) }
         slot.hideRunnable = null
-        slot.lottie?.cancelAnimation()
-        if (!slots.remove(slot)) {
+        slot.currentLottie()?.cancelAnimation()
+        val isHero = heroSlot?.id == slot.id
+        val removedFromHistory = historySlots.remove(slot)
+        if (!isHero && !removedFromHistory) {
             slot.onFinished()
             return
         }
+        if (isHero) heroSlot = null
         val finish = {
-            stackColumn?.removeView(slot.card)
+            if (isHero) {
+                heroHost?.removeView(slot.tile.card)
+            } else {
+                historyRow?.removeView(slot.tile.card)
+            }
             slot.onFinished()
             refreshLottiePlaybackBudget()
-            applyStackVisuals(animate = true)
-            evictOverflowSlots()
-            if (slots.isEmpty()) hideStageImmediate() else relayoutStagePosition()
+            if (heroSlot == null && historySlots.isEmpty()) {
+                hideStageImmediate()
+            }
         }
         if (!animate) {
             finish()
             return
         }
-        slot.card.animate()
+        slot.tile.card.animate()
             .alpha(0f)
-            .scaleX(slot.card.scaleX * 0.9f)
-            .scaleY(slot.card.scaleY * 0.9f)
-            .translationY(slot.card.translationY + dp(OverlayReactionStackLayout.EXIT_SLIDE_Y_DP))
+            .scaleX(0.9f)
+            .scaleY(0.9f)
+            .translationY(slot.tile.card.translationY + dp(OverlayReactionStageLayout.EXIT_SLIDE_Y_DP))
             .setDuration(200L)
             .withEndAction { finish() }
             .start()
@@ -518,18 +480,17 @@ internal class OverlayReactionBurstPresenter(
     private fun noteEnqueue(nowMs: Long) {
         recentEnqueueTimestamps.addLast(nowMs)
         while (recentEnqueueTimestamps.size > 5) recentEnqueueTimestamps.removeFirst()
-        val cutoff = nowMs - OverlayReactionStackLayout.BURST_WINDOW_MS
-        burstMode = recentEnqueueTimestamps.count { it >= cutoff } >= OverlayReactionStackLayout.BURST_MIN_EVENTS
+        val cutoff = nowMs - OverlayReactionStageLayout.BURST_WINDOW_MS
+        burstMode = recentEnqueueTimestamps.count { it >= cutoff } >= OverlayReactionStageLayout.BURST_MIN_EVENTS
         burstIdleRunnable?.let { mainHandler.removeCallbacks(it) }
         val idleRunnable = Runnable {
-            val idleCutoff = System.currentTimeMillis() - OverlayReactionStackLayout.BURST_WINDOW_MS * 2
+            val idleCutoff = System.currentTimeMillis() - OverlayReactionStageLayout.BURST_WINDOW_MS * 2
             if (recentEnqueueTimestamps.none { it >= idleCutoff }) {
                 burstMode = false
-                applyStackVisuals(animate = true)
             }
         }
         burstIdleRunnable = idleRunnable
-        mainHandler.postDelayed(idleRunnable, OverlayReactionStackLayout.BURST_WINDOW_MS * 2)
+        mainHandler.postDelayed(idleRunnable, OverlayReactionStageLayout.BURST_WINDOW_MS * 2)
     }
 
     private fun relayoutStagePosition() {
@@ -541,50 +502,32 @@ internal class OverlayReactionBurstPresenter(
             ?: OverlayReactionAnchorLayout.fallbackTopEndHud(layout.screenWidthPx, dp)
         lastAnchor = anchor
         val placement = OverlayReactionAnchorLayout.computeStageWindowPlacement(
-            anchor, layout.screenWidthPx, dp, safeTopMinYProvider(),
+            anchor,
+            layout.screenWidthPx,
+            dp,
+            safeTopMinYProvider(),
         )
         params.gravity = placement.windowGravity
         params.x = placement.x
         params.y = placement.y
-        stackColumn?.gravity = placement.stackContentGravity
+        stageColumn?.gravity = Gravity.END
         anchor.maxStackWidthPx?.let { maxW ->
-            stackColumn?.layoutParams = (stackColumn?.layoutParams as? FrameLayout.LayoutParams)?.apply {
+            historyRow?.layoutParams = (historyRow?.layoutParams as? LinearLayout.LayoutParams)?.apply {
                 width = maxW
-            } ?: FrameLayout.LayoutParams(maxW, ViewGroup.LayoutParams.WRAP_CONTENT)
-        }
-        applyStackVisuals(animate = false)
-        root.post {
-            if (anchor.horizontalAlign == HorizontalAlign.CENTER && root.width > 0) {
-                params.x = OverlayReactionAnchorLayout.adjustCenteredWindowX(
-                    anchor, root.width, layout.screenWidthPx,
-                )
             }
-            runCatching { wm.updateViewLayout(root, params) }
         }
         runCatching { wm.updateViewLayout(root, params) }
     }
 
     private fun refreshLottiePlaybackBudget() {
-        slots.forEachIndexed { index, slot ->
-            slot.lottie?.let { lottie ->
-                if (index < OverlayReactionStackLayout.MAX_PLAYING_LOTTIES) {
-                    configureBurstLottie(lottie)
-                } else {
-                    lottie.pauseAnimation()
-                    lottie.progress = 0f
-                }
+        historySlots.forEach { slot ->
+            slot.currentLottie()?.let { lottie ->
+                lottie.pauseAnimation()
+                lottie.progress = 0f
             }
         }
-    }
-
-    private fun configureBurstLottie(lottie: LottieAnimationView) {
-        lottie.repeatCount = LottieDrawable.INFINITE
-        lottie.repeatMode = LottieDrawable.RESTART
-        lottie.enableMergePathsForKitKatAndAbove(true)
-        lottie.setRenderMode(RenderMode.AUTOMATIC)
-        lottie.alpha = OverlayReactionBurstLayout.CONTENT_ALPHA
-        disableOverlayTouchTarget(lottie)
-        if (!lottie.isAnimating) lottie.playAnimation()
+        heroSlot?.currentLottie()?.let { configureBurstLottie(it) }
+        historySlots.lastOrNull()?.currentLottie()?.let { configureBurstLottie(it) }
     }
 
     private fun startBurstLottieKeepAlive() {
@@ -603,74 +546,6 @@ internal class OverlayReactionBurstPresenter(
     private fun stopBurstLottieKeepAlive() {
         burstLottieKeepAliveRunnable?.let { mainHandler.removeCallbacks(it) }
         burstLottieKeepAliveRunnable = null
-    }
-
-    private fun createBurstAnimView(
-        reaction: OverlayQuickReaction,
-        maxSidePx: Int,
-        playLottie: Boolean,
-    ): View {
-        reaction.stickerAssetStem?.let { stem ->
-            val packKey = reaction.stickerPackKey ?: OVERLAY_REACTION_STICKER_PACK
-            return nonClippingImage(maxSidePx).also { image ->
-                OverlayReactionBitmapCache.loadAsync(context, packKey, stem) { bmp ->
-                    if (bmp != null && image.isAttachedToWindow) image.setImageBitmap(bmp)
-                }
-            }
-        }
-        reaction.gifDrawableRes?.let { res ->
-            return nonClippingImage(maxSidePx).apply { bindOverlayGif(context, res) }
-        }
-        reaction.memeDrawableRes?.let { res ->
-            return nonClippingImage(maxSidePx).apply {
-                setImageDrawable(AppCompatResources.getDrawable(context, res))
-            }
-        }
-        reaction.lottieRawRes?.let { res ->
-            return LottieAnimationView(context).apply {
-                setAnimation(res)
-                reaction.lottieTintHex?.let { tint ->
-                    addValueCallback(
-                        KeyPath("**"),
-                        LottieProperty.COLOR_FILTER,
-                        LottieValueCallback(
-                            PorterDuffColorFilter(Color.parseColor(tint), PorterDuff.Mode.SRC_ATOP),
-                        ),
-                    )
-                }
-                scaleType = ImageView.ScaleType.FIT_CENTER
-                if (playLottie) configureBurstLottie(this)
-                maxWidth = maxSidePx
-                maxHeight = maxSidePx
-            }
-        }
-        return nonClippingImage(maxSidePx).apply {
-            setImageDrawable(
-                AppCompatResources.getDrawable(context, reaction.iconRes)?.mutate()?.also { d ->
-                    DrawableCompat.setTint(d, Color.parseColor(reaction.tintHex))
-                },
-            )
-        }
-    }
-
-    private fun nonClippingImage(maxSidePx: Int): ImageView =
-        ImageView(context).apply {
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            adjustViewBounds = true
-            alpha = OverlayReactionBurstLayout.CONTENT_ALPHA
-            disableOverlayTouchTarget(this)
-            maxWidth = maxSidePx
-            maxHeight = maxSidePx
-        }
-
-    private fun View.findLottieInSubtree(): LottieAnimationView? {
-        if (this is LottieAnimationView) return this
-        if (this is ViewGroup) {
-            for (i in 0 until childCount) {
-                getChildAt(i).findLottieInSubtree()?.let { return it }
-            }
-        }
-        return null
     }
 
     private fun overlayWindowType(): Int =
