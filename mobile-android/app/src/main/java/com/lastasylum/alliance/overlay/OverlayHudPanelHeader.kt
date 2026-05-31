@@ -32,7 +32,7 @@ fun OverlayHudPanelHeader(
     onRefresh: (() -> Unit)? = null,
     refreshing: Boolean = false,
 ) {
-    Row(
+    Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(
@@ -40,10 +40,10 @@ fun OverlayHudPanelHeader(
                 end = 4.dp,
                 top = 2.dp,
             ),
-        verticalAlignment = Alignment.Top,
     ) {
-        Column(
-            modifier = Modifier.weight(1f),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = title,
@@ -52,47 +52,48 @@ fun OverlayHudPanelHeader(
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
-            val showSubtitleRow = !subtitle.isNullOrBlank() || subtitleTrailing != null
-            if (showSubtitleRow) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+            if (onRefresh != null && subtitleTrailing == null) {
+                IconButton(
+                    onClick = onRefresh,
+                    enabled = !refreshing,
                 ) {
-                    if (!subtitle.isNullOrBlank()) {
-                        Text(
-                            text = subtitle,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                    }
-                    subtitleTrailing?.invoke(this)
+                    Icon(
+                        imageVector = Icons.Outlined.Refresh,
+                        contentDescription = stringResource(R.string.overlay_notifications_refresh_cd),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
                 }
             }
-        }
-        if (onRefresh != null && subtitleTrailing == null) {
-            IconButton(
-                onClick = onRefresh,
-                enabled = !refreshing,
-            ) {
+            IconButton(onClick = onClose) {
                 Icon(
-                    imageVector = Icons.Outlined.Refresh,
-                                contentDescription = stringResource(R.string.overlay_notifications_refresh_cd),
+                    imageVector = Icons.Outlined.Close,
+                    contentDescription = stringResource(R.string.overlay_history_close_cd),
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
         }
-        IconButton(onClick = onClose) {
-            Icon(
-                imageVector = Icons.Outlined.Close,
-                contentDescription = stringResource(R.string.overlay_history_close_cd),
-                tint = MaterialTheme.colorScheme.onSurface,
-            )
+        val showSubtitleRow = !subtitle.isNullOrBlank() || subtitleTrailing != null
+        if (showSubtitleRow) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp, end = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (!subtitle.isNullOrBlank()) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                }
+                subtitleTrailing?.invoke(this)
+            }
         }
     }
 }

@@ -30,6 +30,16 @@ fun formatOverlayReactionLogTimeLine(createdAtIso: String): Pair<String, String>
     return absolute to relative
 }
 
+fun formatOverlayReactionLogTimeLabel(createdAtIso: String): String {
+    val (absolute, relative) = formatOverlayReactionLogTimeLine(createdAtIso)
+    return when {
+        relative.isBlank() -> absolute
+        absolute.isBlank() -> relative
+        relative == absolute -> absolute
+        else -> listOf(absolute, relative).joinToString(" · ")
+    }
+}
+
 fun overlayReactionLogDateHeaderKey(createdAtIso: String): String {
     val instant = parseIsoInstant(createdAtIso.trim()) ?: return ""
     val zdt = instant.atZone(ZoneId.systemDefault())

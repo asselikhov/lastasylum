@@ -46,7 +46,17 @@ internal class OverlayStripPassthroughFrameLayout(context: Context) : FrameLayou
                 compose.getLocationOnScreen(loc)
                 val lx = (ev.rawX - loc[0]).toInt()
                 val ly = (ev.rawY - loc[1]).toInt()
-                if (dismissRectsInCompose.none { !it.isEmpty && it.contains(lx, ly) }) return false
+                val hitSlopPx = (8 * resources.displayMetrics.density).toInt()
+                if (dismissRectsInCompose.none { rect ->
+                    if (rect.isEmpty()) return@none false
+                    val expanded = Rect(
+                        rect.left - hitSlopPx,
+                        rect.top - hitSlopPx,
+                        rect.right + hitSlopPx,
+                        rect.bottom + hitSlopPx,
+                    )
+                    expanded.contains(lx, ly)
+                }) return false
                 forwardingToCompose = true
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {

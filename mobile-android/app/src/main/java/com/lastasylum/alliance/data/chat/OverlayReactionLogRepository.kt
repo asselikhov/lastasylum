@@ -56,12 +56,22 @@ class OverlayReactionLogRepository(
         )
 
     fun insertFromSocket(dto: OverlayReactionLogEntryDto) {
-        val entry = dto.toEntry() ?: return
+        val entry = dto.toEntry(selfUserId)
+        if (entry == null) return
         scope.launch {
             mutex.withLock {
                 mergeEntries(listOf(entry))
             }
             recomputeUnread()
+        }
+    }
+
+    fun applyReactionUpdateFromSocket(dto: OverlayReactionLogEntryDto) {
+        val entry = dto.toEntry(selfUserId) ?: return
+        scope.launch {
+            mutex.withLock {
+                upsertEntry(entry)
+            }
         }
     }
 
@@ -71,6 +81,23 @@ class OverlayReactionLogRepository(
 
     fun refresh() {
         scope.launch { fetchFirstPage(showLoading = false, showRefreshing = true) }
+    }
+
+    fun toggleLogEntryReaction(logId: String, emoji: String) {
+        scope.launch {
+            runCatching {
+                val dto = chatApi.toggleOverlayReactionLogReaction(
+                    logId = logId,
+                    body = ToggleOverlayReactionLogReactionRequest(emoji = emoji),
+                )
+                val updated = dto.toEntry(selfUserId) ?: return@runCatching
+                mutex.withLock {
+                    upsertEntry(updated)
+                }
+            }.onFailure { e ->
+                _error.value = e.message
+            }
+        }
     }
 
     private suspend fun fetchFirstPage(
@@ -91,7 +118,10 @@ class OverlayReactionLogRepository(
             val page = chatApi.listOverlayReactionLog(before = null, limit = 50)
             mutex.withLock {
                 nextCursor = page.nextCursor?.trim()?.takeIf { it.isNotEmpty() }
-                mergeEntries(page.items.mapNotNull { it.toEntry() }, replace = true)
+                mergeEntries(
+                    page.items.mapNotNull { it.toEntry(selfUserId) },
+                    replace = true,
+                )
             }
         }.onFailure { e ->
             _error.value = e.message
@@ -112,7 +142,7 @@ class OverlayReactionLogRepository(
                 val page = chatApi.listOverlayReactionLog(before = before, limit = 50)
                 mutex.withLock {
                     nextCursor = page.nextCursor?.trim()?.takeIf { it.isNotEmpty() }
-                    mergeEntries(page.items.mapNotNull { it.toEntry() })
+                    mergeEntries(page.items.mapNotNull { it.toEntry(selfUserId) })
                 }
             }.onFailure { e ->
                 _error.value = e.message
@@ -123,14 +153,22 @@ class OverlayReactionLogRepository(
 
     fun markAllRead() {
         val newestId = _entries.value.firstOrNull()?.id ?: return
+        val previousCursor = _lastSeenLogId.value
+        _lastSeenLogId.value = newestId
         scope.launch {
+            recomputeUnread()
             runCatching {
                 chatApi.advanceOverlayReactionReadCursor(
                     AdvanceOverlayReactionReadCursorRequest(lastSeenLogId = newestId),
                 )
-                _lastSeenLogId.value = newestId
+            }.onSuccess {
+                if (_entries.value.none { isEntryUnread(it) }) {
+                    _unreadCount.value = 0
+                }
+            }.onFailure {
+                _lastSeenLogId.value = previousCursor
+                recomputeUnread()
             }
-            recomputeUnread()
         }
     }
 
@@ -162,6 +200,16 @@ class OverlayReactionLogRepository(
         val cursor = _lastSeenLogId.value?.trim().orEmpty()
         _unreadCount.value = _entries.value.count { entry ->
             OverlayReactionLogVisibilityPolicy.isEntryUnread(entry, self, cursor.ifEmpty { null })
+        }
+    }
+
+    private fun upsertEntry(entry: OverlayReactionLogEntry) {
+        val existing = _entries.value
+        val index = existing.indexOfFirst { it.id == entry.id }
+        _entries.value = if (index >= 0) {
+            existing.toMutableList().apply { this[index] = entry }
+        } else {
+            (existing + entry).distinctBy { it.id }.sortedByDescending { it.id }
         }
     }
 

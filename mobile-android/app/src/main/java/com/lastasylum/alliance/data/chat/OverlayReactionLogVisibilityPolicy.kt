@@ -1,5 +1,7 @@
 package com.lastasylum.alliance.data.chat
 
+import com.lastasylum.alliance.ui.util.parseIsoInstant
+
 object OverlayReactionLogVisibilityPolicy {
     fun isIncoming(entry: OverlayReactionLogEntry, selfUserId: String): Boolean {
         val self = selfUserId.trim()
@@ -20,7 +22,32 @@ object OverlayReactionLogVisibilityPolicy {
     ): Boolean {
         if (!isIncoming(entry, selfUserId)) return false
         val cursor = lastSeenLogId?.trim().orEmpty()
-        return cursor.isEmpty() || entry.id > cursor
+        if (cursor.isEmpty()) return true
+        return isLogEntryAfterCursor(entry, cursor)
+    }
+
+    internal fun isLogEntryAfterCursor(
+        entry: OverlayReactionLogEntry,
+        cursor: String,
+    ): Boolean {
+        if (entry.id.equals(cursor, ignoreCase = true)) return false
+        val entryInstant = parseIsoInstant(entry.createdAt.trim())
+        val cursorInstant = objectIdInstantOrNull(cursor)
+        if (entryInstant != null && cursorInstant != null) {
+            return entryInstant.isAfter(cursorInstant)
+        }
+        if (entry.id.length == 24 && cursor.length == 24) {
+            return entry.id.compareTo(cursor, ignoreCase = true) > 0
+        }
+        return entry.id > cursor
+    }
+
+    private fun objectIdInstantOrNull(id: String): java.time.Instant? {
+        if (id.length != 24) return null
+        return runCatching {
+            val ts = id.substring(0, 8).toLong(16)
+            java.time.Instant.ofEpochSecond(ts)
+        }.getOrNull()
     }
 
     fun matchesFilter(

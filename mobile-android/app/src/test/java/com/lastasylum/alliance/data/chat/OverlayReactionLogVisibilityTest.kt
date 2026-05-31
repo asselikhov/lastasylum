@@ -14,6 +14,7 @@ class OverlayReactionLogVisibilityTest {
         target: String? = null,
         visibility: OverlayReactionLogVisibility = OverlayReactionLogVisibility.Personal,
         id: String = "1",
+        createdAt: String = "2026-01-01T12:00:00Z",
     ) = OverlayReactionLogEntry(
         id = id,
         senderUserId = sender,
@@ -22,7 +23,7 @@ class OverlayReactionLogVisibilityTest {
         targetUsername = "B",
         reaction = "heart",
         visibility = visibility,
-        createdAt = "2026-01-01T12:00:00Z",
+        createdAt = createdAt,
     )
 
     @Test
@@ -98,6 +99,29 @@ class OverlayReactionLogVisibilityTest {
         )
         assertFalse(
             OverlayReactionLogVisibilityPolicy.isEntryUnread(entry(self, other), self, "0"),
+        )
+    }
+
+    @Test
+    fun isLogEntryAfterCursor_falseWhenCursorMatchesEntryId() {
+        val logId = "674a1b2c3d4e5f6789012345"
+        val read = entry(other, self, id = logId, createdAt = "2026-05-29T12:00:00Z")
+        assertFalse(
+            OverlayReactionLogVisibilityPolicy.isLogEntryAfterCursor(read, logId),
+        )
+    }
+
+    @Test
+    fun isLogEntryAfterCursor_usesCreatedAtWhenIdsAreNotEqual() {
+        val newer = entry(
+            sender = other,
+            target = self,
+            id = "000000000000000000000001",
+            createdAt = "2026-05-29T12:00:00Z",
+        )
+        val oldCursor = "000000000000000000000099"
+        assertTrue(
+            OverlayReactionLogVisibilityPolicy.isLogEntryAfterCursor(newer, oldCursor),
         )
     }
 }

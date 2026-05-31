@@ -28,6 +28,8 @@ class ChatRealtimeSubscriber(
         java.util.concurrent.CopyOnWriteArrayList<(OverlayReactionEvent) -> Unit>()
     private val overlayReactionLogListeners =
         java.util.concurrent.CopyOnWriteArrayList<(OverlayReactionLogEntryDto) -> Unit>()
+    private val overlayReactionLogReactionListeners =
+        java.util.concurrent.CopyOnWriteArrayList<(OverlayReactionLogEntryDto) -> Unit>()
     private val overlayChatPanelClosedListeners =
         java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
     private val overlayReadListeners =
@@ -201,6 +203,27 @@ class ChatRealtimeSubscriber(
         }
     }
 
+    fun addOverlayReactionLogReactionListener(listener: (OverlayReactionLogEntryDto) -> Unit) {
+        if (!overlayReactionLogReactionListeners.contains(listener)) {
+            overlayReactionLogReactionListeners.add(listener)
+        }
+        socketManager.addOverlayReactionLogReactionListener(listener)
+        refreshOverlayRealtimeSubscriptions()
+    }
+
+    fun removeOverlayReactionLogReactionListener(listener: (OverlayReactionLogEntryDto) -> Unit) {
+        overlayReactionLogReactionListeners.remove(listener)
+        socketManager.removeOverlayReactionLogReactionListener(listener)
+        if (overlayRealtimeListenersEmpty()) {
+            overlayRealtimeRoomIds.clear()
+            if (primaryRealtimeRoomIds.isEmpty()) {
+                socketManager.disconnect()
+            } else {
+                ensureRealtimeSocketConnected()
+            }
+        }
+    }
+
     fun onAccessTokenRefreshed() {
         socketManager.reconnectWithFreshToken()
     }
@@ -251,6 +274,7 @@ class ChatRealtimeSubscriber(
         overlayMessageListeners.isEmpty() &&
             overlayReactionListeners.isEmpty() &&
             overlayReactionLogListeners.isEmpty() &&
+            overlayReactionLogReactionListeners.isEmpty() &&
             overlayReadListeners.isEmpty() &&
             overlayRoomUnreadListeners.isEmpty() &&
             overlayMessageDeletedListeners.isEmpty() &&

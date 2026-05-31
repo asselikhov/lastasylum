@@ -36,6 +36,17 @@ export class OverlayReactionLog {
     index: true,
   })
   visibility: 'personal' | 'broadcast';
+  /** Emoji reactions on log entry (chat-style). */
+  @Prop({
+    type: [
+      {
+        emoji: { type: String, required: true, trim: true },
+        userIds: { type: [String], default: [] },
+      },
+    ],
+    default: [],
+  })
+  reactions: { emoji: string; userIds: string[] }[];
 }
 
 export const OverlayReactionLogSchema =

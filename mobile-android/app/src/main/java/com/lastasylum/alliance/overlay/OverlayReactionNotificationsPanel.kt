@@ -2,6 +2,9 @@ package com.lastasylum.alliance.overlay
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,6 +44,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.platform.LocalContext
 import com.lastasylum.alliance.R
@@ -67,7 +71,6 @@ fun OverlayReactionNotificationsPanel(
     selfUserId: String,
     onClose: () -> Unit,
     onReplyToUser: (userId: String) -> Unit,
-    onSendReactionToUser: (userId: String, reactionId: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val entries by repository.entries.collectAsState()
@@ -225,11 +228,17 @@ fun OverlayReactionNotificationsPanel(
                             listState.layoutInfo.visibleItemsInfo.any { it.index == firstUnreadIndex }
                         }
                     }
-                    val showJumpToUnread by remember(unreadCount, firstUnreadIndex, isFirstUnreadVisible) {
+                    val showJumpToUnread by remember(
+                        unreadCount,
+                        firstUnreadIndex,
+                        isFirstUnreadVisible,
+                        isNearBottom,
+                    ) {
                         derivedStateOf {
                             unreadCount > 0 &&
                                 firstUnreadIndex >= 0 &&
-                                !isFirstUnreadVisible
+                                !isFirstUnreadVisible &&
+                                !isNearBottom
                         }
                     }
                     val showScrollToLatest by remember(isNearBottom, displayRows.size) {
@@ -250,6 +259,7 @@ fun OverlayReactionNotificationsPanel(
                         if (!loading && lastClusterIndex >= 0 && !initialScrollDone) {
                             listState.scrollToItem(lastClusterIndex)
                             initialScrollDone = true
+                            repository.markAllRead()
                         }
                     }
 
@@ -257,6 +267,19 @@ fun OverlayReactionNotificationsPanel(
                         if (isNearBottom && clustered.isNotEmpty()) {
                             repository.markAllRead()
                         }
+                    }
+
+                    LaunchedEffect(listState, lastClusterIndex) {
+                        snapshotFlow { isNearBottom }
+                            .distinctUntilChanged()
+                            .collect { nearBottom ->
+                                if (nearBottom) {
+                                    delay(500)
+                                    if (isNearBottom) {
+                                        repository.markAllRead()
+                                    }
+                                }
+                            }
                     }
 
                     PullToRefreshBox(
@@ -275,7 +298,7 @@ fun OverlayReactionNotificationsPanel(
                         ) {
                             itemsIndexed(
                                 items = displayRows,
-                                key = { index, row ->
+                                key = { _, row ->
                                     when {
                                         row.cluster != null -> "cluster-${row.cluster.representative.id}"
                                         row.headerKey != null -> "header-${row.headerKey}"
@@ -295,19 +318,17 @@ fun OverlayReactionNotificationsPanel(
                                         }
                                     }
                                     row.headerKey != null -> {
-                                        Box(
+                                        Text(
+                                            text = overlayReactionLogDateHeaderLabel(row.headerKey),
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier
-                                                .fillMaxWidth()
-                                                .background(PremiumSurfaces.layer1())
-                                                .padding(vertical = 6.dp),
-                                        ) {
-                                            Text(
-                                                text = overlayReactionLogDateHeaderLabel(row.headerKey),
-                                                style = MaterialTheme.typography.labelLarge,
-                                                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
+                                                .padding(vertical = 4.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(PremiumSurfaces.layer1().copy(alpha = 0.35f))
+                                                .padding(horizontal = 10.dp, vertical = 4.dp),
+                                        )
                                     }
                                     row.cluster != null -> {
                                         val cluster = row.cluster
@@ -331,6 +352,18 @@ fun OverlayReactionNotificationsPanel(
                                                     }
                                                 } else {
                                                     null
+                                                },
+                                                onQuickReply = if (incoming) {
+                                                    {
+                                                        OverlayChatInteractionHold
+                                                            .prepareOverlayModalInteraction(true)
+                                                        replySheetEntry = cluster
+                                                    }
+                                                } else {
+                                                    null
+                                                },
+                                                onToggleEmojiReaction = { emoji ->
+                                                    repository.toggleLogEntryReaction(entry.id, emoji)
                                                 },
                                             )
                                         }
@@ -361,6 +394,7 @@ fun OverlayReactionNotificationsPanel(
                             if (lastClusterIndex >= 0) {
                                 scope.launch {
                                     listState.animateScrollToItem(lastClusterIndex)
+                                    repository.markAllRead()
                                 }
                             }
                         },
@@ -386,13 +420,10 @@ fun OverlayReactionNotificationsPanel(
         val entry = cluster.representative
         OverlayReactionLogReplySheet(
             entry = entry,
+            selfUserId = selfUserId,
             onDismiss = { replySheetEntry = null },
-            onSendReaction = { reactionId ->
-                onSendReactionToUser(entry.senderUserId, reactionId)
-            },
-            onMoreReactions = {
-                replySheetEntry = null
-                onReplyToUser(entry.senderUserId)
+            onToggleEmoji = { emoji ->
+                repository.toggleLogEntryReaction(entry.id, emoji)
             },
         )
     }
@@ -448,35 +479,29 @@ private fun OverlayReactionLogDetailSheet(
             if (cluster.mergeCount > 1) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                 ) {
-                    cluster.entries.take(4).forEach { item ->
+                    cluster.entries.forEach { item ->
                         OverlayReactionLogMiniPreview(
                             reactionId = item.reaction,
                             visibility = item.visibility,
                             previewSizeDp = 72,
                             showLabel = false,
                             playAnimatedPreview = true,
+                            compact = false,
                         )
                     }
-                }
-                if (cluster.mergeCount > 4) {
-                    Text(
-                        text = stringResource(
-                            R.string.overlay_notifications_cluster_more,
-                            cluster.mergeCount - 4,
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
                 }
             } else {
                 OverlayReactionLogMiniPreview(
                     reactionId = entry.reaction,
                     visibility = entry.visibility,
-                    previewSizeDp = 112,
+                    previewSizeDp = 140,
                     showLabel = false,
                     playAnimatedPreview = true,
+                    compact = false,
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))
@@ -485,10 +510,10 @@ private fun OverlayReactionLogDetailSheet(
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center,
             )
-            val (absolute, relative) = formatOverlayReactionLogTimeLine(entry.createdAt)
-            if (absolute.isNotBlank()) {
+            val timeLine = formatOverlayReactionLogTimeLabel(entry.createdAt)
+            if (timeLine.isNotBlank()) {
                 Text(
-                    text = listOf(absolute, relative).filter { it.isNotBlank() }.joinToString(" · "),
+                    text = timeLine,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),

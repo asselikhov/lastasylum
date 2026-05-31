@@ -222,6 +222,7 @@ import com.lastasylum.alliance.ui.chat.chatMessageIsOwn
 import com.lastasylum.alliance.ui.chat.chatMessageKey
 import com.lastasylum.alliance.ui.chat.chatTimelineIndexForMessageId
 import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
+import com.lastasylum.alliance.ui.chat.ChatSenderAvatarWithSquadRank
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarEndPad
 import com.lastasylum.alliance.ui.chat.ChatIncomingAvatarSize
 import com.lastasylum.alliance.ui.chat.AttachmentPreviewOverlay
@@ -1713,6 +1714,7 @@ private fun ChatBubbleInnerColumn(
     onFileDownload: ((ChatMessage) -> Unit)? = null,
     downloadingFileUrl: String? = null,
     inMessageList: Boolean = false,
+    overlayUi: Boolean = false,
 ) {
     val openRemoteChatImagePreview = LocalOpenRemoteChatImagePreview.current
     val bubblePadH = ChatMessengerStyle.bubbleHorizontalPadding(stickerStem)
@@ -1755,6 +1757,7 @@ private fun ChatBubbleInnerColumn(
                 nicknameColor = senderAccent,
                 senderRole = message.senderRole,
                 isMine = isMine,
+                showRoleBadge = !overlayUi,
             )
         }
 
@@ -2006,6 +2009,7 @@ private fun ChatFloatingImageAttachmentsBlock(
     canDelete: Boolean,
     onImageLongPress: () -> Unit,
     inMessageList: Boolean = false,
+    overlayUi: Boolean = false,
 ) {
     val openRemote = LocalOpenRemoteChatImagePreview.current
     val label = stringResource(R.string.cd_chat_message_image)
@@ -2046,6 +2050,7 @@ private fun ChatFloatingImageAttachmentsBlock(
                 nicknameColor = senderAccent,
                 senderRole = message.senderRole,
                 isMine = isMine,
+                showRoleBadge = !overlayUi,
             )
         }
         Surface(
@@ -2279,6 +2284,7 @@ private fun ChatAlbumRow(
             deleting = deleting,
             canDelete = canDelete,
             onImageLongPress = imageLongPress,
+            overlayUi = overlayUi,
         )
         ChatMessageReactionsRow(
             reactions = message.reactions,
@@ -2460,12 +2466,22 @@ internal fun ChatMessageBubble(
         showIncomingAvatar = !isMine && isChainBottom,
         reserveIncomingAvatarSpace = !isMine && !isChainBottom,
         leadingAvatar = {
-            ChatSenderAvatar(
-                telegramUrl = telegramUrl,
-                size = ChatIncomingAvatarSize,
-                modifier = Modifier.padding(end = ChatIncomingAvatarEndPad),
-                fallbackName = displayName,
-            )
+            if (overlayUi && !isMine) {
+                ChatSenderAvatarWithSquadRank(
+                    telegramUrl = telegramUrl,
+                    squadRole = message.senderRole,
+                    size = ChatIncomingAvatarSize,
+                    modifier = Modifier.padding(end = ChatIncomingAvatarEndPad),
+                    fallbackName = displayName,
+                )
+            } else {
+                ChatSenderAvatar(
+                    telegramUrl = telegramUrl,
+                    size = ChatIncomingAvatarSize,
+                    modifier = Modifier.padding(end = ChatIncomingAvatarEndPad),
+                    fallbackName = displayName,
+                )
+            }
         },
         selectionControl = {
             if (inSelectionMode && canDelete) {
@@ -2543,6 +2559,7 @@ internal fun ChatMessageBubble(
                             nicknameColor = senderAccent,
                             senderRole = message.senderRole,
                             isMine = isMine,
+                            showRoleBadge = !overlayUi,
                         )
                     }
                     Box(
@@ -2619,6 +2636,7 @@ internal fun ChatMessageBubble(
                     deleting = deleting,
                     canDelete = canDelete,
                     onImageLongPress = imageLongPress,
+                    overlayUi = overlayUi,
                 )
                 if (onReactionChip != null) {
                     ChatMessageReactionsRow(
@@ -2682,6 +2700,7 @@ internal fun ChatMessageBubble(
                             onFileDownload = onFileDownload,
                             downloadingFileUrl = downloadingFileUrl,
                             inMessageList = inMessageList,
+                            overlayUi = overlayUi,
                         )
                     }
                     if (onReactionChip != null) {

@@ -17,6 +17,12 @@ import {
   OverlayReactionLogReadStateDocument,
 } from './schemas/overlay-reaction-log-read-state.schema';
 
+export type OverlayReactionLogReactionView = {
+  emoji: string;
+  count: number;
+  reactedByMe: boolean;
+};
+
 export type OverlayReactionLogView = {
   _id: string;
   senderUserId: string;
@@ -26,6 +32,7 @@ export type OverlayReactionLogView = {
   reaction: string;
   visibility: 'personal' | 'broadcast';
   createdAt: string;
+  reactions: OverlayReactionLogReactionView[];
 };
 
 type UserLean = {
@@ -46,16 +53,30 @@ export class OverlayReactionLogService {
     private readonly chatService: ChatService,
   ) {}
 
-  private toView(row: {
-    _id: Types.ObjectId;
-    senderUserId: string;
-    senderUsername: string;
-    targetUserId?: string | null;
-    targetUsername?: string | null;
-    reaction: string;
-    visibility: 'personal' | 'broadcast';
-    createdAt?: Date;
-  }): OverlayReactionLogView {
+  private toView(
+    row: {
+      _id: Types.ObjectId;
+      senderUserId: string;
+      senderUsername: string;
+      targetUserId?: string | null;
+      targetUsername?: string | null;
+      reaction: string;
+      visibility: 'personal' | 'broadcast';
+      createdAt?: Date;
+      reactions?: { emoji: string; userIds: string[] }[] | null;
+    },
+    viewerUserId?: string,
+  ): OverlayReactionLogView {
+    const reactions = (row.reactions ?? []).map((r) => {
+      const userIds = r.userIds ?? [];
+      return {
+        emoji: r.emoji,
+        count: userIds.length,
+        reactedByMe: viewerUserId
+          ? userIds.includes(viewerUserId)
+          : false,
+      };
+    });
     return {
       _id: row._id.toString(),
       senderUserId: row.senderUserId,
@@ -65,6 +86,7 @@ export class OverlayReactionLogService {
       reaction: row.reaction,
       visibility: row.visibility,
       createdAt: row.createdAt?.toISOString() ?? new Date().toISOString(),
+      reactions,
     };
   }
 
@@ -115,8 +137,9 @@ export class OverlayReactionLogService {
       targetUsername: input.target.username?.trim() || null,
       reaction: input.reaction,
       visibility: 'personal',
+      reactions: [],
     });
-    return this.toView(doc);
+    return this.toView(doc, input.sender._id.toString());
   }
 
   async createBroadcast(input: {
@@ -135,8 +158,9 @@ export class OverlayReactionLogService {
       targetUsername: null,
       reaction: input.reaction,
       visibility: 'broadcast',
+      reactions: [],
     });
-    return this.toView(doc);
+    return this.toView(doc, input.sender._id.toString());
   }
 
   async listForViewer(
@@ -163,7 +187,7 @@ export class OverlayReactionLogService {
       .lean()
       .exec();
     const items = rows.map((r) =>
-      this.toView(r as Parameters<typeof this.toView>[0]),
+      this.toView(r as Parameters<typeof this.toView>[0], userId),
     );
     const nextCursor =
       items.length >= lim ? items[items.length - 1]._id : null;
@@ -227,5 +251,73 @@ export class OverlayReactionLogService {
       filter._id = { $gt: new Types.ObjectId(lastSeen) };
     }
     return this.logModel.countDocuments(filter).exec();
+  }
+
+  async toggleLogEntryReaction(
+    userId: string,
+    logId: string,
+    emoji: string,
+  ): Promise<{ entry: OverlayReactionLogView; recipientUserIds: string[] }> {
+    const trimmedId = logId?.trim();
+    if (!trimmedId || !Types.ObjectId.isValid(trimmedId)) {
+      throw new BadRequestException('Invalid log id');
+    }
+    const trimmedEmoji = emoji?.trim();
+    if (!trimmedEmoji) {
+      throw new BadRequestException('emoji is required');
+    }
+    const { teamId } = await this.assertActiveTeamMember(userId);
+    const row = await this.logModel
+      .findOne({
+        _id: new Types.ObjectId(trimmedId),
+        teamId,
+        ...this.visibilityFilter(userId),
+      })
+      .exec();
+    if (!row) {
+      throw new NotFoundException('Reaction log entry not found');
+    }
+    const list = (row.reactions ?? []) as {
+      emoji: string;
+      userIds: string[];
+    }[];
+    const existing = list.find((x) => x.emoji === trimmedEmoji);
+    if (!existing) {
+      list.push({ emoji: trimmedEmoji, userIds: [userId] });
+    } else {
+      const idx = existing.userIds.indexOf(userId);
+      if (idx >= 0) {
+        existing.userIds.splice(idx, 1);
+      } else {
+        existing.userIds.push(userId);
+      }
+    }
+    row.reactions = list.filter((x) => x.userIds.length > 0) as typeof row.reactions;
+    await row.save();
+    const entry = this.toView(row.toObject(), userId);
+    const recipientUserIds = await this.listRecipientUserIds(teamId, row);
+    return { entry, recipientUserIds };
+  }
+
+  async listRecipientUserIds(
+    teamId: Types.ObjectId,
+    row: {
+      visibility: 'personal' | 'broadcast';
+      senderUserId: string;
+      targetUserId?: string | null;
+    },
+  ): Promise<string[]> {
+    if (row.visibility === 'broadcast') {
+      const members = await this.usersService.listActiveTeamMemberUserIds(
+        teamId.toString(),
+      );
+      return members;
+    }
+    const ids = new Set<string>();
+    ids.add(row.senderUserId);
+    if (row.targetUserId?.trim()) {
+      ids.add(row.targetUserId.trim());
+    }
+    return [...ids];
   }
 }

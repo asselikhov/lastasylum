@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.overlay
 
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -7,6 +8,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.DropdownMenuItem
@@ -26,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
@@ -78,33 +81,78 @@ fun OverlayReactionLogFiltersBar(
             fieldShape = fieldShape,
             fieldTextStyle = fieldTextStyle,
         )
-        OutlinedTextField(
+        CompactFilterSearchField(
             value = searchQuery,
             onValueChange = onSearchQuery,
-            modifier = Modifier
-                .weight(1.15f)
-                .height(FilterFieldHeight),
-            singleLine = true,
-            placeholder = {
-                Text(
-                    text = stringResource(R.string.overlay_notifications_search_hint),
-                    style = fieldTextStyle,
-                )
-            },
-            prefix = {
-                Icon(
-                    Icons.Default.Search,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .size(16.dp)
-                        .padding(end = 2.dp),
-                )
-            },
-            colors = fieldColors,
-            shape = fieldShape,
-            textStyle = fieldTextStyle,
+            placeholder = stringResource(R.string.overlay_notifications_search_hint),
+            modifier = Modifier.weight(1.15f),
+            fieldColors = fieldColors,
+            fieldShape = fieldShape,
+            fieldTextStyle = fieldTextStyle,
         )
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CompactFilterSearchField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    fieldColors: androidx.compose.material3.TextFieldColors,
+    fieldShape: RoundedCornerShape,
+    fieldTextStyle: androidx.compose.ui.text.TextStyle,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier.height(FilterFieldHeight),
+        singleLine = true,
+        textStyle = fieldTextStyle.copy(color = MaterialTheme.colorScheme.onSurface),
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        interactionSource = interactionSource,
+        decorationBox = { innerTextField ->
+            OutlinedTextFieldDefaults.DecorationBox(
+                value = value,
+                innerTextField = innerTextField,
+                enabled = true,
+                singleLine = true,
+                visualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
+                interactionSource = interactionSource,
+                isError = false,
+                placeholder = {
+                    Text(text = placeholder, style = fieldTextStyle)
+                },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                },
+                colors = fieldColors,
+                contentPadding = OutlinedTextFieldDefaults.contentPadding(
+                    start = 8.dp,
+                    end = 8.dp,
+                    top = 0.dp,
+                    bottom = 0.dp,
+                ),
+                container = {
+                    OutlinedTextFieldDefaults.Container(
+                        enabled = true,
+                        isError = false,
+                        interactionSource = interactionSource,
+                        colors = fieldColors,
+                        shape = fieldShape,
+                        focusedBorderThickness = 1.dp,
+                        unfocusedBorderThickness = 1.dp,
+                    )
+                },
+            )
+        },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

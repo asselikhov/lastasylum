@@ -337,6 +337,7 @@ class CombatOverlayService : Service() {
     private var overlayTypingListener: ((com.lastasylum.alliance.data.chat.ChatTypingEvent) -> Unit)? = null
     private var overlayReactionListener: ((OverlayReactionEvent) -> Unit)? = null
     private var overlayReactionLogListener: ((com.lastasylum.alliance.data.chat.OverlayReactionLogEntryDto) -> Unit)? = null
+    private var overlayReactionLogReactionListener: ((com.lastasylum.alliance.data.chat.OverlayReactionLogEntryDto) -> Unit)? = null
     private val inboxBadgeCoordinator = OverlayInboxBadgeCoordinator()
     /** Лента: короткий TTL и мало строк превью — компактная полоса у края. */
     private val stripBuffer = OverlayChatStripBuffer(
@@ -4465,6 +4466,7 @@ class CombatOverlayService : Service() {
         roomUnreadListener: (com.lastasylum.alliance.data.chat.ChatRoomUnreadEvent) -> Unit,
         reactionListener: (OverlayReactionEvent) -> Unit,
         reactionLogListener: (com.lastasylum.alliance.data.chat.OverlayReactionLogEntryDto) -> Unit,
+        reactionLogReactionListener: (com.lastasylum.alliance.data.chat.OverlayReactionLogEntryDto) -> Unit,
     ) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             mainHandler.post {
@@ -4476,6 +4478,7 @@ class CombatOverlayService : Service() {
                     roomUnreadListener,
                     reactionListener,
                     reactionLogListener,
+                    reactionLogReactionListener,
                 )
             }
             return
@@ -4488,6 +4491,7 @@ class CombatOverlayService : Service() {
         repo.addOverlayRoomUnreadListener(roomUnreadListener)
         repo.addOverlayReactionListener(reactionListener)
         repo.addOverlayReactionLogListener(reactionLogListener)
+        repo.addOverlayReactionLogReactionListener(reactionLogReactionListener)
         val historyListener: () -> Unit = {
             mainHandler.post {
                 stripBuffer.clear()
@@ -4550,6 +4554,17 @@ class CombatOverlayService : Service() {
                 }
             }
         overlayReactionLogListener = reactionLogListener
+        val reactionLogReactionListener: (com.lastasylum.alliance.data.chat.OverlayReactionLogEntryDto) -> Unit =
+            reactionLogReactionListener@{ dto ->
+                mainHandler.post {
+                    if (!overlaySessionActive) return@post
+                    val container = AppContainer.from(this@CombatOverlayService)
+                    val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
+                    container.overlayReactionLogRepository.setSelfUserId(selfId)
+                    container.overlayReactionLogRepository.applyReactionUpdateFromSocket(dto)
+                }
+            }
+        overlayReactionLogReactionListener = reactionLogReactionListener
         val readListener: (com.lastasylum.alliance.data.chat.ChatRoomReadEvent) -> Unit = readListener@{ event ->
             mainHandler.post {
                 if (!isOverlayChatRoutingActive()) return@post
@@ -4649,6 +4664,7 @@ class CombatOverlayService : Service() {
             roomUnreadListener,
             reactionListener,
             reactionLogListener,
+            reactionLogReactionListener,
         )
         startOverlayReactionLogUnreadCollector()
         serviceScope.launch {
@@ -4755,6 +4771,12 @@ class CombatOverlayService : Service() {
             }
         }
         overlayReactionLogListener = null
+        overlayReactionLogReactionListener?.let { listener ->
+            runCatching {
+                AppContainer.from(applicationContext).chatRepository.removeOverlayReactionLogReactionListener(listener)
+            }
+        }
+        overlayReactionLogReactionListener = null
         stopOverlayReactionLogUnreadCollector()
         overlayChatHistoryClearedListener?.let { listener ->
             runCatching {
@@ -5175,24 +5197,6 @@ class CombatOverlayService : Service() {
                                                                 replyUserId,
                                                             )
                                                         }
-                                                    },
-                                                    onSendReactionToUser = { replyUserId, reactionId ->
-                                                        container.chatRepository.emitOverlayReaction(
-                                                            replyUserId,
-                                                            reactionId,
-                                                        )
-                                                        val name = OverlayTeamContextCache
-                                                            .memberUsername(replyUserId)
-                                                            ?.trim()
-                                                            .orEmpty()
-                                                            .ifBlank {
-                                                                getString(R.string.overlay_reaction_sender_unknown)
-                                                            }
-                                                        android.widget.Toast.makeText(
-                                                            this@CombatOverlayService,
-                                                            getString(R.string.overlay_reaction_sent, name),
-                                                            android.widget.Toast.LENGTH_SHORT,
-                                                        ).show()
                                                     },
                                                 )
                                             }

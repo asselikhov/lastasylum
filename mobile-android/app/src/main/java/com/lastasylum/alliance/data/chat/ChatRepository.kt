@@ -174,6 +174,12 @@ class ChatRepository(
     fun removeOverlayReactionLogListener(listener: (OverlayReactionLogEntryDto) -> Unit) =
         realtime.removeOverlayReactionLogListener(listener)
 
+    fun addOverlayReactionLogReactionListener(listener: (OverlayReactionLogEntryDto) -> Unit) =
+        realtime.addOverlayReactionLogReactionListener(listener)
+
+    fun removeOverlayReactionLogReactionListener(listener: (OverlayReactionLogEntryDto) -> Unit) =
+        realtime.removeOverlayReactionLogReactionListener(listener)
+
     fun isChatSocketConnected(): Boolean = realtime.isChatSocketConnected()
 
     fun chatConnectionState(): StateFlow<ChatConnectionState> = realtime.chatConnectionState

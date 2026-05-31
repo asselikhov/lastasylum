@@ -10,6 +10,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -18,13 +19,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.MaterialTheme
@@ -54,7 +52,6 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -64,9 +61,8 @@ import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.chatImageAttachments
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.data.chat.stickers.StickerPacks
-import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
+import com.lastasylum.alliance.ui.chat.ChatSenderAvatarWithSquadRank
 import com.lastasylum.alliance.ui.chat.MapLinkedMessageText
-import com.lastasylum.alliance.ui.chat.RoleBadge
 import com.lastasylum.alliance.ui.chat.isAtReverseChatBottom
 import com.lastasylum.alliance.ui.chat.scrollReverseChatRevealLatest
 import com.lastasylum.alliance.ui.chat.TelegramLikeAttachmentsGrid
@@ -97,12 +93,8 @@ fun OverlayChatStrip(
     val keep = remember { mutableStateListOf<ChatMessage>() }
     val leaving = remember { mutableStateMapOf<String, Boolean>() }
     val dismissRegions = remember { mutableStateMapOf<String, Rect>() }
-    val pendingDismissRegions = remember { mutableStateMapOf<String, Rect>() }
     val latestMessages by rememberUpdatedState(messages)
     val stripScroll = rememberLazyListState()
-    val stripScrolling by remember(stripScroll) {
-        derivedStateOf { stripScroll.isScrollInProgress }
-    }
     val atStripBottom by remember(stripScroll) {
         derivedStateOf { stripScroll.isAtReverseChatBottom() }
     }
@@ -120,32 +112,16 @@ fun OverlayChatStrip(
 
     LaunchedEffect(Unit) {
         snapshotFlow { dismissRegions.values.toList() }
-            .debounce(120)
+            .debounce(48)
             .collect { rects -> onDismissRegionsChanged(rects) }
     }
 
     LaunchedEffect(stripScroll) {
         snapshotFlow { stripScroll.isScrollInProgress }
-            .debounce(150)
+            .debounce(80)
             .collect { scrolling ->
-                if (!scrolling) {
-                    var changed = false
-                    for ((k, rect) in pendingDismissRegions) {
-                        val prev = dismissRegions[k]
-                        if (prev == null ||
-                            kotlin.math.abs(prev.left - rect.left) >= 6 ||
-                            kotlin.math.abs(prev.top - rect.top) >= 6 ||
-                            kotlin.math.abs(prev.right - rect.right) >= 6 ||
-                            kotlin.math.abs(prev.bottom - rect.bottom) >= 6
-                        ) {
-                            dismissRegions[k] = rect
-                            changed = true
-                        }
-                    }
-                    pendingDismissRegions.clear()
-                    if (!changed && dismissRegions.isNotEmpty()) {
-                        onDismissRegionsChanged(dismissRegions.values.toList())
-                    }
+                if (!scrolling && dismissRegions.isNotEmpty()) {
+                    onDismissRegionsChanged(dismissRegions.values.toList())
                 }
             }
     }
@@ -217,24 +193,10 @@ fun OverlayChatStrip(
             fun reportBounds(mk: String, rect: Rect) {
                 if (latestMessages.none { keyOf(it) == mk }) return
                 if (rect.isEmpty()) return
-                if (stripScrolling) {
-                    pendingDismissRegions[mk] = rect
-                } else {
-                    val prev = dismissRegions[mk]
-                    if (prev != null &&
-                        kotlin.math.abs(prev.left - rect.left) < 6 &&
-                        kotlin.math.abs(prev.top - rect.top) < 6 &&
-                        kotlin.math.abs(prev.right - rect.right) < 6 &&
-                        kotlin.math.abs(prev.bottom - rect.bottom) < 6
-                    ) {
-                        return
-                    }
-                    dismissRegions[mk] = rect
-                }
+                dismissRegions[mk] = rect
             }
             fun clearRegion(mk: String) {
                 dismissRegions.remove(mk)
-                pendingDismissRegions.remove(mk)
             }
 
             AnimatedVisibility(
@@ -334,52 +296,32 @@ private fun OverlayChatStripMessage(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 10.dp, end = 36.dp, top = 8.dp, bottom = 8.dp),
+                    .padding(start = 10.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.Top,
             ) {
+                ChatSenderAvatarWithSquadRank(
+                    telegramUrl = avatarUrl,
+                    squadRole = role,
+                    size = avatarSize,
+                    fallbackName = msg.senderUsername,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
                 Column(
-                    modifier = Modifier.width(avatarSize),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    ChatSenderAvatar(
-                        telegramUrl = avatarUrl,
-                        size = avatarSize,
-                        fallbackName = msg.senderUsername,
-                    )
-                    if (time.isNotBlank()) {
-                        Text(
-                            text = time,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = timeMuted,
-                            maxLines = 1,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                }
-                Column(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 28.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(
-                            text = displayName,
-                            style = MaterialTheme.typography.labelLarge.copy(
-                                fontWeight = FontWeight.SemiBold,
-                            ),
-                            color = roleAccentColor(role),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                        )
-                        if (role.isNotBlank()) {
-                            RoleBadge(role = role)
-                        }
-                    }
+                    Text(
+                        text = displayName,
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontWeight = FontWeight.SemiBold,
+                        ),
+                        color = roleAccentColor(role),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
 
                     if (hasSticker && stickerStem != null) {
                         val ctx = androidx.compose.ui.platform.LocalContext.current
@@ -438,42 +380,70 @@ private fun OverlayChatStripMessage(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                }
-            }
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .offset(x = 4.dp, y = (-4).dp)
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))
-                    .onGloballyPositioned { coords ->
-                        val b = coords.boundsInRoot()
-                        onReportDismissBounds(
-                            messageKey,
-                            Rect(
-                                b.left.roundToInt(),
-                                b.top.roundToInt(),
-                                b.right.roundToInt(),
-                                b.bottom.roundToInt(),
-                            ),
+                    if (time.isNotBlank()) {
+                        Text(
+                            text = time,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = timeMuted,
+                            maxLines = 1,
+                            modifier = Modifier.align(Alignment.End),
                         )
                     }
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        role = Role.Button,
-                        onClickLabel = dismissCd,
-                        onClick = onDismiss,
+                }
+            }
+            OverlayStripDismissButton(
+                contentDescription = dismissCd,
+                onDismiss = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 4.dp, end = 4.dp),
+                onReportBounds = { rect -> onReportDismissBounds(messageKey, rect) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun OverlayStripDismissButton(
+    contentDescription: String,
+    onDismiss: () -> Unit,
+    onReportBounds: (Rect) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(8.dp)
+    val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+    val bg = MaterialTheme.colorScheme.surface.copy(alpha = 0.62f)
+    val iconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f)
+    Box(
+        modifier = modifier
+            .size(28.dp)
+            .clip(shape)
+            .background(bg)
+            .border(0.5.dp, borderColor, shape)
+            .onGloballyPositioned { coords ->
+                val b = coords.boundsInRoot()
+                onReportBounds(
+                    Rect(
+                        b.left.roundToInt(),
+                        b.top.roundToInt(),
+                        b.right.roundToInt(),
+                        b.bottom.roundToInt(),
                     ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = "✕",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f),
                 )
             }
-        }
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                role = Role.Button,
+                onClickLabel = contentDescription,
+                onClick = onDismiss,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "✕",
+            style = MaterialTheme.typography.labelLarge,
+            color = iconColor,
+        )
     }
 }

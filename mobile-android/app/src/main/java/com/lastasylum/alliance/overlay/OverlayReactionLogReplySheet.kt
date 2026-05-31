@@ -1,39 +1,35 @@
 package com.lastasylum.alliance.overlay
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.OverlayReactionLogEntry
+import com.lastasylum.alliance.ui.chat.ChatQuickReactions
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 
 @Composable
 fun OverlayReactionLogReplySheet(
     entry: OverlayReactionLogEntry,
+    selfUserId: String,
     onDismiss: () -> Unit,
-    onSendReaction: (reactionId: String) -> Unit,
-    onMoreReactions: () -> Unit,
+    onToggleEmoji: (String) -> Unit,
 ) {
-    val context = LocalContext.current
-    val quickReactions = remember(context) {
-        overlayAnimationReactions().take(10)
-    }
     OverlayAwareBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -52,43 +48,38 @@ fun OverlayReactionLogReplySheet(
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
-                text = stringResource(R.string.overlay_notifications_pick_reaction),
+                text = stringResource(R.string.chat_sheet_section_reactions),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
             )
             LazyRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(vertical = 4.dp),
             ) {
-                items(quickReactions, key = { it.id }) { reaction ->
-                    OverlayReactionLogMiniPreview(
-                        reactionId = reaction.id,
-                        visibility = entry.visibility,
-                        previewSizeDp = 52,
-                        showLabel = false,
-                        modifier = Modifier.clickable {
-                            onSendReaction(reaction.id)
+                items(ChatQuickReactions.defaults) { emoji ->
+                    OutlinedButton(
+                        onClick = {
+                            onToggleEmoji(emoji)
                             onDismiss()
                         },
-                    )
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.widthIn(min = 48.dp),
+                    ) {
+                        Text(text = emoji, style = MaterialTheme.typography.titleMedium)
+                    }
                 }
             }
-            TextButton(
-                onClick = {
-                    onDismiss()
-                    onMoreReactions()
-                },
+            Text(
+                text = overlayReactionLogNarrative(entry, selfUserId, includeSenderName = false),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 8.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.overlay_notifications_more_reactions),
-                    textAlign = TextAlign.Center,
-                )
-            }
+                    .padding(top = 12.dp),
+            )
         }
     }
 }

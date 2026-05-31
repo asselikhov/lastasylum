@@ -475,12 +475,43 @@ export class ChatGateway {
       reaction: string;
       visibility: 'personal' | 'broadcast';
       createdAt: string;
+      reactions?: {
+        emoji: string;
+        count: number;
+        reactedByMe: boolean;
+      }[];
     },
     userIds: string[],
   ) {
     const unique = [...new Set(userIds.filter((id) => id.trim()))];
     for (const userId of unique) {
       this.server?.to(`user:${userId}`).emit('overlay:reaction:log', {
+        logEntry,
+      });
+    }
+  }
+
+  emitOverlayReactionLogReaction(
+    logEntry: {
+      _id: string;
+      senderUserId: string;
+      senderUsername: string;
+      targetUserId: string | null;
+      targetUsername: string | null;
+      reaction: string;
+      visibility: 'personal' | 'broadcast';
+      createdAt: string;
+      reactions: {
+        emoji: string;
+        count: number;
+        reactedByMe: boolean;
+      }[];
+    },
+    userIds: string[],
+  ) {
+    const unique = [...new Set(userIds.filter((id) => id.trim()))];
+    for (const userId of unique) {
+      this.server?.to(`user:${userId}`).emit('overlay:reaction:log:reaction', {
         logEntry,
       });
     }

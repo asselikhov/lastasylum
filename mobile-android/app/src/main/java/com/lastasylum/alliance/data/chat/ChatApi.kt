@@ -85,4 +85,10 @@ interface ChatApi {
     suspend fun advanceOverlayReactionReadCursor(
         @Body body: AdvanceOverlayReactionReadCursorRequest,
     ): OverlayReactionReadCursorResponse
+
+    @PATCH("chat/overlay-reactions/{logId}/reactions")
+    suspend fun toggleOverlayReactionLogReaction(
+        @Path("logId") logId: String,
+        @Body body: ToggleOverlayReactionLogReactionRequest,
+    ): OverlayReactionLogEntryDto
 }

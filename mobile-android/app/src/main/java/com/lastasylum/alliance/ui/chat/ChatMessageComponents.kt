@@ -123,6 +123,7 @@ fun ChatBubbleAuthorHeader(
     senderRole: String,
     serverNumber: Int? = null,
     isMine: Boolean = false,
+    showRoleBadge: Boolean = true,
 ) {
     val lineStyle = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
     val serverColor = if (isMine) {
@@ -176,7 +177,7 @@ fun ChatBubbleAuthorHeader(
                 modifier = Modifier.weight(1f, fill = true),
             )
         }
-        if (senderRole.isNotBlank()) {
+        if (senderRole.isNotBlank() && showRoleBadge) {
             Spacer(modifier = Modifier.width(6.dp))
             RoleBadge(role = senderRole)
         }

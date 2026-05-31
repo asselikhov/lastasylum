@@ -12,17 +12,18 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.layout.offset
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -50,6 +51,7 @@ import com.lastasylum.alliance.data.chat.OverlayReactionLogCluster
 import com.lastasylum.alliance.data.chat.OverlayReactionLogEntry
 import com.lastasylum.alliance.data.chat.OverlayReactionLogVisibility
 import com.lastasylum.alliance.data.chat.OverlayReactionLogVisibilityPolicy
+import com.lastasylum.alliance.ui.chat.ChatMessageReactionsRow
 import com.lastasylum.alliance.ui.theme.premium.PremiumColors
 import com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
@@ -59,12 +61,8 @@ private object ReactionLogCardTokens {
     val corner = 14.dp
     val borderDefault = Color(0x403D4A62)
     val borderUnread = Color(0x5538BDF8)
-    val incomingGradientTop = Color(0x2418A4A0)
-    val incomingGradientBottom = Color(0x080E1624)
     val outgoingGradientTop = Color(0x14FFFFFF)
     val outgoingGradientBottom = Color(0x060E1624)
-    val unreadAccentStart = Color(0xFF38BDF8)
-    val unreadAccentEnd = Color(0xFF9070B8)
     val presenceOffline = Color(0xFF667788)
     val presenceRing = Color(0xFF0E1624)
 }
@@ -77,6 +75,8 @@ fun OverlayReactionLogEntryRow(
     unreadHighlight: Boolean,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)?,
+    onQuickReply: (() -> Unit)?,
+    onToggleEmojiReaction: ((String) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val entry = cluster.representative
@@ -93,19 +93,9 @@ fun OverlayReactionLogEntryRow(
         OverlayReactionLogVisibility.Personal -> Color(0xFF9070B8)
         OverlayReactionLogVisibility.Broadcast -> Color(0xFF50B860)
     }
-    val (absolute, relative) = formatOverlayReactionLogTimeLine(entry.createdAt)
-    val timeLine = listOf(absolute, relative).filter { it.isNotBlank() }.joinToString(" · ")
+    val timeLine = formatOverlayReactionLogTimeLabel(entry.createdAt)
 
     val cardShape = RoundedCornerShape(ReactionLogCardTokens.corner)
-    val cardGradient = if (incoming) {
-        Brush.verticalGradient(
-            listOf(ReactionLogCardTokens.incomingGradientTop, ReactionLogCardTokens.incomingGradientBottom),
-        )
-    } else {
-        Brush.verticalGradient(
-            listOf(ReactionLogCardTokens.outgoingGradientTop, ReactionLogCardTokens.outgoingGradientBottom),
-        )
-    }
     val borderColor = when {
         unreadHighlight && incoming -> ReactionLogCardTokens.borderUnread
         else -> ReactionLogCardTokens.borderDefault
@@ -115,8 +105,22 @@ fun OverlayReactionLogEntryRow(
         modifier = modifier
             .fillMaxWidth()
             .clip(cardShape)
-            .background(PremiumSurfaces.layer2())
-            .background(cardGradient)
+            .then(
+                if (incoming) {
+                    Modifier.background(PremiumSurfaces.layer2())
+                } else {
+                    Modifier
+                        .background(PremiumSurfaces.layer2())
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    ReactionLogCardTokens.outgoingGradientTop,
+                                    ReactionLogCardTokens.outgoingGradientBottom,
+                                ),
+                            ),
+                        )
+                },
+            )
             .border(1.dp, borderColor, cardShape)
             .then(
                 if (onLongClick != null) {
@@ -137,11 +141,12 @@ fun OverlayReactionLogEntryRow(
                 cluster = cluster,
                 incoming = incoming,
                 outgoingPersonal = outgoingPersonal,
-                unreadHighlight = unreadHighlight && incoming,
                 scopeLabel = scopeLabel,
                 scopeColor = scopeColor,
                 timeLine = timeLine,
                 selfUserId = selfUserId,
+                onQuickReply = onQuickReply,
+                onToggleEmojiReaction = onToggleEmojiReaction,
             )
         } else {
             WideReactionLogRowContent(
@@ -149,11 +154,12 @@ fun OverlayReactionLogEntryRow(
                 cluster = cluster,
                 incoming = incoming,
                 outgoingPersonal = outgoingPersonal,
-                unreadHighlight = unreadHighlight && incoming,
                 scopeLabel = scopeLabel,
                 scopeColor = scopeColor,
                 timeLine = timeLine,
                 selfUserId = selfUserId,
+                onQuickReply = onQuickReply,
+                onToggleEmojiReaction = onToggleEmojiReaction,
             )
         }
     }
@@ -165,19 +171,17 @@ private fun WideReactionLogRowContent(
     cluster: OverlayReactionLogCluster,
     incoming: Boolean,
     outgoingPersonal: Boolean,
-    unreadHighlight: Boolean,
     scopeLabel: String,
     scopeColor: Color,
     timeLine: String,
     selfUserId: String,
+    onQuickReply: (() -> Unit)?,
+    onToggleEmojiReaction: ((String) -> Unit)?,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (unreadHighlight) {
-            UnreadAccentBar()
-        }
         SenderAvatarBlock(entry = entry, incoming = incoming)
         Spacer(modifier = Modifier.width(10.dp))
         NarrativeBlock(
@@ -187,16 +191,17 @@ private fun WideReactionLogRowContent(
             scopeColor = scopeColor,
             timeLine = timeLine,
             selfUserId = selfUserId,
+            onToggleEmojiReaction = onToggleEmojiReaction,
             modifier = Modifier.weight(1f),
         )
         if (outgoingPersonal) {
             RecipientMiniAvatar(entry = entry)
             Spacer(modifier = Modifier.width(6.dp))
         }
-        OverlayReactionLogMiniPreview(
-            reactionId = entry.reaction,
-            visibility = entry.visibility,
-            showLabel = false,
+        ReactionPreviewWithActions(
+            entry = entry,
+            incoming = incoming,
+            onQuickReply = onQuickReply,
         )
     }
 }
@@ -207,20 +212,18 @@ private fun CompactReactionLogRowContent(
     cluster: OverlayReactionLogCluster,
     incoming: Boolean,
     outgoingPersonal: Boolean,
-    unreadHighlight: Boolean,
     scopeLabel: String,
     scopeColor: Color,
     timeLine: String,
     selfUserId: String,
+    onQuickReply: (() -> Unit)?,
+    onToggleEmojiReaction: ((String) -> Unit)?,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (unreadHighlight) {
-                UnreadAccentBar()
-            }
             SenderAvatarBlock(entry = entry, incoming = incoming)
             Spacer(modifier = Modifier.width(10.dp))
             NarrativeBlock(
@@ -230,6 +233,7 @@ private fun CompactReactionLogRowContent(
                 scopeColor = scopeColor,
                 timeLine = timeLine,
                 selfUserId = selfUserId,
+                onToggleEmojiReaction = onToggleEmojiReaction,
                 modifier = Modifier.weight(1f),
             )
             if (outgoingPersonal) {
@@ -239,36 +243,49 @@ private fun CompactReactionLogRowContent(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 8.dp, start = if (unreadHighlight) 12.dp else 0.dp),
+                .padding(top = 8.dp),
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            OverlayReactionLogMiniPreview(
-                reactionId = entry.reaction,
-                visibility = entry.visibility,
-                showLabel = false,
+            ReactionPreviewWithActions(
+                entry = entry,
+                incoming = incoming,
+                onQuickReply = onQuickReply,
             )
         }
     }
 }
 
 @Composable
-private fun UnreadAccentBar() {
-    Box(
-        modifier = Modifier
-            .width(3.dp)
-            .height(52.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        ReactionLogCardTokens.unreadAccentStart,
-                        ReactionLogCardTokens.unreadAccentEnd,
-                    ),
-                ),
-            ),
-    )
-    Spacer(modifier = Modifier.width(8.dp))
+private fun ReactionPreviewWithActions(
+    entry: OverlayReactionLogEntry,
+    incoming: Boolean,
+    onQuickReply: (() -> Unit)?,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        OverlayReactionLogMiniPreview(
+            reactionId = entry.reaction,
+            visibility = entry.visibility,
+            showLabel = false,
+            playAnimatedPreview = true,
+        )
+        if (incoming && onQuickReply != null) {
+            IconButton(
+                onClick = onQuickReply,
+                modifier = Modifier.size(36.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.Reply,
+                    contentDescription = stringResource(R.string.overlay_notifications_reply_cd),
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -286,7 +303,7 @@ private fun SenderAvatarBlock(
             imageVector = if (incoming) Icons.Outlined.ArrowDownward else Icons.Outlined.ArrowUpward,
             contentDescription = null,
             modifier = Modifier
-                .size(14.dp)
+                .size(18.dp)
                 .background(Color(0xFF0D1524), CircleShape)
                 .padding(2.dp),
             tint = if (incoming) Color(0xFF82CFFF) else Color(0xFF8899AA),
@@ -324,6 +341,7 @@ private fun NarrativeBlock(
     scopeColor: Color,
     timeLine: String,
     selfUserId: String,
+    onToggleEmojiReaction: ((String) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -360,6 +378,13 @@ private fun NarrativeBlock(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
                 modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+        if (entry.reactions.isNotEmpty()) {
+            ChatMessageReactionsRow(
+                reactions = entry.reactions,
+                onReactionToggle = onToggleEmojiReaction,
+                modifier = Modifier.padding(top = 4.dp),
             )
         }
     }

@@ -740,6 +740,23 @@ export class UsersService implements OnModuleInit {
     return rows.map((r) => r._id.toString());
   }
 
+  async listActiveTeamMemberUserIds(teamId: string): Promise<string[]> {
+    if (!Types.ObjectId.isValid(teamId)) return [];
+    const teamOid = new Types.ObjectId(teamId);
+    const rows = await this.userModel
+      .find({
+        membershipStatus: TeamMembershipStatus.ACTIVE,
+        $or: [
+          { playerTeamId: teamOid },
+          { 'gameIdentities.playerTeamId': teamOid },
+        ],
+      })
+      .select('_id')
+      .lean<Array<{ _id: Types.ObjectId }>>()
+      .exec();
+    return rows.map((r) => r._id.toString());
+  }
+
   async collectPushTokensForExcavationAlert(
     allianceId: string,
     excludeUserId: string,

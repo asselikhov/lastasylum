@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,7 +38,8 @@ fun OverlayReactionLogMiniPreview(
     modifier: Modifier = Modifier,
     previewSizeDp: Int = 56,
     showLabel: Boolean = true,
-    playAnimatedPreview: Boolean = false,
+    playAnimatedPreview: Boolean = true,
+    compact: Boolean = true,
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -49,27 +51,39 @@ fun OverlayReactionLogMiniPreview(
         OverlayReactionLogVisibility.Broadcast -> Color(0x9950B860)
     }
     val tileSize = previewSizeDp.dp
+    val maxColumnWidth = if (compact) 72.dp else 220.dp
+    val previewBackground = if (textPayload != null) {
+        Color(0xFF141C28)
+    } else {
+        Color.Transparent
+    }
 
     Column(
-        modifier = modifier.widthIn(max = 72.dp),
+        modifier = modifier.widthIn(max = maxColumnWidth),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
             modifier = Modifier
                 .size(tileSize)
                 .clip(RoundedCornerShape(10.dp))
-                .background(Color(0xFF141C28))
-                .border(1.dp, borderColor, RoundedCornerShape(10.dp)),
+                .background(previewBackground)
+                .then(
+                    if (textPayload != null || !compact) {
+                        Modifier.border(1.dp, borderColor, RoundedCornerShape(10.dp))
+                    } else {
+                        Modifier
+                    },
+                ),
             contentAlignment = Alignment.Center,
         ) {
             if (textPayload != null) {
-                val maxTextWidthPx = remember(density) {
+                val maxTextWidthPx = remember(density, previewSizeDp) {
                     (previewSizeDp * density.density).toInt().coerceAtLeast(96)
                 }
                 AndroidView(
                     modifier = Modifier
-                        .widthIn(max = tileSize + 8.dp)
-                        .heightIn(min = 40.dp, max = tileSize),
+                        .widthIn(max = if (compact) tileSize + 8.dp else maxColumnWidth)
+                        .heightIn(min = 40.dp),
                     factory = { ctx ->
                         OverlayReactionTextBurstUi.createPreviewMessageTextView(
                             ctx,
@@ -80,7 +94,7 @@ fun OverlayReactionLogMiniPreview(
                 )
             } else {
                 AndroidView(
-                    modifier = Modifier.size(tileSize - 8.dp),
+                    modifier = Modifier.size(tileSize),
                     factory = { ctx ->
                         val icon = createOverlayReactionTileIcon(
                             ctx,
@@ -103,10 +117,20 @@ fun OverlayReactionLogMiniPreview(
                             tag = icon
                         }
                     },
+                    update = { host ->
+                        (host.tag as? ImageView)?.let { icon ->
+                            if (playAnimatedPreview) {
+                                resumeOverlayReactionTilePreview(icon)
+                            }
+                        }
+                    },
                     onRelease = { host ->
                         (host.tag as? ImageView)?.let { stopOverlayReactionTileAnimation(it) }
                     },
                 )
+                DisposableEffect(reactionId, playAnimatedPreview) {
+                    onDispose { }
+                }
             }
         }
         if (showLabel) {
@@ -118,7 +142,7 @@ fun OverlayReactionLogMiniPreview(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.widthIn(max = 72.dp),
+                modifier = Modifier.widthIn(max = maxColumnWidth),
             )
         }
     }

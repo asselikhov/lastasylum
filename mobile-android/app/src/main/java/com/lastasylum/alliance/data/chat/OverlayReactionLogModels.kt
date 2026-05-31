@@ -9,6 +9,7 @@ data class OverlayReactionLogEntry(
     val reaction: String,
     val visibility: OverlayReactionLogVisibility,
     val createdAt: String,
+    val reactions: List<ChatReaction> = emptyList(),
 )
 
 enum class OverlayReactionLogVisibility {
@@ -46,10 +47,11 @@ data class OverlayReactionLogEntryDto(
     val reaction: String,
     val visibility: String,
     val createdAt: String,
+    val reactions: List<ChatReactionDto>? = null,
 ) {
     fun resolvedId(): String = id?.trim().orEmpty().ifBlank { _id?.trim().orEmpty() }
 
-    fun toEntry(): OverlayReactionLogEntry? {
+    fun toEntry(selfUserId: String = ""): OverlayReactionLogEntry? {
         val entryId = resolvedId()
         if (entryId.isBlank()) return null
         return OverlayReactionLogEntry(
@@ -61,9 +63,31 @@ data class OverlayReactionLogEntryDto(
             reaction = reaction.trim(),
             visibility = OverlayReactionLogVisibility.fromWire(visibility),
             createdAt = createdAt.trim(),
+            reactions = reactions?.map { it.toChatReaction(selfUserId) } ?: emptyList(),
         )
     }
 }
+
+data class ChatReactionDto(
+    val emoji: String,
+    val count: Int = 0,
+    val reactedByMe: Boolean = false,
+    val userIds: List<String>? = null,
+) {
+    fun toChatReaction(selfUserId: String): ChatReaction {
+        val ids = userIds.orEmpty()
+        return ChatReaction(
+            emoji = emoji,
+            count = if (count > 0) count else ids.size,
+            reactedByMe = reactedByMe ||
+                (selfUserId.isNotBlank() && ids.contains(selfUserId)),
+        )
+    }
+}
+
+data class ToggleOverlayReactionLogReactionRequest(
+    val emoji: String,
+)
 
 data class OverlayReactionReadCursorResponse(
     val lastSeenLogId: String? = null,

@@ -61,6 +61,10 @@ class OverlayReactionReadCursorDto {
   lastSeenLogId: string;
 }
 
+class ToggleOverlayReactionLogReactionDto {
+  emoji: string;
+}
+
 type RequestUser = {
   userId: string;
   username: string;
@@ -515,5 +519,28 @@ export class ChatController {
       req.user.userId,
       lastSeenLogId,
     );
+  }
+
+  @Patch('overlay-reactions/:logId/reactions')
+  @Roles(AllianceRole.MEMBER)
+  async toggleOverlayReactionLogReaction(
+    @Req() req: { user: RequestUser },
+    @Param('logId') logId: string,
+    @Body() dto: ToggleOverlayReactionLogReactionDto,
+  ) {
+    const emoji = dto?.emoji?.trim() ?? '';
+    if (!emoji) {
+      throw new BadRequestException('emoji is required');
+    }
+    const result = await this.overlayReactionLogService.toggleLogEntryReaction(
+      req.user.userId,
+      logId,
+      emoji,
+    );
+    this.chatGateway.emitOverlayReactionLogReaction(
+      result.entry,
+      result.recipientUserIds,
+    );
+    return result.entry;
   }
 }
