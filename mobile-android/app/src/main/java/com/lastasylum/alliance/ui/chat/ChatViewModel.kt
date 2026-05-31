@@ -21,6 +21,7 @@ import com.lastasylum.alliance.data.chat.ChatMessageDeletedEvent
 import com.lastasylum.alliance.data.chat.ChatReaction
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.cache.LaunchDiskCache
+import com.lastasylum.alliance.data.chat.ChatConnectionState
 import com.lastasylum.alliance.data.chat.ChatRepository
 import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.data.chat.ChatRoomReadEvent
@@ -55,6 +56,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -246,6 +248,11 @@ class ChatViewModel(
                     flushPending()
                 }
             }
+        }
+        viewModelScope.launch {
+            repository.chatConnectionState()
+                .filter { it == ChatConnectionState.Connected }
+                .collect { onChatSocketConnected() }
         }
     }
 
@@ -473,32 +480,14 @@ class ChatViewModel(
      * Socket `room:join` targets. When chat UI is inactive, rely on `rooms:unread` on `user:{id}`
      * (backend fanout) and only join raid/hub/selected plus rooms that still show a local badge.
      */
-    private fun realtimeSubscriptionRoomIds(rooms: List<ChatRoomDto>): List<String> {
-        val raid = chatRoomPreferences.getRaidRoomId()
-        val selected = _state.value.selectedRoomId
-        val hub = ChatRoomKindResolver.allianceHubRoom(rooms)?.id
-        return buildList {
-            if (!raid.isNullOrBlank()) add(raid)
-            if (!hub.isNullOrBlank() && hub !in this) add(hub)
-            if (!selected.isNullOrBlank() && selected !in this) add(selected)
-            if (isChatTabActive || overlayChatPanelVisible) {
-                rooms.forEach { room ->
-                    val id = room.id.trim()
-                    if (id.isNotEmpty() && id !in this) add(id)
-                }
-            } else {
-                rooms.forEach { room ->
-                    val id = room.id.trim()
-                    if (id.isNotEmpty() && room.unreadCount > 0 && id !in this) {
-                        add(id)
-                    }
-                }
-            }
-            if (rooms.isNotEmpty() && isEmpty()) {
-                rooms.firstOrNull { it.id == selected }?.id?.let { add(it) }
-            }
-        }
-    }
+    private fun realtimeSubscriptionRoomIds(rooms: List<ChatRoomDto>): List<String> =
+        orderRealtimeSubscriptionRoomIds(
+            rooms = rooms,
+            selectedRoomId = _state.value.selectedRoomId,
+            raidRoomId = chatRoomPreferences.getRaidRoomId(),
+            hubRoomId = ChatRoomKindResolver.allianceHubRoom(rooms)?.id,
+            subscribeAllRooms = isChatTabActive || overlayChatPanelVisible,
+        )
 
     fun refreshChat() {
         scheduleBootstrap(preferAllianceHubRoom = true, force = true)
@@ -855,6 +844,7 @@ class ChatViewModel(
                     if (overlayChatPanelVisible) {
                         recomputeRoomUnreadBadges()
                     }
+                    reconnectRealtimeIfNeeded()
                     schedulePersistChatSnapshot()
                 }
         }
@@ -1114,6 +1104,7 @@ class ChatViewModel(
                     }
                     syncOverlayAllianceHubBadge(next)
                     lastRoomsSyncedAtMs = System.currentTimeMillis()
+                    reconnectRealtimeIfNeeded()
                 }
         }
     }
@@ -1487,6 +1478,7 @@ class ChatViewModel(
         } else {
             _listDerived.value = ChatMessagesListDerived.Empty
         }
+        repository.ensureRoomJoined(roomId)
         viewModelScope.launch {
             chatRoomPreferences.setSelectedRoomId(roomId)
             if (previousRoomId != null && !previousNewestId.isNullOrBlank()) {
@@ -1928,6 +1920,17 @@ class ChatViewModel(
             onRoomUnread = ::onRoomUnreadFromServer,
             onHistoryCleared = ::onChatHistoryClearedFromServer,
         )
+    }
+
+    /** Gap-fill after socket reconnect: merge stash + REST for the visible room. */
+    private fun onChatSocketConnected() {
+        rehydrateSelectedRoomMessagesFromCache()
+        if (!isChatTabActive && !overlayChatPanelVisible) return
+        reconnectRealtimeIfNeeded()
+        val roomId = _state.value.selectedRoomId?.trim().orEmpty()
+        if (roomId.isNotEmpty()) {
+            refreshMessagesInBackground(roomId, force = true)
+        }
     }
 
     private suspend fun openRoom(

@@ -21,3 +21,21 @@ export function buildMessageReactionBroadcastPayload(input: {
     reactions,
   };
 }
+
+/** Personal `user:{id}` fanout — skip users already in `chat:{roomId}` socket room. */
+export function filterPersonalChatFanoutUserIds(
+  eligibleUserIds: string[],
+  inRoomUserIds: Set<string>,
+  excludeUserId?: string,
+): string[] {
+  const exclude = excludeUserId?.trim();
+  const out: string[] = [];
+  for (const raw of eligibleUserIds) {
+    const userId = raw.trim();
+    if (!userId) continue;
+    if (exclude && userId === exclude) continue;
+    if (inRoomUserIds.has(userId)) continue;
+    out.push(userId);
+  }
+  return out;
+}

@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.data.chat
 
 import java.io.File
+import kotlinx.coroutines.flow.StateFlow
 
 class ChatRepository(
     chatApi: ChatApi,
@@ -168,6 +169,10 @@ class ChatRepository(
         realtime.removeOverlayReactionListener(listener)
 
     fun isChatSocketConnected(): Boolean = realtime.isChatSocketConnected()
+
+    fun chatConnectionState(): StateFlow<ChatConnectionState> = realtime.chatConnectionState
+
+    fun ensureRoomJoined(roomId: String) = realtime.ensureRoomJoined(roomId)
 
     fun onAccessTokenRefreshed() = realtime.onAccessTokenRefreshed()
 

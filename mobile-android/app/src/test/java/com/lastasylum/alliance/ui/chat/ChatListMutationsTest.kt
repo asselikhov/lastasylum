@@ -219,6 +219,33 @@ class ChatListMutationsTest {
     }
 
     @Test
+    fun orderRealtimeSubscriptionRoomIds_putsSelectedFirst() {
+        val rooms = listOf(
+            roomDto("raid", unread = 0),
+            roomDto("hub", unread = 0),
+            roomDto("other", unread = 1),
+        )
+        val ids = orderRealtimeSubscriptionRoomIds(
+            rooms = rooms,
+            selectedRoomId = "other",
+            raidRoomId = "raid",
+            hubRoomId = "hub",
+            subscribeAllRooms = true,
+        )
+        assertEquals("other", ids.first())
+        assertTrue(ids.containsAll(listOf("raid", "hub", "other")))
+    }
+
+    private fun roomDto(id: String, unread: Int) =
+        com.lastasylum.alliance.data.chat.ChatRoomDto(
+            id = id,
+            allianceId = "a",
+            title = id,
+            sortOrder = 0,
+            unreadCount = unread,
+        )
+
+    @Test
     fun shouldSkipBackgroundMessageRefresh_falseWhenRoomCacheAheadOfVisible() {
         val visible = listOf(msg("507f1f77bcf86cd799439011", "old"))
         val session = listOf(

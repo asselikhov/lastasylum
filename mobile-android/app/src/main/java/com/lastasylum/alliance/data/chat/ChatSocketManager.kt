@@ -47,8 +47,8 @@ class ChatSocketManager {
     private fun isSubscribedRoom(roomId: String): Boolean =
         roomId.isNotBlank() && subscribedRoomIds.contains(roomId)
 
-    /** Join raid/hub traffic delivered via personal `user:` room before room:join catches up. */
-    private fun opportunisticallyJoinRoom(roomId: String) {
+    /** Join room traffic on connected socket (selected room switch, opportunistic ingest). */
+    fun ensureRoomJoined(roomId: String) {
         val rid = roomId.trim()
         if (rid.isEmpty() || isSubscribedRoom(rid)) return
         subscribedRoomIds = (subscribedRoomIds + rid).distinct()
@@ -57,6 +57,8 @@ class ChatSocketManager {
             JSONObject().put("roomId", rid),
         )
     }
+
+    private fun opportunisticallyJoinRoom(roomId: String) = ensureRoomJoined(roomId)
 
     fun addMessageListener(listener: (ChatMessage) -> Unit) {
         if (!messageListeners.contains(listener)) {
@@ -256,7 +258,7 @@ class ChatSocketManager {
         reconnectScheduled = true
         emitConnectionState(ChatConnectionState.Reconnecting)
         val attempt = reconnectAttempt++
-        val delayMs = min(30_000L, (1L shl min(attempt, 5)) * 1000L)
+        val delayMs = min(8_000L, (1L shl min(attempt, 4)) * 1000L)
         mainHandler.postDelayed(reconnectRunnable, delayMs)
     }
 

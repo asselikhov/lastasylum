@@ -27,6 +27,7 @@ import { Types } from 'mongoose';
 import { PushNotificationsService } from '../push/push-notifications.service';
 import { ChatAttachmentsService } from './chat-attachments.service';
 import { normalizeOverlayChatStickerReaction } from './overlay-sticker-reaction.util';
+import { filterPersonalChatFanoutUserIds } from './chat-realtime-broadcast.util';
 
 /** Must match overlay reaction ids in Android OverlayQuickReactions.kt */
 const ALLOWED_OVERLAY_ANIMATION_REACTIONS = [
@@ -509,10 +510,14 @@ export class ChatGateway {
     excludeUserId?: string,
   ): Promise<void> {
     const eligible = await this.listEligibleUserIdsForRoom(roomId);
-    const exclude = excludeUserId?.trim();
-    for (const userId of eligible) {
-      if (exclude && userId === exclude) continue;
-      // Also emit on personal socket — overlay FGS may miss `chat:room` join (read receipts, etc.).
+    const inRoom = this.userIdsInChatRoom(roomId);
+    const targets = filterPersonalChatFanoutUserIds(
+      eligible,
+      inRoom,
+      excludeUserId,
+    );
+    for (const userId of targets) {
+      // Personal socket for overlay/FGS clients that missed `chat:room` join.
       this.server?.to(`user:${userId}`).emit(event, payload);
     }
   }

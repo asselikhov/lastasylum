@@ -2,6 +2,7 @@ package com.lastasylum.alliance.ui.chat
 
 import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.chat.mergeIncomingChatUpdate
 import com.lastasylum.alliance.data.chat.mergePreservingAttachments
 
@@ -506,3 +507,36 @@ internal fun syncSelections(state: ChatState): ChatState {
         confirmBulkDelete = keepBulkConfirm,
     )
 }
+
+/** Socket `room:join` order — selected room first for lowest message latency. */
+internal fun orderRealtimeSubscriptionRoomIds(
+    rooms: List<ChatRoomDto>,
+    selectedRoomId: String?,
+    raidRoomId: String?,
+    hubRoomId: String?,
+    subscribeAllRooms: Boolean,
+): List<String> =
+    buildList {
+        val selected = selectedRoomId?.trim().orEmpty()
+        if (selected.isNotEmpty()) add(selected)
+        val raid = raidRoomId?.trim().orEmpty()
+        if (raid.isNotEmpty() && raid !in this) add(raid)
+        val hub = hubRoomId?.trim().orEmpty()
+        if (hub.isNotEmpty() && hub !in this) add(hub)
+        if (subscribeAllRooms) {
+            rooms.forEach { room ->
+                val id = room.id.trim()
+                if (id.isNotEmpty() && id !in this) add(id)
+            }
+        } else {
+            rooms.forEach { room ->
+                val id = room.id.trim()
+                if (id.isNotEmpty() && room.unreadCount > 0 && id !in this) {
+                    add(id)
+                }
+            }
+        }
+        if (rooms.isNotEmpty() && isEmpty()) {
+            rooms.firstOrNull { it.id == selectedRoomId }?.id?.let { add(it) }
+        }
+    }

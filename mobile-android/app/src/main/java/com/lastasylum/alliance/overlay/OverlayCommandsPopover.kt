@@ -1332,6 +1332,7 @@ class OverlayCommandsPopover(
                 CombatOverlayService.extendInGameOverlayUiHold()
                 hide()
                 scope.launch {
+                    CombatOverlayService.warmupRaidForQuickCommandSend()
                     val result = notifyExcavation()
                     mainHandler.post {
                         result.onFailure { e ->
@@ -1635,6 +1636,7 @@ class OverlayCommandsPopover(
             CombatOverlayService.extendInGameOverlayUiHold()
             hideCoordOnly()
             scope.launch {
+                CombatOverlayService.warmupRaidForQuickCommandSend()
                 val result = sendCoords(commandLabel, xv, yv, excavation)
                 mainHandler.post {
                     result.onFailure { e ->

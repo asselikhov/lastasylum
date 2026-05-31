@@ -5,6 +5,7 @@ import android.os.Looper
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.data.auth.TokenStore
 import com.lastasylum.alliance.overlay.CombatOverlayService
+import kotlinx.coroutines.flow.StateFlow
 
 /** Socket.IO subscriptions and overlay listener wiring. */
 class ChatRealtimeSubscriber(
@@ -150,6 +151,11 @@ class ChatRealtimeSubscriber(
 
     fun isChatSocketConnected(): Boolean =
         socketManager.connectionState.value == ChatConnectionState.Connected
+
+    val chatConnectionState: StateFlow<ChatConnectionState> =
+        socketManager.connectionState
+
+    fun ensureRoomJoined(roomId: String) = socketManager.ensureRoomJoined(roomId)
 
     fun addOverlayReactionListener(listener: (OverlayReactionEvent) -> Unit) {
         if (!overlayReactionListeners.contains(listener)) {
