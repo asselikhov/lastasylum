@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.MoreVert
@@ -119,7 +120,10 @@ fun OverlayReactionNotificationsPanel(
     val filterKey = uiState.filterKey
 
     var savedScrollIndex by rememberSaveable(filterKey) { mutableIntStateOf(0) }
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = savedScrollIndex)
+    val listState = rememberLazyListState(
+        cacheWindow = LazyLayoutCacheWindow(ahead = 140.dp, behind = 140.dp),
+        initialFirstVisibleItemIndex = savedScrollIndex,
+    )
 
     val firstUnreadIndex = listLayout.firstUnreadItemIndex
     val lastClusterIndex = listLayout.lastClusterItemIndex
@@ -329,7 +333,6 @@ fun OverlayReactionNotificationsPanel(
                             onRefresh = { repository.refresh() },
                             modifier = Modifier.fillMaxSize(),
                         ) {
-                            // beyondBoundsItemCount: not public on Compose BOM 2024.09 (foundation 1.7.0)
                             LazyColumn(
                                 state = listState,
                                 modifier = Modifier.fillMaxSize(),
