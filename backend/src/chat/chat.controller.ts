@@ -501,7 +501,7 @@ export class ChatController {
     return this.overlayReactionLogService.getReadCursor(req.user.userId);
   }
 
-  @PATCH('overlay-reactions/read-cursor')
+  @Patch('overlay-reactions/read-cursor')
   @Roles(AllianceRole.MEMBER)
   async advanceOverlayReactionReadCursor(
     @Req() req: { user: RequestUser },
