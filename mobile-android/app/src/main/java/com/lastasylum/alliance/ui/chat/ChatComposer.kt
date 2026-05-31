@@ -1,4 +1,4 @@
-﻿package com.lastasylum.alliance.ui.chat
+package com.lastasylum.alliance.ui.chat
 
 import android.net.Uri
 import android.widget.Toast
@@ -57,7 +57,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -90,8 +90,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
@@ -217,7 +218,7 @@ internal fun ChatComposer(
         }
     }
 
-    // Оверлей: после системного пикера вложения приходят через applyOverlayPickedUris без onConfirm sheet.
+    // ???????: ????? ?????????? ?????? ???????? ???????? ????? applyOverlayPickedUris ??? onConfirm sheet.
     LaunchedEffect(pickedImageUris.size, showOverlayGalleryPicker) {
         if (showOverlayGalleryPicker && pickedImageUris.isNotEmpty()) {
             showOverlayGalleryPicker = false
@@ -824,7 +825,7 @@ internal fun ChatComposer(
                 }
             }
 
-        // Без анимации высоты — меньше конфликтов с IME при открытии клавиатуры.
+        // ??? ???????? ?????? ? ?????? ?????????? ? IME ??? ???????? ??????????.
         AnimatedVisibility(
             visible = showMediaPanel,
             enter = EnterTransition.None,
@@ -880,7 +881,7 @@ private fun StickerPackPickerPanel(
     Column(modifier = modifier.fillMaxWidth()) {
         if (packs.size > 1) {
             val tabIndex = packs.indexOfFirst { it.packKey == activePack.packKey }.coerceAtLeast(0)
-            ScrollableTabRow(
+            PrimaryScrollableTabRow(
                 selectedTabIndex = tabIndex,
                 edgePadding = 8.dp,
                 containerColor = Color.Transparent,

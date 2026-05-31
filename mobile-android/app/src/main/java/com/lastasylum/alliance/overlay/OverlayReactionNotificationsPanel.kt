@@ -38,7 +38,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -80,13 +80,13 @@ fun OverlayReactionNotificationsPanel(
     onOpenReactionsPicker: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val entries by repository.entries.collectAsState()
-    val loading by repository.loading.collectAsState()
-    val refreshing by repository.refreshing.collectAsState()
-    val loadingMore by repository.loadingMore.collectAsState()
-    val error by repository.error.collectAsState()
-    val unreadCount by repository.unreadCount.collectAsState()
-    val unreadEntryIds by repository.unreadEntryIds.collectAsState()
+    val entries by repository.entries.collectAsStateWithLifecycle()
+    val loading by repository.loading.collectAsStateWithLifecycle()
+    val refreshing by repository.refreshing.collectAsStateWithLifecycle()
+    val loadingMore by repository.loadingMore.collectAsStateWithLifecycle()
+    val error by repository.error.collectAsStateWithLifecycle()
+    val unreadCount by repository.unreadCount.collectAsStateWithLifecycle()
+    val unreadEntryIds by repository.unreadEntryIds.collectAsStateWithLifecycle()
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -99,7 +99,7 @@ fun OverlayReactionNotificationsPanel(
             teamsRepository = container.teamsRepository,
         )
     }
-    val uiState by controller.uiState.collectAsState()
+    val uiState by controller.uiState.collectAsStateWithLifecycle()
     var detailCluster by remember { mutableStateOf<OverlayReactionLogCluster?>(null) }
     var replySheetEntry by remember { mutableStateOf<OverlayReactionLogCluster?>(null) }
     var showClearHistoryConfirm by remember { mutableStateOf(false) }

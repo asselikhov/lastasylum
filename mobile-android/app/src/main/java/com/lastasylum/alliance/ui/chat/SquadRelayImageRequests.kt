@@ -1,8 +1,10 @@
 package com.lastasylum.alliance.ui.chat
 
 import android.content.Context
-import coil.request.ImageRequest
-import coil.size.Size
+import coil3.request.ImageRequest
+import coil3.request.allowHardware
+import coil3.request.crossfade
+import coil3.size.Size
 /**
  * Единые [ImageRequest] с лимитом decode size — меньше RAM/лагов в чате и оверлее.
  */
@@ -15,20 +17,20 @@ object SquadRelayImageRequests {
     private const val STRIP_THUMB_PX = 320
 
     fun chatThumbnail(context: Context, url: String): ImageRequest =
-        sizedAuthed(context, url, CHAT_THUMB_PX, CHAT_THUMB_PX, crossfade = true)
+        sizedAuthed(context, url, CHAT_THUMB_PX, CHAT_THUMB_PX, animateCrossfade = true)
 
     /** Lazy list tiles: no crossfade animation while flinging. */
     fun chatThumbnailInList(context: Context, url: String): ImageRequest =
-        sizedAuthed(context, url, CHAT_LIST_THUMB_PX, CHAT_LIST_THUMB_PX, crossfade = false)
+        sizedAuthed(context, url, CHAT_LIST_THUMB_PX, CHAT_LIST_THUMB_PX, animateCrossfade = false)
 
     fun chatBubbleImage(context: Context, url: String): ImageRequest =
-        sizedAuthed(context, url, CHAT_BUBBLE_MAX_PX, CHAT_BUBBLE_MAX_PX, crossfade = true)
+        sizedAuthed(context, url, CHAT_BUBBLE_MAX_PX, CHAT_BUBBLE_MAX_PX, animateCrossfade = true)
 
     fun chatAvatar(context: Context, url: String): ImageRequest =
-        sizedAuthed(context, url, AVATAR_PX, AVATAR_PX, crossfade = true)
+        sizedAuthed(context, url, AVATAR_PX, AVATAR_PX, animateCrossfade = true)
 
     fun overlayStripThumb(context: Context, url: String): ImageRequest =
-        sizedAuthed(context, url, STRIP_THUMB_PX, STRIP_THUMB_PX, crossfade = false)
+        sizedAuthed(context, url, STRIP_THUMB_PX, STRIP_THUMB_PX, animateCrossfade = false)
 
     /** Превью content:// / FileProvider в композере (оверлей и приложение). */
     fun localUriPreview(context: Context, uri: android.net.Uri): ImageRequest =
@@ -44,18 +46,17 @@ object SquadRelayImageRequests {
         url: String,
         widthPx: Int,
         heightPx: Int,
-        crossfade: Boolean,
+        animateCrossfade: Boolean,
     ): ImageRequest {
         val appContext = context.applicationContext
         val builder = ImageRequest.Builder(appContext)
             .data(url)
             .allowHardware(false)
             .size(Size(widthPx, heightPx))
-            .apply {
-                if (!crossfade) crossfade(false)
-            }
-        if (crossfade) {
+        if (animateCrossfade) {
             builder.crossfade(180)
+        } else {
+            builder.crossfade(false)
         }
         return builder.build()
     }

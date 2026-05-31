@@ -56,8 +56,8 @@ import androidx.compose.ui.unit.sp
 import com.lastasylum.alliance.ui.util.formatServerLabel
 import com.lastasylum.alliance.ui.theme.ChatTelegramTeamTagBg
 import com.lastasylum.alliance.ui.theme.ChatTelegramTeamTagFg
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatReaction
 import com.lastasylum.alliance.data.chat.chatImageAttachments

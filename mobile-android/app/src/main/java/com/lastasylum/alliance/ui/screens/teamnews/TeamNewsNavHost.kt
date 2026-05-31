@@ -96,8 +96,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.teams.CreateTeamNewsBody
 import com.lastasylum.alliance.data.teams.TeamNewsDetailDto

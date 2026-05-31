@@ -1,10 +1,10 @@
 package com.lastasylum.alliance
 
 import android.app.Application
+import android.content.Context
 import androidx.profileinstaller.ProfileInstaller
-import coil.ImageLoader
-import coil.ImageLoaderFactory
-import com.lastasylum.alliance.ui.chat.SquadRelayImageLoader
+import coil3.ImageLoader
+import coil3.SingletonImageLoader
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.analytics.FirebaseAnalytics
@@ -14,13 +14,14 @@ import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.OverlayRuntimeScheduler
 import com.lastasylum.alliance.push.ExcavationPushNotifications
 import com.lastasylum.alliance.push.FcmTokenManager
+import com.lastasylum.alliance.ui.chat.SquadRelayImageLoader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-class SquadRelayApplication : Application(), ImageLoaderFactory {
-    override fun newImageLoader(): ImageLoader = SquadRelayImageLoader.create(this)
+class SquadRelayApplication : Application(), SingletonImageLoader.Factory {
+    override fun newImageLoader(context: Context): ImageLoader = SquadRelayImageLoader.create(context)
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 

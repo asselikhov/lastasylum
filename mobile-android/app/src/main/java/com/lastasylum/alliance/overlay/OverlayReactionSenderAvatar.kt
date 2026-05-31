@@ -14,10 +14,10 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.graphics.ColorUtils
-import coil.Coil
-import coil.request.ErrorResult
-import coil.request.ImageRequest
-import coil.request.SuccessResult
+import coil3.load
+import coil3.request.ErrorResult
+import coil3.request.ImageRequest
+import coil3.request.SuccessResult
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 
 internal object OverlayReactionSenderAvatar {
@@ -81,24 +81,20 @@ internal object OverlayReactionSenderAvatar {
             addView(image)
             addView(initialView)
             if (avatarUrl != null) {
-                Coil.imageLoader(context).enqueue(
-                    ImageRequest.Builder(context)
-                        .data(avatarUrl)
-                        .size(96)
-                        .target(image)
-                        .listener(
-                            object : ImageRequest.Listener {
-                                override fun onSuccess(request: ImageRequest, result: SuccessResult) {
-                                    initialView.visibility = View.GONE
-                                }
+                image.load(avatarUrl) {
+                    size(96)
+                    listener(
+                        object : ImageRequest.Listener {
+                            override fun onSuccess(request: ImageRequest, result: SuccessResult) {
+                                initialView.visibility = View.GONE
+                            }
 
-                                override fun onError(request: ImageRequest, result: ErrorResult) {
-                                    initialView.visibility = View.VISIBLE
-                                }
-                            },
-                        )
-                        .build(),
-                )
+                            override fun onError(request: ImageRequest, result: ErrorResult) {
+                                initialView.visibility = View.VISIBLE
+                            }
+                        },
+                    )
+                }
             }
             disableOverlayTouchTarget(this)
         }

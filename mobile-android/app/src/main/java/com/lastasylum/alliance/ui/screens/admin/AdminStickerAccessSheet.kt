@@ -18,7 +18,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -88,8 +88,10 @@ fun AdminStickerAccessSheet(
             }
         }
         if (state.stickerCatalog.isNotEmpty()) {
-            ScrollableTabRow(selectedTabIndex = state.stickerCatalog.indexOfFirst { it.key == selectedKey }
-                .coerceAtLeast(0)) {
+            PrimaryScrollableTabRow(
+                selectedTabIndex = state.stickerCatalog.indexOfFirst { it.key == selectedKey }
+                    .coerceAtLeast(0),
+            ) {
                 state.stickerCatalog.forEach { item ->
                     val selected = item.key == selectedKey
                     Tab(

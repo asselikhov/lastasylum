@@ -21,8 +21,9 @@ import com.google.android.material.card.MaterialCardView
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
-import coil.Coil
-import coil.request.ImageRequest
+import coil3.load
+import coil3.request.allowHardware
+import coil3.request.crossfade
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.ui.chat.ChatStickerFormat
 import com.lastasylum.alliance.data.chat.ChatMessage
@@ -364,13 +365,9 @@ object OverlayChatHistoryPanel {
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 adjustViewBounds = true
                 contentDescription = context.getString(R.string.cd_chat_sticker)
-                Coil.imageLoader(context).enqueue(
-                    ImageRequest.Builder(context)
-                        .data(StickerPacks.assetUriForMessage(msg.text))
-                        .size(256)
-                        .target(this)
-                        .build(),
-                )
+                load(StickerPacks.assetUriForMessage(msg.text)) {
+                    size(256)
+                }
             }
         } else {
             val imageUrls = msg.chatImageAttachments()
@@ -435,12 +432,11 @@ object OverlayChatHistoryPanel {
                         )
                     }
                     addView(mediaWrap)
-                    Coil.imageLoader(context).enqueue(
-                        overlayAuthedImageRequest(context, firstUrl) {
-                            target(img)
-                            size(720)
-                        },
-                    )
+                    img.load(firstUrl) {
+                        allowHardware(false)
+                        crossfade(false)
+                        size(720)
+                    }
                     if (bodyStr.isNotBlank()) {
                         addView(
                             TextView(context).apply {

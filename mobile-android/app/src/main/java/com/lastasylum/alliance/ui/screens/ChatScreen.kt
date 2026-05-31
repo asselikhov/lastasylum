@@ -1,4 +1,4 @@
-﻿package com.lastasylum.alliance.ui.screens
+package com.lastasylum.alliance.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -271,8 +271,9 @@ import com.lastasylum.alliance.ui.util.ComposerPasteChipRow
 import com.lastasylum.alliance.ui.util.composerLongPressPaste
 import com.lastasylum.alliance.ui.util.rememberComposerPasteState
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -1724,7 +1725,7 @@ private fun ChatBubbleInnerColumn(
     val timeLabel = remember(formattedTime, message.editedAt, message.createdAt) {
         if (formattedTime.isBlank()) "" else {
             val editedSuffix = if (chatMessageShowsEditedLabel(message)) {
-                " В· ${bubbleContext.getString(R.string.chat_edited)}"
+                " · ${bubbleContext.getString(R.string.chat_edited)}"
             } else {
                 ""
             }
@@ -1984,7 +1985,7 @@ private fun ChatBubbleInnerColumn(
 
 // moved to ui/chat/ChatMessageComponents.kt
 
-/** РЎРѕРѕР±С‰РµРЅРёРµ С‚РѕР»СЊРєРѕ СЃ С„РѕС‚Рѕ: Р±РµР· В«РїСѓР·С‹СЂСЏВ», РєР°Рє СЃС‚РёРєРµСЂ; С‚Р°Рї вЂ” РїРѕР»РЅРѕСЌРєСЂР°РЅРЅС‹Р№ РїСЂРѕСЃРјРѕС‚СЂ. */
+/** Сообщение только с фото: без «пузыря», как стикер; тап — полноэкранный просмотр. */
 @Composable
 private fun ChatFloatingImageAttachmentsBlock(
     maxBubble: androidx.compose.ui.unit.Dp,

@@ -163,8 +163,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 import com.lastasylum.alliance.ui.chat.ChatStickerFormat
 import com.lastasylum.alliance.ui.chat.chatDayKey

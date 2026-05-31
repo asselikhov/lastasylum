@@ -19,10 +19,12 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.graphics.ColorUtils
 import com.google.android.material.card.MaterialCardView
-import coil.Coil
-import coil.request.ErrorResult
-import coil.request.ImageRequest
-import coil.request.SuccessResult
+import coil3.load
+import coil3.request.ErrorResult
+import coil3.request.ImageRequest
+import coil3.request.SuccessResult
+import coil3.request.allowHardware
+import coil3.request.crossfade
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.ChatAttachment
 import com.lastasylum.alliance.data.chat.chatImageAttachments
@@ -220,25 +222,21 @@ object OverlayChatStripUi {
         }
 
         if (avatarUrl != null) {
-            Coil.imageLoader(context).enqueue(
-                ImageRequest.Builder(context)
-                    .data(avatarUrl)
-                    .size(128)
-                    .target(avatarImage)
-                    .listener(
-                        object : ImageRequest.Listener {
-                            override fun onSuccess(request: ImageRequest, result: SuccessResult) {
-                                avatarInitial.visibility = View.GONE
-                            }
+            avatarImage.load(avatarUrl) {
+                size(128)
+                listener(
+                    object : ImageRequest.Listener {
+                        override fun onSuccess(request: ImageRequest, result: SuccessResult) {
+                            avatarInitial.visibility = View.GONE
+                        }
 
-                            override fun onError(request: ImageRequest, result: ErrorResult) {
-                                avatarInitial.visibility = View.VISIBLE
-                                avatarImage.setImageDrawable(null)
-                            }
-                        },
-                    )
-                    .build(),
-            )
+                        override fun onError(request: ImageRequest, result: ErrorResult) {
+                            avatarInitial.visibility = View.VISIBLE
+                            avatarImage.setImageDrawable(null)
+                        }
+                    },
+                )
+            }
         }
 
         val tagView = TextView(context).apply {
@@ -315,13 +313,9 @@ object OverlayChatStripUi {
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 adjustViewBounds = true
                 contentDescription = context.getString(R.string.cd_chat_sticker)
-                Coil.imageLoader(context).enqueue(
-                    ImageRequest.Builder(context)
-                        .data(stickerAssetUri)
-                        .size(160)
-                        .target(this)
-                        .build(),
-                )
+                load(stickerAssetUri) {
+                    size(160)
+                }
             }
             firstImage != null -> {
                 val imageUrls =
@@ -385,12 +379,11 @@ object OverlayChatStripUi {
                     )
                 }
                 column.addView(mediaWrap)
-                Coil.imageLoader(context).enqueue(
-                    overlayAuthedImageRequest(context, url) {
-                        target(img)
-                        size(480)
-                    },
-                )
+                img.load(url) {
+                    allowHardware(false)
+                    crossfade(false)
+                    size(480)
+                }
                 if (bodyText.isNotBlank()) {
                     column.addView(
                         TextView(context).apply {

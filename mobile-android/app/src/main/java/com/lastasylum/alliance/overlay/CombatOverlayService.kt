@@ -58,7 +58,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Text
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.CompositionLocalProvider
@@ -117,7 +117,7 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.ui.platform.LocalSavedStateRegistryOwner
+import androidx.savedstate.compose.LocalSavedStateRegistryOwner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -5352,7 +5352,7 @@ class CombatOverlayService : Service() {
                                     chromePane.confirmDeleteMessageId != null ||
                                     chromePane.confirmBulkDelete
                                 if (overlayPane == null && !overlayChatModalOpen) {
-                                    TabRow(selectedTabIndex = selectedTab) {
+                                    PrimaryTabRow(selectedTabIndex = selectedTab) {
                                         Tab(
                                             selected = selectedTab == 0,
                                             onClick = { selectedTab = 0 },

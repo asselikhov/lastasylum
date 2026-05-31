@@ -152,7 +152,7 @@ private fun ScopeFilterDropdown(
             readOnly = true,
             singleLine = true,
             modifier = Modifier
-                .menuAnchor(androidx.compose.material3.MenuAnchorType.PrimaryNotEditable)
+                .menuAnchor(androidx.compose.material3.ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                 .height(FilterFieldHeight),
             trailingIcon = {
                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)

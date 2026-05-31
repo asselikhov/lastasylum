@@ -6,7 +6,9 @@ import android.os.Build
 import android.widget.ImageView
 import androidx.annotation.DrawableRes
 import androidx.appcompat.content.res.AppCompatResources
-import coil.load
+import coil3.load
+import coil3.request.allowHardware
+import coil3.request.crossfade
 
 /**
  * GIF в TYPE_APPLICATION_OVERLAY: без hardware bitmap (см. [com.lastasylum.alliance.ui.chat.SquadRelayImageLoader]).

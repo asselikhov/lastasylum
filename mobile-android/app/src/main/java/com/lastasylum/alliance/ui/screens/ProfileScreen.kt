@@ -56,7 +56,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.users.GameIdentityDto
 import com.lastasylum.alliance.data.users.MyProfileDto
