@@ -17,8 +17,8 @@ import android.graphics.drawable.GradientDrawable
 
 internal object OverlayReactionTextBurstUi {
 
-    private const val TEXT_PREVIEW_SP = 14f
-    private const val TEXT_PREVIEW_LINES_MAX = 3
+    private const val TEXT_PREVIEW_SP = 13f
+    private const val TEXT_PREVIEW_LINES_MAX = 2
 
     fun createPreviewMessageTextView(context: Context, message: String, maxWidthPx: Int): TextView {
         val typeface = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -40,16 +40,12 @@ internal object OverlayReactionTextBurstUi {
             ellipsize = TextUtils.TruncateAt.END
             setShadowLayer(8f, 0f, 2f, Color.parseColor("#CC000000"))
             maxWidth = maxWidthPx
-            val padH = (density * 8).toInt()
-            val padV = (density * 6).toInt()
+            val padH = (density * 6).toInt()
+            val padV = (density * 4).toInt()
             setPadding(padH, padV, padH, padV)
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#CC0D1524"))
-                cornerRadius = density * 10f
-                setStroke(
-                    (density * 1f).toInt().coerceAtLeast(1),
-                    Color.parseColor("#55FFFFFF"),
-                )
+                setColor(Color.parseColor("#3310181E"))
+                cornerRadius = density * 6f
             }
             disableOverlayTouchTarget(this)
         }

@@ -50,6 +50,17 @@ internal object OverlayTeamContextCache {
             ?.takeIf { it.isNotEmpty() }
     }
 
+    /** Cached telegram for overlay avatar (team roster). */
+    fun memberTelegramUsername(userId: String): String? {
+        val id = userId.trim()
+        if (id.isEmpty()) return null
+        return cachedTeam?.members
+            ?.firstOrNull { it.userId == id }
+            ?.telegramUsername
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+    }
+
     suspend fun loadTeamDetail(
         teamId: String,
         teamsRepository: TeamsRepository,

@@ -70,6 +70,15 @@ class OverlayCommandsPopover(
     private val emitOverlayReaction: (targetUserId: String, reactionId: String) -> Unit = { _, _ -> },
     private val emitOverlayReactionBroadcast: (reactionId: String) -> Unit = {},
 ) {
+    private var hudReactionAnchor: () -> OverlayReactionAnchorRect? = { null }
+
+    internal fun setHudReactionAnchorProvider(provider: () -> OverlayReactionAnchorRect?) {
+        hudReactionAnchor = provider
+    }
+
+    internal fun setSafeTopMinYProvider(provider: () -> Int?) {
+        reactionBurstPresenter.setSafeTopMinYProvider(provider)
+    }
     @Volatile
     private var menuScrim: FrameLayout? = null
     @Volatile
@@ -79,7 +88,13 @@ class OverlayCommandsPopover(
     private var reopenMenuOnReactionsTab = false
     private var reopenReactionSubcategory = OverlayReactionCategory.ANIMATIONS
     private var preselectedReactionUserIds: Set<String> = emptySet()
-    private val reactionBurstPresenter = OverlayReactionBurstPresenter(context, mainHandler, dp)
+    private var popoverCard: View? = null
+    private var popoverLayoutListener: View.OnLayoutChangeListener? = null
+    private val reactionBurstPresenter = OverlayReactionBurstPresenter(context, mainHandler, dp).also {
+        it.setAnchorResolver { resolveReactionBurstAnchor() }
+    }
+    private var reactionGridScroll: android.widget.ScrollView? = null
+    private var reactionRow: LinearLayout? = null
     private var heartPreviewAnimator: Animator? = null
     private var reactionTilesAdapter: OverlayReactionTilesAdapter? = null
     private var reactionPreviewKeepAliveRunnable: Runnable? = null
@@ -116,8 +131,12 @@ class OverlayCommandsPopover(
         hideReactionPickOnly()
         hideReactionBurstOnly()
         hideCoordOnly()
+        removePopoverLayoutListener()
         removeShell(menuScrim)
         menuScrim = null
+        popoverCard = null
+        reactionGridScroll = null
+        reactionRow = null
         attachedWindowManager = null
         surfaceTransitionDepth = 0
         clearGameGateSuppress()
@@ -316,8 +335,44 @@ class OverlayCommandsPopover(
     }
 
     /** РџРѕРєР°Р·Р°С‚СЊ РІСЃРїС‹С€РєСѓ СЂРµР°РєС†РёРё РѕС‚ СЃРѕРєРѕРјР°РЅРґРЅРёРєР° (РїСЂРёС€Р»Р° РїРѕ СЃРѕРєРµС‚Сѓ). */
+    /** Anchor below reaction tile grid when popover reactions tab is open. */
+    internal fun reactionBurstAnchor(): OverlayReactionAnchorRect? {
+        val row = reactionRow ?: return null
+        if (row.visibility != View.VISIBLE) return null
+        val target = reactionGridScroll?.takeIf { it.visibility == View.VISIBLE } ?: row
+        val maxW = popoverCard?.width?.takeIf { it > 0 }
+        return OverlayReactionAnchorLayout.anchorFromView(target, HorizontalAlign.CENTER, maxW)
+    }
+
+    private fun removePopoverLayoutListener() {
+        val card = popoverCard
+        val listener = popoverLayoutListener
+        if (card != null && listener != null) {
+            card.removeOnLayoutChangeListener(listener)
+        }
+        popoverLayoutListener = null
+    }
+
+    private fun attachPopoverLayoutListener(card: View) {
+        removePopoverLayoutListener()
+        popoverCard = card
+        val listener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            invalidateReactionBurstAnchor()
+        }
+        popoverLayoutListener = listener
+        card.addOnLayoutChangeListener(listener)
+    }
+
+    private fun resolveReactionBurstAnchor(): OverlayReactionAnchorRect? =
+        reactionBurstAnchor() ?: hudReactionAnchor()
+
+    fun invalidateReactionBurstAnchor() {
+        reactionBurstPresenter.invalidateReactionBurstAnchor()
+    }
+
     fun showIncomingReactionBurst(
         windowManager: WindowManager,
+        fromUserId: String,
         fromUsername: String,
         reactionId: String = "heart",
         broadcast: Boolean = false,
@@ -327,6 +382,7 @@ class OverlayCommandsPopover(
         reactionBurstPresenter.enqueue(
             windowManager,
             OverlayReactionBurstRequest(
+                fromUserId = fromUserId,
                 fromDisplayName = fromUsername,
                 reactionId = reactionId,
                 broadcast = broadcast,
@@ -1015,7 +1071,7 @@ class OverlayCommandsPopover(
             )
         }
 
-        val reactionGridScroll = ScrollView(context).apply {
+        reactionGridScroll = ScrollView(context).apply {
             isFillViewport = false
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
             val wrap = LinearLayout(context).apply {
@@ -1048,7 +1104,8 @@ class OverlayCommandsPopover(
 
         rebuildReactionTiles = fun() {
             val isTextTab = selectedReactionSubcategory == OverlayReactionCategory.TEXT
-            reactionGridScroll.visibility = if (isTextTab) View.GONE else View.VISIBLE
+            reactionGridScroll?.visibility = if (isTextTab) View.GONE else View.VISIBLE
+            reactionGridScroll?.post { invalidateReactionBurstAnchor() }
             reactionTextPanel.visibility = if (isTextTab) View.VISIBLE else View.GONE
             reactionHintRow.visibility = if (isTextTab) View.GONE else View.VISIBLE
             if (!isTextTab) {
@@ -1117,7 +1174,7 @@ class OverlayCommandsPopover(
         refreshStickerPackPicker()
         rebuildReactionTiles()
 
-        val reactionRow = LinearLayout(context).apply {
+        reactionRow = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.START
             visibility = View.GONE
@@ -1262,13 +1319,15 @@ class OverlayCommandsPopover(
                 ensurePopoverSuppressHeld()
                 OverlayReactionBitmapCache.preloadOverlayStickerPack(context)
                 coordsAction.visibility = View.GONE
-                reactionRow.visibility = View.VISIBLE
+                reactionRow?.visibility = View.VISIBLE
                 startReactionStripPreviews()
+                reactionRow?.post { invalidateReactionBurstAnchor() }
             } else {
                 stopHeartPreviewPulse()
                 coordsAction.visibility = View.VISIBLE
-                reactionRow.visibility = View.GONE
+                reactionRow?.visibility = View.GONE
                 refreshPrimaryAction(cat)
+                invalidateReactionBurstAnchor()
             }
         }
 
@@ -1424,6 +1483,7 @@ class OverlayCommandsPopover(
 
         ensurePopoverSuppressHeld()
         menuScrim = scrim
+        attachPopoverLayoutListener(card)
         attachedWindowManager = windowManager
     }
 

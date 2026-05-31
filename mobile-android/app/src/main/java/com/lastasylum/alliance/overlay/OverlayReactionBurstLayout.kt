@@ -2,6 +2,7 @@ package com.lastasylum.alliance.overlay
 
 import android.content.Context
 import android.util.DisplayMetrics
+import android.graphics.drawable.GradientDrawable
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.airbnb.lottie.LottieAnimationView
@@ -31,14 +32,29 @@ internal object OverlayReactionBurstLayout {
     private const val HEIGHT_FRACTION = 0.28f
     private const val MAX_SIDE_DP = 280
     private const val MIN_SIDE_DP = 112
+
+    /** Fallback slot height when card not yet measured (stack eviction estimate). */
+    const val MIN_SLOT_ESTIMATE_HEIGHT_DP = MIN_SIDE_DP + 40
     private const val TEXT_WIDTH_FRACTION = 0.86f
     private const val MIN_TEXT_WIDTH_DP = 148
 
     /** Запас вокруг анимации под enter scale (~1.06), без раздувания hit-area. */
     private const val SCALE_PAD_DP = 14
 
-    /** Окно вспышки ниже верхней ленты чата, чтобы подпись не уезжала за край экрана. */
+    /** Legacy fallback Y when no anchor (unused when anchor resolver is set). */
     const val WINDOW_TOP_Y_DP = 72
+
+    /** Max height of the incoming-reaction stack on screen. */
+    const val MAX_STAGE_HEIGHT_FRACTION = 0.5f
+
+    /** HUD chip-aligned card (see OverlayGameHudChip). */
+    const val CARD_FILL_HEX = "#B310141E"
+    const val CARD_CORNER_DP = 6
+    const val CARD_STROKE_BROADCAST_HEX = "#55FFB74D"
+    const val CARD_STROKE_PRIVATE_HEX = "#4490CAF9"
+
+    /** @deprecated use CARD_CORNER_DP */
+    const val SLOT_CARD_CORNER_DP = CARD_CORNER_DP
 
     /** Отступ подписи отправителя под картинкой мема / Lottie / стикера. */
     const val SENDER_BELOW_ANIM_DP = 8
@@ -60,10 +76,23 @@ internal object OverlayReactionBurstLayout {
         val screenHeightPx: Int,
     )
 
-    fun textMessageMaxWidthPx(metrics: Metrics, minWidthPx: Int): Int {
+    fun textMessageMaxWidthPx(metrics: Metrics, minWidthPx: Int, anchorMaxWidthPx: Int? = null): Int {
         val margin = (metrics.screenWidthPx * TEXT_HORIZONTAL_MARGIN_FRACTION).toInt()
-        return (metrics.screenWidthPx - margin * 2).coerceAtLeast(minWidthPx)
+        val screenBased = (metrics.screenWidthPx - margin * 2).coerceAtLeast(minWidthPx)
+        return anchorMaxWidthPx?.let { minOf(screenBased, it) } ?: screenBased
     }
+
+    fun slotCardBackground(broadcast: Boolean, dp: (Int) -> Int): GradientDrawable =
+        GradientDrawable().apply {
+            setColor(android.graphics.Color.parseColor(CARD_FILL_HEX))
+            cornerRadius = dp(CARD_CORNER_DP).toFloat()
+            setStroke(
+                dp(1).coerceAtLeast(1),
+                android.graphics.Color.parseColor(
+                    if (broadcast) CARD_STROKE_BROADCAST_HEX else CARD_STROKE_PRIVATE_HEX,
+                ),
+            )
+        }
 
     fun metrics(context: Context, dp: (Int) -> Int): Metrics {
         val dm: DisplayMetrics = context.resources.displayMetrics

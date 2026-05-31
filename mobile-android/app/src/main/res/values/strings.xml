@@ -773,6 +773,11 @@
     <string name="overlay_reaction_burst_from_with_caption">от %1$s (%2$s)</string>
     <string name="overlay_reaction_sender_unknown">Союзник</string>
     <string name="overlay_reaction_burst_from_prefix">от</string>
+    <string name="overlay_reaction_burst_sender_compact">%1$s</string>
+    <string name="overlay_reaction_burst_sender_at">@%1$s</string>
+    <string name="overlay_reaction_burst_merge_count">×%1$d</string>
+    <string name="overlay_reaction_burst_badge_broadcast">Реакция всем в игре</string>
+    <string name="overlay_reaction_burst_badge_private">Личная реакция</string>
     <string name="overlay_reaction_socket_offline">Нет связи с чатом — реакция не отправлена</string>
     <string name="overlay_chat_gallery_open_system_picker">Выбрать фото</string>
     <string name="overlay_chat_gallery_partial_access_hint">Доступ только к ранее выбранным снимкам. Откройте системный выбор фото — так можно добавить новые и изменить набор.</string>

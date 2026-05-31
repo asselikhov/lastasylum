@@ -201,7 +201,10 @@ class CombatOverlayService : Service() {
             emitOverlayReactionBroadcast = { reactionId ->
                 AppContainer.from(this@CombatOverlayService).chatRepository.emitOverlayReactionBroadcast(reactionId)
             },
-        )
+        ).also {
+            it.setHudReactionAnchorProvider { hudReactionBurstAnchor() }
+            it.setSafeTopMinYProvider { overlayReactionSafeTopMinY() }
+        }
     }
     private val presenceHeartbeat by lazy {
         OverlayPresenceHeartbeat(
@@ -374,6 +377,7 @@ class CombatOverlayService : Service() {
 
     private val overlayTopRightHudFlow = MutableStateFlow(OverlayGameTopRightHudState())
     private var overlayTopRightHudHost: FrameLayout? = null
+    private var overlayTopRightHudLayoutListener: View.OnLayoutChangeListener? = null
     private var overlayTopRightHudParams: WindowManager.LayoutParams? = null
     private var overlayTopRightHudCompose: ComposeView? = null
     private var overlayTopRightHudComposeOwner: OverlayChatComposeOwner? = null
@@ -2865,15 +2869,49 @@ class CombatOverlayService : Service() {
             Log.w(TAG, "ensureOverlayTopRightHudWindow addView failed", attach.exceptionOrNull())
             return
         }
-        compose.post { compose.requestLayout() }
+        compose.post {
+            compose.requestLayout()
+            overlayCommandsPopover.invalidateReactionBurstAnchor()
+        }
+        val layoutListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            overlayCommandsPopover.invalidateReactionBurstAnchor()
+        }
+        overlayTopRightHudLayoutListener = layoutListener
+        host.addOnLayoutChangeListener(layoutListener)
         overlayTopRightHudHost = host
         overlayTopRightHudParams = params
         retainWindowManager(manager)
         _overlayVisible.value = true
     }
 
+    /** Anchor below top-right HUD (quick-commands chip row). */
+    private fun hudReactionBurstAnchor(): OverlayReactionAnchorRect? {
+        val host = overlayTopRightHudHost?.takeIf {
+            it.visibility == View.VISIBLE && it.isAttachedToWindow
+        }
+        if (host != null) {
+            OverlayReactionAnchorLayout.anchorFromView(host, HorizontalAlign.END)?.let { return it }
+        }
+        val width = resources.displayMetrics.widthPixels
+        if (width <= 0) return null
+        return OverlayReactionAnchorLayout.fallbackTopEndHud(width) { dp(it) }
+    }
+
+    private fun overlayReactionSafeTopMinY(): Int? {
+        val host = overlayStatusHudHost?.takeIf {
+            it.visibility == View.VISIBLE && it.isAttachedToWindow
+        } ?: return null
+        val rect = android.graphics.Rect()
+        if (!host.getGlobalVisibleRect(rect) || rect.isEmpty()) return null
+        return rect.bottom + dp(OverlayReactionAnchorLayout.GAP_BELOW_ANCHOR_DP)
+    }
+
     private fun removeOverlayTopRightHudWindow() {
         val host = overlayTopRightHudHost
+        overlayTopRightHudLayoutListener?.let { listener ->
+            host?.removeOnLayoutChangeListener(listener)
+        }
+        overlayTopRightHudLayoutListener = null
         val composeOwner = overlayTopRightHudComposeOwner
         removeOverlayWindowTracked(host, "topRightHud") {
             overlayTopRightHudHost = null
@@ -2882,6 +2920,7 @@ class CombatOverlayService : Service() {
             composeOwner?.destroy()
             overlayTopRightHudComposeOwner = null
             overlayTopRightHudFlow.value = OverlayGameTopRightHudState()
+            overlayCommandsPopover.invalidateReactionBurstAnchor()
         }
     }
 
@@ -4429,6 +4468,7 @@ class CombatOverlayService : Service() {
                 val wm = windowManager ?: getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return@post
                 overlayCommandsPopover.showIncomingReactionBurst(
                     wm,
+                    event.fromUserId,
                     resolveOverlayReactionSenderDisplayName(event),
                     event.reaction,
                     event.broadcast,
