@@ -1,12 +1,13 @@
 import com.android.build.gradle.internal.api.BaseVariantOutputImpl
 import groovy.json.JsonSlurper
 import java.util.Properties
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
-    id("com.google.devtools.ksp") version "2.0.21-1.0.28"
+    id("com.google.devtools.ksp") version "2.3.7"
     // Firebase: google-services.json → BuildConfig; init in SquadRelayApplication (no gms plugin:
     // devDebug uses applicationIdSuffix ".debug" and needs a second Firebase Android app).
 }
@@ -199,10 +200,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
         buildConfig = true
@@ -218,6 +215,12 @@ android {
         unitTests {
             isIncludeAndroidResources = true
         }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 
