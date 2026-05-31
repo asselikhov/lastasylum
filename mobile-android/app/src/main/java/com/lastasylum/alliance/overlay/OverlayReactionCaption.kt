@@ -3,7 +3,6 @@ package com.lastasylum.alliance.overlay
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -39,7 +38,7 @@ internal object OverlayReactionCaption {
         row.addView(OverlayReactionSenderAvatar.create(context, displayName, fromUserId, dp))
         val nameView = TextView(context).apply {
             text = nick
-            setTextColor(Color.parseColor("#E8F0FFFF"))
+            setTextColor(Color.parseColor("#D9E8F0FF"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, NICK_SP)
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
             maxLines = 1
@@ -73,15 +72,11 @@ internal object OverlayReactionCaption {
         }
         val mergeChip = TextView(context).apply {
             id = R.id.tag_overlay_reaction_merge_count
-            setTextColor(Color.parseColor("#E8F0FFFF"))
+            setTextColor(Color.parseColor("#D9E8F0FF"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
             gravity = Gravity.CENTER
             setPadding(dp(4), dp(1), dp(4), dp(1))
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#50121824"))
-                cornerRadius = dp(6).toFloat()
-            }
             disableOverlayTouchTarget(this)
             visibility = View.GONE
         }
@@ -89,6 +84,7 @@ internal object OverlayReactionCaption {
         row.addView(badge)
         row.addView(mergeChip)
         updateMergeCount(row, mergeCount)
+        row.alpha = OverlayReactionBurstLayout.CAPTION_ALPHA
         return row
     }
 

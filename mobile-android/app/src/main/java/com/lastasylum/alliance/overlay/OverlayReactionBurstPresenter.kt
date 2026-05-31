@@ -255,7 +255,7 @@ internal class OverlayReactionBurstPresenter(
         val card = FrameLayout(context).apply {
             clipChildren = false
             clipToPadding = false
-            background = OverlayReactionBurstLayout.slotCardBackground(request.broadcast, dp)
+            background = OverlayReactionBurstLayout.slotCardBackground()
             setPadding(dp(6), dp(6), dp(6), dp(6))
         }
         val column = LinearLayout(context).apply {
@@ -328,7 +328,6 @@ internal class OverlayReactionBurstPresenter(
         head.fromDisplayName = request.fromDisplayName
         head.mergeCount++
         OverlayReactionCaption.updateMergeCount(head.captionRow, head.mergeCount)
-        head.card.background = OverlayReactionBurstLayout.slotCardBackground(request.broadcast, dp)
         updateSlotContent(head, request)
         playMergePulse(head.card)
         refreshLottiePlaybackBudget()

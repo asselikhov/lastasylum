@@ -31,7 +31,7 @@ internal object OverlayReactionTextBurstUi {
             text = message
             gravity = Gravity.CENTER
             textAlignment = View.TEXT_ALIGNMENT_CENTER
-            setTextColor(Color.parseColor("#FFFDF8F0"))
+            setTextColor(Color.parseColor("#E6FDF8F0"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, TEXT_PREVIEW_SP)
             this.typeface = typeface
             letterSpacing = 0.01f
@@ -43,10 +43,7 @@ internal object OverlayReactionTextBurstUi {
             val padH = (density * 6).toInt()
             val padV = (density * 4).toInt()
             setPadding(padH, padV, padH, padV)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#3310181E"))
-                cornerRadius = density * 6f
-            }
+            alpha = OverlayReactionBurstLayout.CONTENT_ALPHA
             disableOverlayTouchTarget(this)
         }
     }

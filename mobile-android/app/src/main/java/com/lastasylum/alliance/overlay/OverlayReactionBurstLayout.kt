@@ -24,10 +24,10 @@ import com.airbnb.lottie.LottieAnimationView
  * **Анимация:** Lottie в цикле + keep-alive (как в меню реакций).
  */
 internal object OverlayReactionBurstLayout {
-    /** Контент рисуется непрозрачным; лёгкая прозрачность — через LayoutParams.alpha окна. */
-    const val CONTENT_ALPHA = 1f
+    /** Slight transparency on reaction visuals (no card background). */
+    const val CONTENT_ALPHA = 0.87f
 
-    const val CAPTION_ALPHA = 1f
+    const val CAPTION_ALPHA = 0.90f
     private const val WIDTH_FRACTION = 0.56f
     private const val HEIGHT_FRACTION = 0.28f
     private const val MAX_SIDE_DP = 280
@@ -82,17 +82,7 @@ internal object OverlayReactionBurstLayout {
         return anchorMaxWidthPx?.let { minOf(screenBased, it) } ?: screenBased
     }
 
-    fun slotCardBackground(broadcast: Boolean, dp: (Int) -> Int): GradientDrawable =
-        GradientDrawable().apply {
-            setColor(android.graphics.Color.parseColor(CARD_FILL_HEX))
-            cornerRadius = dp(CARD_CORNER_DP).toFloat()
-            setStroke(
-                dp(1).coerceAtLeast(1),
-                android.graphics.Color.parseColor(
-                    if (broadcast) CARD_STROKE_BROADCAST_HEX else CARD_STROKE_PRIVATE_HEX,
-                ),
-            )
-        }
+    fun slotCardBackground(): GradientDrawable? = null
 
     fun metrics(context: Context, dp: (Int) -> Int): Metrics {
         val dm: DisplayMetrics = context.resources.displayMetrics

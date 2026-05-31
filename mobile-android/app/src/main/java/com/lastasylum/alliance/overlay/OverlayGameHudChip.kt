@@ -1,5 +1,11 @@
 package com.lastasylum.alliance.overlay
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,14 +21,23 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
@@ -46,6 +61,81 @@ private val HudBadgeColor = Color(0xFFE53935)
 internal val HudVoiceActiveGreen = Color(0xFF66BB6A)
 
 internal val HudVoiceInactiveTint = Color(0xFF78909C)
+
+private val UpdateGoldDeep = Color(0xFFFFB300)
+private val UpdateGoldBright = Color(0xFFFFE082)
+private val UpdateGoldPale = Color(0xFFFFF8E1)
+private val UpdateGoldAmber = Color(0xFFFF8F00)
+private val UpdateIconTint = Color(0xFFFFCA28)
+
+/** App-update chip: no fill, animated golden shimmer stroke. */
+@Composable
+internal fun OverlayGameHudUpdateChip(
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val transition = rememberInfiniteTransition(label = "updateGoldBorder")
+    val shimmer by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2800, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "shimmer",
+    )
+    val glow by transition.animateFloat(
+        initialValue = 0.55f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1800, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "glow",
+    )
+    val corner = HudChipCorner
+    val borderWidth = 1.5.dp
+    val goldColors = remember {
+        listOf(UpdateGoldDeep, UpdateGoldBright, UpdateGoldPale, UpdateGoldAmber, UpdateGoldDeep)
+    }
+    Box(modifier = modifier.wrapContentSize(unbounded = true)) {
+        Box(
+            modifier = Modifier
+                .drawWithContent {
+                    val strokePx = borderWidth.toPx()
+                    val inset = strokePx / 2f
+                    val w = size.width - strokePx
+                    val h = size.height - strokePx
+                    val phase = shimmer * (w + h)
+                    drawRoundRect(
+                        brush = Brush.linearGradient(
+                            colors = goldColors,
+                            start = Offset(-w + phase, 0f),
+                            end = Offset(phase, h),
+                        ),
+                        topLeft = Offset(inset, inset),
+                        size = androidx.compose.ui.geometry.Size(w, h),
+                        cornerRadius = CornerRadius(corner.toPx()),
+                        style = Stroke(width = strokePx),
+                        alpha = 0.65f + glow * 0.35f,
+                    )
+                    drawContent()
+                }
+                .clickable(onClick = onClick)
+                .padding(horizontal = HudChipPaddingH, vertical = HudChipPaddingV)
+                .semantics { this.contentDescription = contentDescription },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.SystemUpdate,
+                contentDescription = null,
+                tint = UpdateIconTint.copy(alpha = 0.88f + glow * 0.12f),
+                modifier = Modifier.size(HudIconSize),
+            )
+        }
+    }
+}
 
 @Composable
 internal fun OverlayGameHudBar(

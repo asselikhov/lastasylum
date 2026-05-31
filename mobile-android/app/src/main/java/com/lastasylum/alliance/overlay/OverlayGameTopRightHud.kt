@@ -13,7 +13,6 @@ import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MicOff
 import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.runtime.Composable
@@ -137,9 +136,7 @@ fun OverlayGameTopRightHud(
             OverlayGameHudBar(horizontalAlignment = Alignment.End) {
                 OverlayGameHudChipRow {
                     if (!state.appUpdateDownloadUrl.isNullOrBlank()) {
-                        OverlayGameHudChip(
-                            icon = Icons.Outlined.SystemUpdate,
-                            tint = Color(0xFF4FC3F7),
+                        OverlayGameHudUpdateChip(
                             contentDescription = stringResource(R.string.overlay_hud_app_update_cd),
                             onClick = onAppUpdateClick,
                         )
