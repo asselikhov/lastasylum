@@ -71,4 +71,18 @@ interface ChatApi {
         @Path("roomId") roomId: String,
         @Body body: MarkRoomReadRequest,
     ): MarkRoomReadResponse
+
+    @GET("chat/overlay-reactions")
+    suspend fun listOverlayReactionLog(
+        @Query("before") before: String? = null,
+        @Query("limit") limit: Int? = null,
+    ): OverlayReactionLogListResponse
+
+    @GET("chat/overlay-reactions/read-cursor")
+    suspend fun getOverlayReactionReadCursor(): OverlayReactionReadCursorResponse
+
+    @PATCH("chat/overlay-reactions/read-cursor")
+    suspend fun advanceOverlayReactionReadCursor(
+        @Body body: AdvanceOverlayReactionReadCursorRequest,
+    ): OverlayReactionReadCursorResponse
 }

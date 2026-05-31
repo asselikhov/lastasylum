@@ -159,6 +159,8 @@ import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.chat.ChatAttachment
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.ChatRoomKind
+import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
 import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
@@ -663,6 +665,12 @@ private fun ChatScreenComposerSection(
     if (hideComposer) {
         return
     }
+    val selectedRoom = remember(selectedRoomId, chromePane.rooms) {
+        selectedRoomId?.let { id -> chromePane.rooms.find { it.id == id } }
+    }
+    val allowMediaAttachments = selectedRoom?.let {
+        ChatRoomKindResolver.kindOf(it) != ChatRoomKind.Raid
+    } != false
     ChatComposerBar {
         composerPane.sendFailure?.let { failure ->
             Surface(
@@ -731,13 +739,14 @@ private fun ChatScreenComposerSection(
                 isSending = composerPane.isSending,
                 sendEnabled = !globalComposerLocked,
                 readOnly = false,
+                allowMediaAttachments = allowMediaAttachments,
                 enabledStickerPackKeys = composerPane.enabledStickerPackKeys,
                 onDraftChange = onDraftChange,
                 onSendDraft = {
                     if (!globalComposerLocked &&
                         (
                             !draftMessage.isBlank() ||
-                                pickedImageUris.isNotEmpty()
+                                (allowMediaAttachments && pickedImageUris.isNotEmpty())
                             ) &&
                         !composerPane.isSending
                     ) {
@@ -745,12 +754,12 @@ private fun ChatScreenComposerSection(
                     }
                 },
                 onSendStickerPayload = { payload ->
-                    if (!globalComposerLocked && !composerPane.isSending) {
+                    if (!globalComposerLocked && allowMediaAttachments && !composerPane.isSending) {
                         onSendStickerPayload(payload)
                     }
                 },
                 onPickImages = { uris, append ->
-                    if (!globalComposerLocked && !composerPane.isSending) {
+                    if (!globalComposerLocked && allowMediaAttachments && !composerPane.isSending) {
                         onPickImages(uris, append)
                     }
                 },

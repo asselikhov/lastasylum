@@ -119,6 +119,7 @@ internal fun ChatComposer(
     isSending: Boolean,
     sendEnabled: Boolean = true,
     readOnly: Boolean = false,
+    allowMediaAttachments: Boolean = true,
     enabledStickerPackKeys: Set<String> = emptySet(),
     onDraftChange: (String) -> Unit,
     onSendDraft: () -> Unit,
@@ -152,7 +153,12 @@ internal fun ChatComposer(
     val enabledStickerPacks = remember(enabledStickerPackKeys, context) {
         StickerPacks.enabledPacks(enabledStickerPackKeys)
     }
-    val hasStickerPacks = enabledStickerPacks.isNotEmpty()
+    val hasStickerPacks = allowMediaAttachments && enabledStickerPacks.isNotEmpty()
+    LaunchedEffect(allowMediaAttachments) {
+        if (!allowMediaAttachments) {
+            showMediaPanel = false
+        }
+    }
     LaunchedEffect(showMediaPanel, enabledStickerPacks.map { it.packKey }) {
         if (!showMediaPanel) return@LaunchedEffect
         val keys = enabledStickerPacks.map { it.packKey }
@@ -353,6 +359,7 @@ internal fun ChatComposer(
             verticalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
         ) {
                 pendingApkLabel?.let { apkName ->
+                    if (!allowMediaAttachments) return@let
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -386,7 +393,7 @@ internal fun ChatComposer(
                         }
                     }
                 }
-                if (pickedImageUris.isNotEmpty()) {
+                if (allowMediaAttachments && pickedImageUris.isNotEmpty()) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -715,8 +722,8 @@ internal fun ChatComposer(
                                 !composerLocked &&
                                 (
                                     draft.isNotBlank() ||
-                                        pickedImageUris.isNotEmpty() ||
-                                        hasReadyFileAttachment
+                                        (allowMediaAttachments && pickedImageUris.isNotEmpty()) ||
+                                        (allowMediaAttachments && hasReadyFileAttachment)
                                     )
                             val sendButtonEnabled = canSend && !isSending
                             val showSendButton = canSend || isSending
@@ -749,22 +756,24 @@ internal fun ChatComposer(
                                 )
                             }
 
-                            IconButton(
-                                onClick = { openImageAttach() },
-                                enabled = !composerLocked,
-                                modifier = Modifier.size(44.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.AttachFile,
-                                    contentDescription = stringResource(R.string.chat_attach_images_cd),
-                                    tint = if (!composerLocked) {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
-                                    },
-                                )
+                            if (allowMediaAttachments) {
+                                IconButton(
+                                    onClick = { openImageAttach() },
+                                    enabled = !composerLocked,
+                                    modifier = Modifier.size(44.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.AttachFile,
+                                        contentDescription = stringResource(R.string.chat_attach_images_cd),
+                                        tint = if (!composerLocked) {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                                        },
+                                    )
+                                }
                             }
-                            if (onPickApk != null) {
+                            if (allowMediaAttachments && onPickApk != null) {
                                 IconButton(
                                     onClick = {
                                         if (composerLocked) return@IconButton

@@ -89,6 +89,12 @@ internal enum class OverlayHudChipAccent(
         icon = Color(0xFF7AE582),
         border = Color(0x9950B860),
     ),
+    Notifications(
+        backgroundTop = Color(0xE03A3018),
+        backgroundBottom = Color(0xE0282010),
+        icon = Color(0xFFFFD180),
+        border = Color(0x99C89048),
+    ),
     Commands(
         backgroundTop = Color(0xE0382E18),
         backgroundBottom = Color(0xE0282010),

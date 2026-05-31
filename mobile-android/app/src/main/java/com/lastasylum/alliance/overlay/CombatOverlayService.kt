@@ -335,6 +335,7 @@ class CombatOverlayService : Service() {
     private var overlayRoomUnreadListener: ((com.lastasylum.alliance.data.chat.ChatRoomUnreadEvent) -> Unit)? = null
     private var overlayTypingListener: ((com.lastasylum.alliance.data.chat.ChatTypingEvent) -> Unit)? = null
     private var overlayReactionListener: ((OverlayReactionEvent) -> Unit)? = null
+    private var overlayReactionLogListener: ((com.lastasylum.alliance.data.chat.OverlayReactionLogEntryDto) -> Unit)? = null
     private val inboxBadgeCoordinator = OverlayInboxBadgeCoordinator()
     /** Лента: короткий TTL и мало строк превью — компактная полоса у края. */
     private val stripBuffer = OverlayChatStripBuffer(
@@ -552,6 +553,7 @@ class CombatOverlayService : Service() {
             OverlayHudPane.Forum,
             OverlayHudPane.News,
             OverlayHudPane.Participants,
+            OverlayHudPane.Notifications,
             -> return false
             OverlayHudPane.Chat -> return true
             null -> return overlayChatTeamTabIndex == 0
@@ -1958,6 +1960,15 @@ class CombatOverlayService : Service() {
         }
     }
 
+    private fun refreshOverlayReactionLogUnreadBadge() {
+        if (!isInGameOverlayUiActive()) return
+        val count = AppContainer.from(this).overlayReactionLogRepository.unreadCount.value
+        val cur = overlayTopRightHudFlow.value
+        if (cur.reactionLogUnreadCount != count) {
+            overlayTopRightHudFlow.value = cur.copy(reactionLogUnreadCount = count)
+        }
+    }
+
     /** App/VM hub chip sync — does not set [hubUnreadOptimisticFloor] (realtime bumps only). */
     private fun pushAllianceHubUnreadFromApp(displayed: Int) {
         val clamped = displayed.coerceIn(0, 999)
@@ -2827,6 +2838,10 @@ class CombatOverlayService : Service() {
                 SquadRelayTheme {
                     OverlayGameTopRightHud(
                         state = state,
+                        onNotificationsClick = {
+                            overlayCommandsPopover.hide()
+                            showOverlayHudPane(OverlayHudPane.Notifications)
+                        },
                         onOnlineClick = {
                             overlayCommandsPopover.hide()
                             pendingOpenJoinInboxOnParticipants = false
@@ -3357,7 +3372,7 @@ class CombatOverlayService : Service() {
             cancelStripTick()
             return
         }
-        if (stripBuffer.visibleForPreview().isEmpty()) {
+        if (stripPreviewForUi().isEmpty()) {
             cancelStripTick()
             return
         }
@@ -3466,7 +3481,7 @@ class CombatOverlayService : Service() {
         val params = chatStripParams ?: return
         val mgr = windowManager ?: systemWindowManager() ?: return
         if (!host.isAttachedToWindow) return
-        val stripEmpty = stripBuffer.visibleForPreview().isEmpty() &&
+        val stripEmpty = stripPreviewForUi().isEmpty() &&
             chatStripPreviewFlow.value.isEmpty()
         val hasDismissZones = !stripEmpty && host.dismissRectsInCompose.isNotEmpty()
         val mask = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
@@ -3522,9 +3537,15 @@ class CombatOverlayService : Service() {
         return true
     }
 
+    private fun stripPreviewForUi(): List<ChatMessage> {
+        val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
+        return stripBuffer.visibleForPreview()
+            .filter { OverlayStripRecipientPolicy.shouldShowIncomingStripCard(it, selfId) }
+    }
+
     private fun refreshOverlayChatStripNow() {
         stripBuffer.prune()
-        val preview = stripBuffer.visibleForPreview()
+        val preview = stripPreviewForUi()
         val signature = overlayStripPreviewSignature(preview)
         if (signature == lastStripRenderSignature &&
             stripPreviewContentEqual(preview, chatStripPreviewFlow.value)
@@ -3580,7 +3601,7 @@ class CombatOverlayService : Service() {
 
     /** Поднять окно ленты, когда в буфере есть карточки и игрок в матче. */
     private fun ensureStripWindowVisibleForRaidTraffic() {
-        val hasContent = stripBuffer.visibleForPreview().isNotEmpty() ||
+        val hasContent = stripPreviewForUi().isNotEmpty() ||
             chatStripPreviewFlow.value.isNotEmpty()
         if (!hasContent && !isOverlayRaidStripEligible()) return
         publishStripAfterLocalRaidSend()
@@ -3857,6 +3878,11 @@ class CombatOverlayService : Service() {
         trustedRaidRoomId: String? = null,
         displayText: String? = null,
     ) {
+        val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
+        if (!OverlayStripRecipientPolicy.shouldShowIncomingStripCard(sent, selfId)) {
+            extendOverlayUiHold()
+            return
+        }
         if (isOverlayChatStripEnabled()) {
             ensureOverlayStripVisibleSession()
         }
@@ -3879,7 +3905,7 @@ class CombatOverlayService : Service() {
         stripBuffer.mergeReceiveTimeline(normalized, jwtSubFromAccessToken())
         stripBuffer.markClientSend(normalized)
         stripLiveRevision++
-        val preview = stripBuffer.visibleForPreview().toList()
+        val preview = stripPreviewForUi()
         lastStripRenderSignature = overlayStripPreviewSignature(preview)
         forceShowStripUntilMs = maxOf(
             forceShowStripUntilMs,
@@ -4034,7 +4060,7 @@ class CombatOverlayService : Service() {
         stripBuffer.upsert(msg)
         stripBuffer.touchReceivedNow(msg)
         stripLiveRevision++
-        val preview = stripBuffer.visibleForPreview().toList()
+        val preview = stripPreviewForUi()
         lastStripRenderSignature = overlayStripPreviewSignature(preview)
         chatStripPreviewFlow.value = preview
         if (refreshNow) {
@@ -4077,6 +4103,13 @@ class CombatOverlayService : Service() {
         }
         val raidId = resolveOverlayRaidRoomId() ?: trustedOverlayRaidRoomId
         val normalized = normalizeStripRaidMessage(msg, raidId)
+        val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
+        if (!OverlayStripRecipientPolicy.shouldShowIncomingStripCard(normalized, selfId)) {
+            if (BuildConfig.DEBUG) {
+                Log.d(OVERLAY_DIAG_TAG, "stripDrop reason=sender_self id=${normalized._id}")
+            }
+            return
+        }
         if (!forceIngest && isStaleOverlayStripMessage(normalized)) {
             if (BuildConfig.DEBUG) {
                 Log.d(OVERLAY_DIAG_TAG, "stripDrop reason=stale id=${normalized._id}")
@@ -4103,7 +4136,7 @@ class CombatOverlayService : Service() {
                 stripBuffer.mergeReceiveTimeline(forced, jwtSubFromAccessToken())
                 stripBuffer.touchReceivedNow(forced)
                 stripLiveRevision++
-                val forcedPreview = stripBuffer.visibleForPreview().toList()
+                val forcedPreview = stripPreviewForUi()
                 lastStripRenderSignature = overlayStripPreviewSignature(forcedPreview)
                 chatStripPreviewFlow.value = forcedPreview
                 if (refreshNow) {
@@ -4152,7 +4185,7 @@ class CombatOverlayService : Service() {
         stripBuffer.mergeReceiveTimeline(normalized, jwtSubFromAccessToken())
         stripBuffer.touchReceivedNow(normalized)
         stripLiveRevision++
-        val preview = stripBuffer.visibleForPreview().toList()
+        val preview = stripPreviewForUi()
         chatStripPreviewFlow.value = preview
         if (refreshNow) {
             lastStripRenderSignature = 0
@@ -4253,8 +4286,8 @@ class CombatOverlayService : Service() {
             OverlayWindowLayout.applyPopupLayoutCompat(this)
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             x = 0
-            // Slight top margin from the game screen edge.
-            y = dp(10)
+            // Slight top margin below overlay HUD chips.
+            y = dp(OverlayHudLayout.chatStripTopOffsetDp())
         }
 
         val compose = ComposeView(this).apply {
@@ -4405,6 +4438,7 @@ class CombatOverlayService : Service() {
         typingListener: (com.lastasylum.alliance.data.chat.ChatTypingEvent) -> Unit,
         roomUnreadListener: (com.lastasylum.alliance.data.chat.ChatRoomUnreadEvent) -> Unit,
         reactionListener: (OverlayReactionEvent) -> Unit,
+        reactionLogListener: (com.lastasylum.alliance.data.chat.OverlayReactionLogEntryDto) -> Unit,
     ) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             mainHandler.post {
@@ -4415,6 +4449,7 @@ class CombatOverlayService : Service() {
                     typingListener,
                     roomUnreadListener,
                     reactionListener,
+                    reactionLogListener,
                 )
             }
             return
@@ -4426,6 +4461,7 @@ class CombatOverlayService : Service() {
         repo.addOverlayTypingListener(typingListener)
         repo.addOverlayRoomUnreadListener(roomUnreadListener)
         repo.addOverlayReactionListener(reactionListener)
+        repo.addOverlayReactionLogListener(reactionLogListener)
         val historyListener: () -> Unit = {
             mainHandler.post {
                 stripBuffer.clear()
@@ -4476,6 +4512,18 @@ class CombatOverlayService : Service() {
             }
         }
         overlayReactionListener = reactionListener
+        val reactionLogListener: (com.lastasylum.alliance.data.chat.OverlayReactionLogEntryDto) -> Unit =
+            reactionLogListener@{ dto ->
+                mainHandler.post {
+                    if (!overlaySessionActive) return@post
+                    val container = AppContainer.from(this@CombatOverlayService)
+                    val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
+                    container.overlayReactionLogRepository.setSelfUserId(selfId)
+                    container.overlayReactionLogRepository.insertFromSocket(dto)
+                    refreshOverlayReactionLogUnreadBadge()
+                }
+            }
+        overlayReactionLogListener = reactionLogListener
         val readListener: (com.lastasylum.alliance.data.chat.ChatRoomReadEvent) -> Unit = readListener@{ event ->
             mainHandler.post {
                 if (!isOverlayChatRoutingActive()) return@post
@@ -4524,23 +4572,19 @@ class CombatOverlayService : Service() {
                 val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
                 val isSelf = selfId.isNotEmpty() && msg.senderId.trim() == selfId
                 if (isRaid) {
-                    if (isSelf && OverlayQuickCommandStripPolicy.shouldSuppressOwnStripCard(msg.text)) {
-                        OverlayQuickCommandStripPolicy.clearOutgoingQuickCommand(msg.text)
-                    } else {
-                        val allowIngest = if (isSelf) {
-                            OverlayRaidStripIngestPolicy.shouldIngestOutbound(isOverlayRaidStripEligible())
-                        } else {
-                            shouldIngestInboundRaidStrip()
+                    if (isSelf) {
+                        if (OverlayQuickCommandStripPolicy.shouldSuppressOwnStripCard(msg.text)) {
+                            OverlayQuickCommandStripPolicy.clearOutgoingQuickCommand(msg.text)
                         }
+                    } else {
+                        val allowIngest = shouldIngestInboundRaidStrip()
                         if (allowIngest) {
                             ingestOverlayRaidMessage(
                                 normalized,
                                 refreshNow = true,
-                                inbound = !isSelf,
+                                inbound = true,
                             )
-                            if (!isSelf) {
-                                revealStripForInboundRaidIfNeeded()
-                            }
+                            revealStripForInboundRaidIfNeeded()
                             ensureOverlayMessageStripIfNeeded()
                         } else if (BuildConfig.DEBUG) {
                             Log.d(
@@ -4578,7 +4622,15 @@ class CombatOverlayService : Service() {
             typingListener,
             roomUnreadListener,
             reactionListener,
+            reactionLogListener,
         )
+        serviceScope.launch {
+            val container = AppContainer.from(this@CombatOverlayService)
+            val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
+            container.overlayReactionLogRepository.setSelfUserId(selfId)
+            container.overlayReactionLogRepository.loadInitial()
+            mainHandler.post { refreshOverlayReactionLogUnreadBadge() }
+        }
         serviceScope.launch {
             val container = AppContainer.from(this@CombatOverlayService)
             val cachedRooms = com.lastasylum.alliance.data.chat.ChatSessionCache.getFreshRooms()
@@ -4670,6 +4722,12 @@ class CombatOverlayService : Service() {
             }
         }
         overlayReactionListener = null
+        overlayReactionLogListener?.let { listener ->
+            runCatching {
+                AppContainer.from(applicationContext).chatRepository.removeOverlayReactionLogListener(listener)
+            }
+        }
+        overlayReactionLogListener = null
         overlayChatHistoryClearedListener?.let { listener ->
             runCatching {
                 AppContainer.from(applicationContext).chatRepository.removeOverlayChatHistoryClearedListener(listener)
@@ -5014,6 +5072,13 @@ class CombatOverlayService : Service() {
                                             )
                                         }
                                         OverlayHudPane.Participants -> Unit
+                                        OverlayHudPane.Notifications -> {
+                                            OverlayHudPanelHeader(
+                                                title = stringResource(R.string.overlay_notifications_title),
+                                                subtitle = stringResource(R.string.overlay_notifications_subtitle),
+                                                onClose = { hideOverlayChatTeamPanel() },
+                                            )
+                                        }
                                         else -> Unit
                                     }
                                     Box(
@@ -5071,6 +5136,45 @@ class CombatOverlayService : Service() {
                                                     onHudRefresh = {
                                                         OverlayGameStatusHudRefresh.invalidateNewsForumCache()
                                                         refreshOverlayStatusHudData(force = true)
+                                                    },
+                                                )
+                                            }
+                                            OverlayHudPane.Notifications -> {
+                                                OverlayReactionNotificationsPanel(
+                                                    repository = container.overlayReactionLogRepository,
+                                                    selfUserId = userId,
+                                                    onClose = { hideOverlayChatTeamPanel() },
+                                                    onReplyToUser = { replyUserId ->
+                                                        hideOverlayChatTeamPanel(clearStrip = false)
+                                                        val wm = windowManager ?: systemWindowManager()
+                                                        if (wm != null) {
+                                                            overlayCommandsPopover.openReactionsPreselectUser(
+                                                                wm,
+                                                                replyUserId,
+                                                            )
+                                                        }
+                                                    },
+                                                    onQuickReplyToUser = { replyUserId ->
+                                                        container.chatRepository.emitOverlayReaction(
+                                                            replyUserId,
+                                                            "heart",
+                                                        )
+                                                        val name = OverlayTeamContextCache
+                                                            .memberUsername(replyUserId)
+                                                            ?.trim()
+                                                            .orEmpty()
+                                                            .ifBlank {
+                                                                getString(R.string.overlay_reaction_sender_unknown)
+                                                            }
+                                                        android.widget.Toast.makeText(
+                                                            this@CombatOverlayService,
+                                                            getString(R.string.overlay_reaction_sent, name),
+                                                            android.widget.Toast.LENGTH_SHORT,
+                                                        ).show()
+                                                    },
+                                                    onOpenParticipants = {
+                                                        hideOverlayChatTeamPanel(clearStrip = false)
+                                                        showOverlayHudPane(OverlayHudPane.Participants)
                                                     },
                                                 )
                                             }

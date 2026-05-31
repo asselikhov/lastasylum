@@ -82,7 +82,7 @@ fun OverlayHudPanelHeader(
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Refresh,
-                    contentDescription = stringResource(R.string.overlay_online_refresh_cd),
+                                contentDescription = stringResource(R.string.overlay_notifications_refresh_cd),
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }

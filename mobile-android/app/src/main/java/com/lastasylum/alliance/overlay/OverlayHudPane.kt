@@ -5,5 +5,6 @@ enum class OverlayHudPane {
     Chat,
     News,
     Forum,
+    Notifications,
     Participants,
 }

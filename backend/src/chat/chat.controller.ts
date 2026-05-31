@@ -36,6 +36,7 @@ import { ChatGateway } from './chat.gateway';
 import { ChatRoomsService } from './chat-rooms.service';
 import { ChatService } from './chat.service';
 import { ChatAttachmentsService } from './chat-attachments.service';
+import { OverlayReactionLogService } from './overlay-reaction-log.service';
 import { CreateChatRoomDto } from './dto/create-chat-room.dto';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { UpdateChatRoomDto } from './dto/update-chat-room.dto';
@@ -56,6 +57,10 @@ class MarkReadDto {
   messageId: string;
 }
 
+class OverlayReactionReadCursorDto {
+  lastSeenLogId: string;
+}
+
 type RequestUser = {
   userId: string;
   username: string;
@@ -71,6 +76,7 @@ export class ChatController {
     private readonly chatGateway: ChatGateway,
     private readonly usersService: UsersService,
     private readonly attachmentsService: ChatAttachmentsService,
+    private readonly overlayReactionLogService: OverlayReactionLogService,
   ) {}
 
   @Get('rooms')
@@ -473,5 +479,41 @@ export class ChatController {
       success: true,
       unreadCount: result.unreadCount ?? 0,
     };
+  }
+
+  @Get('overlay-reactions')
+  @Roles(AllianceRole.MEMBER)
+  async listOverlayReactions(
+    @Req() req: { user: RequestUser },
+    @Query('before') before?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const parsedLimit = limit ? parseInt(limit, 10) : undefined;
+    return this.overlayReactionLogService.listForViewer(req.user.userId, {
+      before: before?.trim() || undefined,
+      limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
+    });
+  }
+
+  @Get('overlay-reactions/read-cursor')
+  @Roles(AllianceRole.MEMBER)
+  async getOverlayReactionReadCursor(@Req() req: { user: RequestUser }) {
+    return this.overlayReactionLogService.getReadCursor(req.user.userId);
+  }
+
+  @PATCH('overlay-reactions/read-cursor')
+  @Roles(AllianceRole.MEMBER)
+  async advanceOverlayReactionReadCursor(
+    @Req() req: { user: RequestUser },
+    @Body() dto: OverlayReactionReadCursorDto,
+  ) {
+    const lastSeenLogId = dto?.lastSeenLogId?.trim() ?? '';
+    if (!lastSeenLogId) {
+      throw new BadRequestException('lastSeenLogId is required');
+    }
+    return this.overlayReactionLogService.advanceReadCursor(
+      req.user.userId,
+      lastSeenLogId,
+    );
   }
 }

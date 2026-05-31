@@ -26,6 +26,7 @@ import {
 import { Types } from 'mongoose';
 import { PushNotificationsService } from '../push/push-notifications.service';
 import { ChatAttachmentsService } from './chat-attachments.service';
+import { OverlayReactionLogService } from './overlay-reaction-log.service';
 import { normalizeOverlayChatStickerReaction } from './overlay-sticker-reaction.util';
 import { filterPersonalChatFanoutUserIds } from './chat-realtime-broadcast.util';
 
@@ -109,6 +110,7 @@ export class ChatGateway {
     private readonly configService: ConfigService,
     private readonly pushNotifications: PushNotificationsService,
     private readonly attachmentsService: ChatAttachmentsService,
+    private readonly overlayReactionLogService: OverlayReactionLogService,
   ) {}
 
   handleConnection(client: AuthSocket) {
@@ -373,6 +375,12 @@ export class ChatGateway {
       throw new WsException('Recipient is not in your team');
     }
 
+    const logEntry = await this.overlayReactionLogService.createPersonal({
+      sender,
+      target,
+      reaction,
+    });
+
     this.server
       ?.to(`user:${targetUserId}`)
       .emit(
@@ -384,6 +392,11 @@ export class ChatGateway {
           false,
         ),
       );
+
+    this.emitOverlayReactionLog(logEntry, [
+      client.data.user.userId,
+      targetUserId,
+    ]);
 
     return { event: 'overlay:reaction:sent', data: { targetUserId, reaction } };
   }
@@ -421,6 +434,11 @@ export class ChatGateway {
       client.data.user.userId,
     );
 
+    const logEntry = await this.overlayReactionLogService.createBroadcast({
+      sender,
+      reaction,
+    });
+
     for (const targetUserId of targetUserIds) {
       this.server
         ?.to(`user:${targetUserId}`)
@@ -435,10 +453,37 @@ export class ChatGateway {
         );
     }
 
+    const logRecipients = [
+      client.data.user.userId,
+      ...targetUserIds,
+    ];
+    this.emitOverlayReactionLog(logEntry, logRecipients);
+
     return {
       event: 'overlay:reaction:broadcast:sent',
       data: { reaction, recipientCount: targetUserIds.length },
     };
+  }
+
+  private emitOverlayReactionLog(
+    logEntry: {
+      _id: string;
+      senderUserId: string;
+      senderUsername: string;
+      targetUserId: string | null;
+      targetUsername: string | null;
+      reaction: string;
+      visibility: 'personal' | 'broadcast';
+      createdAt: string;
+    },
+    userIds: string[],
+  ) {
+    const unique = [...new Set(userIds.filter((id) => id.trim()))];
+    for (const userId of unique) {
+      this.server?.to(`user:${userId}`).emit('overlay:reaction:log', {
+        logEntry,
+      });
+    }
   }
 
   /**

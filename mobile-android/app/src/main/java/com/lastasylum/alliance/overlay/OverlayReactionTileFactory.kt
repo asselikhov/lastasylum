@@ -48,13 +48,12 @@ internal class OverlayReactionTileFactory(
         val card = FrameLayout(context).apply {
             clipChildren = false
             clipToPadding = false
+            alpha = OverlayReactionBurstLayout.CONTENT_ALPHA
         }
-        applyTileChrome(card, request, mode)
         val column = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             clipChildren = false
-            minimumWidth = columnWidthPx
         }
         val visualHost = FrameLayout(context).apply {
             setTag(R.id.tag_overlay_reaction_anim_host, true)
@@ -138,7 +137,6 @@ internal class OverlayReactionTileFactory(
                 context = context,
                 displayName = request.fromDisplayName,
                 broadcast = request.broadcast,
-                maxWidthPx = tilePx,
             ).also { nick ->
                 column.addView(
                     nick,
@@ -159,7 +157,7 @@ internal class OverlayReactionTileFactory(
         card.addView(
             column,
             FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
+                columnWidthPx,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER,
             ),
@@ -231,42 +229,6 @@ internal class OverlayReactionTileFactory(
                     Gravity.CENTER,
                 ),
             )
-        }
-    }
-
-    private fun applyTileChrome(
-        card: FrameLayout,
-        request: OverlayReactionBurstRequest,
-        mode: OverlayReactionTileMode,
-    ) {
-        val cornerPx = dp(OverlayReactionBurstLayout.CARD_CORNER_DP).toFloat()
-        val ringColor = OverlayReactionUserAccent.ringColorFor(request.fromUserId)
-        when (mode) {
-            OverlayReactionTileMode.HERO -> {
-                val scopeHex = if (request.broadcast) {
-                    OverlayReactionBurstLayout.CARD_STROKE_BROADCAST_HEX
-                } else {
-                    OverlayReactionBurstLayout.CARD_STROKE_PRIVATE_HEX
-                }
-                val scopeColor = Color.parseColor(scopeHex)
-                card.background = OverlayReactionUserAccent.strokeDrawable(
-                    scopeColor,
-                    cornerPx,
-                    dp(2).coerceAtLeast(1),
-                )
-                card.foreground = OverlayReactionUserAccent.strokeDrawable(
-                    ringColor,
-                    cornerPx,
-                    dp(1).coerceAtLeast(1),
-                )
-            }
-            OverlayReactionTileMode.MINI -> {
-                card.background = OverlayReactionUserAccent.strokeDrawable(
-                    ringColor,
-                    cornerPx,
-                    dp(1).coerceAtLeast(1),
-                )
-            }
         }
     }
 

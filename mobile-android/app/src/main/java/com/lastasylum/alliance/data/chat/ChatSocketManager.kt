@@ -25,6 +25,8 @@ class ChatSocketManager {
     private val roomUnreadListeners = CopyOnWriteArrayList<(ChatRoomUnreadEvent) -> Unit>()
     private val overlayReactionListeners =
         CopyOnWriteArrayList<(OverlayReactionEvent) -> Unit>()
+    private val overlayReactionLogListeners =
+        CopyOnWriteArrayList<(OverlayReactionLogEntryDto) -> Unit>()
     private val chatHistoryClearedListeners = CopyOnWriteArrayList<() -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var reconnectAttempt = 0
@@ -120,6 +122,16 @@ class ChatSocketManager {
         overlayReactionListeners.remove(listener)
     }
 
+    fun addOverlayReactionLogListener(listener: (OverlayReactionLogEntryDto) -> Unit) {
+        if (!overlayReactionLogListeners.contains(listener)) {
+            overlayReactionLogListeners.add(listener)
+        }
+    }
+
+    fun removeOverlayReactionLogListener(listener: (OverlayReactionLogEntryDto) -> Unit) {
+        overlayReactionLogListeners.remove(listener)
+    }
+
     fun addChatHistoryClearedListener(listener: () -> Unit) {
         if (!chatHistoryClearedListeners.contains(listener)) {
             chatHistoryClearedListeners.add(listener)
@@ -136,6 +148,7 @@ class ChatSocketManager {
         typingListeners.clear()
         readListeners.clear()
         overlayReactionListeners.clear()
+        overlayReactionLogListeners.clear()
         chatHistoryClearedListeners.clear()
     }
 
@@ -245,6 +258,7 @@ class ChatSocketManager {
         readListeners.clear()
         roomUnreadListeners.clear()
         overlayReactionListeners.clear()
+        overlayReactionLogListeners.clear()
         chatHistoryClearedListeners.clear()
     }
 
@@ -442,6 +456,12 @@ class ChatSocketManager {
                     )
                     overlayReactionListeners.forEach { l -> runCatching { l(event) } }
                 }
+                on("overlay:reaction:log") { args ->
+                    val payload = args.firstOrNull() as? JSONObject ?: return@on
+                    val logEntry = payload.optJSONObject("logEntry") ?: return@on
+                    val dto = logEntry.toOverlayReactionLogEntryDto() ?: return@on
+                    overlayReactionLogListeners.forEach { l -> runCatching { l(dto) } }
+                }
                 on("chat:history:cleared") {
                     val listeners = chatHistoryClearedListeners.toList()
                     if (listeners.isEmpty()) return@on
@@ -480,6 +500,24 @@ class ChatSocketManager {
     private companion object {
         private const val TAG = "ChatSocket"
     }
+}
+
+private fun JSONObject.toOverlayReactionLogEntryDto(): OverlayReactionLogEntryDto? {
+    val entryId = optString("_id").takeIf { it.isNotBlank() }
+        ?: optString("id").takeIf { it.isNotBlank() }
+        ?: return null
+    val senderUserId = optString("senderUserId", "").trim()
+    if (senderUserId.isEmpty()) return null
+    return OverlayReactionLogEntryDto(
+        _id = entryId,
+        senderUserId = senderUserId,
+        senderUsername = optString("senderUsername", ""),
+        targetUserId = optString("targetUserId").takeIf { it.isNotBlank() },
+        targetUsername = optString("targetUsername").takeIf { it.isNotBlank() },
+        reaction = optString("reaction", "heart").ifBlank { "heart" },
+        visibility = optString("visibility", "personal"),
+        createdAt = optString("createdAt", ""),
+    )
 }
 
 private fun JSONObject.toChatReplyPreview(): ChatMessageReplyPreview? {

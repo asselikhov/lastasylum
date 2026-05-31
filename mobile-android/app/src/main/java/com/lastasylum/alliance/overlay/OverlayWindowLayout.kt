@@ -1,7 +1,6 @@
 package com.lastasylum.alliance.overlay
 
 import android.content.Context
-import android.hardware.input.InputManager
 import android.os.Build
 import android.util.DisplayMetrics
 import android.view.WindowManager
@@ -21,7 +20,7 @@ import android.view.WindowManager
  *   невидимую полоску на всю ширину экрана между сообщениями.
  * - **Quick commands**: маленькие `WRAP_CONTENT` окна у пузыря, тот же корень для pinch.
  * - **Вспышка реакции**: [reactionBurstWindowFlags] + [applyReactionBurstWindowTouchPolicy]
- *   (alpha окна ≤ порога Android 12 для pass-through, без NOT_TOUCH_MODAL).
+ *   (alpha окна = 1; NOT_TOUCHABLE + без input channel на API 33+).
  * - **Полноэкранный чат**: свои флаги [historyPanelWindowFlags] (фокус + IME), без NOT_TOUCH_MODAL — окно
  *   должно полностью перехватыть ввод, пока открыт чат.
  */
@@ -50,22 +49,10 @@ object OverlayWindowLayout {
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
 
     /**
-     * Альфа **окна** (LayoutParams.alpha), не View: на Android 12+ иначе блокируются «untrusted» pass-through
-     * касания при [FLAG_NOT_TOUCHABLE], если непрозрачность > [InputManager.getMaximumObscuringOpacityForTouch]
-     * (обычно 0.8). View.alpha на Lottie/GIF не учитывается системой.
+     * Альфа **окна** (LayoutParams.alpha): 1 — реакция без прозрачности.
+     * Пропуск касаний: [FLAG_NOT_TOUCHABLE] + [INPUT_FEATURE_NO_INPUT_CHANNEL] на API 33+.
      */
-    fun reactionBurstWindowAlpha(context: Context): Float {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            return 1f
-        }
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-            return 1f
-        }
-        val cap = (context.getSystemService(Context.INPUT_SERVICE) as? InputManager)
-            ?.maximumObscuringOpacityForTouch
-            ?: 0.8f
-        return (cap - 0.03f).coerceIn(0.55f, cap)
-    }
+    fun reactionBurstWindowAlpha(@Suppress("UNUSED_PARAMETER") context: Context): Float = 1f
 
     /**
      * Пропуск тапов/свайпов камеры в игру под вспышкой реакции на всех прошивках.

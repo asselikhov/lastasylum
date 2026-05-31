@@ -10,10 +10,10 @@ import com.airbnb.lottie.LottieAnimationView
 /**
  * Правила вёрстки входящей реакции (аудит: игра / размер / обрезка / фон / FPS).
  *
- * **Игра:** [OverlayWindowLayout.applyReactionBurstWindowTouchPolicy] (alpha **окна** ≤ 0.8 на Android 12+)
+ * **Игра:** [OverlayWindowLayout.applyReactionBurstWindowTouchPolicy] (NOT_TOUCHABLE, alpha окна = 1)
  * + [OverlayReactionBurstTouchRoot] (без input channel на API 33+).
  *
- * **Прозрачность:** задаётся alpha окна ([OverlayWindowLayout.reactionBurstWindowAlpha]), не только View.alpha.
+ * **Прозрачность:** реакция (Lottie/GIF/стикер/текст) — alpha 1; полупрозрачный только фон подписи отправителя.
  *
  * **Размер:** доля экрана по ширине и высоте, чтобы не перекрывать HUD и не вылезать за safe area.
  *
@@ -24,10 +24,14 @@ import com.airbnb.lottie.LottieAnimationView
  * **Анимация:** Lottie в цикле + keep-alive (как в меню реакций).
  */
 internal object OverlayReactionBurstLayout {
-    /** Slight transparency on reaction visuals (no card background). */
+    /** Reaction visuals (Lottie/GIF/sticker/text) render fully opaque. */
     const val CONTENT_ALPHA = 1f
 
+    /** Caption view alpha; semi-transparency lives only in [CAPTION_BACKGROUND_HEX]. */
     const val CAPTION_ALPHA = 1f
+
+    /** Semi-transparent pill behind sender nick only (ARGB). */
+    const val CAPTION_BACKGROUND_HEX = "#CC0D1524"
     private const val WIDTH_FRACTION = 0.56f
     private const val HEIGHT_FRACTION = 0.28f
     private const val MAX_SIDE_DP = 280

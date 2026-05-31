@@ -31,6 +31,7 @@ import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.chat.ChatRaidRoomSync
 import com.lastasylum.alliance.data.chat.ChatRoomKind
 import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
+import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.OverlayRaidChatForwardPolicy
 import com.lastasylum.alliance.data.chat.ChatUnreadCounts
@@ -1275,6 +1276,14 @@ class ChatViewModel(
     ): Boolean =
         rooms.find { it.id == roomId }?.allianceId == ChatAllianceIds.GLOBAL
 
+    private fun isRaidChatRoom(
+        roomId: String,
+        rooms: List<ChatRoomDto> = _state.value.rooms,
+    ): Boolean {
+        val room = rooms.find { it.id == roomId } ?: return false
+        return ChatRoomKindResolver.kindOf(room) == ChatRoomKind.Raid
+    }
+
     private fun globalSendBlocked(
         roomId: String,
         messageText: String,
@@ -1432,6 +1441,7 @@ class ChatViewModel(
         messageIdIndex.clear()
         lazyColumnKeyByMessageId.clear()
         _draftMessage.value = ""
+        _pickedImageUris.value = emptyList()
         _typingPeers.value = emptyMap()
         synchronized(typingPeerJobsLock) {
             typingPeerJobs.values.forEach { it.cancel() }
@@ -2431,6 +2441,7 @@ class ChatViewModel(
         val trimmed = text.trim()
         if (trimmed.isBlank()) return
         val roomId = _state.value.selectedRoomId ?: return
+        if (isRaidChatRoom(roomId) && StickerPacks.stemForMessage(trimmed) != null) return
         val replyToMessageId = replyOverride ?: _state.value.replyToMessage?._id
         if (globalSendBlocked(roomId, trimmed, replyToMessageId)) return
         val optimistic = buildOptimisticOutgoingMessage(roomId, trimmed, replyToMessageId)
@@ -2633,6 +2644,8 @@ class ChatViewModel(
      */
     fun onImagesPicked(uris: List<Uri>, append: Boolean = false) {
         if (uris.isEmpty()) return
+        val roomId = _state.value.selectedRoomId ?: return
+        if (isRaidChatRoom(roomId)) return
         val distinct = uris.distinctBy { it.toString() }
         val next = if (append) {
             (_pickedImageUris.value + distinct).distinctBy { it.toString() }

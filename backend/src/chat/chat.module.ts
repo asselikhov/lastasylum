@@ -18,6 +18,15 @@ import {
   ChatRoomReadState,
   ChatRoomReadStateSchema,
 } from './schemas/chat-room-read-state.schema';
+import {
+  OverlayReactionLog,
+  OverlayReactionLogSchema,
+} from './schemas/overlay-reaction-log.schema';
+import {
+  OverlayReactionLogReadState,
+  OverlayReactionLogReadStateSchema,
+} from './schemas/overlay-reaction-log-read-state.schema';
+import { OverlayReactionLogService } from './overlay-reaction-log.service';
 import { StorageModule } from '../storage/storage.module';
 import {
   PlayerTeam,
@@ -35,6 +44,11 @@ import {
       { name: ChatAttachment.name, schema: ChatAttachmentSchema },
       { name: ChatRoom.name, schema: ChatRoomSchema },
       { name: ChatRoomReadState.name, schema: ChatRoomReadStateSchema },
+      { name: OverlayReactionLog.name, schema: OverlayReactionLogSchema },
+      {
+        name: OverlayReactionLogReadState.name,
+        schema: OverlayReactionLogReadStateSchema,
+      },
       { name: PlayerTeam.name, schema: PlayerTeamSchema },
     ]),
   ],
@@ -44,7 +58,8 @@ import {
     ChatGateway,
     ChatRoomsService,
     ChatAttachmentsService,
+    OverlayReactionLogService,
   ],
-  exports: [ChatService, ChatRoomsService, ChatGateway],
+  exports: [ChatService, ChatRoomsService, ChatGateway, OverlayReactionLogService],
 })
 export class ChatModule {}

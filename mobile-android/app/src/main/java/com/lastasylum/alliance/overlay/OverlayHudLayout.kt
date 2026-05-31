@@ -11,6 +11,11 @@ import android.view.WindowManager
 internal object OverlayHudLayout {
     const val WINDOW_X_DP = 10
     const val WINDOW_Y_DP = 2
+    const val CHAT_STRIP_BELOW_HUD_GAP_DP = 8
+    const val HUD_CHIP_ESTIMATE_HEIGHT_DP = 28
+
+    fun chatStripTopOffsetDp(): Int =
+        WINDOW_Y_DP + HUD_CHIP_ESTIMATE_HEIGHT_DP + CHAT_STRIP_BELOW_HUD_GAP_DP
 
     fun applyStatusHudPosition(params: WindowManager.LayoutParams, dp: (Int) -> Int) {
         params.gravity = Gravity.TOP or Gravity.START

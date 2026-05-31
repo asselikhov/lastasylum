@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -15,17 +16,17 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -39,10 +40,8 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.boundsInRoot
@@ -53,8 +52,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -70,33 +67,28 @@ import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
 import com.lastasylum.alliance.ui.chat.MapLinkedMessageText
 import com.lastasylum.alliance.ui.chat.RoleBadge
-import com.lastasylum.alliance.ui.chat.chatMessageIsClusterChainBottomNewestFirst
-import com.lastasylum.alliance.ui.chat.chatMessageShowsClusterHeaderNewestFirst
 import com.lastasylum.alliance.ui.chat.isAtReverseChatBottom
 import com.lastasylum.alliance.ui.chat.scrollReverseChatRevealLatest
 import com.lastasylum.alliance.ui.chat.TelegramLikeAttachmentsGrid
 import com.lastasylum.alliance.ui.chat.formatChatTime
 import com.lastasylum.alliance.ui.chat.resolvedChatAttachmentImageUrl
-import com.lastasylum.alliance.ui.chat.SquadRelayImageRequests
 import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingBubble
 import com.lastasylum.alliance.ui.theme.ChatTelegramIncomingOnBubble
-import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingBubble
-import com.lastasylum.alliance.ui.theme.ChatTelegramOutgoingOnBubble
-import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMuted
 import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMutedIncoming
 import com.lastasylum.alliance.ui.theme.roleAccentColor
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
-import java.time.Instant
-import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
+
+private const val STRIP_EXIT_ANIM_MS = 180L
+private const val STRIP_CARD_ESTIMATE_DP = 120
 
 @OptIn(FlowPreview::class)
 @Composable
 fun OverlayChatStrip(
     messages: List<ChatMessage>,
-    selfUserId: String?,
-    lightStrip: Boolean = false,
+    @Suppress("UNUSED_PARAMETER") selfUserId: String?,
+    @Suppress("UNUSED_PARAMETER") lightStrip: Boolean = false,
     onDismissMessage: (ChatMessage) -> Unit = {},
     onDismissRegionsChanged: (List<Rect>) -> Unit = {},
     onNoticeClick: (String) -> Unit = {},
@@ -107,9 +99,7 @@ fun OverlayChatStrip(
     val dismissRegions = remember { mutableStateMapOf<String, Rect>() }
     val pendingDismissRegions = remember { mutableStateMapOf<String, Rect>() }
     val latestMessages by rememberUpdatedState(messages)
-    val latestSelfId by rememberUpdatedState(selfUserId)
     val stripScroll = rememberLazyListState()
-    var accentEnterKey by remember { mutableStateOf<String?>(null) }
     val stripScrolling by remember(stripScroll) {
         derivedStateOf { stripScroll.isScrollInProgress }
     }
@@ -160,21 +150,18 @@ fun OverlayChatStrip(
             }
     }
 
-    val cfg = LocalConfiguration.current
-    val stripMaxHeight = remember(cfg.screenHeightDp) {
-        (cfg.screenHeightDp * 0.56f).dp.coerceAtLeast(220.dp)
+    val stripMaxHeight = remember {
+        (STRIP_CARD_ESTIMATE_DP * OverlayChatStripBuffer.DEFAULT_MAX_PREVIEW +
+            8 * (OverlayChatStripBuffer.DEFAULT_MAX_PREVIEW - 1)).dp
     }
 
     LaunchedEffect(latestMessages) {
-        val keysBefore = keep.map { keyOf(it) }.toSet()
-
         latestMessages.forEach { m ->
             val key = keyOf(m)
             leaving.remove(key)
             val i = keep.indexOfFirst { keyOf(it) == key }
             if (i >= 0) {
                 keep[i] = m
-                if (!lightStrip) accentEnterKey = key
             } else {
                 keep.add(m)
             }
@@ -183,36 +170,29 @@ fun OverlayChatStrip(
         val removed = keep.filter { keyOf(it) !in currentKeys }
         removed.forEach { m -> leaving[keyOf(m)] = true }
         if (removed.isNotEmpty()) {
-            delay(220)
+            delay(STRIP_EXIT_ANIM_MS)
             keep.removeAll { keyOf(it) !in currentKeys }
             removed.forEach { m -> leaving.remove(keyOf(m)) }
         }
         val orderIndex = latestMessages.mapIndexed { index, msg -> keyOf(msg) to index }.toMap()
         keep.sortBy { orderIndex[keyOf(it)] ?: Int.MAX_VALUE }
         while (keep.size > OverlayChatStripBuffer.DEFAULT_MAX_PREVIEW) {
+            val oldest = keep.firstOrNull() ?: break
+            val oldestKey = keyOf(oldest)
+            leaving[oldestKey] = true
+            delay(STRIP_EXIT_ANIM_MS)
             keep.removeAt(0)
-        }
-
-        val keysAfter = latestMessages.map { keyOf(it) }.toSet()
-        val newKeys = keysAfter - keysBefore
-        // Только одно новое сообщение — «премиум» анимация входа; при пакетной подгрузке истории не дёргаем всю колонку.
-        if (!lightStrip && newKeys.size == 1) {
-            accentEnterKey = newKeys.first()
-            delay(260)
-            accentEnterKey = null
+            leaving.remove(oldestKey)
         }
     }
 
-    val compactStickers = keep.size > 5
-    val stripBurstMode = lightStrip || keep.size >= 3
-    val useLiteRow = lightStrip || stripBurstMode
     val leavingCount = leaving.size
-    val visibleMessages = remember(keep.size, leavingCount) {
-        keep.filter { leaving[keyOf(it)] != true }.asReversed()
+    val displayMessages = remember(keep.size, leavingCount) {
+        keep.asReversed()
     }
 
     LaunchedEffect(latestMessages, atStripBottom) {
-        if (!atStripBottom || visibleMessages.isEmpty()) return@LaunchedEffect
+        if (!atStripBottom || displayMessages.isEmpty()) return@LaunchedEffect
         runCatching {
             stripScroll.scrollReverseChatRevealLatest(animate = false, adjustViewport = false)
         }
@@ -227,23 +207,13 @@ fun OverlayChatStrip(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         items(
-            count = visibleMessages.size,
-            key = { visibleMessages[it].let { m -> keyOf(m) } },
+            count = displayMessages.size,
+            key = { displayMessages[it].let { m -> keyOf(m) } },
         ) { index ->
-            val msg = visibleMessages[index]
+            val msg = displayMessages[index]
             val key = keyOf(msg)
-            val isMine = !latestSelfId.isNullOrBlank() && msg.senderId == latestSelfId
-            val isChainBottom = chatMessageIsClusterChainBottomNewestFirst(visibleMessages, index)
-            val showClusterHeader = chatMessageShowsClusterHeaderNewestFirst(visibleMessages, index)
-            val fancyEnter = !useLiteRow && !stripScrolling && accentEnterKey != null && key == accentEnterKey
-            val enterTransition = if (useLiteRow || stripScrolling) {
-                fadeIn(animationSpec = tween(24))
-            } else if (fancyEnter) {
-                fadeIn(animationSpec = tween(90)) +
-                    scaleIn(initialScale = 0.97f, animationSpec = tween(120))
-            } else {
-                fadeIn(animationSpec = tween(40))
-            }
+            val isVisible = leaving[key] != true
+
             fun reportBounds(mk: String, rect: Rect) {
                 if (latestMessages.none { keyOf(it) == mk }) return
                 if (rect.isEmpty()) return
@@ -266,87 +236,26 @@ fun OverlayChatStrip(
                 dismissRegions.remove(mk)
                 pendingDismissRegions.remove(mk)
             }
-            val rowContent: @Composable () -> Unit = {
-                if (useLiteRow) {
-                    OverlayChatStripMessageLite(
-                        msg = msg,
-                        messageKey = key,
-                        isMine = isMine,
-                        showSenderHeader = showClusterHeader,
-                        onNoticeClick = onNoticeClick,
-                        onDismiss = { onDismissMessage(msg) },
-                        onReportDismissBounds = { mk, rect -> reportBounds(mk, rect) },
-                        onClearDismissRegion = { mk -> clearRegion(mk) },
-                    )
-                } else {
-                    OverlayChatStripMessage(
-                        msg = msg,
-                        messageKey = key,
-                        isMine = isMine,
-                        showAvatar = !isMine && isChainBottom,
-                        showSenderHeader = showClusterHeader,
-                        compactStickers = compactStickers,
-                        lightStrip = false,
-                        onNoticeClick = onNoticeClick,
-                        onDismiss = { onDismissMessage(msg) },
-                        onReportDismissBounds = { mk, rect -> reportBounds(mk, rect) },
-                        onClearDismissRegion = { mk -> clearRegion(mk) },
-                    )
-                }
-            }
-            if (useLiteRow || stripScrolling) {
-                rowContent()
-            } else {
-                AnimatedVisibility(
-                    visible = true,
-                    enter = enterTransition,
-                ) {
-                    rowContent()
-                }
-            }
-        }
-        if (visibleMessages.isNotEmpty()) {
-            item(key = "strip_hdr") {
-                OverlayStripBatchHeader(firstMessage = visibleMessages.last())
-            }
-        }
-    }
-}
 
-@Composable
-private fun OverlayStripBatchHeader(firstMessage: ChatMessage) {
-    val context = LocalContext.current
-    val clock = remember(firstMessage.createdAt) { formatChatTime(firstMessage.createdAt) }
-    val label = remember(firstMessage.createdAt, clock) {
-        if (clock.isBlank()) {
-            context.getString(R.string.overlay_strip_live_now)
-        } else {
-            val instant = OverlayChatTime.parseInstant(firstMessage.createdAt)
-            val recent = instant != null &&
-                abs(Instant.now().epochSecond - instant.epochSecond) < 150L
-            if (recent) {
-                context.getString(R.string.overlay_strip_live_now)
-            } else {
-                context.getString(R.string.overlay_strip_messages_since, clock)
+            AnimatedVisibility(
+                visible = isVisible,
+                enter = fadeIn(animationSpec = tween(220)) +
+                    slideInVertically(initialOffsetY = { it / 3 }, animationSpec = tween(220)) +
+                    scaleIn(initialScale = 0.96f, animationSpec = tween(220)),
+                exit = fadeOut(animationSpec = tween(STRIP_EXIT_ANIM_MS.toInt())) +
+                    slideOutVertically(targetOffsetY = { -it / 4 }, animationSpec = tween(STRIP_EXIT_ANIM_MS.toInt())) +
+                    scaleOut(targetScale = 0.98f, animationSpec = tween(STRIP_EXIT_ANIM_MS.toInt())),
+            ) {
+                OverlayChatStripMessage(
+                    msg = msg,
+                    messageKey = key,
+                    onNoticeClick = onNoticeClick,
+                    onDismiss = { onDismissMessage(msg) },
+                    onReportDismissBounds = { mk, rect -> reportBounds(mk, rect) },
+                    onClearDismissRegion = { mk -> clearRegion(mk) },
+                )
             }
         }
-    }
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        HorizontalDivider(
-            modifier = Modifier.padding(horizontal = 10.dp),
-            thickness = 1.dp,
-            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.28f),
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f),
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
-        )
     }
 }
 
@@ -354,11 +263,6 @@ private fun OverlayStripBatchHeader(firstMessage: ChatMessage) {
 private fun OverlayChatStripMessage(
     msg: ChatMessage,
     messageKey: String,
-    isMine: Boolean,
-    showAvatar: Boolean,
-    showSenderHeader: Boolean,
-    compactStickers: Boolean,
-    lightStrip: Boolean,
     onNoticeClick: (String) -> Unit,
     onDismiss: () -> Unit,
     onReportDismissBounds: (String, Rect) -> Unit,
@@ -367,23 +271,15 @@ private fun OverlayChatStripMessage(
     val noticeId = msg._id
     val isNotice = OverlayStripNoticeIds.isNotice(noticeId)
     val noticeClickable = OverlayStripNoticeIds.isClickable(noticeId)
-    val bubbleBg = if (isMine) ChatTelegramOutgoingBubble else ChatTelegramIncomingBubble
-    val onBubble = if (isMine) ChatTelegramOutgoingOnBubble else ChatTelegramIncomingOnBubble
-    val timeMuted = if (isMine) ChatTelegramTimeMuted else ChatTelegramTimeMutedIncoming
+    val bubbleBg = ChatTelegramIncomingBubble
+    val onBubble = ChatTelegramIncomingOnBubble
+    val timeMuted = ChatTelegramTimeMutedIncoming
     val time = remember(msg.createdAt) { formatChatTime(msg.createdAt) }
-    val images = remember(msg.attachments, lightStrip) {
-        if (lightStrip) {
-            emptyList()
-        } else {
-            msg.chatImageAttachments()
-        }
-    }
+    val images = remember(msg.attachments) { msg.chatImageAttachments() }
     val imageUrls = remember(images) { images.map { resolvedChatAttachmentImageUrl(it.url) } }
-    val stickerStem = remember(msg.text, lightStrip) {
-        if (lightStrip) null else StickerPacks.stemForMessage(msg.text)
-    }
-    val hasSticker = !lightStrip && stickerStem != null
-    val hasText = msg.text.isNotBlank() && (!hasSticker || lightStrip)
+    val stickerStem = remember(msg.text) { StickerPacks.stemForMessage(msg.text) }
+    val hasSticker = stickerStem != null
+    val hasText = msg.text.isNotBlank() && !hasSticker
     val displayName = remember(msg.senderTeamTag, msg.senderUsername) {
         chatSenderDisplayWithTag(
             msg.senderTeamTag,
@@ -397,14 +293,12 @@ private fun OverlayChatStripMessage(
     val role = remember(msg.senderRole) { msg.senderRole.trim() }
     val border = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
     val shape = RoundedCornerShape(16.dp)
-    val gradientBrush = remember(bubbleBg, isMine) {
-        val top = lerp(bubbleBg, Color.White, if (isMine) 0.10f else 0.07f)
-        val bottom = lerp(bubbleBg, Color.Black, if (isMine) 0.16f else 0.20f)
+    val gradientBrush = remember(bubbleBg) {
+        val top = lerp(bubbleBg, Color.White, 0.07f)
+        val bottom = lerp(bubbleBg, Color.Black, 0.20f)
         Brush.verticalGradient(listOf(top, bottom))
     }
-    val stickerCap = if (compactStickers) 72.dp else 96.dp
-    val stickerImg = if (compactStickers) 58.dp else 76.dp
-    val avatarSize = if (compactStickers) 28.dp else 30.dp
+    val avatarSize = 30.dp
     val dismissCd = stringResource(R.string.overlay_chat_dismiss_cd)
 
     DisposableEffect(messageKey) {
@@ -416,7 +310,7 @@ private fun OverlayChatStripMessage(
         color = bubbleBg,
         border = BorderStroke(1.dp, border),
         tonalElevation = 0.dp,
-        shadowElevation = if (lightStrip) 0.dp else 3.dp,
+        shadowElevation = 3.dp,
         modifier = Modifier
             .fillMaxWidth()
             .then(
@@ -440,46 +334,27 @@ private fun OverlayChatStripMessage(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(
-                        start = 10.dp,
-                        end = 28.dp,
-                        top = if (lightStrip) 6.dp else 8.dp,
-                        bottom = if (lightStrip) 6.dp else 8.dp,
-                    ),
+                    .padding(start = 10.dp, end = 36.dp, top = 8.dp, bottom = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Column(
+                    modifier = Modifier.width(avatarSize),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    when {
-                        showAvatar && lightStrip -> {
-                            OverlayLightStripAvatar(
-                                fallbackName = msg.senderUsername,
-                                size = avatarSize,
-                            )
-                        }
-                        showAvatar -> {
-                            ChatSenderAvatar(
-                                telegramUrl = avatarUrl,
-                                size = avatarSize,
-                                fallbackName = msg.senderUsername,
-                            )
-                        }
-                        !isMine -> {
-                            Spacer(
-                                modifier = Modifier.size(
-                                    width = avatarSize,
-                                    height = avatarSize,
-                                ),
-                            )
-                        }
-                    }
-                    if (time.isNotBlank() && showAvatar) {
+                    ChatSenderAvatar(
+                        telegramUrl = avatarUrl,
+                        size = avatarSize,
+                        fallbackName = msg.senderUsername,
+                    )
+                    if (time.isNotBlank()) {
                         Text(
                             text = time,
                             style = MaterialTheme.typography.labelSmall,
                             color = timeMuted,
                             maxLines = 1,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
                 }
@@ -487,24 +362,22 @@ private fun OverlayChatStripMessage(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    if (showSenderHeader) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text(
-                                text = displayName,
-                                style = MaterialTheme.typography.labelLarge.copy(
-                                    fontWeight = FontWeight.SemiBold,
-                                ),
-                                color = roleAccentColor(role),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f),
-                            )
-                            if (role.isNotBlank() && !lightStrip) {
-                                RoleBadge(role = role)
-                            }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = displayName,
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontWeight = FontWeight.SemiBold,
+                            ),
+                            color = roleAccentColor(role),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (role.isNotBlank()) {
+                            RoleBadge(role = role)
                         }
                     }
 
@@ -512,16 +385,16 @@ private fun OverlayChatStripMessage(
                         val ctx = androidx.compose.ui.platform.LocalContext.current
                         Surface(
                             shape = RoundedCornerShape(14.dp),
-                            color = lerp(bubbleBg, Color.Black, if (isMine) 0.08f else 0.12f),
+                            color = lerp(bubbleBg, Color.Black, 0.12f),
                             tonalElevation = 0.dp,
                             shadowElevation = 0.dp,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(max = stickerCap),
+                                .heightIn(max = 96.dp),
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .padding(if (compactStickers) 6.dp else 8.dp)
+                                    .padding(8.dp)
                                     .fillMaxWidth(),
                                 contentAlignment = Alignment.Center,
                             ) {
@@ -534,7 +407,7 @@ private fun OverlayChatStripMessage(
                                         .build(),
                                     contentDescription = stringResource(R.string.cd_chat_sticker),
                                     modifier = Modifier
-                                        .size(stickerImg)
+                                        .size(76.dp)
                                         .clip(RoundedCornerShape(12.dp)),
                                     contentScale = ContentScale.Fit,
                                 )
@@ -555,18 +428,13 @@ private fun OverlayChatStripMessage(
                     }
                     if (hasText) {
                         val body = msg.text.trimEnd()
-                        val linkColor = if (isMine) {
-                            Color(0xFF8FD3FF)
-                        } else {
-                            Color(0xFF5EB3F6)
-                        }
                         MapLinkedMessageText(
                             text = body,
                             style = MaterialTheme.typography.bodyMedium,
                             color = onBubble,
                             fadeBaseColor = bubbleBg,
-                            linkColor = linkColor,
-                            maxLines = if (compactStickers) 2 else 3,
+                            linkColor = Color(0xFF5EB3F6),
+                            maxLines = 3,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
@@ -575,8 +443,10 @@ private fun OverlayChatStripMessage(
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(top = 3.dp, end = 3.dp)
-                    .size(32.dp)
+                    .offset(x = 4.dp, y = (-4).dp)
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))
                     .onGloballyPositioned { coords ->
                         val b = coords.boundsInRoot()
                         onReportDismissBounds(
@@ -600,141 +470,10 @@ private fun OverlayChatStripMessage(
             ) {
                 Text(
                     text = "✕",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f),
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun OverlayChatStripMessageLite(
-    msg: ChatMessage,
-    messageKey: String,
-    isMine: Boolean,
-    showSenderHeader: Boolean,
-    onNoticeClick: (String) -> Unit,
-    onDismiss: () -> Unit,
-    onReportDismissBounds: (String, Rect) -> Unit,
-    onClearDismissRegion: (String) -> Unit,
-) {
-    val noticeId = msg._id
-    val isNotice = OverlayStripNoticeIds.isNotice(noticeId)
-    val noticeClickable = OverlayStripNoticeIds.isClickable(noticeId)
-    val onBubble = if (isMine) ChatTelegramOutgoingOnBubble else ChatTelegramIncomingOnBubble
-    val bubbleBg = if (isMine) ChatTelegramOutgoingBubble else ChatTelegramIncomingBubble
-    val displayName = remember(msg.senderTeamTag, msg.senderUsername) {
-        chatSenderDisplayWithTag(
-            msg.senderTeamTag,
-            msg.senderUsername,
-            msg.senderServerNumber,
-        ).trim().ifBlank { "—" }
-    }
-    val dismissCd = stringResource(R.string.overlay_chat_dismiss_cd)
-
-    DisposableEffect(messageKey) {
-        onDispose { onClearDismissRegion(messageKey) }
-    }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(bubbleBg.copy(alpha = 0.94f))
-            .then(
-                if (isNotice && noticeClickable && noticeId != null) {
-                    Modifier.clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        role = Role.Button,
-                        onClick = { onNoticeClick(noticeId) },
-                    )
-                } else {
-                    Modifier
-                },
-            )
-            .padding(start = 8.dp, end = 28.dp, top = 6.dp, bottom = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        if (!isMine) {
-            OverlayLightStripAvatar(fallbackName = msg.senderUsername, size = 26.dp)
-        }
-        Column(modifier = Modifier.weight(1f)) {
-            if (showSenderHeader) {
-                Text(
-                    text = displayName,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = roleAccentColor(msg.senderRole.trim()),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            if (msg.text.isNotBlank()) {
-                MapLinkedMessageText(
-                    text = msg.text.trimEnd(),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = onBubble,
-                    fadeBaseColor = bubbleBg,
-                    linkColor = if (isMine) Color(0xFF8FD3FF) else Color(0xFF5EB3F6),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        Box(
-            modifier = Modifier
-                .size(28.dp)
-                .onGloballyPositioned { coords ->
-                    val b = coords.boundsInRoot()
-                    onReportDismissBounds(
-                        messageKey,
-                        Rect(
-                            b.left.roundToInt(),
-                            b.top.roundToInt(),
-                            b.right.roundToInt(),
-                            b.bottom.roundToInt(),
-                        ),
-                    )
-                }
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    role = Role.Button,
-                    onClickLabel = dismissCd,
-                    onClick = onDismiss,
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = "✕",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
-            )
-        }
-    }
-}
-
-@Composable
-private fun OverlayLightStripAvatar(
-    fallbackName: String,
-    size: androidx.compose.ui.unit.Dp,
-) {
-    val letter = fallbackName.trim().take(1).uppercase().ifBlank { "?" }
-    Box(
-        modifier = Modifier
-            .size(size)
-            .clip(RoundedCornerShape(10.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = letter,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }

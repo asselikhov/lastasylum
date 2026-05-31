@@ -6,6 +6,7 @@ import com.lastasylum.alliance.data.cache.LaunchDiskCache
 import com.lastasylum.alliance.data.auth.AuthRepository
 import com.lastasylum.alliance.data.auth.TokenStore
 import com.lastasylum.alliance.data.chat.ChatRepository
+import com.lastasylum.alliance.data.chat.OverlayReactionLogRepository
 import com.lastasylum.alliance.data.chat.ChatRoomsSessionCache
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
 import com.lastasylum.alliance.data.chat.ChatRoomsRepository
@@ -80,6 +81,10 @@ class AppContainer private constructor(context: Context) {
                 ).also { chatRepositoryInstance = it }
             }
         }
+
+    val overlayReactionLogRepository: OverlayReactionLogRepository by lazy {
+        OverlayReactionLogRepository(chatApi = authorizedClients.chatApi)
+    }
 
     val usersRepository: UsersRepository by lazy {
         UsersRepository(

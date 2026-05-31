@@ -17,6 +17,12 @@ internal object OverlayReactionCaption {
     private val NickColor = Color.parseColor("#FFF4F7FF")
     private val ScopeColor = Color.parseColor("#B0C8D8E8")
 
+    private fun nickBackground(context: Context, cornerDp: Float): GradientDrawable =
+        GradientDrawable().apply {
+            setColor(Color.parseColor(OverlayReactionBurstLayout.CAPTION_BACKGROUND_HEX))
+            cornerRadius = context.resources.displayMetrics.density * cornerDp
+        }
+
     fun formatReactionDisplayNick(displayName: String): String =
         OverlayReactionNickFormat.format(displayName)
 
@@ -67,17 +73,13 @@ internal object OverlayReactionCaption {
             maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
             setShadowLayer(6f, 0f, 2f, Color.parseColor("#CC000000"))
-            alpha = OverlayReactionBurstLayout.CAPTION_ALPHA
             setPadding(
                 (context.resources.displayMetrics.density * 8).toInt(),
                 (context.resources.displayMetrics.density * 4).toInt(),
                 (context.resources.displayMetrics.density * 8).toInt(),
                 (context.resources.displayMetrics.density * 4).toInt(),
             )
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#CC0D1524"))
-                cornerRadius = context.resources.displayMetrics.density * 6f
-            }
+            background = nickBackground(context, cornerDp = 6f)
             disableOverlayTouchTarget(this)
             setTag(R.id.tag_overlay_reaction_caption, true)
         }
@@ -104,7 +106,6 @@ internal object OverlayReactionCaption {
         context: Context,
         displayName: String,
         broadcast: Boolean,
-        maxWidthPx: Int,
     ): TextView {
         val nick = formatReactionDisplayNick(displayName)
         val scope = context.getString(
@@ -124,9 +125,14 @@ internal object OverlayReactionCaption {
             textAlignment = android.view.View.TEXT_ALIGNMENT_CENTER
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
-            maxWidth = maxWidthPx
             setShadowLayer(4f, 0f, 1f, Color.parseColor("#99000000"))
-            alpha = OverlayReactionBurstLayout.CAPTION_ALPHA
+            setPadding(
+                (context.resources.displayMetrics.density * 4).toInt(),
+                (context.resources.displayMetrics.density * 2).toInt(),
+                (context.resources.displayMetrics.density * 4).toInt(),
+                (context.resources.displayMetrics.density * 2).toInt(),
+            )
+            background = nickBackground(context, cornerDp = 4f)
             disableOverlayTouchTarget(this)
         }
     }

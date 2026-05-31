@@ -26,6 +26,8 @@ class ChatRealtimeSubscriber(
         java.util.concurrent.CopyOnWriteArrayList<(ChatMessage) -> Unit>()
     private val overlayReactionListeners =
         java.util.concurrent.CopyOnWriteArrayList<(OverlayReactionEvent) -> Unit>()
+    private val overlayReactionLogListeners =
+        java.util.concurrent.CopyOnWriteArrayList<(OverlayReactionLogEntryDto) -> Unit>()
     private val overlayChatPanelClosedListeners =
         java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
     private val overlayReadListeners =
@@ -178,6 +180,27 @@ class ChatRealtimeSubscriber(
         }
     }
 
+    fun addOverlayReactionLogListener(listener: (OverlayReactionLogEntryDto) -> Unit) {
+        if (!overlayReactionLogListeners.contains(listener)) {
+            overlayReactionLogListeners.add(listener)
+        }
+        socketManager.addOverlayReactionLogListener(listener)
+        refreshOverlayRealtimeSubscriptions()
+    }
+
+    fun removeOverlayReactionLogListener(listener: (OverlayReactionLogEntryDto) -> Unit) {
+        overlayReactionLogListeners.remove(listener)
+        socketManager.removeOverlayReactionLogListener(listener)
+        if (overlayRealtimeListenersEmpty()) {
+            overlayRealtimeRoomIds.clear()
+            if (primaryRealtimeRoomIds.isEmpty()) {
+                socketManager.disconnect()
+            } else {
+                ensureRealtimeSocketConnected()
+            }
+        }
+    }
+
     fun onAccessTokenRefreshed() {
         socketManager.reconnectWithFreshToken()
     }
@@ -227,6 +250,7 @@ class ChatRealtimeSubscriber(
     private fun overlayRealtimeListenersEmpty(): Boolean =
         overlayMessageListeners.isEmpty() &&
             overlayReactionListeners.isEmpty() &&
+            overlayReactionLogListeners.isEmpty() &&
             overlayReadListeners.isEmpty() &&
             overlayRoomUnreadListeners.isEmpty() &&
             overlayMessageDeletedListeners.isEmpty() &&

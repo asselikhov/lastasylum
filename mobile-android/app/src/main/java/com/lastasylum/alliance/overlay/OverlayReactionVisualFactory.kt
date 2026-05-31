@@ -17,6 +17,7 @@ internal class OverlayReactionVisualFactory(
         when (icon) {
             is LottieAnimationView -> {
                 icon.layoutParams = FrameLayout.LayoutParams(maxSidePx, maxSidePx, Gravity.CENTER)
+                icon.alpha = OverlayReactionBurstLayout.CONTENT_ALPHA
                 if (playLottie) {
                     configureLottie(icon)
                     icon.post {

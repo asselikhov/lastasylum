@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MicOff
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
@@ -33,6 +34,7 @@ data class OverlayGameTopRightHudState(
     /** Teammates in game with a fresh overlay heartbeat (see [OverlayGameStatusHudRefresh.filterTeamIngameOverlayMembers]). */
     val onlineIngameCount: Int = 0,
     val teamJoinRequestCount: Int = 0,
+    val reactionLogUnreadCount: Int = 0,
     val micOn: Boolean = false,
     val soundOn: Boolean = false,
     val voiceExpanded: Boolean = false,
@@ -46,6 +48,7 @@ data class OverlayGameTopRightHudState(
 @Composable
 fun OverlayGameTopRightHud(
     state: OverlayGameTopRightHudState,
+    onNotificationsClick: () -> Unit,
     onOnlineClick: () -> Unit,
     onAppUpdateClick: () -> Unit,
     onQuickCommandsClick: () -> Unit,
@@ -143,6 +146,20 @@ fun OverlayGameTopRightHud(
                             onClick = onAppUpdateClick,
                         )
                     }
+                    OverlayGameHudChip(
+                        icon = Icons.Outlined.Notifications,
+                        accent = OverlayHudChipAccent.Notifications,
+                        badgeCount = state.reactionLogUnreadCount,
+                        contentDescription = if (state.reactionLogUnreadCount > 0) {
+                            stringResource(
+                                R.string.overlay_hud_notifications_unread_cd,
+                                state.reactionLogUnreadCount,
+                            )
+                        } else {
+                            stringResource(R.string.overlay_hud_notifications_cd)
+                        },
+                        onClick = onNotificationsClick,
+                    )
                     OverlayGameHudChip(
                         icon = Icons.Outlined.Groups,
                         accent = OverlayHudChipAccent.Online,
