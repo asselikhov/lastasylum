@@ -3,6 +3,9 @@ package com.lastasylum.alliance.overlay
 import com.lastasylum.alliance.data.teams.TeamDetailDto
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.users.UsersRepository
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /** Cached team/profile context for overlay panels (news/forum/online). */
 data class OverlayTeamHudContext(
@@ -19,6 +22,9 @@ data class OverlayTeamHudContext(
 
 internal object OverlayTeamContextCache {
     private const val TTL_MS = 30_000L
+
+    private val _revision = MutableStateFlow(0)
+    val revision: StateFlow<Int> = _revision.asStateFlow()
 
     @Volatile
     private var cached: OverlayTeamHudContext? = null
@@ -37,6 +43,7 @@ internal object OverlayTeamContextCache {
         cachedAtMs = 0L
         cachedTeam = null
         cachedTeamAtMs = 0L
+        bumpRevision()
     }
 
     /** Ник из кэша состава команды (для подписи входящей реакции без блокирующего API). */
@@ -61,6 +68,12 @@ internal object OverlayTeamContextCache {
             ?.takeIf { it.isNotEmpty() }
     }
 
+    fun memberDto(userId: String): com.lastasylum.alliance.data.teams.PlayerTeamMemberDto? {
+        val id = userId.trim()
+        if (id.isEmpty()) return null
+        return cachedTeam?.members?.firstOrNull { it.userId == id }
+    }
+
     suspend fun loadTeamDetail(
         teamId: String,
         teamsRepository: TeamsRepository,
@@ -77,6 +90,7 @@ internal object OverlayTeamContextCache {
         teamsRepository.getTeam(teamId).getOrThrow().also { team ->
             cachedTeam = team
             cachedTeamAtMs = now
+            bumpRevision()
         }
     }
 
@@ -112,6 +126,11 @@ internal object OverlayTeamContextCache {
         ).also { ctx ->
             cached = ctx
             cachedAtMs = now
+            bumpRevision()
         }
+    }
+
+    private fun bumpRevision() {
+        _revision.value = _revision.value + 1
     }
 }

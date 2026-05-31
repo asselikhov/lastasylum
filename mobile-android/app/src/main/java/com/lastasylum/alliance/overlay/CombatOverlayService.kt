@@ -126,6 +126,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -1022,6 +1023,8 @@ class CombatOverlayService : Service() {
     private var hudRefreshPending: Boolean = false
 
     private var hudRefreshJob: Job? = null
+
+    private var overlayReactionLogUnreadJob: Job? = null
 
     private var lastHudRefreshCompletedAtMs: Long = 0L
 
@@ -1967,6 +1970,29 @@ class CombatOverlayService : Service() {
         if (cur.reactionLogUnreadCount != count) {
             overlayTopRightHudFlow.value = cur.copy(reactionLogUnreadCount = count)
         }
+    }
+
+    private fun startOverlayReactionLogUnreadCollector() {
+        overlayReactionLogUnreadJob?.cancel()
+        overlayReactionLogUnreadJob = serviceScope.launch {
+            AppContainer.from(this@CombatOverlayService)
+                .overlayReactionLogRepository
+                .unreadCount
+                .collect { count ->
+                    mainHandler.post {
+                        if (!isInGameOverlayUiActive()) return@post
+                        val cur = overlayTopRightHudFlow.value
+                        if (cur.reactionLogUnreadCount != count) {
+                            overlayTopRightHudFlow.value = cur.copy(reactionLogUnreadCount = count)
+                        }
+                    }
+                }
+        }
+    }
+
+    private fun stopOverlayReactionLogUnreadCollector() {
+        overlayReactionLogUnreadJob?.cancel()
+        overlayReactionLogUnreadJob = null
     }
 
     /** App/VM hub chip sync — does not set [hubUnreadOptimisticFloor] (realtime bumps only). */
@@ -4624,6 +4650,7 @@ class CombatOverlayService : Service() {
             reactionListener,
             reactionLogListener,
         )
+        startOverlayReactionLogUnreadCollector()
         serviceScope.launch {
             val container = AppContainer.from(this@CombatOverlayService)
             val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
@@ -4728,6 +4755,7 @@ class CombatOverlayService : Service() {
             }
         }
         overlayReactionLogListener = null
+        stopOverlayReactionLogUnreadCollector()
         overlayChatHistoryClearedListener?.let { listener ->
             runCatching {
                 AppContainer.from(applicationContext).chatRepository.removeOverlayChatHistoryClearedListener(listener)
@@ -5072,13 +5100,7 @@ class CombatOverlayService : Service() {
                                             )
                                         }
                                         OverlayHudPane.Participants -> Unit
-                                        OverlayHudPane.Notifications -> {
-                                            OverlayHudPanelHeader(
-                                                title = stringResource(R.string.overlay_notifications_title),
-                                                subtitle = stringResource(R.string.overlay_notifications_subtitle),
-                                                onClose = { hideOverlayChatTeamPanel() },
-                                            )
-                                        }
+                                        OverlayHudPane.Notifications -> Unit
                                         else -> Unit
                                     }
                                     Box(
@@ -5154,10 +5176,10 @@ class CombatOverlayService : Service() {
                                                             )
                                                         }
                                                     },
-                                                    onQuickReplyToUser = { replyUserId ->
+                                                    onSendReactionToUser = { replyUserId, reactionId ->
                                                         container.chatRepository.emitOverlayReaction(
                                                             replyUserId,
-                                                            "heart",
+                                                            reactionId,
                                                         )
                                                         val name = OverlayTeamContextCache
                                                             .memberUsername(replyUserId)
@@ -5171,10 +5193,6 @@ class CombatOverlayService : Service() {
                                                             getString(R.string.overlay_reaction_sent, name),
                                                             android.widget.Toast.LENGTH_SHORT,
                                                         ).show()
-                                                    },
-                                                    onOpenParticipants = {
-                                                        hideOverlayChatTeamPanel(clearStrip = false)
-                                                        showOverlayHudPane(OverlayHudPane.Participants)
                                                     },
                                                 )
                                             }

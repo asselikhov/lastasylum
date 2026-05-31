@@ -36,6 +36,8 @@ fun OverlayReactionLogMiniPreview(
     visibility: OverlayReactionLogVisibility,
     modifier: Modifier = Modifier,
     previewSizeDp: Int = 56,
+    showLabel: Boolean = true,
+    playAnimatedPreview: Boolean = false,
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -83,7 +85,7 @@ fun OverlayReactionLogMiniPreview(
                         val icon = createOverlayReactionTileIcon(
                             ctx,
                             reaction,
-                            playAnimatedPreview = false,
+                            playAnimatedPreview = playAnimatedPreview,
                         )
                         FrameLayout(ctx).apply {
                             layoutParams = ViewGroup.LayoutParams(
@@ -107,15 +109,17 @@ fun OverlayReactionLogMiniPreview(
                 )
             }
         }
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            fontSize = 10.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.widthIn(max = 72.dp),
-        )
+        if (showLabel) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                fontSize = 10.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.widthIn(max = 72.dp),
+            )
+        }
     }
 }

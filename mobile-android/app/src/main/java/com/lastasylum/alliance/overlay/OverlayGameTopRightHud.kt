@@ -147,20 +147,6 @@ fun OverlayGameTopRightHud(
                         )
                     }
                     OverlayGameHudChip(
-                        icon = Icons.Outlined.Notifications,
-                        accent = OverlayHudChipAccent.Notifications,
-                        badgeCount = state.reactionLogUnreadCount,
-                        contentDescription = if (state.reactionLogUnreadCount > 0) {
-                            stringResource(
-                                R.string.overlay_hud_notifications_unread_cd,
-                                state.reactionLogUnreadCount,
-                            )
-                        } else {
-                            stringResource(R.string.overlay_hud_notifications_cd)
-                        },
-                        onClick = onNotificationsClick,
-                    )
-                    OverlayGameHudChip(
                         icon = Icons.Outlined.Groups,
                         accent = OverlayHudChipAccent.Online,
                         badgeCount = state.teamJoinRequestCount,
@@ -182,6 +168,20 @@ fun OverlayGameTopRightHud(
                         accent = OverlayHudChipAccent.Commands,
                         contentDescription = stringResource(R.string.overlay_cd_commands),
                         onClick = onQuickCommandsClick,
+                    )
+                    OverlayGameHudChip(
+                        icon = Icons.Outlined.Notifications,
+                        accent = OverlayHudChipAccent.Notifications,
+                        badgeCount = state.reactionLogUnreadCount,
+                        contentDescription = if (state.reactionLogUnreadCount > 0) {
+                            stringResource(
+                                R.string.overlay_hud_notifications_unread_cd,
+                                state.reactionLogUnreadCount,
+                            )
+                        } else {
+                            stringResource(R.string.overlay_hud_notifications_cd)
+                        },
+                        onClick = onNotificationsClick,
                     )
                     OverlayGameHudChip(
                         icon = Icons.Outlined.RecordVoiceOver,

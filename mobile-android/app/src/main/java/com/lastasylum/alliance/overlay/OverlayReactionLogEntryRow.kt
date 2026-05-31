@@ -2,6 +2,7 @@ package com.lastasylum.alliance.overlay
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,23 +18,29 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.offset
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Reply
-import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -43,8 +50,24 @@ import com.lastasylum.alliance.data.chat.OverlayReactionLogCluster
 import com.lastasylum.alliance.data.chat.OverlayReactionLogEntry
 import com.lastasylum.alliance.data.chat.OverlayReactionLogVisibility
 import com.lastasylum.alliance.data.chat.OverlayReactionLogVisibilityPolicy
+import com.lastasylum.alliance.ui.theme.premium.PremiumColors
 import com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
+import kotlinx.coroutines.delay
+
+private object ReactionLogCardTokens {
+    val corner = 14.dp
+    val borderDefault = Color(0x403D4A62)
+    val borderUnread = Color(0x5538BDF8)
+    val incomingGradientTop = Color(0x2418A4A0)
+    val incomingGradientBottom = Color(0x080E1624)
+    val outgoingGradientTop = Color(0x14FFFFFF)
+    val outgoingGradientBottom = Color(0x060E1624)
+    val unreadAccentStart = Color(0xFF38BDF8)
+    val unreadAccentEnd = Color(0xFF9070B8)
+    val presenceOffline = Color(0xFF667788)
+    val presenceRing = Color(0xFF0E1624)
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -52,10 +75,8 @@ fun OverlayReactionLogEntryRow(
     cluster: OverlayReactionLogCluster,
     selfUserId: String,
     unreadHighlight: Boolean,
-    onReply: () -> Unit,
-    onQuickReply: () -> Unit,
     onClick: () -> Unit,
-    onLongClick: () -> Unit,
+    onLongClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val entry = cluster.representative
@@ -75,16 +96,37 @@ fun OverlayReactionLogEntryRow(
     val (absolute, relative) = formatOverlayReactionLogTimeLine(entry.createdAt)
     val timeLine = listOf(absolute, relative).filter { it.isNotBlank() }.joinToString(" · ")
 
+    val cardShape = RoundedCornerShape(ReactionLogCardTokens.corner)
+    val cardGradient = if (incoming) {
+        Brush.verticalGradient(
+            listOf(ReactionLogCardTokens.incomingGradientTop, ReactionLogCardTokens.incomingGradientBottom),
+        )
+    } else {
+        Brush.verticalGradient(
+            listOf(ReactionLogCardTokens.outgoingGradientTop, ReactionLogCardTokens.outgoingGradientBottom),
+        )
+    }
+    val borderColor = when {
+        unreadHighlight && incoming -> ReactionLogCardTokens.borderUnread
+        else -> ReactionLogCardTokens.borderDefault
+    }
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(
-                if (unreadHighlight) Color(0x1A3D5AFE) else PremiumSurfaces.layer2(),
-            )
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick,
+            .clip(cardShape)
+            .background(PremiumSurfaces.layer2())
+            .background(cardGradient)
+            .border(1.dp, borderColor, cardShape)
+            .then(
+                if (onLongClick != null) {
+                    Modifier.combinedClickable(
+                        onClick = onClick,
+                        onLongClick = onLongClick,
+                    )
+                } else {
+                    Modifier.combinedClickable(onClick = onClick)
+                },
             )
             .padding(12.dp),
     ) {
@@ -95,13 +137,11 @@ fun OverlayReactionLogEntryRow(
                 cluster = cluster,
                 incoming = incoming,
                 outgoingPersonal = outgoingPersonal,
-                unreadHighlight = unreadHighlight,
+                unreadHighlight = unreadHighlight && incoming,
                 scopeLabel = scopeLabel,
                 scopeColor = scopeColor,
                 timeLine = timeLine,
                 selfUserId = selfUserId,
-                onReply = onReply,
-                onQuickReply = onQuickReply,
             )
         } else {
             WideReactionLogRowContent(
@@ -109,13 +149,11 @@ fun OverlayReactionLogEntryRow(
                 cluster = cluster,
                 incoming = incoming,
                 outgoingPersonal = outgoingPersonal,
-                unreadHighlight = unreadHighlight,
+                unreadHighlight = unreadHighlight && incoming,
                 scopeLabel = scopeLabel,
                 scopeColor = scopeColor,
                 timeLine = timeLine,
                 selfUserId = selfUserId,
-                onReply = onReply,
-                onQuickReply = onQuickReply,
             )
         }
     }
@@ -132,8 +170,6 @@ private fun WideReactionLogRowContent(
     scopeColor: Color,
     timeLine: String,
     selfUserId: String,
-    onReply: () -> Unit,
-    onQuickReply: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -160,10 +196,8 @@ private fun WideReactionLogRowContent(
         OverlayReactionLogMiniPreview(
             reactionId = entry.reaction,
             visibility = entry.visibility,
+            showLabel = false,
         )
-        if (incoming) {
-            IncomingQuickActions(onReply = onReply, onQuickReply = onQuickReply)
-        }
     }
 }
 
@@ -178,8 +212,6 @@ private fun CompactReactionLogRowContent(
     scopeColor: Color,
     timeLine: String,
     selfUserId: String,
-    onReply: () -> Unit,
-    onQuickReply: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -214,10 +246,8 @@ private fun CompactReactionLogRowContent(
             OverlayReactionLogMiniPreview(
                 reactionId = entry.reaction,
                 visibility = entry.visibility,
+                showLabel = false,
             )
-            if (incoming) {
-                IncomingQuickActions(onReply = onReply, onQuickReply = onQuickReply)
-            }
         }
     }
 }
@@ -226,10 +256,17 @@ private fun CompactReactionLogRowContent(
 private fun UnreadAccentBar() {
     Box(
         modifier = Modifier
-            .width(4.dp)
-            .height(56.dp)
+            .width(3.dp)
+            .height(52.dp)
             .clip(RoundedCornerShape(2.dp))
-            .background(Color(0xFF3D5AFE)),
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        ReactionLogCardTokens.unreadAccentStart,
+                        ReactionLogCardTokens.unreadAccentEnd,
+                    ),
+                ),
+            ),
     )
     Spacer(modifier = Modifier.width(8.dp))
 }
@@ -240,7 +277,7 @@ private fun SenderAvatarBlock(
     incoming: Boolean,
 ) {
     Box(contentAlignment = Alignment.BottomEnd) {
-        OverlayReactionLogAvatar(
+        OverlayReactionLogAvatarWithPresence(
             userId = entry.senderUserId,
             username = entry.senderUsername,
             sizeDp = 40,
@@ -271,7 +308,7 @@ private fun RecipientMiniAvatar(entry: OverlayReactionLogEntry) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.width(4.dp))
-        OverlayReactionLogAvatar(
+        OverlayReactionLogAvatarWithPresence(
             userId = targetId,
             username = targetName,
             sizeDp = 32,
@@ -297,6 +334,7 @@ private fun NarrativeBlock(
                 },
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),
@@ -320,7 +358,7 @@ private fun NarrativeBlock(
             Text(
                 text = timeLine,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
                 modifier = Modifier.padding(top = 2.dp),
             )
         }
@@ -335,7 +373,7 @@ private fun ScopePill(label: String, color: Color) {
         color = color,
         modifier = Modifier
             .clip(RoundedCornerShape(6.dp))
-            .background(color.copy(alpha = 0.18f))
+            .background(color.copy(alpha = 0.16f))
             .padding(horizontal = 6.dp, vertical = 2.dp),
     )
 }
@@ -354,22 +392,90 @@ private fun MergeCountPill(count: Int) {
 }
 
 @Composable
-private fun IncomingQuickActions(
-    onReply: () -> Unit,
-    onQuickReply: () -> Unit,
+fun OverlayReactionLogAvatarWithPresence(
+    userId: String,
+    username: String,
+    sizeDp: Int = 40,
+    modifier: Modifier = Modifier,
 ) {
-    IconButton(onClick = onQuickReply) {
-        Icon(
-            imageVector = Icons.Filled.Favorite,
-            contentDescription = stringResource(R.string.overlay_notifications_quick_reply_cd),
-            tint = Color(0xFFE57373),
+    val presenceRevision by OverlayTeamPresenceCache.revision.collectAsState()
+    val teamRevision by OverlayTeamContextCache.revision.collectAsState()
+    var freshnessTick by remember(userId) { mutableIntStateOf(0) }
+    LaunchedEffect(userId) {
+        while (true) {
+            delay(30_000L)
+            freshnessTick++
+        }
+    }
+    val isOnline = remember(userId, presenceRevision, teamRevision, freshnessTick) {
+        OverlayMemberPresenceLookup.isInGameNow(userId)
+    }
+    Box(modifier = modifier) {
+        OverlayReactionLogAvatar(
+            userId = userId,
+            username = username,
+            sizeDp = sizeDp,
+        )
+        OverlayReactionLogPresenceIndicator(
+            isOnline = isOnline,
+            avatarSizeDp = sizeDp,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .offset(x = (-2).dp, y = (-2).dp),
         )
     }
-    IconButton(onClick = onReply) {
-        Icon(
-            imageVector = Icons.AutoMirrored.Outlined.Reply,
-            contentDescription = stringResource(R.string.overlay_notifications_reply_cd),
-        )
+}
+
+@Composable
+private fun OverlayReactionLogPresenceIndicator(
+    isOnline: Boolean,
+    avatarSizeDp: Int,
+    modifier: Modifier = Modifier,
+) {
+    val dotOuter = if (avatarSizeDp >= 40) 12.dp else 10.dp
+    val dotInner = dotOuter - 3.dp
+    val presenceCd = stringResource(
+        if (isOnline) {
+            R.string.overlay_notifications_presence_online_cd
+        } else {
+            R.string.overlay_notifications_presence_offline_cd
+        },
+    )
+    Box(
+        modifier = modifier.semantics { contentDescription = presenceCd },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(dotOuter)
+                .clip(CircleShape)
+                .background(ReactionLogCardTokens.presenceRing),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(dotInner)
+                    .clip(CircleShape)
+                    .background(
+                        if (isOnline) {
+                            Brush.radialGradient(
+                                colors = listOf(
+                                    PremiumColors.liveIndicator.copy(alpha = 0.95f),
+                                    PremiumColors.liveIndicator,
+                                    Color(0xFF16A34A),
+                                ),
+                            )
+                        } else {
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    ReactionLogCardTokens.presenceOffline.copy(alpha = 0.85f),
+                                    ReactionLogCardTokens.presenceOffline,
+                                ),
+                            )
+                        },
+                    ),
+            )
+        }
     }
 }
 
