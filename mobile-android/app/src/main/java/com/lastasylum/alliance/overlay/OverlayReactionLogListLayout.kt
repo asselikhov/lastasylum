@@ -7,7 +7,7 @@ internal data class OverlayReactionLogDisplayRow(
     val cluster: OverlayReactionLogCluster?,
 )
 
-internal data class OverlayReactionLogStickyListLayout(
+data class OverlayReactionLogStickyListLayout(
     val grouped: List<Pair<String, List<OverlayReactionLogCluster>>>,
     val firstUnreadItemIndex: Int,
     val lastClusterItemIndex: Int,

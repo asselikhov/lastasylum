@@ -1,7 +1,9 @@
 package com.lastasylum.alliance.overlay
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -43,6 +45,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -73,6 +76,7 @@ fun OverlayReactionLogEntryRow(
     compactLayout: Boolean,
     playAnimatedPreview: Boolean = true,
     isOnline: Boolean = false,
+    animateEnter: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val entry = cluster.representative
@@ -98,11 +102,16 @@ fun OverlayReactionLogEntryRow(
         Modifier.combinedClickable(onClick = onClick)
     }
 
-    OverlayReactionLogCard(
-        incoming = incoming,
-        unreadHighlight = unreadHighlight,
+    AnimatedVisibility(
+        visible = true,
+        enter = if (animateEnter) fadeIn(tween(220)) else fadeIn(tween(0)),
         modifier = modifier,
     ) {
+        OverlayReactionLogCard(
+            incoming = incoming,
+            unreadHighlight = unreadHighlight,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
         if (compactLayout) {
             CompactReactionLogRowContent(
                 entry = entry,
@@ -133,6 +142,7 @@ fun OverlayReactionLogEntryRow(
                 playAnimatedPreview = playAnimatedPreview,
                 isOnline = isOnline,
             )
+        }
         }
     }
 }
@@ -381,7 +391,9 @@ private fun NarrativeClickableBlock(
         if (timeLine.isNotBlank()) {
             Text(
                 text = timeLine,
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontFamily = FontFamily.Monospace,
+                ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
                 textAlign = if (alignTimeEnd) TextAlign.End else TextAlign.Start,
                 modifier = Modifier

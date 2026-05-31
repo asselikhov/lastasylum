@@ -14,6 +14,10 @@ class OverlayReactionLogRepository(
     private val chatApi: ChatApi,
     private val preferences: OverlayReactionLogPreferences,
 ) {
+    companion object {
+        /** In-memory window for overlay list; older pages remain on server and reload via [loadMore]. */
+        const val MAX_RETAINED_LOG_ENTRIES = 300
+    }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutex = Mutex()
 
@@ -77,6 +81,7 @@ class OverlayReactionLogRepository(
             mutex.withLock {
                 upsertEntry(entry)
             }
+            recomputeUnread()
         }
     }
 
@@ -250,13 +255,8 @@ class OverlayReactionLogRepository(
             _unreadEntryIds.value = emptySet()
             return
         }
-        val lastSeen = _lastSeenLogId.value?.trim().orEmpty()
-        val unreadIds = _entries.value
-            .filter { entry ->
-                OverlayReactionLogVisibilityPolicy.isEntryUnread(entry, self, lastSeen.ifEmpty { null })
-            }
-            .map { it.id }
-            .toSet()
+        val lastSeen = _lastSeenLogId.value?.trim()?.takeIf { it.isNotEmpty() }
+        var unreadIds = computeUnreadEntryIds(_entries.value, self, lastSeen)
         if (unreadIds.isNotEmpty()) {
             _unreadCount.value = unreadIds.size
             _unreadEntryIds.value = unreadIds
@@ -269,25 +269,24 @@ class OverlayReactionLogRepository(
                 _lastSeenLogId.value = serverCursor
             }
         }
-        val cursor = _lastSeenLogId.value?.trim().orEmpty()
-        val resolvedUnread = _entries.value
-            .filter { entry ->
-                OverlayReactionLogVisibilityPolicy.isEntryUnread(entry, self, cursor.ifEmpty { null })
-            }
-            .map { it.id }
-            .toSet()
-        _unreadCount.value = resolvedUnread.size
-        _unreadEntryIds.value = resolvedUnread
+        unreadIds = computeUnreadEntryIds(
+            _entries.value,
+            self,
+            _lastSeenLogId.value?.trim()?.takeIf { it.isNotEmpty() },
+        )
+        _unreadCount.value = unreadIds.size
+        _unreadEntryIds.value = unreadIds
     }
 
     private fun upsertEntry(entry: OverlayReactionLogEntry) {
         val existing = _entries.value
         val index = existing.indexOfFirst { it.id == entry.id }
-        _entries.value = if (index >= 0) {
+        val merged = if (index >= 0) {
             existing.toMutableList().apply { this[index] = entry }
         } else {
             (existing + entry).distinctBy { it.id }.sortedByDescending { it.id }
         }
+        _entries.value = trimRetainedEntries(merged)
     }
 
     private fun applyOptimisticReactionToggle(
@@ -332,6 +331,11 @@ class OverlayReactionLogRepository(
         val merged = (base + incoming)
             .distinctBy { it.id }
             .sortedByDescending { it.id }
-        _entries.value = merged
+        _entries.value = trimRetainedEntries(merged)
+    }
+
+    private fun trimRetainedEntries(entries: List<OverlayReactionLogEntry>): List<OverlayReactionLogEntry> {
+        if (entries.size <= MAX_RETAINED_LOG_ENTRIES) return entries
+        return entries.take(MAX_RETAINED_LOG_ENTRIES)
     }
 }

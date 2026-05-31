@@ -24,9 +24,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.ui.components.premium.PremiumGlassSurface
+import com.lastasylum.alliance.ui.theme.premium.PremiumGlow
 
 @Composable
 fun OverlayReactionLogSkeleton(
@@ -44,6 +48,7 @@ fun OverlayReactionLogSkeleton(
         label = "skeleton_alpha",
     )
     val block = Color(0xFF2A3544).copy(alpha = alpha)
+    val cornerPx = with(LocalDensity.current) { ReactionLogCardTokens.corner.toPx() }
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -55,6 +60,13 @@ fun OverlayReactionLogSkeleton(
                 shape = RoundedCornerShape(ReactionLogCardTokens.corner),
                 shadowElevation = 3.dp,
                 showInnerGlow = true,
+                modifier = Modifier.drawBehind {
+                    drawRoundRect(
+                        brush = PremiumGlow.cardInnerTop(size.height.coerceAtMost(72f)),
+                        cornerRadius = CornerRadius(cornerPx, cornerPx),
+                        size = size,
+                    )
+                },
             ) {
                 Row(
                     modifier = Modifier

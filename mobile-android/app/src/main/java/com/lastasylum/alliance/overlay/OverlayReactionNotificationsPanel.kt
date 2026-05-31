@@ -5,7 +5,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -33,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -59,7 +62,6 @@ import com.lastasylum.alliance.data.chat.OverlayReactionLogFilter
 import com.lastasylum.alliance.data.chat.OverlayReactionLogRepository
 import com.lastasylum.alliance.data.chat.OverlayReactionLogScopeFilter
 import com.lastasylum.alliance.data.chat.OverlayReactionLogVisibilityPolicy
-import com.lastasylum.alliance.ui.util.OVERLAY_ONLINE_PANEL_POLL_MS
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -84,83 +86,37 @@ fun OverlayReactionNotificationsPanel(
     val error by repository.error.collectAsState()
     val unreadCount by repository.unreadCount.collectAsState()
     val unreadEntryIds by repository.unreadEntryIds.collectAsState()
-    var directionFilter by remember { mutableStateOf(OverlayReactionLogFilter.All) }
-    var scopeFilter by remember { mutableStateOf(OverlayReactionLogScopeFilter.All) }
-    var searchQuery by remember { mutableStateOf("") }
-    var debouncedSearch by remember { mutableStateOf("") }
+    val haptics = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val container = remember(context) { AppContainer.from(context) }
+    val controller = remember(repository, container, scope) {
+        OverlayReactionNotificationsController(
+            scope = scope,
+            repository = repository,
+            usersRepository = container.usersRepository,
+            teamsRepository = container.teamsRepository,
+        )
+    }
+    val uiState by controller.uiState.collectAsState()
     var detailCluster by remember { mutableStateOf<OverlayReactionLogCluster?>(null) }
     var replySheetEntry by remember { mutableStateOf<OverlayReactionLogCluster?>(null) }
     var showClearHistoryConfirm by remember { mutableStateOf(false) }
     var showHeaderMenu by remember { mutableStateOf(false) }
     var initialScrollDone by remember { mutableStateOf(false) }
     var hapticConsumedForSession by remember { mutableStateOf(false) }
-    val haptics = LocalHapticFeedback.current
-    val scope = rememberCoroutineScope()
-    val context = androidx.compose.ui.platform.LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
-    val presenceRevision by OverlayTeamPresenceCache.revision.collectAsState()
-    val teamRevision by OverlayTeamContextCache.revision.collectAsState()
 
-    LaunchedEffect(repository, selfUserId) {
-        repository.setSelfUserId(selfUserId)
-        repository.loadInitial()
+    DisposableEffect(controller, selfUserId) {
+        controller.start(selfUserId)
+        onDispose { controller.stop() }
     }
 
-    LaunchedEffect(searchQuery) {
-        delay(300)
-        debouncedSearch = searchQuery
-    }
-
-    LaunchedEffect(Unit) {
-        val container = AppContainer.from(context)
-        while (true) {
-            runCatching {
-                val ctx = OverlayTeamContextCache.load(
-                    usersRepository = container.usersRepository,
-                    teamsRepository = container.teamsRepository,
-                ).getOrNull() ?: return@runCatching
-                OverlayTeamContextCache.loadTeamDetail(
-                    teamId = ctx.teamId,
-                    teamsRepository = container.teamsRepository,
-                )
-                OverlayTeamPresenceCache.load(
-                    teamId = ctx.teamId,
-                    teamsRepository = container.teamsRepository,
-                )
-            }
-            delay(OVERLAY_ONLINE_PANEL_POLL_MS)
-        }
-    }
-
-    val filtered = remember(entries, directionFilter, scopeFilter, debouncedSearch, selfUserId) {
-        OverlayReactionNotificationsDeriver.filterEntries(
-            entries = entries,
-            selfUserId = selfUserId,
-            directionFilter = directionFilter,
-            scopeFilter = scopeFilter,
-            searchQuery = debouncedSearch,
-        )
-    }
-
-    val clustered = remember(filtered, selfUserId) {
-        OverlayReactionNotificationsDeriver.clusterFiltered(filtered, selfUserId)
-    }
-
-    val grouped = remember(clustered) {
-        OverlayReactionNotificationsDeriver.groupClusters(clustered)
-    }
-
-    val listLayout = remember(grouped, loadingMore, unreadEntryIds) {
-        buildStickyListLayout(grouped, loadingMore, unreadEntryIds)
-    }
-
-    val onlineUserIds = remember(clustered, presenceRevision, teamRevision) {
-        OverlayReactionNotificationsDeriver.resolveOnlineUserIds(clustered)
-    }
-
-    val filterKey = remember(directionFilter, scopeFilter, debouncedSearch) {
-        OverlayReactionNotificationsDeriver.filterKey(directionFilter, scopeFilter, debouncedSearch)
-    }
+    val clustered = uiState.clustered
+    val grouped = uiState.grouped
+    val listLayout = uiState.listLayout
+    val onlineUserIds = uiState.onlineUserIds
+    val filterKey = uiState.filterKey
 
     var savedScrollIndex by rememberSaveable(filterKey) { mutableIntStateOf(0) }
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = savedScrollIndex)
@@ -278,15 +234,30 @@ fun OverlayReactionNotificationsPanel(
                 },
             )
             if (refreshing) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 16.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.overlay_notifications_syncing),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                    )
+                }
             }
             OverlayReactionLogFiltersBar(
-                directionFilter = directionFilter,
-                onDirectionFilter = { directionFilter = it },
-                scopeFilter = scopeFilter,
-                onScopeFilter = { scopeFilter = it },
-                searchQuery = searchQuery,
-                onSearchQuery = { searchQuery = it },
+                directionFilter = uiState.directionFilter,
+                onDirectionFilter = controller::onDirectionFilter,
+                scopeFilter = uiState.scopeFilter,
+                onScopeFilter = controller::onScopeFilter,
+                searchQuery = uiState.searchQuery,
+                onSearchQuery = controller::onSearchQuery,
             )
             BoxWithConstraints(
                 modifier = Modifier
@@ -318,7 +289,7 @@ fun OverlayReactionNotificationsPanel(
                     }
                     clustered.isEmpty() -> {
                         EmptyNotificationsState(
-                            directionFilter = directionFilter,
+                            directionFilter = uiState.directionFilter,
                             onOpenReactionsPicker = onOpenReactionsPicker,
                             modifier = Modifier.align(Alignment.Center),
                         )
@@ -328,7 +299,7 @@ fun OverlayReactionNotificationsPanel(
                             snapshotFlow { listState.firstVisibleItemIndex }
                                 .distinctUntilChanged()
                                 .collect { firstIndex ->
-                                    if (firstIndex <= 2) repository.loadMore()
+                                    controller.loadMoreIfNeeded(firstIndex)
                                 }
                         }
 
@@ -358,6 +329,7 @@ fun OverlayReactionNotificationsPanel(
                             onRefresh = { repository.refresh() },
                             modifier = Modifier.fillMaxSize(),
                         ) {
+                            // beyondBoundsItemCount: not public on Compose BOM 2024.09 (foundation 1.7.0)
                             LazyColumn(
                                 state = listState,
                                 modifier = Modifier.fillMaxSize(),
@@ -402,6 +374,7 @@ fun OverlayReactionNotificationsPanel(
                                             compactLayout = compactLayout,
                                             playAnimatedPreview = entry.id in animatedPreviewIds,
                                             isOnline = entry.senderUserId.trim() in onlineUserIds,
+                                            animateEnter = entry.id == uiState.newestUnreadEntryId,
                                             onClick = { detailCluster = cluster },
                                             onLongClick = if (incoming) {
                                                 {
