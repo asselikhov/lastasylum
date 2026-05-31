@@ -55,6 +55,9 @@ object OverlayWindowLayout {
      * (обычно 0.8). View.alpha на Lottie/GIF не учитывается системой.
      */
     fun reactionBurstWindowAlpha(context: Context): Float {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return 1f
+        }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             return 1f
         }

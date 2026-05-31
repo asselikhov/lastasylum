@@ -26,12 +26,14 @@ internal object OverlayReactionTextBurstUi {
         message: String,
         tileSizePx: Int,
         mini: Boolean = false,
+        textSp: Float? = null,
+        maxLines: Int? = null,
     ): TextView = createPreviewMessageTextView(
         context = context,
         message = message,
         maxWidthPx = tileSizePx,
-        textSp = if (mini) TEXT_MINI_SP else TEXT_PREVIEW_SP,
-        maxLines = TEXT_PREVIEW_LINES_MAX,
+        textSp = textSp ?: if (mini) TEXT_MINI_SP else TEXT_PREVIEW_SP,
+        maxLines = maxLines ?: TEXT_PREVIEW_LINES_MAX,
     )
 
     fun createPreviewMessageTextView(

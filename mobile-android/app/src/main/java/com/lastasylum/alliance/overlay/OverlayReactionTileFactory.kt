@@ -2,6 +2,7 @@ package com.lastasylum.alliance.overlay
 
 import android.content.Context
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -24,15 +25,25 @@ internal class OverlayReactionTileFactory(
     private val dp: (Int) -> Int,
     private val visualFactory: OverlayReactionVisualFactory,
 ) {
+    private fun metrics() = OverlayReactionBurstLayout.metrics(context, dp)
+
     fun buildTile(
         request: OverlayReactionBurstRequest,
         mode: OverlayReactionTileMode,
         mergeCount: Int = 1,
         playLottie: Boolean = true,
     ): OverlayReactionBuiltTile {
+        val m = metrics()
         val tilePx = when (mode) {
-            OverlayReactionTileMode.HERO -> OverlayReactionStageLayout.heroTileSizePx(dp)
-            OverlayReactionTileMode.MINI -> OverlayReactionStageLayout.miniTileSizePx(dp)
+            OverlayReactionTileMode.HERO -> OverlayReactionStageLayout.heroTileSizePx(m.screenWidthPx, dp)
+            OverlayReactionTileMode.MINI -> OverlayReactionStageLayout.miniTileSizePx(m.screenWidthPx, dp)
+        }
+        val textPayload = decodeTextReactionId(request.reactionId)
+        val isHeroText = textPayload != null && mode == OverlayReactionTileMode.HERO
+        val columnWidthPx = if (isHeroText) {
+            OverlayReactionBurstLayout.textMessageMaxWidthPx(m, dp(120))
+        } else {
+            tilePx
         }
         val card = FrameLayout(context).apply {
             clipChildren = false
@@ -43,6 +54,7 @@ internal class OverlayReactionTileFactory(
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             clipChildren = false
+            minimumWidth = columnWidthPx
         }
         val visualHost = FrameLayout(context).apply {
             setTag(R.id.tag_overlay_reaction_anim_host, true)
@@ -51,26 +63,44 @@ internal class OverlayReactionTileFactory(
         }
         var messageView: TextView? = null
         var lottie: LottieAnimationView? = null
-        val textPayload = decodeTextReactionId(request.reactionId)
         if (textPayload != null) {
+            val textSp = if (mode == OverlayReactionTileMode.HERO) {
+                OverlayReactionStageLayout.TEXT_HERO_SP
+            } else {
+                OverlayReactionStageLayout.TEXT_MINI_SP
+            }
+            val maxLines = if (mode == OverlayReactionTileMode.HERO) {
+                OverlayReactionStageLayout.TEXT_HERO_MAX_LINES
+            } else {
+                2
+            }
+            val textWidth = if (mode == OverlayReactionTileMode.HERO) columnWidthPx else tilePx
             messageView = OverlayReactionTextBurstUi.createTileTextView(
                 context,
                 textPayload,
-                tilePx,
-                mini = mode == OverlayReactionTileMode.MINI,
+                textWidth,
+                textSp = textSp,
+                maxLines = maxLines,
             ).also { view ->
                 view.setTag(R.id.tag_overlay_reaction_message, true)
                 visualHost.addView(
                     view,
                     FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
                         Gravity.CENTER,
                     ),
                 )
             }
+            column.addView(
+                visualHost,
+                LinearLayout.LayoutParams(columnWidthPx, ViewGroup.LayoutParams.WRAP_CONTENT),
+            )
         } else {
             val reaction = overlayQuickReactionById(context, request.reactionId)
+            if (mode == OverlayReactionTileMode.HERO) {
+                addHeroGlow(visualHost, reaction.burstAccentHex, tilePx)
+            }
             val animView = visualFactory.createAnimView(reaction, tilePx, playLottie)
             lottie = animView as? LottieAnimationView
             visualHost.addView(
@@ -81,23 +111,22 @@ internal class OverlayReactionTileFactory(
                     Gravity.CENTER,
                 ),
             )
+            column.addView(
+                visualHost,
+                LinearLayout.LayoutParams(tilePx, tilePx),
+            )
         }
-        column.addView(
-            visualHost,
-            LinearLayout.LayoutParams(tilePx, tilePx),
-        )
         val captionView = if (mode == OverlayReactionTileMode.HERO) {
             OverlayReactionCaption.createCaptionLine(
                 context = context,
                 displayName = request.fromDisplayName,
                 broadcast = request.broadcast,
-                maxWidthPx = dp(OverlayReactionStageLayout.HERO_CAPTION_MAX_WIDTH_DP),
                 mergeCount = mergeCount,
             ).also { caption ->
                 column.addView(
                     caption,
                     LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT,
                     ).apply {
                         topMargin = dp(OverlayReactionStageLayout.HERO_CAPTION_TOP_MARGIN_DP)
@@ -130,28 +159,48 @@ internal class OverlayReactionTileFactory(
         playLottie: Boolean,
     ) {
         tile.visualHost.removeAllViews()
+        val m = metrics()
         val tilePx = when (mode) {
-            OverlayReactionTileMode.HERO -> OverlayReactionStageLayout.heroTileSizePx(dp)
-            OverlayReactionTileMode.MINI -> OverlayReactionStageLayout.miniTileSizePx(dp)
+            OverlayReactionTileMode.HERO -> OverlayReactionStageLayout.heroTileSizePx(m.screenWidthPx, dp)
+            OverlayReactionTileMode.MINI -> OverlayReactionStageLayout.miniTileSizePx(m.screenWidthPx, dp)
         }
         val textPayload = decodeTextReactionId(request.reactionId)
         if (textPayload != null) {
+            val textSp = if (mode == OverlayReactionTileMode.HERO) {
+                OverlayReactionStageLayout.TEXT_HERO_SP
+            } else {
+                OverlayReactionStageLayout.TEXT_MINI_SP
+            }
+            val maxLines = if (mode == OverlayReactionTileMode.HERO) {
+                OverlayReactionStageLayout.TEXT_HERO_MAX_LINES
+            } else {
+                2
+            }
+            val textWidth = if (mode == OverlayReactionTileMode.HERO) {
+                OverlayReactionBurstLayout.textMessageMaxWidthPx(m, dp(120))
+            } else {
+                tilePx
+            }
             val messageView = OverlayReactionTextBurstUi.createTileTextView(
                 context,
                 textPayload,
-                tilePx,
-                mini = mode == OverlayReactionTileMode.MINI,
+                textWidth,
+                textSp = textSp,
+                maxLines = maxLines,
             )
             tile.visualHost.addView(
                 messageView,
                 FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
                     Gravity.CENTER,
                 ),
             )
         } else {
             val reaction = overlayQuickReactionById(context, request.reactionId)
+            if (mode == OverlayReactionTileMode.HERO) {
+                addHeroGlow(tile.visualHost, reaction.burstAccentHex, tilePx)
+            }
             val animView = visualFactory.createAnimView(reaction, tilePx, playLottie)
             tile.visualHost.addView(
                 animView,
@@ -162,5 +211,21 @@ internal class OverlayReactionTileFactory(
                 ),
             )
         }
+    }
+
+    private fun addHeroGlow(host: FrameLayout, accentHex: String, sizePx: Int) {
+        val accent = runCatching { Color.parseColor(accentHex) }.getOrDefault(Color.parseColor("#66FFE082"))
+        val glow = View(context).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                gradientType = GradientDrawable.RADIAL_GRADIENT
+                gradientRadius = sizePx * 0.55f
+                setColors(intArrayOf(Color.argb(38, Color.red(accent), Color.green(accent), Color.blue(accent)), Color.TRANSPARENT))
+            }
+        }
+        host.addView(
+            glow,
+            FrameLayout.LayoutParams(sizePx, sizePx, Gravity.CENTER),
+        )
     }
 }

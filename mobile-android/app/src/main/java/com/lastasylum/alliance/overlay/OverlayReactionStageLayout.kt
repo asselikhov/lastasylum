@@ -2,13 +2,15 @@ package com.lastasylum.alliance.overlay
 
 /** Hero + history strip layout under top-right HUD. */
 internal object OverlayReactionStageLayout {
-    const val HERO_TILE_DP = 96
-    const val MINI_TILE_DP = 40
+    const val HERO_WIDTH_FRACTION = 0.40f
+    const val HERO_MAX_DP = 168
+    const val HERO_MIN_DP = 128
+    const val MINI_HERO_RATIO = 0.42f
+    const val MINI_MIN_DP = 52
     const val MAX_HISTORY_TILES = 4
     const val MAX_PLAYING_LOTTIES = 2
     const val HISTORY_GAP_DP = 6
-    const val HERO_CAPTION_MAX_WIDTH_DP = 120
-    const val HERO_CAPTION_TOP_MARGIN_DP = 4
+    const val HERO_CAPTION_TOP_MARGIN_DP = 6
     const val STAGE_MAX_HEIGHT_FRACTION = 0.35f
     const val HERO_VISIBLE_MS = 4_500L
     const val HERO_EXTEND_MS = 1_500L
@@ -19,10 +21,18 @@ internal object OverlayReactionStageLayout {
     const val REFLOW_MS = 240L
     const val ENTER_FROM_ANCHOR_Y_DP = 12
     const val EXIT_SLIDE_Y_DP = 12
+    const val TEXT_HERO_SP = 24f
+    const val TEXT_HERO_MAX_LINES = 4
+    const val TEXT_MINI_SP = 11f
 
-    fun heroTileSizePx(dp: (Int) -> Int): Int = dp(HERO_TILE_DP)
+    fun heroTileSizePx(screenWidthPx: Int, dp: (Int) -> Int): Int =
+        minOf((screenWidthPx * HERO_WIDTH_FRACTION).toInt(), dp(HERO_MAX_DP))
+            .coerceAtLeast(dp(HERO_MIN_DP))
 
-    fun miniTileSizePx(dp: (Int) -> Int): Int = dp(MINI_TILE_DP)
+    fun miniTileSizePx(screenWidthPx: Int, dp: (Int) -> Int): Int {
+        val hero = heroTileSizePx(screenWidthPx, dp)
+        return (hero * MINI_HERO_RATIO).toInt().coerceAtLeast(dp(MINI_MIN_DP))
+    }
 
     fun maxStageHeightPx(screenHeightPx: Int): Int =
         (screenHeightPx * STAGE_MAX_HEIGHT_FRACTION).toInt()

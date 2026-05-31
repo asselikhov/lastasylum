@@ -19,6 +19,8 @@ internal enum class HorizontalAlign {
     END,
     /** Stack centered under anchor (reaction grid in popover). */
     CENTER,
+    /** Stage centered on screen width; Y from anchor bottom. */
+    SCREEN_CENTER,
 }
 
 internal fun interface OverlayReactionAnchorProvider {
@@ -30,6 +32,7 @@ internal data class OverlayReactionStageWindowPlacement(
     val x: Int,
     val y: Int,
     val stackContentGravity: Int,
+    val fullScreenWidth: Boolean = false,
 )
 
 internal object OverlayReactionAnchorLayout {
@@ -58,7 +61,7 @@ internal object OverlayReactionAnchorLayout {
                 screenWidthPx - x,
                 y + chipH,
             ),
-            horizontalAlign = HorizontalAlign.END,
+            horizontalAlign = HorizontalAlign.SCREEN_CENTER,
         )
     }
 
@@ -83,6 +86,13 @@ internal object OverlayReactionAnchorLayout {
                 x = 0,
                 y = y,
                 stackContentGravity = Gravity.CENTER_HORIZONTAL,
+            )
+            HorizontalAlign.SCREEN_CENTER -> OverlayReactionStageWindowPlacement(
+                windowGravity = Gravity.TOP or Gravity.START,
+                x = 0,
+                y = y,
+                stackContentGravity = Gravity.CENTER_HORIZONTAL,
+                fullScreenWidth = true,
             )
         }
     }

@@ -1,77 +1,50 @@
 package com.lastasylum.alliance.overlay
 
 import android.content.Context
-import android.graphics.Color
-import android.graphics.PorterDuff
-import android.graphics.PorterDuffColorFilter
+import android.view.Gravity
 import android.view.View
+import android.widget.FrameLayout
 import android.widget.ImageView
-import androidx.appcompat.content.res.AppCompatResources
-import androidx.core.graphics.drawable.DrawableCompat
 import com.airbnb.lottie.LottieAnimationView
-import com.airbnb.lottie.LottieDrawable
-import com.airbnb.lottie.LottieProperty
-import com.airbnb.lottie.RenderMode
-import com.airbnb.lottie.model.KeyPath
-import com.airbnb.lottie.value.LottieValueCallback
 
 internal class OverlayReactionVisualFactory(
     private val context: Context,
     private val configureLottie: (LottieAnimationView) -> Unit,
 ) {
-    fun createAnimView(reaction: OverlayQuickReaction, maxSidePx: Int, playLottie: Boolean): android.view.View {
-        reaction.stickerAssetStem?.let { stem ->
-            val packKey = reaction.stickerPackKey ?: OVERLAY_REACTION_STICKER_PACK
-            return nonClippingImage(maxSidePx).also { image ->
-                OverlayReactionBitmapCache.loadAsync(context, packKey, stem) { bmp ->
-                    if (bmp != null && image.isAttachedToWindow) image.setImageBitmap(bmp)
+    fun createAnimView(reaction: OverlayQuickReaction, maxSidePx: Int, playLottie: Boolean): View {
+        preloadStickerIfNeeded(reaction)
+        val icon = createOverlayReactionTileIcon(context, reaction, playAnimatedPreview = playLottie)
+        when (icon) {
+            is LottieAnimationView -> {
+                icon.layoutParams = FrameLayout.LayoutParams(maxSidePx, maxSidePx, Gravity.CENTER)
+                if (playLottie) {
+                    configureLottie(icon)
+                    icon.post {
+                        if (icon.isAttachedToWindow && !icon.isAnimating) {
+                            icon.playAnimation()
+                        }
+                    }
+                }
+            }
+            else -> {
+                icon.apply {
+                    layoutParams = FrameLayout.LayoutParams(maxSidePx, maxSidePx, Gravity.CENTER)
+                    alpha = OverlayReactionBurstLayout.CONTENT_ALPHA
+                    maxWidth = maxSidePx
+                    maxHeight = maxSidePx
                 }
             }
         }
-        reaction.gifDrawableRes?.let { res ->
-            return nonClippingImage(maxSidePx).apply { bindOverlayGif(context, res) }
-        }
-        reaction.memeDrawableRes?.let { res ->
-            return nonClippingImage(maxSidePx).apply {
-                setImageDrawable(AppCompatResources.getDrawable(context, res))
-            }
-        }
-        reaction.lottieRawRes?.let { res ->
-            return LottieAnimationView(context).apply {
-                setAnimation(res)
-                reaction.lottieTintHex?.let { tint ->
-                    addValueCallback(
-                        KeyPath("**"),
-                        LottieProperty.COLOR_FILTER,
-                        LottieValueCallback(
-                            PorterDuffColorFilter(Color.parseColor(tint), PorterDuff.Mode.SRC_ATOP),
-                        ),
-                    )
-                }
-                scaleType = ImageView.ScaleType.FIT_CENTER
-                if (playLottie) configureLottie(this)
-                maxWidth = maxSidePx
-                maxHeight = maxSidePx
-            }
-        }
-        return nonClippingImage(maxSidePx).apply {
-            setImageDrawable(
-                AppCompatResources.getDrawable(context, reaction.iconRes)?.mutate()?.also { d ->
-                    DrawableCompat.setTint(d, Color.parseColor(reaction.tintHex))
-                },
-            )
-        }
+        disableOverlayTouchTarget(icon)
+        return icon
     }
 
-    private fun nonClippingImage(maxSidePx: Int): ImageView =
-        ImageView(context).apply {
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            adjustViewBounds = true
-            alpha = OverlayReactionBurstLayout.CONTENT_ALPHA
-            disableOverlayTouchTarget(this)
-            maxWidth = maxSidePx
-            maxHeight = maxSidePx
-        }
+    private fun preloadStickerIfNeeded(reaction: OverlayQuickReaction) {
+        val stem = reaction.stickerAssetStem ?: return
+        val packKey = reaction.stickerPackKey ?: OVERLAY_REACTION_STICKER_PACK
+        OverlayReactionBitmapCache.preloadSticker(context, packKey, stem)
+        OverlayReactionBitmapCache.loadSync(context, packKey, stem)
+    }
 }
 
 internal fun View.findLottieInSubtree(): LottieAnimationView? {
@@ -86,10 +59,10 @@ internal fun View.findLottieInSubtree(): LottieAnimationView? {
 }
 
 internal fun configureBurstLottie(lottie: LottieAnimationView) {
-    lottie.repeatCount = LottieDrawable.INFINITE
-    lottie.repeatMode = LottieDrawable.RESTART
+    lottie.repeatCount = com.airbnb.lottie.LottieDrawable.INFINITE
+    lottie.repeatMode = com.airbnb.lottie.LottieDrawable.RESTART
     lottie.enableMergePathsForKitKatAndAbove(true)
-    lottie.setRenderMode(RenderMode.AUTOMATIC)
+    lottie.setRenderMode(com.airbnb.lottie.RenderMode.AUTOMATIC)
     lottie.alpha = OverlayReactionBurstLayout.CONTENT_ALPHA
     disableOverlayTouchTarget(lottie)
     if (!lottie.isAnimating) lottie.playAnimation()

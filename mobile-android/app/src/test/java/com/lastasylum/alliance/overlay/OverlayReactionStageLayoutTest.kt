@@ -10,9 +10,16 @@ class OverlayReactionStageLayoutTest {
     private val dp: (Int) -> Int = { it * 2 }
 
     @Test
-    fun heroAndMiniTileSizes_useDpScale() {
-        assertEquals(192, OverlayReactionStageLayout.heroTileSizePx(dp))
-        assertEquals(80, OverlayReactionStageLayout.miniTileSizePx(dp))
+    fun heroAndMiniTileSizes_scaleWithScreenWidth() {
+        assertEquals(256, OverlayReactionStageLayout.heroTileSizePx(640, dp))
+        assertEquals(336, OverlayReactionStageLayout.heroTileSizePx(1080, dp))
+        assertEquals(107, OverlayReactionStageLayout.miniTileSizePx(640, dp))
+    }
+
+    @Test
+    fun heroTileSize_respectsMaxAndMinDp() {
+        assertEquals(336, OverlayReactionStageLayout.heroTileSizePx(2000, dp))
+        assertEquals(256, OverlayReactionStageLayout.heroTileSizePx(200, dp))
     }
 
     @Test
@@ -57,10 +64,27 @@ class OverlayReactionStageLayoutTest {
     }
 
     @Test
+    fun computeStageWindowPlacement_screenCenterUsesFullWidth() {
+        val anchor = OverlayReactionAnchorRect(
+            bounds = android.graphics.Rect(0, 0, 100, 40),
+            horizontalAlign = HorizontalAlign.SCREEN_CENTER,
+        )
+        val placement = OverlayReactionAnchorLayout.computeStageWindowPlacement(
+            anchor = anchor,
+            screenWidthPx = 1080,
+            dp = dp,
+            safeTopMinY = 100,
+        )
+        assertEquals(100, placement.y)
+        assertTrue(placement.fullScreenWidth)
+        assertEquals(android.view.Gravity.CENTER_HORIZONTAL, placement.stackContentGravity)
+    }
+
+    @Test
     fun computeStageWindowPlacement_respectsSafeTopMinY() {
         val anchor = OverlayReactionAnchorRect(
             bounds = android.graphics.Rect(0, 0, 100, 40),
-            horizontalAlign = HorizontalAlign.END,
+            horizontalAlign = HorizontalAlign.SCREEN_CENTER,
         )
         val placement = OverlayReactionAnchorLayout.computeStageWindowPlacement(
             anchor = anchor,

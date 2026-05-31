@@ -25,9 +25,9 @@ import com.airbnb.lottie.LottieAnimationView
  */
 internal object OverlayReactionBurstLayout {
     /** Slight transparency on reaction visuals (no card background). */
-    const val CONTENT_ALPHA = 0.87f
+    const val CONTENT_ALPHA = 1f
 
-    const val CAPTION_ALPHA = 0.90f
+    const val CAPTION_ALPHA = 1f
     private const val WIDTH_FRACTION = 0.56f
     private const val HEIGHT_FRACTION = 0.28f
     private const val MAX_SIDE_DP = 280

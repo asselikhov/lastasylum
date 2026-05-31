@@ -7,6 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,16 +52,80 @@ private val HudChipPaddingV = 5.dp
 internal val HudRowSpacing = 8.dp
 /** Stable width for top-right HUD — matches voice settings panel so chips do not shift on expand. */
 internal val HudTopRightMinWidth = 280.dp
-private val HudChipBackground = Color(0xB310141E)
 private val HudChipCorner = 6.dp
+private val HudChipBorderWidth = 1.dp
 private val HudBadgeOverflowPaddingTop = 10.dp
 private val HudBadgeOverflowPaddingEnd = 10.dp
 private val HudBadgeColor = Color(0xFFE53935)
 
+/** Гармоничная палитра HUD-кнопок: свой оттенок фона, обводки и иконки. */
+internal enum class OverlayHudChipAccent(
+    val backgroundTop: Color,
+    val backgroundBottom: Color,
+    val icon: Color,
+    val border: Color,
+) {
+    News(
+        backgroundTop = Color(0xE01A3048),
+        backgroundBottom = Color(0xE0101C28),
+        icon = Color(0xFF82CFFF),
+        border = Color(0x9958A8E0),
+    ),
+    Forum(
+        backgroundTop = Color(0xE02A2240),
+        backgroundBottom = Color(0xE0181228),
+        icon = Color(0xFFD4A5F5),
+        border = Color(0x999070B8),
+    ),
+    Mail(
+        backgroundTop = Color(0xE0163834),
+        backgroundBottom = Color(0xE00C2420),
+        icon = Color(0xFF5EEAD4),
+        border = Color(0x9938B8A8),
+    ),
+    Online(
+        backgroundTop = Color(0xE01E3828),
+        backgroundBottom = Color(0xE0122818),
+        icon = Color(0xFF7AE582),
+        border = Color(0x9950B860),
+    ),
+    Commands(
+        backgroundTop = Color(0xE0382E18),
+        backgroundBottom = Color(0xE0282010),
+        icon = Color(0xFFFFC470),
+        border = Color(0x99C89048),
+    ),
+    Voice(
+        backgroundTop = Color(0xE0242840),
+        backgroundBottom = Color(0xE016182C),
+        icon = Color(0xFFA5B4FF),
+        border = Color(0x997080C8),
+    ),
+    Sound(
+        backgroundTop = Color(0xE01E2848),
+        backgroundBottom = Color(0xE0121830),
+        icon = Color(0xFF90CAF9),
+        border = Color(0x996080D0),
+    ),
+    Mic(
+        backgroundTop = Color(0xE0381828),
+        backgroundBottom = Color(0xE0281018),
+        icon = Color(0xFFF48FB1),
+        border = Color(0x99B06080),
+    ),
+    Settings(
+        backgroundTop = Color(0xE0302238),
+        backgroundBottom = Color(0xE0201828),
+        icon = Color(0xFFB39DDB),
+        border = Color(0x998068A8),
+    ),
+    ;
+
+    fun mutedIcon(fraction: Float = 0.72f): Color = icon.copy(alpha = fraction)
+}
+
 /** Включённый микрофон / звук в голосовом HUD. */
 internal val HudVoiceActiveGreen = Color(0xFF66BB6A)
-
-internal val HudVoiceInactiveTint = Color(0xFF78909C)
 
 private val UpdateGoldDeep = Color(0xFFFFB300)
 private val UpdateGoldBright = Color(0xFFFFE082)
@@ -159,20 +224,29 @@ internal fun OverlayGameHudBar(
 
 @Composable
 internal fun OverlayGameHudChip(
-    tint: Color,
+    accent: OverlayHudChipAccent,
     contentDescription: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     badgeCount: Int = 0,
+    iconTint: Color? = null,
     icon: ImageVector? = null,
     painter: Painter? = null,
 ) {
     require(icon != null || painter != null) { "icon or painter required" }
     val badge = badgeCount.coerceAtLeast(0)
+    val shape = RoundedCornerShape(HudChipCorner)
+    val tint = iconTint ?: accent.icon
     Box(modifier = modifier.wrapContentSize(unbounded = true)) {
         Box(
             modifier = Modifier
-                .background(HudChipBackground, RoundedCornerShape(HudChipCorner))
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(accent.backgroundTop, accent.backgroundBottom),
+                    ),
+                    shape = shape,
+                )
+                .border(HudChipBorderWidth, accent.border.copy(alpha = 0.58f), shape)
                 .clickable(onClick = onClick)
                 .padding(horizontal = HudChipPaddingH, vertical = HudChipPaddingV)
                 .semantics { this.contentDescription = contentDescription },

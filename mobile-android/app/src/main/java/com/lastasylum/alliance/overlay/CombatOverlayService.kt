@@ -2890,7 +2890,7 @@ class CombatOverlayService : Service() {
             it.visibility == View.VISIBLE && it.isAttachedToWindow
         }
         if (host != null) {
-            OverlayReactionAnchorLayout.anchorFromView(host, HorizontalAlign.END)?.let { return it }
+            OverlayReactionAnchorLayout.anchorFromView(host, HorizontalAlign.SCREEN_CENTER)?.let { return it }
         }
         val width = resources.displayMetrics.widthPixels
         if (width <= 0) return null

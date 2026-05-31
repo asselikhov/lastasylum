@@ -22,7 +22,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -82,7 +81,8 @@ fun OverlayGameTopRightHud(
                         } else {
                             Icons.AutoMirrored.Outlined.VolumeOff
                         },
-                        tint = if (state.soundOn) HudVoiceActiveGreen else HudVoiceInactiveTint,
+                        accent = OverlayHudChipAccent.Sound,
+                        iconTint = if (state.soundOn) HudVoiceActiveGreen else null,
                         contentDescription = stringResource(
                             if (state.soundOn) {
                                 R.string.overlay_voice_sound_on_cd
@@ -94,7 +94,8 @@ fun OverlayGameTopRightHud(
                     )
                     OverlayGameHudChip(
                         icon = if (state.micOn) Icons.Outlined.Mic else Icons.Outlined.MicOff,
-                        tint = if (state.micOn) HudVoiceActiveGreen else HudVoiceInactiveTint,
+                        accent = OverlayHudChipAccent.Mic,
+                        iconTint = if (state.micOn) HudVoiceActiveGreen else null,
                         contentDescription = stringResource(
                             if (state.micOn) {
                                 R.string.overlay_voice_mic_on_cd
@@ -106,10 +107,11 @@ fun OverlayGameTopRightHud(
                     )
                     OverlayGameHudChip(
                         icon = Icons.Outlined.Settings,
-                        tint = if (state.voiceSettingsVisible) {
-                            Color(0xFF7986CB)
+                        accent = OverlayHudChipAccent.Settings,
+                        iconTint = if (state.voiceSettingsVisible) {
+                            OverlayHudChipAccent.Settings.icon
                         } else {
-                            Color(0xFF9FA8DA)
+                            OverlayHudChipAccent.Settings.mutedIcon()
                         },
                         contentDescription = stringResource(R.string.overlay_voice_settings_cd),
                         onClick = onVoiceSettingsClick,
@@ -143,7 +145,7 @@ fun OverlayGameTopRightHud(
                     }
                     OverlayGameHudChip(
                         icon = Icons.Outlined.Groups,
-                        tint = Color(0xFF81C784),
+                        accent = OverlayHudChipAccent.Online,
                         badgeCount = state.teamJoinRequestCount,
                         contentDescription = if (state.teamJoinRequestCount > 0) {
                             stringResource(
@@ -160,16 +162,17 @@ fun OverlayGameTopRightHud(
                     )
                     OverlayGameHudChip(
                         painter = painterResource(R.drawable.ic_overlay_quick_commands),
-                        tint = Color(0xFFFFB74D),
+                        accent = OverlayHudChipAccent.Commands,
                         contentDescription = stringResource(R.string.overlay_cd_commands),
                         onClick = onQuickCommandsClick,
                     )
                     OverlayGameHudChip(
                         icon = Icons.Outlined.RecordVoiceOver,
-                        tint = if (state.voiceExpanded || state.micOn || state.soundOn) {
-                            Color(0xFF7986CB)
+                        accent = OverlayHudChipAccent.Voice,
+                        iconTint = if (state.voiceExpanded || state.micOn || state.soundOn) {
+                            OverlayHudChipAccent.Voice.icon
                         } else {
-                            Color(0xFF9FA8DA)
+                            OverlayHudChipAccent.Voice.mutedIcon()
                         },
                         contentDescription = stringResource(
                             if (state.voiceExpanded) {

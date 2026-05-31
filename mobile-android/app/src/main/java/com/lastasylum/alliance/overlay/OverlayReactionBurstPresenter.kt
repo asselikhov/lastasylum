@@ -88,6 +88,7 @@ internal class OverlayReactionBurstPresenter(
         onBurstFinished: () -> Unit = {},
     ) {
         attachedWindowManager = windowManager
+        preloadReactionAssets(request)
         if (!ensureStage(windowManager)) {
             onBurstFinished()
             return
@@ -154,14 +155,14 @@ internal class OverlayReactionBurstPresenter(
         heroHost = heroContainer
         val history = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.END
+            gravity = Gravity.CENTER_HORIZONTAL
             clipChildren = false
             clipToPadding = false
         }
         historyRow = history
         val column = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.END
+            gravity = Gravity.CENTER_HORIZONTAL
             clipChildren = false
             clipToPadding = false
             setBackgroundColor(Color.TRANSPARENT)
@@ -187,9 +188,9 @@ internal class OverlayReactionBurstPresenter(
             addView(
                 column,
                 FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    Gravity.END or Gravity.TOP,
+                    Gravity.CENTER_HORIZONTAL or Gravity.TOP,
                 ),
             )
         }
@@ -200,14 +201,14 @@ internal class OverlayReactionBurstPresenter(
             addView(
                 clipHost,
                 FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
                     maxH,
-                    Gravity.END or Gravity.TOP,
+                    Gravity.CENTER_HORIZONTAL or Gravity.TOP,
                 ),
             )
         }
         val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            layout.screenWidthPx,
             WindowManager.LayoutParams.WRAP_CONTENT,
             overlayWindowType(),
             OverlayWindowLayout.reactionBurstWindowFlags(),
@@ -377,19 +378,19 @@ internal class OverlayReactionBurstPresenter(
     private fun playHeroEnter(card: FrameLayout) {
         val enterFrom = -dp(OverlayReactionStageLayout.ENTER_FROM_ANCHOR_Y_DP).toFloat()
         card.alpha = 0f
-        card.scaleX = 0.55f
-        card.scaleY = 0.55f
+        card.scaleX = 0.7f
+        card.scaleY = 0.7f
         card.translationY = enterFrom
         card.translationX = 0f
         val pop = OvershootInterpolator(1.1f)
         AnimatorSet().apply {
             playTogether(
                 ObjectAnimator.ofFloat(card, View.ALPHA, 0f, 1f).apply { duration = 280 },
-                ObjectAnimator.ofFloat(card, View.SCALE_X, 0.55f, 1.02f, 1f).apply {
+                ObjectAnimator.ofFloat(card, View.SCALE_X, 0.7f, 1.02f, 1f).apply {
                     duration = 420
                     interpolator = pop
                 },
-                ObjectAnimator.ofFloat(card, View.SCALE_Y, 0.55f, 1.02f, 1f).apply {
+                ObjectAnimator.ofFloat(card, View.SCALE_Y, 0.7f, 1.02f, 1f).apply {
                     duration = 420
                     interpolator = pop
                 },
@@ -510,13 +511,29 @@ internal class OverlayReactionBurstPresenter(
         params.gravity = placement.windowGravity
         params.x = placement.x
         params.y = placement.y
-        stageColumn?.gravity = Gravity.END
-        anchor.maxStackWidthPx?.let { maxW ->
-            historyRow?.layoutParams = (historyRow?.layoutParams as? LinearLayout.LayoutParams)?.apply {
-                width = maxW
-            }
+        if (placement.fullScreenWidth) {
+            params.width = layout.screenWidthPx
         }
+        stageColumn?.gravity = placement.stackContentGravity
+        clipHostGravity(placement.stackContentGravity)
         runCatching { wm.updateViewLayout(root, params) }
+    }
+
+    private fun clipHostGravity(contentGravity: Int) {
+        val root = stageRoot ?: return
+        val clipHost = (root as? ViewGroup)?.getChildAt(0) as? FrameLayout ?: return
+        (clipHost.getChildAt(0)?.layoutParams as? FrameLayout.LayoutParams)?.gravity =
+            contentGravity or Gravity.TOP
+    }
+
+    private fun preloadReactionAssets(request: OverlayReactionBurstRequest) {
+        decodeTextReactionId(request.reactionId)?.let { return }
+        val reaction = overlayQuickReactionById(context, request.reactionId)
+        reaction.stickerAssetStem?.let { stem ->
+            val packKey = reaction.stickerPackKey ?: OVERLAY_REACTION_STICKER_PACK
+            OverlayReactionBitmapCache.preloadSticker(context, packKey, stem)
+            OverlayReactionBitmapCache.loadSync(context, packKey, stem)
+        }
     }
 
     private fun refreshLottiePlaybackBudget() {
