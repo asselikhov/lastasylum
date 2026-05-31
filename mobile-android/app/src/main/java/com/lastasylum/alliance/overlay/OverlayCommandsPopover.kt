@@ -322,6 +322,16 @@ class OverlayCommandsPopover(
         showMenu(windowManager)
     }
 
+    /** Opens quick commands on the reactions tab without a preselected recipient. */
+    fun openReactionsTab(windowManager: WindowManager) {
+        preselectedReactionUserIds = emptySet()
+        reopenMenuOnReactionsTab = true
+        if (isShowing()) hide()
+        ensurePopoverSuppressHeld()
+        warmupOverlayRaid()
+        showMenu(windowManager)
+    }
+
     /** Opens quick commands on the reactions tab; next recipient picker preselects [userId]. */
     fun openReactionsPreselectUser(windowManager: WindowManager, userId: String) {
         val id = userId.trim()

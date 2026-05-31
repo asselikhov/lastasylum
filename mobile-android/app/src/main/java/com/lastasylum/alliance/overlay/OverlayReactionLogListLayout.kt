@@ -7,6 +7,13 @@ internal data class OverlayReactionLogDisplayRow(
     val cluster: OverlayReactionLogCluster?,
 )
 
+internal data class OverlayReactionLogStickyListLayout(
+    val grouped: List<Pair<String, List<OverlayReactionLogCluster>>>,
+    val firstUnreadItemIndex: Int,
+    val lastClusterItemIndex: Int,
+    val itemIndexToEntryId: Map<Int, String>,
+)
+
 internal fun buildOverlayReactionLogDisplayRows(
     grouped: List<Pair<String, List<OverlayReactionLogCluster>>>,
     loadingMore: Boolean,
@@ -22,6 +29,38 @@ internal fun buildOverlayReactionLogDisplayRows(
         }
     }
     return rows
+}
+
+internal fun buildStickyListLayout(
+    grouped: List<Pair<String, List<OverlayReactionLogCluster>>>,
+    loadingMore: Boolean,
+    unreadEntryIds: Set<String>,
+): OverlayReactionLogStickyListLayout {
+    var index = 0
+    var firstUnread = -1
+    var lastCluster = -1
+    val itemIndexToEntryId = mutableMapOf<Int, String>()
+    if (loadingMore) {
+        index++
+    }
+    grouped.forEach { (_, clusters) ->
+        index++
+        clusters.forEach { cluster ->
+            val entryId = cluster.representative.id
+            if (entryId in unreadEntryIds && firstUnread < 0) {
+                firstUnread = index
+            }
+            lastCluster = index
+            itemIndexToEntryId[index] = entryId
+            index++
+        }
+    }
+    return OverlayReactionLogStickyListLayout(
+        grouped = grouped,
+        firstUnreadItemIndex = firstUnread,
+        lastClusterItemIndex = lastCluster,
+        itemIndexToEntryId = itemIndexToEntryId,
+    )
 }
 
 internal fun firstUnreadDisplayIndex(

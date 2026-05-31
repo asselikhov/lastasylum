@@ -6,6 +6,7 @@ import com.lastasylum.alliance.data.cache.LaunchDiskCache
 import com.lastasylum.alliance.data.auth.AuthRepository
 import com.lastasylum.alliance.data.auth.TokenStore
 import com.lastasylum.alliance.data.chat.ChatRepository
+import com.lastasylum.alliance.data.chat.OverlayReactionLogPreferences
 import com.lastasylum.alliance.data.chat.OverlayReactionLogRepository
 import com.lastasylum.alliance.data.chat.ChatRoomsSessionCache
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
@@ -82,8 +83,14 @@ class AppContainer private constructor(context: Context) {
             }
         }
 
+    val overlayReactionLogPreferences: OverlayReactionLogPreferences =
+        OverlayReactionLogPreferences(appContext)
+
     val overlayReactionLogRepository: OverlayReactionLogRepository by lazy {
-        OverlayReactionLogRepository(chatApi = authorizedClients.chatApi)
+        OverlayReactionLogRepository(
+            chatApi = authorizedClients.chatApi,
+            preferences = overlayReactionLogPreferences,
+        )
     }
 
     val usersRepository: UsersRepository by lazy {

@@ -18,8 +18,9 @@ import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.Text
+import com.lastasylum.alliance.ui.components.premium.PremiumGlassBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,16 +54,14 @@ fun OverlayReactionLogJumpToUnreadFab(
             scaleOut(targetScale = 0.92f, animationSpec = tween(120)) +
             slideOutVertically(targetOffsetY = { -it / 4 }, animationSpec = tween(140)),
     ) {
-        Surface(
-            onClick = onClick,
+        PremiumGlassBar(
             shape = RoundedCornerShape(22.dp),
-            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.96f),
-            shadowElevation = 8.dp,
-            tonalElevation = 2.dp,
-            modifier = Modifier.semantics {
-                role = Role.Button
-                contentDescription = cd
-            },
+            modifier = Modifier
+                .semantics {
+                    role = Role.Button
+                    contentDescription = cd
+                }
+                .clickable(onClick = onClick),
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
@@ -72,7 +71,7 @@ fun OverlayReactionLogJumpToUnreadFab(
                 Icon(
                     imageVector = Icons.Outlined.ExpandLess,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(22.dp),
                 )
                 Text(
@@ -82,7 +81,7 @@ fun OverlayReactionLogJumpToUnreadFab(
                         stringResource(R.string.overlay_notifications_jump_unread_badge, unreadCount)
                     },
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             }
         }
@@ -106,16 +105,14 @@ fun OverlayReactionLogScrollToLatestFab(
             scaleOut(targetScale = 0.92f, animationSpec = tween(120)) +
             slideOutVertically(targetOffsetY = { it / 4 }, animationSpec = tween(140)),
     ) {
-        Surface(
-            onClick = onClick,
+        PremiumGlassBar(
             shape = RoundedCornerShape(22.dp),
-            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.96f),
-            shadowElevation = 8.dp,
-            tonalElevation = 2.dp,
-            modifier = Modifier.semantics {
-                role = Role.Button
-                contentDescription = cd
-            },
+            modifier = Modifier
+                .semantics {
+                    role = Role.Button
+                    contentDescription = cd
+                }
+                .clickable(onClick = onClick),
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
@@ -125,13 +122,13 @@ fun OverlayReactionLogScrollToLatestFab(
                 Icon(
                     imageVector = Icons.Outlined.ExpandMore,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(22.dp),
                 )
                 Text(
                     text = stringResource(R.string.overlay_notifications_scroll_latest),
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             }
         }

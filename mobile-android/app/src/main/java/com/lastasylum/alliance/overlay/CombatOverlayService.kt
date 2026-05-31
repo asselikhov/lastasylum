@@ -5198,6 +5198,13 @@ class CombatOverlayService : Service() {
                                                             )
                                                         }
                                                     },
+                                                    onOpenReactionsPicker = {
+                                                        hideOverlayChatTeamPanel(clearStrip = false)
+                                                        val wm = windowManager ?: systemWindowManager()
+                                                        if (wm != null) {
+                                                            overlayCommandsPopover.openReactionsTab(wm)
+                                                        }
+                                                    },
                                                 )
                                             }
                                             else -> Unit

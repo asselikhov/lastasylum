@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.lastasylum.alliance.ui.components.premium.PremiumGlassSurface
 
 @Composable
 fun OverlayReactionLogSkeleton(
@@ -50,41 +51,49 @@ fun OverlayReactionLogSkeleton(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         repeat(rowCount) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+            PremiumGlassSurface(
+                shape = RoundedCornerShape(ReactionLogCardTokens.corner),
+                shadowElevation = 3.dp,
+                showInnerGlow = true,
             ) {
-                Box(
+                Row(
                     modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(block),
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(0.55f)
-                            .height(14.dp)
-                            .clip(RoundedCornerShape(4.dp))
+                            .size(40.dp)
+                            .clip(CircleShape)
                             .background(block),
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(0.55f)
+                                .height(14.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(block),
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(0.75f)
+                                .height(12.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(block),
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(0.75f)
-                            .height(12.dp)
-                            .clip(RoundedCornerShape(4.dp))
+                            .size(56.dp)
+                            .clip(RoundedCornerShape(10.dp))
                             .background(block),
                     )
                 }
-                Spacer(modifier = Modifier.width(12.dp))
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(block),
-                )
             }
         }
     }

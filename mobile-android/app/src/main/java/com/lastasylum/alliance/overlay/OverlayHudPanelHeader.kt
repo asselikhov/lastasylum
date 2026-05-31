@@ -31,6 +31,7 @@ fun OverlayHudPanelHeader(
     subtitleTrailing: @Composable (RowScope.() -> Unit)? = null,
     onRefresh: (() -> Unit)? = null,
     refreshing: Boolean = false,
+    headerTrailing: @Composable (() -> Unit)? = null,
 ) {
     Column(
         modifier = modifier
@@ -54,7 +55,9 @@ fun OverlayHudPanelHeader(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            if (onRefresh != null && subtitleTrailing == null) {
+            if (headerTrailing != null) {
+                headerTrailing()
+            } else if (onRefresh != null && subtitleTrailing == null) {
                 IconButton(
                     onClick = onRefresh,
                     enabled = !refreshing,

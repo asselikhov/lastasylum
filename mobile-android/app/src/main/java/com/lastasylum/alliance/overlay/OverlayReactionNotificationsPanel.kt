@@ -1,14 +1,10 @@
 package com.lastasylum.alliance.overlay
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,14 +12,23 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material3.Badge
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -32,9 +37,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -44,18 +51,14 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.zIndex
-import androidx.compose.ui.platform.LocalContext
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.data.chat.OverlayReactionLogCluster
-import com.lastasylum.alliance.data.chat.OverlayReactionLogClusterPolicy
 import com.lastasylum.alliance.data.chat.OverlayReactionLogFilter
 import com.lastasylum.alliance.data.chat.OverlayReactionLogRepository
 import com.lastasylum.alliance.data.chat.OverlayReactionLogScopeFilter
 import com.lastasylum.alliance.data.chat.OverlayReactionLogVisibilityPolicy
-import com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces
 import com.lastasylum.alliance.ui.util.OVERLAY_ONLINE_PANEL_POLL_MS
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -71,6 +74,7 @@ fun OverlayReactionNotificationsPanel(
     selfUserId: String,
     onClose: () -> Unit,
     onReplyToUser: (userId: String) -> Unit,
+    onOpenReactionsPicker: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val entries by repository.entries.collectAsState()
@@ -79,19 +83,32 @@ fun OverlayReactionNotificationsPanel(
     val loadingMore by repository.loadingMore.collectAsState()
     val error by repository.error.collectAsState()
     val unreadCount by repository.unreadCount.collectAsState()
+    val unreadEntryIds by repository.unreadEntryIds.collectAsState()
     var directionFilter by remember { mutableStateOf(OverlayReactionLogFilter.All) }
     var scopeFilter by remember { mutableStateOf(OverlayReactionLogScopeFilter.All) }
     var searchQuery by remember { mutableStateOf("") }
+    var debouncedSearch by remember { mutableStateOf("") }
     var detailCluster by remember { mutableStateOf<OverlayReactionLogCluster?>(null) }
     var replySheetEntry by remember { mutableStateOf<OverlayReactionLogCluster?>(null) }
+    var showClearHistoryConfirm by remember { mutableStateOf(false) }
+    var showHeaderMenu by remember { mutableStateOf(false) }
     var initialScrollDone by remember { mutableStateOf(false) }
+    var hapticConsumedForSession by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val presenceRevision by OverlayTeamPresenceCache.revision.collectAsState()
+    val teamRevision by OverlayTeamContextCache.revision.collectAsState()
 
     LaunchedEffect(repository, selfUserId) {
         repository.setSelfUserId(selfUserId)
         repository.loadInitial()
+    }
+
+    LaunchedEffect(searchQuery) {
+        delay(300)
+        debouncedSearch = searchQuery
     }
 
     LaunchedEffect(Unit) {
@@ -115,199 +132,243 @@ fun OverlayReactionNotificationsPanel(
         }
     }
 
-    val filtered = remember(entries, directionFilter, scopeFilter, searchQuery, selfUserId) {
-        entries
-            .filter { OverlayReactionLogVisibilityPolicy.matchesFilter(it, selfUserId, directionFilter) }
-            .filter { OverlayReactionLogVisibilityPolicy.matchesScopeFilter(it, scopeFilter) }
-            .filter { OverlayReactionLogVisibilityPolicy.matchesSearchQuery(it, searchQuery) }
+    val filtered = remember(entries, directionFilter, scopeFilter, debouncedSearch, selfUserId) {
+        OverlayReactionNotificationsDeriver.filterEntries(
+            entries = entries,
+            selfUserId = selfUserId,
+            directionFilter = directionFilter,
+            scopeFilter = scopeFilter,
+            searchQuery = debouncedSearch,
+        )
     }
 
     val clustered = remember(filtered, selfUserId) {
-        OverlayReactionLogClusterPolicy.clusterEntries(filtered, selfUserId)
+        OverlayReactionNotificationsDeriver.clusterFiltered(filtered, selfUserId)
     }
 
     val grouped = remember(clustered) {
-        clustered.groupBy { overlayReactionLogDateHeaderKey(it.representative.createdAt) }
-            .toList()
-            .sortedBy { (_, group) -> group.firstOrNull()?.representative?.id.orEmpty() }
-            .map { (headerKey, groupClusters) ->
-                headerKey to groupClusters.sortedBy { it.representative.id }
-            }
+        OverlayReactionNotificationsDeriver.groupClusters(clustered)
     }
 
-    val displayRows = remember(grouped, loadingMore) {
-        buildOverlayReactionLogDisplayRows(grouped, loadingMore)
+    val listLayout = remember(grouped, loadingMore, unreadEntryIds) {
+        buildStickyListLayout(grouped, loadingMore, unreadEntryIds)
     }
 
-    val firstUnreadIndex = remember(displayRows, unreadCount, selfUserId) {
-        if (unreadCount <= 0) {
-            -1
-        } else {
-            firstUnreadDisplayIndex(displayRows) { cluster ->
-                repository.isEntryUnread(cluster.representative)
-            }
+    val onlineUserIds = remember(clustered, presenceRevision, teamRevision) {
+        OverlayReactionNotificationsDeriver.resolveOnlineUserIds(clustered)
+    }
+
+    val filterKey = remember(directionFilter, scopeFilter, debouncedSearch) {
+        OverlayReactionNotificationsDeriver.filterKey(directionFilter, scopeFilter, debouncedSearch)
+    }
+
+    var savedScrollIndex by rememberSaveable(filterKey) { mutableIntStateOf(0) }
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = savedScrollIndex)
+
+    val firstUnreadIndex = listLayout.firstUnreadItemIndex
+    val lastClusterIndex = listLayout.lastClusterItemIndex
+
+    val isNearBottom by remember(listState, lastClusterIndex) {
+        derivedStateOf {
+            if (lastClusterIndex < 0) return@derivedStateOf false
+            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            lastVisible >= lastClusterIndex - 1
+        }
+    }
+    val isFirstUnreadVisible by remember(listState, firstUnreadIndex) {
+        derivedStateOf {
+            if (firstUnreadIndex < 0) return@derivedStateOf true
+            listState.layoutInfo.visibleItemsInfo.any { it.index == firstUnreadIndex }
+        }
+    }
+    val showJumpToUnread by remember(unreadCount, firstUnreadIndex, isFirstUnreadVisible, isNearBottom) {
+        derivedStateOf {
+            unreadCount > 0 && firstUnreadIndex >= 0 && !isFirstUnreadVisible && !isNearBottom
+        }
+    }
+    val showScrollToLatest by remember(isNearBottom, grouped) {
+        derivedStateOf { grouped.isNotEmpty() && !isNearBottom }
+    }
+    val animatedPreviewIds by remember(listState, listLayout.itemIndexToEntryId) {
+        derivedStateOf {
+            OverlayReactionPreviewAnimationPolicy.resolveAnimatedEntryIds(
+                visibleItems = listState.layoutInfo.visibleItemsInfo,
+                itemIndexToEntryId = listLayout.itemIndexToEntryId,
+                layoutInfo = listState.layoutInfo,
+            )
         }
     }
 
-    val lastClusterIndex = remember(displayRows) {
-        lastClusterDisplayIndex(displayRows)
-    }
-
-    var lastHapticEntryId by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(entries.firstOrNull()?.id) {
+    LaunchedEffect(entries.firstOrNull()?.id, unreadEntryIds) {
         val newest = entries.firstOrNull() ?: return@LaunchedEffect
-        if (newest.id != lastHapticEntryId && repository.isEntryUnread(newest)) {
+        if (!hapticConsumedForSession && newest.id in unreadEntryIds) {
             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-            lastHapticEntryId = newest.id
+            hapticConsumedForSession = true
         }
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
-        OverlayHudPanelHeader(
-            title = stringResource(R.string.overlay_notifications_title),
-            onClose = onClose,
-            onRefresh = { repository.refresh() },
-            refreshing = refreshing,
+    LaunchedEffect(error, clustered.isNotEmpty()) {
+        val message = error ?: return@LaunchedEffect
+        if (clustered.isEmpty()) return@LaunchedEffect
+        val text = message.ifBlank {
+            context.getString(R.string.overlay_notifications_reaction_failed)
+        }
+        val result = snackbarHostState.showSnackbar(
+            message = text,
+            actionLabel = context.getString(R.string.overlay_notifications_retry),
         )
-        OverlayReactionLogFiltersBar(
-            directionFilter = directionFilter,
-            onDirectionFilter = { directionFilter = it },
-            scopeFilter = scopeFilter,
-            onScopeFilter = { scopeFilter = it },
-            searchQuery = searchQuery,
-            onSearchQuery = { searchQuery = it },
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-        ) {
-            when {
-                loading && clustered.isEmpty() -> {
-                    OverlayReactionLogSkeleton(
-                        modifier = Modifier.align(Alignment.TopCenter),
-                    )
+        repository.clearError()
+        if (result == SnackbarResult.ActionPerformed) {
+            repository.refresh()
+        }
+    }
+
+    LaunchedEffect(listState.isScrollInProgress, filterKey) {
+        snapshotFlow { listState.isScrollInProgress }
+            .distinctUntilChanged()
+            .collect { scrolling ->
+                if (!scrolling) {
+                    savedScrollIndex = listState.firstVisibleItemIndex
                 }
-                error != null && clustered.isEmpty() -> {
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.overlay_notifications_error),
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                        TextButton(onClick = { repository.refresh() }) {
-                            Text(stringResource(R.string.overlay_notifications_retry))
+            }
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            OverlayHudPanelHeader(
+                title = stringResource(R.string.overlay_notifications_title),
+                subtitle = stringResource(R.string.overlay_notifications_subtitle),
+                onClose = onClose,
+                subtitleTrailing = {
+                    if (unreadCount > 0) {
+                        Badge {
+                            Text(
+                                text = if (unreadCount > 99) "99+" else unreadCount.toString(),
+                            )
                         }
                     }
-                }
-                clustered.isEmpty() -> {
-                    Box(modifier = Modifier.fillMaxSize()) {
+                },
+                headerTrailing = {
+                    IconButton(
+                        onClick = { showHeaderMenu = true },
+                        enabled = !loading,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.MoreVert,
+                            contentDescription = stringResource(
+                                R.string.overlay_notifications_menu_clear_history,
+                            ),
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showHeaderMenu,
+                        onDismissRequest = { showHeaderMenu = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(stringResource(R.string.overlay_notifications_menu_clear_history))
+                            },
+                            onClick = {
+                                showHeaderMenu = false
+                                OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
+                                showClearHistoryConfirm = true
+                            },
+                        )
+                    }
+                },
+            )
+            if (refreshing) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+            OverlayReactionLogFiltersBar(
+                directionFilter = directionFilter,
+                onDirectionFilter = { directionFilter = it },
+                scopeFilter = scopeFilter,
+                onScopeFilter = { scopeFilter = it },
+                searchQuery = searchQuery,
+                onSearchQuery = { searchQuery = it },
+            )
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+            ) {
+                val compactLayout = maxWidth < 340.dp
+                when {
+                    loading && clustered.isEmpty() -> {
+                        OverlayReactionLogSkeleton(
+                            modifier = Modifier.align(Alignment.TopCenter),
+                        )
+                    }
+                    error != null && clustered.isEmpty() -> {
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.overlay_notifications_error),
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                            TextButton(onClick = { repository.refresh() }) {
+                                Text(stringResource(R.string.overlay_notifications_retry))
+                            }
+                        }
+                    }
+                    clustered.isEmpty() -> {
                         EmptyNotificationsState(
                             directionFilter = directionFilter,
+                            onOpenReactionsPicker = onOpenReactionsPicker,
                             modifier = Modifier.align(Alignment.Center),
                         )
                     }
-                }
-                else -> {
-                    val listState = rememberLazyListState()
-                    val isNearBottom by remember(listState, lastClusterIndex) {
-                        derivedStateOf {
-                            if (lastClusterIndex < 0) return@derivedStateOf false
-                            val info = listState.layoutInfo
-                            val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: -1
-                            lastVisible >= lastClusterIndex - 1
+                    else -> {
+                        LaunchedEffect(listState, listLayout.itemIndexToEntryId.size) {
+                            snapshotFlow { listState.firstVisibleItemIndex }
+                                .distinctUntilChanged()
+                                .collect { firstIndex ->
+                                    if (firstIndex <= 2) repository.loadMore()
+                                }
                         }
-                    }
-                    val isFirstUnreadVisible by remember(listState, firstUnreadIndex) {
-                        derivedStateOf {
-                            if (firstUnreadIndex < 0) return@derivedStateOf true
-                            listState.layoutInfo.visibleItemsInfo.any { it.index == firstUnreadIndex }
-                        }
-                    }
-                    val showJumpToUnread by remember(
-                        unreadCount,
-                        firstUnreadIndex,
-                        isFirstUnreadVisible,
-                        isNearBottom,
-                    ) {
-                        derivedStateOf {
-                            unreadCount > 0 &&
-                                firstUnreadIndex >= 0 &&
-                                !isFirstUnreadVisible &&
-                                !isNearBottom
-                        }
-                    }
-                    val showScrollToLatest by remember(isNearBottom, displayRows.size) {
-                        derivedStateOf {
-                            displayRows.isNotEmpty() && !isNearBottom
-                        }
-                    }
 
-                    LaunchedEffect(listState, displayRows.size) {
-                        snapshotFlow { listState.firstVisibleItemIndex }
-                            .distinctUntilChanged()
-                            .collect { firstIndex ->
-                                if (firstIndex <= 2) repository.loadMore()
+                        LaunchedEffect(lastClusterIndex, loading, clustered.isNotEmpty()) {
+                            if (!loading && lastClusterIndex >= 0 && !initialScrollDone) {
+                                listState.scrollToItem(lastClusterIndex)
+                                initialScrollDone = true
+                                repository.markAllRead()
                             }
-                    }
-
-                    LaunchedEffect(lastClusterIndex, loading, clustered.isNotEmpty()) {
-                        if (!loading && lastClusterIndex >= 0 && !initialScrollDone) {
-                            listState.scrollToItem(lastClusterIndex)
-                            initialScrollDone = true
-                            repository.markAllRead()
                         }
-                    }
 
-                    LaunchedEffect(isNearBottom) {
-                        if (isNearBottom && clustered.isNotEmpty()) {
-                            repository.markAllRead()
-                        }
-                    }
-
-                    LaunchedEffect(listState, lastClusterIndex) {
-                        snapshotFlow { isNearBottom }
-                            .distinctUntilChanged()
-                            .collect { nearBottom ->
-                                if (nearBottom) {
-                                    delay(500)
-                                    if (isNearBottom) {
-                                        repository.markAllRead()
+                        LaunchedEffect(listState, lastClusterIndex, clustered.isNotEmpty()) {
+                            snapshotFlow { listState.isScrollInProgress to isNearBottom }
+                                .distinctUntilChanged()
+                                .collect { (scrolling, nearBottom) ->
+                                    if (!scrolling && nearBottom && clustered.isNotEmpty()) {
+                                        delay(300)
+                                        if (!listState.isScrollInProgress && isNearBottom) {
+                                            repository.markAllRead()
+                                        }
                                     }
                                 }
-                            }
-                    }
+                        }
 
-                    PullToRefreshBox(
-                        isRefreshing = refreshing,
-                        onRefresh = { repository.refresh() },
-                        modifier = Modifier.fillMaxSize(),
-                    ) {
-                        LazyColumn(
-                            state = listState,
+                        PullToRefreshBox(
+                            isRefreshing = refreshing,
+                            onRefresh = { repository.refresh() },
                             modifier = Modifier.fillMaxSize(),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                horizontal = com.lastasylum.alliance.ui.theme.SquadRelayDimens.contentPaddingHorizontal,
-                                vertical = 8.dp,
-                            ),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            itemsIndexed(
-                                items = displayRows,
-                                key = { _, row ->
-                                    when {
-                                        row.cluster != null -> "cluster-${row.cluster.representative.id}"
-                                        row.headerKey != null -> "header-${row.headerKey}"
-                                        else -> "loading-more"
-                                    }
-                                },
-                            ) { _, row ->
-                                when {
-                                    row.cluster == null && row.headerKey == null -> {
+                            LazyColumn(
+                                state = listState,
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                    horizontal = com.lastasylum.alliance.ui.theme.SquadRelayDimens.contentPaddingHorizontal,
+                                    vertical = 8.dp,
+                                ),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                if (loadingMore) {
+                                    item(key = "loading-more", contentType = 2) {
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxWidth()
@@ -317,102 +378,107 @@ fun OverlayReactionNotificationsPanel(
                                             CircularProgressIndicator(modifier = Modifier.size(24.dp))
                                         }
                                     }
-                                    row.headerKey != null -> {
-                                        Text(
-                                            text = overlayReactionLogDateHeaderLabel(row.headerKey),
-                                            style = MaterialTheme.typography.labelLarge,
-                                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier
-                                                .padding(vertical = 4.dp)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(PremiumSurfaces.layer1().copy(alpha = 0.35f))
-                                                .padding(horizontal = 10.dp, vertical = 4.dp),
+                                }
+                                listLayout.grouped.forEach { (headerKey, clusters) ->
+                                    stickyHeader(key = "header-$headerKey", contentType = 0) {
+                                        OverlayReactionLogDateHeader(
+                                            label = overlayReactionLogDateHeaderLabel(headerKey),
                                         )
                                     }
-                                    row.cluster != null -> {
-                                        val cluster = row.cluster
+                                    items(
+                                        items = clusters,
+                                        key = { "cluster-${it.representative.id}" },
+                                        contentType = { 1 },
+                                    ) { cluster ->
                                         val entry = cluster.representative
-                                        val incoming = OverlayReactionLogVisibilityPolicy.isIncoming(entry, selfUserId)
-                                        val unread = repository.isEntryUnread(entry)
-                                        OverlayReactionLogSwipeRow(
-                                            enabled = incoming,
-                                            onReply = { onReplyToUser(entry.senderUserId) },
-                                        ) {
-                                            OverlayReactionLogEntryRow(
-                                                cluster = cluster,
-                                                selfUserId = selfUserId,
-                                                unreadHighlight = unread,
-                                                onClick = { detailCluster = cluster },
-                                                onLongClick = if (incoming) {
-                                                    {
-                                                        OverlayChatInteractionHold
-                                                            .prepareOverlayModalInteraction(true)
-                                                        replySheetEntry = cluster
-                                                    }
-                                                } else {
-                                                    null
-                                                },
-                                                onQuickReply = if (incoming) {
-                                                    {
-                                                        OverlayChatInteractionHold
-                                                            .prepareOverlayModalInteraction(true)
-                                                        replySheetEntry = cluster
-                                                    }
-                                                } else {
-                                                    null
-                                                },
-                                                onToggleEmojiReaction = { emoji ->
-                                                    repository.toggleLogEntryReaction(entry.id, emoji)
-                                                },
-                                            )
-                                        }
+                                        val incoming = OverlayReactionLogVisibilityPolicy.isIncoming(
+                                            entry,
+                                            selfUserId,
+                                        )
+                                        OverlayReactionLogEntryRow(
+                                            cluster = cluster,
+                                            selfUserId = selfUserId,
+                                            unreadHighlight = entry.id in unreadEntryIds,
+                                            compactLayout = compactLayout,
+                                            playAnimatedPreview = entry.id in animatedPreviewIds,
+                                            isOnline = entry.senderUserId.trim() in onlineUserIds,
+                                            onClick = { detailCluster = cluster },
+                                            onLongClick = if (incoming) {
+                                                {
+                                                    OverlayChatInteractionHold
+                                                        .prepareOverlayModalInteraction(true)
+                                                    replySheetEntry = cluster
+                                                }
+                                            } else {
+                                                null
+                                            },
+                                            onQuickReply = if (incoming) {
+                                                { onReplyToUser(entry.senderUserId) }
+                                            } else {
+                                                null
+                                            },
+                                            onToggleEmojiReaction = { emoji ->
+                                                repository.toggleLogEntryReaction(entry.id, emoji)
+                                            },
+                                        )
                                     }
                                 }
                             }
                         }
-                    }
 
-                    OverlayReactionLogJumpToUnreadFab(
-                        visible = showJumpToUnread,
-                        unreadCount = unreadCount,
-                        onClick = {
-                            if (firstUnreadIndex >= 0) {
-                                scope.launch {
-                                    listState.animateScrollToItem(firstUnreadIndex)
+                        OverlayReactionLogJumpToUnreadFab(
+                            visible = showJumpToUnread,
+                            unreadCount = unreadCount,
+                            onClick = {
+                                if (firstUnreadIndex >= 0) {
+                                    scope.launch {
+                                        listState.animateScrollToItem(firstUnreadIndex)
+                                    }
                                 }
-                            }
-                        },
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .padding(top = 8.dp)
-                            .zIndex(6f),
-                    )
-                    OverlayReactionLogScrollToLatestFab(
-                        visible = showScrollToLatest,
-                        onClick = {
-                            if (lastClusterIndex >= 0) {
-                                scope.launch {
-                                    listState.animateScrollToItem(lastClusterIndex)
-                                    repository.markAllRead()
+                            },
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = 8.dp)
+                                .zIndex(6f),
+                        )
+                        OverlayReactionLogScrollToLatestFab(
+                            visible = showScrollToLatest,
+                            onClick = {
+                                if (lastClusterIndex >= 0) {
+                                    scope.launch {
+                                        listState.animateScrollToItem(lastClusterIndex)
+                                        repository.markAllRead()
+                                    }
                                 }
-                            }
-                        },
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(end = 8.dp, bottom = 12.dp)
-                            .zIndex(6f),
-                    )
+                            },
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(end = 8.dp, bottom = 12.dp)
+                                .zIndex(6f),
+                        )
+                    }
                 }
             }
         }
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 8.dp),
+        )
     }
 
     detailCluster?.let { cluster ->
+        val entry = cluster.representative
+        val incoming = OverlayReactionLogVisibilityPolicy.isIncoming(entry, selfUserId)
         OverlayReactionLogDetailSheet(
             cluster = cluster,
             selfUserId = selfUserId,
             onDismiss = { detailCluster = null },
+            onReplyToUser = if (incoming) onReplyToUser else null,
+            onToggleEmojiReaction = { emoji ->
+                repository.toggleLogEntryReaction(entry.id, emoji)
+            },
         )
     }
 
@@ -424,6 +490,50 @@ fun OverlayReactionNotificationsPanel(
             onDismiss = { replySheetEntry = null },
             onToggleEmoji = { emoji ->
                 repository.toggleLogEntryReaction(entry.id, emoji)
+                replySheetEntry = null
+            },
+        )
+    }
+
+    if (showClearHistoryConfirm) {
+        OverlayAwareAlertDialog(
+            onDismissRequest = {
+                showClearHistoryConfirm = false
+                OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
+            },
+            title = {
+                Text(
+                    text = stringResource(R.string.overlay_notifications_clear_confirm_title),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.overlay_notifications_clear_confirm_message),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showClearHistoryConfirm = false
+                        OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
+                        repository.clearHistoryForUser()
+                    },
+                ) {
+                    Text(stringResource(R.string.overlay_notifications_clear_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showClearHistoryConfirm = false
+                        OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
+                    },
+                ) {
+                    Text(stringResource(R.string.overlay_notifications_clear_cancel))
+                }
             },
         )
     }
@@ -432,6 +542,7 @@ fun OverlayReactionNotificationsPanel(
 @Composable
 private fun EmptyNotificationsState(
     directionFilter: OverlayReactionLogFilter,
+    onOpenReactionsPicker: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -443,7 +554,7 @@ private fun EmptyNotificationsState(
             Icons.Outlined.Notifications,
             contentDescription = null,
             modifier = Modifier.size(48.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
         )
         Spacer(modifier = Modifier.height(12.dp))
         Text(
@@ -459,66 +570,11 @@ private fun EmptyNotificationsState(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
-    }
-}
-
-@Composable
-private fun OverlayReactionLogDetailSheet(
-    cluster: OverlayReactionLogCluster,
-    selfUserId: String,
-    onDismiss: () -> Unit,
-) {
-    val entry = cluster.representative
-    OverlayAwareBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+        TextButton(
+            onClick = onOpenReactionsPicker,
+            modifier = Modifier.padding(top = 8.dp),
         ) {
-            if (cluster.mergeCount > 1) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                ) {
-                    cluster.entries.forEach { item ->
-                        OverlayReactionLogMiniPreview(
-                            reactionId = item.reaction,
-                            visibility = item.visibility,
-                            previewSizeDp = 72,
-                            showLabel = false,
-                            playAnimatedPreview = true,
-                            compact = false,
-                        )
-                    }
-                }
-            } else {
-                OverlayReactionLogMiniPreview(
-                    reactionId = entry.reaction,
-                    visibility = entry.visibility,
-                    previewSizeDp = 140,
-                    showLabel = false,
-                    playAnimatedPreview = true,
-                    compact = false,
-                )
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = overlayReactionLogNarrative(entry, selfUserId, includeSenderName = true),
-                style = MaterialTheme.typography.bodyLarge,
-                textAlign = TextAlign.Center,
-            )
-            val timeLine = formatOverlayReactionLogTimeLabel(entry.createdAt)
-            if (timeLine.isNotBlank()) {
-                Text(
-                    text = timeLine,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
+            Text(stringResource(R.string.overlay_notifications_open_reactions))
         }
     }
 }
