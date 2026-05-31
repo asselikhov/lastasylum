@@ -240,28 +240,80 @@ export class TeamForumService {
   }
 
   private async countUnreadForumMessages(
+    teamId: Types.ObjectId,
     userId: string,
     topicIds: Types.ObjectId[],
   ): Promise<Map<string, number>> {
     const out = new Map<string, number>();
     if (topicIds.length === 0) return out;
-    const readByTopic = await this.readStatesByTopicIds(userId, topicIds);
-    await Promise.all(
-      topicIds.map(async (topicOid) => {
-        const key = topicOid.toString();
-        const lastRead = readByTopic.get(key);
-        const filter: Record<string, unknown> = {
-          topicId: topicOid,
+
+    const readStateCollection = this.topicReadStateModel.collection.name;
+    const rows = await this.messageModel.aggregate<{
+      _id: Types.ObjectId;
+      count: number;
+    }>([
+      {
+        $match: {
+          teamId,
+          topicId: { $in: topicIds },
           deletedAt: null,
           senderUserId: { $ne: userId },
-        };
-        if (lastRead && Types.ObjectId.isValid(lastRead)) {
-          filter._id = { $gt: new Types.ObjectId(lastRead) };
-        }
-        const n = await this.messageModel.countDocuments(filter).exec();
-        out.set(key, n);
-      }),
-    );
+        },
+      },
+      {
+        $lookup: {
+          from: readStateCollection,
+          let: { topicOid: '$topicId' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$topicId', '$$topicOid'] },
+                    { $eq: ['$userId', userId] },
+                  ],
+                },
+              },
+            },
+            { $project: { lastReadMessageId: 1, _id: 0 } },
+            { $limit: 1 },
+          ],
+          as: 'readState',
+        },
+      },
+      {
+        $addFields: {
+          lastReadOid: {
+            $convert: {
+              input: { $arrayElemAt: ['$readState.lastReadMessageId', 0] },
+              to: 'objectId',
+              onError: null,
+              onNull: null,
+            },
+          },
+        },
+      },
+      {
+        $match: {
+          $expr: {
+            $or: [
+              { $eq: ['$lastReadOid', null] },
+              { $gt: ['$_id', '$lastReadOid'] },
+            ],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: '$topicId',
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    for (const row of rows) {
+      out.set(row._id.toString(), row.count);
+    }
     return out;
   }
 
@@ -516,8 +568,22 @@ export class TeamForumService {
 
   /** Sum of per-topic unread message counts for the member (excludes own messages). */
   async sumUnreadMessages(teamId: string, userId: string): Promise<number> {
-    const topics = await this.listTopics(teamId, userId);
-    return topics.reduce((sum, t) => sum + (t.unreadCount ?? 0), 0);
+    await this.teams.getTeamIfMemberOrThrow(teamId, userId);
+    const tid = new Types.ObjectId(teamId);
+    const topicLimit = 100;
+    const rows = await this.topicModel
+      .find({ teamId: tid })
+      .select('_id')
+      .sort({ lastMessageAt: -1, updatedAt: -1 })
+      .limit(topicLimit)
+      .lean();
+    const topicIds = rows.map((r) => (r as { _id: Types.ObjectId })._id);
+    const unreadMap = await this.countUnreadForumMessages(tid, userId, topicIds);
+    let sum = 0;
+    for (const count of unreadMap.values()) {
+      sum += count;
+    }
+    return sum;
   }
 
   async listTopics(
@@ -541,7 +607,7 @@ export class TeamForumService {
       { $group: { _id: '$topicId', count: { $sum: 1 } } },
     ]);
     const countMap = new Map(countAgg.map((c) => [c._id.toString(), c.count]));
-    const unreadMap = await this.countUnreadForumMessages(userId, topicIds);
+    const unreadMap = await this.countUnreadForumMessages(tid, userId, topicIds);
     const lastReadMap = await this.getLastReadMessageIdsByTopicIds(
       userId,
       topicIds,
