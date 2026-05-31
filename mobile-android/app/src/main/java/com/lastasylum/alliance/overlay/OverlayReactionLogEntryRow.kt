@@ -45,7 +45,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -391,8 +391,8 @@ private fun NarrativeClickableBlock(
         if (timeLine.isNotBlank()) {
             Text(
                 text = timeLine,
-                style = MaterialTheme.typography.bodySmall.copy(
-                    fontFamily = FontFamily.Monospace,
+                style = MaterialTheme.typography.bodySmall.merge(
+                    TextStyle(fontFeatureSettings = "tnum"),
                 ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
                 textAlign = if (alignTimeEnd) TextAlign.End else TextAlign.Start,

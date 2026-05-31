@@ -5,7 +5,8 @@ import java.util.Properties
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("com.google.devtools.ksp") version "1.9.24-1.0.20"
+    id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.devtools.ksp") version "2.0.21-1.0.28"
     // Firebase: google-services.json → BuildConfig; init in SquadRelayApplication (no gms plugin:
     // devDebug uses applicationIdSuffix ".debug" and needs a second Firebase Android app).
 }
@@ -205,10 +206,6 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
-    }
-
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.14"
     }
 
     packaging {
