@@ -48,8 +48,8 @@ internal class OverlayReactionTileFactory(
         val card = FrameLayout(context).apply {
             clipChildren = false
             clipToPadding = false
-            background = OverlayReactionBurstLayout.slotCardBackground()
         }
+        applyTileChrome(card, request, mode)
         val column = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
@@ -134,13 +134,28 @@ internal class OverlayReactionTileFactory(
                 )
             }
         } else {
-            card.contentDescription = OverlayReactionCaption.miniContentDescription(
-                context,
-                request.fromDisplayName,
-                request.broadcast,
-            )
-            null
+            OverlayReactionCaption.createMiniNick(
+                context = context,
+                displayName = request.fromDisplayName,
+                broadcast = request.broadcast,
+                maxWidthPx = tilePx,
+            ).also { nick ->
+                column.addView(
+                    nick,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply {
+                        topMargin = dp(2)
+                    },
+                )
+            }
         }
+        card.contentDescription = OverlayReactionCaption.miniContentDescription(
+            context,
+            request.fromDisplayName,
+            request.broadcast,
+        )
         card.addView(
             column,
             FrameLayout.LayoutParams(
@@ -149,7 +164,13 @@ internal class OverlayReactionTileFactory(
                 Gravity.CENTER,
             ),
         )
-        return OverlayReactionBuiltTile(card, captionView, visualHost, messageView, lottie)
+        return OverlayReactionBuiltTile(
+            card = card,
+            captionView = if (mode == OverlayReactionTileMode.HERO) captionView else null,
+            visualHost = visualHost,
+            messageView = messageView,
+            lottie = lottie,
+        )
     }
 
     fun rebuildVisual(
@@ -213,6 +234,42 @@ internal class OverlayReactionTileFactory(
         }
     }
 
+    private fun applyTileChrome(
+        card: FrameLayout,
+        request: OverlayReactionBurstRequest,
+        mode: OverlayReactionTileMode,
+    ) {
+        val cornerPx = dp(OverlayReactionBurstLayout.CARD_CORNER_DP).toFloat()
+        val ringColor = OverlayReactionUserAccent.ringColorFor(request.fromUserId)
+        when (mode) {
+            OverlayReactionTileMode.HERO -> {
+                val scopeHex = if (request.broadcast) {
+                    OverlayReactionBurstLayout.CARD_STROKE_BROADCAST_HEX
+                } else {
+                    OverlayReactionBurstLayout.CARD_STROKE_PRIVATE_HEX
+                }
+                val scopeColor = Color.parseColor(scopeHex)
+                card.background = OverlayReactionUserAccent.strokeDrawable(
+                    scopeColor,
+                    cornerPx,
+                    dp(2).coerceAtLeast(1),
+                )
+                card.foreground = OverlayReactionUserAccent.strokeDrawable(
+                    ringColor,
+                    cornerPx,
+                    dp(1).coerceAtLeast(1),
+                )
+            }
+            OverlayReactionTileMode.MINI -> {
+                card.background = OverlayReactionUserAccent.strokeDrawable(
+                    ringColor,
+                    cornerPx,
+                    dp(1).coerceAtLeast(1),
+                )
+            }
+        }
+    }
+
     private fun addHeroGlow(host: FrameLayout, accentHex: String, sizePx: Int) {
         val accent = runCatching { Color.parseColor(accentHex) }.getOrDefault(Color.parseColor("#66FFE082"))
         val glow = View(context).apply {
@@ -220,7 +277,12 @@ internal class OverlayReactionTileFactory(
                 shape = GradientDrawable.OVAL
                 gradientType = GradientDrawable.RADIAL_GRADIENT
                 gradientRadius = sizePx * 0.55f
-                setColors(intArrayOf(Color.argb(38, Color.red(accent), Color.green(accent), Color.blue(accent)), Color.TRANSPARENT))
+                setColors(
+                    intArrayOf(
+                        Color.argb(38, Color.red(accent), Color.green(accent), Color.blue(accent)),
+                        Color.TRANSPARENT,
+                    ),
+                )
             }
         }
         host.addView(

@@ -217,6 +217,12 @@ private const val CHAT_STICKER_REACTION_ID_PREFIX = "sticker/"
 internal fun encodeChatStickerReactionId(packKey: String, stem: String): String =
     "$CHAT_STICKER_REACTION_ID_PREFIX$packKey/$stem"
 
+internal fun isStickerOrGifReactionId(reactionId: String): Boolean {
+    if (decodeChatStickerReactionId(reactionId) != null) return true
+    if (reactionId.startsWith("sticker_")) return true
+    return reactionId.startsWith("gif_")
+}
+
 internal fun decodeChatStickerReactionId(reactionId: String): Pair<String, String>? {
     if (!reactionId.startsWith(CHAT_STICKER_REACTION_ID_PREFIX)) return null
     val rest = reactionId.removePrefix(CHAT_STICKER_REACTION_ID_PREFIX)

@@ -24,6 +24,9 @@ internal object OverlayReactionStageLayout {
     const val TEXT_HERO_SP = 24f
     const val TEXT_HERO_MAX_LINES = 4
     const val TEXT_MINI_SP = 11f
+    const val STAGGER_MS = 80L
+    const val DEMOTE_ANIM_MS = 280L
+    const val MINI_SCALE_RATIO = MINI_HERO_RATIO
 
     fun heroTileSizePx(screenWidthPx: Int, dp: (Int) -> Int): Int =
         minOf((screenWidthPx * HERO_WIDTH_FRACTION).toInt(), dp(HERO_MAX_DP))

@@ -99,4 +99,35 @@ internal object OverlayReactionCaption {
         )
         return context.getString(R.string.overlay_reaction_burst_caption_line, nick, scope)
     }
+
+    fun createMiniNick(
+        context: Context,
+        displayName: String,
+        broadcast: Boolean,
+        maxWidthPx: Int,
+    ): TextView {
+        val nick = formatReactionDisplayNick(displayName)
+        val scope = context.getString(
+            if (broadcast) {
+                R.string.overlay_reaction_burst_caption_broadcast
+            } else {
+                R.string.overlay_reaction_burst_caption_private
+            },
+        )
+        return TextView(context).apply {
+            text = nick
+            contentDescription = context.getString(R.string.overlay_reaction_mini_tooltip, nick, scope)
+            setTextColor(ScopeColor)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 9f)
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+            gravity = Gravity.CENTER_HORIZONTAL
+            textAlignment = android.view.View.TEXT_ALIGNMENT_CENTER
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            maxWidth = maxWidthPx
+            setShadowLayer(4f, 0f, 1f, Color.parseColor("#99000000"))
+            alpha = OverlayReactionBurstLayout.CAPTION_ALPHA
+            disableOverlayTouchTarget(this)
+        }
+    }
 }

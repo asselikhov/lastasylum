@@ -777,6 +777,8 @@
     <string name="overlay_reaction_burst_sender_compact">%1$s</string>
     <string name="overlay_reaction_burst_sender_at">@%1$s</string>
     <string name="overlay_reaction_burst_merge_count">×%1$d</string>
+    <string name="overlay_reaction_history_overflow">+%1$d</string>
+    <string name="overlay_reaction_mini_tooltip">%1$s · %2$s</string>
     <string name="overlay_reaction_burst_badge_broadcast">Реакция всем в игре</string>
     <string name="overlay_reaction_burst_badge_private">Личная реакция</string>
     <string name="overlay_reaction_socket_offline">Нет связи с чатом — реакция не отправлена</string>

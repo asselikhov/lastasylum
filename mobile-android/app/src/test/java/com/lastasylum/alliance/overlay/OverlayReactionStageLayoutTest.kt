@@ -54,6 +54,17 @@ class OverlayReactionStageLayoutTest {
     }
 
     @Test
+    fun polishConstants_matchPlan() {
+        assertEquals(80L, OverlayReactionStageLayout.STAGGER_MS)
+        assertEquals(280L, OverlayReactionStageLayout.DEMOTE_ANIM_MS)
+        assertEquals(
+            OverlayReactionStageLayout.MINI_HERO_RATIO,
+            OverlayReactionStageLayout.MINI_SCALE_RATIO,
+            0.001f,
+        )
+    }
+
+    @Test
     fun clampStackWidth_respectsAnchorMax() {
         val anchor = OverlayReactionAnchorRect(
             bounds = android.graphics.Rect(0, 0, 200, 50),
