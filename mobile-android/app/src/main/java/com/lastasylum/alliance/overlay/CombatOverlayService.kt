@@ -1584,6 +1584,8 @@ class CombatOverlayService : Service() {
                             dismissRectCount = (chatStripHost as? OverlayStripPassthroughFrameLayout)
                                 ?.dismissRectsInCompose?.size ?: 0,
                             zOrderLifted = chatStripZOrderLifted,
+                            hudStatusVisible = overlayStatusHudHost?.visibility == View.VISIBLE,
+                            hudTopRightVisible = overlayTopRightHudHost?.visibility == View.VISIBLE,
                         )
                     }
                     syncOverlayIngamePresence(inGameProbe = inGame)
@@ -2264,9 +2266,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun forwardOverlayRaidMessageToViewModel(msg: ChatMessage) {
-        val vm = resolveChatViewModel() ?: return
-        if (vm.shouldSuppressOwnOutgoingRealtimeEcho(msg)) return
-        vm.stashOverlayRealtimeMessage(msg)
+        resolveChatViewModel()?.applyOverlayRaidHttpMessage(msg)
     }
 
     private fun isOverlayRaidStripSocketMessage(msg: ChatMessage): Boolean {
@@ -4775,6 +4775,8 @@ class CombatOverlayService : Service() {
         runCatching {
             mgr.removeView(host)
             mgr.addView(host, p)
+        }.onSuccess {
+            rebalanceOverlayHudZOrder(force = true)
         }.onFailure { e ->
             chatStripZOrderLifted = false
             Log.w(TAG, "requestChatStripZOrderLift failed", e)

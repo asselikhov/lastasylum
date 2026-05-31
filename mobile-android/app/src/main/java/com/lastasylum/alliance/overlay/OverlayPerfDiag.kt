@@ -60,12 +60,15 @@ internal object OverlayPerfDiag {
         stripNotTouchable: Boolean,
         dismissRectCount: Int,
         zOrderLifted: Boolean,
+        hudStatusVisible: Boolean,
+        hudTopRightVisible: Boolean,
     ) {
         if (!BuildConfig.DEBUG) return
         Log.d(
             TAG,
             "gate inGame=$inGame showUi=$showUi stripNotTouchable=$stripNotTouchable " +
                 "dismissRects=$dismissRectCount zOrderLifted=$zOrderLifted " +
+                "hudStatus=$hudStatusVisible hudTopRight=$hudTopRightVisible " +
                 "suppressDepth=${OverlayChatInteractionHold.overlayModalSuppressDepthForDiag()}",
         )
     }

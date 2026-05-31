@@ -31,6 +31,7 @@ import com.lastasylum.alliance.data.chat.ChatRaidRoomSync
 import com.lastasylum.alliance.data.chat.ChatRoomKind
 import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
 import com.lastasylum.alliance.overlay.CombatOverlayService
+import com.lastasylum.alliance.overlay.OverlayRaidChatForwardPolicy
 import com.lastasylum.alliance.data.chat.ChatUnreadCounts
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
 import com.lastasylum.alliance.data.chat.isCompactReactionSocketUpdate
@@ -339,6 +340,19 @@ class ChatViewModel(
             return
         }
         stashIncomingMessageForRoom(message)
+    }
+
+    /**
+     * Overlay quick-command HTTP: cache + visible list when «Рейд» (or matching room) is selected.
+     * Unlike socket forward, does not skip apply when activity holds primary subscription.
+     */
+    fun applyOverlayRaidHttpMessage(message: ChatMessage) {
+        if (shouldSuppressOwnOutgoingRealtimeEcho(message)) return
+        stashOverlayRealtimeMessage(message)
+        if (!OverlayRaidChatForwardPolicy.shouldApplyToVisibleChat(_state.value.selectedRoomId, message.roomId)) {
+            return
+        }
+        applyOverlayChatMessageFromSocket(message)
     }
 
     /** Overlay socket while in-game chat panel is open (primary listener may be absent). */
