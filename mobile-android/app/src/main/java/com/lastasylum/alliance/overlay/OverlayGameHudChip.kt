@@ -285,6 +285,7 @@ internal fun OverlayGameHudChip(
                     .align(Alignment.TopEnd)
                     .offset(x = 6.dp, y = (-6).dp)
                     .zIndex(2f)
+                    .clickable(onClick = onClick)
                     .defaultMinSize(minWidth = 16.dp, minHeight = 16.dp),
             ) {
                 Text(
