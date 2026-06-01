@@ -7,6 +7,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -14,16 +15,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -34,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -48,6 +53,8 @@ fun OverlayReactionLogReplyThreadFooter(
     replyCount: Int,
     modifier: Modifier = Modifier,
     defaultExpanded: Boolean = false,
+    incoming: Boolean = true,
+    unreadHighlight: Boolean = false,
     expandedContent: @Composable () -> Unit,
 ) {
     if (replyCount <= 0) return
@@ -75,8 +82,30 @@ fun OverlayReactionLogReplyThreadFooter(
             replyCount,
         )
     }
+    val capsuleBorder = when {
+        unreadHighlight && incoming -> ReactionLogCardTokens.borderUnread
+        else -> Color(0x503D4A62)
+    }
+    val capsuleShape = RoundedCornerShape(12.dp)
 
     Column(modifier = modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(28.dp)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            if (incoming) {
+                                ReactionLogCardTokens.incomingGradientBottom.copy(alpha = 0.9f)
+                            } else {
+                                ReactionLogCardTokens.outgoingGradientBottom.copy(alpha = 0.9f)
+                            },
+                        ),
+                    ),
+                ),
+        )
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -86,22 +115,19 @@ fun OverlayReactionLogReplyThreadFooter(
                     indication = null,
                     onClick = { expanded = !expanded },
                 ),
+            contentAlignment = Alignment.TopCenter,
         ) {
-            HorizontalDivider(
-                color = Color(0x403D4A62),
+            Surface(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp),
-            )
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .offset(y = 10.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF1A2438))
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                    .offset(y = (-14).dp)
+                    .clip(capsuleShape),
+                shape = capsuleShape,
+                color = Color(0xE6141C28),
+                border = BorderStroke(1.dp, capsuleBorder),
+                shadowElevation = 2.dp,
             ) {
                 Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
@@ -109,7 +135,7 @@ fun OverlayReactionLogReplyThreadFooter(
                         imageVector = Icons.Default.KeyboardArrowDown,
                         contentDescription = null,
                         modifier = Modifier
-                            .size(20.dp)
+                            .size(18.dp)
                             .rotate(chevronRotation),
                         tint = MaterialTheme.colorScheme.primary,
                     )
@@ -129,11 +155,17 @@ fun OverlayReactionLogReplyThreadFooter(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 18.dp, start = 8.dp, end = 8.dp, bottom = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                    .padding(top = 6.dp, start = 10.dp, end = 10.dp, bottom = 10.dp),
             ) {
+                HorizontalDivider(
+                    color = Color(0x20FFFFFF),
+                    modifier = Modifier.padding(bottom = 10.dp),
+                )
                 expandedContent()
             }
+        }
+        if (!expanded) {
+            Spacer(modifier = Modifier.height(6.dp))
         }
     }
 }

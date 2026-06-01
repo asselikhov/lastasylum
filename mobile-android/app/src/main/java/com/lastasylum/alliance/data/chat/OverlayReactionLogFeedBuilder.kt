@@ -21,16 +21,7 @@ object OverlayReactionLogFeedBuilder {
         val enrichedAll = OverlayReactionLogReplyEnricher.enrichEntries(allEntries)
         val filteredIdSet = filteredEntries.map { it.id }.toSet()
 
-        if (directionFilter == OverlayReactionLogFilter.Reply) {
-            return buildReplyFilterFeed(filteredEntries, enrichedAll)
-        }
-
         val clustered = OverlayReactionLogClusterPolicy.clusterEntries(filteredEntries, selfUserId)
-        val showNestedReplies = directionFilter == OverlayReactionLogFilter.All
-        if (!showNestedReplies) {
-            return clustered.map { OverlayReactionLogFeedItem.Root(it) }
-        }
-
         val repliesByParent = repliesGroupedByParent(enrichedAll)
         val anchoredParentIds = anchoredParentIdsForReplies(
             repliesByParent = repliesByParent,
@@ -78,24 +69,6 @@ object OverlayReactionLogFeedBuilder {
             }
 
         return items.sortedByDescending { feedItemSortKey(it) }
-    }
-
-    private fun buildReplyFilterFeed(
-        filteredEntries: List<OverlayReactionLogEntry>,
-        enrichedAll: List<OverlayReactionLogEntry>,
-    ): List<OverlayReactionLogFeedItem> {
-        val replyEntries = filteredEntries.filter { OverlayReactionLogReplyEnricher.isReplyEntry(it) }
-        val repliesByParent = repliesGroupedByParent(replyEntries)
-        return repliesByParent.keys
-            .mapNotNull { parentId ->
-                val parentEntry = enrichedAll.find { it.id == parentId } ?: return@mapNotNull null
-                val parentCluster = OverlayReactionLogCluster(listOf(parentEntry))
-                val replyClusters = (repliesByParent[parentId] ?: emptyList())
-                    .sortedByDescending { it.id }
-                    .map { OverlayReactionLogCluster(listOf(it)) }
-                OverlayReactionLogFeedItem.ThreadParent(parentCluster, replyClusters)
-            }
-            .sortedByDescending { feedItemSortKey(it) }
     }
 
     private fun repliesGroupedByParent(

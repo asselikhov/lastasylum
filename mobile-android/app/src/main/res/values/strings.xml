@@ -773,7 +773,7 @@
     <string name="overlay_reactions_send_all_subtitle">%1$d в игре с оверлеем</string>
     <string name="overlay_reaction_sent_all">Реакция отправлена %1$d участникам</string>
     <string name="overlay_reaction_sent_broadcast">Реакция отправлена всем</string>
-    <string name="overlay_reaction_burst_caption_private">Лично</string>
+    <string name="overlay_reaction_burst_caption_private">Личная</string>
     <string name="overlay_reaction_burst_caption_broadcast">Всем</string>
     <string name="overlay_reaction_burst_caption_line">%1$s · %2$s</string>
     <string name="overlay_reaction_burst_from">от %1$s</string>
@@ -789,7 +789,7 @@
     <string name="overlay_reaction_burst_badge_private">Личная реакция</string>
     <string name="overlay_reaction_socket_offline">Нет связи с чатом — реакция не отправлена</string>
     <string name="overlay_notifications_title">Уведомления</string>
-    <string name="overlay_notifications_subtitle">Реакции · Лично и Всем</string>
+    <string name="overlay_notifications_subtitle">Реакции · Личная и Всем</string>
     <string name="overlay_hud_notifications_cd">Уведомления о реакциях</string>
     <string name="overlay_hud_notifications_unread_cd">Непрочитанные реакции: %1$d</string>
     <string name="overlay_notifications_loading">Загрузка…</string>
@@ -803,10 +803,11 @@
     <string name="overlay_notifications_filter_outgoing">Исходящие</string>
     <string name="overlay_notifications_filter_reply">Ответ</string>
     <string name="overlay_notifications_reply_to">Ответ на</string>
-    <string name="overlay_notifications_reply_scope">Ответно</string>
+    <string name="overlay_notifications_reply_scope">Ответная</string>
     <string name="overlay_notifications_narrative_reply_outgoing">Вы ответили %1$s</string>
     <string name="overlay_notifications_narrative_incoming_reply">отправил(а) ответную реакцию</string>
-    <string name="overlay_notifications_reply_badge">Ответно</string>
+    <string name="overlay_notifications_reply_on_parent">на</string>
+    <string name="overlay_notifications_reply_badge">Ответная</string>
     <string name="overlay_notifications_empty_reply">Пока нет ответов на реакции</string>
     <string name="overlay_notifications_show_replies">Показать ответы</string>
     <string name="overlay_notifications_hide_replies">Скрыть ответы</string>

@@ -43,18 +43,10 @@ class OverlayReactionLogVisibilityTest {
         val reply = entry(other, self, id = "2", replyToLog = replyTo("parent"))
         val plain = entry(other, self, id = "3")
         assertTrue(
-            OverlayReactionLogVisibilityPolicy.matchesFilter(
-                reply,
-                self,
-                OverlayReactionLogFilter.Reply,
-            ),
+            OverlayReactionLogReplyEnricher.isReplyEntry(reply),
         )
         assertFalse(
-            OverlayReactionLogVisibilityPolicy.matchesFilter(
-                plain,
-                self,
-                OverlayReactionLogFilter.Reply,
-            ),
+            OverlayReactionLogReplyEnricher.isReplyEntry(plain),
         )
     }
 
@@ -66,6 +58,30 @@ class OverlayReactionLogVisibilityTest {
     @Test
     fun outgoing_whenSenderIsSelf() {
         assertTrue(OverlayReactionLogVisibilityPolicy.isOutgoing(entry(self, other), self))
+    }
+
+    @Test
+    fun filter_incoming_includesReplyEntries() {
+        val incomingReply = entry(other, self, id = "2", replyToLog = replyTo("parent"))
+        assertTrue(
+            OverlayReactionLogVisibilityPolicy.matchesFilter(
+                incomingReply,
+                self,
+                OverlayReactionLogFilter.Incoming,
+            ),
+        )
+    }
+
+    @Test
+    fun filter_outgoing_includesOwnReplyEntries() {
+        val outgoingReply = entry(self, other, id = "2", replyToLog = replyTo("parent"))
+        assertTrue(
+            OverlayReactionLogVisibilityPolicy.matchesFilter(
+                outgoingReply,
+                self,
+                OverlayReactionLogFilter.Outgoing,
+            ),
+        )
     }
 
     @Test
@@ -81,20 +97,13 @@ class OverlayReactionLogVisibilityTest {
     }
 
     @Test
-    fun filter_incoming_excludesReplyEntries() {
-        val incomingReply = entry(other, self, id = "2", replyToLog = replyTo("parent"))
+    fun filter_outgoing_excludesIncoming() {
+        val incoming = entry(other, self)
         assertFalse(
             OverlayReactionLogVisibilityPolicy.matchesFilter(
-                incomingReply,
+                incoming,
                 self,
-                OverlayReactionLogFilter.Incoming,
-            ),
-        )
-        assertTrue(
-            OverlayReactionLogVisibilityPolicy.matchesFilter(
-                incomingReply,
-                self,
-                OverlayReactionLogFilter.Reply,
+                OverlayReactionLogFilter.Outgoing,
             ),
         )
     }
@@ -105,23 +114,12 @@ class OverlayReactionLogVisibilityTest {
             replyToLog = null,
             replyToLogId = "parent",
         )
+        assertTrue(OverlayReactionLogReplyEnricher.isReplyEntry(replyOnlyId))
         assertTrue(
             OverlayReactionLogVisibilityPolicy.matchesFilter(
                 replyOnlyId,
                 self,
-                OverlayReactionLogFilter.Reply,
-            ),
-        )
-    }
-
-    @Test
-    fun filter_outgoing_excludesIncoming() {
-        val incoming = entry(other, self)
-        assertFalse(
-            OverlayReactionLogVisibilityPolicy.matchesFilter(
-                incoming,
-                self,
-                OverlayReactionLogFilter.Outgoing,
+                OverlayReactionLogFilter.Incoming,
             ),
         )
     }

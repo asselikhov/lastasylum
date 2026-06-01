@@ -56,6 +56,7 @@ import coil3.request.crossfade
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.OverlayReactionLogCluster
 import com.lastasylum.alliance.data.chat.OverlayReactionLogEntry
+import com.lastasylum.alliance.data.chat.OverlayReactionLogReplyEnricher
 import com.lastasylum.alliance.data.chat.OverlayReactionLogVisibility
 import com.lastasylum.alliance.data.chat.OverlayReactionLogVisibilityPolicy
 import com.lastasylum.alliance.ui.chat.ChatMessageReactionsRow
@@ -138,6 +139,21 @@ private fun ReactionLogRowContent(
     playAnimatedPreview: Boolean,
     isOnline: Boolean,
 ) {
+    val replyTo = entry.replyToLog
+    if (OverlayReactionLogReplyEnricher.isReplyEntry(entry) && replyTo != null) {
+        CompactReplyRowContent(
+            entry = entry,
+            cluster = cluster,
+            scopeLabel = scopeLabel,
+            scopeColor = scopeColor,
+            timeLine = timeLine,
+            onPreviewClick = onPreviewClick,
+            onToggleEmojiReaction = onToggleEmojiReaction,
+            playAnimatedPreview = playAnimatedPreview,
+            replyTo = replyTo,
+        )
+        return
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -172,6 +188,100 @@ private fun ReactionLogRowContent(
 }
 
 @Composable
+private fun CompactReplyRowContent(
+    entry: OverlayReactionLogEntry,
+    cluster: OverlayReactionLogCluster,
+    scopeLabel: String,
+    scopeColor: Color,
+    timeLine: String,
+    replyTo: com.lastasylum.alliance.data.chat.OverlayReactionLogReplyTo,
+    onPreviewClick: () -> Unit,
+    onToggleEmojiReaction: ((String) -> Unit)?,
+    playAnimatedPreview: Boolean,
+) {
+    val clickModifier = Modifier.clickable(
+        interactionSource = remember { MutableInteractionSource() },
+        indication = null,
+        onClick = onPreviewClick,
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = entry.senderUsername.ifBlank {
+                    stringResource(R.string.overlay_reaction_sender_unknown)
+                },
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            ScopePill(label = scopeLabel, color = scopeColor)
+            if (timeLine.isNotBlank()) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = timeLine,
+                    style = MaterialTheme.typography.labelSmall.merge(
+                        TextStyle(fontFeatureSettings = "tnum"),
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    maxLines = 1,
+                )
+            }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Box(modifier = clickModifier) {
+                if (cluster.mergeCount > 1) {
+                    OverlayReactionLogStackedPreview(
+                        cluster = cluster,
+                        playAnimatedPreview = playAnimatedPreview,
+                    )
+                } else {
+                    OverlayReactionLogMiniPreview(
+                        reactionId = entry.reaction,
+                        visibility = entry.visibility,
+                        showLabel = false,
+                        playAnimatedPreview = playAnimatedPreview,
+                        previewSizeDp = 44,
+                    )
+                }
+            }
+            Text(
+                text = stringResource(R.string.overlay_notifications_reply_on_parent),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OverlayReactionLogMiniPreview(
+                reactionId = replyTo.reaction,
+                visibility = replyTo.visibility,
+                showLabel = false,
+                playAnimatedPreview = false,
+                previewSizeDp = 36,
+            )
+        }
+        AnimatedReactionsRow(
+            reactions = entry.reactions,
+            onToggleEmojiReaction = onToggleEmojiReaction,
+        )
+    }
+}
+
+@Composable
 private fun ReactionPreviewColumn(
     cluster: OverlayReactionLogCluster,
     entry: OverlayReactionLogEntry,
@@ -192,7 +302,7 @@ private fun ReactionPreviewColumn(
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (incoming && onQuickReply != null) {
+            if (incoming && onQuickReply != null && !OverlayReactionLogReplyEnricher.isReplyEntry(entry)) {
                 IconButton(
                     onClick = onQuickReply,
                     modifier = Modifier.size(ReactionPreviewReplySlot),

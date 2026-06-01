@@ -108,7 +108,6 @@ private fun DirectionFilterDropdown(
         OverlayReactionLogFilter.All -> stringResource(R.string.overlay_notifications_filter_all)
         OverlayReactionLogFilter.Incoming -> stringResource(R.string.overlay_notifications_filter_incoming)
         OverlayReactionLogFilter.Outgoing -> stringResource(R.string.overlay_notifications_filter_outgoing)
-        OverlayReactionLogFilter.Reply -> stringResource(R.string.overlay_notifications_filter_reply)
     }
     FilterDropdown(
         label = label,
@@ -128,8 +127,6 @@ private fun DirectionFilterDropdown(
                                 stringResource(R.string.overlay_notifications_filter_incoming)
                             OverlayReactionLogFilter.Outgoing ->
                                 stringResource(R.string.overlay_notifications_filter_outgoing)
-                            OverlayReactionLogFilter.Reply ->
-                                stringResource(R.string.overlay_notifications_filter_reply)
                         },
                         style = OverlayHudFilterFields.menuItemTextStyle(),
                     )

@@ -64,6 +64,7 @@ import com.lastasylum.alliance.data.chat.OverlayReactionLogCluster
 import com.lastasylum.alliance.data.chat.OverlayReactionLogEntry
 import com.lastasylum.alliance.data.chat.OverlayReactionLogFeedItem
 import com.lastasylum.alliance.data.chat.OverlayReactionLogFilter
+import com.lastasylum.alliance.data.chat.OverlayReactionLogReplyEnricher
 import com.lastasylum.alliance.data.chat.OverlayReactionLogRepository
 import com.lastasylum.alliance.data.chat.OverlayReactionLogScopeFilter
 import com.lastasylum.alliance.data.chat.maxOverlayReactionLogId
@@ -428,7 +429,6 @@ fun OverlayReactionNotificationsPanel(
                                                     parent = feedItem.parent,
                                                     replies = feedItem.replies,
                                                     selfUserId = selfUserId,
-                                                    directionFilter = uiState.directionFilter,
                                                     unreadEntryIds = unreadEntryIds,
                                                     animatedPreviewIds = animatedPreviewIds,
                                                     onlineUserIds = onlineUserIds,
@@ -560,7 +560,6 @@ private fun OverlayReactionLogThreadParentClusterRow(
     parent: OverlayReactionLogCluster,
     replies: List<OverlayReactionLogCluster>,
     selfUserId: String,
-    directionFilter: OverlayReactionLogFilter,
     unreadEntryIds: Set<String>,
     animatedPreviewIds: Set<String>,
     onlineUserIds: Set<String>,
@@ -573,9 +572,7 @@ private fun OverlayReactionLogThreadParentClusterRow(
     val parentEntry = parent.representative
     val parentIncoming =
         OverlayReactionLogVisibilityPolicy.isIncoming(parentEntry, selfUserId)
-    val defaultRepliesExpanded =
-        directionFilter == OverlayReactionLogFilter.Reply ||
-            replies.any { it.representative.id in unreadEntryIds }
+    val defaultRepliesExpanded = replies.any { it.representative.id in unreadEntryIds }
     OverlayReactionLogCard(
         incoming = parentIncoming,
         unreadHighlight = parentEntry.id in unreadEntryIds,
@@ -594,7 +591,7 @@ private fun OverlayReactionLogThreadParentClusterRow(
                     OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
                     onPreviewCluster(parent)
                 },
-                onQuickReply = if (parentIncoming) {
+                onQuickReply = if (parentIncoming && !OverlayReactionLogReplyEnricher.isReplyEntry(parentEntry)) {
                     { onReplyToReactionLog(parentEntry) }
                 } else {
                     null
@@ -605,7 +602,8 @@ private fun OverlayReactionLogThreadParentClusterRow(
                 parentLogId = parentEntry.id,
                 replyCount = replies.size,
                 defaultExpanded = defaultRepliesExpanded,
-                modifier = Modifier.padding(bottom = 4.dp),
+                incoming = parentIncoming,
+                unreadHighlight = parentEntry.id in unreadEntryIds,
             ) {
                 replies.forEach { replyCluster ->
                     OverlayReactionLogFeedClusterRow(
@@ -653,7 +651,7 @@ private fun OverlayReactionLogFeedClusterRow(
             OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
             onPreviewCluster(cluster)
         },
-        onQuickReply = if (incoming) {
+        onQuickReply = if (incoming && !OverlayReactionLogReplyEnricher.isReplyEntry(entry)) {
             { onReplyToReactionLog(entry) }
         } else {
             null
@@ -701,8 +699,6 @@ private fun EmptyNotificationsState(
                     stringResource(R.string.overlay_notifications_empty_outgoing)
                 OverlayReactionLogFilter.All ->
                     stringResource(R.string.overlay_notifications_empty)
-                OverlayReactionLogFilter.Reply ->
-                    stringResource(R.string.overlay_notifications_empty_reply)
             },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

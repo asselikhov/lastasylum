@@ -90,13 +90,6 @@ private fun ReplyContextRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp, horizontalAlignment),
     ) {
-        Text(
-            text = stringResource(R.string.overlay_notifications_reply_scope),
-            style = MaterialTheme.typography.labelMedium,
-            color = OverlayReactionLogLabelColors.replyScope,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
         OverlayReactionLogMiniPreview(
             reactionId = replyTo.reaction,
             visibility = replyTo.visibility,
