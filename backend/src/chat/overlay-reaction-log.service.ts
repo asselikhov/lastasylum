@@ -54,6 +54,32 @@ type UserLean = {
   membershipStatus?: TeamMembershipStatus;
 };
 
+/** Embedded parent snapshot on reply log rows (Mongo subdocument). */
+type ReplyToLogEmbedded = {
+  _id: Types.ObjectId;
+  reaction: string;
+  visibility: 'personal' | 'broadcast';
+  senderUserId: string;
+  senderUsername: string;
+  targetUserId?: string | null;
+  targetUsername?: string | null;
+};
+
+type ReplyToLogRowFields = {
+  replyToLogId?: Types.ObjectId | null;
+  replyToLog?: ReplyToLogEmbedded | null;
+};
+
+type ReplyToLogParentRow = {
+  _id: Types.ObjectId;
+  senderUserId: string;
+  senderUsername: string;
+  targetUserId?: string | null;
+  targetUsername?: string | null;
+  reaction: string;
+  visibility: 'personal' | 'broadcast';
+};
+
 @Injectable()
 export class OverlayReactionLogService {
   constructor(
@@ -65,18 +91,7 @@ export class OverlayReactionLogService {
     private readonly chatService: ChatService,
   ) {}
 
-  private replyToLogFromRow(row: {
-    replyToLogId?: Types.ObjectId | null;
-    replyToLog?: {
-      _id: Types.ObjectId;
-      reaction: string;
-      visibility: 'personal' | 'broadcast';
-      senderUserId: string;
-      senderUsername: string;
-      targetUserId?: string | null;
-      targetUsername?: string | null;
-    } | null;
-  }): OverlayReactionLogReplyToView | null {
+  private replyToLogFromRow(row: ReplyToLogRowFields): OverlayReactionLogReplyToView | null {
     const snap = row.replyToLog;
     if (!snap?._id) return null;
     return {
@@ -102,15 +117,7 @@ export class OverlayReactionLogService {
       createdAt?: Date;
       reactions?: { emoji: string; userIds: string[] }[] | null;
       replyToLogId?: Types.ObjectId | null;
-      replyToLog?: {
-        _id: Types.ObjectId;
-        reaction: string;
-        visibility: 'personal' | 'broadcast';
-        senderUserId: string;
-        senderUsername: string;
-        targetUserId?: string | null;
-        targetUsername?: string | null;
-      } | null;
+      replyToLog?: ReplyToLogEmbedded | null;
     },
     viewerUserId?: string,
   ): OverlayReactionLogView {
@@ -139,15 +146,7 @@ export class OverlayReactionLogService {
     };
   }
 
-  private buildReplyToSnapshot(parent: {
-    _id: Types.ObjectId;
-    senderUserId: string;
-    senderUsername: string;
-    targetUserId?: string | null;
-    targetUsername?: string | null;
-    reaction: string;
-    visibility: 'personal' | 'broadcast';
-  }) {
+  private buildReplyToSnapshot(parent: ReplyToLogParentRow): ReplyToLogEmbedded {
     return {
       _id: parent._id,
       reaction: parent.reaction,
@@ -161,10 +160,7 @@ export class OverlayReactionLogService {
 
   /** Legacy rows may have replyToLogId without embedded snapshot. */
   private async hydrateMissingReplySnapshots(
-    rows: Array<{
-      replyToLogId?: Types.ObjectId | null;
-      replyToLog?: Parameters<typeof this.buildReplyToSnapshot>[0] | null;
-    }>,
+    rows: ReplyToLogRowFields[],
   ): Promise<void> {
     const missingIds = [
       ...new Set(
@@ -181,7 +177,7 @@ export class OverlayReactionLogService {
       .lean()
       .exec();
     const byId = new Map(
-      parents.map((p) => [p._id.toString(), p as Parameters<typeof this.buildReplyToSnapshot>[0]]),
+      parents.map((p) => [p._id.toString(), p as ReplyToLogParentRow]),
     );
     for (const row of rows) {
       if (row.replyToLog?._id) continue;
@@ -376,12 +372,7 @@ export class OverlayReactionLogService {
       .limit(lim)
       .lean()
       .exec();
-    await this.hydrateMissingReplySnapshots(
-      rows as Array<{
-        replyToLogId?: Types.ObjectId | null;
-        replyToLog?: Parameters<typeof this.buildReplyToSnapshot>[0] | null;
-      }>,
-    );
+    await this.hydrateMissingReplySnapshots(rows as ReplyToLogRowFields[]);
     const items = rows.map((r) =>
       this.toView(r as Parameters<typeof this.toView>[0], userId),
     );
