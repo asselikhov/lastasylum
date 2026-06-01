@@ -126,44 +126,6 @@ fun OverlayReactionNotificationsPanel(
     }
 
     var savedScrollIndex by rememberSaveable(filterKey) { mutableIntStateOf(0) }
-    val listState = rememberLazyListState(
-        cacheWindow = LazyLayoutCacheWindow(ahead = 140.dp, behind = 140.dp),
-        initialFirstVisibleItemIndex = savedScrollIndex,
-    )
-
-    val firstUnreadIndex = listLayout.firstUnreadItemIndex
-    val lastClusterIndex = listLayout.lastClusterItemIndex
-
-    val isNearBottom by remember(listState, lastClusterIndex) {
-        derivedStateOf {
-            if (lastClusterIndex < 0) return@derivedStateOf false
-            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-            lastVisible >= lastClusterIndex - 1
-        }
-    }
-    val isFirstUnreadVisible by remember(listState, firstUnreadIndex) {
-        derivedStateOf {
-            if (firstUnreadIndex < 0) return@derivedStateOf true
-            listState.layoutInfo.visibleItemsInfo.any { it.index == firstUnreadIndex }
-        }
-    }
-    val showJumpToUnread by remember(unreadCount, firstUnreadIndex, isFirstUnreadVisible, isNearBottom) {
-        derivedStateOf {
-            unreadCount > 0 && firstUnreadIndex >= 0 && !isFirstUnreadVisible && !isNearBottom
-        }
-    }
-    val showScrollToLatest by remember(isNearBottom, grouped) {
-        derivedStateOf { grouped.isNotEmpty() && !isNearBottom }
-    }
-    val animatedPreviewIds by remember(listState, listLayout.itemIndexToEntryId) {
-        derivedStateOf {
-            OverlayReactionPreviewAnimationPolicy.resolveAnimatedEntryIds(
-                visibleItems = listState.layoutInfo.visibleItemsInfo,
-                itemIndexToEntryId = listLayout.itemIndexToEntryId,
-                layoutInfo = listState.layoutInfo,
-            )
-        }
-    }
 
     LaunchedEffect(entries.firstOrNull()?.id, unreadEntryIds) {
         val newest = entries.firstOrNull() ?: return@LaunchedEffect
@@ -189,16 +151,6 @@ fun OverlayReactionNotificationsPanel(
         if (result == SnackbarResult.ActionPerformed) {
             repository.refresh()
         }
-    }
-
-    LaunchedEffect(listState.isScrollInProgress, filterKey) {
-        snapshotFlow { listState.isScrollInProgress }
-            .distinctUntilChanged()
-            .collect { scrolling ->
-                if (!scrolling) {
-                    savedScrollIndex = listState.firstVisibleItemIndex
-                }
-            }
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -271,11 +223,57 @@ fun OverlayReactionNotificationsPanel(
                 searchQuery = uiState.searchQuery,
                 onSearchQuery = controller::onSearchQuery,
             )
-            BoxWithConstraints(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-            ) {
+            key(filterKey) {
+                val listState = rememberLazyListState(
+                    cacheWindow = LazyLayoutCacheWindow(ahead = 140.dp, behind = 140.dp),
+                    initialFirstVisibleItemIndex = savedScrollIndex,
+                )
+                val firstUnreadIndex = listLayout.firstUnreadItemIndex
+                val lastClusterIndex = listLayout.lastClusterItemIndex
+                val isNearBottom by remember(listState, lastClusterIndex) {
+                    derivedStateOf {
+                        if (lastClusterIndex < 0) return@derivedStateOf false
+                        val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+                        lastVisible >= lastClusterIndex - 1
+                    }
+                }
+                val isFirstUnreadVisible by remember(listState, firstUnreadIndex) {
+                    derivedStateOf {
+                        if (firstUnreadIndex < 0) return@derivedStateOf true
+                        listState.layoutInfo.visibleItemsInfo.any { it.index == firstUnreadIndex }
+                    }
+                }
+                val showJumpToUnread by remember(unreadCount, firstUnreadIndex, isFirstUnreadVisible, isNearBottom) {
+                    derivedStateOf {
+                        unreadCount > 0 && firstUnreadIndex >= 0 && !isFirstUnreadVisible && !isNearBottom
+                    }
+                }
+                val showScrollToLatest by remember(isNearBottom, grouped) {
+                    derivedStateOf { grouped.isNotEmpty() && !isNearBottom }
+                }
+                val animatedPreviewIds by remember(listState, listLayout.itemIndexToEntryId) {
+                    derivedStateOf {
+                        OverlayReactionPreviewAnimationPolicy.resolveAnimatedEntryIds(
+                            visibleItems = listState.layoutInfo.visibleItemsInfo,
+                            itemIndexToEntryId = listLayout.itemIndexToEntryId,
+                            layoutInfo = listState.layoutInfo,
+                        )
+                    }
+                }
+                LaunchedEffect(listState) {
+                    snapshotFlow { listState.isScrollInProgress }
+                        .distinctUntilChanged()
+                        .collect { scrolling ->
+                            if (!scrolling) {
+                                savedScrollIndex = listState.firstVisibleItemIndex
+                            }
+                        }
+                }
+                BoxWithConstraints(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                ) {
                 val compactLayout = maxWidth < 340.dp
                 when {
                     loading && clustered.isEmpty() -> {
@@ -441,6 +439,7 @@ fun OverlayReactionNotificationsPanel(
                                 .zIndex(6f),
                         )
                     }
+                }
                 }
             }
         }

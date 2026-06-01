@@ -16,10 +16,11 @@ internal fun ChatComposerBar(
     content: @Composable () -> Unit,
 ) {
     val liftWithIme = !LocalOverlayUiMode.current
+    val imeLift = if (liftWithIme) Modifier.chatComposerImePadding() else Modifier
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .then(if (liftWithIme) Modifier.chatComposerImePadding() else Modifier)
+            .then(imeLift)
             .chatComposerOverlayDock(),
     ) {
         content()

@@ -12,6 +12,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,16 +81,18 @@ fun OverlayReactionLogMiniPreview(
                         val maxTextWidthPx = remember(density, previewSizeDp) {
                             (previewSizeDp * density.density).toInt().coerceAtLeast(96)
                         }
-                        AndroidView(
-                            modifier = Modifier.size(tileSize),
-                            factory = { ctx ->
-                                OverlayReactionTextBurstUi.createPreviewMessageTextView(
-                                    ctx,
-                                    textPayload,
-                                    maxTextWidthPx,
-                                )
-                            },
-                        )
+                        key(reactionId, playAnimatedPreview) {
+                            AndroidView(
+                                modifier = Modifier.size(tileSize),
+                                factory = { ctx ->
+                                    OverlayReactionTextBurstUi.createPreviewMessageTextView(
+                                        ctx,
+                                        textPayload,
+                                        maxTextWidthPx,
+                                    )
+                                },
+                            )
+                        }
                     } else {
                         Text(
                             text = textPayload,
