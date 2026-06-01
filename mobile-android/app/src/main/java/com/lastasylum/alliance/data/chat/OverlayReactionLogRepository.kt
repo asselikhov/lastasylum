@@ -159,7 +159,7 @@ class OverlayReactionLogRepository(
         runCatching {
             val cursor = chatApi.getOverlayReactionReadCursor()
             val seen = cursor.lastSeenLogId?.trim()?.takeIf { it.isNotEmpty() }
-            _lastSeenLogId.value = seen
+            mergeLastSeenFromServer(seen, _lastSeenLogId.value)
             val page = chatApi.listOverlayReactionLog(before = null, limit = 50)
             mutex.withLock {
                 nextCursor = page.nextCursor?.trim()?.takeIf { it.isNotEmpty() }
@@ -253,15 +253,16 @@ class OverlayReactionLogRepository(
         }
     }
 
-    suspend fun markAllReadAwait() {
+    suspend fun markAllReadAwait(): Boolean {
         markReadUpToJob?.cancel()
         markReadUpToJob = null
         pendingMarkReadUpToWatermark = null
-        val watermark = resolveMarkAllReadWatermark() ?: return
+        val watermark = resolveMarkAllReadWatermark()
+        if (watermark.isNullOrBlank()) return false
         val previousCursor = _lastSeenLogId.value
         _lastSeenLogId.value = watermark
         publishUnreadCounts(emptySet())
-        runCatching {
+        return runCatching {
             chatApi.advanceOverlayReactionReadCursor(
                 AdvanceOverlayReactionReadCursorRequest(lastSeenLogId = watermark),
             )
@@ -270,7 +271,7 @@ class OverlayReactionLogRepository(
         }.onFailure {
             _lastSeenLogId.value = previousCursor
             recomputeUnread()
-        }
+        }.isSuccess
     }
 
     private suspend fun resolveMarkAllReadWatermark(): String? {
@@ -394,7 +395,9 @@ class OverlayReactionLogRepository(
         } else {
             (existing + entry).distinctBy { it.id }.sortedByDescending { it.id }
         }
-        _entries.value = trimRetainedEntries(merged)
+        _entries.value = trimRetainedEntries(
+            OverlayReactionLogReplyEnricher.enrichEntries(merged),
+        )
     }
 
     private fun applyOptimisticReactionToggle(
@@ -436,9 +439,11 @@ class OverlayReactionLogRepository(
             return
         }
         val base = if (replace) emptyList() else _entries.value
-        val merged = (base + incoming)
-            .distinctBy { it.id }
-            .sortedByDescending { it.id }
+        val merged = OverlayReactionLogReplyEnricher.enrichEntries(
+            (base + incoming)
+                .distinctBy { it.id }
+                .sortedByDescending { it.id },
+        )
         _entries.value = trimRetainedEntries(merged)
     }
 

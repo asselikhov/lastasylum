@@ -826,6 +826,7 @@
     <string name="overlay_notifications_reply">Ответить реакцией</string>
     <string name="overlay_notifications_reply_cd">Ответить реакцией</string>
     <string name="overlay_notifications_reaction_failed">Не удалось поставить реакцию</string>
+    <string name="overlay_notifications_mark_all_read_failed">Не удалось пометить всё прочитанным</string>
     <string name="overlay_notifications_merge_window">×%1$d за 2 с</string>
     <string name="overlay_notifications_open_reactions">Открыть реакции</string>
     <string name="overlay_notifications_menu_clear_history">Очистить историю</string>

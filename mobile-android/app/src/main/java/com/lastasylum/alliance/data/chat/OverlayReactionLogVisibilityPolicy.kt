@@ -56,9 +56,11 @@ object OverlayReactionLogVisibilityPolicy {
         filter: OverlayReactionLogFilter,
     ): Boolean = when (filter) {
         OverlayReactionLogFilter.All -> true
-        OverlayReactionLogFilter.Incoming -> isIncoming(entry, selfUserId)
-        OverlayReactionLogFilter.Outgoing -> isOutgoing(entry, selfUserId)
-        OverlayReactionLogFilter.Reply -> entry.replyToLog != null
+        OverlayReactionLogFilter.Incoming ->
+            isIncoming(entry, selfUserId) && !OverlayReactionLogReplyEnricher.isReplyEntry(entry)
+        OverlayReactionLogFilter.Outgoing ->
+            isOutgoing(entry, selfUserId) && !OverlayReactionLogReplyEnricher.isReplyEntry(entry)
+        OverlayReactionLogFilter.Reply -> OverlayReactionLogReplyEnricher.isReplyEntry(entry)
     }
 
     fun matchesScopeFilter(

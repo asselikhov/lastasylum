@@ -39,7 +39,7 @@ object OverlayReactionLogClusterPolicy {
     }
 
     private fun isReplyEntry(entry: OverlayReactionLogEntry): Boolean =
-        entry.replyToLog != null
+        OverlayReactionLogReplyEnricher.isReplyEntry(entry)
 
     fun canMerge(
         newer: OverlayReactionLogEntry,

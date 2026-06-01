@@ -81,6 +81,40 @@ class OverlayReactionLogVisibilityTest {
     }
 
     @Test
+    fun filter_incoming_excludesReplyEntries() {
+        val incomingReply = entry(other, self, id = "2", replyToLog = replyTo("parent"))
+        assertFalse(
+            OverlayReactionLogVisibilityPolicy.matchesFilter(
+                incomingReply,
+                self,
+                OverlayReactionLogFilter.Incoming,
+            ),
+        )
+        assertTrue(
+            OverlayReactionLogVisibilityPolicy.matchesFilter(
+                incomingReply,
+                self,
+                OverlayReactionLogFilter.Reply,
+            ),
+        )
+    }
+
+    @Test
+    fun filter_reply_matchesReplyToLogIdOnly() {
+        val replyOnlyId = entry(other, self, id = "2").copy(
+            replyToLog = null,
+            replyToLogId = "parent",
+        )
+        assertTrue(
+            OverlayReactionLogVisibilityPolicy.matchesFilter(
+                replyOnlyId,
+                self,
+                OverlayReactionLogFilter.Reply,
+            ),
+        )
+    }
+
+    @Test
     fun filter_outgoing_excludesIncoming() {
         val incoming = entry(other, self)
         assertFalse(

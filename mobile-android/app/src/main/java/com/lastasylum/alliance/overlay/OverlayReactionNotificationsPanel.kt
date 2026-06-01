@@ -118,7 +118,9 @@ fun OverlayReactionNotificationsPanel(
     var previewCluster by remember { mutableStateOf<OverlayReactionLogCluster?>(null) }
     var showClearHistoryConfirm by remember { mutableStateOf(false) }
     var hapticConsumedForSession by remember { mutableStateOf(false) }
+    var markAllReadLoading by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
+    val markAllReadFailedText = stringResource(R.string.overlay_notifications_mark_all_read_failed)
 
     DisposableEffect(controller, selfUserId) {
         controller.start(selfUserId)
@@ -166,11 +168,17 @@ fun OverlayReactionNotificationsPanel(
                 onClose = onClose,
                 closeIconTint = Color.White,
                 onMarkAllRead = {
-                    if (unreadCount > 0) {
-                        repository.markAllRead()
+                    scope.launch {
+                        markAllReadLoading = true
+                        val ok = repository.markAllReadAwait()
+                        markAllReadLoading = false
+                        if (!ok) {
+                            snackbarHostState.showSnackbar(markAllReadFailedText)
+                        }
                     }
                 },
-                markAllReadEnabled = unreadCount > 0 && !loading,
+                markAllReadEnabled = unreadCount > 0 && !loading && !markAllReadLoading,
+                markAllReadLoading = markAllReadLoading,
                 markAllReadIconTint = Color.White,
                 headerTrailing = {
                     IconButton(
@@ -420,6 +428,7 @@ fun OverlayReactionNotificationsPanel(
                                                     parent = feedItem.parent,
                                                     replies = feedItem.replies,
                                                     selfUserId = selfUserId,
+                                                    directionFilter = uiState.directionFilter,
                                                     unreadEntryIds = unreadEntryIds,
                                                     animatedPreviewIds = animatedPreviewIds,
                                                     onlineUserIds = onlineUserIds,
@@ -551,6 +560,7 @@ private fun OverlayReactionLogThreadParentClusterRow(
     parent: OverlayReactionLogCluster,
     replies: List<OverlayReactionLogCluster>,
     selfUserId: String,
+    directionFilter: OverlayReactionLogFilter,
     unreadEntryIds: Set<String>,
     animatedPreviewIds: Set<String>,
     onlineUserIds: Set<String>,
@@ -563,6 +573,9 @@ private fun OverlayReactionLogThreadParentClusterRow(
     val parentEntry = parent.representative
     val parentIncoming =
         OverlayReactionLogVisibilityPolicy.isIncoming(parentEntry, selfUserId)
+    val defaultRepliesExpanded =
+        directionFilter == OverlayReactionLogFilter.Reply ||
+            replies.any { it.representative.id in unreadEntryIds }
     OverlayReactionLogCard(
         incoming = parentIncoming,
         unreadHighlight = parentEntry.id in unreadEntryIds,
@@ -591,6 +604,7 @@ private fun OverlayReactionLogThreadParentClusterRow(
             OverlayReactionLogReplyThreadFooter(
                 parentLogId = parentEntry.id,
                 replyCount = replies.size,
+                defaultExpanded = defaultRepliesExpanded,
                 modifier = Modifier.padding(bottom = 4.dp),
             ) {
                 replies.forEach { replyCluster ->

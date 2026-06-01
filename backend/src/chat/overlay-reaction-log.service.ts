@@ -159,6 +159,41 @@ export class OverlayReactionLogService {
     };
   }
 
+  /** Legacy rows may have replyToLogId without embedded snapshot. */
+  private async hydrateMissingReplySnapshots(
+    rows: Array<{
+      replyToLogId?: Types.ObjectId | null;
+      replyToLog?: Parameters<typeof this.buildReplyToSnapshot>[0] | null;
+    }>,
+  ): Promise<void> {
+    const missingIds = [
+      ...new Set(
+        rows
+          .filter((row) => row.replyToLogId && !row.replyToLog?._id)
+          .map((row) => row.replyToLogId!.toString()),
+      ),
+    ];
+    if (missingIds.length === 0) return;
+    const parents = await this.logModel
+      .find({
+        _id: { $in: missingIds.map((id) => new Types.ObjectId(id)) },
+      })
+      .lean()
+      .exec();
+    const byId = new Map(
+      parents.map((p) => [p._id.toString(), p as Parameters<typeof this.buildReplyToSnapshot>[0]]),
+    );
+    for (const row of rows) {
+      if (row.replyToLog?._id) continue;
+      const parentId = row.replyToLogId?.toString();
+      if (!parentId) continue;
+      const parent = byId.get(parentId);
+      if (parent) {
+        row.replyToLog = this.buildReplyToSnapshot(parent);
+      }
+    }
+  }
+
   private async loadParentLogForReply(
     teamId: Types.ObjectId,
     replierUserId: string,
@@ -341,6 +376,12 @@ export class OverlayReactionLogService {
       .limit(lim)
       .lean()
       .exec();
+    await this.hydrateMissingReplySnapshots(
+      rows as Array<{
+        replyToLogId?: Types.ObjectId | null;
+        replyToLog?: Parameters<typeof this.buildReplyToSnapshot>[0] | null;
+      }>,
+    );
     const items = rows.map((r) =>
       this.toView(r as Parameters<typeof this.toView>[0], userId),
     );

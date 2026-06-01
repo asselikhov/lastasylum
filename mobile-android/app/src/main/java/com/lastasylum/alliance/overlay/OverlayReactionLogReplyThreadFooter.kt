@@ -47,10 +47,13 @@ fun OverlayReactionLogReplyThreadFooter(
     parentLogId: String,
     replyCount: Int,
     modifier: Modifier = Modifier,
+    defaultExpanded: Boolean = false,
     expandedContent: @Composable () -> Unit,
 ) {
     if (replyCount <= 0) return
-    var expanded by rememberSaveable(parentLogId) { mutableStateOf(false) }
+    var expanded by rememberSaveable(parentLogId, defaultExpanded) {
+        mutableStateOf(defaultExpanded)
+    }
     val chevronRotation by animateFloatAsState(
         targetValue = if (expanded) 180f else 0f,
         animationSpec = tween(220),

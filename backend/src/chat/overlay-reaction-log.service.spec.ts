@@ -320,3 +320,78 @@ describe('OverlayReactionLogService createPersonal reply', () => {
     expect(result.recipientUserIds).toHaveLength(3);
   });
 });
+
+describe('OverlayReactionLogService listForViewer reply hydration', () => {
+  const userId = 'user-viewer';
+  const teamId = new Types.ObjectId();
+  const parentId = new Types.ObjectId();
+  const replyId = new Types.ObjectId();
+
+  it('hydrates replyToLog from parent when snapshot missing', async () => {
+    const parentRow = {
+      _id: parentId,
+      teamId,
+      senderUserId: 'user-a',
+      senderUsername: 'A',
+      targetUserId: userId,
+      targetUsername: 'Viewer',
+      reaction: 'heart',
+      visibility: 'personal' as const,
+    };
+    const replyRow = {
+      _id: replyId,
+      teamId,
+      senderUserId: userId,
+      senderUsername: 'Viewer',
+      targetUserId: 'user-a',
+      targetUsername: 'A',
+      reaction: 'thumbsup',
+      visibility: 'personal' as const,
+      createdAt: new Date('2026-05-29T10:00:01.000Z'),
+      replyToLogId: parentId,
+      replyToLog: null,
+      reactions: [],
+    };
+
+    const service = Object.create(
+      OverlayReactionLogService.prototype,
+    ) as OverlayReactionLogService;
+
+    (service as unknown as { assertActiveTeamMember: jest.Mock }).assertActiveTeamMember =
+      jest.fn().mockResolvedValue({ userId, teamId });
+
+    const listFindChain = {
+      sort: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockReturnThis(),
+      exec: jest.fn().mockResolvedValue([replyRow]),
+    };
+
+    const parentFindChain = {
+      lean: jest.fn().mockReturnThis(),
+      exec: jest.fn().mockResolvedValue([parentRow]),
+    };
+
+    (service as unknown as { logModel: { find: jest.Mock } }).logModel = {
+      find: jest
+        .fn()
+        .mockReturnValueOnce(listFindChain)
+        .mockReturnValueOnce(parentFindChain),
+    };
+
+    (
+      service as unknown as {
+        visibilityFilter: (uid: string) => Record<string, unknown>;
+      }
+    ).visibilityFilter = OverlayReactionLogService.prototype[
+      'visibilityFilter'
+    ].bind(service);
+
+    const page = await service.listForViewer(userId, { limit: 10 });
+
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0].replyToLogId).toBe(parentId.toString());
+    expect(page.items[0].replyToLog?._id).toBe(parentId.toString());
+    expect(page.items[0].replyToLog?.reaction).toBe('heart');
+  });
+});

@@ -107,6 +107,13 @@ class OverlayReactionLogUnreadTest {
     }
 
     @Test
+    fun mergeOverlayReactionLastSeenLogId_keepsLocalWhenAheadOfServer() {
+        val local = "000000000000000000000099"
+        val server = "000000000000000000000010"
+        assertEquals(local, mergeOverlayReactionLastSeenLogId(local, server))
+    }
+
+    @Test
     fun mergeOverlayReactionLastSeenLogId_keepsNewerWhenAdvancing() {
         val local = "000000000000000000000010"
         val incoming = "000000000000000000000050"
