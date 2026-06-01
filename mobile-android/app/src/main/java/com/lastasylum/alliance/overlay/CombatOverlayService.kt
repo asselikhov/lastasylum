@@ -4543,6 +4543,7 @@ class CombatOverlayService : Service() {
             refreshOverlayHubUnreadFromCache()
             return
         }
+        unregisterOverlayReactionListenersIfRegistered()
         prefetchOverlayRaidRoomForStrip()
         registerVoiceMicPermissionReceiver()
         cancelStripTick()
@@ -4553,6 +4554,12 @@ class CombatOverlayService : Service() {
                 if (selfId.isBlank()) return@post
                 if (event.fromUserId == selfId) return@post
                 if (event.targetUserId != selfId) return@post
+                if (OverlayIncomingReactionDedupe.shouldSuppress(event)) {
+                    if (BuildConfig.DEBUG) {
+                        Log.d(TAG, "overlay:reaction deduped logEntryId=${event.logEntryId}")
+                    }
+                    return@post
+                }
                 val wm = windowManager ?: getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return@post
                 overlayCommandsPopover.showIncomingReactionBurst(
                     wm,
@@ -4560,6 +4567,7 @@ class CombatOverlayService : Service() {
                     resolveOverlayReactionSenderDisplayName(event),
                     event.reaction,
                     event.broadcast,
+                    replyToLog = event.replyToLog,
                 )
             }
         }
@@ -4739,6 +4747,16 @@ class CombatOverlayService : Service() {
         }
     }
 
+    private fun unregisterOverlayReactionListenersIfRegistered() {
+        overlayReactionListener?.let { listener ->
+            runCatching {
+                AppContainer.from(applicationContext).chatRepository.removeOverlayReactionListener(listener)
+            }
+        }
+        overlayReactionListener = null
+        OverlayIncomingReactionDedupe.clear()
+    }
+
     private fun endOverlayChatSubscription() {
         mainHandler.removeCallbacks(stripZOrderLiftRunnable)
         stripZOrderLiftPosted = false
@@ -4781,12 +4799,7 @@ class CombatOverlayService : Service() {
             }
         }
         overlayRoomUnreadListener = null
-        overlayReactionListener?.let { listener ->
-            runCatching {
-                AppContainer.from(applicationContext).chatRepository.removeOverlayReactionListener(listener)
-            }
-        }
-        overlayReactionListener = null
+        unregisterOverlayReactionListenersIfRegistered()
         overlayReactionLogListener?.let { listener ->
             runCatching {
                 AppContainer.from(applicationContext).chatRepository.removeOverlayReactionLogListener(listener)

@@ -470,6 +470,9 @@ class ChatSocketManager {
                         reaction = reaction,
                         targetUserId = targetUserId,
                         broadcast = payload.optBoolean("broadcast", false),
+                        logEntryId = payload.optString("logEntryId").takeIf { it.isNotBlank() },
+                        replyToLogId = payload.optString("replyToLogId").takeIf { it.isNotBlank() },
+                        replyToLog = payload.optJSONObject("replyToLog")?.toOverlayReactionBurstReplyTo(),
                     )
                     overlayReactionListeners.forEach { l -> runCatching { l(event) } }
                 }
@@ -553,6 +556,17 @@ private fun JSONObject.toOverlayReactionLogEntryDto(): OverlayReactionLogEntryDt
         },
         replyToLogId = optString("replyToLogId").takeIf { it.isNotBlank() },
         replyToLog = optJSONObject("replyToLog")?.toOverlayReactionLogReplyToDto(),
+    )
+}
+
+private fun JSONObject.toOverlayReactionBurstReplyTo(): OverlayReactionBurstReplyTo? {
+    val logId = optString("_id").takeIf { it.isNotBlank() }
+        ?: optString("id").takeIf { it.isNotBlank() }
+        ?: return null
+    return OverlayReactionBurstReplyTo(
+        logId = logId,
+        reaction = optString("reaction", "heart").ifBlank { "heart" },
+        visibility = OverlayReactionLogVisibility.fromWire(optString("visibility", "personal")),
     )
 }
 

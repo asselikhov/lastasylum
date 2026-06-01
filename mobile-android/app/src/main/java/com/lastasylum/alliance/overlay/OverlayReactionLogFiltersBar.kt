@@ -80,13 +80,6 @@ fun OverlayReactionLogFiltersBar(
                 .weight(1.1f)
                 .then(OverlayHudFilterFields.baseFieldModifier()),
             singleLine = true,
-            placeholder = {
-                Text(
-                    text = stringResource(R.string.overlay_notifications_search_hint),
-                    style = fieldTextStyle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            },
             leadingIcon = {
                 Icon(
                     Icons.Default.Search,

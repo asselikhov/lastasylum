@@ -36,8 +36,10 @@ object OverlayReactionLogFeedBuilder {
         val filteredParentIds = filteredEntries.map { it.id }.toSet()
         val anchoredParentIds = repliesByParent.keys.filterTo(mutableSetOf()) { parentId ->
             val parentEntry = allEntries.find { it.id == parentId } ?: return@filterTo false
+            val isOwnParent = OverlayReactionLogVisibilityPolicy.isOutgoing(parentEntry, selfUserId) ||
+                OverlayReactionLogVisibilityPolicy.isIncoming(parentEntry, selfUserId)
             parentId in filteredParentIds &&
-                OverlayReactionLogVisibilityPolicy.isOutgoing(parentEntry, selfUserId) &&
+                isOwnParent &&
                 !repliesByParent[parentId].isNullOrEmpty()
         }
 

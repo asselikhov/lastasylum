@@ -58,6 +58,26 @@ class OverlayReactionLogFeedBuilderTest {
     }
 
     @Test
+    fun incomingParentWithReplies_showsThreadParent() {
+        val parentEntry = parent("p1", sender = other)
+        val replyEntry = reply("r1", "p1", sender = self).copy(
+            targetUserId = other,
+            targetUsername = "Peer",
+        )
+        val all = listOf(parentEntry, replyEntry)
+        val feed = OverlayReactionLogFeedBuilder.buildFeedItems(
+            filteredEntries = all,
+            allEntries = all,
+            selfUserId = self,
+            directionFilter = OverlayReactionLogFilter.All,
+        )
+        assertEquals(1, feed.size)
+        val thread = feed.first() as OverlayReactionLogFeedItem.ThreadParent
+        assertEquals("p1", thread.parent.representative.id)
+        assertEquals(1, thread.replies.size)
+    }
+
+    @Test
     fun replyFilterIsFlatList() {
         val parentEntry = parent("p1")
         val replyEntry = reply("r1", "p1")

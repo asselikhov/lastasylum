@@ -241,13 +241,6 @@ private fun OnlinePanelFilterSearchRow(
                 .weight(1f)
                 .then(OverlayHudFilterFields.baseFieldModifier()),
             singleLine = true,
-            placeholder = {
-                Text(
-                    stringResource(R.string.overlay_online_search_hint),
-                    color = tokens.mutedColor,
-                    style = fieldTextStyle,
-                )
-            },
             leadingIcon = {
                 Icon(
                     Icons.Default.Search,

@@ -394,6 +394,7 @@ class OverlayCommandsPopover(
         fromUsername: String,
         reactionId: String = "heart",
         broadcast: Boolean = false,
+        replyToLog: com.lastasylum.alliance.data.chat.OverlayReactionBurstReplyTo? = null,
     ) {
         attachedWindowManager = windowManager
         acquireGameGateSuppress()
@@ -404,6 +405,7 @@ class OverlayCommandsPopover(
                 fromDisplayName = fromUsername,
                 reactionId = reactionId,
                 broadcast = broadcast,
+                replyToLog = replyToLog,
             ),
         ) {
             if (!reactionBurstPresenter.isActive()) {

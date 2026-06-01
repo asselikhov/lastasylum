@@ -319,14 +319,37 @@ export class ChatGateway {
     targetUserId: string,
     reaction: string,
     broadcast: boolean,
+    logEntry?: {
+      _id: string;
+      replyToLogId?: string | null;
+      replyToLog?: {
+        _id: string;
+        reaction: string;
+        visibility: 'personal' | 'broadcast';
+        senderUserId: string;
+        senderUsername: string;
+        targetUserId: string | null;
+        targetUsername: string | null;
+      } | null;
+    },
   ) {
-    return {
+    const payload: Record<string, unknown> = {
       fromUserId: sender.userId,
       fromUsername: sender.username,
       reaction,
       targetUserId,
       broadcast,
     };
+    if (logEntry?._id) {
+      payload.logEntryId = logEntry._id;
+    }
+    if (logEntry?.replyToLogId) {
+      payload.replyToLogId = logEntry.replyToLogId;
+    }
+    if (logEntry?.replyToLog) {
+      payload.replyToLog = logEntry.replyToLog;
+    }
+    return payload;
   }
 
   /**
@@ -395,6 +418,7 @@ export class ChatGateway {
           targetUserId,
           reaction,
           false,
+          logEntry,
         ),
       );
 
@@ -451,6 +475,7 @@ export class ChatGateway {
             targetUserId,
             reaction,
             true,
+            logEntry,
           ),
         );
     }

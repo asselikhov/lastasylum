@@ -20,12 +20,14 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import com.airbnb.lottie.LottieAnimationView
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.data.chat.OverlayReactionBurstReplyTo
 
 internal data class OverlayReactionBurstRequest(
     val fromUserId: String,
     val fromDisplayName: String,
     val reactionId: String,
     val broadcast: Boolean,
+    val replyToLog: OverlayReactionBurstReplyTo? = null,
 )
 
 /** Incoming overlay reactions: hero tile + history strip under top-right HUD. */
@@ -130,6 +132,7 @@ internal class OverlayReactionBurstPresenter(
         var fromDisplayName: String,
         var reactionId: String,
         val broadcast: Boolean,
+        val replyToLog: OverlayReactionBurstReplyTo?,
         var mergeCount: Int,
         val createdAtMs: Long,
         val onFinished: () -> Unit,
@@ -147,6 +150,7 @@ internal class OverlayReactionBurstPresenter(
             fromDisplayName = fromDisplayName,
             reactionId = reactionId,
             broadcast = broadcast,
+            replyToLog = replyToLog,
         )
 
         fun currentLottie(): LottieAnimationView? = tile.card.findLottieInSubtree()
@@ -308,6 +312,7 @@ internal class OverlayReactionBurstPresenter(
             fromDisplayName = request.fromDisplayName,
             reactionId = request.reactionId,
             broadcast = request.broadcast,
+            replyToLog = request.replyToLog,
             mergeCount = 1,
             createdAtMs = System.currentTimeMillis(),
             onFinished = onFinished,
