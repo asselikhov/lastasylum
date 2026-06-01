@@ -66,9 +66,13 @@ object OverlayReactionLogVisibilityPolicy {
     ): Boolean = when (filter) {
         OverlayReactionLogScopeFilter.All -> true
         OverlayReactionLogScopeFilter.Personal ->
-            entry.visibility == OverlayReactionLogVisibility.Personal
+            !OverlayReactionLogReplyEnricher.isReplyEntry(entry) &&
+                entry.visibility == OverlayReactionLogVisibility.Personal
         OverlayReactionLogScopeFilter.Broadcast ->
-            entry.visibility == OverlayReactionLogVisibility.Broadcast
+            !OverlayReactionLogReplyEnricher.isReplyEntry(entry) &&
+                entry.visibility == OverlayReactionLogVisibility.Broadcast
+        OverlayReactionLogScopeFilter.Reply ->
+            OverlayReactionLogReplyEnricher.isReplyEntry(entry)
     }
 
     fun matchesSearchQuery(entry: OverlayReactionLogEntry, query: String): Boolean {
@@ -90,4 +94,5 @@ enum class OverlayReactionLogScopeFilter {
     All,
     Personal,
     Broadcast,
+    Reply,
 }

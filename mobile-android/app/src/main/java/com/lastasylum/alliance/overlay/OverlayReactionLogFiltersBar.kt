@@ -156,6 +156,8 @@ private fun ScopeFilterDropdown(
             stringResource(R.string.overlay_reaction_burst_caption_private)
         OverlayReactionLogScopeFilter.Broadcast ->
             stringResource(R.string.overlay_reaction_burst_caption_broadcast)
+        OverlayReactionLogScopeFilter.Reply ->
+            stringResource(R.string.overlay_notifications_reply_scope)
     }
     FilterDropdown(
         label = label,
@@ -175,6 +177,8 @@ private fun ScopeFilterDropdown(
                                 stringResource(R.string.overlay_reaction_burst_caption_private)
                             OverlayReactionLogScopeFilter.Broadcast ->
                                 stringResource(R.string.overlay_reaction_burst_caption_broadcast)
+                            OverlayReactionLogScopeFilter.Reply ->
+                                stringResource(R.string.overlay_notifications_reply_scope)
                         },
                         style = OverlayHudFilterFields.menuItemTextStyle(),
                     )

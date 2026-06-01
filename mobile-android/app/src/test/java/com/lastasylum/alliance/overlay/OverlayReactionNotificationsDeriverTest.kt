@@ -43,6 +43,37 @@ class OverlayReactionNotificationsDeriverTest {
         assertTrue(a != b)
     }
 
+    @Test
+    fun filterEntries_replyScope_returnsOnlyReplies() {
+        val self = "self-1"
+        val reply = entry(
+            id = "2",
+            sender = "alice",
+            target = self,
+            visibility = OverlayReactionLogVisibility.Personal,
+        ).copy(
+            replyToLog = com.lastasylum.alliance.data.chat.OverlayReactionLogReplyTo(
+                logId = "1",
+                reaction = "heart",
+                visibility = OverlayReactionLogVisibility.Personal,
+                senderUserId = self,
+                senderUsername = "Self",
+                targetUserId = "alice",
+                targetUsername = "Alice",
+            ),
+        )
+        val plain = entry("1", "alice", self, OverlayReactionLogVisibility.Personal)
+        val filtered = OverlayReactionNotificationsDeriver.filterEntries(
+            entries = listOf(plain, reply),
+            selfUserId = self,
+            directionFilter = OverlayReactionLogFilter.All,
+            scopeFilter = OverlayReactionLogScopeFilter.Reply,
+            searchQuery = "",
+        )
+        assertEquals(1, filtered.size)
+        assertEquals("2", filtered.single().id)
+    }
+
     private fun entry(
         id: String,
         sender: String,

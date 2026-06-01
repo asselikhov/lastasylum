@@ -89,6 +89,16 @@ fun OverlayReactionLogDetailSheet(
                     modifier = Modifier.padding(top = 4.dp),
                 )
             }
+            if (OverlayReactionLogReplyEnricher.isReplyEntry(entry)) {
+                entry.replyToLog?.let { parent ->
+                    OverlayReactionLogReplyContext(
+                        replyTo = parent,
+                        layout = OverlayReactionLogReplyContextLayout.Compact,
+                        previewSizeDp = 40,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
             if (entry.reactions.isNotEmpty()) {
                 ChatMessageReactionsRow(
                     reactions = entry.reactions,

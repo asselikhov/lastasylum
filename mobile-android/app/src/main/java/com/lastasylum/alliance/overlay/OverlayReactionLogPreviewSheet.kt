@@ -23,6 +23,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.OverlayReactionLogCluster
+import com.lastasylum.alliance.data.chat.OverlayReactionLogReplyEnricher
 import com.lastasylum.alliance.data.chat.OverlayReactionLogVisibility
 import com.lastasylum.alliance.data.chat.OverlayReactionLogVisibilityPolicy
 import com.lastasylum.alliance.ui.chat.MessageSheetPreviewSurface
@@ -120,6 +121,15 @@ fun OverlayReactionLogPreviewSheet(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
                         )
+                    }
+                    if (OverlayReactionLogReplyEnricher.isReplyEntry(entry)) {
+                        entry.replyToLog?.let { parent ->
+                            OverlayReactionLogReplyContext(
+                                replyTo = parent,
+                                layout = OverlayReactionLogReplyContextLayout.Compact,
+                                previewSizeDp = 36,
+                            )
+                        }
                     }
                 }
             }

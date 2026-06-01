@@ -153,6 +153,30 @@ class OverlayReactionLogVisibilityTest {
     }
 
     @Test
+    fun scopeFilter_reply_onlyReplyEntries() {
+        val reply = entry(other, self, id = "2", replyToLog = replyTo("parent"))
+        val plain = entry(other, self, id = "3")
+        assertTrue(
+            OverlayReactionLogVisibilityPolicy.matchesScopeFilter(
+                reply,
+                OverlayReactionLogScopeFilter.Reply,
+            ),
+        )
+        assertFalse(
+            OverlayReactionLogVisibilityPolicy.matchesScopeFilter(
+                plain,
+                OverlayReactionLogScopeFilter.Reply,
+            ),
+        )
+        assertFalse(
+            OverlayReactionLogVisibilityPolicy.matchesScopeFilter(
+                reply,
+                OverlayReactionLogScopeFilter.Personal,
+            ),
+        )
+    }
+
+    @Test
     fun isEntryUnread_onlyIncomingAfterCursor() {
         val incoming = entry(other, self, id = "5")
         assertTrue(

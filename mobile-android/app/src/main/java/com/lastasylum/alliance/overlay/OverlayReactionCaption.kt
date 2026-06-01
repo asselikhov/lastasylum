@@ -26,20 +26,22 @@ internal object OverlayReactionCaption {
     fun formatReactionDisplayNick(displayName: String): String =
         OverlayReactionNickFormat.format(displayName)
 
+    private fun scopeLabel(context: Context, broadcast: Boolean, isReply: Boolean): String =
+        when {
+            isReply -> context.getString(R.string.overlay_notifications_reply_scope)
+            broadcast -> context.getString(R.string.overlay_reaction_burst_caption_broadcast)
+            else -> context.getString(R.string.overlay_reaction_burst_caption_private)
+        }
+
     fun createCaptionLine(
         context: Context,
         displayName: String,
         broadcast: Boolean,
+        isReply: Boolean = false,
         mergeCount: Int = 1,
     ): TextView {
         val nick = formatReactionDisplayNick(displayName)
-        val scope = context.getString(
-            if (broadcast) {
-                R.string.overlay_reaction_burst_caption_broadcast
-            } else {
-                R.string.overlay_reaction_burst_caption_private
-            },
-        )
+        val scope = scopeLabel(context, broadcast, isReply)
         val mergeSuffix = if (mergeCount > 1) {
             " ${context.getString(R.string.overlay_reaction_burst_merge_count, mergeCount)}"
         } else {
@@ -85,20 +87,25 @@ internal object OverlayReactionCaption {
         }
     }
 
-    fun updateMergeCount(caption: TextView, displayName: String, broadcast: Boolean, mergeCount: Int) {
-        val rebuilt = createCaptionLine(caption.context, displayName, broadcast, mergeCount)
+    fun updateMergeCount(
+        caption: TextView,
+        displayName: String,
+        broadcast: Boolean,
+        isReply: Boolean,
+        mergeCount: Int,
+    ) {
+        val rebuilt = createCaptionLine(caption.context, displayName, broadcast, isReply, mergeCount)
         caption.text = rebuilt.text
     }
 
-    fun miniContentDescription(context: Context, displayName: String, broadcast: Boolean): String {
+    fun miniContentDescription(
+        context: Context,
+        displayName: String,
+        broadcast: Boolean,
+        isReply: Boolean = false,
+    ): String {
         val nick = formatReactionDisplayNick(displayName)
-        val scope = context.getString(
-            if (broadcast) {
-                R.string.overlay_reaction_burst_caption_broadcast
-            } else {
-                R.string.overlay_reaction_burst_caption_private
-            },
-        )
+        val scope = scopeLabel(context, broadcast, isReply)
         return context.getString(R.string.overlay_reaction_burst_caption_line, nick, scope)
     }
 
@@ -106,15 +113,10 @@ internal object OverlayReactionCaption {
         context: Context,
         displayName: String,
         broadcast: Boolean,
+        isReply: Boolean = false,
     ): TextView {
         val nick = formatReactionDisplayNick(displayName)
-        val scope = context.getString(
-            if (broadcast) {
-                R.string.overlay_reaction_burst_caption_broadcast
-            } else {
-                R.string.overlay_reaction_burst_caption_private
-            },
-        )
+        val scope = scopeLabel(context, broadcast, isReply)
         return TextView(context).apply {
             text = nick
             contentDescription = context.getString(R.string.overlay_reaction_mini_tooltip, nick, scope)

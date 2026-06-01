@@ -220,17 +220,24 @@ private fun CompactReplyRowContent(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 ScopePill(label = scopeLabel, color = scopeColor)
-                if (timeLine.isNotBlank()) {
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = timeLine,
-                        style = MaterialTheme.typography.labelSmall.merge(
-                            TextStyle(fontFeatureSettings = "tnum"),
-                        ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                        maxLines = 1,
-                    )
-                }
+            }
+            if (timeLine.isNotBlank()) {
+                Text(
+                    text = timeLine,
+                    style = MaterialTheme.typography.bodySmall.merge(
+                        TextStyle(fontFeatureSettings = "tnum"),
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                    maxLines = 1,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+            entry.replyToLog?.let { parent ->
+                OverlayReactionLogReplyContext(
+                    replyTo = parent,
+                    layout = OverlayReactionLogReplyContextLayout.Compact,
+                    previewSizeDp = 28,
+                )
             }
             AnimatedReactionsRow(
                 reactions = entry.reactions,

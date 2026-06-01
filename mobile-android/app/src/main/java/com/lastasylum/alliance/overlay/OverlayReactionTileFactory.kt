@@ -125,11 +125,13 @@ internal class OverlayReactionTileFactory(
                 LinearLayout.LayoutParams(tilePx, tilePx),
             )
         }
+        val isReply = request.replyToLog != null
         val captionView = if (mode == OverlayReactionTileMode.HERO) {
             OverlayReactionCaption.createCaptionLine(
                 context = context,
                 displayName = request.fromDisplayName,
                 broadcast = request.broadcast,
+                isReply = isReply,
                 mergeCount = mergeCount,
             ).also { caption ->
                 column.addView(
@@ -147,6 +149,7 @@ internal class OverlayReactionTileFactory(
                 context = context,
                 displayName = request.fromDisplayName,
                 broadcast = request.broadcast,
+                isReply = isReply,
             ).also { nick ->
                 column.addView(
                     nick,
@@ -163,6 +166,7 @@ internal class OverlayReactionTileFactory(
             context,
             request.fromDisplayName,
             request.broadcast,
+            isReply = isReply,
         )
         card.addView(
             column,

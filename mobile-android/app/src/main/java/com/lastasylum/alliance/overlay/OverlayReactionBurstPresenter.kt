@@ -389,7 +389,8 @@ internal class OverlayReactionBurstPresenter(
                 caption,
                 hero.fromDisplayName,
                 hero.broadcast,
-                hero.mergeCount,
+                isReply = hero.replyToLog != null,
+                mergeCount = hero.mergeCount,
             )
         }
         tileFactory.rebuildVisual(hero.tile, request, OverlayReactionTileMode.HERO, playLottie = true)
