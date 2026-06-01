@@ -74,13 +74,6 @@ fun OverlayReactionLogDetailSheet(
                     }
                 }
             }
-            entry.replyToLog?.let { replyTo ->
-                Spacer(modifier = Modifier.height(8.dp))
-                OverlayReactionLogReplyContext(
-                    replyTo = replyTo,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
             Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = overlayReactionLogNarrative(entry, selfUserId, includeSenderName = true),

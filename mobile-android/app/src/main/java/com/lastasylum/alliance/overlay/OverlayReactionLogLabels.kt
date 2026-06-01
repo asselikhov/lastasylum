@@ -5,6 +5,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.OverlayReactionLogEntry
+import com.lastasylum.alliance.data.chat.OverlayReactionLogReplyEnricher
 import com.lastasylum.alliance.data.chat.OverlayReactionLogVisibility
 
 object OverlayReactionLogLabelColors {
@@ -15,7 +16,7 @@ object OverlayReactionLogLabelColors {
 
 @Composable
 fun overlayReactionLogScopeLabel(entry: OverlayReactionLogEntry): String =
-    if (entry.replyToLog != null) {
+    if (OverlayReactionLogReplyEnricher.isReplyEntry(entry)) {
         stringResource(R.string.overlay_notifications_reply_scope)
     } else {
         when (entry.visibility) {
@@ -28,7 +29,7 @@ fun overlayReactionLogScopeLabel(entry: OverlayReactionLogEntry): String =
 
 @Composable
 fun overlayReactionLogScopeColor(entry: OverlayReactionLogEntry): Color =
-    if (entry.replyToLog != null) {
+    if (OverlayReactionLogReplyEnricher.isReplyEntry(entry)) {
         OverlayReactionLogLabelColors.replyScope
     } else {
         when (entry.visibility) {

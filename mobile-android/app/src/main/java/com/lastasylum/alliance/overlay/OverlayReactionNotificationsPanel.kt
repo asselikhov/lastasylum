@@ -116,8 +116,10 @@ fun OverlayReactionNotificationsPanel(
     val listLayout = uiState.listLayout
     val onlineUserIds = uiState.onlineUserIds
     val filterKey = uiState.filterKey
+    val newestFeedEntryIds = uiState.newestFeedEntryIds
     var previewCluster by remember { mutableStateOf<OverlayReactionLogCluster?>(null) }
     var showClearHistoryConfirm by remember { mutableStateOf(false) }
+    var showMarkAllReadConfirm by remember { mutableStateOf(false) }
     var hapticConsumedForSession by remember { mutableStateOf(false) }
     var markAllReadLoading by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -169,14 +171,8 @@ fun OverlayReactionNotificationsPanel(
                 onClose = onClose,
                 closeIconTint = Color.White,
                 onMarkAllRead = {
-                    scope.launch {
-                        markAllReadLoading = true
-                        val ok = repository.markAllReadAwait()
-                        markAllReadLoading = false
-                        if (!ok) {
-                            snackbarHostState.showSnackbar(markAllReadFailedText)
-                        }
-                    }
+                    OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
+                    showMarkAllReadConfirm = true
                 },
                 markAllReadEnabled = unreadCount > 0 && !loading && !markAllReadLoading,
                 markAllReadLoading = markAllReadLoading,
@@ -231,11 +227,18 @@ fun OverlayReactionNotificationsPanel(
                     savedScrollIndex >= 0 -> savedScrollIndex
                     lastClusterIndexForInit >= 0 -> lastClusterIndexForInit
                     else -> 0
-                }
+                }.coerceAtMost(lastClusterIndexForInit.coerceAtLeast(0))
                 val listState = rememberLazyListState(
                     cacheWindow = LazyLayoutCacheWindow(ahead = 140.dp, behind = 140.dp),
                     initialFirstVisibleItemIndex = initialListIndex,
                 )
+                LaunchedEffect(filterKey, listLayout.lastClusterItemIndex) {
+                    val lastIndex = listLayout.lastClusterItemIndex
+                    if (lastIndex < 0) return@LaunchedEffect
+                    if (listState.firstVisibleItemIndex > lastIndex) {
+                        listState.scrollToItem(lastIndex)
+                    }
+                }
                 val firstUnreadIndex = listLayout.firstUnreadItemIndex
                 val lastClusterIndex = listLayout.lastClusterItemIndex
                 val isNearBottom by remember(listState, lastClusterIndex) {
@@ -269,18 +272,29 @@ fun OverlayReactionNotificationsPanel(
                 }
                 val markReadUpToRef = rememberUpdatedState(repository::markReadUpTo)
                 val unreadEntryIdsRef = rememberUpdatedState(unreadEntryIds)
-                val itemIndexToEntryIdRef = rememberUpdatedState(listLayout.itemIndexToEntryId)
-                LaunchedEffect(listState, listLayout.itemIndexToEntryId) {
-                    snapshotFlow {
-                        listState.layoutInfo.visibleItemsInfo.map { it.index }
-                    }
+                val groupedFeedRef = rememberUpdatedState(groupedFeed)
+                fun visibleUnreadMarkReadIds(
+                    visibleItems: List<androidx.compose.foundation.lazy.LazyListItemInfo>,
+                ): Set<String> = visibleItems.flatMap { info ->
+                    val key = info.key.toString()
+                    collectMarkReadIdsForListKey(
+                        listKey = key,
+                        groupedFeed = groupedFeedRef.value,
+                        unreadEntryIds = unreadEntryIdsRef.value,
+                    )
+                }.toSet()
+                LaunchedEffect(listState, groupedFeed, unreadEntryIds) {
+                    snapshotFlow { listState.layoutInfo.visibleItemsInfo }
+                        .filter { it.isNotEmpty() }
+                        .first()
+                    val ids = visibleUnreadMarkReadIds(listState.layoutInfo.visibleItemsInfo)
+                    val watermark = maxOverlayReactionLogId(ids) ?: return@LaunchedEffect
+                    markReadUpToRef.value(watermark)
+                }
+                LaunchedEffect(listState, groupedFeed, unreadEntryIds) {
+                    snapshotFlow { listState.layoutInfo.visibleItemsInfo }
                         .debounce(140)
-                        .map { indices ->
-                            val unread = unreadEntryIdsRef.value
-                            val idByIndex = itemIndexToEntryIdRef.value
-                            indices.mapNotNull { idByIndex[it] }
-                                .filter { it in unread }
-                        }
+                        .map { visible -> visibleUnreadMarkReadIds(visible) }
                         .distinctUntilChanged()
                         .collect { visibleUnreadIds ->
                             val watermark = maxOverlayReactionLogId(visibleUnreadIds) ?: return@collect
@@ -290,12 +304,12 @@ fun OverlayReactionNotificationsPanel(
                 val showScrollToLatest by remember(isNearBottom, groupedFeed) {
                     derivedStateOf { groupedFeed.isNotEmpty() && !isNearBottom }
                 }
-                val animatedPreviewIds by remember(listState, listLayout.itemIndexToEntryId) {
+                val animatedPreviewIds by remember(listState, listLayout.itemIndexToEntryId, newestFeedEntryIds) {
                     derivedStateOf {
                         OverlayReactionPreviewAnimationPolicy.resolveAnimatedEntryIds(
+                            newestEntryIds = newestFeedEntryIds,
                             visibleItems = listState.layoutInfo.visibleItemsInfo,
                             itemIndexToEntryId = listLayout.itemIndexToEntryId,
-                            layoutInfo = listState.layoutInfo,
                         )
                     }
                 }
@@ -335,7 +349,7 @@ fun OverlayReactionNotificationsPanel(
                             }
                         }
                     }
-                    clustered.isEmpty() -> {
+                    groupedFeed.isEmpty() -> {
                         EmptyNotificationsState(
                             directionFilter = uiState.directionFilter,
                             onOpenReactionsPicker = onOpenReactionsPicker,
@@ -498,6 +512,56 @@ fun OverlayReactionNotificationsPanel(
         )
     }
 
+    if (showMarkAllReadConfirm) {
+        OverlayAwareAlertDialog(
+            onDismissRequest = {
+                showMarkAllReadConfirm = false
+                OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
+            },
+            title = {
+                Text(
+                    text = stringResource(R.string.overlay_notifications_mark_all_confirm_title),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.overlay_notifications_mark_all_confirm_message),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showMarkAllReadConfirm = false
+                        OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
+                        scope.launch {
+                            markAllReadLoading = true
+                            val ok = repository.markAllReadAwait()
+                            markAllReadLoading = false
+                            if (!ok) {
+                                snackbarHostState.showSnackbar(markAllReadFailedText)
+                            }
+                        }
+                    },
+                ) {
+                    Text(stringResource(R.string.overlay_notifications_mark_all_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showMarkAllReadConfirm = false
+                        OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
+                    },
+                ) {
+                    Text(stringResource(R.string.overlay_notifications_clear_cancel))
+                }
+            },
+        )
+    }
+
     if (showClearHistoryConfirm) {
         OverlayAwareAlertDialog(
             onDismissRequest = {
@@ -573,55 +637,63 @@ private fun OverlayReactionLogThreadParentClusterRow(
     val parentIncoming =
         OverlayReactionLogVisibilityPolicy.isIncoming(parentEntry, selfUserId)
     val defaultRepliesExpanded = replies.any { it.representative.id in unreadEntryIds }
-    OverlayReactionLogCard(
+    OverlayReactionLogReplyThreadFooter(
+        parentLogId = parentEntry.id,
+        replyCount = replies.size,
+        defaultExpanded = defaultRepliesExpanded,
         incoming = parentIncoming,
         unreadHighlight = parentEntry.id in unreadEntryIds,
         modifier = modifier.fillMaxWidth(),
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            OverlayReactionLogEntryRow(
-                cluster = parent,
-                selfUserId = selfUserId,
-                unreadHighlight = parentEntry.id in unreadEntryIds,
-                playAnimatedPreview = parentEntry.id in animatedPreviewIds,
-                isOnline = parentEntry.senderUserId.trim() in onlineUserIds,
-                animateEnter = parentEntry.id == newestUnreadEntryId,
-                wrapInCard = false,
-                onPreviewClick = {
-                    OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
-                    onPreviewCluster(parent)
-                },
-                onQuickReply = if (parentIncoming && !OverlayReactionLogReplyEnricher.isReplyEntry(parentEntry)) {
-                    { onReplyToReactionLog(parentEntry) }
-                } else {
-                    null
-                },
-                onToggleEmojiReaction = { emoji -> onToggleEmojiReaction(parentEntry.id, emoji) },
-            )
-            OverlayReactionLogReplyThreadFooter(
-                parentLogId = parentEntry.id,
-                replyCount = replies.size,
-                defaultExpanded = defaultRepliesExpanded,
+        cardContent = {
+            OverlayReactionLogCard(
                 incoming = parentIncoming,
                 unreadHighlight = parentEntry.id in unreadEntryIds,
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                replies.forEach { replyCluster ->
-                    OverlayReactionLogFeedClusterRow(
-                        cluster = replyCluster,
-                        selfUserId = selfUserId,
-                        unreadEntryIds = unreadEntryIds,
-                        animatedPreviewIds = animatedPreviewIds,
-                        onlineUserIds = onlineUserIds,
-                        newestUnreadEntryId = newestUnreadEntryId,
-                        onPreviewCluster = onPreviewCluster,
-                        onReplyToReactionLog = onReplyToReactionLog,
-                        onToggleEmojiReaction = onToggleEmojiReaction,
-                        modifier = Modifier.padding(start = 8.dp),
-                    )
-                }
+                OverlayReactionLogEntryRow(
+                    cluster = parent,
+                    selfUserId = selfUserId,
+                    unreadHighlight = parentEntry.id in unreadEntryIds,
+                    playAnimatedPreview = parentEntry.id in animatedPreviewIds,
+                    isOnline = parentEntry.senderUserId.trim() in onlineUserIds,
+                    animateEnter = parentEntry.id == newestUnreadEntryId,
+                    wrapInCard = false,
+                    onPreviewClick = {
+                        OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
+                        onPreviewCluster(parent)
+                    },
+                    onQuickReply = if (
+                        parentIncoming && !OverlayReactionLogReplyEnricher.isReplyEntry(parentEntry)
+                    ) {
+                        { onReplyToReactionLog(parentEntry) }
+                    } else {
+                        null
+                    },
+                    onToggleEmojiReaction = { emoji ->
+                        onToggleEmojiReaction(parentEntry.id, emoji)
+                    },
+                )
             }
-        }
-    }
+        },
+        expandedContent = {
+            replies.forEachIndexed { index, replyCluster ->
+                if (index > 0) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
+                OverlayReactionLogFeedClusterRow(
+                    cluster = replyCluster,
+                    selfUserId = selfUserId,
+                    unreadEntryIds = unreadEntryIds,
+                    animatedPreviewIds = animatedPreviewIds,
+                    onlineUserIds = onlineUserIds,
+                    newestUnreadEntryId = newestUnreadEntryId,
+                    onPreviewCluster = onPreviewCluster,
+                    onReplyToReactionLog = onReplyToReactionLog,
+                    onToggleEmojiReaction = onToggleEmojiReaction,
+                )
+            }
+        },
+    )
 }
 
 @Composable

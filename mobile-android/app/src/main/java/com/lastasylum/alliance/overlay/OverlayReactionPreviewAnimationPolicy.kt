@@ -1,33 +1,27 @@
 package com.lastasylum.alliance.overlay
 
 import androidx.compose.foundation.lazy.LazyListItemInfo
-import androidx.compose.foundation.lazy.LazyListLayoutInfo
-import kotlin.math.abs
 
 object OverlayReactionPreviewAnimationPolicy {
     const val MAX_CONCURRENT_ANIMATED_PREVIEWS = 3
 
     /**
-     * Picks up to [MAX_CONCURRENT_ANIMATED_PREVIEWS] entry ids whose list items are visible
-     * and closest to the viewport vertical center.
+     * Animates up to [MAX_CONCURRENT_ANIMATED_PREVIEWS] newest feed cards that are currently visible.
      */
     fun resolveAnimatedEntryIds(
+        newestEntryIds: List<String>,
         visibleItems: List<LazyListItemInfo>,
         itemIndexToEntryId: Map<Int, String>,
-        layoutInfo: LazyListLayoutInfo,
     ): Set<String> {
-        if (visibleItems.isEmpty() || itemIndexToEntryId.isEmpty()) return emptySet()
-        val viewportCenter =
-            (layoutInfo.viewportStartOffset + layoutInfo.viewportEndOffset) / 2
-        return visibleItems
-            .mapNotNull { info ->
-                val entryId = itemIndexToEntryId[info.index] ?: return@mapNotNull null
-                val itemCenter = info.offset + info.size / 2
-                entryId to abs(itemCenter - viewportCenter)
-            }
-            .sortedBy { it.second }
+        if (newestEntryIds.isEmpty() || visibleItems.isEmpty() || itemIndexToEntryId.isEmpty()) {
+            return emptySet()
+        }
+        val candidates = newestEntryIds
             .take(MAX_CONCURRENT_ANIMATED_PREVIEWS)
-            .map { it.first }
+            .toSet()
+        return visibleItems
+            .mapNotNull { info -> itemIndexToEntryId[info.index] }
+            .filter { it in candidates }
             .toSet()
     }
 }

@@ -254,19 +254,21 @@ class OverlayReactionLogRepository(
     }
 
     suspend fun markAllReadAwait(): Boolean {
+        flushPendingReadCursorAwait()
         markReadUpToJob?.cancel()
         markReadUpToJob = null
         pendingMarkReadUpToWatermark = null
         val watermark = resolveMarkAllReadWatermark()
         if (watermark.isNullOrBlank()) return false
         val previousCursor = _lastSeenLogId.value
-        _lastSeenLogId.value = watermark
-        publishUnreadCounts(emptySet())
         return runCatching {
             chatApi.advanceOverlayReactionReadCursor(
                 AdvanceOverlayReactionReadCursorRequest(lastSeenLogId = watermark),
             )
-        }.onSuccess {
+        }.onSuccess { response ->
+            val serverCursor = response.lastSeenLogId?.trim()?.takeIf { it.isNotEmpty() }
+            val merged = mergeOverlayReactionLastSeenLogId(watermark, serverCursor) ?: watermark
+            _lastSeenLogId.value = merged
             publishUnreadCounts(emptySet())
         }.onFailure {
             _lastSeenLogId.value = previousCursor

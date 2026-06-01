@@ -68,12 +68,6 @@ fun OverlayReactionLogPreviewSheet(
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                     color = MaterialTheme.colorScheme.onSurface,
                 )
-                entry.replyToLog?.let { replyTo ->
-                    OverlayReactionLogReplyContext(
-                        replyTo = replyTo,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()

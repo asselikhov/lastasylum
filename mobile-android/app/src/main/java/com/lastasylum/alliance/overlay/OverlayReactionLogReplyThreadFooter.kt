@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -46,7 +47,23 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.ui.components.premium.PremiumGlassSurface
+import com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces
 
+private val CapsuleShape = RoundedCornerShape(12.dp)
+private val ThreadPanelShape = RoundedCornerShape(
+    topStart = 6.dp,
+    topEnd = 6.dp,
+    bottomStart = ReactionLogCardTokens.corner,
+    bottomEnd = ReactionLogCardTokens.corner,
+)
+private val CapsuleOverlap = 14.dp
+private val CapsuleReserve = 12.dp
+
+/**
+ * Обёртка для карточки с ответами: [cardContent] не меняет границ по сравнению с обычной карточкой;
+ * капсула раскрытия сидит на нижнем контуре; ответы рисуются отдельной панелью снизу.
+ */
 @Composable
 fun OverlayReactionLogReplyThreadFooter(
     parentLogId: String,
@@ -55,12 +72,17 @@ fun OverlayReactionLogReplyThreadFooter(
     defaultExpanded: Boolean = false,
     incoming: Boolean = true,
     unreadHighlight: Boolean = false,
+    cardContent: @Composable () -> Unit,
     expandedContent: @Composable () -> Unit,
 ) {
-    if (replyCount <= 0) return
-    var expanded by rememberSaveable(parentLogId, defaultExpanded) {
-        mutableStateOf(defaultExpanded)
+    if (replyCount <= 0) {
+        Box(modifier = modifier.fillMaxWidth()) {
+            cardContent()
+        }
+        return
     }
+
+    var expanded by rememberSaveable(parentLogId) { mutableStateOf(defaultExpanded) }
     val chevronRotation by animateFloatAsState(
         targetValue = if (expanded) 180f else 0f,
         animationSpec = tween(220),
@@ -86,86 +108,177 @@ fun OverlayReactionLogReplyThreadFooter(
         unreadHighlight && incoming -> ReactionLogCardTokens.borderUnread
         else -> Color(0x503D4A62)
     }
-    val capsuleShape = RoundedCornerShape(12.dp)
+    val railColor = if (incoming) {
+        ReactionLogCardTokens.incomingRail
+    } else {
+        ReactionLogCardTokens.outgoingRail
+    }
 
     Column(modifier = modifier.fillMaxWidth()) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(28.dp)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            if (incoming) {
-                                ReactionLogCardTokens.incomingGradientBottom.copy(alpha = 0.9f)
-                            } else {
-                                ReactionLogCardTokens.outgoingGradientBottom.copy(alpha = 0.9f)
-                            },
-                        ),
-                    ),
-                ),
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .semantics { contentDescription = toggleCd }
-                .clickable(
-                    interactionSource = MutableInteractionSource(),
-                    indication = null,
-                    onClick = { expanded = !expanded },
-                ),
-            contentAlignment = Alignment.TopCenter,
+                .padding(bottom = CapsuleReserve),
         ) {
-            Surface(
+            cardContent()
+            ReplyThreadCapsule(
+                expanded = expanded,
+                chevronRotation = chevronRotation,
+                countLabel = countLabel,
+                toggleCd = toggleCd,
+                capsuleBorder = capsuleBorder,
+                onToggle = { expanded = !expanded },
                 modifier = Modifier
-                    .offset(y = (-14).dp)
-                    .clip(capsuleShape),
-                shape = capsuleShape,
-                color = Color(0xE6141C28),
-                border = BorderStroke(1.dp, capsuleBorder),
-                shadowElevation = 2.dp,
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.KeyboardArrowDown,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .size(18.dp)
-                            .rotate(chevronRotation),
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                    Text(
-                        text = countLabel,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-            }
+                    .align(Alignment.BottomCenter)
+                    .offset(y = CapsuleOverlap),
+            )
         }
+
         AnimatedVisibility(
             visible = expanded,
-            enter = expandVertically() + fadeIn(tween(180)),
-            exit = shrinkVertically() + fadeOut(tween(160)),
+            enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(tween(200)),
+            exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(tween(160)),
         ) {
-            Column(
+            ReplyThreadExpandedPanel(
+                incoming = incoming,
+                unreadHighlight = unreadHighlight,
+                railColor = railColor,
+                content = expandedContent,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReplyThreadCapsule(
+    expanded: Boolean,
+    chevronRotation: Float,
+    countLabel: String,
+    toggleCd: String,
+    capsuleBorder: Color,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier
+            .semantics { contentDescription = toggleCd }
+            .clip(CapsuleShape)
+            .clickable(
+                interactionSource = MutableInteractionSource(),
+                indication = null,
+                onClick = onToggle,
+            ),
+        shape = CapsuleShape,
+        color = Color(0xF0141C28),
+        border = BorderStroke(1.dp, capsuleBorder),
+        shadowElevation = 4.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowDown,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(18.dp)
+                    .rotate(chevronRotation),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                text = countLabel,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReplyThreadExpandedPanel(
+    incoming: Boolean,
+    unreadHighlight: Boolean,
+    railColor: Color,
+    content: @Composable () -> Unit,
+) {
+    val borderColor = when {
+        unreadHighlight && incoming -> ReactionLogCardTokens.borderUnread.copy(alpha = 0.7f)
+        else -> Color(0x353D4A62)
+    }
+    val panelGradient = Brush.verticalGradient(
+        colors = listOf(
+            if (incoming) {
+                ReactionLogCardTokens.incomingGradientTop.copy(alpha = 0.55f)
+            } else {
+                ReactionLogCardTokens.outgoingGradientTop.copy(alpha = 0.4f)
+            },
+            if (incoming) {
+                ReactionLogCardTokens.incomingGradientBottom
+            } else {
+                ReactionLogCardTokens.outgoingGradientBottom
+            },
+        ),
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .width(1.dp)
+                .height(10.dp)
+                .background(railColor.copy(alpha = 0.45f)),
+        )
+        PremiumGlassSurface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = ThreadPanelShape,
+            shadowElevation = 2.dp,
+            layerAlpha = PremiumSurfaces.listCardAlpha * 0.92f,
+            showInnerGlow = false,
+            border = BorderStroke(1.dp, borderColor),
+            highlightCornerRadius = ReactionLogCardTokens.corner,
+        ) {
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 6.dp, start = 10.dp, end = 10.dp, bottom = 10.dp),
+                    .background(panelGradient),
             ) {
-                HorizontalDivider(
-                    color = Color(0x20FFFFFF),
-                    modifier = Modifier.padding(bottom = 10.dp),
-                )
-                expandedContent()
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .padding(start = if (incoming) 0.dp else 0.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .align(
+                                if (incoming) Alignment.CenterStart else Alignment.CenterEnd,
+                            )
+                            .width(ReactionLogCardTokens.railWidth)
+                            .matchParentSize()
+                            .background(railColor.copy(alpha = if (incoming) 0.4f else 0.28f)),
+                    )
+                }
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            start = if (incoming) 10.dp else 8.dp,
+                            end = if (incoming) 8.dp else 10.dp,
+                            top = 10.dp,
+                            bottom = 10.dp,
+                        ),
+                ) {
+                    HorizontalDivider(
+                        color = Color(0x18FFFFFF),
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                    content()
+                }
             }
-        }
-        if (!expanded) {
-            Spacer(modifier = Modifier.height(6.dp))
         }
     }
 }

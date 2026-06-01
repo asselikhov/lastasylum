@@ -116,7 +116,7 @@ class OverlayReactionLogFeedBuilderTest {
     }
 
     @Test
-    fun incomingFilter_onlyReplyStillShowsParentThread() {
+    fun incomingFilter_incomingReplyToOutgoingParent_showsStandaloneReply() {
         val parentEntry = parent("p1", sender = self)
         val replyEntry = reply("r1", "p1", sender = other)
         val all = listOf(parentEntry, replyEntry)
@@ -136,13 +136,13 @@ class OverlayReactionLogFeedBuilderTest {
             directionFilter = OverlayReactionLogFilter.Incoming,
         )
         assertEquals(1, feed.size)
-        val thread = feed.first() as OverlayReactionLogFeedItem.ThreadParent
-        assertEquals("p1", thread.parent.representative.id)
-        assertEquals("r1", thread.replies.first().representative.id)
+        val root = feed.first() as OverlayReactionLogFeedItem.Root
+        assertEquals("r1", root.cluster.representative.id)
+        assertTrue(OverlayReactionLogReplyEnricher.isReplyEntry(root.cluster.representative))
     }
 
     @Test
-    fun outgoingFilter_showsOwnReply() {
+    fun outgoingFilter_includesOwnReplyEntry() {
         val parentEntry = parent("p1", sender = other)
         val replyEntry = reply("r1", "p1", sender = self).copy(
             targetUserId = other,
@@ -156,8 +156,16 @@ class OverlayReactionLogFeedBuilderTest {
             OverlayReactionLogScopeFilter.All,
             "",
         )
-        assertEquals(1, filtered.size)
-        assertEquals("r1", filtered.first().id)
+        val feed = OverlayReactionLogFeedBuilder.buildFeedItems(
+            filteredEntries = filtered,
+            allEntries = all,
+            selfUserId = self,
+            directionFilter = OverlayReactionLogFilter.Outgoing,
+        )
+        assertEquals(1, feed.size)
+        val root = feed.first() as OverlayReactionLogFeedItem.Root
+        assertEquals("r1", root.cluster.representative.id)
+        assertTrue(OverlayReactionLogReplyEnricher.isReplyEntry(root.cluster.representative))
     }
 
     @Test

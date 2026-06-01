@@ -47,6 +47,7 @@ data class OverlayReactionNotificationsUiState(
     ),
     val onlineUserIds: Set<String> = emptySet(),
     val newestUnreadEntryId: String? = null,
+    val newestFeedEntryIds: List<String> = emptyList(),
 )
 
 class OverlayReactionNotificationsController(
@@ -239,6 +240,7 @@ class OverlayReactionNotificationsController(
         )
         val onlineUserIds = OverlayReactionNotificationsDeriver.resolveOnlineUserIds(clustered)
         val newestUnread = entries.firstOrNull()?.id?.takeIf { it in unreadEntryIds }
+        val newestFeedEntryIds = buildNewestFeedEntryIds(groupedFeed)
 
         _uiState.update {
             it.copy(
@@ -248,6 +250,7 @@ class OverlayReactionNotificationsController(
                 listLayout = listLayout,
                 onlineUserIds = onlineUserIds,
                 newestUnreadEntryId = newestUnread,
+                newestFeedEntryIds = newestFeedEntryIds,
             )
         }
     }

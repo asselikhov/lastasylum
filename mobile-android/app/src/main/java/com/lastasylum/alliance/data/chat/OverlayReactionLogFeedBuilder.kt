@@ -28,6 +28,7 @@ object OverlayReactionLogFeedBuilder {
             enrichedAll = enrichedAll,
             filteredIdSet = filteredIdSet,
             selfUserId = selfUserId,
+            directionFilter = directionFilter,
         )
         val replyClustersByParent = replyClustersForParents(
             anchoredParentIds = anchoredParentIds,
@@ -87,16 +88,26 @@ object OverlayReactionLogFeedBuilder {
         enrichedAll: List<OverlayReactionLogEntry>,
         filteredIdSet: Set<String>,
         selfUserId: String,
+        directionFilter: OverlayReactionLogFilter,
     ): Set<String> =
         repliesByParent.keys.filterTo(mutableSetOf()) { parentId ->
             val parentEntry = enrichedAll.find { it.id == parentId } ?: return@filterTo false
             val hasVisibleReplies = repliesByParent[parentId]?.any { it.id in filteredIdSet } == true
             hasVisibleReplies &&
-                (
-                    OverlayReactionLogVisibilityPolicy.isIncoming(parentEntry, selfUserId) ||
-                        OverlayReactionLogVisibilityPolicy.isOutgoing(parentEntry, selfUserId)
-                    )
+                parentMatchesDirectionFilter(parentEntry, selfUserId, directionFilter)
         }
+
+    private fun parentMatchesDirectionFilter(
+        parentEntry: OverlayReactionLogEntry,
+        selfUserId: String,
+        directionFilter: OverlayReactionLogFilter,
+    ): Boolean = when (directionFilter) {
+        OverlayReactionLogFilter.All -> true
+        OverlayReactionLogFilter.Incoming ->
+            OverlayReactionLogVisibilityPolicy.isIncoming(parentEntry, selfUserId)
+        OverlayReactionLogFilter.Outgoing ->
+            OverlayReactionLogVisibilityPolicy.isOutgoing(parentEntry, selfUserId)
+    }
 
     private fun replyClustersForParents(
         anchoredParentIds: Set<String>,

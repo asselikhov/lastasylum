@@ -32,11 +32,79 @@ internal fun buildOverlayReactionLogDisplayRows(
     return rows
 }
 
-internal fun feedItemPrimaryEntryId(item: OverlayReactionLogFeedItem): String =
+fun feedItemPrimaryEntryId(item: OverlayReactionLogFeedItem): String =
     when (item) {
         is OverlayReactionLogFeedItem.Root -> item.cluster.representative.id
         is OverlayReactionLogFeedItem.ThreadParent -> item.parent.representative.id
     }
+
+/** Newest-first entry ids for preview animation (top of feed). */
+fun buildNewestFeedEntryIds(
+    groupedFeed: List<Pair<String, List<OverlayReactionLogFeedItem>>>,
+    limit: Int = OverlayReactionPreviewAnimationPolicy.MAX_CONCURRENT_ANIMATED_PREVIEWS,
+): List<String> {
+    val ids = mutableListOf<String>()
+    groupedFeed.forEach { (_, feedItems) ->
+        feedItems.forEach { item ->
+            if (ids.size >= limit) return ids
+            ids += feedItemPrimaryEntryId(item)
+        }
+    }
+    return ids
+}
+
+fun parseOverlayReactionLogListKey(key: Any?): String? = when (key) {
+    is String -> when {
+        key.startsWith(CLUSTER_KEY_PREFIX) -> key.removePrefix(CLUSTER_KEY_PREFIX)
+        key.startsWith(THREAD_KEY_PREFIX) -> key.removePrefix(THREAD_KEY_PREFIX)
+        else -> null
+    }
+    else -> null
+}
+
+fun findThreadParentFeedItem(
+    groupedFeed: List<Pair<String, List<OverlayReactionLogFeedItem>>>,
+    parentLogId: String,
+): OverlayReactionLogFeedItem.ThreadParent? {
+    groupedFeed.forEach { (_, feedItems) ->
+        feedItems.forEach { item ->
+            if (item is OverlayReactionLogFeedItem.ThreadParent &&
+                item.parent.representative.id == parentLogId
+            ) {
+                return item
+            }
+        }
+    }
+    return null
+}
+
+fun collectMarkReadIdsForListKey(
+    listKey: String,
+    groupedFeed: List<Pair<String, List<OverlayReactionLogFeedItem>>>,
+    unreadEntryIds: Set<String>,
+): Set<String> {
+    if (unreadEntryIds.isEmpty()) return emptySet()
+    return when {
+        listKey.startsWith(CLUSTER_KEY_PREFIX) -> {
+            val id = listKey.removePrefix(CLUSTER_KEY_PREFIX)
+            if (id in unreadEntryIds) setOf(id) else emptySet()
+        }
+        listKey.startsWith(THREAD_KEY_PREFIX) -> {
+            val parentId = listKey.removePrefix(THREAD_KEY_PREFIX)
+            buildSet {
+                if (parentId in unreadEntryIds) add(parentId)
+                findThreadParentFeedItem(groupedFeed, parentId)?.replies?.forEach { reply ->
+                    val replyId = reply.representative.id
+                    if (replyId in unreadEntryIds) add(replyId)
+                }
+            }
+        }
+        else -> emptySet()
+    }
+}
+
+private const val CLUSTER_KEY_PREFIX = "cluster-"
+private const val THREAD_KEY_PREFIX = "thread-"
 
 internal fun buildStickyListLayout(
     groupedFeed: List<Pair<String, List<OverlayReactionLogFeedItem>>>,

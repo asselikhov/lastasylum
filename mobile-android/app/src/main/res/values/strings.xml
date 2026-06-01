@@ -806,7 +806,6 @@
     <string name="overlay_notifications_reply_scope">Ответная</string>
     <string name="overlay_notifications_narrative_reply_outgoing">Вы ответили %1$s</string>
     <string name="overlay_notifications_narrative_incoming_reply">отправил(а) ответную реакцию</string>
-    <string name="overlay_notifications_reply_on_parent">на</string>
     <string name="overlay_notifications_reply_badge">Ответная</string>
     <string name="overlay_notifications_empty_reply">Пока нет ответов на реакции</string>
     <string name="overlay_notifications_show_replies">Показать ответы</string>
@@ -828,6 +827,9 @@
     <string name="overlay_notifications_reply_cd">Ответить реакцией</string>
     <string name="overlay_notifications_reaction_failed">Не удалось поставить реакцию</string>
     <string name="overlay_notifications_mark_all_read_failed">Не удалось пометить всё прочитанным</string>
+    <string name="overlay_notifications_mark_all_confirm_title">Пометить всё прочитанным?</string>
+    <string name="overlay_notifications_mark_all_confirm_message">Все входящие реакции в журнале будут отмечены как прочитанные. Счётчик на кнопке «Уведомления» обнулится.</string>
+    <string name="overlay_notifications_mark_all_confirm">Пометить прочитанными</string>
     <string name="overlay_notifications_merge_window">×%1$d за 2 с</string>
     <string name="overlay_notifications_open_reactions">Открыть реакции</string>
     <string name="overlay_notifications_menu_clear_history">Очистить историю</string>
