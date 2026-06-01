@@ -28,7 +28,7 @@ internal object OverlayReactionBurstReplyPreview {
             gravity = Gravity.CENTER_VERTICAL
         }
         val label = TextView(context).apply {
-            text = context.getString(R.string.overlay_notifications_reply_to)
+            text = context.getString(R.string.overlay_notifications_reply_scope)
             setTextColor(Color.parseColor("#99A8B5C8"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, if (hero) 11f else 9f)
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)

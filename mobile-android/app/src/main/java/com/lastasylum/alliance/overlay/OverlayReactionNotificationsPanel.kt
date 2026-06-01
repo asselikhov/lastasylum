@@ -401,46 +401,21 @@ fun OverlayReactionNotificationsPanel(
                                                         repository.toggleLogEntryReaction(id, emoji)
                                                     },
                                                 )
-                                            is OverlayReactionLogFeedItem.ThreadParent -> {
-                                                val parent = feedItem.parent
-                                                val parentEntry = parent.representative
-                                                Column(modifier = Modifier.fillMaxWidth()) {
-                                                    OverlayReactionLogFeedClusterRow(
-                                                        cluster = parent,
-                                                        selfUserId = selfUserId,
-                                                        unreadEntryIds = unreadEntryIds,
-                                                        animatedPreviewIds = animatedPreviewIds,
-                                                        onlineUserIds = onlineUserIds,
-                                                        newestUnreadEntryId = uiState.newestUnreadEntryId,
-                                                        onPreviewCluster = { previewCluster = it },
-                                                        onReplyToReactionLog = onReplyToReactionLog,
-                                                        onToggleEmojiReaction = { id, emoji ->
-                                                            repository.toggleLogEntryReaction(id, emoji)
-                                                        },
-                                                    )
-                                                    OverlayReactionLogReplyThreadFooter(
-                                                        parentLogId = parentEntry.id,
-                                                        replyCount = feedItem.replies.size,
-                                                    ) {
-                                                        feedItem.replies.forEach { replyCluster ->
-                                                            OverlayReactionLogFeedClusterRow(
-                                                                cluster = replyCluster,
-                                                                selfUserId = selfUserId,
-                                                                unreadEntryIds = unreadEntryIds,
-                                                                animatedPreviewIds = animatedPreviewIds,
-                                                                onlineUserIds = onlineUserIds,
-                                                                newestUnreadEntryId = uiState.newestUnreadEntryId,
-                                                                onPreviewCluster = { previewCluster = it },
-                                                                onReplyToReactionLog = onReplyToReactionLog,
-                                                                onToggleEmojiReaction = { id, emoji ->
-                                                                    repository.toggleLogEntryReaction(id, emoji)
-                                                                },
-                                                                modifier = Modifier.padding(start = 12.dp),
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
+                                            is OverlayReactionLogFeedItem.ThreadParent ->
+                                                OverlayReactionLogThreadParentClusterRow(
+                                                    parent = feedItem.parent,
+                                                    replies = feedItem.replies,
+                                                    selfUserId = selfUserId,
+                                                    unreadEntryIds = unreadEntryIds,
+                                                    animatedPreviewIds = animatedPreviewIds,
+                                                    onlineUserIds = onlineUserIds,
+                                                    newestUnreadEntryId = uiState.newestUnreadEntryId,
+                                                    onPreviewCluster = { previewCluster = it },
+                                                    onReplyToReactionLog = onReplyToReactionLog,
+                                                    onToggleEmojiReaction = { id, emoji ->
+                                                        repository.toggleLogEntryReaction(id, emoji)
+                                                    },
+                                                )
                                         }
                                     }
                                 }
@@ -555,6 +530,72 @@ private suspend fun scrollOverlayNotificationsListToIndex(
             .filter { it > index }
             .first()
         listState.scrollToItem(index)
+    }
+}
+
+@Composable
+private fun OverlayReactionLogThreadParentClusterRow(
+    parent: OverlayReactionLogCluster,
+    replies: List<OverlayReactionLogCluster>,
+    selfUserId: String,
+    unreadEntryIds: Set<String>,
+    animatedPreviewIds: Set<String>,
+    onlineUserIds: Set<String>,
+    newestUnreadEntryId: String?,
+    onPreviewCluster: (OverlayReactionLogCluster) -> Unit,
+    onReplyToReactionLog: (OverlayReactionLogEntry) -> Unit,
+    onToggleEmojiReaction: (String, String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val parentEntry = parent.representative
+    val parentIncoming =
+        OverlayReactionLogVisibilityPolicy.isIncoming(parentEntry, selfUserId)
+    OverlayReactionLogCard(
+        incoming = parentIncoming,
+        unreadHighlight = parentEntry.id in unreadEntryIds,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            OverlayReactionLogEntryRow(
+                cluster = parent,
+                selfUserId = selfUserId,
+                unreadHighlight = parentEntry.id in unreadEntryIds,
+                playAnimatedPreview = parentEntry.id in animatedPreviewIds,
+                isOnline = parentEntry.senderUserId.trim() in onlineUserIds,
+                animateEnter = parentEntry.id == newestUnreadEntryId,
+                wrapInCard = false,
+                onPreviewClick = {
+                    OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
+                    onPreviewCluster(parent)
+                },
+                onQuickReply = if (parentIncoming) {
+                    { onReplyToReactionLog(parentEntry) }
+                } else {
+                    null
+                },
+                onToggleEmojiReaction = { emoji -> onToggleEmojiReaction(parentEntry.id, emoji) },
+            )
+            OverlayReactionLogReplyThreadFooter(
+                parentLogId = parentEntry.id,
+                replyCount = replies.size,
+                modifier = Modifier.padding(bottom = 4.dp),
+            ) {
+                replies.forEach { replyCluster ->
+                    OverlayReactionLogFeedClusterRow(
+                        cluster = replyCluster,
+                        selfUserId = selfUserId,
+                        unreadEntryIds = unreadEntryIds,
+                        animatedPreviewIds = animatedPreviewIds,
+                        onlineUserIds = onlineUserIds,
+                        newestUnreadEntryId = newestUnreadEntryId,
+                        onPreviewCluster = onPreviewCluster,
+                        onReplyToReactionLog = onReplyToReactionLog,
+                        onToggleEmojiReaction = onToggleEmojiReaction,
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
+            }
+        }
     }
 }
 

@@ -7,16 +7,21 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -27,15 +32,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
-import com.lastasylum.alliance.data.chat.OverlayReactionLogCluster
-import com.lastasylum.alliance.ui.components.premium.PremiumGlassSurface
 
 @Composable
 fun OverlayReactionLogReplyThreadFooter(
@@ -69,10 +74,9 @@ fun OverlayReactionLogReplyThreadFooter(
     }
 
     Column(modifier = modifier.fillMaxWidth()) {
-        PremiumGlassSurface(
+        Box(
             modifier = Modifier
-                .align(Alignment.CenterHorizontally)
-                .padding(top = 4.dp)
+                .fillMaxWidth()
                 .semantics { contentDescription = toggleCd }
                 .clickable(
                     interactionSource = MutableInteractionSource(),
@@ -80,24 +84,38 @@ fun OverlayReactionLogReplyThreadFooter(
                     onClick = { expanded = !expanded },
                 ),
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            HorizontalDivider(
+                color = Color(0x403D4A62),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp),
+            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .offset(y = 10.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF1A2438))
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
             ) {
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowDown,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .size(20.dp)
-                        .rotate(chevronRotation),
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-                Text(
-                    text = countLabel,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowDown,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .rotate(chevronRotation),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        text = countLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
             }
         }
         AnimatedVisibility(
@@ -108,7 +126,7 @@ fun OverlayReactionLogReplyThreadFooter(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 8.dp),
+                    .padding(top = 18.dp, start = 8.dp, end = 8.dp, bottom = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 expandedContent()
