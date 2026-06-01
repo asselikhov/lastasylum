@@ -40,6 +40,16 @@ fun formatOverlayReactionLogTimeLabel(createdAtIso: String): String {
     }
 }
 
+/** Одна метка времени для карточек ленты (без «15:30 · 5 мин назад»). */
+fun formatOverlayReactionLogTimeLabelCompact(createdAtIso: String): String {
+    val (absolute, relative) = formatOverlayReactionLogTimeLine(createdAtIso)
+    return when {
+        relative.isNotBlank() && relative != absolute -> relative
+        absolute.isNotBlank() -> absolute
+        else -> relative
+    }
+}
+
 fun overlayReactionLogDateHeaderKey(createdAtIso: String): String {
     val instant = parseIsoInstant(createdAtIso.trim()) ?: return ""
     val zdt = instant.atZone(ZoneId.systemDefault())

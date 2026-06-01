@@ -29,6 +29,7 @@ fun OverlayHudPanelHeader(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     subtitleTrailing: @Composable (RowScope.() -> Unit)? = null,
+    titleTrailing: @Composable (RowScope.() -> Unit)? = null,
     onRefresh: (() -> Unit)? = null,
     refreshing: Boolean = false,
     headerTrailing: @Composable (() -> Unit)? = null,
@@ -53,8 +54,9 @@ fun OverlayHudPanelHeader(
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f, fill = false),
             )
+            titleTrailing?.invoke(this)
             if (headerTrailing != null) {
                 headerTrailing()
             } else if (onRefresh != null && subtitleTrailing == null) {

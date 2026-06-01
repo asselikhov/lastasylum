@@ -4,9 +4,9 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,7 +47,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -64,17 +63,17 @@ import com.lastasylum.alliance.ui.theme.premium.PremiumColors
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import kotlinx.coroutines.delay
 
-@OptIn(ExperimentalFoundationApi::class)
+private val ReactionPreviewColumnWidth = 96.dp
+private val ReactionPreviewReplySlot = 36.dp
+
 @Composable
 fun OverlayReactionLogEntryRow(
     cluster: OverlayReactionLogCluster,
     selfUserId: String,
     unreadHighlight: Boolean,
-    onClick: () -> Unit,
-    onLongClick: (() -> Unit)?,
+    onPreviewClick: () -> Unit,
     onQuickReply: (() -> Unit)?,
     onToggleEmojiReaction: ((String) -> Unit)?,
-    compactLayout: Boolean,
     playAnimatedPreview: Boolean = true,
     isOnline: Boolean = false,
     animateEnter: Boolean = false,
@@ -92,16 +91,7 @@ fun OverlayReactionLogEntryRow(
         OverlayReactionLogVisibility.Personal -> Color(0xFF9070B8)
         OverlayReactionLogVisibility.Broadcast -> Color(0xFF50B860)
     }
-    val timeLine = formatOverlayReactionLogTimeLabel(entry.createdAt)
-
-    val clickableModifier = if (onLongClick != null) {
-        Modifier.combinedClickable(
-            onClick = onClick,
-            onLongClick = onLongClick,
-        )
-    } else {
-        Modifier.combinedClickable(onClick = onClick)
-    }
+    val timeLine = formatOverlayReactionLogTimeLabelCompact(entry.createdAt)
 
     AnimatedVisibility(
         visible = true,
@@ -113,8 +103,7 @@ fun OverlayReactionLogEntryRow(
             unreadHighlight = unreadHighlight,
             modifier = Modifier.fillMaxWidth(),
         ) {
-        if (compactLayout) {
-            CompactReactionLogRowContent(
+            ReactionLogRowContent(
                 entry = entry,
                 cluster = cluster,
                 incoming = incoming,
@@ -122,34 +111,18 @@ fun OverlayReactionLogEntryRow(
                 scopeColor = scopeColor,
                 timeLine = timeLine,
                 selfUserId = selfUserId,
+                onPreviewClick = onPreviewClick,
                 onQuickReply = onQuickReply,
                 onToggleEmojiReaction = onToggleEmojiReaction,
-                clickableModifier = clickableModifier,
                 playAnimatedPreview = playAnimatedPreview,
                 isOnline = isOnline,
             )
-        } else {
-            WideReactionLogRowContent(
-                entry = entry,
-                cluster = cluster,
-                incoming = incoming,
-                scopeLabel = scopeLabel,
-                scopeColor = scopeColor,
-                timeLine = timeLine,
-                selfUserId = selfUserId,
-                onQuickReply = onQuickReply,
-                onToggleEmojiReaction = onToggleEmojiReaction,
-                clickableModifier = clickableModifier,
-                playAnimatedPreview = playAnimatedPreview,
-                isOnline = isOnline,
-            )
-        }
         }
     }
 }
 
 @Composable
-private fun WideReactionLogRowContent(
+private fun ReactionLogRowContent(
     entry: OverlayReactionLogEntry,
     cluster: OverlayReactionLogCluster,
     incoming: Boolean,
@@ -157,9 +130,9 @@ private fun WideReactionLogRowContent(
     scopeColor: Color,
     timeLine: String,
     selfUserId: String,
+    onPreviewClick: () -> Unit,
     onQuickReply: (() -> Unit)?,
     onToggleEmojiReaction: ((String) -> Unit)?,
-    clickableModifier: Modifier,
     playAnimatedPreview: Boolean,
     isOnline: Boolean,
 ) {
@@ -172,25 +145,24 @@ private fun WideReactionLogRowContent(
         SenderAvatarBlock(entry = entry, incoming = incoming, isOnline = isOnline)
         Spacer(modifier = Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
-            NarrativeClickableBlock(
+            NarrativeBlock(
                 entry = entry,
                 cluster = cluster,
                 scopeLabel = scopeLabel,
                 scopeColor = scopeColor,
                 timeLine = timeLine,
                 selfUserId = selfUserId,
-                modifier = clickableModifier,
-                alignTimeEnd = true,
             )
             AnimatedReactionsRow(
                 reactions = entry.reactions,
                 onToggleEmojiReaction = onToggleEmojiReaction,
             )
         }
-        ReactionPreviewWithActions(
+        ReactionPreviewColumn(
             cluster = cluster,
             entry = entry,
             incoming = incoming,
+            onPreviewClick = onPreviewClick,
             onQuickReply = onQuickReply,
             playAnimatedPreview = playAnimatedPreview,
         )
@@ -198,62 +170,56 @@ private fun WideReactionLogRowContent(
 }
 
 @Composable
-private fun CompactReactionLogRowContent(
-    entry: OverlayReactionLogEntry,
+private fun ReactionPreviewColumn(
     cluster: OverlayReactionLogCluster,
+    entry: OverlayReactionLogEntry,
     incoming: Boolean,
-    scopeLabel: String,
-    scopeColor: Color,
-    timeLine: String,
-    selfUserId: String,
+    onPreviewClick: () -> Unit,
     onQuickReply: (() -> Unit)?,
-    onToggleEmojiReaction: ((String) -> Unit)?,
-    clickableModifier: Modifier,
     playAnimatedPreview: Boolean,
-    isOnline: Boolean,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(12.dp),
+    Row(
+        modifier = Modifier.width(ReactionPreviewColumnWidth),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            SenderAvatarBlock(entry = entry, incoming = incoming, isOnline = isOnline)
-            Spacer(modifier = Modifier.width(10.dp))
-            NarrativeClickableBlock(
-                entry = entry,
-                cluster = cluster,
-                scopeLabel = scopeLabel,
-                scopeColor = scopeColor,
-                timeLine = timeLine,
-                selfUserId = selfUserId,
-                modifier = Modifier
-                    .weight(1f)
-                    .then(clickableModifier),
-                alignTimeEnd = false,
-            )
+        if (incoming && onQuickReply != null) {
+            IconButton(
+                onClick = onQuickReply,
+                modifier = Modifier.size(ReactionPreviewReplySlot),
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.Reply,
+                    contentDescription = stringResource(R.string.overlay_notifications_reply_cd),
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        } else {
+            Spacer(modifier = Modifier.size(ReactionPreviewReplySlot))
         }
-        AnimatedReactionsRow(
-            reactions = entry.reactions,
-            onToggleEmojiReaction = onToggleEmojiReaction,
-        )
-        Row(
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 8.dp),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically,
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onPreviewClick,
+                ),
+            contentAlignment = Alignment.Center,
         ) {
-            ReactionPreviewWithActions(
-                cluster = cluster,
-                entry = entry,
-                incoming = incoming,
-                onQuickReply = onQuickReply,
-                playAnimatedPreview = playAnimatedPreview,
-            )
+            if (cluster.mergeCount > 1) {
+                OverlayReactionLogStackedPreview(
+                    cluster = cluster,
+                    playAnimatedPreview = playAnimatedPreview,
+                )
+            } else {
+                OverlayReactionLogMiniPreview(
+                    reactionId = entry.reaction,
+                    visibility = entry.visibility,
+                    showLabel = false,
+                    playAnimatedPreview = playAnimatedPreview,
+                )
+            }
         }
     }
 }
@@ -285,47 +251,6 @@ private fun AnimatedReactionsRow(
 }
 
 @Composable
-private fun ReactionPreviewWithActions(
-    cluster: OverlayReactionLogCluster,
-    entry: OverlayReactionLogEntry,
-    incoming: Boolean,
-    onQuickReply: (() -> Unit)?,
-    playAnimatedPreview: Boolean,
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        if (cluster.mergeCount > 1) {
-            OverlayReactionLogStackedPreview(
-                cluster = cluster,
-                playAnimatedPreview = playAnimatedPreview,
-            )
-        } else {
-            OverlayReactionLogMiniPreview(
-                reactionId = entry.reaction,
-                visibility = entry.visibility,
-                showLabel = false,
-                playAnimatedPreview = playAnimatedPreview,
-            )
-        }
-        if (incoming && onQuickReply != null) {
-            IconButton(
-                onClick = onQuickReply,
-                modifier = Modifier.size(36.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Outlined.Reply,
-                    contentDescription = stringResource(R.string.overlay_notifications_reply_cd),
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun SenderAvatarBlock(
     entry: OverlayReactionLogEntry,
     incoming: Boolean,
@@ -345,23 +270,21 @@ private fun SenderAvatarBlock(
                 .size(18.dp)
                 .background(Color(0xFF0D1524), CircleShape)
                 .padding(2.dp),
-            tint = if (incoming) Color(0xFF82CFFF) else Color(0xFF8899AA),
+            tint = if (incoming) Color(0xFF6EE7B7) else Color(0xFF8899AA),
         )
     }
 }
 
 @Composable
-private fun NarrativeClickableBlock(
+private fun NarrativeBlock(
     entry: OverlayReactionLogEntry,
     cluster: OverlayReactionLogCluster,
     scopeLabel: String,
     scopeColor: Color,
     timeLine: String,
     selfUserId: String,
-    modifier: Modifier = Modifier,
-    alignTimeEnd: Boolean,
 ) {
-    Column(modifier = modifier) {
+    Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = entry.senderUsername.ifBlank {
@@ -396,10 +319,7 @@ private fun NarrativeClickableBlock(
                     TextStyle(fontFeatureSettings = "tnum"),
                 ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-                textAlign = if (alignTimeEnd) TextAlign.End else TextAlign.Start,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 2.dp),
+                modifier = Modifier.padding(top = 4.dp),
             )
         }
     }

@@ -19,12 +19,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.Badge
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,6 +51,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
@@ -112,11 +111,9 @@ fun OverlayReactionNotificationsPanel(
     val listLayout = uiState.listLayout
     val onlineUserIds = uiState.onlineUserIds
     val filterKey = uiState.filterKey
-    var detailCluster by remember { mutableStateOf<OverlayReactionLogCluster?>(null) }
-    var replySheetEntry by remember { mutableStateOf<OverlayReactionLogCluster?>(null) }
+    var previewCluster by remember { mutableStateOf<OverlayReactionLogCluster?>(null) }
     var showClearHistoryConfirm by remember { mutableStateOf(false) }
-    var showHeaderMenu by remember { mutableStateOf(false) }
-    var initialScrollDone by remember(filterKey) { mutableStateOf(false) }
+    var markReadOnFirstLayout by remember(filterKey) { mutableStateOf(true) }
     var hapticConsumedForSession by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -125,7 +122,7 @@ fun OverlayReactionNotificationsPanel(
         onDispose { controller.stop() }
     }
 
-    var savedScrollIndex by rememberSaveable(filterKey) { mutableIntStateOf(0) }
+    var savedScrollIndex by rememberSaveable(filterKey) { mutableIntStateOf(-1) }
 
     LaunchedEffect(entries.firstOrNull()?.id, unreadEntryIds) {
         val newest = entries.firstOrNull() ?: return@LaunchedEffect
@@ -157,9 +154,9 @@ fun OverlayReactionNotificationsPanel(
         Column(modifier = Modifier.fillMaxSize()) {
             OverlayHudPanelHeader(
                 title = stringResource(R.string.overlay_notifications_title),
-                subtitle = stringResource(R.string.overlay_notifications_subtitle),
+                subtitle = null,
                 onClose = onClose,
-                subtitleTrailing = {
+                titleTrailing = {
                     if (unreadCount > 0) {
                         Badge {
                             Text(
@@ -170,29 +167,18 @@ fun OverlayReactionNotificationsPanel(
                 },
                 headerTrailing = {
                     IconButton(
-                        onClick = { showHeaderMenu = true },
+                        onClick = {
+                            OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
+                            showClearHistoryConfirm = true
+                        },
                         enabled = !loading,
                     ) {
                         Icon(
-                            imageVector = Icons.Outlined.MoreVert,
+                            imageVector = Icons.Outlined.DeleteOutline,
                             contentDescription = stringResource(
-                                R.string.overlay_notifications_menu_clear_history,
+                                R.string.overlay_notifications_clear_history_cd,
                             ),
-                        )
-                    }
-                    DropdownMenu(
-                        expanded = showHeaderMenu,
-                        onDismissRequest = { showHeaderMenu = false },
-                    ) {
-                        DropdownMenuItem(
-                            text = {
-                                Text(stringResource(R.string.overlay_notifications_menu_clear_history))
-                            },
-                            onClick = {
-                                showHeaderMenu = false
-                                OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
-                                showClearHistoryConfirm = true
-                            },
+                            tint = Color.White,
                         )
                     }
                 },
@@ -224,9 +210,15 @@ fun OverlayReactionNotificationsPanel(
                 onSearchQuery = controller::onSearchQuery,
             )
             key(filterKey) {
+                val lastClusterIndexForInit = listLayout.lastClusterItemIndex
+                val initialListIndex = when {
+                    savedScrollIndex >= 0 -> savedScrollIndex
+                    lastClusterIndexForInit >= 0 -> lastClusterIndexForInit
+                    else -> 0
+                }
                 val listState = rememberLazyListState(
                     cacheWindow = LazyLayoutCacheWindow(ahead = 140.dp, behind = 140.dp),
-                    initialFirstVisibleItemIndex = savedScrollIndex,
+                    initialFirstVisibleItemIndex = initialListIndex,
                 )
                 val firstUnreadIndex = listLayout.firstUnreadItemIndex
                 val lastClusterIndex = listLayout.lastClusterItemIndex
@@ -274,7 +266,6 @@ fun OverlayReactionNotificationsPanel(
                         .fillMaxWidth()
                         .weight(1f),
                 ) {
-                val compactLayout = maxWidth < 340.dp
                 when {
                     loading && clustered.isEmpty() -> {
                         OverlayReactionLogSkeleton(
@@ -313,11 +304,10 @@ fun OverlayReactionNotificationsPanel(
                                 }
                         }
 
-                        LaunchedEffect(lastClusterIndex, loading, clustered.isNotEmpty(), filterKey) {
-                            if (!loading && lastClusterIndex >= 0 && !initialScrollDone && clustered.isNotEmpty()) {
-                                scrollOverlayNotificationsListToIndex(listState, lastClusterIndex)
-                                initialScrollDone = true
+                        LaunchedEffect(filterKey, lastClusterIndex, loading, clustered.isNotEmpty()) {
+                            if (!loading && lastClusterIndex >= 0 && clustered.isNotEmpty() && markReadOnFirstLayout) {
                                 repository.markAllRead()
+                                markReadOnFirstLayout = false
                             }
                         }
 
@@ -380,19 +370,13 @@ fun OverlayReactionNotificationsPanel(
                                             cluster = cluster,
                                             selfUserId = selfUserId,
                                             unreadHighlight = entry.id in unreadEntryIds,
-                                            compactLayout = compactLayout,
                                             playAnimatedPreview = entry.id in animatedPreviewIds,
                                             isOnline = entry.senderUserId.trim() in onlineUserIds,
                                             animateEnter = entry.id == uiState.newestUnreadEntryId,
-                                            onClick = { detailCluster = cluster },
-                                            onLongClick = if (incoming) {
-                                                {
-                                                    OverlayChatInteractionHold
-                                                        .prepareOverlayModalInteraction(true)
-                                                    replySheetEntry = cluster
-                                                }
-                                            } else {
-                                                null
+                                            onPreviewClick = {
+                                                OverlayChatInteractionHold
+                                                    .prepareOverlayModalInteraction(true)
+                                                previewCluster = cluster
                                             },
                                             onQuickReply = if (incoming) {
                                                 { onReplyToUser(entry.senderUserId) }
@@ -451,29 +435,13 @@ fun OverlayReactionNotificationsPanel(
         )
     }
 
-    detailCluster?.let { cluster ->
-        val entry = cluster.representative
-        val incoming = OverlayReactionLogVisibilityPolicy.isIncoming(entry, selfUserId)
-        OverlayReactionLogDetailSheet(
+    previewCluster?.let { cluster ->
+        OverlayReactionLogPreviewSheet(
             cluster = cluster,
             selfUserId = selfUserId,
-            onDismiss = { detailCluster = null },
-            onReplyToUser = if (incoming) onReplyToUser else null,
-            onToggleEmojiReaction = { emoji ->
-                repository.toggleLogEntryReaction(entry.id, emoji)
-            },
-        )
-    }
-
-    replySheetEntry?.let { cluster ->
-        val entry = cluster.representative
-        OverlayReactionLogReplySheet(
-            entry = entry,
-            selfUserId = selfUserId,
-            onDismiss = { replySheetEntry = null },
-            onToggleEmoji = { emoji ->
-                repository.toggleLogEntryReaction(entry.id, emoji)
-                replySheetEntry = null
+            onDismiss = {
+                previewCluster = null
+                OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
             },
         )
     }

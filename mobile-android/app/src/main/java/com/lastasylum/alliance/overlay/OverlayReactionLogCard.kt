@@ -23,11 +23,11 @@ import com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces
 internal object ReactionLogCardTokens {
     val corner = 14.dp
     val railWidth = 3.dp
-    val borderUnread = Color(0x5538BDF8)
-    val incomingRail = Color(0xFF38BDF8)
+    val borderUnread = Color(0x554ADE80)
+    val incomingRail = Color(0xFF34D399)
     val outgoingRail = Color(0xFF6B7A90)
-    val incomingGradientTop = Color(0x18FFFFFF)
-    val incomingGradientBottom = Color(0x060E1624)
+    val incomingGradientTop = Color(0x1A34D399)
+    val incomingGradientBottom = Color(0x08166534)
     val outgoingGradientTop = Color(0x14FFFFFF)
     val outgoingGradientBottom = Color(0x060E1624)
     val presenceOffline = Color(0xFF667788)

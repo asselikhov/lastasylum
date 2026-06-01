@@ -6,6 +6,8 @@ import androidx.compose.ui.unit.dp
 object SquadRelayDimens {
     /** Минимальная высота ряда вкладок в [com.lastasylum.alliance.ui.AppNavigation]. */
     val bottomNavigationBarHeight = 56.dp
+    /** Нижний отступ слота bottomBar (фиксированный, без navigationBars inset). */
+    val bottomBarOuterPadding = 8.dp
     /** Радиус панели нижней навигации и кнопок вкладок (одинаковый). */
     val bottomNavigationBarCornerRadius = 16.dp
     val screenPaddingHorizontal = 16.dp
@@ -26,7 +28,7 @@ object SquadRelayDimens {
      * Вычитается из IME-inset, чтобы зазор композер–клавиатура совпадал с зазором композер–навбар.
      */
     val chatComposerScaffoldBottomObstruction =
-        bottomNavigationBarHeight + 20.dp + 12.dp
+        bottomNavigationBarHeight + 20.dp + 12.dp + bottomBarOuterPadding
     val headerSubtitleGap = 2.dp
     val listRowHorizontalPadding = 10.dp
     val listRowVerticalPadding = 10.dp

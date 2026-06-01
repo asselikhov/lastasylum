@@ -1,13 +1,12 @@
 package com.lastasylum.alliance.overlay
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
@@ -15,8 +14,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -37,8 +34,10 @@ import com.lastasylum.alliance.data.chat.OverlayReactionLogScopeFilter
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 
 private val FilterFieldHeight = 40.dp
+private val DirectionDropdownMinWidth = 108.dp
+private val ScopeDropdownMinWidth = 100.dp
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OverlayReactionLogFiltersBar(
     directionFilter: OverlayReactionLogFilter,
@@ -56,54 +55,33 @@ fun OverlayReactionLogFiltersBar(
         unfocusedContainerColor = Color(0xFF141C28),
     )
     val fieldShape = RoundedCornerShape(10.dp)
-    val chipColors = FilterChipDefaults.filterChipColors(
-        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
-        selectedLabelColor = MaterialTheme.colorScheme.primary,
-    )
 
-    Column(
+    Row(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
     ) {
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            OverlayReactionLogFilter.entries.forEach { option ->
-                FilterChip(
-                    selected = directionFilter == option,
-                    onClick = { onDirectionFilter(option) },
-                    label = {
-                        Text(
-                            text = when (option) {
-                                OverlayReactionLogFilter.All ->
-                                    stringResource(R.string.overlay_notifications_filter_all)
-                                OverlayReactionLogFilter.Incoming ->
-                                    stringResource(R.string.overlay_notifications_filter_incoming)
-                                OverlayReactionLogFilter.Outgoing ->
-                                    stringResource(R.string.overlay_notifications_filter_outgoing)
-                            },
-                            style = MaterialTheme.typography.labelSmall,
-                        )
-                    },
-                    colors = chipColors,
-                )
-            }
-            ScopeFilterDropdown(
-                selected = scopeFilter,
-                onSelected = onScopeFilter,
-                fieldColors = fieldColors,
-                fieldShape = fieldShape,
-            )
-        }
+        DirectionFilterDropdown(
+            selected = directionFilter,
+            onSelected = onDirectionFilter,
+            fieldColors = fieldColors,
+            fieldShape = fieldShape,
+            modifier = Modifier.widthIn(min = DirectionDropdownMinWidth),
+        )
+        ScopeFilterDropdown(
+            selected = scopeFilter,
+            onSelected = onScopeFilter,
+            fieldColors = fieldColors,
+            fieldShape = fieldShape,
+            modifier = Modifier.widthIn(min = ScopeDropdownMinWidth),
+        )
         OutlinedTextField(
             value = searchQuery,
             onValueChange = onSearchQuery,
             modifier = Modifier
-                .fillMaxWidth()
+                .weight(1f)
                 .height(FilterFieldHeight),
             singleLine = true,
             placeholder = {
@@ -128,13 +106,57 @@ fun OverlayReactionLogFiltersBar(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+private fun DirectionFilterDropdown(
+    selected: OverlayReactionLogFilter,
+    onSelected: (OverlayReactionLogFilter) -> Unit,
+    fieldColors: androidx.compose.material3.TextFieldColors,
+    fieldShape: RoundedCornerShape,
+    modifier: Modifier = Modifier,
+) {
+    val label = when (selected) {
+        OverlayReactionLogFilter.All -> stringResource(R.string.overlay_notifications_filter_all)
+        OverlayReactionLogFilter.Incoming -> stringResource(R.string.overlay_notifications_filter_incoming)
+        OverlayReactionLogFilter.Outgoing -> stringResource(R.string.overlay_notifications_filter_outgoing)
+    }
+    FilterDropdown(
+        label = label,
+        modifier = modifier,
+        fieldColors = fieldColors,
+        fieldShape = fieldShape,
+    ) { onDismiss ->
+        OverlayReactionLogFilter.entries.forEach { option ->
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        when (option) {
+                            OverlayReactionLogFilter.All ->
+                                stringResource(R.string.overlay_notifications_filter_all)
+                            OverlayReactionLogFilter.Incoming ->
+                                stringResource(R.string.overlay_notifications_filter_incoming)
+                            OverlayReactionLogFilter.Outgoing ->
+                                stringResource(R.string.overlay_notifications_filter_outgoing)
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                },
+                onClick = {
+                    onDismiss()
+                    onSelected(option)
+                },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun ScopeFilterDropdown(
     selected: OverlayReactionLogScopeFilter,
     onSelected: (OverlayReactionLogScopeFilter) -> Unit,
     fieldColors: androidx.compose.material3.TextFieldColors,
     fieldShape: RoundedCornerShape,
+    modifier: Modifier = Modifier,
 ) {
-    var expanded by remember { mutableStateOf(false) }
     val label = when (selected) {
         OverlayReactionLogScopeFilter.All -> stringResource(R.string.overlay_notifications_scope_all)
         OverlayReactionLogScopeFilter.Personal ->
@@ -142,9 +164,50 @@ private fun ScopeFilterDropdown(
         OverlayReactionLogScopeFilter.Broadcast ->
             stringResource(R.string.overlay_reaction_burst_caption_broadcast)
     }
+    FilterDropdown(
+        label = label,
+        modifier = modifier,
+        fieldColors = fieldColors,
+        fieldShape = fieldShape,
+    ) { onDismiss ->
+        OverlayReactionLogScopeFilter.entries.forEach { option ->
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        when (option) {
+                            OverlayReactionLogScopeFilter.All ->
+                                stringResource(R.string.overlay_notifications_scope_all)
+                            OverlayReactionLogScopeFilter.Personal ->
+                                stringResource(R.string.overlay_reaction_burst_caption_private)
+                            OverlayReactionLogScopeFilter.Broadcast ->
+                                stringResource(R.string.overlay_reaction_burst_caption_broadcast)
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                },
+                onClick = {
+                    onDismiss()
+                    onSelected(option)
+                },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FilterDropdown(
+    label: String,
+    fieldColors: androidx.compose.material3.TextFieldColors,
+    fieldShape: RoundedCornerShape,
+    modifier: Modifier = Modifier,
+    menuItems: @Composable (onDismiss: () -> Unit) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(
         expanded = expanded,
         onExpandedChange = { expanded = it },
+        modifier = modifier,
     ) {
         OutlinedTextField(
             value = label,
@@ -153,7 +216,8 @@ private fun ScopeFilterDropdown(
             singleLine = true,
             modifier = Modifier
                 .menuAnchor(androidx.compose.material3.ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                .height(FilterFieldHeight),
+                .height(FilterFieldHeight)
+                .fillMaxWidth(),
             trailingIcon = {
                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
             },
@@ -165,27 +229,7 @@ private fun ScopeFilterDropdown(
             expanded = expanded,
             onDismissRequest = { expanded = false },
         ) {
-            OverlayReactionLogScopeFilter.entries.forEach { option ->
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            when (option) {
-                                OverlayReactionLogScopeFilter.All ->
-                                    stringResource(R.string.overlay_notifications_scope_all)
-                                OverlayReactionLogScopeFilter.Personal ->
-                                    stringResource(R.string.overlay_reaction_burst_caption_private)
-                                OverlayReactionLogScopeFilter.Broadcast ->
-                                    stringResource(R.string.overlay_reaction_burst_caption_broadcast)
-                            },
-                            style = MaterialTheme.typography.labelMedium,
-                        )
-                    },
-                    onClick = {
-                        expanded = false
-                        onSelected(option)
-                    },
-                )
-            }
+            menuItems { expanded = false }
         }
     }
 }

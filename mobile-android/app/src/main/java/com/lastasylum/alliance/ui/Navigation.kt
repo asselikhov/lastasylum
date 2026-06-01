@@ -14,10 +14,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -267,9 +265,13 @@ fun AppNavigation(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    // Не navigationBarsPadding(): при IME inset навбара меняется и панель «прыгает».
-                    .windowInsetsPadding(WindowInsets.navigationBars.exclude(WindowInsets.ime))
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    // Фиксированный отступ: inset navigationBars меняется при IME и дёргает панель.
+                    .padding(
+                        start = 16.dp,
+                        end = 16.dp,
+                        top = 10.dp,
+                        bottom = SquadRelayDimens.bottomBarOuterPadding,
+                    ),
             ) {
                 PremiumGlassBar(
                     modifier = Modifier.fillMaxWidth(),
