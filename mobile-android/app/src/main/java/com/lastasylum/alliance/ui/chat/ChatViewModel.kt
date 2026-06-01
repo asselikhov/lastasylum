@@ -1525,6 +1525,9 @@ class ChatViewModel(
         _pickedImageUris.value = emptyList()
         _listDerived.value = ChatMessagesListDerived.Empty
         ChatSessionCache.updateMessages(roomId, emptyList())
+        val updatedRooms = _state.value.rooms.map {
+            if (it.id == roomId) it.copy(unreadCount = unreadCount.coerceAtLeast(0)) else it
+        }
         _state.value = _state.value.copy(
             messages = emptyList(),
             hasMoreOlder = false,
@@ -1541,10 +1544,12 @@ class ChatViewModel(
             confirmBulkDelete = false,
             isDeletingSelection = false,
             deletingMessageId = null,
-            rooms = _state.value.rooms.map {
-                if (it.id == roomId) it.copy(unreadCount = unreadCount.coerceAtLeast(0)) else it
-            },
+            rooms = updatedRooms,
         )
+        clearOptimisticUnreadFloor(roomId)
+        ChatSessionCache.update(updatedRooms)
+        syncTabUnreadBadge(updatedRooms)
+        syncOverlayAllianceHubBadge(updatedRooms)
         schedulePersistChatSnapshot()
     }
 

@@ -5765,6 +5765,15 @@ class CombatOverlayService : Service() {
             service.mainHandler.post {
                 service.stripBuffer.removeMessagesForRoom(rid)
                 service.stripBuffer.prune()
+                val hubId = runCatching { service.resolveOverlayHubRoomId() }
+                    .getOrNull()
+                    ?.trim()
+                    .orEmpty()
+                if (hubId.isNotEmpty() && hubId == rid) {
+                    service.clearHubUnreadOptimisticState()
+                    service.applyAllianceHubUnreadCount(0)
+                    service.patchHubUnreadInSessionCacheAfterLocalRead()
+                }
                 service.refreshOverlayChatStripNow()
             }
         }
