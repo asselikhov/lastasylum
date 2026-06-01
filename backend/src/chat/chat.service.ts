@@ -637,12 +637,16 @@ export class ChatService {
       roomId: roomObjectId,
       deletedAt: null,
     };
-    const before = options?.before?.trim();
-    if (before) {
-      if (!Types.ObjectId.isValid(before)) {
-        throw new BadRequestException('Invalid before cursor');
-      }
-      filter._id = { $lt: new Types.ObjectId(before) };
+    const hiddenBefore = await this.getHiddenBeforeMessageId(
+      userId,
+      roomObjectId,
+    );
+    const idBounds = this.messageIdBoundsFilter(
+      hiddenBefore,
+      options?.before?.trim(),
+    );
+    if (idBounds) {
+      filter._id = idBounds;
     }
     const messages = await this.messageModel
       .find(filter)
@@ -872,7 +876,13 @@ export class ChatService {
                   },
                 },
               },
-              { $project: { lastReadMessageId: 1, _id: 0 } },
+              {
+                $project: {
+                  lastReadMessageId: 1,
+                  hiddenBeforeMessageId: 1,
+                  _id: 0,
+                },
+              },
               { $limit: 1 },
             ],
             as: 'readState',
@@ -898,14 +908,42 @@ export class ChatService {
                 },
               },
             },
+            hiddenBeforeOid: {
+              $let: {
+                vars: {
+                  raw: {
+                    $arrayElemAt: ['$readState.hiddenBeforeMessageId', 0],
+                  },
+                },
+                in: {
+                  $cond: [
+                    {
+                      $and: [{ $ne: ['$$raw', null] }, { $ne: ['$$raw', ''] }],
+                    },
+                    { $toObjectId: '$$raw' },
+                    null,
+                  ],
+                },
+              },
+            },
           },
         },
         {
           $match: {
             $expr: {
-              $or: [
-                { $eq: ['$lastReadOid', null] },
-                { $gt: ['$_id', '$lastReadOid'] },
+              $and: [
+                {
+                  $or: [
+                    { $eq: ['$hiddenBeforeOid', null] },
+                    { $gt: ['$_id', '$hiddenBeforeOid'] },
+                  ],
+                },
+                {
+                  $or: [
+                    { $eq: ['$lastReadOid', null] },
+                    { $gt: ['$_id', '$lastReadOid'] },
+                  ],
+                },
               ],
             },
           },
@@ -918,6 +956,113 @@ export class ChatService {
       out.set(row._id.toString(), row.count);
     }
     return out;
+  }
+
+  private messageIdBoundsFilter(
+    hiddenBefore?: string | null,
+    before?: string | null,
+  ): Record<string, Types.ObjectId> | undefined {
+    const hidden = hiddenBefore?.trim();
+    const beforeId = before?.trim();
+    const bounds: Record<string, Types.ObjectId> = {};
+    if (hidden) {
+      if (!Types.ObjectId.isValid(hidden)) {
+        throw new BadRequestException('Invalid hiddenBeforeMessageId');
+      }
+      bounds.$gt = new Types.ObjectId(hidden);
+    }
+    if (beforeId) {
+      if (!Types.ObjectId.isValid(beforeId)) {
+        throw new BadRequestException('Invalid before cursor');
+      }
+      bounds.$lt = new Types.ObjectId(beforeId);
+    }
+    return Object.keys(bounds).length > 0 ? bounds : undefined;
+  }
+
+  private async getHiddenBeforeMessageId(
+    userId: string,
+    roomObjectId: Types.ObjectId,
+  ): Promise<string | null> {
+    const row = await this.chatReadStateModel
+      .findOne({ roomId: roomObjectId, userId })
+      .select('hiddenBeforeMessageId')
+      .lean()
+      .exec();
+    const hidden = row?.hiddenBeforeMessageId?.trim();
+    return hidden && Types.ObjectId.isValid(hidden) ? hidden : null;
+  }
+
+  /**
+   * Hide all current messages in a room for this user only (DB rows are kept).
+   */
+  async clearRoomHistoryForUser(
+    userId: string,
+    roomId: string,
+  ): Promise<{
+    roomId: string;
+    hiddenBeforeMessageId: string | null;
+    lastReadMessageId: string | null;
+    unreadCount: number;
+  }> {
+    if (!Types.ObjectId.isValid(roomId)) {
+      throw new BadRequestException('Invalid room id');
+    }
+    await this.assertUserMayUseChat(userId);
+    const { roomObjectId } = await this.assertRoomForUser(userId, roomId);
+    const newest = await this.messageModel
+      .findOne({ roomId: roomObjectId, deletedAt: null })
+      .sort({ _id: -1 })
+      .select('_id')
+      .lean()
+      .exec();
+    if (!newest?._id) {
+      return {
+        roomId,
+        hiddenBeforeMessageId: null,
+        lastReadMessageId: null,
+        unreadCount: 0,
+      };
+    }
+    const watermark = newest._id.toString();
+    const existing = await this.chatReadStateModel
+      .findOne({ roomId: roomObjectId, userId })
+      .lean()
+      .exec();
+    const prevRead = existing?.lastReadMessageId?.trim();
+    const prevHidden = existing?.hiddenBeforeMessageId?.trim();
+    const watermarkOid = new Types.ObjectId(watermark);
+    let lastReadMessageId = watermark;
+    if (prevRead && Types.ObjectId.isValid(prevRead)) {
+      const prevOid = new Types.ObjectId(prevRead);
+      lastReadMessageId =
+        watermarkOid >= prevOid ? watermark : prevRead;
+    }
+    let hiddenBeforeMessageId = watermark;
+    if (prevHidden && Types.ObjectId.isValid(prevHidden)) {
+      const prevHiddenOid = new Types.ObjectId(prevHidden);
+      hiddenBeforeMessageId =
+        watermarkOid >= prevHiddenOid ? watermark : prevHidden;
+    }
+    await this.chatReadStateModel
+      .updateOne(
+        { roomId: roomObjectId, userId },
+        {
+          $set: {
+            lastReadMessageId,
+            hiddenBeforeMessageId,
+          },
+        },
+        { upsert: true },
+      )
+      .exec();
+    const unreadMap = await this.countUnreadByRoomIds(userId, [roomId]);
+    return {
+      roomId,
+      hiddenBeforeMessageId,
+      lastReadMessageId,
+      unreadCount: unreadMap.get(roomId) ?? 0,
+    };
   }
 
   async markRoomRead(input: {

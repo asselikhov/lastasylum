@@ -94,6 +94,14 @@ data class MarkRoomReadResponse(
     val unreadCount: Int = 0,
 )
 
+/** Per-user room history clear (messages stay in DB for other members). */
+data class ClearRoomHistoryResponse(
+    val roomId: String,
+    val hiddenBeforeMessageId: String? = null,
+    val lastReadMessageId: String? = null,
+    val unreadCount: Int = 0,
+)
+
 /** Server push after message:new / markRoomRead (personal user socket room). */
 data class ChatRoomUnreadEvent(
     val roomId: String,

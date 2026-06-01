@@ -21,7 +21,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material3.Badge
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -65,9 +64,7 @@ import com.lastasylum.alliance.data.chat.OverlayReactionLogFilter
 import com.lastasylum.alliance.data.chat.OverlayReactionLogRepository
 import com.lastasylum.alliance.data.chat.OverlayReactionLogScopeFilter
 import com.lastasylum.alliance.data.chat.OverlayReactionLogVisibilityPolicy
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import java.util.Locale
+import com.lastasylum.alliance.ui.chat.formatChatDaySeparator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
@@ -156,15 +153,7 @@ fun OverlayReactionNotificationsPanel(
                 title = stringResource(R.string.overlay_notifications_title),
                 subtitle = null,
                 onClose = onClose,
-                titleTrailing = {
-                    if (unreadCount > 0) {
-                        Badge {
-                            Text(
-                                text = if (unreadCount > 99) "99+" else unreadCount.toString(),
-                            )
-                        }
-                    }
-                },
+                closeIconTint = Color.White,
                 headerTrailing = {
                     IconButton(
                         onClick = {
@@ -353,7 +342,9 @@ fun OverlayReactionNotificationsPanel(
                                 listLayout.grouped.forEach { (headerKey, clusters) ->
                                     stickyHeader(key = "header-$headerKey", contentType = 0) {
                                         OverlayReactionLogDateHeader(
-                                            label = overlayReactionLogDateHeaderLabel(headerKey),
+                                            label = formatChatDaySeparator(
+                                                clusters.firstOrNull()?.representative?.createdAt,
+                                            ),
                                         )
                                     }
                                     items(
@@ -554,13 +545,4 @@ private fun EmptyNotificationsState(
             Text(stringResource(R.string.overlay_notifications_open_reactions))
         }
     }
-}
-
-@Composable
-private fun overlayReactionLogDateHeaderLabel(headerKey: String): String = when (headerKey) {
-    "today" -> stringResource(R.string.overlay_notifications_date_today)
-    "yesterday" -> stringResource(R.string.overlay_notifications_date_yesterday)
-    else -> runCatching {
-        LocalDate.parse(headerKey).format(DateTimeFormatter.ofPattern("d MMMM", Locale("ru")))
-    }.getOrDefault(headerKey)
 }

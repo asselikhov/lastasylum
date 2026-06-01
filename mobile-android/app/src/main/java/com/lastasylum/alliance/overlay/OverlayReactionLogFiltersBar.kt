@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
@@ -34,8 +33,6 @@ import com.lastasylum.alliance.data.chat.OverlayReactionLogScopeFilter
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 
 private val FilterFieldHeight = 40.dp
-private val DirectionDropdownMinWidth = 108.dp
-private val ScopeDropdownMinWidth = 100.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -68,20 +65,20 @@ fun OverlayReactionLogFiltersBar(
             onSelected = onDirectionFilter,
             fieldColors = fieldColors,
             fieldShape = fieldShape,
-            modifier = Modifier.widthIn(min = DirectionDropdownMinWidth),
+            modifier = Modifier.weight(0.95f),
         )
         ScopeFilterDropdown(
             selected = scopeFilter,
             onSelected = onScopeFilter,
             fieldColors = fieldColors,
             fieldShape = fieldShape,
-            modifier = Modifier.widthIn(min = ScopeDropdownMinWidth),
+            modifier = Modifier.weight(0.95f),
         )
         OutlinedTextField(
             value = searchQuery,
             onValueChange = onSearchQuery,
             modifier = Modifier
-                .weight(1f)
+                .weight(1.1f)
                 .height(FilterFieldHeight),
             singleLine = true,
             placeholder = {

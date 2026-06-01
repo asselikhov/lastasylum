@@ -52,6 +52,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -60,6 +61,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -5281,10 +5283,12 @@ class CombatOverlayService : Service() {
                         val typingPeers by chatVm.typingPeers.collectAsStateWithLifecycle(owner)
                         val otherReadUptoMessageId by chatVm.otherReadUptoMessageId.collectAsStateWithLifecycle(owner)
 
+                        var showClearRoomHistoryConfirm by remember { mutableStateOf(false) }
                         val blockPanelBack = OverlayChatInteractionHold.blocksFullscreenPanelBack() ||
                             chromePane.activeActionMessageId != null ||
                             chromePane.confirmDeleteMessageId != null ||
-                            chromePane.confirmBulkDelete
+                            chromePane.confirmBulkDelete ||
+                            showClearRoomHistoryConfirm
                         BackHandler(enabled = !blockPanelBack) {
                             hideOverlayChatTeamPanel()
                         }
@@ -5298,12 +5302,31 @@ class CombatOverlayService : Service() {
                                         .fillMaxWidth()
                                         .padding(top = 2.dp, end = 4.dp),
                                     horizontalArrangement = Arrangement.End,
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
+                                    val clearHistoryEnabled = chromePane.selectedRoomId != null &&
+                                        !listPane.isLoading
+                                    IconButton(
+                                        onClick = {
+                                            OverlayChatInteractionHold
+                                                .prepareOverlayModalInteraction(true)
+                                            showClearRoomHistoryConfirm = true
+                                        },
+                                        enabled = clearHistoryEnabled,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.DeleteOutline,
+                                            contentDescription = getString(
+                                                R.string.chat_clear_room_history_cd,
+                                            ),
+                                            tint = androidx.compose.ui.graphics.Color.White,
+                                        )
+                                    }
                                     IconButton(onClick = { hideOverlayChatTeamPanel() }) {
                                         Icon(
                                             imageVector = Icons.Outlined.Close,
                                             contentDescription = getString(R.string.overlay_history_close_cd),
-                                            tint = MaterialTheme.colorScheme.onSurface,
+                                            tint = androidx.compose.ui.graphics.Color.White,
                                         )
                                     }
                                 }
@@ -5349,6 +5372,51 @@ class CombatOverlayService : Service() {
                                 val overlayChatModalOpen = chromePane.activeActionMessageId != null ||
                                     chromePane.confirmDeleteMessageId != null ||
                                     chromePane.confirmBulkDelete
+                                if (showClearRoomHistoryConfirm) {
+                                    OverlayAwareAlertDialog(
+                                        onDismissRequest = {
+                                            showClearRoomHistoryConfirm = false
+                                            OverlayChatInteractionHold
+                                                .cancelPreparedOverlayModalInteraction(true)
+                                        },
+                                        title = {
+                                            Text(
+                                                text = getString(R.string.chat_clear_room_confirm_title),
+                                                style = MaterialTheme.typography.titleMedium,
+                                            )
+                                        },
+                                        text = {
+                                            Text(
+                                                text = getString(R.string.chat_clear_room_confirm_message),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        },
+                                        confirmButton = {
+                                            TextButton(
+                                                onClick = {
+                                                    showClearRoomHistoryConfirm = false
+                                                    OverlayChatInteractionHold
+                                                        .cancelPreparedOverlayModalInteraction(true)
+                                                    chatVm.clearHistoryForSelectedRoom()
+                                                },
+                                            ) {
+                                                Text(getString(R.string.chat_clear_room_confirm))
+                                            }
+                                        },
+                                        dismissButton = {
+                                            TextButton(
+                                                onClick = {
+                                                    showClearRoomHistoryConfirm = false
+                                                    OverlayChatInteractionHold
+                                                        .cancelPreparedOverlayModalInteraction(true)
+                                                },
+                                            ) {
+                                                Text(getString(R.string.chat_clear_room_cancel))
+                                            }
+                                        },
+                                    )
+                                }
                                 if (overlayPane == null && !overlayChatModalOpen) {
                                     PrimaryTabRow(selectedTabIndex = selectedTab) {
                                         Tab(
@@ -5640,6 +5708,18 @@ class CombatOverlayService : Service() {
             service.mainHandler.post {
                 service.clearHubUnreadOptimisticState()
                 service.applyAllianceHubUnreadCount(0)
+            }
+        }
+
+        /** Remove raid/hub strip cards for a room after per-user history clear. */
+        fun notifyRoomHistoryCleared(roomId: String) {
+            val rid = roomId.trim()
+            if (rid.isEmpty()) return
+            val service = runningInstance ?: return
+            service.mainHandler.post {
+                service.stripBuffer.removeMessagesForRoom(rid)
+                service.stripBuffer.prune()
+                service.refreshOverlayChatStripNow()
             }
         }
 

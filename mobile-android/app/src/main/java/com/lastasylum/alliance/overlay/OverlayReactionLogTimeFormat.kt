@@ -4,6 +4,9 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import com.lastasylum.alliance.ui.util.APP_DISPLAY_ZONE
+import com.lastasylum.alliance.ui.util.chatDayKeyMsk
+import com.lastasylum.alliance.ui.util.formatChatTimeMsk
 import com.lastasylum.alliance.ui.util.parseIsoInstant
 
 fun formatOverlayReactionLogTimeLine(createdAtIso: String): Pair<String, String> {
@@ -50,13 +53,26 @@ fun formatOverlayReactionLogTimeLabelCompact(createdAtIso: String): String {
     }
 }
 
-fun overlayReactionLogDateHeaderKey(createdAtIso: String): String {
+/** Ключ дня по МСК — как [chatDayKeyMsk] в чат-комнатах. */
+fun overlayReactionLogDateHeaderKey(createdAtIso: String): String =
+    chatDayKeyMsk(createdAtIso).orEmpty()
+
+/** Время для sheet превью реакции (МСК, как в чате). */
+fun formatOverlayReactionLogPreviewTime(createdAtIso: String, incoming: Boolean): String {
     val instant = parseIsoInstant(createdAtIso.trim()) ?: return ""
-    val zdt = instant.atZone(ZoneId.systemDefault())
-    val today = Instant.now().atZone(ZoneId.systemDefault()).toLocalDate()
-    return when (zdt.toLocalDate()) {
-        today -> "today"
-        today.minusDays(1) -> "yesterday"
-        else -> zdt.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+    val zdt = instant.atZone(APP_DISPLAY_ZONE)
+    val now = Instant.now().atZone(APP_DISPLAY_ZONE)
+    val clock = formatChatTimeMsk(createdAtIso)
+    if (clock.isBlank()) return ""
+    val dayLabel = when (zdt.toLocalDate()) {
+        now.toLocalDate() -> null
+        now.toLocalDate().minusDays(1) -> "вчера"
+        else ->
+            zdt.format(DateTimeFormatter.ofPattern("d MMM", Locale("ru")))
     }
+    val prefix = when {
+        dayLabel == null -> if (incoming) "получено " else "отправлено "
+        else -> if (incoming) "получено $dayLabel, " else "отправлено $dayLabel, "
+    }
+    return prefix + clock
 }

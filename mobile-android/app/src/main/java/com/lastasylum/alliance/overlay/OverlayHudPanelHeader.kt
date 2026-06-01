@@ -15,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -32,7 +33,9 @@ fun OverlayHudPanelHeader(
     titleTrailing: @Composable (RowScope.() -> Unit)? = null,
     onRefresh: (() -> Unit)? = null,
     refreshing: Boolean = false,
-    headerTrailing: @Composable (() -> Unit)? = null,
+    headerTrailing: @Composable (RowScope.() -> Unit)? = null,
+    closeIconTint: Color = MaterialTheme.colorScheme.onSurface,
+    showCloseButton: Boolean = true,
 ) {
     Column(
         modifier = modifier
@@ -57,9 +60,8 @@ fun OverlayHudPanelHeader(
                 modifier = Modifier.weight(1f, fill = false),
             )
             titleTrailing?.invoke(this)
-            if (headerTrailing != null) {
-                headerTrailing()
-            } else if (onRefresh != null && subtitleTrailing == null) {
+            headerTrailing?.invoke(this)
+            if (headerTrailing == null && onRefresh != null && subtitleTrailing == null) {
                 IconButton(
                     onClick = onRefresh,
                     enabled = !refreshing,
@@ -71,12 +73,14 @@ fun OverlayHudPanelHeader(
                     )
                 }
             }
-            IconButton(onClick = onClose) {
-                Icon(
-                    imageVector = Icons.Outlined.Close,
-                    contentDescription = stringResource(R.string.overlay_history_close_cd),
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
+            if (showCloseButton) {
+                IconButton(onClick = onClose) {
+                    Icon(
+                        imageVector = Icons.Outlined.Close,
+                        contentDescription = stringResource(R.string.overlay_history_close_cd),
+                        tint = closeIconTint,
+                    )
+                }
             }
         }
         val showSubtitleRow = !subtitle.isNullOrBlank() || subtitleTrailing != null

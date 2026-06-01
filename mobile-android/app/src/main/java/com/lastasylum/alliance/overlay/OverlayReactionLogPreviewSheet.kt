@@ -1,9 +1,9 @@
 package com.lastasylum.alliance.overlay
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -11,10 +11,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.OverlayReactionLogCluster
+import com.lastasylum.alliance.data.chat.OverlayReactionLogVisibilityPolicy
+import com.lastasylum.alliance.ui.chat.MessageSheetPreviewSurface
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 
 @Composable
@@ -24,8 +26,15 @@ fun OverlayReactionLogPreviewSheet(
     onDismiss: () -> Unit,
 ) {
     val entry = cluster.representative
-    val incoming = com.lastasylum.alliance.data.chat.OverlayReactionLogVisibilityPolicy
-        .isIncoming(entry, selfUserId)
+    val incoming = OverlayReactionLogVisibilityPolicy.isIncoming(entry, selfUserId)
+    val displayName = when {
+        incoming -> entry.senderUsername.trim().ifBlank {
+            stringResource(R.string.overlay_reaction_sender_unknown)
+        }
+        else -> stringResource(R.string.overlay_notifications_preview_sender_self)
+    }
+    val timeLine = formatOverlayReactionLogPreviewTime(entry.createdAt, incoming)
+
     OverlayAwareBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -34,17 +43,18 @@ fun OverlayReactionLogPreviewSheet(
                     horizontal = SquadRelayDimens.contentPaddingHorizontal,
                     vertical = SquadRelayDimens.itemGap,
                 ),
-            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            OverlayReactionLogCard(
-                incoming = incoming,
-                unreadHighlight = false,
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
+            MessageSheetPreviewSurface {
+                Text(
+                    text = displayName,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (cluster.mergeCount > 1) {
                         OverlayReactionLogStackedPreview(
@@ -56,28 +66,20 @@ fun OverlayReactionLogPreviewSheet(
                         OverlayReactionLogMiniPreview(
                             reactionId = entry.reaction,
                             visibility = entry.visibility,
-                            previewSizeDp = 140,
+                            previewSizeDp = 72,
                             showLabel = true,
                             playAnimatedPreview = true,
                             compact = false,
                         )
                     }
                 }
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = overlayReactionLogNarrative(entry, selfUserId, includeSenderName = true),
-                style = MaterialTheme.typography.bodyLarge,
-                textAlign = TextAlign.Center,
-            )
-            val timeLine = formatOverlayReactionLogTimeLabelCompact(entry.createdAt)
-            if (timeLine.isNotBlank()) {
-                Text(
-                    text = timeLine,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
+                if (timeLine.isNotBlank()) {
+                    Text(
+                        text = timeLine,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }

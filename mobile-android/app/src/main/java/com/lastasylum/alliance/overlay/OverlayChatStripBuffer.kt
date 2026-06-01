@@ -39,6 +39,19 @@ class OverlayChatStripBuffer(
         visibleSince = null
     }
 
+    /** Drop preview rows for a room after per-user history clear. */
+    fun removeMessagesForRoom(roomId: String) {
+        val rid = roomId.trim()
+        if (rid.isEmpty()) return
+        val removedKeys = mutableListOf<String>()
+        messages.removeAll { msg ->
+            val remove = msg.roomId.trim() == rid
+            if (remove) removedKeys.add(msg.stableKey())
+            remove
+        }
+        removedKeys.forEach { receivedAt.remove(it) }
+    }
+
     fun upsert(msg: ChatMessage) {
         val id = msg._id?.takeIf { it.isNotBlank() }
         if (id != null) {

@@ -458,6 +458,17 @@ export class ChatController {
     return forwarded;
   }
 
+  @Post('rooms/:roomId/clear-history')
+  @Roles(AllianceRole.MEMBER)
+  async clearRoomHistory(
+    @Req() req: { user: RequestUser },
+    @Param('roomId') roomId: string,
+  ) {
+    const rid = roomId?.trim() ?? '';
+    if (!rid) throw new BadRequestException('roomId is required');
+    return this.chatService.clearRoomHistoryForUser(req.user.userId, rid);
+  }
+
   @Post('rooms/:roomId/read')
   @Roles(AllianceRole.MEMBER)
   async markRoomRead(

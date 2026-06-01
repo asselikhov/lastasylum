@@ -464,6 +464,7 @@ fun AppNavigation(
                     onConsumeTransientNotice = chatViewModel::consumeTransientNotice,
                     onMessageListScrollInProgress = chatViewModel::setMessageListScrollInProgress,
                     messageListKey = chatViewModel::messageListCompositionKey,
+                    onClearRoomHistory = chatViewModel::clearHistoryForSelectedRoom,
                 )
                 }
                         }

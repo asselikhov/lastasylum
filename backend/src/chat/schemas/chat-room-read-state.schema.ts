@@ -20,6 +20,12 @@ export class ChatRoomReadState {
   /** Highest read message id (ObjectId string) for the room. */
   @Prop({ type: String, required: true })
   lastReadMessageId: string;
+
+  /**
+   * Per-user history cutoff: messages with _id <= this id are hidden for this user only.
+   */
+  @Prop({ type: String, default: null })
+  hiddenBeforeMessageId?: string | null;
 }
 
 export const ChatRoomReadStateSchema =

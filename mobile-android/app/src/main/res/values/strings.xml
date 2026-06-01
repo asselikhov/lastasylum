@@ -150,6 +150,11 @@
     <string name="chat_delete_body">Сообщение исчезнет из чата для всех участников. Действие нельзя отменить.</string>
     <string name="chat_delete_confirm">Удалить</string>
     <string name="chat_delete_cancel">Отмена</string>
+    <string name="chat_clear_room_history_cd">Очистить историю комнаты</string>
+    <string name="chat_clear_room_confirm_title">Очистить историю?</string>
+    <string name="chat_clear_room_confirm_message">Сообщения этой комнаты будут скрыты только у вас на этом устройстве. У других участников и в базе команды история останется.</string>
+    <string name="chat_clear_room_confirm">Очистить</string>
+    <string name="chat_clear_room_cancel">Отмена</string>
     <string name="chat_typing_one">%1$s печатает…</string>
     <string name="chat_typing_many">%1$s печатают…</string>
     <string name="chat_send_failed_title">Не отправлено</string>
@@ -819,6 +824,7 @@
     <string name="overlay_notifications_clear_cancel">Отмена</string>
     <string name="overlay_notifications_scope_all">Все типы</string>
     <string name="overlay_notifications_search_hint">Поиск по нику</string>
+    <string name="overlay_notifications_preview_sender_self">Вы</string>
     <string name="overlay_notifications_pick_reaction">Выберите реакцию</string>
     <string name="overlay_notifications_more_reactions">Ещё реакции…</string>
     <string name="overlay_notifications_cluster_more">ещё %1$d</string>

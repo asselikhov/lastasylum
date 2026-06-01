@@ -63,6 +63,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.automirrored.outlined.Forward
@@ -355,6 +356,8 @@ private fun ChatScreenMessagesHost(
     onConsumeTransientNotice: () -> Unit,
     onMessageListScrollInProgress: (Boolean) -> Unit = {},
     messageListKey: (ChatMessage) -> String,
+    onRequestClearRoomHistory: (() -> Unit)? = null,
+    clearRoomHistoryEnabled: Boolean = true,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -578,6 +581,8 @@ private fun ChatScreenMessagesHost(
                     onSelectRoom = onSelectRoom,
                     overlayUi = overlayUi,
                     isRoomsLoading = chromePane.isRoomsLoading,
+                    onRequestClearHistory = onRequestClearRoomHistory,
+                    clearHistoryEnabled = clearRoomHistoryEnabled,
                 )
             }
             if (inSelectionMode) {
@@ -823,9 +828,11 @@ fun ChatScreen(
     },
     /** Overlay panel: hide room bar, rely on cached session + narrow socket subscriptions. */
     compactOverlayMode: Boolean = false,
+    onClearRoomHistory: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val overlayUi = LocalOverlayUiMode.current
+    var showClearRoomHistoryConfirm by remember { mutableStateOf(false) }
     val canHandleBack = LocalOnBackPressedDispatcherOwner.current != null
 
     val selectedRoomId = chromePane.selectedRoomId
@@ -921,6 +928,13 @@ fun ChatScreen(
                 onConsumeTransientNotice = onConsumeTransientNotice,
                 onMessageListScrollInProgress = onMessageListScrollInProgress,
                 messageListKey = messageListKey,
+                onRequestClearRoomHistory = if (!overlayUi) {
+                    { showClearRoomHistoryConfirm = true }
+                } else {
+                    null
+                },
+                clearRoomHistoryEnabled = !listPane.isLoading &&
+                    !chromePane.selectedRoomId.isNullOrBlank(),
             )
             ChatScreenComposerSection(
                 composerPane = composerPane,
@@ -1033,6 +1047,34 @@ fun ChatScreen(
             )
             }
         }
+    }
+
+    if (showClearRoomHistoryConfirm && !overlayUi) {
+        AlertDialog(
+            onDismissRequest = { showClearRoomHistoryConfirm = false },
+            title = { Text(stringResource(R.string.chat_clear_room_confirm_title)) },
+            text = {
+                Text(
+                    stringResource(R.string.chat_clear_room_confirm_message),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showClearRoomHistoryConfirm = false
+                        onClearRoomHistory()
+                    },
+                ) {
+                    Text(stringResource(R.string.chat_clear_room_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearRoomHistoryConfirm = false }) {
+                    Text(stringResource(R.string.chat_clear_room_cancel))
+                }
+            },
+        )
     }
 
     confirmDeleteMessage?.let {
@@ -1631,6 +1673,8 @@ private fun ChatRoomsBar(
     onSelectRoom: (String) -> Unit,
     overlayUi: Boolean = false,
     isRoomsLoading: Boolean = false,
+    onRequestClearHistory: (() -> Unit)? = null,
+    clearHistoryEnabled: Boolean = true,
 ) {
     if (rooms.isEmpty()) {
         if (overlayUi && isRoomsLoading) {
@@ -1679,12 +1723,31 @@ private fun ChatRoomsBar(
             )
         }
     }
-    ChatRoomsSwitcher(
-        tabs = tabs,
-        selectedId = selectedRoomId,
-        onSelect = onSelectRoom,
-        modifier = Modifier.padding(bottom = if (overlayUi) 4.dp else 6.dp),
-    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = if (overlayUi) 4.dp else 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ChatRoomsSwitcher(
+            tabs = tabs,
+            selectedId = selectedRoomId,
+            onSelect = onSelectRoom,
+            modifier = Modifier.weight(1f),
+        )
+        if (onRequestClearHistory != null && !selectedRoomId.isNullOrBlank()) {
+            IconButton(
+                onClick = onRequestClearHistory,
+                enabled = clearHistoryEnabled,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.DeleteOutline,
+                    contentDescription = stringResource(R.string.chat_clear_room_history_cd),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
+    }
 }
 
 

@@ -130,4 +130,7 @@ class ChatRestRepository(
         runCatching {
             chatApi.markRoomRead(roomId, MarkRoomReadRequest(messageId = messageId))
         }
+
+    suspend fun clearRoomHistoryForUser(roomId: String): Result<ClearRoomHistoryResponse> =
+        runCatching { chatApi.clearRoomHistory(roomId) }
 }

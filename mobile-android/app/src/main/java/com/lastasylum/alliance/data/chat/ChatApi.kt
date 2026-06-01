@@ -72,6 +72,11 @@ interface ChatApi {
         @Body body: MarkRoomReadRequest,
     ): MarkRoomReadResponse
 
+    @POST("chat/rooms/{roomId}/clear-history")
+    suspend fun clearRoomHistory(
+        @Path("roomId") roomId: String,
+    ): ClearRoomHistoryResponse
+
     @GET("chat/overlay-reactions")
     suspend fun listOverlayReactionLog(
         @Query("before") before: String? = null,

@@ -128,6 +128,9 @@ class ChatRepository(
     suspend fun markRoomRead(roomId: String, messageId: String): Result<MarkRoomReadResponse> =
         rest.markRoomRead(roomId, messageId)
 
+    suspend fun clearRoomHistoryForUser(roomId: String): Result<ClearRoomHistoryResponse> =
+        rest.clearRoomHistoryForUser(roomId)
+
     fun connectRealtime(
         roomId: String,
         onMessage: (ChatMessage) -> Unit,

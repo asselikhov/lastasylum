@@ -2,6 +2,7 @@ package com.lastasylum.alliance.ui.chat
 
 import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.chat.ChatMessage
+import com.lastasylum.alliance.data.chat.ChatMessageVisibilityPolicy
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.chat.mergeIncomingChatUpdate
 import com.lastasylum.alliance.data.chat.mergePreservingAttachments
@@ -13,10 +14,14 @@ internal const val CHAT_MAX_MESSAGES_IN_MEMORY = 800
 internal fun filterMessagesForRoom(
     messages: List<ChatMessage>,
     roomId: String,
+    hiddenBeforeMessageId: String? = null,
 ): List<ChatMessage> {
     val rid = roomId.trim()
     if (rid.isEmpty()) return messages
-    return messages.filter { it.roomId.trim() == rid }
+    val hidden = hiddenBeforeMessageId?.trim().orEmpty().ifBlank { null }
+    return messages
+        .filter { it.roomId.trim() == rid }
+        .filter { ChatMessageVisibilityPolicy.isMessageVisible(it, hidden) }
 }
 
 internal data class MessageUpsertResult(
@@ -211,9 +216,10 @@ internal fun mergeVisibleMessagesWithRoomCache(
     roomId: String,
     maxMessages: Int = CHAT_MAX_MESSAGES_IN_MEMORY,
     excludedMessageIds: Set<String> = emptySet(),
+    hiddenBeforeMessageId: String? = null,
 ): List<ChatMessage> {
-    val scopedVisible = filterMessagesForRoom(visible, roomId)
-    val scopedCached = filterMessagesForRoom(cached, roomId)
+    val scopedVisible = filterMessagesForRoom(visible, roomId, hiddenBeforeMessageId)
+    val scopedCached = filterMessagesForRoom(cached, roomId, hiddenBeforeMessageId)
     return when {
         scopedVisible.isEmpty() -> capNewestFirst(scopedCached, maxMessages)
         scopedCached.isEmpty() -> capNewestFirst(scopedVisible, maxMessages)

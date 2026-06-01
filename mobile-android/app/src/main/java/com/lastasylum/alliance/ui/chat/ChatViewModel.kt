@@ -893,10 +893,30 @@ class ChatViewModel(
         }
     }
 
+    private fun hiddenBeforeForRoom(roomId: String): String? =
+        chatRoomPreferences.getHiddenBeforeMessageId(roomId)
+
+    private fun filterMessagesForRoom(
+        messages: List<ChatMessage>,
+        roomId: String,
+    ): List<ChatMessage> =
+        com.lastasylum.alliance.ui.chat.filterMessagesForRoom(
+            messages,
+            roomId,
+            hiddenBeforeForRoom(roomId),
+        )
+
     /** Reaction/edit/delete socket rows — update list/cache, never bump unread. */
     private fun applyKnownChatMessageUpdate(message: ChatMessage) {
         val roomId = message.roomId.trim()
         if (roomId.isBlank()) return
+        if (!com.lastasylum.alliance.data.chat.ChatMessageVisibilityPolicy.isMessageVisible(
+                message,
+                hiddenBeforeForRoom(roomId),
+            )
+        ) {
+            return
+        }
         if (shouldBlockOwnOutgoingRealtime(message)) return
         val selected = _state.value.selectedRoomId
         when {
@@ -1414,6 +1434,67 @@ class ChatViewModel(
         }
     }
 
+    fun clearHistoryForSelectedRoom() {
+        val roomId = _state.value.selectedRoomId?.trim().orEmpty()
+        if (roomId.isEmpty() || _state.value.isLoading) return
+        viewModelScope.launch {
+            repository.clearRoomHistoryForUser(roomId)
+                .onSuccess { response ->
+                    response.hiddenBeforeMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                        chatRoomPreferences.setHiddenBeforeMessageId(roomId, it)
+                    }
+                    response.lastReadMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                        chatRoomPreferences.setLastReadMessageId(roomId, it)
+                        lastMarkedReadByRoom[roomId] = it
+                    }
+                    applyClearedRoomHistoryLocal(roomId, response.unreadCount)
+                    CombatOverlayService.notifyRoomHistoryCleared(roomId)
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(
+                        transientNotice = e.toUserMessageRu(getApplication<Application>().resources),
+                    )
+                }
+        }
+    }
+
+    private fun applyClearedRoomHistoryLocal(roomId: String, unreadCount: Int) {
+        synchronized(chatMutationLock) {
+            roomMessageCache[roomId] = RoomMessageCache(
+                messages = emptyList(),
+                hasMoreOlder = false,
+            )
+            knownMessageIds.clear()
+            messageIdIndex.clear()
+            lazyColumnKeyByMessageId.clear()
+        }
+        _draftMessage.value = ""
+        _pickedImageUris.value = emptyList()
+        _listDerived.value = ChatMessagesListDerived.Empty
+        ChatSessionCache.updateMessages(roomId, emptyList())
+        _state.value = _state.value.copy(
+            messages = emptyList(),
+            hasMoreOlder = false,
+            isLoading = false,
+            isLoadingOlder = false,
+            error = null,
+            replyToMessage = null,
+            scrollToMessageId = null,
+            highlightMessageId = null,
+            transientNotice = null,
+            activeActionMessageId = null,
+            confirmDeleteMessageId = null,
+            selectedMessageIds = emptySet(),
+            confirmBulkDelete = false,
+            isDeletingSelection = false,
+            deletingMessageId = null,
+            rooms = _state.value.rooms.map {
+                if (it.id == roomId) it.copy(unreadCount = unreadCount.coerceAtLeast(0)) else it
+            },
+        )
+        schedulePersistChatSnapshot()
+    }
+
     fun selectRoom(roomId: String) {
         if (roomId == _state.value.selectedRoomId) return
         if (isGlobalChatRoom(roomId)) {
@@ -1460,6 +1541,7 @@ class ChatViewModel(
                 roomId = roomId,
                 maxMessages = messageMemoryCap,
                 excludedMessageIds = locallyRemovedMessageIds,
+                hiddenBeforeMessageId = hiddenBeforeForRoom(roomId),
             )
         }
         val hasCachedMessages = cachedMessages.isNotEmpty()
@@ -1716,6 +1798,7 @@ class ChatViewModel(
             roomId = rid,
             maxMessages = messageMemoryCap,
             excludedMessageIds = locallyRemovedMessageIds,
+            hiddenBeforeMessageId = hiddenBeforeForRoom(rid),
         )
         if (chatMessagesListContentEqual(visible, merged)) return false
         knownMessageIds.clear()
