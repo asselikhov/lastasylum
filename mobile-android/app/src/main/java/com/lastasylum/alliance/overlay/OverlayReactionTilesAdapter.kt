@@ -97,7 +97,7 @@ internal class OverlayReactionTilesAdapter(
             onPick = { onPick(reaction) },
             onToggleFavorite = {
                 favorites.toggleFavorite(reaction.id)
-                val pos = holder.adapterPosition
+                val pos = holder.bindingAdapterPosition
                 if (pos != RecyclerView.NO_POSITION) {
                     notifyItemChanged(pos)
                 }

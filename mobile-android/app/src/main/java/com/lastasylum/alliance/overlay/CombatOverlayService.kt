@@ -5101,7 +5101,7 @@ class CombatOverlayService : Service() {
                     LocalOverlayUiMode provides true,
                 ) {
                     SquadRelayTheme {
-                        if (!needsChatVm && overlayPane != null) {
+                        if (!needsChatVm) {
                             BackHandler { hideOverlayChatTeamPanel() }
                             Surface(
                                 modifier = Modifier.fillMaxSize(),
@@ -5123,7 +5123,6 @@ class CombatOverlayService : Service() {
                                         }
                                         OverlayHudPane.Participants -> Unit
                                         OverlayHudPane.Notifications -> Unit
-                                        else -> Unit
                                     }
                                     Box(
                                         Modifier
@@ -5207,7 +5206,6 @@ class CombatOverlayService : Service() {
                                                     },
                                                 )
                                             }
-                                            else -> Unit
                                         }
                                     }
                                 }

@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imeNestedScroll
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -1326,6 +1327,7 @@ private fun ChatDayDivider(label: String) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ChatMessagesLazyList(
     modifier: Modifier = Modifier,
@@ -1378,7 +1380,7 @@ private fun ChatMessagesLazyList(
     }
     LazyColumn(
         state = listState,
-        modifier = modifier,
+        modifier = modifier.imeNestedScroll(),
         reverseLayout = true,
         flingBehavior = ScrollableDefaults.flingBehavior(),
         verticalArrangement = Arrangement.spacedBy(0.dp),
@@ -2092,7 +2094,7 @@ private fun ChatFloatingImageAttachmentsBlock(
                 }
                 if (hasCaption) {
                     TelegramImageCaptionBar(
-                        caption = caption!!.trimEnd(),
+                        caption = caption.orEmpty().trimEnd(),
                         formattedTime = formattedTime,
                         captionBarBg = captionBarBg,
                         onBubble = onBubble,

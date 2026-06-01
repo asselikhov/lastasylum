@@ -8,14 +8,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.exclude
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -35,11 +33,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -101,7 +96,6 @@ enum class AppTab(val route: String, val titleRes: Int) {
     ADMIN("admin", R.string.tab_admin),
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AppNavigation(
     userId: String,
@@ -253,23 +247,6 @@ fun AppNavigation(
         .distinctUntilChanged()
         .collectAsStateWithLifecycle(0)
     val chatRouteActive = currentTabRoute == AppTab.CHAT.route
-    val imeVisible = WindowInsets.isImeVisible
-    // Скрываем навбар сразу при IME; показываем с задержкой после закрытия — без «дёрганья».
-    var chatNavBarVisible by remember { mutableStateOf(true) }
-    LaunchedEffect(chatRouteActive, imeVisible) {
-        if (!chatRouteActive) {
-            chatNavBarVisible = true
-            return@LaunchedEffect
-        }
-        if (imeVisible) {
-            chatNavBarVisible = false
-        } else {
-            delay(160)
-            chatNavBarVisible = true
-        }
-    }
-    val showBottomNav = !chatRouteActive || chatNavBarVisible
-    val navBarImeAnimMs = PremiumMotion.fadeFastMs
     DisposableEffect(chatRouteActive) {
         if (chatRouteActive) {
             chatViewModel.onChatTabResumed()
@@ -282,14 +259,10 @@ fun AppNavigation(
         modifier = modifier,
         containerColor = Color.Transparent,
         contentColor = MaterialTheme.colorScheme.onBackground,
-        // IME — только на композере ([chatComposerAppDock]); контент NavHost не дублирует inset.
+        // IME не сжимает Scaffold (adjustNothing): навбар остаётся внизу, системная клавиатура перекрывает его.
+        // Подъём полей — imePadding на композерах/формах, не на bottomBar.
         contentWindowInsets = WindowInsets.safeDrawing.exclude(WindowInsets.ime),
         bottomBar = {
-            AnimatedVisibility(
-                visible = showBottomNav,
-                enter = fadeIn(tween(navBarImeAnimMs)),
-                exit = fadeOut(tween(navBarImeAnimMs)),
-            ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -403,7 +376,6 @@ fun AppNavigation(
                         }
                     }
                 }
-            }
             }
         },
     ) { contentPadding ->

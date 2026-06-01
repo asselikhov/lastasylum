@@ -221,6 +221,8 @@ android {
 kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
+        // Moshi @Json and Android @DrawableRes on data-class ctor params (KT-73255).
+        freeCompilerArgs.add("-Xannotation-default-target=param-property")
     }
 }
 

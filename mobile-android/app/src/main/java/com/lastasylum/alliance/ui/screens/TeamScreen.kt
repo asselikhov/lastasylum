@@ -367,8 +367,8 @@ fun TeamScreen(
                         }
                         val canManageForumTopics = isSquadOfficer
                         val canModerateForumMessages = isSquadOfficer
-                        val enabledStickerPackKeys = remember(profile?.enabledStickerPacks) {
-                            profile?.enabledStickerPacks?.toSet() ?: emptySet()
+                        val enabledStickerPackKeys = remember(profile.enabledStickerPacks) {
+                            profile.enabledStickerPacks.toSet()
                         }
                         Surface(
                             modifier = Modifier
@@ -382,7 +382,7 @@ fun TeamScreen(
                             Column(Modifier.fillMaxSize()) {
                                 TeamLeaderToolbar(
                                     team = team,
-                                    activeServerNumber = profile?.activeServerNumber,
+                                    activeServerNumber = profile.activeServerNumber,
                                     subtitle = stringResource(
                                         R.string.team_roster_count,
                                         team.members.size,

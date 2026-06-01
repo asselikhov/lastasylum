@@ -19,11 +19,8 @@ object SquadRelayDimens {
     val cardInnerPadding = 14.dp
     val panelInnerPadding = 14.dp
     val composerInnerPadding = 10.dp
-    /** Небольший зазор композера над нижним краем контента / IME ([chatComposerDock]). */
+    /** Небольший зазор композера над нижним краем контента / IME ([chatComposerOverlayDock]). */
     val composerBottomGap = 8.dp
-    /** Высота bottomBar Scaffold; вычитается из IME-inset, если adjustResize не обнулил inset. */
-    val chatComposerScaffoldBottomObstruction =
-        bottomNavigationBarHeight + 20.dp + 12.dp
     val headerSubtitleGap = 2.dp
     val listRowHorizontalPadding = 10.dp
     val listRowVerticalPadding = 10.dp

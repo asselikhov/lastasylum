@@ -708,7 +708,7 @@ private fun TeamNewsDetailRoute(
                 title = d?.poll?.question?.takeIf { it.isNotBlank() }
                     ?: d?.title
                     ?: "",
-                canEdit = canEdit && d != null,
+                canEdit = canEdit,
                 onBack = onBack,
                 onEdit = { d?.let { onEdit(it.id) } },
                 onDelete = {

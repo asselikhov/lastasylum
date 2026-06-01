@@ -31,7 +31,7 @@ class MainActivity : ComponentActivity() {
             isAppearanceLightNavigationBars = false
         }
         super.onCreate(savedInstanceState)
-        // adjustNothing + imePadding на композере; навбар в Scaffold не дублирует IME.
+        // adjustNothing: IME поверх окна; навбар не скрывается; imePadding только на полях ввода.
         WindowCompat.setDecorFitsSystemWindows(window, false)
         hideSystemUi()
         setContent {

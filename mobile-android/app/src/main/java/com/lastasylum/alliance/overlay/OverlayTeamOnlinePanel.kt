@@ -23,8 +23,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -92,9 +93,10 @@ fun OverlayTeamOnlinePanel(
         onDispose { voiceRosterSync.release() }
     }
 
-    val uiState by controller.state.collectAsState()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val uiState by controller.state.collectAsStateWithLifecycle(lifecycleOwner)
     var longPressMember by remember { mutableStateOf<OverlayOnlineMemberUiModel?>(null) }
-    val voicePeers by TeamVoicePresenceStore.peers.collectAsState(initial = emptyMap())
+    val voicePeers by TeamVoicePresenceStore.peers.collectAsStateWithLifecycle(lifecycleOwner)
     val hasLocalVoiceSession = voiceSession != null
 
     LaunchedEffect(openJoinInboxInitially) {

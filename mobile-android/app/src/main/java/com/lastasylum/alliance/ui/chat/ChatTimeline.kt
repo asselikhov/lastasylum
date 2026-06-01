@@ -44,13 +44,9 @@ fun chatBubbleClusterTopSpacing(
         val o = when (e) {
             is ChatTimelineEntry.ChatMessageItem -> e.message
             is ChatTimelineEntry.ChatAlbumItem -> e.representativeMessage
-            else -> null
         }
-        if (o != null) {
-            val same = o.senderId.trim() == sid && o.senderId.trim().isNotEmpty()
-            return if (same) 3.dp else 14.dp
-        }
-        i++
+        val same = o.senderId.trim() == sid && o.senderId.trim().isNotEmpty()
+        return if (same) 3.dp else 14.dp
     }
     return 10.dp
 }

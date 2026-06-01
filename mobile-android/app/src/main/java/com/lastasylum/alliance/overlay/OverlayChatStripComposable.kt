@@ -325,7 +325,7 @@ private fun OverlayChatStripMessage(
                         overflow = TextOverflow.Ellipsis,
                     )
 
-                    if (hasSticker && stickerStem != null) {
+                    if (hasSticker) {
                         val ctx = androidx.compose.ui.platform.LocalContext.current
                         Surface(
                             shape = RoundedCornerShape(14.dp),
