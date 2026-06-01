@@ -36,6 +36,34 @@ export class OverlayReactionLog {
     index: true,
   })
   visibility: 'personal' | 'broadcast';
+
+  @Prop({ type: Types.ObjectId, default: null, index: true })
+  replyToLogId: Types.ObjectId | null;
+
+  /** Denormalized parent snapshot for reply entries (UI quote row). */
+  @Prop({
+    type: {
+      _id: { type: Types.ObjectId, required: true },
+      reaction: { type: String, required: true, trim: true },
+      visibility: { type: String, required: true, enum: ['personal', 'broadcast'] },
+      senderUserId: { type: String, required: true },
+      senderUsername: { type: String, required: true, trim: true },
+      targetUserId: { type: String, default: null },
+      targetUsername: { type: String, default: null, trim: true },
+    },
+    default: null,
+    _id: false,
+  })
+  replyToLog: {
+    _id: Types.ObjectId;
+    reaction: string;
+    visibility: 'personal' | 'broadcast';
+    senderUserId: string;
+    senderUsername: string;
+    targetUserId: string | null;
+    targetUsername: string | null;
+  } | null;
+
   /** Emoji reactions on log entry (chat-style). */
   @Prop({
     type: [
@@ -55,3 +83,4 @@ OverlayReactionLogSchema.index({ teamId: 1, _id: -1 });
 OverlayReactionLogSchema.index({ teamId: 1, visibility: 1, _id: -1 });
 OverlayReactionLogSchema.index({ teamId: 1, targetUserId: 1, _id: -1 });
 OverlayReactionLogSchema.index({ teamId: 1, senderUserId: 1, _id: -1 });
+OverlayReactionLogSchema.index({ teamId: 1, replyToLogId: 1, _id: -1 });

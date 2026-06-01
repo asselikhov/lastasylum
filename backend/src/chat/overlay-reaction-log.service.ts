@@ -23,6 +23,16 @@ export type OverlayReactionLogReactionView = {
   reactedByMe: boolean;
 };
 
+export type OverlayReactionLogReplyToView = {
+  _id: string;
+  reaction: string;
+  visibility: 'personal' | 'broadcast';
+  senderUserId: string;
+  senderUsername: string;
+  targetUserId: string | null;
+  targetUsername: string | null;
+};
+
 export type OverlayReactionLogView = {
   _id: string;
   senderUserId: string;
@@ -33,6 +43,8 @@ export type OverlayReactionLogView = {
   visibility: 'personal' | 'broadcast';
   createdAt: string;
   reactions: OverlayReactionLogReactionView[];
+  replyToLogId: string | null;
+  replyToLog: OverlayReactionLogReplyToView | null;
 };
 
 type UserLean = {
@@ -53,6 +65,31 @@ export class OverlayReactionLogService {
     private readonly chatService: ChatService,
   ) {}
 
+  private replyToLogFromRow(row: {
+    replyToLogId?: Types.ObjectId | null;
+    replyToLog?: {
+      _id: Types.ObjectId;
+      reaction: string;
+      visibility: 'personal' | 'broadcast';
+      senderUserId: string;
+      senderUsername: string;
+      targetUserId?: string | null;
+      targetUsername?: string | null;
+    } | null;
+  }): OverlayReactionLogReplyToView | null {
+    const snap = row.replyToLog;
+    if (!snap?._id) return null;
+    return {
+      _id: snap._id.toString(),
+      reaction: snap.reaction,
+      visibility: snap.visibility,
+      senderUserId: snap.senderUserId,
+      senderUsername: snap.senderUsername,
+      targetUserId: snap.targetUserId ?? null,
+      targetUsername: snap.targetUsername ?? null,
+    };
+  }
+
   private toView(
     row: {
       _id: Types.ObjectId;
@@ -64,6 +101,16 @@ export class OverlayReactionLogService {
       visibility: 'personal' | 'broadcast';
       createdAt?: Date;
       reactions?: { emoji: string; userIds: string[] }[] | null;
+      replyToLogId?: Types.ObjectId | null;
+      replyToLog?: {
+        _id: Types.ObjectId;
+        reaction: string;
+        visibility: 'personal' | 'broadcast';
+        senderUserId: string;
+        senderUsername: string;
+        targetUserId?: string | null;
+        targetUsername?: string | null;
+      } | null;
     },
     viewerUserId?: string,
   ): OverlayReactionLogView {
@@ -87,7 +134,58 @@ export class OverlayReactionLogService {
       visibility: row.visibility,
       createdAt: row.createdAt?.toISOString() ?? new Date().toISOString(),
       reactions,
+      replyToLogId: row.replyToLogId?.toString() ?? null,
+      replyToLog: this.replyToLogFromRow(row),
     };
+  }
+
+  private buildReplyToSnapshot(parent: {
+    _id: Types.ObjectId;
+    senderUserId: string;
+    senderUsername: string;
+    targetUserId?: string | null;
+    targetUsername?: string | null;
+    reaction: string;
+    visibility: 'personal' | 'broadcast';
+  }) {
+    return {
+      _id: parent._id,
+      reaction: parent.reaction,
+      visibility: parent.visibility,
+      senderUserId: parent.senderUserId,
+      senderUsername: parent.senderUsername,
+      targetUserId: parent.targetUserId ?? null,
+      targetUsername: parent.targetUsername ?? null,
+    };
+  }
+
+  private async loadParentLogForReply(
+    teamId: Types.ObjectId,
+    replierUserId: string,
+    replyToLogId: string,
+  ): Promise<OverlayReactionLogDocument> {
+    const trimmed = replyToLogId?.trim();
+    if (!trimmed || !Types.ObjectId.isValid(trimmed)) {
+      throw new BadRequestException('Invalid replyToLogId');
+    }
+    const parent = await this.logModel
+      .findOne({
+        _id: new Types.ObjectId(trimmed),
+        teamId,
+      })
+      .exec();
+    if (!parent) {
+      throw new NotFoundException('Reaction log entry not found');
+    }
+    const parentFilter = this.visibilityFilter(replierUserId);
+    const visible = await this.logModel
+      .findOne({ _id: parent._id, teamId, ...parentFilter })
+      .lean()
+      .exec();
+    if (!visible) {
+      throw new BadRequestException('Cannot reply to this reaction log entry');
+    }
+    return parent;
   }
 
   private async assertActiveTeamMember(userId: string): Promise<{
@@ -124,22 +222,77 @@ export class OverlayReactionLogService {
     sender: UserLean;
     target: UserLean;
     reaction: string;
-  }): Promise<OverlayReactionLogView> {
+    replyToLogId?: string | null;
+  }): Promise<{ entry: OverlayReactionLogView; recipientUserIds: string[] }> {
     const teamId = input.sender.playerTeamId;
     if (!teamId) {
       throw new BadRequestException('Sender has no team');
     }
+    const senderId = input.sender._id.toString();
+    const targetId = input.target._id.toString();
+    const replyToLogId = input.replyToLogId?.trim();
+
+    if (replyToLogId) {
+      const parent = await this.loadParentLogForReply(
+        teamId,
+        senderId,
+        replyToLogId,
+      );
+      const parentSenderId = parent.senderUserId.trim();
+      const parentTargetId = parent.targetUserId?.trim() ?? '';
+
+      if (parent.visibility === 'broadcast') {
+        if (senderId === parentSenderId) {
+          throw new BadRequestException('Cannot reply to your own broadcast reaction');
+        }
+        if (targetId !== parentSenderId) {
+          throw new BadRequestException('Invalid reply target for broadcast reaction');
+        }
+      } else {
+        if (senderId !== parentTargetId) {
+          throw new BadRequestException('Only the recipient can reply to this reaction');
+        }
+        if (targetId !== parentSenderId) {
+          throw new BadRequestException('Invalid reply target for personal reaction');
+        }
+      }
+
+      const entryVisibility: 'personal' | 'broadcast' =
+        parent.visibility === 'broadcast' ? 'broadcast' : 'personal';
+      const replySnapshot = this.buildReplyToSnapshot(parent.toObject());
+
+      const doc = await this.logModel.create({
+        teamId,
+        senderUserId: senderId,
+        senderUsername: input.sender.username?.trim() || 'Союзник',
+        targetUserId: targetId,
+        targetUsername: input.target.username?.trim() || null,
+        reaction: input.reaction,
+        visibility: entryVisibility,
+        replyToLogId: parent._id,
+        replyToLog: replySnapshot,
+        reactions: [],
+      });
+      const entry = this.toView(doc.toObject(), senderId);
+      const recipientUserIds = await this.listRecipientUserIds(teamId, doc);
+      return { entry, recipientUserIds };
+    }
+
     const doc = await this.logModel.create({
       teamId,
-      senderUserId: input.sender._id.toString(),
+      senderUserId: senderId,
       senderUsername: input.sender.username?.trim() || 'Союзник',
-      targetUserId: input.target._id.toString(),
+      targetUserId: targetId,
       targetUsername: input.target.username?.trim() || null,
       reaction: input.reaction,
       visibility: 'personal',
+      replyToLogId: null,
+      replyToLog: null,
       reactions: [],
     });
-    return this.toView(doc, input.sender._id.toString());
+    const entry = this.toView(doc.toObject(), senderId);
+    const recipientUserIds = await this.listRecipientUserIds(teamId, doc);
+    return { entry, recipientUserIds };
   }
 
   async createBroadcast(input: {
@@ -158,9 +311,11 @@ export class OverlayReactionLogService {
       targetUsername: null,
       reaction: input.reaction,
       visibility: 'broadcast',
+      replyToLogId: null,
+      replyToLog: null,
       reactions: [],
     });
-    return this.toView(doc, input.sender._id.toString());
+    return this.toView(doc.toObject(), input.sender._id.toString());
   }
 
   async listForViewer(

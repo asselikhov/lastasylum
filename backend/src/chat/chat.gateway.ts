@@ -337,7 +337,7 @@ export class ChatGateway {
   async sendOverlayReaction(
     @ConnectedSocket() client: AuthSocket,
     @MessageBody()
-    body: { targetUserId?: string; reaction?: string },
+    body: { targetUserId?: string; reaction?: string; replyToLogId?: string },
   ) {
     if (!client.data.user) {
       throw new WsException('Unauthorized socket connection');
@@ -375,11 +375,16 @@ export class ChatGateway {
       throw new WsException('Recipient is not in your team');
     }
 
-    const logEntry = await this.overlayReactionLogService.createPersonal({
-      sender,
-      target,
-      reaction,
-    });
+    const replyToLogId =
+      typeof body?.replyToLogId === 'string' ? body.replyToLogId.trim() : '';
+
+    const { entry: logEntry, recipientUserIds } =
+      await this.overlayReactionLogService.createPersonal({
+        sender,
+        target,
+        reaction,
+        replyToLogId: replyToLogId || null,
+      });
 
     this.server
       ?.to(`user:${targetUserId}`)
@@ -393,10 +398,7 @@ export class ChatGateway {
         ),
       );
 
-    this.emitOverlayReactionLog(logEntry, [
-      client.data.user.userId,
-      targetUserId,
-    ]);
+    this.emitOverlayReactionLog(logEntry, recipientUserIds);
 
     return { event: 'overlay:reaction:sent', data: { targetUserId, reaction } };
   }
@@ -480,6 +482,16 @@ export class ChatGateway {
         count: number;
         reactedByMe: boolean;
       }[];
+      replyToLogId?: string | null;
+      replyToLog?: {
+        _id: string;
+        reaction: string;
+        visibility: 'personal' | 'broadcast';
+        senderUserId: string;
+        senderUsername: string;
+        targetUserId: string | null;
+        targetUsername: string | null;
+      } | null;
     },
     userIds: string[],
   ) {

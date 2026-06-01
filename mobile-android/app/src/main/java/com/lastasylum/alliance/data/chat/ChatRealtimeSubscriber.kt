@@ -145,8 +145,12 @@ class ChatRealtimeSubscriber(
         socketManager.emitTyping(roomId)
     }
 
-    fun emitOverlayReaction(targetUserId: String, reaction: String = "heart") {
-        socketManager.emitOverlayReaction(targetUserId, reaction)
+    fun emitOverlayReaction(
+        targetUserId: String,
+        reaction: String = "heart",
+        replyToLogId: String? = null,
+    ) {
+        socketManager.emitOverlayReaction(targetUserId, reaction, replyToLogId)
     }
 
     fun emitOverlayReactionBroadcast(reaction: String = "heart") {

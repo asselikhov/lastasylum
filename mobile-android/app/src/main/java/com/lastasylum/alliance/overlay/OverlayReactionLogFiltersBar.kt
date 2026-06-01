@@ -3,7 +3,7 @@ package com.lastasylum.alliance.overlay
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,7 +32,7 @@ import com.lastasylum.alliance.data.chat.OverlayReactionLogFilter
 import com.lastasylum.alliance.data.chat.OverlayReactionLogScopeFilter
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 
-private val FilterFieldHeight = 40.dp
+private val FilterFieldMinHeight = 48.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,24 +79,24 @@ fun OverlayReactionLogFiltersBar(
             onValueChange = onSearchQuery,
             modifier = Modifier
                 .weight(1.1f)
-                .height(FilterFieldHeight),
+                .heightIn(min = FilterFieldMinHeight),
             singleLine = true,
             placeholder = {
                 Text(
                     text = stringResource(R.string.overlay_notifications_search_hint),
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.bodySmall,
                 )
             },
             leadingIcon = {
                 Icon(
                     Icons.Default.Search,
                     contentDescription = null,
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(18.dp),
                 )
             },
             colors = fieldColors,
             shape = fieldShape,
-            textStyle = MaterialTheme.typography.labelSmall,
+            textStyle = MaterialTheme.typography.bodySmall,
         )
     }
 }
@@ -114,6 +114,7 @@ private fun DirectionFilterDropdown(
         OverlayReactionLogFilter.All -> stringResource(R.string.overlay_notifications_filter_all)
         OverlayReactionLogFilter.Incoming -> stringResource(R.string.overlay_notifications_filter_incoming)
         OverlayReactionLogFilter.Outgoing -> stringResource(R.string.overlay_notifications_filter_outgoing)
+        OverlayReactionLogFilter.Reply -> stringResource(R.string.overlay_notifications_filter_reply)
     }
     FilterDropdown(
         label = label,
@@ -132,6 +133,8 @@ private fun DirectionFilterDropdown(
                                 stringResource(R.string.overlay_notifications_filter_incoming)
                             OverlayReactionLogFilter.Outgoing ->
                                 stringResource(R.string.overlay_notifications_filter_outgoing)
+                            OverlayReactionLogFilter.Reply ->
+                                stringResource(R.string.overlay_notifications_filter_reply)
                         },
                         style = MaterialTheme.typography.labelMedium,
                     )
@@ -213,14 +216,14 @@ private fun FilterDropdown(
             singleLine = true,
             modifier = Modifier
                 .menuAnchor(androidx.compose.material3.ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                .height(FilterFieldHeight)
+                .heightIn(min = FilterFieldMinHeight)
                 .fillMaxWidth(),
             trailingIcon = {
                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
             },
             colors = fieldColors,
             shape = fieldShape,
-            textStyle = MaterialTheme.typography.labelSmall,
+            textStyle = MaterialTheme.typography.bodySmall,
         )
         ExposedDropdownMenu(
             expanded = expanded,

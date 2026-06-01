@@ -146,21 +146,22 @@ fun OverlayChatStrip(
         }
         val currentKeys = latestMessages.map { keyOf(it) }.toSet()
         val removed = keep.filter { keyOf(it) !in currentKeys }
-        removed.forEach { m -> leaving[keyOf(m)] = true }
         if (removed.isNotEmpty()) {
+            removed.forEach { m -> leaving[keyOf(m)] = true }
             delay(STRIP_EXIT_ANIM_MS)
             keep.removeAll { keyOf(it) !in currentKeys }
             removed.forEach { m -> leaving.remove(keyOf(m)) }
         }
         val orderIndex = latestMessages.mapIndexed { index, msg -> keyOf(msg) to index }.toMap()
         keep.sortBy { orderIndex[keyOf(it)] ?: Int.MAX_VALUE }
-        while (keep.size > OverlayChatStripBuffer.DEFAULT_MAX_PREVIEW) {
-            val oldest = keep.firstOrNull() ?: break
-            val oldestKey = keyOf(oldest)
-            leaving[oldestKey] = true
+        if (keep.size > OverlayChatStripBuffer.DEFAULT_MAX_PREVIEW) {
+            val overflow = keep.size - OverlayChatStripBuffer.DEFAULT_MAX_PREVIEW
+            val trimmed = keep.take(overflow)
+            trimmed.forEach { m -> leaving[keyOf(m)] = true }
             delay(STRIP_EXIT_ANIM_MS)
-            keep.removeAt(0)
-            leaving.remove(oldestKey)
+            val trimKeys = trimmed.map { keyOf(it) }.toSet()
+            keep.removeAll { keyOf(it) in trimKeys }
+            trimmed.forEach { m -> leaving.remove(keyOf(m)) }
         }
     }
 
@@ -187,6 +188,9 @@ fun OverlayChatStrip(
         items(
             count = displayMessages.size,
             key = { displayMessages[it].let { m -> keyOf(m) } },
+            contentType = { idx ->
+                if (OverlayStripNoticeIds.isNotice(displayMessages[idx]._id)) 0 else 1
+            },
         ) { index ->
             val msg = displayMessages[index]
             val key = keyOf(msg)

@@ -70,4 +70,25 @@ class OverlayReactionLogUnreadTest {
         )
         assertEquals(setOf("1"), computeUnreadEntryIds(entries, self, null))
     }
+
+    @Test
+    fun filterUnreadEntryIdsToRetained_dropsIdsNotInMemoryWindow() {
+        val entries = listOf(entry(id = "b", sender = other))
+        val unread = setOf("a", "b")
+        assertEquals(setOf("b"), filterUnreadEntryIdsToRetained(unread, entries))
+    }
+
+    @Test
+    fun mergeOverlayReactionLastSeenLogId_keepsNewerLocalCursor() {
+        val local = "000000000000000000000099"
+        val server = "000000000000000000000001"
+        assertEquals(local, mergeOverlayReactionLastSeenLogId(local, server))
+    }
+
+    @Test
+    fun mergeOverlayReactionLastSeenLogId_adoptsNewerServerCursor() {
+        val local = "000000000000000000000001"
+        val server = "000000000000000000000099"
+        assertEquals(server, mergeOverlayReactionLastSeenLogId(local, server))
+    }
 }

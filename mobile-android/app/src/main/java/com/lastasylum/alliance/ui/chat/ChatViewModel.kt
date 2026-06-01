@@ -587,11 +587,27 @@ class ChatViewModel(
      * @return true если список комнат восстановлен
      */
     fun primeFromLaunchDisk(): Boolean {
-        if (currentUserId.isBlank()) return false
-        val roomsRaw = launchDiskCache.loadChatRooms(currentUserId) ?: return false
+        val payload = readLaunchDiskPrimePayload() ?: return false
+        return applyLaunchDiskPrimePayload(payload)
+    }
+
+    /** Disk reads on [Dispatchers.IO] — не блокировать main при открытии оверлей-чата. */
+    suspend fun primeFromLaunchDiskForOverlay(): Boolean {
+        val payload = withContext(Dispatchers.IO) { readLaunchDiskPrimePayload() } ?: return false
+        return withContext(Dispatchers.Main.immediate) { applyLaunchDiskPrimePayload(payload) }
+    }
+
+    private data class LaunchDiskPrimePayload(
+        val roomsRaw: List<ChatRoomDto>,
+        val selectedRoomId: String,
+        val roomCaches: Map<String, RoomMessageCache>,
+    )
+
+    private fun readLaunchDiskPrimePayload(): LaunchDiskPrimePayload? {
+        if (currentUserId.isBlank()) return null
+        val roomsRaw = launchDiskCache.loadChatRooms(currentUserId) ?: return null
         val rooms = applyRoomsFromServer(roomsRaw)
-        if (rooms.isEmpty()) return false
-        ChatSessionCache.update(rooms)
+        if (rooms.isEmpty()) return null
         val selected = resolveOverlayPreferredRoomId(
             rooms = rooms,
             preferOverlayRaidRoom = false,
@@ -601,6 +617,7 @@ class ChatViewModel(
         val roomIdsToPrime = linkedSetOf(selected)
         allianceHubRoomId(rooms)?.let { roomIdsToPrime.add(it) }
         allianceRaidRoomId(rooms)?.let { roomIdsToPrime.add(it) }
+        val roomCaches = linkedMapOf<String, RoomMessageCache>()
         for (rid in roomIdsToPrime) {
             launchDiskCache.loadRoomMessages(currentUserId, rid)?.let { disk ->
                 val scrubbed = filterMessagesForRoom(
@@ -608,11 +625,28 @@ class ChatViewModel(
                     rid,
                 )
                 val capped = capNewestFirst(scrubbed, PAGE_SIZE)
-                roomMessageCache[rid] = RoomMessageCache(
+                roomCaches[rid] = RoomMessageCache(
                     messages = capped,
                     hasMoreOlder = disk.hasMoreOlder,
                 )
-                ChatSessionCache.updateMessages(rid, capped)
+            }
+        }
+        return LaunchDiskPrimePayload(
+            roomsRaw = roomsRaw,
+            selectedRoomId = selected,
+            roomCaches = roomCaches,
+        )
+    }
+
+    private fun applyLaunchDiskPrimePayload(payload: LaunchDiskPrimePayload): Boolean {
+        val rooms = applyRoomsFromServer(payload.roomsRaw)
+        if (rooms.isEmpty()) return false
+        ChatSessionCache.update(rooms)
+        val selected = payload.selectedRoomId
+        payload.roomCaches.forEach { (rid, cache) ->
+            roomMessageCache[rid] = cache
+            if (cache.messages.isNotEmpty()) {
+                ChatSessionCache.updateMessages(rid, cache.messages)
             }
         }
         val cached = roomMessageCache[selected]
@@ -876,11 +910,30 @@ class ChatViewModel(
             syncReadStateFromPreferences()
             primeOverlayChatFromCache(preferAllianceHubRoom = true)
             rehydrateSelectedRoomMessagesFromCache()
-            recomputeRoomUnreadBadges()
             reconnectRealtimeIfNeeded()
-            val roomId = _state.value.selectedRoomId
-            if (!roomId.isNullOrBlank()) {
-                refreshMessagesInBackground(roomId, force = true)
+            viewModelScope.launch {
+                if (!overlayChatPanelVisible) return@launch
+                delay(32)
+                if (!overlayChatPanelVisible) return@launch
+                rehydrateSelectedRoomMessagesFromCache()
+                if (_state.value.selectedRoomId.isNullOrBlank()) {
+                    ensureAllianceHubRoomSelected()
+                }
+                val activeRoomId = _state.value.selectedRoomId?.trim().orEmpty()
+                val newestId = _state.value.messages.firstOrNull()?._id
+                if (
+                    activeRoomId.isNotEmpty() &&
+                    isValidMarkReadMessageId(newestId) &&
+                    shouldAutoMarkReadSelectedRoom()
+                ) {
+                    markRoomReadUpTo(activeRoomId, newestId!!)
+                } else {
+                    recomputeRoomUnreadBadges()
+                }
+                val roomId = _state.value.selectedRoomId
+                if (!roomId.isNullOrBlank()) {
+                    refreshMessagesInBackground(roomId, force = true)
+                }
             }
             return
         }

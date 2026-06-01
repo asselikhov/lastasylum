@@ -38,11 +38,15 @@ object OverlayReactionLogClusterPolicy {
         return clusters
     }
 
+    private fun isReplyEntry(entry: OverlayReactionLogEntry): Boolean =
+        entry.replyToLog != null
+
     fun canMerge(
         newer: OverlayReactionLogEntry,
         older: OverlayReactionLogEntry,
         selfUserId: String,
     ): Boolean {
+        if (isReplyEntry(newer) || isReplyEntry(older)) return false
         if (newer.senderUserId.trim() != older.senderUserId.trim()) return false
         if (newer.visibility != older.visibility) return false
         val newerIncoming = OverlayReactionLogVisibilityPolicy.isIncoming(newer, selfUserId)

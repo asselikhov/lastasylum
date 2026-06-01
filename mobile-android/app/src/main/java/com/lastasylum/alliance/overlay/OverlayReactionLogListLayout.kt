@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.overlay
 
 import com.lastasylum.alliance.data.chat.OverlayReactionLogCluster
+import com.lastasylum.alliance.data.chat.OverlayReactionLogFeedItem
 
 internal data class OverlayReactionLogDisplayRow(
     val headerKey: String?,
@@ -8,7 +9,7 @@ internal data class OverlayReactionLogDisplayRow(
 )
 
 data class OverlayReactionLogStickyListLayout(
-    val grouped: List<Pair<String, List<OverlayReactionLogCluster>>>,
+    val groupedFeed: List<Pair<String, List<OverlayReactionLogFeedItem>>>,
     val firstUnreadItemIndex: Int,
     val lastClusterItemIndex: Int,
     val itemIndexToEntryId: Map<Int, String>,
@@ -31,8 +32,14 @@ internal fun buildOverlayReactionLogDisplayRows(
     return rows
 }
 
+internal fun feedItemPrimaryEntryId(item: OverlayReactionLogFeedItem): String =
+    when (item) {
+        is OverlayReactionLogFeedItem.Root -> item.cluster.representative.id
+        is OverlayReactionLogFeedItem.ThreadParent -> item.parent.representative.id
+    }
+
 internal fun buildStickyListLayout(
-    grouped: List<Pair<String, List<OverlayReactionLogCluster>>>,
+    groupedFeed: List<Pair<String, List<OverlayReactionLogFeedItem>>>,
     loadingMore: Boolean,
     unreadEntryIds: Set<String>,
 ): OverlayReactionLogStickyListLayout {
@@ -43,10 +50,10 @@ internal fun buildStickyListLayout(
     if (loadingMore) {
         index++
     }
-    grouped.forEach { (_, clusters) ->
+    groupedFeed.forEach { (_, feedItems) ->
         index++
-        clusters.forEach { cluster ->
-            val entryId = cluster.representative.id
+        feedItems.forEach { feedItem ->
+            val entryId = feedItemPrimaryEntryId(feedItem)
             if (entryId in unreadEntryIds && firstUnread < 0) {
                 firstUnread = index
             }
@@ -56,7 +63,7 @@ internal fun buildStickyListLayout(
         }
     }
     return OverlayReactionLogStickyListLayout(
-        grouped = grouped,
+        groupedFeed = groupedFeed,
         firstUnreadItemIndex = firstUnread,
         lastClusterItemIndex = lastCluster,
         itemIndexToEntryId = itemIndexToEntryId,

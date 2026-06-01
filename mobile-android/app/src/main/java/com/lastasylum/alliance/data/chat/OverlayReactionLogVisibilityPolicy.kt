@@ -58,6 +58,7 @@ object OverlayReactionLogVisibilityPolicy {
         OverlayReactionLogFilter.All -> true
         OverlayReactionLogFilter.Incoming -> isIncoming(entry, selfUserId)
         OverlayReactionLogFilter.Outgoing -> isOutgoing(entry, selfUserId)
+        OverlayReactionLogFilter.Reply -> entry.replyToLog != null
     }
 
     fun matchesScopeFilter(
@@ -84,6 +85,7 @@ enum class OverlayReactionLogFilter {
     All,
     Incoming,
     Outgoing,
+    Reply,
 }
 
 enum class OverlayReactionLogScopeFilter {

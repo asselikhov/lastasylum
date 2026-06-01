@@ -54,6 +54,16 @@ internal object OverlayPerfDiag {
         )
     }
 
+    fun logPanelPrime(durationMs: Long, hubReady: Boolean) {
+        if (!BuildConfig.DEBUG) return
+        Log.d(TAG, "panelPrime ms=$durationMs hubReady=$hubReady")
+    }
+
+    fun logPanelOpen(pane: String) {
+        if (!BuildConfig.DEBUG) return
+        Log.d(TAG, "panelOpen pane=$pane")
+    }
+
     fun logGateState(
         inGame: Boolean,
         showUi: Boolean,

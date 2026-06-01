@@ -165,14 +165,17 @@ class ChatSocketManager {
         chatHistoryClearedListeners.clear()
     }
 
-    fun emitOverlayReaction(targetUserId: String, reaction: String = "heart") {
+    fun emitOverlayReaction(
+        targetUserId: String,
+        reaction: String = "heart",
+        replyToLogId: String? = null,
+    ) {
         if (targetUserId.isBlank()) return
-        socket?.emit(
-            "overlay:reaction",
-            JSONObject()
-                .put("targetUserId", targetUserId)
-                .put("reaction", reaction),
-        )
+        val body = JSONObject()
+            .put("targetUserId", targetUserId)
+            .put("reaction", reaction)
+        replyToLogId?.trim()?.takeIf { it.isNotEmpty() }?.let { body.put("replyToLogId", it) }
+        socket?.emit("overlay:reaction", body)
     }
 
     /** One server-side fan-out to all teammates in game with overlay (single rate-limit slot). */
@@ -548,6 +551,25 @@ private fun JSONObject.toOverlayReactionLogEntryDto(): OverlayReactionLogEntryDt
                 )
             }
         },
+        replyToLogId = optString("replyToLogId").takeIf { it.isNotBlank() },
+        replyToLog = optJSONObject("replyToLog")?.toOverlayReactionLogReplyToDto(),
+    )
+}
+
+private fun JSONObject.toOverlayReactionLogReplyToDto(): OverlayReactionLogReplyToDto? {
+    val logId = optString("_id").takeIf { it.isNotBlank() }
+        ?: optString("id").takeIf { it.isNotBlank() }
+        ?: return null
+    val senderUserId = optString("senderUserId", "").trim()
+    if (senderUserId.isEmpty()) return null
+    return OverlayReactionLogReplyToDto(
+        _id = logId,
+        reaction = optString("reaction", "heart").ifBlank { "heart" },
+        visibility = optString("visibility", "personal"),
+        senderUserId = senderUserId,
+        senderUsername = optString("senderUsername", ""),
+        targetUserId = optString("targetUserId").takeIf { it.isNotBlank() },
+        targetUsername = optString("targetUsername").takeIf { it.isNotBlank() },
     )
 }
 

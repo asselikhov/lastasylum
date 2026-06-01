@@ -21,6 +21,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.OverlayReactionLogCluster
+import com.lastasylum.alliance.data.chat.OverlayReactionLogEntry
 import com.lastasylum.alliance.data.chat.OverlayReactionLogVisibilityPolicy
 import com.lastasylum.alliance.ui.chat.ChatMessageReactionsRow
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
@@ -30,7 +31,7 @@ fun OverlayReactionLogDetailSheet(
     cluster: OverlayReactionLogCluster,
     selfUserId: String,
     onDismiss: () -> Unit,
-    onReplyToUser: ((String) -> Unit)? = null,
+    onReplyToReactionLog: ((OverlayReactionLogEntry) -> Unit)? = null,
     onToggleEmojiReaction: ((String) -> Unit)? = null,
 ) {
     val entry = cluster.representative
@@ -71,6 +72,13 @@ fun OverlayReactionLogDetailSheet(
                         )
                     }
                 }
+            }
+            entry.replyToLog?.let { replyTo ->
+                Spacer(modifier = Modifier.height(8.dp))
+                OverlayReactionLogReplyContext(
+                    replyTo = replyTo,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
             Spacer(modifier = Modifier.height(12.dp))
             Text(
@@ -132,12 +140,12 @@ fun OverlayReactionLogDetailSheet(
                     }
                 }
             }
-            if (incoming && onReplyToUser != null) {
+            if (incoming && onReplyToReactionLog != null) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Button(
                     onClick = {
                         onDismiss()
-                        onReplyToUser(entry.senderUserId)
+                        onReplyToReactionLog(entry)
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {

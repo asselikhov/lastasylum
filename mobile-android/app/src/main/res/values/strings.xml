@@ -800,6 +800,20 @@
     <string name="overlay_notifications_filter_all">Все</string>
     <string name="overlay_notifications_filter_incoming">Входящие</string>
     <string name="overlay_notifications_filter_outgoing">Исходящие</string>
+    <string name="overlay_notifications_filter_reply">Ответ</string>
+    <string name="overlay_notifications_reply_to">Ответ на</string>
+    <string name="overlay_notifications_narrative_reply_outgoing">Вы ответили %1$s</string>
+    <string name="overlay_notifications_reply_badge">Ответ</string>
+    <string name="overlay_notifications_empty_reply">Пока нет ответов на реакции</string>
+    <string name="overlay_notifications_show_replies">Показать ответы</string>
+    <string name="overlay_notifications_hide_replies">Скрыть ответы</string>
+    <string name="overlay_notifications_replies_count_one">1 ответ</string>
+    <plurals name="overlay_notifications_replies_count">
+        <item quantity="one">%1$d ответ</item>
+        <item quantity="few">%1$d ответа</item>
+        <item quantity="many">%1$d ответов</item>
+        <item quantity="other">%1$d ответов</item>
+    </plurals>
     <string name="overlay_notifications_date_today">Сегодня</string>
     <string name="overlay_notifications_date_yesterday">Вчера</string>
     <string name="overlay_notifications_narrative_incoming_private">отправил(а) вам</string>

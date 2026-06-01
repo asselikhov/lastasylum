@@ -9,12 +9,23 @@ class OverlayReactionLogVisibilityTest {
     private val other = "user-other"
     private val third = "user-third"
 
+    private fun replyTo(parentId: String) = OverlayReactionLogReplyTo(
+        logId = parentId,
+        reaction = "heart",
+        visibility = OverlayReactionLogVisibility.Personal,
+        senderUserId = other,
+        senderUsername = "A",
+        targetUserId = self,
+        targetUsername = "Self",
+    )
+
     private fun entry(
         sender: String,
         target: String? = null,
         visibility: OverlayReactionLogVisibility = OverlayReactionLogVisibility.Personal,
         id: String = "1",
         createdAt: String = "2026-01-01T12:00:00Z",
+        replyToLog: OverlayReactionLogReplyTo? = null,
     ) = OverlayReactionLogEntry(
         id = id,
         senderUserId = sender,
@@ -24,7 +35,28 @@ class OverlayReactionLogVisibilityTest {
         reaction = "heart",
         visibility = visibility,
         createdAt = createdAt,
+        replyToLog = replyToLog,
     )
+
+    @Test
+    fun filter_reply_onlyReplyEntries() {
+        val reply = entry(other, self, id = "2", replyToLog = replyTo("parent"))
+        val plain = entry(other, self, id = "3")
+        assertTrue(
+            OverlayReactionLogVisibilityPolicy.matchesFilter(
+                reply,
+                self,
+                OverlayReactionLogFilter.Reply,
+            ),
+        )
+        assertFalse(
+            OverlayReactionLogVisibilityPolicy.matchesFilter(
+                plain,
+                self,
+                OverlayReactionLogFilter.Reply,
+            ),
+        )
+    }
 
     @Test
     fun incoming_whenSenderIsNotSelf() {

@@ -67,7 +67,8 @@ class OverlayCommandsPopover(
         { _, _, _, _ -> null },
     private val prepareOptimisticRaidNotify: () -> String? = { null },
     private val removeOptimisticRaidSend: (pendingId: String) -> Unit = {},
-    private val emitOverlayReaction: (targetUserId: String, reactionId: String) -> Unit = { _, _ -> },
+    private val emitOverlayReaction: (targetUserId: String, reactionId: String, replyToLogId: String?) -> Unit =
+        { _, _, _ -> },
     private val emitOverlayReactionBroadcast: (reactionId: String) -> Unit = {},
 ) {
     private var hudReactionAnchor: () -> OverlayReactionAnchorRect? = { null }
@@ -88,6 +89,7 @@ class OverlayCommandsPopover(
     private var reopenMenuOnReactionsTab = false
     private var reopenReactionSubcategory = OverlayReactionCategory.ANIMATIONS
     private var preselectedReactionUserIds: Set<String> = emptySet()
+    private var preselectedReplyToLogId: String? = null
     private var popoverCard: View? = null
     private var popoverLayoutListener: View.OnLayoutChangeListener? = null
     private val reactionBurstPresenter = OverlayReactionBurstPresenter(context, mainHandler, dp).also {
@@ -325,6 +327,7 @@ class OverlayCommandsPopover(
     /** Opens quick commands on the reactions tab without a preselected recipient. */
     fun openReactionsTab(windowManager: WindowManager) {
         preselectedReactionUserIds = emptySet()
+        preselectedReplyToLogId = null
         reopenMenuOnReactionsTab = true
         if (isShowing()) hide()
         ensurePopoverSuppressHeld()
@@ -333,10 +336,15 @@ class OverlayCommandsPopover(
     }
 
     /** Opens quick commands on the reactions tab; next recipient picker preselects [userId]. */
-    fun openReactionsPreselectUser(windowManager: WindowManager, userId: String) {
+    fun openReactionsPreselectUser(
+        windowManager: WindowManager,
+        userId: String,
+        replyToLogId: String? = null,
+    ) {
         val id = userId.trim()
         if (id.isEmpty()) return
         preselectedReactionUserIds = setOf(id)
+        preselectedReplyToLogId = replyToLogId?.trim()?.takeIf { it.isNotEmpty() }
         reopenMenuOnReactionsTab = true
         if (isShowing()) hide()
         ensurePopoverSuppressHeld()
@@ -1748,7 +1756,9 @@ class OverlayCommandsPopover(
         val overlayService = context as CombatOverlayService
         val composeOwner = overlayService.obtainOverlayPopoverComposeOwner()
         val initialSelected = preselectedReactionUserIds
+        val replyToLogId = preselectedReplyToLogId
         preselectedReactionUserIds = emptySet()
+        preselectedReplyToLogId = null
 
         val composeHost = FrameLayout(context).apply {
             consumeTouchesInSubtree()
@@ -1807,7 +1817,7 @@ class OverlayCommandsPopover(
                             if (userIds.isEmpty()) return@OverlayReactionRecipientSheet
                             if (!emitReactionIfConnected {
                                     userIds.forEach { uid ->
-                                        emitOverlayReaction(uid, reactionId)
+                                        emitOverlayReaction(uid, reactionId, replyToLogId)
                                     }
                                 }
                             ) {

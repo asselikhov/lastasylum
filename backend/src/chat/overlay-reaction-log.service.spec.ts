@@ -139,3 +139,184 @@ describe('OverlayReactionLogService toggleLogEntryReaction', () => {
     expect(result.entry.reactions).toEqual([]);
   });
 });
+
+describe('OverlayReactionLogService createPersonal reply', () => {
+  const teamId = new Types.ObjectId();
+  const parentId = new Types.ObjectId();
+  const senderId = 'user-replier';
+  const targetId = 'user-original';
+
+  function mockSender() {
+    return {
+      _id: { toString: () => senderId },
+      username: 'Replier',
+      playerTeamId: teamId,
+    };
+  }
+
+  function mockTarget() {
+    return {
+      _id: { toString: () => targetId },
+      username: 'Original',
+      playerTeamId: teamId,
+    };
+  }
+
+  function createReplyService(parent: {
+    _id: Types.ObjectId;
+    visibility: 'personal' | 'broadcast';
+    senderUserId: string;
+    targetUserId?: string | null;
+    reaction: string;
+    senderUsername: string;
+    targetUsername?: string | null;
+    toObject: () => Record<string, unknown>;
+  }) {
+    const createdDoc = {
+      _id: new Types.ObjectId(),
+      teamId,
+      senderUserId: senderId,
+      senderUsername: 'Replier',
+      targetUserId: targetId,
+      targetUsername: 'Original',
+      reaction: 'thumbsup',
+      visibility: parent.visibility === 'broadcast' ? 'broadcast' : 'personal',
+      replyToLogId: parent._id,
+      replyToLog: {
+        _id: parent._id,
+        reaction: parent.reaction,
+        visibility: parent.visibility,
+        senderUserId: parent.senderUserId,
+        senderUsername: parent.senderUsername,
+        targetUserId: parent.targetUserId ?? null,
+        targetUsername: parent.targetUsername ?? null,
+      },
+      reactions: [],
+      toObject: jest.fn().mockReturnValue({
+        _id: new Types.ObjectId(),
+        senderUserId: senderId,
+        senderUsername: 'Replier',
+        targetUserId: targetId,
+        targetUsername: 'Original',
+        reaction: 'thumbsup',
+        visibility: parent.visibility === 'broadcast' ? 'broadcast' : 'personal',
+        replyToLogId: parent._id,
+        replyToLog: {
+          _id: parent._id,
+          reaction: parent.reaction,
+          visibility: parent.visibility,
+          senderUserId: parent.senderUserId,
+          senderUsername: parent.senderUsername,
+          targetUserId: parent.targetUserId ?? null,
+          targetUsername: parent.targetUsername ?? null,
+        },
+        createdAt: new Date(),
+        reactions: [],
+      }),
+    };
+
+    const service = Object.create(
+      OverlayReactionLogService.prototype,
+    ) as OverlayReactionLogService;
+
+    const findOneChain = {
+      exec: jest.fn().mockResolvedValueOnce(parent),
+      lean: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue({ _id: parent._id }),
+      }),
+    };
+
+    (service as unknown as { logModel: { findOne: jest.Mock; create: jest.Mock } }).logModel =
+      {
+        findOne: jest.fn().mockReturnValue(findOneChain),
+        create: jest.fn().mockResolvedValue(createdDoc),
+      };
+
+    (
+      service as unknown as {
+        visibilityFilter: (userId: string) => Record<string, unknown>;
+      }
+    ).visibilityFilter = OverlayReactionLogService.prototype[
+      'visibilityFilter'
+    ].bind(service);
+
+    (
+      service as unknown as {
+        listRecipientUserIds: jest.Mock;
+      }
+    ).listRecipientUserIds = jest
+      .fn()
+      .mockResolvedValue(['user-a', 'user-b', 'user-c']);
+
+    return { service, createdDoc };
+  }
+
+  it('reply to personal sets visibility personal and snapshot', async () => {
+    const parent = {
+      _id: parentId,
+      visibility: 'personal' as const,
+      senderUserId: targetId,
+      targetUserId: senderId,
+      reaction: 'heart',
+      senderUsername: 'Original',
+      targetUsername: 'Replier',
+      toObject: () => ({
+        _id: parentId,
+        visibility: 'personal',
+        senderUserId: targetId,
+        targetUserId: senderId,
+        reaction: 'heart',
+        senderUsername: 'Original',
+        targetUsername: 'Replier',
+      }),
+    };
+    const { service } = createReplyService(parent);
+
+    const result = await service.createPersonal({
+      sender: mockSender() as never,
+      target: mockTarget() as never,
+      reaction: 'thumbsup',
+      replyToLogId: parentId.toString(),
+    });
+
+    expect(result.entry.visibility).toBe('personal');
+    expect(result.entry.replyToLogId).toBe(parentId.toString());
+    expect(result.entry.replyToLog?.reaction).toBe('heart');
+    expect(result.recipientUserIds).toEqual(
+      expect.arrayContaining(['user-a', 'user-b', 'user-c']),
+    );
+  });
+
+  it('reply to broadcast sets visibility broadcast for all teammates', async () => {
+    const parent = {
+      _id: parentId,
+      visibility: 'broadcast' as const,
+      senderUserId: targetId,
+      targetUserId: null,
+      reaction: 'heart',
+      senderUsername: 'Original',
+      targetUsername: null,
+      toObject: () => ({
+        _id: parentId,
+        visibility: 'broadcast',
+        senderUserId: targetId,
+        targetUserId: null,
+        reaction: 'heart',
+        senderUsername: 'Original',
+        targetUsername: null,
+      }),
+    };
+    const { service } = createReplyService(parent);
+
+    const result = await service.createPersonal({
+      sender: mockSender() as never,
+      target: mockTarget() as never,
+      reaction: 'thumbsup',
+      replyToLogId: parentId.toString(),
+    });
+
+    expect(result.entry.visibility).toBe('broadcast');
+    expect(result.entry.replyToLog?.visibility).toBe('broadcast');
+    expect(result.recipientUserIds).toHaveLength(3);
+  });
+});

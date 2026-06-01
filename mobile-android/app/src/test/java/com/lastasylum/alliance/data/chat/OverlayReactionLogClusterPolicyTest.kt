@@ -50,6 +50,26 @@ class OverlayReactionLogClusterPolicyTest {
     }
 
     @Test
+    fun doesNotMergeReplyEntries() {
+        val parentId = "parent-1"
+        val replyTo = OverlayReactionLogReplyTo(
+            logId = parentId,
+            reaction = "heart",
+            visibility = OverlayReactionLogVisibility.Personal,
+            senderUserId = other,
+            senderUsername = "User",
+            targetUserId = self,
+            targetUsername = "Target",
+        )
+        val plain = entry("2", other, "2026-01-01T12:00:02.000Z")
+        val reply = entry("3", self, "2026-01-01T12:00:01.500Z", targetUserId = other)
+            .copy(replyToLog = replyTo)
+        assertFalse(OverlayReactionLogClusterPolicy.canMerge(plain, reply, self))
+        val clusters = OverlayReactionLogClusterPolicy.clusterEntries(listOf(plain, reply), self)
+        assertEquals(2, clusters.size)
+    }
+
+    @Test
     fun doesNotMergeOutsideWindow() {
         val newer = entry("2", other, "2026-01-01T12:00:05.000Z")
         val older = entry("1", other, "2026-01-01T12:00:01.000Z")

@@ -170,6 +170,7 @@ class OverlayReactionLogRepository(
                 _error.value = e.message
             }
             _loadingMore.value = false
+            recomputeUnread()
         }
     }
 
@@ -177,18 +178,14 @@ class OverlayReactionLogRepository(
         val newestId = _entries.value.firstOrNull()?.id ?: return
         val previousCursor = _lastSeenLogId.value
         _lastSeenLogId.value = newestId
-        _unreadEntryIds.value = emptySet()
-        _unreadCount.value = 0
+        publishUnreadCounts(emptySet())
         scope.launch {
-            recomputeUnread()
             runCatching {
                 chatApi.advanceOverlayReactionReadCursor(
                     AdvanceOverlayReactionReadCursorRequest(lastSeenLogId = newestId),
                 )
             }.onSuccess {
-                if (_entries.value.none { isEntryUnread(it) }) {
-                    _unreadCount.value = 0
-                }
+                publishUnreadCounts(emptySet())
             }.onFailure {
                 _lastSeenLogId.value = previousCursor
                 recomputeUnread()
@@ -248,32 +245,50 @@ class OverlayReactionLogRepository(
     private fun filterVisible(entries: List<OverlayReactionLogEntry>): List<OverlayReactionLogEntry> =
         entries.filterNot { isEntryHiddenFromHistory(it) }
 
-    private suspend fun recomputeUnread() {
+    private suspend fun recomputeUnread(fetchServerCursorIfEmpty: Boolean = true) {
         val self = selfUserId
         if (self.isEmpty()) {
-            _unreadCount.value = 0
-            _unreadEntryIds.value = emptySet()
+            publishUnreadCounts(emptySet())
             return
         }
+        val entries = _entries.value
         val lastSeen = _lastSeenLogId.value?.trim()?.takeIf { it.isNotEmpty() }
-        var unreadIds = computeUnreadEntryIds(_entries.value, self, lastSeen)
+        var unreadIds = unreadIdsForEntries(entries, self, lastSeen)
         if (unreadIds.isNotEmpty()) {
-            _unreadCount.value = unreadIds.size
-            _unreadEntryIds.value = unreadIds
+            publishUnreadCounts(unreadIds)
             return
         }
-        runCatching {
-            chatApi.getOverlayReactionReadCursor().lastSeenLogId?.trim()?.takeIf { it.isNotEmpty() }
-        }.onSuccess { serverCursor ->
-            if (!serverCursor.isNullOrBlank()) {
-                _lastSeenLogId.value = serverCursor
+        if (fetchServerCursorIfEmpty) {
+            val localSeen = lastSeen
+            runCatching {
+                chatApi.getOverlayReactionReadCursor().lastSeenLogId?.trim()?.takeIf { it.isNotEmpty() }
+            }.onSuccess { serverCursor ->
+                mergeLastSeenFromServer(serverCursor, localSeen)
             }
+            unreadIds = unreadIdsForEntries(
+                _entries.value,
+                self,
+                _lastSeenLogId.value?.trim()?.takeIf { it.isNotEmpty() },
+            )
         }
-        unreadIds = computeUnreadEntryIds(
-            _entries.value,
-            self,
-            _lastSeenLogId.value?.trim()?.takeIf { it.isNotEmpty() },
-        )
+        publishUnreadCounts(unreadIds)
+    }
+
+    private fun unreadIdsForEntries(
+        entries: List<OverlayReactionLogEntry>,
+        selfUserId: String,
+        lastSeenLogId: String?,
+    ): Set<String> = filterUnreadEntryIdsToRetained(
+        computeUnreadEntryIds(entries, selfUserId, lastSeenLogId),
+        entries,
+    )
+
+    private fun mergeLastSeenFromServer(serverCursor: String?, localSeen: String?) {
+        val merged = mergeOverlayReactionLastSeenLogId(localSeen, serverCursor) ?: return
+        _lastSeenLogId.value = merged
+    }
+
+    private fun publishUnreadCounts(unreadIds: Set<String>) {
         _unreadCount.value = unreadIds.size
         _unreadEntryIds.value = unreadIds
     }

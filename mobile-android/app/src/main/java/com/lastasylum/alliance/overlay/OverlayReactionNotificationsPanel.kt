@@ -60,6 +60,8 @@ import androidx.compose.ui.zIndex
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.data.chat.OverlayReactionLogCluster
+import com.lastasylum.alliance.data.chat.OverlayReactionLogEntry
+import com.lastasylum.alliance.data.chat.OverlayReactionLogFeedItem
 import com.lastasylum.alliance.data.chat.OverlayReactionLogFilter
 import com.lastasylum.alliance.data.chat.OverlayReactionLogRepository
 import com.lastasylum.alliance.data.chat.OverlayReactionLogScopeFilter
@@ -77,19 +79,13 @@ fun OverlayReactionNotificationsPanel(
     repository: OverlayReactionLogRepository,
     selfUserId: String,
     onClose: () -> Unit,
-    onReplyToUser: (userId: String) -> Unit,
+    onReplyToReactionLog: (OverlayReactionLogEntry) -> Unit,
     onOpenReactionsPicker: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // Overlay ComposeView: explicit owner matches CombatOverlayService HUD/chat pattern.
     val lifecycleOwner = LocalLifecycleOwner.current
     val entries by repository.entries.collectAsStateWithLifecycle(lifecycleOwner)
-    val loading by repository.loading.collectAsStateWithLifecycle(lifecycleOwner)
-    val refreshing by repository.refreshing.collectAsStateWithLifecycle(lifecycleOwner)
-    val loadingMore by repository.loadingMore.collectAsStateWithLifecycle(lifecycleOwner)
-    val error by repository.error.collectAsStateWithLifecycle(lifecycleOwner)
-    val unreadCount by repository.unreadCount.collectAsStateWithLifecycle(lifecycleOwner)
-    val unreadEntryIds by repository.unreadEntryIds.collectAsStateWithLifecycle(lifecycleOwner)
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -103,14 +99,20 @@ fun OverlayReactionNotificationsPanel(
         )
     }
     val uiState by controller.uiState.collectAsStateWithLifecycle(lifecycleOwner)
+    val repositoryUi by controller.repositoryUi.collectAsStateWithLifecycle(lifecycleOwner)
+    val loading = repositoryUi.loading
+    val refreshing = repositoryUi.refreshing
+    val loadingMore = repositoryUi.loadingMore
+    val error = repositoryUi.error
+    val unreadCount = repositoryUi.unreadCount
+    val unreadEntryIds = repositoryUi.unreadEntryIds
     val clustered = uiState.clustered
-    val grouped = uiState.grouped
+    val groupedFeed = uiState.groupedFeed
     val listLayout = uiState.listLayout
     val onlineUserIds = uiState.onlineUserIds
     val filterKey = uiState.filterKey
     var previewCluster by remember { mutableStateOf<OverlayReactionLogCluster?>(null) }
     var showClearHistoryConfirm by remember { mutableStateOf(false) }
-    var markReadOnFirstLayout by remember(filterKey) { mutableStateOf(true) }
     var hapticConsumedForSession by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -224,13 +226,26 @@ fun OverlayReactionNotificationsPanel(
                         listState.layoutInfo.visibleItemsInfo.any { it.index == firstUnreadIndex }
                     }
                 }
-                val showJumpToUnread by remember(unreadCount, firstUnreadIndex, isFirstUnreadVisible, isNearBottom) {
+                val visibleUnreadCount by remember(clustered, unreadEntryIds) {
                     derivedStateOf {
-                        unreadCount > 0 && firstUnreadIndex >= 0 && !isFirstUnreadVisible && !isNearBottom
+                        clustered.count { it.representative.id in unreadEntryIds }
                     }
                 }
-                val showScrollToLatest by remember(isNearBottom, grouped) {
-                    derivedStateOf { grouped.isNotEmpty() && !isNearBottom }
+                val showJumpToUnread by remember(
+                    visibleUnreadCount,
+                    firstUnreadIndex,
+                    isFirstUnreadVisible,
+                    isNearBottom,
+                ) {
+                    derivedStateOf {
+                        visibleUnreadCount > 0 &&
+                            firstUnreadIndex >= 0 &&
+                            !isFirstUnreadVisible &&
+                            !isNearBottom
+                    }
+                }
+                val showScrollToLatest by remember(isNearBottom, groupedFeed) {
+                    derivedStateOf { groupedFeed.isNotEmpty() && !isNearBottom }
                 }
                 val animatedPreviewIds by remember(listState, listLayout.itemIndexToEntryId) {
                     derivedStateOf {
@@ -293,13 +308,6 @@ fun OverlayReactionNotificationsPanel(
                                 }
                         }
 
-                        LaunchedEffect(filterKey, lastClusterIndex, loading, clustered.isNotEmpty()) {
-                            if (!loading && lastClusterIndex >= 0 && clustered.isNotEmpty() && markReadOnFirstLayout) {
-                                repository.markAllRead()
-                                markReadOnFirstLayout = false
-                            }
-                        }
-
                         LaunchedEffect(listState, lastClusterIndex, clustered.isNotEmpty()) {
                             snapshotFlow { listState.isScrollInProgress to isNearBottom }
                                 .distinctUntilChanged()
@@ -339,45 +347,94 @@ fun OverlayReactionNotificationsPanel(
                                         }
                                     }
                                 }
-                                listLayout.grouped.forEach { (headerKey, clusters) ->
+                                listLayout.groupedFeed.forEach { (headerKey, feedItems) ->
                                     stickyHeader(key = "header-$headerKey", contentType = 0) {
+                                        val sampleCreatedAt = feedItems.firstOrNull().let { item ->
+                                            when (item) {
+                                                is OverlayReactionLogFeedItem.Root ->
+                                                    item.cluster.representative.createdAt
+                                                is OverlayReactionLogFeedItem.ThreadParent ->
+                                                    item.parent.representative.createdAt
+                                                null -> null
+                                            }
+                                        }
                                         OverlayReactionLogDateHeader(
-                                            label = formatChatDaySeparator(
-                                                clusters.firstOrNull()?.representative?.createdAt,
-                                            ),
+                                            label = formatChatDaySeparator(sampleCreatedAt),
                                         )
                                     }
                                     items(
-                                        items = clusters,
-                                        key = { "cluster-${it.representative.id}" },
-                                        contentType = { 1 },
-                                    ) { cluster ->
-                                        val entry = cluster.representative
-                                        val incoming = OverlayReactionLogVisibilityPolicy.isIncoming(
-                                            entry,
-                                            selfUserId,
-                                        )
-                                        OverlayReactionLogEntryRow(
-                                            cluster = cluster,
-                                            selfUserId = selfUserId,
-                                            unreadHighlight = entry.id in unreadEntryIds,
-                                            playAnimatedPreview = entry.id in animatedPreviewIds,
-                                            isOnline = entry.senderUserId.trim() in onlineUserIds,
-                                            animateEnter = entry.id == uiState.newestUnreadEntryId,
-                                            onPreviewClick = {
-                                                OverlayChatInteractionHold
-                                                    .prepareOverlayModalInteraction(true)
-                                                previewCluster = cluster
-                                            },
-                                            onQuickReply = if (incoming) {
-                                                { onReplyToUser(entry.senderUserId) }
-                                            } else {
-                                                null
-                                            },
-                                            onToggleEmojiReaction = { emoji ->
-                                                repository.toggleLogEntryReaction(entry.id, emoji)
-                                            },
-                                        )
+                                        items = feedItems,
+                                        key = { item ->
+                                            when (item) {
+                                                is OverlayReactionLogFeedItem.Root ->
+                                                    "cluster-${item.cluster.representative.id}"
+                                                is OverlayReactionLogFeedItem.ThreadParent ->
+                                                    "thread-${item.parent.representative.id}"
+                                            }
+                                        },
+                                        contentType = { item ->
+                                            when (item) {
+                                                is OverlayReactionLogFeedItem.Root -> 1
+                                                is OverlayReactionLogFeedItem.ThreadParent -> 3
+                                            }
+                                        },
+                                    ) { feedItem ->
+                                        when (feedItem) {
+                                            is OverlayReactionLogFeedItem.Root ->
+                                                OverlayReactionLogFeedClusterRow(
+                                                    cluster = feedItem.cluster,
+                                                    selfUserId = selfUserId,
+                                                    unreadEntryIds = unreadEntryIds,
+                                                    animatedPreviewIds = animatedPreviewIds,
+                                                    onlineUserIds = onlineUserIds,
+                                                    newestUnreadEntryId = uiState.newestUnreadEntryId,
+                                                    onPreviewCluster = { previewCluster = it },
+                                                    onReplyToReactionLog = onReplyToReactionLog,
+                                                    onToggleEmojiReaction = { id, emoji ->
+                                                        repository.toggleLogEntryReaction(id, emoji)
+                                                    },
+                                                )
+                                            is OverlayReactionLogFeedItem.ThreadParent -> {
+                                                val parent = feedItem.parent
+                                                val parentEntry = parent.representative
+                                                Column(modifier = Modifier.fillMaxWidth()) {
+                                                    OverlayReactionLogFeedClusterRow(
+                                                        cluster = parent,
+                                                        selfUserId = selfUserId,
+                                                        unreadEntryIds = unreadEntryIds,
+                                                        animatedPreviewIds = animatedPreviewIds,
+                                                        onlineUserIds = onlineUserIds,
+                                                        newestUnreadEntryId = uiState.newestUnreadEntryId,
+                                                        onPreviewCluster = { previewCluster = it },
+                                                        onReplyToReactionLog = onReplyToReactionLog,
+                                                        onToggleEmojiReaction = { id, emoji ->
+                                                            repository.toggleLogEntryReaction(id, emoji)
+                                                        },
+                                                    )
+                                                    OverlayReactionLogReplyThreadFooter(
+                                                        parentLogId = parentEntry.id,
+                                                        replyCount = feedItem.replies.size,
+                                                    ) {
+                                                        feedItem.replies.forEach { replyCluster ->
+                                                            OverlayReactionLogFeedClusterRow(
+                                                                cluster = replyCluster,
+                                                                selfUserId = selfUserId,
+                                                                unreadEntryIds = unreadEntryIds,
+                                                                animatedPreviewIds = animatedPreviewIds,
+                                                                onlineUserIds = onlineUserIds,
+                                                                newestUnreadEntryId = uiState.newestUnreadEntryId,
+                                                                onPreviewCluster = { previewCluster = it },
+                                                                onReplyToReactionLog = onReplyToReactionLog,
+                                                                onToggleEmojiReaction = { id, emoji ->
+                                                                    repository.toggleLogEntryReaction(id, emoji)
+                                                                },
+                                                                modifier = Modifier.padding(start = 12.dp),
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -385,7 +442,7 @@ fun OverlayReactionNotificationsPanel(
 
                         OverlayReactionLogJumpToUnreadFab(
                             visible = showJumpToUnread,
-                            unreadCount = unreadCount,
+                            unreadCount = visibleUnreadCount,
                             onClick = {
                                 if (firstUnreadIndex >= 0) {
                                     scope.launch {
@@ -494,6 +551,42 @@ private suspend fun scrollOverlayNotificationsListToIndex(
     }
 }
 
+@Composable
+private fun OverlayReactionLogFeedClusterRow(
+    cluster: OverlayReactionLogCluster,
+    selfUserId: String,
+    unreadEntryIds: Set<String>,
+    animatedPreviewIds: Set<String>,
+    onlineUserIds: Set<String>,
+    newestUnreadEntryId: String?,
+    onPreviewCluster: (OverlayReactionLogCluster) -> Unit,
+    onReplyToReactionLog: (OverlayReactionLogEntry) -> Unit,
+    onToggleEmojiReaction: (String, String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val entry = cluster.representative
+    val incoming = OverlayReactionLogVisibilityPolicy.isIncoming(entry, selfUserId)
+    OverlayReactionLogEntryRow(
+        cluster = cluster,
+        selfUserId = selfUserId,
+        unreadHighlight = entry.id in unreadEntryIds,
+        playAnimatedPreview = entry.id in animatedPreviewIds,
+        isOnline = entry.senderUserId.trim() in onlineUserIds,
+        animateEnter = entry.id == newestUnreadEntryId,
+        modifier = modifier,
+        onPreviewClick = {
+            OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
+            onPreviewCluster(cluster)
+        },
+        onQuickReply = if (incoming) {
+            { onReplyToReactionLog(entry) }
+        } else {
+            null
+        },
+        onToggleEmojiReaction = { emoji -> onToggleEmojiReaction(entry.id, emoji) },
+    )
+}
+
 private suspend fun animateOverlayNotificationsListToIndex(
     listState: LazyListState,
     index: Int,
@@ -533,6 +626,8 @@ private fun EmptyNotificationsState(
                     stringResource(R.string.overlay_notifications_empty_outgoing)
                 OverlayReactionLogFilter.All ->
                     stringResource(R.string.overlay_notifications_empty)
+                OverlayReactionLogFilter.Reply ->
+                    stringResource(R.string.overlay_notifications_empty_reply)
             },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

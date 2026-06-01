@@ -3,6 +3,7 @@ package com.lastasylum.alliance.overlay
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -57,8 +58,8 @@ fun OverlayHudPanelHeader(
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
             )
+            Spacer(modifier = Modifier.weight(1f))
             titleTrailing?.invoke(this)
             headerTrailing?.invoke(this)
             if (headerTrailing == null && onRefresh != null && subtitleTrailing == null) {

@@ -41,8 +41,6 @@ data class OverlayGameTopRightHudState(
     val voiceSettingsVisible: Boolean = false,
     val soundVolume: Float = 1f,
     val micVolume: Float = 1f,
-    /** Non-null when backend reports a newer APK; shows update chip in the top HUD row. */
-    val appUpdateDownloadUrl: String? = null,
 )
 
 @Composable
@@ -50,7 +48,6 @@ fun OverlayGameTopRightHud(
     state: OverlayGameTopRightHudState,
     onNotificationsClick: () -> Unit,
     onOnlineClick: () -> Unit,
-    onAppUpdateClick: () -> Unit,
     onQuickCommandsClick: () -> Unit,
     onVoiceHubClick: () -> Unit,
     onMicClick: () -> Unit,
@@ -140,12 +137,6 @@ fun OverlayGameTopRightHud(
         ) {
             OverlayGameHudBar(horizontalAlignment = Alignment.End) {
                 OverlayGameHudChipRow {
-                    if (!state.appUpdateDownloadUrl.isNullOrBlank()) {
-                        OverlayGameHudUpdateChip(
-                            contentDescription = stringResource(R.string.overlay_hud_app_update_cd),
-                            onClick = onAppUpdateClick,
-                        )
-                    }
                     OverlayGameHudChip(
                         icon = Icons.Outlined.Groups,
                         accent = OverlayHudChipAccent.Online,

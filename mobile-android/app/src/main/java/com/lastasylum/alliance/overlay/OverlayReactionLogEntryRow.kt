@@ -299,10 +299,17 @@ private fun NarrativeBlock(
             )
             Spacer(modifier = Modifier.width(6.dp))
             ScopePill(label = scopeLabel, color = scopeColor)
+            entry.replyToLog?.let {
+                Spacer(modifier = Modifier.width(4.dp))
+                ReplyBadgePill()
+            }
             if (cluster.mergeCount > 1) {
                 Spacer(modifier = Modifier.width(4.dp))
                 MergeCountPill(count = cluster.mergeCount)
             }
+        }
+        entry.replyToLog?.let { replyTo ->
+            OverlayReactionLogReplyContext(replyTo = replyTo)
         }
         Text(
             text = overlayReactionLogNarrative(entry, selfUserId, includeSenderName = false),
@@ -334,6 +341,19 @@ private fun ScopePill(label: String, color: Color) {
         modifier = Modifier
             .clip(RoundedCornerShape(6.dp))
             .background(color.copy(alpha = 0.16f))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    )
+}
+
+@Composable
+private fun ReplyBadgePill() {
+    Text(
+        text = stringResource(R.string.overlay_notifications_reply_badge),
+        style = MaterialTheme.typography.labelSmall,
+        color = Color(0xFF7EB8FF),
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(Color(0x337EB8FF))
             .padding(horizontal = 6.dp, vertical = 2.dp),
     )
 }
@@ -478,6 +498,9 @@ fun overlayReactionLogNarrative(
     val targetName = entry.targetUsername?.trim().orEmpty().ifBlank {
         OverlayTeamContextCache.memberUsername(entry.targetUserId.orEmpty()).orEmpty()
     }.ifBlank { stringResource(R.string.overlay_reaction_sender_unknown) }
+    if (entry.replyToLog != null && !incoming) {
+        return stringResource(R.string.overlay_notifications_narrative_reply_outgoing, targetName)
+    }
     return when {
         incoming && entry.visibility == OverlayReactionLogVisibility.Personal ->
             stringResource(R.string.overlay_notifications_narrative_incoming_private)

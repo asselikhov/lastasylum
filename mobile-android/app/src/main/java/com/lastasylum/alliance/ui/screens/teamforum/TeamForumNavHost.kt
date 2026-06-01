@@ -9,6 +9,10 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -25,15 +29,13 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import com.lastasylum.alliance.ui.chat.AttachmentPreviewOverlay
 import com.lastasylum.alliance.ui.chat.ChatComposer
-import com.lastasylum.alliance.ui.chat.chatComposerImePadding
-import com.lastasylum.alliance.ui.chat.chatComposerOverlayDock
+import com.lastasylum.alliance.ui.chat.ChatComposerBar
 import com.lastasylum.alliance.ui.chat.stabilizeComposerImageUris
 import com.lastasylum.alliance.ui.chat.capForumMessagesOldestFirst
 import com.lastasylum.alliance.ui.chat.mergePreservingForumMedia
@@ -173,6 +175,7 @@ import com.lastasylum.alliance.ui.chat.chatDayKey
 import com.lastasylum.alliance.ui.chat.formatChatDaySeparator
 import com.lastasylum.alliance.ui.chat.formatChatTime
 import com.lastasylum.alliance.ui.components.PremiumEmptyState
+import com.lastasylum.alliance.ui.components.premium.PremiumGlassBar
 import com.lastasylum.alliance.ui.components.premium.PremiumGradientIconFab
 import com.lastasylum.alliance.ui.components.CenteredScreenLoading
 import com.lastasylum.alliance.ui.components.team.ForumTopicCardTokens
@@ -664,6 +667,41 @@ private data class ForumLoadOlderSignal(
     val totalItems: Int,
 )
 
+@Composable
+private fun ForumTopicOverlayBackChip(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val label = stringResource(R.string.team_detail_back_cd)
+    PremiumGlassBar(
+        shape = RoundedCornerShape(22.dp),
+        modifier = modifier
+            .semantics {
+                role = Role.Button
+                contentDescription = label
+            }
+            .clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(22.dp),
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
 @Composable
 private fun TeamForumTopicChatRoute(
@@ -1010,42 +1048,21 @@ private fun TeamForumTopicChatRoute(
         }
     }
 
+    val forumListContentPadding = if (overlayUi) {
+        PaddingValues(
+            start = SquadRelayDimens.contentPaddingHorizontal,
+            end = SquadRelayDimens.contentPaddingHorizontal,
+            top = 52.dp,
+            bottom = 10.dp,
+        )
+    } else {
+        PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+    }
+
     CompositionLocalProvider(
         LocalOpenRemoteChatImagePreview provides openImages,
     ) {
-    var composerBlockHeightPx by remember { mutableIntStateOf(0) }
-    val composerReserveBottom = with(LocalDensity.current) {
-        composerBlockHeightPx.toDp()
-    }
-    Box(Modifier.fillMaxSize()) {
-    Column(
-        Modifier
-            .fillMaxSize()
-            .padding(bottom = composerReserveBottom),
-    ) {
-        if (overlayUi) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = stringResource(R.string.team_news_cd_back),
-                    )
-                }
-                Text(
-                    text = topicTitle.ifBlank { "…" },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
+    Column(Modifier.fillMaxSize()) {
         error?.let { err ->
             Text(
                 err,
@@ -1099,6 +1116,7 @@ private fun TeamForumTopicChatRoute(
                     hasMoreOlder = hasMoreOlder,
                     loadingOlder = loadingOlder,
                     highlightMessageId = highlightMessageId,
+                    contentPadding = forumListContentPadding,
                 ) { msg, idx ->
                     val mine = msg.senderUserId == currentUserId
                     val inSelectionMode = selectedMessageIds.isNotEmpty()
@@ -1162,6 +1180,18 @@ private fun TeamForumTopicChatRoute(
                     )
                 }
                 }
+                if (overlayUi) {
+                    ForumTopicOverlayBackChip(
+                        onClick = onBack,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(
+                                start = SquadRelayDimens.contentPaddingHorizontal,
+                                top = 8.dp,
+                            )
+                            .zIndex(5f),
+                    )
+                }
                 ChatScrollToLatestFab(
                     visible = showScrollToLatestFab,
                     newMessageCount = newMessagesWhileScrolledUp,
@@ -1180,18 +1210,10 @@ private fun TeamForumTopicChatRoute(
                 )
             }
         }
-    }
         val forumReplyChat = remember(replyToMessage, teamId, topicId) {
             replyToMessage?.toDisplayChatMessage(teamId, topicId)
         }
-        Column(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .onSizeChanged { size -> composerBlockHeightPx = size.height }
-                .chatComposerImePadding()
-                .chatComposerOverlayDock(),
-        ) {
+        ChatComposerBar {
         ChatComposer(
             draft = draft,
             pickedImageUris = pickedImageUris,
@@ -1343,7 +1365,6 @@ private fun TeamForumTopicChatRoute(
             )
         }
     }
-    }
 
     // legacy menu dialog removed (replaced with bottom sheet)
 
@@ -1481,6 +1502,7 @@ private fun TeamForumTopicChatRoute(
             },
         )
         }
+    }
     }
 }
 

@@ -13,6 +13,8 @@ data class OverlayGameStatusHudState(
     val allianceChatUnread: Int = 0,
     val teamNewsUnread: Int = 0,
     val forumUnread: Int = 0,
+    /** Non-null when backend reports a newer APK; shows update chip after alliance chat. */
+    val appUpdateDownloadUrl: String? = null,
 )
 
 @Composable
@@ -21,6 +23,7 @@ fun OverlayGameStatusHud(
     onMailClick: () -> Unit,
     onNewsClick: () -> Unit,
     onForumClick: () -> Unit,
+    onAppUpdateClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     OverlayGameHudBar(modifier = modifier) {
@@ -49,6 +52,12 @@ fun OverlayGameStatusHud(
                 ),
                 onClick = onMailClick,
             )
+            if (!state.appUpdateDownloadUrl.isNullOrBlank()) {
+                OverlayGameHudUpdateChip(
+                    contentDescription = stringResource(R.string.overlay_hud_app_update_cd),
+                    onClick = onAppUpdateClick,
+                )
+            }
         }
     }
 }

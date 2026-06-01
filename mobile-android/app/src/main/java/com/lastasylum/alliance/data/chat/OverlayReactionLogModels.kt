@@ -1,5 +1,15 @@
 package com.lastasylum.alliance.data.chat
 
+data class OverlayReactionLogReplyTo(
+    val logId: String,
+    val reaction: String,
+    val visibility: OverlayReactionLogVisibility,
+    val senderUserId: String,
+    val senderUsername: String,
+    val targetUserId: String?,
+    val targetUsername: String?,
+)
+
 data class OverlayReactionLogEntry(
     val id: String,
     val senderUserId: String,
@@ -10,6 +20,8 @@ data class OverlayReactionLogEntry(
     val visibility: OverlayReactionLogVisibility,
     val createdAt: String,
     val reactions: List<ChatReaction> = emptyList(),
+    val replyToLogId: String? = null,
+    val replyToLog: OverlayReactionLogReplyTo? = null,
 )
 
 enum class OverlayReactionLogVisibility {
@@ -48,6 +60,8 @@ data class OverlayReactionLogEntryDto(
     val visibility: String,
     val createdAt: String,
     val reactions: List<ChatReactionDto>? = null,
+    val replyToLogId: String? = null,
+    val replyToLog: OverlayReactionLogReplyToDto? = null,
 ) {
     fun resolvedId(): String = id?.trim().orEmpty().ifBlank { _id?.trim().orEmpty() }
 
@@ -64,6 +78,35 @@ data class OverlayReactionLogEntryDto(
             visibility = OverlayReactionLogVisibility.fromWire(visibility),
             createdAt = createdAt.trim(),
             reactions = reactions?.map { it.toChatReaction(selfUserId) } ?: emptyList(),
+            replyToLogId = replyToLogId?.trim()?.takeIf { it.isNotEmpty() },
+            replyToLog = replyToLog?.toReplyTo(),
+        )
+    }
+}
+
+data class OverlayReactionLogReplyToDto(
+    val id: String? = null,
+    val _id: String? = null,
+    val reaction: String,
+    val visibility: String,
+    val senderUserId: String,
+    val senderUsername: String,
+    val targetUserId: String? = null,
+    val targetUsername: String? = null,
+) {
+    fun resolvedId(): String = id?.trim().orEmpty().ifBlank { _id?.trim().orEmpty() }
+
+    fun toReplyTo(): OverlayReactionLogReplyTo? {
+        val logId = resolvedId()
+        if (logId.isBlank()) return null
+        return OverlayReactionLogReplyTo(
+            logId = logId,
+            reaction = reaction.trim(),
+            visibility = OverlayReactionLogVisibility.fromWire(visibility),
+            senderUserId = senderUserId.trim(),
+            senderUsername = senderUsername.trim(),
+            targetUserId = targetUserId?.trim()?.takeIf { it.isNotEmpty() },
+            targetUsername = targetUsername?.trim()?.takeIf { it.isNotEmpty() },
         )
     }
 }

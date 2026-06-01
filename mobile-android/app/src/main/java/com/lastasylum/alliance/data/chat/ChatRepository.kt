@@ -159,8 +159,11 @@ class ChatRepository(
 
     fun emitTypingPing(roomId: String) = realtime.emitTypingPing(roomId)
 
-    fun emitOverlayReaction(targetUserId: String, reaction: String = "heart") =
-        realtime.emitOverlayReaction(targetUserId, reaction)
+    fun emitOverlayReaction(
+        targetUserId: String,
+        reaction: String = "heart",
+        replyToLogId: String? = null,
+    ) = realtime.emitOverlayReaction(targetUserId, reaction, replyToLogId)
 
     fun emitOverlayReactionBroadcast(reaction: String = "heart") =
         realtime.emitOverlayReactionBroadcast(reaction)

@@ -2,6 +2,7 @@ package com.lastasylum.alliance.overlay
 
 import com.lastasylum.alliance.data.chat.OverlayReactionLogCluster
 import com.lastasylum.alliance.data.chat.OverlayReactionLogEntry
+import com.lastasylum.alliance.data.chat.OverlayReactionLogFeedItem
 import com.lastasylum.alliance.data.chat.OverlayReactionLogFilter
 import com.lastasylum.alliance.data.chat.OverlayReactionLogRepository
 import com.lastasylum.alliance.data.chat.OverlayReactionLogScopeFilter
@@ -21,16 +22,25 @@ import kotlinx.coroutines.launch
 
 private const val SEARCH_DEBOUNCE_MS = 300L
 
+data class OverlayReactionNotificationsRepositoryUi(
+    val loading: Boolean = false,
+    val refreshing: Boolean = false,
+    val loadingMore: Boolean = false,
+    val error: String? = null,
+    val unreadCount: Int = 0,
+    val unreadEntryIds: Set<String> = emptySet(),
+)
+
 data class OverlayReactionNotificationsUiState(
     val directionFilter: OverlayReactionLogFilter = OverlayReactionLogFilter.All,
     val scopeFilter: OverlayReactionLogScopeFilter = OverlayReactionLogScopeFilter.All,
     val searchQuery: String = "",
     val debouncedSearch: String = "",
     val filterKey: String = "",
-    val grouped: List<Pair<String, List<OverlayReactionLogCluster>>> = emptyList(),
+    val groupedFeed: List<Pair<String, List<OverlayReactionLogFeedItem>>> = emptyList(),
     val clustered: List<OverlayReactionLogCluster> = emptyList(),
     val listLayout: OverlayReactionLogStickyListLayout = OverlayReactionLogStickyListLayout(
-        grouped = emptyList(),
+        groupedFeed = emptyList(),
         firstUnreadItemIndex = -1,
         lastClusterItemIndex = -1,
         itemIndexToEntryId = emptyMap(),
@@ -48,11 +58,24 @@ class OverlayReactionNotificationsController(
     private val _uiState = MutableStateFlow(OverlayReactionNotificationsUiState())
     val uiState: StateFlow<OverlayReactionNotificationsUiState> = _uiState.asStateFlow()
 
+    private val _repositoryUi = MutableStateFlow(OverlayReactionNotificationsRepositoryUi())
+    val repositoryUi: StateFlow<OverlayReactionNotificationsRepositoryUi> = _repositoryUi.asStateFlow()
+
     private var selfUserId: String = ""
+    private var lastListRebuildKey: ListRebuildKey? = null
     private var started = false
     private var pollJob: Job? = null
     private var searchDebounceJob: Job? = null
     private var combineJob: Job? = null
+    private var repositoryUiJob: Job? = null
+
+    private data class ListRebuildKey(
+        val entryIds: List<String>,
+        val unreadEntryIds: Set<String>,
+        val directionFilter: OverlayReactionLogFilter,
+        val scopeFilter: OverlayReactionLogScopeFilter,
+        val debouncedSearch: String,
+    )
 
     fun start(userId: String) {
         selfUserId = userId.trim()
@@ -64,6 +87,33 @@ class OverlayReactionNotificationsController(
         started = true
         repository.loadInitial()
         startPresencePolling()
+        repositoryUiJob = scope.launch {
+            combine(
+                combine(
+                    repository.loading,
+                    repository.refreshing,
+                    repository.loadingMore,
+                ) { loading, refreshing, loadingMore ->
+                    Triple(loading, refreshing, loadingMore)
+                },
+                combine(
+                    repository.error,
+                    repository.unreadCount,
+                    repository.unreadEntryIds,
+                ) { error, unreadCount, unreadEntryIds ->
+                    Triple(error, unreadCount, unreadEntryIds)
+                },
+            ) { loadingTriple, unreadTriple ->
+                OverlayReactionNotificationsRepositoryUi(
+                    loading = loadingTriple.first,
+                    refreshing = loadingTriple.second,
+                    loadingMore = loadingTriple.third,
+                    error = unreadTriple.first,
+                    unreadCount = unreadTriple.second,
+                    unreadEntryIds = unreadTriple.third,
+                )
+            }.collect { _repositoryUi.value = it }
+        }
         combineJob = scope.launch {
             combine(
                 repository.entries,
@@ -84,6 +134,9 @@ class OverlayReactionNotificationsController(
         searchDebounceJob = null
         combineJob?.cancel()
         combineJob = null
+        repositoryUiJob?.cancel()
+        repositoryUiJob = null
+        lastListRebuildKey = null
         OverlayReactionTilePreviewPool.clear()
     }
 
@@ -152,16 +205,33 @@ class OverlayReactionNotificationsController(
         val state = _uiState.value
         if (selfUserId.isEmpty()) return
 
-        val filtered = OverlayReactionNotificationsDeriver.filterEntries(
+        val rebuildKey = ListRebuildKey(
+            entryIds = entries.map { it.id },
+            unreadEntryIds = unreadEntryIds,
+            directionFilter = state.directionFilter,
+            scopeFilter = state.scopeFilter,
+            debouncedSearch = state.debouncedSearch,
+        )
+        val previousKey = lastListRebuildKey
+        if (
+            previousKey != null &&
+            previousKey == rebuildKey &&
+            _uiState.value.groupedFeed.isNotEmpty()
+        ) {
+            val listLayout = buildStickyListLayout(_uiState.value.groupedFeed, loadingMore, unreadEntryIds)
+            _uiState.update { it.copy(listLayout = listLayout) }
+            return
+        }
+        lastListRebuildKey = rebuildKey
+
+        val (clustered, groupedFeed) = OverlayReactionNotificationsDeriver.buildGroupedFeed(
             entries = entries,
             selfUserId = selfUserId,
             directionFilter = state.directionFilter,
             scopeFilter = state.scopeFilter,
             searchQuery = state.debouncedSearch,
         )
-        val clustered = OverlayReactionNotificationsDeriver.clusterFiltered(filtered, selfUserId)
-        val grouped = OverlayReactionNotificationsDeriver.groupClusters(clustered)
-        val listLayout = buildStickyListLayout(grouped, loadingMore, unreadEntryIds)
+        val listLayout = buildStickyListLayout(groupedFeed, loadingMore, unreadEntryIds)
         val filterKey = OverlayReactionNotificationsDeriver.filterKey(
             state.directionFilter,
             state.scopeFilter,
@@ -173,7 +243,7 @@ class OverlayReactionNotificationsController(
         _uiState.update {
             it.copy(
                 filterKey = filterKey,
-                grouped = grouped,
+                groupedFeed = groupedFeed,
                 clustered = clustered,
                 listLayout = listLayout,
                 onlineUserIds = onlineUserIds,

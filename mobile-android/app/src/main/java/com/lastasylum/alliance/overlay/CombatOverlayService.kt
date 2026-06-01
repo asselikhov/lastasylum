@@ -198,8 +198,12 @@ class CombatOverlayService : Service() {
                 }
                 removeStripMessageByKey(pendingId)
             },
-            emitOverlayReaction = { targetUserId, reactionId ->
-                AppContainer.from(this@CombatOverlayService).chatRepository.emitOverlayReaction(targetUserId, reactionId)
+            emitOverlayReaction = { targetUserId, reactionId, replyToLogId ->
+                AppContainer.from(this@CombatOverlayService).chatRepository.emitOverlayReaction(
+                    targetUserId,
+                    reactionId,
+                    replyToLogId,
+                )
             },
             emitOverlayReactionBroadcast = { reactionId ->
                 AppContainer.from(this@CombatOverlayService).chatRepository.emitOverlayReactionBroadcast(reactionId)
@@ -552,17 +556,19 @@ class CombatOverlayService : Service() {
         }
     }
 
-    private fun shouldApplyOverlayImagePickToChatViewModel(): Boolean {
+    private fun isOverlayChatContentActive(): Boolean =
         when (currentOverlayHudPane) {
+            OverlayHudPane.Chat -> true
             OverlayHudPane.Forum,
             OverlayHudPane.News,
             OverlayHudPane.Participants,
             OverlayHudPane.Notifications,
-            -> return false
-            OverlayHudPane.Chat -> return true
-            null -> return overlayChatTeamTabIndex == 0
+            -> false
+            null -> overlayChatTeamTabIndex == 0
         }
-    }
+
+    private fun shouldApplyOverlayImagePickToChatViewModel(): Boolean =
+        isOverlayChatContentActive()
 
     private fun deliverOverlayPickImagesResult(
         requestCode: Int,
@@ -1026,6 +1032,11 @@ class CombatOverlayService : Service() {
     private var hudRefreshPending: Boolean = false
 
     private var hudRefreshJob: Job? = null
+
+    private var overlayChatPrimeJob: Job? = null
+
+    @Volatile
+    private var overlayChatWarmupCompleted: Boolean = false
 
     private var overlayReactionLogUnreadJob: Job? = null
 
@@ -1758,6 +1769,15 @@ class CombatOverlayService : Service() {
                     rooms != null -> hubDisplayed
                     else -> maxOf(hubDisplayed, hubUnreadOptimisticFloor)
                 }
+                val nowMs = System.currentTimeMillis()
+                val refreshAppUpdate = force ||
+                    nowMs - lastOverlayAppUpdateCheckAtMs >= APP_UPDATE_CHECK_MS
+                val appUpdateUrl = if (refreshAppUpdate) {
+                    lastOverlayAppUpdateCheckAtMs = nowMs
+                    runCatching { fetchNewerApkDownloadUrl() }.getOrNull()
+                } else {
+                    prevHud.appUpdateDownloadUrl
+                }
                 val mergedState = state.copy(
                     allianceChatUnread = hubMerged,
                     forumUnread = inboxBadgeCoordinator.mergeHudForum(
@@ -1770,8 +1790,8 @@ class CombatOverlayService : Service() {
                         prevDisplayed = prevHud.teamNewsUnread,
                         useAuthoritative = refreshTeamInboxBadges,
                     ),
+                    appUpdateDownloadUrl = appUpdateUrl,
                 )
-                val nowMs = System.currentTimeMillis()
                 val refreshPresenceCounts = force ||
                     nowMs - lastHudPresenceCountRefreshAtMs >= HUD_PRESENCE_COUNT_REFRESH_MS
                 val onlineIngameCount = if (refreshPresenceCounts) {
@@ -1793,14 +1813,6 @@ class CombatOverlayService : Service() {
                 } else {
                     overlayTopRightHudFlow.value.teamJoinRequestCount
                 }
-                val refreshAppUpdate = force ||
-                    nowMs - lastOverlayAppUpdateCheckAtMs >= APP_UPDATE_CHECK_MS
-                val appUpdateUrl = if (refreshAppUpdate) {
-                    lastOverlayAppUpdateCheckAtMs = nowMs
-                    runCatching { fetchNewerApkDownloadUrl() }.getOrNull()
-                } else {
-                    overlayTopRightHudFlow.value.appUpdateDownloadUrl
-                }
                 mainHandler.post {
                     if (!isInGameOverlayUiActive()) return@post
                     if (mergedState != overlayStatusHudFlow.value) {
@@ -1817,7 +1829,6 @@ class CombatOverlayService : Service() {
                     val nextTopRight = prevTopRight.copy(
                         onlineIngameCount = onlineIngameCount,
                         teamJoinRequestCount = joinRequestCount,
-                        appUpdateDownloadUrl = appUpdateUrl,
                     )
                     if (nextTopRight != prevTopRight) {
                         overlayTopRightHudFlow.value = nextTopRight
@@ -2269,8 +2280,7 @@ class CombatOverlayService : Service() {
         if (messageId.isBlank()) return false
         val lastRead = AppContainer.from(this).chatRoomPreferences.getLastReadMessageId(hubId)
         if (!isObjectIdNewer(messageId, lastRead)) return false
-        if (overlayChatTeamPanelVisible) {
-            if (overlayChatTeamTabIndex != 0) return false
+        if (overlayChatTeamPanelVisible && isOverlayChatContentActive()) {
             val vm = activeOverlayChatSessionViewModel()
             if (vm != null && vm.state.value.selectedRoomId == hubId) {
                 return false
@@ -2586,15 +2596,15 @@ class CombatOverlayService : Service() {
             val url = runCatching { fetchNewerApkDownloadUrl() }.getOrNull()
             mainHandler.post {
                 if (!isInGameOverlayUiActive()) return@post
-                val prev = overlayTopRightHudFlow.value
+                val prev = overlayStatusHudFlow.value
                 val next = prev.copy(appUpdateDownloadUrl = url)
-                if (next != prev) overlayTopRightHudFlow.value = next
+                if (next != prev) overlayStatusHudFlow.value = next
             }
         }
     }
 
     private fun onOverlayAppUpdateClick() {
-        val url = overlayTopRightHudFlow.value.appUpdateDownloadUrl?.trim().orEmpty()
+        val url = overlayStatusHudFlow.value.appUpdateDownloadUrl?.trim().orEmpty()
         if (url.isEmpty() || overlayAppUpdateDownloadInFlight) return
         overlayAppUpdateDownloadInFlight = true
         Toast.makeText(this, getString(R.string.overlay_app_update_downloading), Toast.LENGTH_SHORT).show()
@@ -2788,6 +2798,7 @@ class CombatOverlayService : Service() {
                         onForumClick = { showOverlayHudPane(OverlayHudPane.Forum) },
                         onMailClick = { showOverlayHudPane(OverlayHudPane.Chat) },
                         onNewsClick = { showOverlayHudPane(OverlayHudPane.News) },
+                        onAppUpdateClick = { onOverlayAppUpdateClick() },
                     )
                 }
             }
@@ -2876,7 +2887,6 @@ class CombatOverlayService : Service() {
                             pendingOpenJoinInboxOnParticipants = false
                             showOverlayHudPane(OverlayHudPane.Participants)
                         },
-                        onAppUpdateClick = { onOverlayAppUpdateClick() },
                         onQuickCommandsClick = { openOverlayQuickCommandsFromHud() },
                         onVoiceHubClick = { toggleOverlayTopRightVoiceExpanded() },
                         onMicClick = { toggleOverlayVoiceMicFromHud() },
@@ -3077,6 +3087,7 @@ class CombatOverlayService : Service() {
             stableGatePollTicks = HUD_STABLE_TICKS_BEFORE_ATTACH
             beginOverlayStripGameSession()
             prefetchOverlayRaidRoomForStrip()
+            scheduleOverlayChatWarmup()
             stripSessionNeedsRestart = false
         } else if (shouldShow && stripSessionNeedsRestart) {
             ensureOverlayStripVisibleSession()
@@ -5019,23 +5030,54 @@ class CombatOverlayService : Service() {
         activeOverlayChatSessionViewModel()?.refreshChatForOverlay()
     }
 
-    /** Кэш ленты до attach Compose — без кадра «Пока нет сообщений…». */
-    private fun prepareOverlayChatBeforePanelShow() {
+    /** Прогрев hub/диска в фоне после входа в игру — быстрее первое открытие «Чат». */
+    private fun scheduleOverlayChatWarmup() {
+        if (overlayChatWarmupCompleted || overlayChatTeamPanelVisible) return
+        overlayChatPrimeJob?.cancel()
+        overlayChatPrimeJob = serviceScope.launch {
+            prepareOverlayChatBeforePanelShowSuspend()
+            overlayChatWarmupCompleted = true
+        }
+    }
+
+    private fun scheduleOverlayChatPrimeForPanel() {
+        overlayChatPrimeJob?.cancel()
+        overlayChatPrimeJob = serviceScope.launch {
+            val started = android.os.SystemClock.elapsedRealtime()
+            prepareOverlayChatBeforePanelShowSuspend()
+            val hubReady = resolveChatViewModel()?.overlayHubReadyForPanel() == true
+            OverlayPerfDiag.logPanelPrime(
+                durationMs = android.os.SystemClock.elapsedRealtime() - started,
+                hubReady = hubReady,
+            )
+        }
+    }
+
+    private suspend fun prepareOverlayChatBeforePanelShowSuspend() {
         val uid = jwtSubFromAccessToken()?.trim().orEmpty()
         if (uid.isBlank()) return
         val container = AppContainer.from(this)
-        ReadCursorSession.bind(
-            container.chatRoomPreferences,
-            container.teamForumPreferences,
-            container.userSettingsPreferences,
-            uid,
-        )
-        val vm = resolveChatViewModel()
-            ?: ensureOverlayFallbackChatViewModel(uid, jwtRoleFromAccessToken())
-        vm.primeOverlayChatFromCache(preferAllianceHubRoom = true)
-        if (!vm.overlayHubReadyForPanel()) {
-            vm.primeFromLaunchDisk()
+        withContext(Dispatchers.Main.immediate) {
+            ReadCursorSession.bind(
+                container.chatRoomPreferences,
+                container.teamForumPreferences,
+                container.userSettingsPreferences,
+                uid,
+            )
+        }
+        val vm = withContext(Dispatchers.Main.immediate) {
+            resolveChatViewModel()
+                ?: ensureOverlayFallbackChatViewModel(uid, jwtRoleFromAccessToken())
+        }
+        withContext(Dispatchers.Main.immediate) {
             vm.primeOverlayChatFromCache(preferAllianceHubRoom = true)
+        }
+        val hubReady = withContext(Dispatchers.Main.immediate) { vm.overlayHubReadyForPanel() }
+        if (!hubReady) {
+            vm.primeFromLaunchDiskForOverlay()
+            withContext(Dispatchers.Main.immediate) {
+                vm.primeOverlayChatFromCache(preferAllianceHubRoom = true)
+            }
         }
     }
 
@@ -5047,9 +5089,8 @@ class CombatOverlayService : Service() {
         if (overlayChatTeamPanelVisible) return
         val initialTab = initialTabIndex.coerceIn(0, 1)
         val overlayPane = hudPane
-        if (overlayPane == null || overlayPane == OverlayHudPane.Chat) {
-            prepareOverlayChatBeforePanelShow()
-        }
+        val needsChatPrime = overlayPane == null || overlayPane == OverlayHudPane.Chat
+        OverlayPerfDiag.logPanelOpen(pane = overlayPane?.name ?: "legacy")
         currentOverlayHudPane = hudPane
         overlayCommandsPopover.hide()
         extendOverlayUiHold(OVERLAY_UI_HOLD_PANEL_TRANSITION_MS)
@@ -5189,13 +5230,14 @@ class CombatOverlayService : Service() {
                                                     repository = container.overlayReactionLogRepository,
                                                     selfUserId = userId,
                                                     onClose = { hideOverlayChatTeamPanel() },
-                                                    onReplyToUser = { replyUserId ->
+                                                    onReplyToReactionLog = { entry ->
                                                         hideOverlayChatTeamPanel(clearStrip = false)
                                                         val wm = windowManager ?: systemWindowManager()
                                                         if (wm != null) {
                                                             overlayCommandsPopover.openReactionsPreselectUser(
                                                                 wm,
-                                                                replyUserId,
+                                                                entry.senderUserId,
+                                                                replyToLogId = entry.id,
                                                             )
                                                         }
                                                     },
@@ -5514,6 +5556,9 @@ class CombatOverlayService : Service() {
         overlayChatTeamParams = params
         overlayChatTeamPanelVisible = true
         syncOverlayChatPanelVisibilityToViewModel(true)
+        if (needsChatPrime) {
+            scheduleOverlayChatPrimeForPanel()
+        }
         OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = true
         rebalanceOverlayFullscreenZOrder()
         if (isOverlayRaidStripEligible()) {
@@ -5691,14 +5736,15 @@ class CombatOverlayService : Service() {
                 ?: ChatViewModelRegistry.shared
                 ?: runningInstance?.overlayFallbackChatViewModel
 
-        /** True when overlay team panel is on the Chat tab (not Team news/forum). */
-        fun isOverlayChatTabActive(): Boolean = runningInstance?.overlayChatTeamTabIndex == 0
+        /** True when overlay shows alliance chat (HUD «Чат» or legacy tab 0). */
+        fun isOverlayChatTabActive(): Boolean =
+            runningInstance?.isOverlayChatContentActive() == true
 
         /** Chat tab open in overlay HUD while in-game — enables mark-read and ✓✓ for senders. */
         fun isOverlayChatPanelOpenInGame(): Boolean {
             val service = runningInstance ?: return false
             return service.overlayChatTeamPanelVisible &&
-                service.overlayChatTeamTabIndex == 0 &&
+                service.isOverlayChatContentActive() &&
                 service.isInGameOverlayUiActive()
         }
 
