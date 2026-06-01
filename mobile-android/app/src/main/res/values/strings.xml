@@ -663,7 +663,7 @@
     <string name="overlay_online_close_cd">Закрыть список</string>
     <string name="overlay_online_summary_ingame">В игре: %1$d</string>
     <string name="overlay_online_summary_recent">Недавно: %1$d</string>
-    <string name="overlay_online_search_hint">Поиск по нику или Telegram</string>
+    <string name="overlay_online_search_hint">Поиск по нику</string>
     <string name="overlay_online_leader_badge">лидер</string>
     <string name="overlay_online_status_ingame">В игре</string>
     <string name="overlay_online_status_recent">Недавно</string>

@@ -86,7 +86,20 @@ class OverlayReactionLogRepository(
     }
 
     fun loadInitial() {
-        scope.launch { fetchFirstPage(showLoading = true) }
+        scope.launch {
+            fetchFirstPage(showLoading = !shouldUseSilentInitialFetch())
+        }
+    }
+
+    /**
+     * After local history clear we already know the feed is empty on this device;
+     * skip the blocking skeleton and refresh quietly (new reactions after cutoff still load).
+     */
+    private fun shouldUseSilentInitialFetch(): Boolean {
+        val self = selfUserId.trim()
+        if (self.isEmpty()) return false
+        if (_entries.value.isNotEmpty()) return false
+        return preferences.getHiddenBeforeLogId(self) != null
     }
 
     fun refresh() {

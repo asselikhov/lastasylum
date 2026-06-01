@@ -2,11 +2,11 @@ package com.lastasylum.alliance.overlay
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.DropdownMenuItem
@@ -24,15 +24,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.OverlayReactionLogFilter
 import com.lastasylum.alliance.data.chat.OverlayReactionLogScopeFilter
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
-
-private val FilterFieldMinHeight = 48.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,19 +42,15 @@ fun OverlayReactionLogFiltersBar(
     onSearchQuery: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val fieldColors = OutlinedTextFieldDefaults.colors(
-        focusedBorderColor = MaterialTheme.colorScheme.primary,
-        unfocusedBorderColor = Color(0xFF3A4555),
-        focusedContainerColor = Color(0xFF1A2836),
-        unfocusedContainerColor = Color(0xFF141C28),
-    )
-    val fieldShape = RoundedCornerShape(10.dp)
+    val fieldColors = OverlayHudFilterFields.notificationsFieldColors()
+    val fieldShape = OverlayHudFilterFields.FieldShape
+    val fieldTextStyle = OverlayHudFilterFields.textStyle()
 
     Row(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(OverlayHudFilterFields.FieldSpacing),
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
     ) {
         DirectionFilterDropdown(
@@ -65,26 +58,33 @@ fun OverlayReactionLogFiltersBar(
             onSelected = onDirectionFilter,
             fieldColors = fieldColors,
             fieldShape = fieldShape,
-            modifier = Modifier.weight(0.95f),
+            fieldTextStyle = fieldTextStyle,
+            modifier = Modifier
+                .weight(0.95f)
+                .then(OverlayHudFilterFields.baseFieldModifier()),
         )
         ScopeFilterDropdown(
             selected = scopeFilter,
             onSelected = onScopeFilter,
             fieldColors = fieldColors,
             fieldShape = fieldShape,
-            modifier = Modifier.weight(0.95f),
+            fieldTextStyle = fieldTextStyle,
+            modifier = Modifier
+                .weight(0.95f)
+                .then(OverlayHudFilterFields.baseFieldModifier()),
         )
         OutlinedTextField(
             value = searchQuery,
             onValueChange = onSearchQuery,
             modifier = Modifier
                 .weight(1.1f)
-                .heightIn(min = FilterFieldMinHeight),
+                .then(OverlayHudFilterFields.baseFieldModifier()),
             singleLine = true,
             placeholder = {
                 Text(
                     text = stringResource(R.string.overlay_notifications_search_hint),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = fieldTextStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             },
             leadingIcon = {
@@ -96,7 +96,7 @@ fun OverlayReactionLogFiltersBar(
             },
             colors = fieldColors,
             shape = fieldShape,
-            textStyle = MaterialTheme.typography.bodySmall,
+            textStyle = fieldTextStyle,
         )
     }
 }
@@ -107,7 +107,8 @@ private fun DirectionFilterDropdown(
     selected: OverlayReactionLogFilter,
     onSelected: (OverlayReactionLogFilter) -> Unit,
     fieldColors: androidx.compose.material3.TextFieldColors,
-    fieldShape: RoundedCornerShape,
+    fieldShape: androidx.compose.foundation.shape.RoundedCornerShape,
+    fieldTextStyle: androidx.compose.ui.text.TextStyle,
     modifier: Modifier = Modifier,
 ) {
     val label = when (selected) {
@@ -121,6 +122,7 @@ private fun DirectionFilterDropdown(
         modifier = modifier,
         fieldColors = fieldColors,
         fieldShape = fieldShape,
+        fieldTextStyle = fieldTextStyle,
     ) { onDismiss ->
         OverlayReactionLogFilter.entries.forEach { option ->
             DropdownMenuItem(
@@ -136,7 +138,7 @@ private fun DirectionFilterDropdown(
                             OverlayReactionLogFilter.Reply ->
                                 stringResource(R.string.overlay_notifications_filter_reply)
                         },
-                        style = MaterialTheme.typography.labelMedium,
+                        style = OverlayHudFilterFields.menuItemTextStyle(),
                     )
                 },
                 onClick = {
@@ -154,7 +156,8 @@ private fun ScopeFilterDropdown(
     selected: OverlayReactionLogScopeFilter,
     onSelected: (OverlayReactionLogScopeFilter) -> Unit,
     fieldColors: androidx.compose.material3.TextFieldColors,
-    fieldShape: RoundedCornerShape,
+    fieldShape: androidx.compose.foundation.shape.RoundedCornerShape,
+    fieldTextStyle: androidx.compose.ui.text.TextStyle,
     modifier: Modifier = Modifier,
 ) {
     val label = when (selected) {
@@ -169,6 +172,7 @@ private fun ScopeFilterDropdown(
         modifier = modifier,
         fieldColors = fieldColors,
         fieldShape = fieldShape,
+        fieldTextStyle = fieldTextStyle,
     ) { onDismiss ->
         OverlayReactionLogScopeFilter.entries.forEach { option ->
             DropdownMenuItem(
@@ -182,7 +186,7 @@ private fun ScopeFilterDropdown(
                             OverlayReactionLogScopeFilter.Broadcast ->
                                 stringResource(R.string.overlay_reaction_burst_caption_broadcast)
                         },
-                        style = MaterialTheme.typography.labelMedium,
+                        style = OverlayHudFilterFields.menuItemTextStyle(),
                     )
                 },
                 onClick = {
@@ -199,7 +203,8 @@ private fun ScopeFilterDropdown(
 private fun FilterDropdown(
     label: String,
     fieldColors: androidx.compose.material3.TextFieldColors,
-    fieldShape: RoundedCornerShape,
+    fieldShape: androidx.compose.foundation.shape.RoundedCornerShape,
+    fieldTextStyle: androidx.compose.ui.text.TextStyle,
     modifier: Modifier = Modifier,
     menuItems: @Composable (onDismiss: () -> Unit) -> Unit,
 ) {
@@ -216,14 +221,15 @@ private fun FilterDropdown(
             singleLine = true,
             modifier = Modifier
                 .menuAnchor(androidx.compose.material3.ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                .heightIn(min = FilterFieldMinHeight)
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                .heightIn(min = OverlayHudFilterFields.FieldHeight)
+                .defaultMinSize(minHeight = OverlayHudFilterFields.FieldHeight),
             trailingIcon = {
                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
             },
             colors = fieldColors,
             shape = fieldShape,
-            textStyle = MaterialTheme.typography.bodySmall,
+            textStyle = fieldTextStyle,
         )
         ExposedDropdownMenu(
             expanded = expanded,

@@ -8,14 +8,14 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
@@ -165,7 +165,6 @@ fun OverlayOnlinePanelScaffold(
 }
 
 private val OnlinePanelSectionSpacing = 8.dp
-private val OnlinePanelFieldHeight = 48.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -179,21 +178,19 @@ private fun OnlinePanelFilterSearchRow(
     val tokens = OverlayOnlineMemberTokens
     var filterExpanded by remember { mutableStateOf(false) }
     val filterLabel = stringResource(filterLabelRes(activeChip))
-    val fieldColors = OutlinedTextFieldDefaults.colors(
-        focusedTextColor = tokens.titleColor,
-        unfocusedTextColor = tokens.titleColor,
-        focusedBorderColor = tokens.borderLive.copy(alpha = 0.5f),
-        unfocusedBorderColor = tokens.borderDefault,
+    val fieldColors = OverlayHudFilterFields.onlineFieldColors(
+        textColor = tokens.titleColor,
+        focusedBorder = tokens.borderLive.copy(alpha = 0.5f),
+        unfocusedBorder = tokens.borderDefault,
         cursorColor = tokens.borderLive,
-        focusedContainerColor = Color(0xFF1A2836),
-        unfocusedContainerColor = Color(0xFF141C28),
     )
-    val fieldShape = RoundedCornerShape(10.dp)
+    val fieldShape = OverlayHudFilterFields.FieldShape
+    val fieldTextStyle = OverlayHudFilterFields.textStyle()
 
     Row(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(OverlayHudFilterFields.FieldSpacing),
     ) {
         ExposedDropdownMenuBox(
             expanded = filterExpanded,
@@ -208,13 +205,14 @@ private fun OnlinePanelFilterSearchRow(
                 modifier = Modifier
                     .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                     .fillMaxWidth()
-                    .height(OnlinePanelFieldHeight),
+                    .heightIn(min = OverlayHudFilterFields.FieldHeight)
+                    .defaultMinSize(minHeight = OverlayHudFilterFields.FieldHeight),
                 trailingIcon = {
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = filterExpanded)
                 },
                 colors = fieldColors,
                 shape = fieldShape,
-                textStyle = MaterialTheme.typography.labelSmall,
+                textStyle = fieldTextStyle,
             )
             ExposedDropdownMenu(
                 expanded = filterExpanded,
@@ -225,7 +223,7 @@ private fun OnlinePanelFilterSearchRow(
                         text = {
                             Text(
                                 stringResource(filterLabelRes(chip)),
-                                style = MaterialTheme.typography.labelMedium,
+                                style = OverlayHudFilterFields.menuItemTextStyle(),
                             )
                         },
                         onClick = {
@@ -241,13 +239,13 @@ private fun OnlinePanelFilterSearchRow(
             onValueChange = onSearchQuery,
             modifier = Modifier
                 .weight(1f)
-                .height(OnlinePanelFieldHeight),
+                .then(OverlayHudFilterFields.baseFieldModifier()),
             singleLine = true,
             placeholder = {
                 Text(
                     stringResource(R.string.overlay_online_search_hint),
                     color = tokens.mutedColor,
-                    style = MaterialTheme.typography.labelSmall,
+                    style = fieldTextStyle,
                 )
             },
             leadingIcon = {
@@ -260,7 +258,7 @@ private fun OnlinePanelFilterSearchRow(
             },
             colors = fieldColors,
             shape = fieldShape,
-            textStyle = MaterialTheme.typography.labelSmall,
+            textStyle = fieldTextStyle,
         )
     }
 }

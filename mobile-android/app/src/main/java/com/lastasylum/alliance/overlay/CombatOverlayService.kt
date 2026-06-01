@@ -1053,7 +1053,7 @@ class CombatOverlayService : Service() {
     private var deferredDismissWhenPickerEnds: Boolean = false
 
     private val overlayCloseHudRefreshRunnable = Runnable {
-        if (!isInGameOverlayUiActive()) return@Runnable
+        if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return@Runnable
         restoreOverlayHudChromeAfterPanel()
         refreshOverlayChatStripNow()
         refreshOverlayHubUnreadFromCache()
@@ -1325,6 +1325,7 @@ class CombatOverlayService : Service() {
     private fun repairOrRemoveDetachedHudWindows() {
         val mgr = windowManager ?: systemWindowManager() ?: return
         if (!isInGameOverlayUiActive()) {
+            if (isOverlayUiHoldActive()) return
             removeOverlayStatusHudWindow()
             removeOverlayTopRightHudWindow()
             return
@@ -2752,7 +2753,7 @@ class CombatOverlayService : Service() {
 
     /** Показать HUD/ленту после закрытия полноэкранной панели без remove/add окон. */
     private fun restoreOverlayHudChromeAfterPanel() {
-        if (!isInGameOverlayUiActive()) return
+        if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return
         if (overlayStatusHudHost?.visibility != View.VISIBLE) {
             overlayStatusHudHost?.visibility = View.VISIBLE
         }
@@ -3013,11 +3014,17 @@ class CombatOverlayService : Service() {
                 gateSoftHideStartedAtMs = 0L
                 return
             }
+            // После закрытия «Чат»/HUD-панели: не прятать кнопки по краткому ложному «не в игре».
+            if (isOverlayUiHoldActive()) {
+                gateSoftHideStartedAtMs = 0L
+                return
+            }
             softHideOverlayUiBecauseNotInGame()
             if (!overlayInGameProbeActive) {
                 gateSoftHideStartedAtMs = 0L
-                overlayUiHoldUntilMs = 0L
-                dismissOverlayUiBecauseNotInGame(logWaitingForGame = true)
+                if (!isOverlayUiHoldActive()) {
+                    dismissOverlayUiBecauseNotInGame(logWaitingForGame = true)
+                }
                 return
             }
             if (overlayCommandsPopover.isBlockingGameGateDismiss()) {
@@ -3038,7 +3045,8 @@ class CombatOverlayService : Service() {
             if (nowMs - gateSoftHideStartedAtMs >= GATE_DISMISS_AFTER_MS) {
                 gateSoftHideStartedAtMs = 0L
                 if (!overlayChatTeamPanelVisible &&
-                    !OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible
+                    !OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible &&
+                    !isOverlayUiHoldActive()
                 ) {
                     dismissOverlayUiBecauseNotInGame(logWaitingForGame = true)
                 }
@@ -3128,6 +3136,7 @@ class CombatOverlayService : Service() {
      * иначе оставляют оверлей «висеть» после сворачивания или закрытия игры.
      */
     private fun dismissOverlayUiBecauseNotInGame(logWaitingForGame: Boolean) {
+        if (isOverlayUiHoldActive()) return
         if (OverlayChatInteractionHold.isOverlaySystemPickerSessionActive()) {
             deferredDismissWhenPickerEnds = true
             return
@@ -4877,6 +4886,8 @@ class CombatOverlayService : Service() {
     }
 
     private fun hideOverlayChatTeamPanelNow(clearStrip: Boolean = false) {
+        extendOverlayUiHold(OVERLAY_UI_HOLD_PANEL_TRANSITION_MS)
+        gateSoftHideStartedAtMs = 0L
         val root = overlayChatTeamRoot
         val hadVisible = overlayChatTeamPanelVisible
         overlayChatTeamPanelVisible = false
@@ -4910,7 +4921,6 @@ class CombatOverlayService : Service() {
         ensureOverlayStatusHudWindow()
         ensureOverlayTopRightHudWindow()
         restoreOverlayHudChromeAfterPanel()
-        extendOverlayUiHold(OVERLAY_UI_HOLD_PANEL_TRANSITION_MS)
         lastStripRenderSignature = 0
         applyOverlayStripVisibility(rebalanceZOrder = false)
         refreshOverlayChatStripNow()
@@ -5924,7 +5934,8 @@ class CombatOverlayService : Service() {
         /** Краткий grace при ложном «не в игре» во время чата/пикера; не применяется при явном лаунчере/другом приложении. */
         private const val OVERLAY_INGAME_GRACE_MS = 3_500L
         /** Sustained «not in game» (краткий лаг usage-stats) перед снятием окон. */
-        private const val GATE_DISMISS_AFTER_MS = 2_500L
+        /** Чуть дольше hold после закрытия панели — иначе гейт успевает снять HUD до истечения hold. */
+        private const val GATE_DISMISS_AFTER_MS = 3_000L
         private const val FORCE_SHOW_STRIP_AFTER_LOCAL_SEND_MS = 4_000L
         /** После отправки в «Рейд» / координат — не снимать HUD на ложном «не в игре». */
         private const val OVERLAY_UI_HOLD_AFTER_RAID_SEND_MS = 3_500L
