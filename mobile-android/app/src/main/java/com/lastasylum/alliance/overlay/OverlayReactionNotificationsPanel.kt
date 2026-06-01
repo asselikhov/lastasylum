@@ -43,6 +43,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -65,15 +66,18 @@ import com.lastasylum.alliance.data.chat.OverlayReactionLogFeedItem
 import com.lastasylum.alliance.data.chat.OverlayReactionLogFilter
 import com.lastasylum.alliance.data.chat.OverlayReactionLogRepository
 import com.lastasylum.alliance.data.chat.OverlayReactionLogScopeFilter
+import com.lastasylum.alliance.data.chat.maxOverlayReactionLogId
 import com.lastasylum.alliance.data.chat.OverlayReactionLogVisibilityPolicy
 import com.lastasylum.alliance.ui.chat.formatChatDaySeparator
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, FlowPreview::class)
 @Composable
 fun OverlayReactionNotificationsPanel(
     repository: OverlayReactionLogRepository,
@@ -118,7 +122,12 @@ fun OverlayReactionNotificationsPanel(
 
     DisposableEffect(controller, selfUserId) {
         controller.start(selfUserId)
-        onDispose { controller.stop() }
+        onDispose {
+            controller.stop()
+            scope.launch {
+                repository.flushPendingReadCursorAwait()
+            }
+        }
     }
 
     var savedScrollIndex by rememberSaveable(filterKey) { mutableIntStateOf(-1) }
@@ -242,14 +251,32 @@ fun OverlayReactionNotificationsPanel(
                     visibleUnreadCount,
                     firstUnreadIndex,
                     isFirstUnreadVisible,
-                    isNearBottom,
                 ) {
                     derivedStateOf {
                         visibleUnreadCount > 0 &&
                             firstUnreadIndex >= 0 &&
-                            !isFirstUnreadVisible &&
-                            !isNearBottom
+                            !isFirstUnreadVisible
                     }
+                }
+                val markReadUpToRef = rememberUpdatedState(repository::markReadUpTo)
+                val unreadEntryIdsRef = rememberUpdatedState(unreadEntryIds)
+                val itemIndexToEntryIdRef = rememberUpdatedState(listLayout.itemIndexToEntryId)
+                LaunchedEffect(listState, listLayout.itemIndexToEntryId) {
+                    snapshotFlow {
+                        listState.layoutInfo.visibleItemsInfo.map { it.index }
+                    }
+                        .debounce(140)
+                        .map { indices ->
+                            val unread = unreadEntryIdsRef.value
+                            val idByIndex = itemIndexToEntryIdRef.value
+                            indices.mapNotNull { idByIndex[it] }
+                                .filter { it in unread }
+                        }
+                        .distinctUntilChanged()
+                        .collect { visibleUnreadIds ->
+                            val watermark = maxOverlayReactionLogId(visibleUnreadIds) ?: return@collect
+                            markReadUpToRef.value(watermark)
+                        }
                 }
                 val showScrollToLatest by remember(isNearBottom, groupedFeed) {
                     derivedStateOf { groupedFeed.isNotEmpty() && !isNearBottom }
@@ -312,19 +339,6 @@ fun OverlayReactionNotificationsPanel(
                                 .distinctUntilChanged()
                                 .collect { firstIndex ->
                                     controller.loadMoreIfNeeded(firstIndex)
-                                }
-                        }
-
-                        LaunchedEffect(listState, lastClusterIndex, clustered.isNotEmpty()) {
-                            snapshotFlow { listState.isScrollInProgress to isNearBottom }
-                                .distinctUntilChanged()
-                                .collect { (scrolling, nearBottom) ->
-                                    if (!scrolling && nearBottom && clustered.isNotEmpty()) {
-                                        delay(300)
-                                        if (!listState.isScrollInProgress && isNearBottom) {
-                                            repository.markAllRead()
-                                        }
-                                    }
                                 }
                         }
 
@@ -443,7 +457,6 @@ fun OverlayReactionNotificationsPanel(
                                 if (lastClusterIndex >= 0) {
                                     scope.launch {
                                         animateOverlayNotificationsListToIndex(listState, lastClusterIndex)
-                                        repository.markAllRead()
                                     }
                                 }
                             },

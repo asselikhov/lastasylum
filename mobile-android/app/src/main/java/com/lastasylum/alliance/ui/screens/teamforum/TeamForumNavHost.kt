@@ -157,6 +157,7 @@ import com.lastasylum.alliance.ui.chat.replyPreviewText
 import com.lastasylum.alliance.ui.util.copyForumMessageToClipboard
 import com.lastasylum.alliance.ui.util.forumMessageHasCopyableContent
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
+import com.lastasylum.alliance.overlay.OverlayReactionLogJumpToUnreadFab
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
 import com.lastasylum.alliance.overlay.OverlayAwareBottomSheet
@@ -175,6 +176,7 @@ import com.lastasylum.alliance.ui.chat.ChatStickerFormat
 import com.lastasylum.alliance.ui.chat.chatDayKey
 import com.lastasylum.alliance.ui.chat.formatChatDaySeparator
 import com.lastasylum.alliance.ui.chat.formatChatTime
+import com.lastasylum.alliance.ui.chat.ForumTimelineEntry
 import com.lastasylum.alliance.ui.components.PremiumEmptyState
 import com.lastasylum.alliance.ui.components.premium.PremiumGlassBar
 import com.lastasylum.alliance.ui.components.premium.PremiumGradientIconFab
@@ -441,6 +443,36 @@ private fun TeamForumListRoute(
         reload()
     }
 
+    val topicListState = rememberLazyListState(
+        initialFirstVisibleItemIndex = 0,
+        initialFirstVisibleItemScrollOffset = 0,
+    )
+    val forumTopicUnreadTotal = remember(topics) {
+        topics.sumOf { effectiveTopicUnread(it).coerceAtLeast(0) }
+    }
+    val firstUnreadTopicIndex = remember(topics) {
+        topics.indexOfLast { effectiveTopicUnread(it) > 0 }
+    }
+    val isFirstUnreadTopicVisible by remember(topicListState, firstUnreadTopicIndex) {
+        derivedStateOf {
+            if (firstUnreadTopicIndex < 0) return@derivedStateOf true
+            topicListState.layoutInfo.visibleItemsInfo.any { it.index == firstUnreadTopicIndex }
+        }
+    }
+    val showJumpToUnreadTopics by remember(
+        overlayUi,
+        forumTopicUnreadTotal,
+        firstUnreadTopicIndex,
+        isFirstUnreadTopicVisible,
+    ) {
+        derivedStateOf {
+            overlayUi &&
+                forumTopicUnreadTotal > 0 &&
+                firstUnreadTopicIndex >= 0 &&
+                !isFirstUnreadTopicVisible
+        }
+    }
+
     Column(Modifier.fillMaxSize()) {
         error?.let { err ->
             Surface(
@@ -477,7 +509,9 @@ private fun TeamForumListRoute(
                 }
                 else -> {
                     val listTopPad = if (overlayUi) 0.dp else 8.dp
+                    Box(Modifier.fillMaxSize()) {
                     LazyColumn(
+                        state = topicListState,
                         contentPadding = PaddingValues(
                             start = SquadRelayDimens.contentPaddingHorizontal,
                             end = SquadRelayDimens.contentPaddingHorizontal,
@@ -536,9 +570,27 @@ private fun TeamForumListRoute(
                             )
                         }
                     }
+                    if (overlayUi) {
+                        OverlayReactionLogJumpToUnreadFab(
+                            visible = showJumpToUnreadTopics,
+                            unreadCount = forumTopicUnreadTotal,
+                            onClick = {
+                                if (firstUnreadTopicIndex >= 0) {
+                                    scope.launch {
+                                        topicListState.animateScrollToItem(firstUnreadTopicIndex)
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = 8.dp)
+                                .zIndex(6f),
+                        )
+                    }
+                    }
                 }
             }
-            if (canManageTopics) {
+            if (canManageTopics && !overlayUi) {
                 PremiumGradientIconFab(
                     onClick = {
                         OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
@@ -849,6 +901,17 @@ private fun TeamForumTopicChatRoute(
         forumPrefs.setLastReadMessageId(teamId, topicId, messageId)
     }
 
+    var markForumReadJob by remember(teamId, topicId) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+
+    fun scheduleMarkForumTopicRead(messageId: String) {
+        mergeReadCursor(messageId)
+        markForumReadJob?.cancel()
+        markForumReadJob = scope.launch {
+            delay(320)
+            teamsRepository.markForumTopicRead(teamId, topicId, messageId)
+        }
+    }
+
     fun markTopicReadToLatest(forceSync: Boolean = false) {
         val newestId = stableMessages.lastOrNull()?.id ?: return
         val prev = lastReadCursor
@@ -856,6 +919,49 @@ private fun TeamForumTopicChatRoute(
         scope.launch {
             teamsRepository.markForumTopicRead(teamId, topicId, newestId)
                 .onSuccess { mergeReadCursor(newestId) }
+        }
+    }
+
+    fun markVisibleForumMessages(lazyIndices: List<Int>) {
+        if (!overlayUi) return
+        val self = currentUserId.trim()
+        val lastRead = lastReadCursor?.trim().orEmpty()
+        var watermark: String? = null
+        for (lazyIdx in lazyIndices) {
+            val timelineIndex = listDerived.timeline.lastIndex - lazyIdx
+            val entry = listDerived.timeline.getOrNull(timelineIndex) ?: continue
+            val id = when (entry) {
+                is ForumTimelineEntry.Message -> entry.messageId
+                else -> continue
+            }
+            if (id.isBlank()) continue
+            if (self.isNotBlank()) {
+                val sender = stableMessages.find { it.id == id }?.senderUserId?.trim()
+                if (sender == self) continue
+            }
+            if (lastRead.isNotEmpty() && !isObjectIdNewer(id, lastRead)) continue
+            watermark = when (val prev = watermark) {
+                null -> id
+                else -> if (isObjectIdNewer(id, prev)) id else prev
+            }
+        }
+        val markId = watermark ?: return
+        scheduleMarkForumTopicRead(markId)
+    }
+
+    fun jumpToFirstUnreadInTopic() {
+        val lastRead = lastReadCursor?.trim().orEmpty()
+        val self = currentUserId.trim()
+        val targetId = stableMessages.lastOrNull { msg ->
+            val id = msg.id.trim()
+            if (id.isEmpty()) return@lastOrNull false
+            if (self.isNotBlank() && msg.senderUserId.trim() == self) return@lastOrNull false
+            lastRead.isEmpty() || isObjectIdNewer(id, lastRead)
+        }?.id ?: return
+        val lazyIdx = listDerived.fullLazyIndexForMessageId(targetId) ?: return
+        scope.launch {
+            runCatching { listState.scrollTimelineItemToViewportCenter(lazyIdx) }
+                .onFailure { listState.scrollToItem(lazyIdx) }
         }
     }
 
@@ -889,7 +995,9 @@ private fun TeamForumTopicChatRoute(
             trimForumMessagesInMemory()
         }
         bumpMessagesGeneration()
-        markTopicReadToLatest()
+        if (!overlayUi || isNearBottom) {
+            markTopicReadToLatest()
+        }
     }
 
     fun canDeleteForumMessage(msg: TeamForumMessageDto): Boolean {
@@ -970,9 +1078,63 @@ private fun TeamForumTopicChatRoute(
     }
 
     LaunchedEffect(stableMessages.lastOrNull()?.id) {
-        if (stableMessages.isNotEmpty()) {
+        if (!overlayUi && stableMessages.isNotEmpty()) {
             markTopicReadToLatest()
         }
+    }
+
+    val topicUnreadEstimate = remember(stableMessages, lastReadCursor, currentUserId) {
+        val lastRead = lastReadCursor?.trim().orEmpty()
+        val self = currentUserId.trim()
+        stableMessages.count { msg ->
+            val id = msg.id.trim()
+            if (id.isEmpty()) return@count false
+            if (self.isNotBlank() && msg.senderUserId.trim() == self) return@count false
+            lastRead.isEmpty() || isObjectIdNewer(id, lastRead)
+        }
+    }
+    val firstUnreadMessageId = remember(stableMessages, lastReadCursor, currentUserId) {
+        val lastRead = lastReadCursor?.trim().orEmpty()
+        val self = currentUserId.trim()
+        stableMessages.lastOrNull { msg ->
+            val id = msg.id.trim()
+            if (id.isEmpty()) return@lastOrNull false
+            if (self.isNotBlank() && msg.senderUserId.trim() == self) return@lastOrNull false
+            lastRead.isEmpty() || isObjectIdNewer(id, lastRead)
+        }?.id
+    }
+    val firstUnreadLazyIndex = remember(firstUnreadMessageId, listDerived) {
+        firstUnreadMessageId?.let { listDerived.fullLazyIndexForMessageId(it) } ?: -1
+    }
+    val isFirstUnreadVisible by remember(listState, firstUnreadLazyIndex) {
+        derivedStateOf {
+            if (firstUnreadLazyIndex < 0) return@derivedStateOf true
+            listState.layoutInfo.visibleItemsInfo.any { it.index == firstUnreadLazyIndex }
+        }
+    }
+    val showJumpToUnreadMessages by remember(
+        overlayUi,
+        topicUnreadEstimate,
+        firstUnreadLazyIndex,
+        isFirstUnreadVisible,
+        isNearBottom,
+    ) {
+        derivedStateOf {
+            overlayUi &&
+                topicUnreadEstimate > 0 &&
+                firstUnreadLazyIndex >= 0 &&
+                isNearBottom &&
+                !isFirstUnreadVisible
+        }
+    }
+    val markVisibleForumRef = rememberUpdatedState(::markVisibleForumMessages)
+    LaunchedEffect(listState, overlayUi, teamId, topicId) {
+        if (!overlayUi) return@LaunchedEffect
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
+            .debounce(140)
+            .collect { indices ->
+                markVisibleForumRef.value(indices)
+            }
     }
 
     var initialScrollApplied by remember(teamId, topicId) { mutableStateOf(false) }
@@ -1081,7 +1243,17 @@ private fun TeamForumTopicChatRoute(
                 topicId,
             ) { tokenStore.getAccessToken() }
             onDispose {
-                markTopicReadToLatest(forceSync = true)
+                if (overlayUi) {
+                    markForumReadJob?.cancel()
+                    val cursor = lastReadCursor?.trim().orEmpty()
+                    if (cursor.isNotEmpty()) {
+                        scope.launch {
+                            teamsRepository.markForumTopicRead(teamId, topicId, cursor)
+                        }
+                    }
+                } else {
+                    markTopicReadToLatest(forceSync = true)
+                }
                 forumSocket.removeMessageListener(onNew)
                 forumSocket.removeMessageEditedListener(onEdited)
                 forumSocket.removeMessageDeletedListener(onDeleted)
@@ -1236,6 +1408,15 @@ private fun TeamForumTopicChatRoute(
                                 top = 8.dp,
                             )
                             .zIndex(5f),
+                    )
+                    OverlayReactionLogJumpToUnreadFab(
+                        visible = showJumpToUnreadMessages,
+                        unreadCount = topicUnreadEstimate,
+                        onClick = { jumpToFirstUnreadInTopic() },
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 8.dp)
+                            .zIndex(6f),
                     )
                 }
                 ChatScrollToLatestFab(

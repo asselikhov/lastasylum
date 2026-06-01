@@ -998,7 +998,50 @@ class ChatViewModel(
 
     private fun shouldAutoMarkReadSelectedRoom(): Boolean {
         val roomId = _state.value.selectedRoomId ?: return false
+        // Overlay HUD: read cursor advances when the panel closes, not while browsing.
+        if (overlayChatPanelVisible) return false
         return isRoomActivelyViewed(roomId)
+    }
+
+    /** Mark visible overlay messages read (viewport); advances cursor only forward. */
+    fun markOverlayVisibleMessagesAsRead(messageIds: List<String>) {
+        if (!overlayChatPanelVisible) return
+        val roomId = _state.value.selectedRoomId?.trim().orEmpty()
+        if (roomId.isEmpty()) return
+        val room = _state.value.rooms.find { it.id == roomId } ?: return
+        val lastRead = resolvedLastReadMessageId(room)?.trim().orEmpty()
+        val self = currentUserId.trim()
+        var watermark: String? = null
+        for (raw in messageIds) {
+            val id = raw.trim()
+            if (!isValidMarkReadMessageId(id)) continue
+            if (lastRead.isNotEmpty() && !isObjectIdNewer(id, lastRead)) continue
+            val senderId = _state.value.messages.find { it._id?.trim() == id }?.senderId?.trim().orEmpty()
+            if (self.isNotBlank() && senderId == self) continue
+            watermark = when (val prev = watermark) {
+                null -> id
+                else -> if (isObjectIdNewer(id, prev)) id else prev
+            }
+        }
+        val markId = watermark ?: return
+        viewModelScope.launch { markRoomReadUpTo(roomId, markId) }
+    }
+
+    /** Oldest unread incoming in the open room (reverse list: last matching row). */
+    fun jumpToFirstUnreadInSelectedRoom() {
+        val roomId = _state.value.selectedRoomId?.trim().orEmpty()
+        if (roomId.isEmpty()) return
+        val room = _state.value.rooms.find { it.id == roomId } ?: return
+        val lastRead = resolvedLastReadMessageId(room)?.trim().orEmpty()
+        if (lastRead.isEmpty()) return
+        val self = currentUserId.trim()
+        val targetId = _state.value.messages.lastOrNull { message ->
+            val id = message._id?.trim().orEmpty()
+            if (!isValidMarkReadMessageId(id)) return@lastOrNull false
+            if (self.isNotBlank() && message.senderId.trim() == self) return@lastOrNull false
+            isObjectIdNewer(id, lastRead)
+        }?._id ?: return
+        jumpToQuotedMessage(targetId)
     }
 
     private fun isValidMarkReadMessageId(messageId: String?): Boolean {

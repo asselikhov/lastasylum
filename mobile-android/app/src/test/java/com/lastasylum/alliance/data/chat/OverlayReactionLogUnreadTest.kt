@@ -107,6 +107,13 @@ class OverlayReactionLogUnreadTest {
     }
 
     @Test
+    fun mergeOverlayReactionLastSeenLogId_keepsNewerWhenAdvancing() {
+        val local = "000000000000000000000010"
+        val incoming = "000000000000000000000050"
+        assertEquals(incoming, mergeOverlayReactionLastSeenLogId(local, incoming))
+    }
+
+    @Test
     fun maxOverlayReactionLogId_picksNewest() {
         assertEquals(
             "000000000000000000000099",

@@ -84,6 +84,7 @@ import com.lastasylum.alliance.data.ReadCursorSession
 import com.lastasylum.alliance.data.chat.ChatUnreadCounts
 import com.lastasylum.alliance.data.teams.TeamForumTopicActivityEvent
 import com.lastasylum.alliance.data.teams.TeamInboxUnread
+import com.lastasylum.alliance.data.teams.TeamNewsReadCursorSync
 import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.displayedUnreadCount
 import com.lastasylum.alliance.data.effectiveUnreadCount
@@ -4872,6 +4873,76 @@ class CombatOverlayService : Service() {
             rebalanceOverlayFullscreenZOrder()
         }
     }
+    /** Flush in-panel read cursors and refresh HUD badges (no bulk mark-all). */
+    private fun flushOverlayHudPaneReadOnClose(
+        closingPane: OverlayHudPane?,
+        legacyChatTabIndex: Int,
+    ) {
+        serviceScope.launch(Dispatchers.IO) {
+            runCatching {
+                when (closingPane) {
+                    OverlayHudPane.Notifications -> {
+                        AppContainer.from(this@CombatOverlayService)
+                            .overlayReactionLogRepository
+                            .flushPendingReadCursorAwait()
+                    }
+                    OverlayHudPane.Chat, null -> {
+                        if (closingPane == OverlayHudPane.Chat || legacyChatTabIndex == 0) {
+                            withContext(Dispatchers.Main) {
+                                resolveChatViewModel()?.awaitPendingMarkRead()
+                            }
+                        }
+                    }
+                    OverlayHudPane.News -> {
+                        val container = AppContainer.from(this@CombatOverlayService)
+                        val ctx = OverlayTeamContextCache.load(
+                            usersRepository = container.usersRepository,
+                            teamsRepository = container.teamsRepository,
+                            forceRefresh = false,
+                        ).getOrNull() ?: return@runCatching
+                        TeamNewsReadCursorSync.flushPendingNewsCursor(
+                            teamsRepository = container.teamsRepository,
+                            prefs = container.userSettingsPreferences,
+                            teamId = ctx.teamId,
+                        )
+                    }
+                    OverlayHudPane.Forum, OverlayHudPane.Participants -> Unit
+                }
+            }
+            mainHandler.post {
+                refreshOverlayBadgesAfterPaneClose(closingPane, legacyChatTabIndex)
+            }
+        }
+    }
+
+    private fun refreshOverlayBadgesAfterPaneClose(
+        closingPane: OverlayHudPane?,
+        legacyChatTabIndex: Int,
+    ) {
+        when (closingPane) {
+            OverlayHudPane.Notifications -> refreshOverlayReactionLogUnreadBadge()
+            OverlayHudPane.Chat -> {
+                clearHubUnreadOptimisticState()
+                refreshOverlayHubUnreadFromCache()
+            }
+            OverlayHudPane.News -> {
+                OverlayGameStatusHudRefresh.invalidateNewsCache()
+                refreshOverlayNewsBadgeOnly()
+            }
+            OverlayHudPane.Forum -> {
+                OverlayGameStatusHudRefresh.invalidateForumCache()
+                refreshOverlayForumBadgeOnly()
+            }
+            OverlayHudPane.Participants -> Unit
+            null -> {
+                if (legacyChatTabIndex == 0) {
+                    clearHubUnreadOptimisticState()
+                    refreshOverlayHubUnreadFromCache()
+                }
+            }
+        }
+    }
+
     private fun hideOverlayChatTeamPanel(clearStrip: Boolean = false) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             mainHandler.post { hideOverlayChatTeamPanel(clearStrip) }
@@ -4890,9 +4961,14 @@ class CombatOverlayService : Service() {
         gateSoftHideStartedAtMs = 0L
         val root = overlayChatTeamRoot
         val hadVisible = overlayChatTeamPanelVisible
+        val closingPane = currentOverlayHudPane
+        val legacyChatTabIndex = overlayChatTeamTabIndex
         overlayChatTeamPanelVisible = false
         syncOverlayChatPanelVisibilityToViewModel(false)
         currentOverlayHudPane = null
+        if (hadVisible) {
+            flushOverlayHudPaneReadOnClose(closingPane, legacyChatTabIndex)
+        }
         OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = false
         OverlayChatInteractionHold.releaseGameForegroundSuppress()
         resumeOverlayWindowsAfterSystemActivity(skipFullscreenRebalance = true)

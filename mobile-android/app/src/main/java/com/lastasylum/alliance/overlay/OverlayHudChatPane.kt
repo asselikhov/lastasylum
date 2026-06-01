@@ -64,6 +64,8 @@ internal fun OverlayHudChatPane(
         onForwardMessage = vm::forwardMessage,
         onToggleReaction = vm::toggleReaction,
         onScrollToLatest = vm::scrollToLatestMessages,
+        onJumpToFirstUnread = vm::jumpToFirstUnreadInSelectedRoom,
+        onMarkOverlayVisibleRead = vm::markOverlayVisibleMessagesAsRead,
         onJumpToQuotedMessage = vm::jumpToQuotedMessage,
         onConsumeScrollToMessage = vm::consumeScrollToMessage,
         onClearHighlightMessage = vm::clearHighlightMessage,

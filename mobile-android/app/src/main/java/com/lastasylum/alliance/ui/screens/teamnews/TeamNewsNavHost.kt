@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.FlowRow
@@ -66,14 +67,18 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -111,6 +116,13 @@ import com.lastasylum.alliance.data.teams.UpdateTeamNewsBody
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.data.teams.TeamInboxUnread
 import com.lastasylum.alliance.overlay.OverlayGameStatusHudRefresh
+import com.lastasylum.alliance.overlay.OverlayReactionLogJumpToUnreadFab
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import java.time.Instant
+import androidx.compose.ui.zIndex
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import com.lastasylum.alliance.ui.components.team.PremiumJournalFeedTokens
@@ -122,7 +134,6 @@ import com.lastasylum.alliance.ui.components.team.TeamPollVoteOptionSurface
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import kotlinx.coroutines.launch
-import java.time.Instant
 private object TeamNewsRoutes {
     const val LIST = "news_list"
     const val CREATE = "news_create"
@@ -454,7 +465,7 @@ fun TeamNewsNavHost(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, FlowPreview::class)
 @Composable
 private fun TeamNewsListRoute(
     teamId: String,
@@ -482,7 +493,9 @@ private fun TeamNewsListRoute(
         }
     }
     var loading by remember { mutableStateOf(cachedPage == null) }
-    var newsItems by remember { mutableStateOf(cachedPage?.items ?: emptyList()) }
+    var newsItems by remember {
+        mutableStateOf(TeamInboxUnread.sortNewsFeedNewestFirst(cachedPage?.items ?: emptyList()))
+    }
     var newsNextCursor by remember { mutableStateOf(cachedPage?.nextCursor) }
     var loadingMore by remember { mutableStateOf(false) }
     var loadError by remember { mutableStateOf<String?>(null) }
@@ -492,10 +505,15 @@ private fun TeamNewsListRoute(
         if (!append) loadError = null
         teamsRepository.listTeamNews(teamId, cursor, limit = 40)
             .onSuccess { page ->
-                newsItems = if (append) newsItems + page.items else page.items
+                val merged = if (append) newsItems + page.items else page.items
+                newsItems = TeamInboxUnread.sortNewsFeedNewestFirst(merged)
                 newsNextCursor = page.nextCursor
                 if (!append && currentUserId.isNotBlank()) {
-                    launchDiskCache.saveTeamNews(currentUserId, teamId, page)
+                    launchDiskCache.saveTeamNews(
+                        currentUserId,
+                        teamId,
+                        page.copy(items = newsItems),
+                    )
                 }
                 loading = false
                 loadingMore = false
@@ -529,6 +547,78 @@ private fun TeamNewsListRoute(
                 }
                 .map { it.id }
                 .toSet()
+        }
+    }
+    val visibleUnreadCount = unreadNewsIds.size
+    val newsListState = rememberLazyListState(
+        initialFirstVisibleItemIndex = 0,
+        initialFirstVisibleItemScrollOffset = 0,
+    )
+    var overlayListAnchored by remember(teamId) { mutableStateOf(false) }
+    LaunchedEffect(overlayUi, teamId, loading, newsItems.size) {
+        if (!overlayUi || overlayListAnchored || loading || newsItems.isEmpty()) return@LaunchedEffect
+        newsListState.scrollToItem(0)
+        overlayListAnchored = true
+    }
+    val firstUnreadIndex = remember(newsItems, unreadNewsIds) {
+        if (unreadNewsIds.isEmpty()) -1
+        else newsItems.indexOfLast { it.id in unreadNewsIds }
+    }
+    val isFirstUnreadVisible by remember(newsListState, firstUnreadIndex) {
+        derivedStateOf {
+            if (firstUnreadIndex < 0) return@derivedStateOf true
+            newsListState.layoutInfo.visibleItemsInfo.any { it.index == firstUnreadIndex }
+        }
+    }
+    val showJumpToUnread by remember(overlayUi, visibleUnreadCount, firstUnreadIndex, isFirstUnreadVisible) {
+        derivedStateOf {
+            overlayUi &&
+                visibleUnreadCount > 0 &&
+                firstUnreadIndex >= 0 &&
+                !isFirstUnreadVisible
+        }
+    }
+    val markNewsSeenUpToRef = rememberUpdatedState { createdAt: String ->
+        TeamNewsReadCursorSync.markNewsSeenUpTo(
+            teamsRepository = teamsRepository,
+            prefs = newsPrefs,
+            teamId = teamId,
+            createdAt = createdAt,
+        )
+    }
+    val unreadNewsIdsRef = rememberUpdatedState(unreadNewsIds)
+    val newsItemsRef = rememberUpdatedState(newsItems)
+    LaunchedEffect(newsListState, overlayUi, newsItems.size) {
+        if (!overlayUi) return@LaunchedEffect
+        snapshotFlow { newsListState.layoutInfo.visibleItemsInfo.map { it.index } }
+            .debounce(140)
+            .map { indices ->
+                indices.mapNotNull { newsItemsRef.value.getOrNull(it) }
+                    .filter { it.id in unreadNewsIdsRef.value }
+                    .mapNotNull { item ->
+                        runCatching { Instant.parse(item.createdAt.trim()) }.getOrNull()
+                            ?.let { parsed -> item.createdAt.trim() to parsed }
+                    }
+                    .maxByOrNull { it.second }
+                    ?.first
+            }
+            .distinctUntilChanged()
+            .collect { newestSeen ->
+                val iso = newestSeen ?: return@collect
+                markNewsSeenUpToRef.value(iso)
+            }
+    }
+    if (overlayUi) {
+        DisposableEffect(teamId) {
+            onDispose {
+                scope.launch {
+                    TeamNewsReadCursorSync.flushPendingNewsCursor(
+                        teamsRepository = teamsRepository,
+                        prefs = newsPrefs,
+                        teamId = teamId,
+                    )
+                }
+            }
         }
     }
 
@@ -578,7 +668,9 @@ private fun TeamNewsListRoute(
                 }
                 else -> {
                     val listTopPad = if (overlayUi) 0.dp else 8.dp
+                    Box(Modifier.fillMaxSize()) {
                     LazyColumn(
+                        state = newsListState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(
                             start = SquadRelayDimens.contentPaddingHorizontal,
@@ -634,9 +726,27 @@ private fun TeamNewsListRoute(
                             }
                         }
                     }
+                    if (overlayUi) {
+                        OverlayReactionLogJumpToUnreadFab(
+                            visible = showJumpToUnread,
+                            unreadCount = visibleUnreadCount,
+                            onClick = {
+                                if (firstUnreadIndex >= 0) {
+                                    scope.launch {
+                                        newsListState.animateScrollToItem(firstUnreadIndex)
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = 8.dp)
+                                .zIndex(6f),
+                        )
+                    }
+                    }
                 }
             }
-            if (canPublishNews) {
+            if (canPublishNews && !overlayUi) {
                 FloatingActionButton(
                     onClick = onCreate,
                     containerColor = MaterialTheme.colorScheme.primary,

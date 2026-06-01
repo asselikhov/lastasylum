@@ -1,8 +1,11 @@
 package com.lastasylum.alliance.data.chat
 
+import com.lastasylum.alliance.data.isObjectIdNewer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,9 +20,16 @@ class OverlayReactionLogRepository(
     companion object {
         /** In-memory window for overlay list; older pages remain on server and reload via [loadMore]. */
         const val MAX_RETAINED_LOG_ENTRIES = 300
+
+        private const val MARK_READ_UP_TO_DEBOUNCE_MS = 320L
     }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutex = Mutex()
+
+    private var markReadUpToJob: Job? = null
+
+    @Volatile
+    private var pendingMarkReadUpToWatermark: String? = null
 
     private val _entries = MutableStateFlow<List<OverlayReactionLogEntry>>(emptyList())
     val entries: StateFlow<List<OverlayReactionLogEntry>> = _entries.asStateFlow()
@@ -191,7 +201,62 @@ class OverlayReactionLogRepository(
         scope.launch { markAllReadAwait() }
     }
 
+    /** Advance read cursor for visible overlay cards (debounced PATCH). */
+    fun markReadUpTo(logId: String) {
+        val id = logId.trim()
+        if (id.isEmpty()) return
+        scope.launch { markReadUpToAwait(id) }
+    }
+
+    suspend fun markReadUpToAwait(logId: String) {
+        val id = logId.trim()
+        if (id.isEmpty()) return
+        val self = selfUserId.trim()
+        if (self.isEmpty()) return
+        val current = _lastSeenLogId.value?.trim()?.takeIf { it.isNotEmpty() }
+        if (current != null && !isObjectIdNewer(id, current)) return
+        val merged = maxOverlayReactionLogId(listOfNotNull(current, id)) ?: return
+        mutex.withLock {
+            _lastSeenLogId.value = merged
+        }
+        publishUnreadCounts(
+            unreadIdsForEntries(
+                _entries.value,
+                self,
+                merged,
+            ),
+        )
+        pendingMarkReadUpToWatermark = merged
+        markReadUpToJob?.cancel()
+        markReadUpToJob = scope.launch {
+            delay(MARK_READ_UP_TO_DEBOUNCE_MS)
+            flushPendingReadCursorAwait()
+        }
+    }
+
+    /** Push debounced read cursor before closing the overlay panel. */
+    suspend fun flushPendingReadCursorAwait() {
+        markReadUpToJob?.cancel()
+        markReadUpToJob = null
+        val watermark = pendingMarkReadUpToWatermark
+            ?: _lastSeenLogId.value?.trim()?.takeIf { it.isNotEmpty() }
+            ?: return
+        pendingMarkReadUpToWatermark = null
+        val previous = _lastSeenLogId.value
+        runCatching {
+            chatApi.advanceOverlayReactionReadCursor(
+                AdvanceOverlayReactionReadCursorRequest(lastSeenLogId = watermark),
+            )
+        }.onFailure {
+            _lastSeenLogId.value = previous
+            recomputeUnread()
+        }
+    }
+
     suspend fun markAllReadAwait() {
+        markReadUpToJob?.cancel()
+        markReadUpToJob = null
+        pendingMarkReadUpToWatermark = null
         val watermark = resolveMarkAllReadWatermark() ?: return
         val previousCursor = _lastSeenLogId.value
         _lastSeenLogId.value = watermark

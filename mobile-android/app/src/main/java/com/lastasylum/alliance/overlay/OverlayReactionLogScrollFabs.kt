@@ -18,9 +18,12 @@ import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.Text
 import com.lastasylum.alliance.ui.components.premium.PremiumGlassBar
+import com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,8 +57,12 @@ fun OverlayReactionLogJumpToUnreadFab(
             scaleOut(targetScale = 0.92f, animationSpec = tween(120)) +
             slideOutVertically(targetOffsetY = { -it / 4 }, animationSpec = tween(140)),
     ) {
-        PremiumGlassBar(
+        Surface(
             shape = RoundedCornerShape(22.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.42f),
+            tonalElevation = 0.dp,
+            shadowElevation = 10.dp,
+            border = BorderStroke(1.dp, PremiumSurfaces.borderColor(0.14f)),
             modifier = Modifier
                 .semantics {
                     role = Role.Button

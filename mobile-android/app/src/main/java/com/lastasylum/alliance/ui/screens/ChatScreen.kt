@@ -327,6 +327,18 @@ private fun findChatMessage(messages: List<ChatMessage>, id: String?): ChatMessa
     return messages.firstOrNull { it._id?.trim() == key }
 }
 
+private fun messageIdsForTimelineIndex(
+    timeline: List<ChatTimelineEntry>,
+    messages: List<ChatMessage>,
+    index: Int,
+): List<String> = when (val entry = timeline.getOrNull(index)) {
+    is ChatTimelineEntry.ChatMessageItem ->
+        listOfNotNull(entry.message._id?.trim()?.takeIf { it.isNotEmpty() })
+    is ChatTimelineEntry.ChatAlbumItem ->
+        entry.memberMessageIds.mapNotNull { it.trim().takeIf { id -> id.isNotEmpty() } }
+    else -> emptyList()
+}
+
 @OptIn(FlowPreview::class)
 @Composable
 private fun ChatScreenMessagesHost(
@@ -351,6 +363,8 @@ private fun ChatScreenMessagesHost(
     onClearMessageSelection: () -> Unit,
     onRequestBulkDelete: () -> Unit,
     onScrollToLatest: () -> Unit,
+    onJumpToFirstUnread: (() -> Unit)? = null,
+    onMarkOverlayVisibleRead: ((List<String>) -> Unit)? = null,
     onConsumeScrollToMessage: () -> Unit,
     onClearHighlightMessage: () -> Unit,
     onConsumeTransientNotice: () -> Unit,
@@ -408,6 +422,9 @@ private fun ChatScreenMessagesHost(
         }
     }
 
+    val selectedRoomUnread = remember(selectedRoomId, chromePane.rooms) {
+        chromePane.rooms.find { it.id == selectedRoomId }?.unreadCount?.coerceAtLeast(0) ?: 0
+    }
     val showScrollToLatestFab by remember(
         listState,
         inSelectionMode,
@@ -422,6 +439,71 @@ private fun ChatScreenMessagesHost(
                 !listPane.isLoading &&
                 listPane.selectedRoomId != null
         }
+    }
+    val firstUnreadMessageId = remember(
+        selectedRoomId,
+        messages,
+        chromePane.rooms,
+        listUiState.currentUserId,
+    ) {
+        val room = chromePane.rooms.find { it.id == selectedRoomId } ?: return@remember null
+        val lastRead = room.lastReadMessageId?.trim().orEmpty()
+        val self = listUiState.currentUserId.trim()
+        messages.lastOrNull { message ->
+            val id = message._id?.trim().orEmpty()
+            if (id.isEmpty() || id.startsWith("pending-")) return@lastOrNull false
+            if (self.isNotBlank() && message.senderId.trim() == self) return@lastOrNull false
+            lastRead.isEmpty() || com.lastasylum.alliance.data.isObjectIdNewer(id, lastRead)
+        }?._id
+    }
+    val firstUnreadTimelineIndex = remember(firstUnreadMessageId, listDerived.timeline, messages) {
+        val target = firstUnreadMessageId?.trim().orEmpty()
+        if (target.isEmpty()) -1
+        else chatTimelineIndexForMessageId(listDerived.timeline, messages, target)
+    }
+    val isFirstUnreadVisible by remember(listState, firstUnreadTimelineIndex) {
+        derivedStateOf {
+            if (firstUnreadTimelineIndex < 0) return@derivedStateOf true
+            listState.layoutInfo.visibleItemsInfo.any { it.index == firstUnreadTimelineIndex }
+        }
+    }
+    val showJumpToUnreadFab by remember(
+        overlayUi,
+        onJumpToFirstUnread,
+        selectedRoomUnread,
+        isNearLatest,
+        isFirstUnreadVisible,
+        inSelectionMode,
+        listPane.messages.size,
+        listPane.isLoading,
+        listPane.selectedRoomId,
+    ) {
+        derivedStateOf {
+            overlayUi &&
+                onJumpToFirstUnread != null &&
+                selectedRoomUnread > 0 &&
+                isNearLatest &&
+                !isFirstUnreadVisible &&
+                !inSelectionMode &&
+                listPane.messages.isNotEmpty() &&
+                !listPane.isLoading &&
+                listPane.selectedRoomId != null
+        }
+    }
+    val markOverlayVisibleReadRef = rememberUpdatedState(onMarkOverlayVisibleRead)
+    val timelineRef = rememberUpdatedState(listDerived.timeline)
+    val messagesRef = rememberUpdatedState(messages)
+    LaunchedEffect(listState, overlayUi, listPane.selectedRoomId) {
+        if (!overlayUi) return@LaunchedEffect
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
+            .debounce(140)
+            .collect { indices ->
+                val markRead = markOverlayVisibleReadRef.value ?: return@collect
+                val ids = indices.flatMap { index ->
+                    messageIdsForTimelineIndex(timelineRef.value, messagesRef.value, index)
+                }
+                if (ids.isNotEmpty()) markRead(ids)
+            }
     }
 
     var pendingScrollAnchor by remember(listPane.selectedRoomId) {
@@ -451,7 +533,6 @@ private fun ChatScreenMessagesHost(
         }
     }
 
-    val messagesRef = rememberUpdatedState(messages)
     LaunchedEffect(listPane.scrollToMessageId, timelineSize) {
         val targetId = listPane.scrollToMessageId?.trim().orEmpty()
         if (targetId.isEmpty()) return@LaunchedEffect
@@ -628,6 +709,17 @@ private fun ChatScreenMessagesHost(
                         .padding(start = 4.dp, bottom = 10.dp)
                         .zIndex(3f),
                 )
+                if (onJumpToFirstUnread != null) {
+                    com.lastasylum.alliance.overlay.OverlayReactionLogJumpToUnreadFab(
+                        visible = showJumpToUnreadFab,
+                        unreadCount = selectedRoomUnread,
+                        onClick = onJumpToFirstUnread,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 8.dp)
+                            .zIndex(6f),
+                    )
+                }
                 ChatScrollToLatestFab(
                     visible = showScrollToLatestFab,
                     newMessageCount = newMessagesWhileScrolledUp,
@@ -818,6 +910,8 @@ fun ChatScreen(
     onForwardMessage: (String) -> Unit,
     onToggleReaction: (String, String) -> Unit,
     onScrollToLatest: () -> Unit = {},
+    onJumpToFirstUnread: (() -> Unit)? = null,
+    onMarkOverlayVisibleRead: ((List<String>) -> Unit)? = null,
     onJumpToQuotedMessage: (String) -> Unit = {},
     onConsumeScrollToMessage: () -> Unit = {},
     onClearHighlightMessage: () -> Unit = {},
@@ -923,6 +1017,8 @@ fun ChatScreen(
                 onClearMessageSelection = onClearMessageSelection,
                 onRequestBulkDelete = onRequestBulkDelete,
                 onScrollToLatest = onScrollToLatest,
+                onJumpToFirstUnread = onJumpToFirstUnread,
+                onMarkOverlayVisibleRead = onMarkOverlayVisibleRead,
                 onConsumeScrollToMessage = onConsumeScrollToMessage,
                 onClearHighlightMessage = onClearHighlightMessage,
                 onConsumeTransientNotice = onConsumeTransientNotice,

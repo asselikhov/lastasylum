@@ -27,6 +27,16 @@ object TeamInboxUnread {
         currentUserId: String = "",
     ): Int = items.count { isNewsItemUnread(it, prefs, currentUserId) }
 
+    /** Newest post first (same order as forum topic list / API `_id: -1`). */
+    fun sortNewsFeedNewestFirst(items: List<TeamNewsListItemDto>): List<TeamNewsListItemDto> {
+        if (items.size <= 1) return items
+        return items.sortedWith(
+            compareByDescending<TeamNewsListItemDto> { item ->
+                runCatching { Instant.parse(item.createdAt.trim()) }.getOrNull() ?: Instant.EPOCH
+            }.thenByDescending { it.id },
+        )
+    }
+
     fun sumForumUnread(
         topics: List<TeamForumTopicDto>,
         localReadByTopic: Map<String, String>,
