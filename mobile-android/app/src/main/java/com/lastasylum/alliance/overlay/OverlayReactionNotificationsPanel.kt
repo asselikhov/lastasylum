@@ -156,6 +156,13 @@ fun OverlayReactionNotificationsPanel(
                 subtitle = null,
                 onClose = onClose,
                 closeIconTint = Color.White,
+                onMarkAllRead = {
+                    if (unreadCount > 0) {
+                        repository.markAllRead()
+                    }
+                },
+                markAllReadEnabled = unreadCount > 0 && !loading,
+                markAllReadIconTint = Color.White,
                 headerTrailing = {
                     IconButton(
                         onClick = {

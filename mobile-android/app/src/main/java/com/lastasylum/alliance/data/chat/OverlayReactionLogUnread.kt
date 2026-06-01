@@ -1,5 +1,7 @@
 package com.lastasylum.alliance.data.chat
 
+import com.lastasylum.alliance.data.isObjectIdNewer
+
 fun computeUnreadEntryIds(
     entries: List<OverlayReactionLogEntry>,
     selfUserId: String,
@@ -19,6 +21,35 @@ internal fun filterUnreadEntryIdsToRetained(
     unreadIds: Set<String>,
     entries: List<OverlayReactionLogEntry>,
 ): Set<String> = unreadIds.intersect(entries.map { it.id }.toSet())
+
+/** Newest Mongo ObjectId string among [ids], or null if empty. */
+fun maxOverlayReactionLogId(ids: Collection<String>): String? {
+    var best: String? = null
+    for (raw in ids) {
+        val id = raw.trim()
+        if (id.isEmpty()) continue
+        val current = best
+        if (current == null || isObjectIdNewer(id, current)) {
+            best = id
+        }
+    }
+    return best
+}
+
+/**
+ * Watermark for mark-all-read: covers in-memory unread, loaded feed head, and prior cursor.
+ */
+fun resolveOverlayReactionMarkAllReadWatermark(
+    unreadIds: Set<String>,
+    loadedEntries: List<OverlayReactionLogEntry>,
+    lastSeenLogId: String?,
+): String? = maxOverlayReactionLogId(
+    buildList {
+        addAll(unreadIds)
+        addAll(loadedEntries.map { it.id })
+        lastSeenLogId?.trim()?.takeIf { it.isNotEmpty() }?.let { add(it) }
+    },
+)
 
 /** Keep the newer read cursor when reconciling with the server (never downgrade local). */
 internal fun mergeOverlayReactionLastSeenLogId(local: String?, server: String?): String? {

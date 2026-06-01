@@ -70,6 +70,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -2080,20 +2081,6 @@ class CombatOverlayService : Service() {
     ) {
         val effective = serverEffectiveCount.coerceAtLeast(0)
         if (effective <= 0) {
-            if (isAllianceHubLocallyReadSuppressedNow()) {
-                hubUnreadOptimisticFloor = 0
-                applyAllianceHubUnreadCount(0)
-                patchHubUnreadInSessionCacheAfterLocalRead()
-                return
-            }
-            if (hubUnreadOptimisticFloor > 0) {
-                val displayed = maxOf(
-                    hubUnreadOptimisticFloor,
-                    overlayStatusHudFlow.value.allianceChatUnread,
-                ).coerceAtMost(999)
-                applyAllianceHubUnreadCount(displayed)
-                return
-            }
             hubUnreadOptimisticFloor = 0
             applyAllianceHubUnreadCount(0)
             patchHubUnreadInSessionCacheAfterLocalRead()
@@ -5173,18 +5160,24 @@ class CombatOverlayService : Service() {
                                 modifier = Modifier.fillMaxSize(),
                                 color = com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces.layer1(),
                             ) {
+                                var newsMarkReadAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+                                var forumMarkReadAction by remember { mutableStateOf<(() -> Unit)?>(null) }
                                 Column(Modifier.fillMaxSize()) {
                                     when (overlayPane) {
                                         OverlayHudPane.News -> {
                                             OverlayHudPanelHeader(
                                                 title = stringResource(R.string.team_tab_news),
                                                 onClose = { hideOverlayChatTeamPanel() },
+                                                onMarkAllRead = { newsMarkReadAction?.invoke() },
+                                                markAllReadEnabled = newsMarkReadAction != null,
                                             )
                                         }
                                         OverlayHudPane.Forum -> {
                                             OverlayHudPanelHeader(
                                                 title = stringResource(R.string.team_tab_forum),
                                                 onClose = { hideOverlayChatTeamPanel() },
+                                                onMarkAllRead = { forumMarkReadAction?.invoke() },
+                                                markAllReadEnabled = forumMarkReadAction != null,
                                             )
                                         }
                                         OverlayHudPane.Participants -> Unit
@@ -5204,6 +5197,7 @@ class CombatOverlayService : Service() {
                                                         OverlayGameStatusHudRefresh.invalidateNewsCache()
                                                         refreshOverlayNewsBadgeOnly()
                                                     },
+                                                    onRegisterMarkReadAction = { newsMarkReadAction = it },
                                                 )
                                             }
                                             OverlayHudPane.Forum -> {
@@ -5214,6 +5208,7 @@ class CombatOverlayService : Service() {
                                                         OverlayGameStatusHudRefresh.invalidateForumCache()
                                                         refreshOverlayForumBadgeOnly()
                                                     },
+                                                    onRegisterMarkReadAction = { forumMarkReadAction = it },
                                                 )
                                             }
                                             OverlayHudPane.Participants -> {
@@ -5347,6 +5342,8 @@ class CombatOverlayService : Service() {
                         val pickedImageUris by chatVm.pickedImageUris.collectAsStateWithLifecycle(owner)
                         val typingPeers by chatVm.typingPeers.collectAsStateWithLifecycle(owner)
                         val otherReadUptoMessageId by chatVm.otherReadUptoMessageId.collectAsStateWithLifecycle(owner)
+                        val chatScope = rememberCoroutineScope()
+                        var chatMarkReadBusy by remember { mutableStateOf(false) }
 
                         var showClearRoomHistoryConfirm by remember { mutableStateOf(false) }
                         val blockPanelBack = OverlayChatInteractionHold.blocksFullscreenPanelBack() ||
@@ -5371,6 +5368,18 @@ class CombatOverlayService : Service() {
                                 ) {
                                     val clearHistoryEnabled = chromePane.selectedRoomId != null &&
                                         !listPane.isLoading
+                                    OverlayMarkAsReadIconButton(
+                                        onClick = {
+                                            chatScope.launch {
+                                                chatMarkReadBusy = true
+                                                chatVm.markAllRoomsReadUpToLatest()
+                                                chatMarkReadBusy = false
+                                            }
+                                        },
+                                        enabled = !listPane.isLoading,
+                                        loading = chatMarkReadBusy,
+                                        tint = androidx.compose.ui.graphics.Color.White,
+                                    )
                                     IconButton(
                                         onClick = {
                                             OverlayChatInteractionHold

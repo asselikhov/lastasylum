@@ -188,22 +188,37 @@ class OverlayReactionLogRepository(
     }
 
     fun markAllRead() {
-        val newestId = _entries.value.firstOrNull()?.id ?: return
+        scope.launch { markAllReadAwait() }
+    }
+
+    suspend fun markAllReadAwait() {
+        val watermark = resolveMarkAllReadWatermark() ?: return
         val previousCursor = _lastSeenLogId.value
-        _lastSeenLogId.value = newestId
+        _lastSeenLogId.value = watermark
         publishUnreadCounts(emptySet())
-        scope.launch {
-            runCatching {
-                chatApi.advanceOverlayReactionReadCursor(
-                    AdvanceOverlayReactionReadCursorRequest(lastSeenLogId = newestId),
-                )
-            }.onSuccess {
-                publishUnreadCounts(emptySet())
-            }.onFailure {
-                _lastSeenLogId.value = previousCursor
-                recomputeUnread()
-            }
+        runCatching {
+            chatApi.advanceOverlayReactionReadCursor(
+                AdvanceOverlayReactionReadCursorRequest(lastSeenLogId = watermark),
+            )
+        }.onSuccess {
+            publishUnreadCounts(emptySet())
+        }.onFailure {
+            _lastSeenLogId.value = previousCursor
+            recomputeUnread()
         }
+    }
+
+    private suspend fun resolveMarkAllReadWatermark(): String? {
+        val fromMemory = resolveOverlayReactionMarkAllReadWatermark(
+            unreadIds = _unreadEntryIds.value,
+            loadedEntries = _entries.value,
+            lastSeenLogId = _lastSeenLogId.value,
+        )
+        val fetchedNewest = runCatching {
+            chatApi.listOverlayReactionLog(before = null, limit = 1)
+                .items.firstOrNull()?.resolvedId()?.trim()?.takeIf { it.isNotEmpty() }
+        }.getOrNull()
+        return maxOverlayReactionLogId(listOfNotNull(fromMemory, fetchedNewest))
     }
 
     fun refreshUnreadCount() {

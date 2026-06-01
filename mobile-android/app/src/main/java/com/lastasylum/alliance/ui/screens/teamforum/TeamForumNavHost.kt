@@ -141,6 +141,7 @@ import com.lastasylum.alliance.data.teams.TeamForumMessageDeletedEvent
 import com.lastasylum.alliance.data.teams.TeamForumSocketManager
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamForumTypingEvent
+import com.lastasylum.alliance.data.teams.TeamForumMarkRead
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -212,10 +213,18 @@ fun TeamForumNavHost(
     /** Wire keys of sticker packs the current user may send. */
     enabledStickerPackKeys: Set<String> = emptySet(),
     onForumInboxChanged: () -> Unit = {},
+    onRegisterMarkReadAction: ((() -> Unit)?) -> Unit = {},
 ) {
     val nav = rememberNavController()
     val topicTitles = remember { mutableStateMapOf<String, String>() }
     var listRefreshNonce by remember { mutableIntStateOf(0) }
+    var markReadAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    LaunchedEffect(markReadAction) {
+        onRegisterMarkReadAction(markReadAction)
+    }
+    DisposableEffect(Unit) {
+        onDispose { onRegisterMarkReadAction(null) }
+    }
     LaunchedEffect(listRefreshNonce) {
         if (listRefreshNonce > 0) onForumInboxChanged()
     }
@@ -266,6 +275,7 @@ fun TeamForumNavHost(
                     nav.navigate(ForumRoutes.topic(t.id))
                 },
                 onBack = { },
+                onProvideMarkReadAction = { markReadAction = it },
             )
         }
         composable(
@@ -300,6 +310,7 @@ fun TeamForumNavHost(
                     nav.popBackStack()
                     listRefreshNonce++
                 },
+                onProvideMarkReadAction = { markReadAction = it },
             )
         }
     }
@@ -315,6 +326,7 @@ private fun TeamForumListRoute(
     refreshNonce: Int,
     onOpenTopic: (TeamForumTopicDto) -> Unit,
     @Suppress("UNUSED_PARAMETER") onBack: () -> Unit,
+    onProvideMarkReadAction: ((() -> Unit)?) -> Unit = {},
 ) {
     val context = LocalContext.current
     val res = context.resources
@@ -399,6 +411,18 @@ private fun TeamForumListRoute(
                 }
             loading = false
         }
+    }
+
+    LaunchedEffect(teamId) {
+        onProvideMarkReadAction {
+            scope.launch {
+                TeamForumMarkRead.markAllTopicsRead(teamsRepository, forumPrefs, teamId)
+                reload()
+            }
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose { onProvideMarkReadAction(null) }
     }
 
     LaunchedEffect(teamId, refreshNonce, currentUserId) {
@@ -716,6 +740,7 @@ private fun TeamForumTopicChatRoute(
     sectionActive: Boolean = true,
     onBack: () -> Unit,
     enabledStickerPackKeys: Set<String> = emptySet(),
+    onProvideMarkReadAction: ((() -> Unit)?) -> Unit = {},
 ) {
     BackHandler { onBack() }
 
@@ -832,6 +857,27 @@ private fun TeamForumTopicChatRoute(
             teamsRepository.markForumTopicRead(teamId, topicId, newestId)
                 .onSuccess { mergeReadCursor(newestId) }
         }
+    }
+
+    LaunchedEffect(teamId, topicId, stableMessages.lastOrNull()?.id) {
+        onProvideMarkReadAction {
+            scope.launch {
+                val newestId = stableMessages.lastOrNull()?.id
+                if (!newestId.isNullOrBlank()) {
+                    markTopicReadToLatest(forceSync = true)
+                } else {
+                    TeamForumMarkRead.markTopicReadToLatest(
+                        teamsRepository = teamsRepository,
+                        forumPrefs = forumPrefs,
+                        teamId = teamId,
+                        topicId = topicId,
+                    )
+                }
+            }
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose { onProvideMarkReadAction(null) }
     }
 
     fun mergeNew(msg: TeamForumMessageDto) {

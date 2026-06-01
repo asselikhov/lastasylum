@@ -91,4 +91,28 @@ class OverlayReactionLogUnreadTest {
         val server = "000000000000000000000099"
         assertEquals(server, mergeOverlayReactionLastSeenLogId(local, server))
     }
+
+    @Test
+    fun resolveOverlayReactionMarkAllReadWatermark_prefersNewestUnreadId() {
+        val entries = listOf(
+            entry(id = "000000000000000000000099", sender = other),
+            entry(id = "000000000000000000000050", sender = other),
+        )
+        val watermark = resolveOverlayReactionMarkAllReadWatermark(
+            unreadIds = setOf("000000000000000000000050"),
+            loadedEntries = entries,
+            lastSeenLogId = "000000000000000000000001",
+        )
+        assertEquals("000000000000000000000099", watermark)
+    }
+
+    @Test
+    fun maxOverlayReactionLogId_picksNewest() {
+        assertEquals(
+            "000000000000000000000099",
+            maxOverlayReactionLogId(
+                listOf("000000000000000000000001", "000000000000000000000099"),
+            ),
+        )
+    }
 }

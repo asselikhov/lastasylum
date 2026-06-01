@@ -34,6 +34,10 @@ fun OverlayHudPanelHeader(
     titleTrailing: @Composable (RowScope.() -> Unit)? = null,
     onRefresh: (() -> Unit)? = null,
     refreshing: Boolean = false,
+    onMarkAllRead: (() -> Unit)? = null,
+    markAllReadEnabled: Boolean = true,
+    markAllReadLoading: Boolean = false,
+    markAllReadIconTint: Color = MaterialTheme.colorScheme.onSurface,
     headerTrailing: @Composable (RowScope.() -> Unit)? = null,
     closeIconTint: Color = MaterialTheme.colorScheme.onSurface,
     showCloseButton: Boolean = true,
@@ -61,6 +65,14 @@ fun OverlayHudPanelHeader(
             )
             Spacer(modifier = Modifier.weight(1f))
             titleTrailing?.invoke(this)
+            if (onMarkAllRead != null) {
+                OverlayMarkAsReadIconButton(
+                    onClick = onMarkAllRead,
+                    enabled = markAllReadEnabled,
+                    loading = markAllReadLoading,
+                    tint = markAllReadIconTint,
+                )
+            }
             headerTrailing?.invoke(this)
             if (headerTrailing == null && onRefresh != null && subtitleTrailing == null) {
                 IconButton(

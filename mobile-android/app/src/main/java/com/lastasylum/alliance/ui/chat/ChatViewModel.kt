@@ -199,6 +199,7 @@ class ChatViewModel(
     /** Fullscreen overlay chat/team panel is open — separate from bottom-nav Chat tab. */
     @Volatile
     private var overlayChatPanelVisible = false
+    private var overlayAutoMarkReadJob: kotlinx.coroutines.Job? = null
     private val bootstrapMutex = Mutex()
     private var bootstrapJob: Job? = null
     private var persistSnapshotJob: Job? = null
@@ -935,8 +936,11 @@ class ChatViewModel(
                     refreshMessagesInBackground(roomId, force = true)
                 }
             }
+            startOverlayAutoMarkReadCollector()
             return
         }
+        overlayAutoMarkReadJob?.cancel()
+        overlayAutoMarkReadJob = null
         snapshotSelectedRoomToMessageCache()
         schedulePersistChatSnapshot()
         viewModelScope.launch {
@@ -1085,6 +1089,57 @@ class ChatViewModel(
     /** Overlay panel closed — wait for in-flight mark-read before releasing shared VM state. */
     suspend fun awaitPendingMarkRead() {
         markReadInFlight.toList().joinAll()
+    }
+
+    /** Mark every room with unread up to the latest known message (overlay DoneAll). */
+    suspend fun markAllRoomsReadUpToLatest() {
+        val rooms = _state.value.rooms
+        if (rooms.isEmpty()) return
+        val selectedId = _state.value.selectedRoomId?.trim().orEmpty()
+        for (room in rooms) {
+            val hasUnread = effectiveUnreadForRoom(room) > 0 || room.unreadCount > 0
+            if (!hasUnread) continue
+            val messageId = when (room.id.trim()) {
+                selectedId -> _state.value.messages.firstOrNull()?._id?.trim().orEmpty()
+                else -> ""
+            }.takeIf { isValidMarkReadMessageId(it) }
+                ?: repository.loadRecentMessages(room.id, beforeMessageId = null, limit = 1)
+                    .getOrNull()
+                    ?.firstOrNull()
+                    ?._id
+                    ?.trim()
+                    .orEmpty()
+                    .takeIf { isValidMarkReadMessageId(it) }
+                ?: resolvedLastReadMessageId(room)?.trim().orEmpty().takeIf { it.isNotEmpty() }
+            if (messageId.isNullOrBlank()) continue
+            markRoomReadUpTo(room.id, messageId, forceSync = true)
+        }
+        awaitPendingMarkRead()
+        recomputeRoomUnreadBadges()
+        syncOverlayAllianceHubBadge()
+        CombatOverlayService.clearHubUnreadState()
+    }
+
+    private fun startOverlayAutoMarkReadCollector() {
+        overlayAutoMarkReadJob?.cancel()
+        overlayAutoMarkReadJob = viewModelScope.launch {
+            _state
+                .map { st ->
+                    Triple(
+                        overlayChatPanelVisible,
+                        st.selectedRoomId,
+                        st.messages.firstOrNull()?._id,
+                    )
+                }
+                .distinctUntilChanged()
+                .collect { (visible, roomId, newestId) ->
+                    if (!visible) return@collect
+                    val rid = roomId?.trim().orEmpty()
+                    if (rid.isEmpty() || !isValidMarkReadMessageId(newestId)) return@collect
+                    if (!shouldAutoMarkReadSelectedRoom()) return@collect
+                    markRoomReadUpTo(rid, newestId!!)
+                }
+        }
     }
 
     private fun scheduleBootstrap(
