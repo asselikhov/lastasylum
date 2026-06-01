@@ -803,10 +803,10 @@
     <string name="overlay_notifications_filter_outgoing">Исходящие</string>
     <string name="overlay_notifications_filter_reply">Ответ</string>
     <string name="overlay_notifications_reply_to">Ответ на</string>
-    <string name="overlay_notifications_reply_scope">Ответная</string>
+    <string name="overlay_notifications_reply_scope">Ответно</string>
     <string name="overlay_notifications_narrative_reply_outgoing">Вы ответили %1$s</string>
     <string name="overlay_notifications_narrative_incoming_reply">отправил(а) ответную реакцию</string>
-    <string name="overlay_notifications_reply_badge">Ответная</string>
+    <string name="overlay_notifications_reply_badge">Ответно</string>
     <string name="overlay_notifications_empty_reply">Пока нет ответов на реакции</string>
     <string name="overlay_notifications_show_replies">Показать ответы</string>
     <string name="overlay_notifications_hide_replies">Скрыть ответы</string>
