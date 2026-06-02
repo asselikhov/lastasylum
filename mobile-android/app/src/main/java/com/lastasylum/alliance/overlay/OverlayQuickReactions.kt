@@ -65,6 +65,20 @@ private val overlayMemeDrawableIds = intArrayOf(
     R.drawable.overlay_meme_23,
     R.drawable.overlay_meme_24,
     R.drawable.overlay_meme_25,
+    R.drawable.overlay_meme_26,
+    R.drawable.overlay_meme_27,
+    R.drawable.overlay_meme_28,
+    R.drawable.overlay_meme_29,
+    R.drawable.overlay_meme_30,
+    R.drawable.overlay_meme_31,
+    R.drawable.overlay_meme_32,
+    R.drawable.overlay_meme_33,
+    R.drawable.overlay_meme_34,
+    R.drawable.overlay_meme_35,
+    R.drawable.overlay_meme_36,
+    R.drawable.overlay_meme_37,
+    R.drawable.overlay_meme_38,
+    R.drawable.overlay_meme_39,
 )
 
 private val overlayStickerAssetStemsFallback = arrayOf(
@@ -111,6 +125,14 @@ private val overlayGifDrawableIds = intArrayOf(
     R.drawable.overlay_reaction_gif_35,
     R.drawable.overlay_reaction_gif_36,
     R.drawable.overlay_reaction_gif_37,
+    R.drawable.overlay_reaction_gif_38,
+    R.drawable.overlay_reaction_gif_39,
+    R.drawable.overlay_reaction_gif_40,
+    R.drawable.overlay_reaction_gif_41,
+    R.drawable.overlay_reaction_gif_42,
+    R.drawable.overlay_reaction_gif_43,
+    R.drawable.overlay_reaction_gif_44,
+    R.drawable.overlay_reaction_gif_45,
 )
 
 private val overlayGifReactionById: Map<String, Int> = buildMap {

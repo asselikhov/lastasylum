@@ -41,20 +41,20 @@ const ALLOWED_OVERLAY_ANIMATION_REACTIONS = [
   'cat_playing',
 ] as const;
 
-/** GIF tiles in Android overlay Animations tab (overlay_reaction_gif_01..23). */
+/** GIF tiles in Android overlay Animations tab (overlay_reaction_gif_01..45). */
 const ALLOWED_OVERLAY_GIF_REACTIONS = Array.from(
-  { length: 37 },
+  { length: 45 },
   (_, i) => `gif_${String(i + 1).padStart(2, '0')}`,
 );
 
-/** Must match overlay_meme_01..25 drawables in OverlayQuickReactions.kt */
+/** Must match overlay_meme_01..39 drawables in OverlayQuickReactions.kt */
 const ALLOWED_OVERLAY_MEME_REACTIONS = Array.from(
-  { length: 25 },
+  { length: 39 },
   (_, i) => `meme_${String(i + 1).padStart(2, '0')}`,
 );
 
 const ALLOWED_OVERLAY_STICKER_REACTIONS = Array.from(
-  { length: 3 },
+  { length: 20 },
   (_, i) => `sticker_${String(i + 1).padStart(2, '0')}`,
 );
 
