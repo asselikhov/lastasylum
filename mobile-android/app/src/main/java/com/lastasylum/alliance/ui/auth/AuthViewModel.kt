@@ -8,6 +8,8 @@ import androidx.lifecycle.viewModelScope
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.ReadCursorSession
 import com.lastasylum.alliance.data.auth.AuthRepository
+import com.lastasylum.alliance.data.auth.AuthUser
+import com.lastasylum.alliance.data.auth.JwtAccessTokenClaims
 import com.lastasylum.alliance.data.auth.RegisterResult
 import com.lastasylum.alliance.data.auth.TokenStore
 import com.lastasylum.alliance.data.teams.TeamForumPreferences
@@ -15,6 +17,7 @@ import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.push.FcmTokenManager
+import com.lastasylum.alliance.ui.SESSION_BOOTSTRAP_MAX_MS
 import com.lastasylum.alliance.ui.util.toUserMessageRu
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +27,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import retrofit2.HttpException
 
 class AuthViewModel(
     application: Application,
@@ -39,13 +44,24 @@ class AuthViewModel(
     private val res get() = getApplication<Application>().resources
 
     private var authBootstrapJob: Job? = null
+    private var backgroundSessionRefreshJob: Job? = null
 
     init {
         authBootstrapJob = viewModelScope.launch {
+            val bootstrapStartMs = System.currentTimeMillis()
+            var tokenProbeMs = 0L
             val hasRefresh = withContext(Dispatchers.IO) {
-                runCatching { tokenStore.getRefreshToken() != null }.getOrDefault(false)
+                val probeStart = System.currentTimeMillis()
+                val found = runCatching { tokenStore.getRefreshToken() != null }.getOrDefault(false)
+                tokenProbeMs = System.currentTimeMillis() - probeStart
+                found
             }
             if (!hasRefresh) {
+                logBootstrapDebug(
+                    bootstrapStartMs = bootstrapStartMs,
+                    tokenProbeMs = tokenProbeMs,
+                    path = "no_refresh",
+                )
                 _state.value = AuthState(
                     isCheckingStoredSession = false,
                     isLoading = false,
@@ -53,13 +69,17 @@ class AuthViewModel(
                 )
                 return@launch
             }
-            restoreSession()
+            withContext(Dispatchers.IO) {
+                restoreSession(bootstrapStartMs, tokenProbeMs)
+            }
         }
     }
 
     private fun cancelAuthBootstrap() {
         authBootstrapJob?.cancel()
         authBootstrapJob = null
+        backgroundSessionRefreshJob?.cancel()
+        backgroundSessionRefreshJob = null
     }
 
     fun clearError() {
@@ -83,6 +103,21 @@ class AuthViewModel(
         }
     }
 
+    private fun registerFcmInBackground() {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { FcmTokenManager.registerWithBackend(getApplication()) }
+        }
+    }
+
+    private fun completeAuthenticated(user: AuthUser) {
+        _state.value = AuthState(
+            isCheckingStoredSession = false,
+            isLoading = false,
+            isAuthenticated = true,
+            user = user,
+        )
+    }
+
     fun login(email: String, password: String) {
         cancelAuthBootstrap()
         viewModelScope.launch {
@@ -90,13 +125,8 @@ class AuthViewModel(
             authRepository.login(email, password)
                 .onSuccess { user ->
                     bindReadCursors(user.id)
-                    runCatching { FcmTokenManager.registerWithBackend(getApplication()) }
-                    _state.value = AuthState(
-                        isCheckingStoredSession = false,
-                        isLoading = false,
-                        isAuthenticated = true,
-                        user = user,
-                    )
+                    registerFcmInBackground()
+                    completeAuthenticated(user)
                 }
                 .onFailure { throwable ->
                     logAuthFailure("login", throwable)
@@ -124,13 +154,8 @@ class AuthViewModel(
                     when (result) {
                         is RegisterResult.LoggedIn -> {
                             bindReadCursors(result.user.id)
-                            runCatching { FcmTokenManager.registerWithBackend(getApplication()) }
-                            _state.value = AuthState(
-                                isCheckingStoredSession = false,
-                                isLoading = false,
-                                isAuthenticated = true,
-                                user = result.user,
-                            )
+                            registerFcmInBackground()
+                            completeAuthenticated(result.user)
                         }
                         RegisterResult.PendingApproval -> {
                             _state.value = AuthState(
@@ -223,8 +248,13 @@ class AuthViewModel(
         }
     }
 
-    private suspend fun restoreSession() {
+    private suspend fun restoreSession(bootstrapStartMs: Long, tokenProbeMs: Long) {
         if (!authRepository.hasSession()) {
+            logBootstrapDebug(
+                bootstrapStartMs = bootstrapStartMs,
+                tokenProbeMs = tokenProbeMs,
+                path = "no_session",
+            )
             _state.value = AuthState(
                 isCheckingStoredSession = false,
                 isLoading = false,
@@ -233,20 +263,73 @@ class AuthViewModel(
             return
         }
 
-        authRepository.refreshSession()
-            .onSuccess { user ->
-                bindReadCursors(user.id)
-                runCatching { FcmTokenManager.registerWithBackend(getApplication()) }
+        val access = tokenStore.getAccessToken()
+        val fastUser = authRepository.resolveSessionUserForFastPath(access)
+        if (
+            !access.isNullOrBlank() &&
+            JwtAccessTokenClaims.isAccessTokenValid(access) &&
+            fastUser != null
+        ) {
+            bindReadCursors(fastUser.id)
+            completeAuthenticated(fastUser)
+            logBootstrapDebug(
+                bootstrapStartMs = bootstrapStartMs,
+                tokenProbeMs = tokenProbeMs,
+                refreshMs = 0L,
+                path = "fast_path",
+            )
+            scheduleBackgroundSessionRefresh()
+            return
+        }
+
+        val refreshStartMs = System.currentTimeMillis()
+        val refreshResult = withTimeoutOrNull(SESSION_BOOTSTRAP_MAX_MS) {
+            authRepository.refreshSession()
+        }
+        val refreshMs = System.currentTimeMillis() - refreshStartMs
+
+        when {
+            refreshResult == null -> {
+                logBootstrapDebug(
+                    bootstrapStartMs = bootstrapStartMs,
+                    tokenProbeMs = tokenProbeMs,
+                    refreshMs = refreshMs,
+                    path = "refresh_timeout",
+                )
+                if (tryAuthenticateFromFastPath(access)) {
+                    scheduleBackgroundSessionRefresh()
+                    return
+                }
                 _state.value = AuthState(
                     isCheckingStoredSession = false,
                     isLoading = false,
-                    isAuthenticated = true,
-                    user = user,
+                    isAuthenticated = false,
+                    error = getApplication<Application>().getString(
+                        R.string.launch_splash_session_timeout,
+                    ),
                 )
             }
-            .onFailure { err ->
+            refreshResult.isSuccess -> {
+                val user = refreshResult.getOrThrow()
+                bindReadCursors(user.id)
+                completeAuthenticated(user)
+                logBootstrapDebug(
+                    bootstrapStartMs = bootstrapStartMs,
+                    tokenProbeMs = tokenProbeMs,
+                    refreshMs = refreshMs,
+                    path = "refresh_ok",
+                )
+            }
+            else -> {
+                val err = refreshResult.exceptionOrNull()!!
                 if (err is CancellationException) throw err
                 logAuthFailure("refreshSession", err)
+                logBootstrapDebug(
+                    bootstrapStartMs = bootstrapStartMs,
+                    tokenProbeMs = tokenProbeMs,
+                    refreshMs = refreshMs,
+                    path = "refresh_failed",
+                )
                 authRepository.logout(userId = _state.value.user?.id)
                 _state.value = AuthState(
                     isCheckingStoredSession = false,
@@ -255,10 +338,77 @@ class AuthViewModel(
                     error = getApplication<Application>().getString(R.string.session_expired_message),
                 )
             }
+        }
+    }
+
+    private fun tryAuthenticateFromFastPath(access: String?): Boolean {
+        if (access.isNullOrBlank() || !JwtAccessTokenClaims.isAccessTokenValid(access)) {
+            return false
+        }
+        val user = authRepository.resolveSessionUserForFastPath(access) ?: return false
+        bindReadCursors(user.id)
+        completeAuthenticated(user)
+        return true
+    }
+
+    private fun scheduleBackgroundSessionRefresh() {
+        backgroundSessionRefreshJob?.cancel()
+        backgroundSessionRefreshJob = viewModelScope.launch(Dispatchers.IO) {
+            val refreshStart = System.currentTimeMillis()
+            authRepository.refreshSession()
+                .onSuccess { user ->
+                    withContext(Dispatchers.Main) {
+                        bindReadCursors(user.id)
+                        if (_state.value.isAuthenticated) {
+                            _state.value = _state.value.copy(user = user)
+                        }
+                    }
+                    if (BuildConfig.DEBUG) {
+                        Log.d(
+                            TAG,
+                            "background_refresh_ok ms=${System.currentTimeMillis() - refreshStart}",
+                        )
+                    }
+                }
+                .onFailure { err ->
+                    if (err is CancellationException) throw err
+                    logAuthFailure("backgroundRefreshSession", err)
+                    if (shouldLogoutOnRefreshFailure(err)) {
+                        withContext(Dispatchers.Main) {
+                            authRepository.logout(userId = _state.value.user?.id)
+                            _state.value = AuthState(
+                                isCheckingStoredSession = false,
+                                isLoading = false,
+                                isAuthenticated = false,
+                                error = getApplication<Application>().getString(
+                                    R.string.session_expired_message,
+                                ),
+                            )
+                        }
+                    }
+                }
+        }
+    }
+
+    private fun shouldLogoutOnRefreshFailure(err: Throwable): Boolean =
+        err is HttpException && err.code() in UNAUTHORIZED_REFRESH_CODES
+
+    private fun logBootstrapDebug(
+        bootstrapStartMs: Long,
+        tokenProbeMs: Long,
+        refreshMs: Long = 0L,
+        path: String,
+    ) {
+        if (!BuildConfig.DEBUG) return
+        val totalMs = System.currentTimeMillis() - bootstrapStartMs
+        Log.d(
+            TAG,
+            "session_bootstrap path=$path token_probe_ms=$tokenProbeMs refresh_ms=$refreshMs total_ms=$totalMs",
+        )
     }
 
     private fun logAuthFailure(stage: String, throwable: Throwable) {
-        val extra = if (throwable is retrofit2.HttpException) {
+        val extra = if (throwable is HttpException) {
             " HTTP ${throwable.code()}"
         } else {
             ""
@@ -272,5 +422,6 @@ class AuthViewModel(
 
     private companion object {
         private const val TAG = "SquadRelayAuth"
+        private val UNAUTHORIZED_REFRESH_CODES = setOf(401, 403)
     }
 }

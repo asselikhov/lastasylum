@@ -1,5 +1,7 @@
 package com.lastasylum.alliance.overlay
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
 import android.content.Context
@@ -540,7 +542,7 @@ internal class OverlayReactionBurstPresenter(
             .start()
     }
 
-    private fun playPromoteFromMini(card: FrameLayout, caption: TextView?) {
+    private fun playPromoteFromMini(card: FrameLayout, caption: android.view.View?) {
         card.scaleX = OverlayReactionStageLayout.MINI_SCALE_RATIO
         card.scaleY = OverlayReactionStageLayout.MINI_SCALE_RATIO
         card.animate()
@@ -574,6 +576,13 @@ internal class OverlayReactionBurstPresenter(
                 ObjectAnimator.ofFloat(card, View.TRANSLATION_Y, enterFrom, 0f).apply {
                     duration = 320
                     interpolator = DecelerateInterpolator()
+                },
+            )
+            addListener(
+                object : AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(animation: Animator) {
+                        applyBurstVisualFullOpacity(card)
+                    }
                 },
             )
             start()

@@ -48,13 +48,10 @@ object NetworkModule {
         return builder.build()
     }
 
-    private fun OkHttpClient.Builder.applySquadRelayNetworkDefaults(): OkHttpClient.Builder {
+    private fun OkHttpClient.Builder.applySquadRelayNetworkCore(): OkHttpClient.Builder {
         // HTTP/2 + IPv6 на части LTE дают «тихие» таймауты; HTTP/1.1 + приоритет IPv4 стабильнее.
         protocols(listOf(Protocol.HTTP_1_1))
         dns(PreferIpv4Dns)
-        connectTimeout(45, TimeUnit.SECONDS)
-        readTimeout(120, TimeUnit.SECONDS)
-        writeTimeout(45, TimeUnit.SECONDS)
         addInterceptor(userAgentInterceptor())
         if (BuildConfig.DEBUG) {
             addInterceptor(debugNetworkFailureInterceptor())
@@ -64,9 +61,28 @@ object NetworkModule {
         return this
     }
 
+    private fun OkHttpClient.Builder.applySquadRelayNetworkDefaults(): OkHttpClient.Builder =
+        applySquadRelayNetworkCore()
+            .connectTimeout(45, TimeUnit.SECONDS)
+            .readTimeout(120, TimeUnit.SECONDS)
+            .writeTimeout(45, TimeUnit.SECONDS)
+
+    /** Shorter timeouts for login/refresh so session splash does not wait on chat-scale limits. */
+    private fun OkHttpClient.Builder.applyAuthNetworkDefaults(): OkHttpClient.Builder =
+        applySquadRelayNetworkCore()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(15, TimeUnit.SECONDS)
+
     private val publicClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .applySquadRelayNetworkDefaults()
+            .build()
+    }
+
+    private val authClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .applyAuthNetworkDefaults()
             .build()
     }
 
@@ -78,7 +94,15 @@ object NetworkModule {
             .build()
     }
 
-    val authApi: AuthApi by lazy { publicRetrofit.create(AuthApi::class.java) }
+    private val authRetrofit: Retrofit by lazy {
+        Retrofit.Builder()
+            .baseUrl(BuildConfig.API_BASE_URL)
+            .client(authClient)
+            .addConverterFactory(MoshiConverterFactory.create(moshi))
+            .build()
+    }
+
+    val authApi: AuthApi by lazy { authRetrofit.create(AuthApi::class.java) }
 
     val mobileApi: MobileApi by lazy { publicRetrofit.create(MobileApi::class.java) }
 

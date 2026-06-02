@@ -4,18 +4,27 @@ import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.text.SpannableString
-import android.text.Spanned
-import android.text.style.ForegroundColorSpan
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
+import android.widget.LinearLayout
 import android.widget.TextView
 import com.lastasylum.alliance.R
 
+internal data class OverlayReactionHeroCaptionBlock(
+    val root: LinearLayout,
+    val scopeRow: LinearLayout,
+    val scopeLabelView: TextView,
+    val fromLineView: TextView,
+)
+
 internal object OverlayReactionCaption {
-    private const val NICK_SP = 14f
+    private const val LINE_SP = 14f
     private val NickColor = Color.parseColor("#FFF4F7FF")
-    private val ScopeColor = Color.parseColor("#B0C8D8E8")
+    private val ReplyScopeColor = Color.parseColor("#FF7EB8FF")
+    private val PersonalScopeColor = Color.parseColor("#FF9070B8")
+    private val BroadcastScopeColor = Color.parseColor("#FF50B860")
 
     private fun nickBackground(context: Context, cornerDp: Float): GradientDrawable =
         GradientDrawable().apply {
@@ -33,13 +42,27 @@ internal object OverlayReactionCaption {
             else -> context.getString(R.string.overlay_reaction_burst_caption_private)
         }
 
-    fun createCaptionLine(
+    private fun scopeColor(broadcast: Boolean, isReply: Boolean): Int =
+        when {
+            isReply -> ReplyScopeColor
+            broadcast -> BroadcastScopeColor
+            else -> PersonalScopeColor
+        }
+
+    private fun scopeLineText(scope: String, mergeCount: Int, mergeSuffix: String): String =
+        if (mergeCount > 1) {
+            "[$scope]$mergeSuffix"
+        } else {
+            "[$scope]"
+        }
+
+    fun createHeroCaptionBlock(
         context: Context,
         displayName: String,
         broadcast: Boolean,
         isReply: Boolean = false,
         mergeCount: Int = 1,
-    ): TextView {
+    ): OverlayReactionHeroCaptionBlock {
         val nick = formatReactionDisplayNick(displayName)
         val scope = scopeLabel(context, broadcast, isReply)
         val mergeSuffix = if (mergeCount > 1) {
@@ -47,55 +70,122 @@ internal object OverlayReactionCaption {
         } else {
             ""
         }
-        val line = "$nick · $scope$mergeSuffix"
-        val spannable = SpannableString(line).apply {
-            setSpan(
-                ForegroundColorSpan(NickColor),
-                0,
-                nick.length,
-                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
-            )
-            val scopeStart = nick.length + 3
-            if (scopeStart < length) {
-                setSpan(
-                    ForegroundColorSpan(ScopeColor),
-                    scopeStart,
-                    length,
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
-                )
-            }
-        }
-        return TextView(context).apply {
-            text = spannable
-            setTextColor(NickColor)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, NICK_SP)
+        val density = context.resources.displayMetrics.density
+        val padH = (density * 8).toInt()
+        val padV = (density * 4).toInt()
+
+        val scopeLabelView = TextView(context).apply {
+            text = scopeLineText(scope, mergeCount, mergeSuffix)
+            setTextColor(scopeColor(broadcast, isReply))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, LINE_SP)
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
             gravity = Gravity.CENTER_HORIZONTAL
-            textAlignment = android.view.View.TEXT_ALIGNMENT_CENTER
-            maxLines = 2
+            textAlignment = View.TEXT_ALIGNMENT_CENTER
+            maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             setShadowLayer(6f, 0f, 2f, Color.parseColor("#CC000000"))
-            setPadding(
-                (context.resources.displayMetrics.density * 8).toInt(),
-                (context.resources.displayMetrics.density * 4).toInt(),
-                (context.resources.displayMetrics.density * 8).toInt(),
-                (context.resources.displayMetrics.density * 4).toInt(),
-            )
-            background = nickBackground(context, cornerDp = 6f)
+            setTag(R.id.tag_overlay_reaction_caption_scope, true)
             disableOverlayTouchTarget(this)
-            setTag(R.id.tag_overlay_reaction_caption, true)
         }
+
+        val scopeRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            clipChildren = false
+            addView(
+                scopeLabelView,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+        }
+
+        val fromLineView = TextView(context).apply {
+            text = context.getString(R.string.overlay_reaction_burst_from, nick)
+            setTextColor(NickColor)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, LINE_SP)
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+            gravity = Gravity.CENTER_HORIZONTAL
+            textAlignment = View.TEXT_ALIGNMENT_CENTER
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setShadowLayer(6f, 0f, 2f, Color.parseColor("#CC000000"))
+            disableOverlayTouchTarget(this)
+        }
+
+        val root = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(padH, padV, padH, padV)
+            background = nickBackground(context, cornerDp = 6f)
+            setTag(R.id.tag_overlay_reaction_caption, true)
+            addView(
+                scopeRow,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+            addView(
+                fromLineView,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply {
+                    topMargin = (density * 2).toInt()
+                },
+            )
+        }
+
+        return OverlayReactionHeroCaptionBlock(
+            root = root,
+            scopeRow = scopeRow,
+            scopeLabelView = scopeLabelView,
+            fromLineView = fromLineView,
+        )
+    }
+
+    private fun findScopeLabelView(captionRoot: View): TextView? {
+        if (captionRoot is TextView && captionRoot.getTag(R.id.tag_overlay_reaction_caption_scope) == true) {
+            return captionRoot
+        }
+        if (captionRoot is ViewGroup) {
+            for (i in 0 until captionRoot.childCount) {
+                findScopeLabelView(captionRoot.getChildAt(i))?.let { return it }
+            }
+        }
+        return null
     }
 
     fun updateMergeCount(
-        caption: TextView,
+        captionRoot: View,
         displayName: String,
         broadcast: Boolean,
         isReply: Boolean,
         mergeCount: Int,
     ) {
-        val rebuilt = createCaptionLine(caption.context, displayName, broadcast, isReply, mergeCount)
-        caption.text = rebuilt.text
+        val scopeView = findScopeLabelView(captionRoot) ?: return
+        val context = captionRoot.context
+        val scope = scopeLabel(context, broadcast, isReply)
+        val mergeSuffix = if (mergeCount > 1) {
+            " ${context.getString(R.string.overlay_reaction_burst_merge_count, mergeCount)}"
+        } else {
+            ""
+        }
+        scopeView.text = scopeLineText(scope, mergeCount, mergeSuffix)
+        scopeView.setTextColor(scopeColor(broadcast, isReply))
+
+        val nick = formatReactionDisplayNick(displayName)
+        (captionRoot as? LinearLayout)?.let { root ->
+            for (i in 0 until root.childCount) {
+                val child = root.getChildAt(i)
+                if (child is TextView && child !== scopeView) {
+                    child.text = context.getString(R.string.overlay_reaction_burst_from, nick)
+                    break
+                }
+            }
+        }
     }
 
     fun miniContentDescription(
@@ -106,7 +196,8 @@ internal object OverlayReactionCaption {
     ): String {
         val nick = formatReactionDisplayNick(displayName)
         val scope = scopeLabel(context, broadcast, isReply)
-        return context.getString(R.string.overlay_reaction_burst_caption_line, nick, scope)
+        val fromLine = context.getString(R.string.overlay_reaction_burst_from, nick)
+        return "[$scope], $fromLine"
     }
 
     fun createMiniNick(
@@ -120,11 +211,11 @@ internal object OverlayReactionCaption {
         return TextView(context).apply {
             text = nick
             contentDescription = context.getString(R.string.overlay_reaction_mini_tooltip, nick, scope)
-            setTextColor(ScopeColor)
+            setTextColor(PersonalScopeColor)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 9f)
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
             gravity = Gravity.CENTER_HORIZONTAL
-            textAlignment = android.view.View.TEXT_ALIGNMENT_CENTER
+            textAlignment = View.TEXT_ALIGNMENT_CENTER
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             setShadowLayer(4f, 0f, 1f, Color.parseColor("#99000000"))

@@ -264,5 +264,8 @@ const val LAUNCH_SPLASH_MIN_MS = 450L
 /** Максимум ожидания прогрева; UI показывается даже при медленной сети. */
 const val LAUNCH_WARMUP_MAX_MS = 8_000L
 
+/** Максимум ожидания refresh при восстановлении сессии (без FCM на критическом пути). */
+const val SESSION_BOOTSTRAP_MAX_MS = 8_000L
+
 /** @deprecated Используйте [LAUNCH_SPLASH_MIN_MS]; оставлено для совместимости. */
 const val LAUNCH_SPLASH_MS = LAUNCH_SPLASH_MIN_MS

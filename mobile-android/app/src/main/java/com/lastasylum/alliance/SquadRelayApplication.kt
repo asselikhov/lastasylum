@@ -38,6 +38,7 @@ class SquadRelayApplication : Application(), SingletonImageLoader.Factory {
         appScope.launch(Dispatchers.IO) {
             runCatching { ProfileInstaller.writeProfile(this@SquadRelayApplication) }
             val container = AppContainer.from(this@SquadRelayApplication)
+            runCatching { container.tokenStore.getRefreshToken() }
             val access = runCatching { container.tokenStore.getAccessToken() }.getOrNull()
             if (!access.isNullOrBlank()) {
                 runCatching { FcmTokenManager.registerWithBackend(this@SquadRelayApplication) }

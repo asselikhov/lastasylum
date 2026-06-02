@@ -21,7 +21,8 @@ internal fun configureOverlayReactionLottie(lottie: LottieAnimationView, playLoo
     lottie.repeatCount = if (playLoop) LottieDrawable.INFINITE else 0
     lottie.repeatMode = LottieDrawable.RESTART
     lottie.enableMergePathsForKitKatAndAbove(true)
-    lottie.setRenderMode(com.airbnb.lottie.RenderMode.AUTOMATIC)
+    applyBurstLottieRenderMode(lottie)
+    lottie.alpha = OverlayReactionBurstLayout.CONTENT_ALPHA
 }
 
 internal fun applyOverlayLottieReactionTint(view: LottieAnimationView, tintHex: String) {

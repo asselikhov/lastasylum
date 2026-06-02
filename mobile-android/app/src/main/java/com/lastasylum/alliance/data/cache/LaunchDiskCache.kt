@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.data.cache
 
 import android.content.Context
+import com.lastasylum.alliance.data.auth.AuthUser
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.teams.TeamDetailDto
@@ -28,6 +29,15 @@ class LaunchDiskCache(private val context: Context) {
     private val removedMessageIdsAdapter = moshi.adapter(CachedRemovedMessageIds::class.java)
     private val newsAdapter = moshi.adapter(CachedTeamNews::class.java)
     private val forumTopicsAdapter = moshi.adapter(CachedForumTopics::class.java)
+    private val authUserAdapter = moshi.adapter(CachedAuthUser::class.java)
+
+    fun saveAuthUser(userId: String, user: AuthUser) {
+        if (userId.isBlank()) return
+        write(userId, FILE_AUTH_USER, authUserAdapter.toJson(CachedAuthUser(user, nowMs())))
+    }
+
+    fun loadAuthUser(userId: String): AuthUser? =
+        readCached(userId, FILE_AUTH_USER, authUserAdapter)?.user
 
     fun saveProfile(userId: String, profile: MyProfileDto) {
         if (userId.isBlank()) return
@@ -214,6 +224,7 @@ class LaunchDiskCache(private val context: Context) {
 
     companion object {
         private const val CACHE_DIR_NAME = "launch_cache"
+        private const val FILE_AUTH_USER = "auth_user.json"
         private const val FILE_PROFILE = "profile.json"
         private const val FILE_TEAM = "team.json"
         private const val FILE_CHAT_ROOMS = "chat_rooms.json"
@@ -229,6 +240,12 @@ class LaunchDiskCache(private val context: Context) {
             savedAtMs <= 0L || nowMs - savedAtMs > SOFT_TTL_MS
     }
 }
+
+@JsonClass(generateAdapter = true)
+data class CachedAuthUser(
+    val user: AuthUser,
+    val savedAtMs: Long,
+)
 
 @JsonClass(generateAdapter = true)
 data class CachedProfile(

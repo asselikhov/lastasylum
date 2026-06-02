@@ -3,7 +3,7 @@ package com.lastasylum.alliance.overlay
 import androidx.compose.foundation.lazy.LazyListItemInfo
 
 object OverlayReactionPreviewAnimationPolicy {
-    const val MAX_CONCURRENT_ANIMATED_PREVIEWS = 3
+    const val MAX_CONCURRENT_ANIMATED_PREVIEWS = 5
 
     /**
      * Animates up to [MAX_CONCURRENT_ANIMATED_PREVIEWS] newest feed cards that are currently visible.

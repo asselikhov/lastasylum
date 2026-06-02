@@ -5,6 +5,7 @@ import android.widget.ImageView
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 
 @Composable
@@ -13,6 +14,7 @@ internal fun OverlayReactionTilePreviewHost(
     playAnimatedPreview: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     key(reactionId, playAnimatedPreview) {
         AndroidView(
             modifier = modifier,
@@ -21,7 +23,7 @@ internal fun OverlayReactionTilePreviewHost(
             },
             update = { host ->
                 val icon = host.tag as? ImageView ?: return@AndroidView
-                if (playAnimatedPreview) {
+                if (playAnimatedPreview && overlayReactionSupportsAnimatedPreview(context, reactionId)) {
                     resumeOverlayReactionTilePreview(icon)
                 } else {
                     stopOverlayReactionTileAnimation(icon)

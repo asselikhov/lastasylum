@@ -2,6 +2,7 @@
 <resources>
     <string name="app_name">SquadRelay</string>
     <string name="launch_splash_session_subtitle">Проверка сохранённого входа…</string>
+    <string name="launch_splash_session_timeout">Не удалось проверить вход. Проверьте сеть и войдите снова.</string>
     <string name="launch_splash_welcome_subtitle">Подготовка интерфейса…</string>
     <string name="launch_splash_preparing">Синхронизация чата и команды…</string>
 

@@ -2,6 +2,7 @@
 <resources>
     <item name="tag_overlay_reaction_stem" type="id" />
     <item name="tag_overlay_reaction_caption" type="id" />
+    <item name="tag_overlay_reaction_caption_scope" type="id" />
     <item name="tag_overlay_reaction_anim_host" type="id" />
     <item name="tag_overlay_reaction_message" type="id" />
     <item name="tag_overlay_reaction_merge_count" type="id" />

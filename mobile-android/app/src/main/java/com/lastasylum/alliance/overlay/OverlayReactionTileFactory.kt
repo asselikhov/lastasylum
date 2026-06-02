@@ -14,7 +14,7 @@ import com.lastasylum.alliance.R
 
 internal data class OverlayReactionBuiltTile(
     val card: FrameLayout,
-    val captionView: TextView?,
+    val captionView: View?,
     val visualHost: FrameLayout,
     val messageView: TextView?,
     val lottie: LottieAnimationView?,
@@ -97,18 +97,12 @@ internal class OverlayReactionTileFactory(
             )
         } else {
             val reaction = overlayQuickReactionById(context, request.reactionId)
-            if (mode == OverlayReactionTileMode.HERO) {
-                addHeroGlow(visualHost, reaction.burstAccentHex, tilePx)
-            }
-            val animView = visualFactory.createAnimView(reaction, tilePx, playLottie)
-            lottie = animView as? LottieAnimationView
-            visualHost.addView(
-                animView,
-                FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    Gravity.CENTER,
-                ),
+            lottie = installBurstAnimatedVisual(
+                host = visualHost,
+                reaction = reaction,
+                mode = mode,
+                tilePx = tilePx,
+                playLottie = playLottie,
             )
             column.addView(
                 visualHost,
@@ -117,13 +111,24 @@ internal class OverlayReactionTileFactory(
         }
         val isReply = request.replyToLog != null
         val captionView = if (mode == OverlayReactionTileMode.HERO) {
-            OverlayReactionCaption.createCaptionLine(
+            val captionBlock = OverlayReactionCaption.createHeroCaptionBlock(
                 context = context,
                 displayName = request.fromDisplayName,
                 broadcast = request.broadcast,
                 isReply = isReply,
                 mergeCount = mergeCount,
-            ).also { caption ->
+            )
+            request.replyToLog?.let { replyTo ->
+                OverlayReactionBurstReplyPreview.attachBesideScopeRow(
+                    scopeRow = captionBlock.scopeRow,
+                    context = context,
+                    replyTo = replyTo,
+                    visualFactory = visualFactory,
+                    dp = dp,
+                    hero = true,
+                )
+            }
+            captionBlock.root.also { caption ->
                 column.addView(
                     caption,
                     LinearLayout.LayoutParams(
@@ -151,16 +156,6 @@ internal class OverlayReactionTileFactory(
                     },
                 )
             }
-        }
-        request.replyToLog?.let { replyTo ->
-            OverlayReactionBurstReplyPreview.attachBelowNickname(
-                column = column,
-                context = context,
-                replyTo = replyTo,
-                visualFactory = visualFactory,
-                dp = dp,
-                hero = mode == OverlayReactionTileMode.HERO,
-            )
         }
         card.contentDescription = OverlayReactionCaption.miniContentDescription(
             context,
@@ -231,19 +226,54 @@ internal class OverlayReactionTileFactory(
             )
         } else {
             val reaction = overlayQuickReactionById(context, request.reactionId)
-            if (mode == OverlayReactionTileMode.HERO) {
-                addHeroGlow(tile.visualHost, reaction.burstAccentHex, tilePx)
-            }
-            val animView = visualFactory.createAnimView(reaction, tilePx, playLottie)
-            tile.visualHost.addView(
-                animView,
-                FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    Gravity.CENTER,
-                ),
+            installBurstAnimatedVisual(
+                host = tile.visualHost,
+                reaction = reaction,
+                mode = mode,
+                tilePx = tilePx,
+                playLottie = playLottie,
             )
         }
+    }
+
+    /** Glow (bottom) → opaque plate → reaction so TRANSLUCENT window does not wash out content. */
+    private fun installBurstAnimatedVisual(
+        host: FrameLayout,
+        reaction: OverlayQuickReaction,
+        mode: OverlayReactionTileMode,
+        tilePx: Int,
+        playLottie: Boolean,
+    ): LottieAnimationView? {
+        if (mode == OverlayReactionTileMode.HERO) {
+            addHeroGlow(host, reaction.burstAccentHex, tilePx)
+        }
+        addBurstReactionOpaquePlate(host, tilePx)
+        val animView = visualFactory.createAnimView(reaction, tilePx, playLottie)
+        host.addView(
+            animView,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                Gravity.CENTER,
+            ),
+        )
+        applyBurstVisualFullOpacity(host)
+        return animView as? LottieAnimationView
+    }
+
+    private fun addBurstReactionOpaquePlate(host: FrameLayout, sizePx: Int) {
+        val cornerPx = context.resources.displayMetrics.density * 10f
+        val plate = View(context).apply {
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#FF141C28"))
+                cornerRadius = cornerPx
+            }
+            alpha = OverlayReactionBurstLayout.CONTENT_ALPHA
+        }
+        host.addView(
+            plate,
+            FrameLayout.LayoutParams(sizePx, sizePx, Gravity.CENTER),
+        )
     }
 
     private fun addHeroGlow(host: FrameLayout, accentHex: String, sizePx: Int) {

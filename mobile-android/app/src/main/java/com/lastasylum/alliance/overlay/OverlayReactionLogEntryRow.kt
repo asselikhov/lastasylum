@@ -203,49 +203,25 @@ private fun CompactReplyRowContent(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "[$scopeLabel]",
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = scopeColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(bottom = 2.dp),
-            )
             val parent = entry.replyToLog
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(R.string.overlay_reaction_burst_from_prefix),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f),
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = entry.senderUsername.ifBlank {
-                        stringResource(R.string.overlay_reaction_sender_unknown)
-                    },
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                parent?.let { p ->
-                    Spacer(modifier = Modifier.width(6.dp))
-                    OverlayReactionLogMiniPreview(
-                        reactionId = p.reaction,
-                        visibility = p.visibility,
-                        showLabel = false,
-                        playAnimatedPreview = false,
-                        previewSizeDp = 24,
-                        compact = true,
-                    )
-                }
-            }
+            SenderNicknameScopeLine(
+                senderUsername = entry.senderUsername,
+                scopeLabel = scopeLabel,
+                scopeColor = scopeColor,
+                trailing = parent?.let { p ->
+                    {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        OverlayReactionLogMiniPreview(
+                            reactionId = p.reaction,
+                            visibility = p.visibility,
+                            showLabel = false,
+                            playAnimatedPreview = false,
+                            previewSizeDp = 24,
+                            compact = true,
+                        )
+                    }
+                },
+            )
             if (timeLine.isNotBlank()) {
                 Text(
                     text = timeLine,
@@ -409,38 +385,19 @@ private fun NarrativeBlock(
     selfUserId: String,
 ) {
     Column {
-        Text(
-            text = "[$scopeLabel]",
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = scopeColor,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(bottom = 2.dp),
+        SenderNicknameScopeLine(
+            senderUsername = entry.senderUsername,
+            scopeLabel = scopeLabel,
+            scopeColor = scopeColor,
+            trailing = if (cluster.mergeCount > 1) {
+                {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    MergeCountPill(count = cluster.mergeCount)
+                }
+            } else {
+                null
+            },
         )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = stringResource(R.string.overlay_reaction_burst_from_prefix),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f),
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                text = entry.senderUsername.ifBlank {
-                    stringResource(R.string.overlay_reaction_sender_unknown)
-                },
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-            if (cluster.mergeCount > 1) {
-                Spacer(modifier = Modifier.width(6.dp))
-                MergeCountPill(count = cluster.mergeCount)
-            }
-        }
         Text(
             text = overlayReactionLogNarrative(entry, selfUserId, includeSenderName = false),
             style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
@@ -459,6 +416,46 @@ private fun NarrativeBlock(
                 modifier = Modifier.padding(top = 4.dp),
             )
         }
+    }
+}
+
+@Composable
+private fun SenderNicknameScopeLine(
+    senderUsername: String,
+    scopeLabel: String,
+    scopeColor: Color,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    val nicknameStyle = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(R.string.overlay_reaction_burst_from_prefix),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f),
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = senderUsername.ifBlank {
+                stringResource(R.string.overlay_reaction_sender_unknown)
+            },
+            style = nicknameStyle,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = "[$scopeLabel]",
+            style = nicknameStyle,
+            color = scopeColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        trailing?.invoke()
     }
 }
 

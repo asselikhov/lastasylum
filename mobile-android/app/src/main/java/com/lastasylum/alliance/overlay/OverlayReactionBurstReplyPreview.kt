@@ -11,9 +11,9 @@ import com.lastasylum.alliance.data.chat.OverlayReactionBurstReplyTo
 import com.lastasylum.alliance.data.chat.OverlayReactionLogVisibility
 
 internal object OverlayReactionBurstReplyPreview {
-    /** Parent reaction thumbnail shown under sender nickname on reply bursts. */
-    fun attachBelowNickname(
-        column: LinearLayout,
+    /** Parent reaction thumbnail beside scope label on reply bursts. */
+    fun attachBesideScopeRow(
+        scopeRow: LinearLayout,
         context: Context,
         replyTo: OverlayReactionBurstReplyTo,
         visualFactory: OverlayReactionVisualFactory,
@@ -40,11 +40,11 @@ internal object OverlayReactionBurstReplyPreview {
                 Gravity.CENTER,
             ),
         )
-        column.addView(
+        scopeRow.addView(
             previewHost,
             LinearLayout.LayoutParams(previewPx, previewPx).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-                topMargin = dp(if (hero) 4 else 3)
+                gravity = Gravity.CENTER_VERTICAL
+                marginStart = dp(6)
             },
         )
     }

@@ -3,10 +3,8 @@ package com.lastasylum.alliance.overlay
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -16,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -47,7 +46,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
-import com.lastasylum.alliance.ui.components.premium.PremiumGlassSurface
 import com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces
 
 private val CapsuleShape = RoundedCornerShape(12.dp)
@@ -134,10 +132,11 @@ fun OverlayReactionLogReplyThreadFooter(
             )
         }
 
+        // No expandVertically: inside LazyColumn it measures children with infinite max height and crashes.
         AnimatedVisibility(
             visible = expanded,
-            enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(tween(200)),
-            exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(tween(160)),
+            enter = fadeIn(tween(200)),
+            exit = fadeOut(tween(160)),
         ) {
             ReplyThreadExpandedPanel(
                 incoming = incoming,
@@ -233,38 +232,27 @@ private fun ReplyThreadExpandedPanel(
                 .height(10.dp)
                 .background(railColor.copy(alpha = 0.45f)),
         )
-        PremiumGlassSurface(
+        Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = ThreadPanelShape,
+            color = PremiumSurfaces.layer1(PremiumSurfaces.listCardAlpha * 0.92f),
             shadowElevation = 2.dp,
-            layerAlpha = PremiumSurfaces.listCardAlpha * 0.92f,
-            showInnerGlow = false,
             border = BorderStroke(1.dp, borderColor),
-            highlightCornerRadius = ReactionLogCardTokens.corner,
         ) {
-            Box(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(panelGradient),
             ) {
                 Box(
                     modifier = Modifier
-                        .matchParentSize()
-                        .padding(start = if (incoming) 0.dp else 0.dp),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .align(
-                                if (incoming) Alignment.CenterStart else Alignment.CenterEnd,
-                            )
-                            .width(ReactionLogCardTokens.railWidth)
-                            .matchParentSize()
-                            .background(railColor.copy(alpha = if (incoming) 0.4f else 0.28f)),
-                    )
-                }
+                        .width(ReactionLogCardTokens.railWidth)
+                        .fillMaxHeight()
+                        .background(railColor.copy(alpha = if (incoming) 0.4f else 0.28f)),
+                )
                 Column(
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .weight(1f)
                         .padding(
                             start = if (incoming) 10.dp else 8.dp,
                             end = if (incoming) 8.dp else 10.dp,

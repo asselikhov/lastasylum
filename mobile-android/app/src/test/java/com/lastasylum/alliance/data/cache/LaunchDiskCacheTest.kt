@@ -2,6 +2,7 @@ package com.lastasylum.alliance.data.cache
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.lastasylum.alliance.data.auth.AuthUser
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.teams.TeamDetailDto
@@ -31,6 +32,21 @@ class LaunchDiskCacheTest {
         val ctx = ApplicationProvider.getApplicationContext<Context>()
         cache = LaunchDiskCache(ctx)
         cache.clearUser(userId)
+    }
+
+    @Test
+    fun authUserRoundTripAndClearUser() {
+        val user = AuthUser(
+            id = userId,
+            email = "a@example.com",
+            username = "alice",
+            role = "member",
+            teamTag = "TAG",
+        )
+        cache.saveAuthUser(userId, user)
+        assertEquals("TAG", cache.loadAuthUser(userId)?.teamTag)
+        cache.clearUser(userId)
+        assertNull(cache.loadAuthUser(userId))
     }
 
     @Test

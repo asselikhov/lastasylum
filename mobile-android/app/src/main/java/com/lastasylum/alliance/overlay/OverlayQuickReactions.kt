@@ -347,6 +347,11 @@ internal fun overlayQuickReactionById(context: Context, reactionId: String): Ove
         ?: overlayAnimationReactions().first()
 }
 
+internal fun overlayReactionSupportsAnimatedPreview(context: Context, reactionId: String): Boolean {
+    val reaction = overlayQuickReactionById(context, reactionId)
+    return reaction.lottieRawRes != null || reaction.gifDrawableRes != null
+}
+
 /** Избранные этой вкладки первыми, затем остальные. */
 internal fun overlayReactionsForCategory(
     category: OverlayReactionCategory,

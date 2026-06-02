@@ -42,6 +42,7 @@ class AuthRepository(
             val refresh = body.refreshToken ?: error("Missing refresh token")
             val user = body.user ?: error("Missing user")
             tokenStore.saveTokens(access, refresh)
+            cacheSessionUser(user)
             RegisterResult.LoggedIn(user)
         }
     }
@@ -52,6 +53,7 @@ class AuthRepository(
                 LoginRequest(email = email.trim().lowercase(Locale.ROOT), password = password),
             )
             tokenStore.saveTokens(response.accessToken, response.refreshToken)
+            cacheSessionUser(response.user)
             response.user
         }
     }
@@ -62,11 +64,25 @@ class AuthRepository(
         return suspendRunCatching {
             val response = authApi.refresh(RefreshRequest(refreshToken))
             tokenStore.saveTokens(response.accessToken, response.refreshToken)
+            cacheSessionUser(response.user)
             response.user
         }
     }
 
     fun hasSession(): Boolean = tokenStore.getRefreshToken() != null
+
+    fun cacheSessionUser(user: AuthUser) {
+        launchDiskCache.saveAuthUser(user.id, user)
+    }
+
+    /** Cached [AuthUser] or JWT-derived minimal user when `sub` matches access token. */
+    fun resolveSessionUserForFastPath(accessToken: String?): AuthUser? {
+        if (accessToken.isNullOrBlank()) return null
+        val sub = JwtAccessTokenClaims.sub(accessToken) ?: return null
+        val cached = launchDiskCache.loadAuthUser(sub)
+        if (cached != null && cached.id == sub) return cached
+        return JwtAccessTokenClaims.authUserFromAccessToken(accessToken)?.takeIf { it.id == sub }
+    }
 
     suspend fun forgotPassword(email: String): Result<Unit> {
         return suspendRunCatching {

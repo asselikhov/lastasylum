@@ -11,16 +11,18 @@ import org.junit.Test
 class OverlayReactionLogListLayoutTest {
 
     @Test
-    fun buildNewestFeedEntryIds_takesFirstThreeInFeedOrder() {
+    fun buildNewestFeedEntryIds_takesFirstFiveInFeedOrder() {
         val grouped = listOf(
             "day" to listOf(
                 root("1"),
                 root("2"),
                 root("3"),
                 root("4"),
+                root("5"),
+                root("6"),
             ),
         )
-        assertEquals(listOf("1", "2", "3"), buildNewestFeedEntryIds(grouped))
+        assertEquals(listOf("1", "2", "3", "4", "5"), buildNewestFeedEntryIds(grouped))
     }
 
     @Test

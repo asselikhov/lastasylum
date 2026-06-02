@@ -1779,9 +1779,7 @@ class OverlayCommandsPopover(
         } else {
             R.string.overlay_reactions_recipient_title
         }
-        preselectedReactionUserIds = emptySet()
-        preselectedReplyToLogId = null
-        preselectedReplyMode = false
+        // Keep reply context while user picks another reaction (onBack → reactions grid).
 
         val composeHost = FrameLayout(context).apply {
             consumeTouchesInSubtree()
@@ -1857,6 +1855,7 @@ class OverlayCommandsPopover(
                                 return@OverlayReactionRecipientSheet
                             }
                             hideReactionPickOnly()
+                            clearPreselectedReactionContext()
                             Toast.makeText(
                                 context,
                                 context.getString(R.string.overlay_reaction_sent_selected, userIds.size),
@@ -1871,6 +1870,7 @@ class OverlayCommandsPopover(
                                 return@OverlayReactionRecipientSheet
                             }
                             hideReactionPickOnly()
+                            clearPreselectedReactionContext()
                             Toast.makeText(
                                 context,
                                 context.getString(R.string.overlay_reaction_sent_broadcast),

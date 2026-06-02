@@ -6,6 +6,7 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
 import com.airbnb.lottie.LottieAnimationView
+import com.airbnb.lottie.RenderMode
 
 internal class OverlayReactionVisualFactory(
     private val context: Context,
@@ -36,6 +37,7 @@ internal class OverlayReactionVisualFactory(
                 }
             }
         }
+        applyBurstVisualFullOpacity(icon)
         disableOverlayTouchTarget(icon)
         return icon
     }
@@ -63,8 +65,26 @@ internal fun configureBurstLottie(lottie: LottieAnimationView) {
     lottie.repeatCount = com.airbnb.lottie.LottieDrawable.INFINITE
     lottie.repeatMode = com.airbnb.lottie.LottieDrawable.RESTART
     lottie.enableMergePathsForKitKatAndAbove(true)
-    lottie.setRenderMode(com.airbnb.lottie.RenderMode.AUTOMATIC)
+    applyBurstLottieRenderMode(lottie)
     lottie.alpha = OverlayReactionBurstLayout.CONTENT_ALPHA
     disableOverlayTouchTarget(lottie)
     if (!lottie.isAnimating) lottie.playAnimation()
+}
+
+internal fun applyBurstLottieRenderMode(lottie: LottieAnimationView) {
+    runCatching { lottie.setRenderMode(RenderMode.HARDWARE) }
+        .onFailure { lottie.setRenderMode(RenderMode.AUTOMATIC) }
+}
+
+/** Force full opacity on burst reaction visuals (some GPUs wash out TRANSLUCENT overlay layers). */
+internal fun applyBurstVisualFullOpacity(root: View) {
+    root.alpha = OverlayReactionBurstLayout.CONTENT_ALPHA
+    if (root is LottieAnimationView) {
+        root.alpha = OverlayReactionBurstLayout.CONTENT_ALPHA
+    }
+    if (root is android.view.ViewGroup) {
+        for (i in 0 until root.childCount) {
+            applyBurstVisualFullOpacity(root.getChildAt(i))
+        }
+    }
 }
