@@ -532,7 +532,9 @@ class CombatOverlayService : Service() {
             OverlayChatInteractionHold.endOverlaySystemPickerSession()
         }
         OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
-        restoreOverlayChatTeamPanelOpaqueAppearance()
+        if (shouldRestoreOverlayChatTeamPanelWindow()) {
+            restoreOverlayChatTeamPanelOpaqueAppearance()
+        }
         if (!skipFullscreenRebalance) {
             rebalanceOverlayFullscreenZOrder()
         }
@@ -1250,8 +1252,15 @@ class CombatOverlayService : Service() {
         )
     }
 
+    private fun shouldRestoreOverlayChatTeamPanelWindow(): Boolean =
+        OverlayFullscreenPanelRestorePolicy.shouldRestorePanelWindow(
+            servicePanelVisible = overlayChatTeamPanelVisible,
+            holdPanelVisible = OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible,
+        )
+
     /** После пикера/снимка окон — непрозрачный фон панели чата (без remove/add). */
     private fun restoreOverlayChatTeamPanelOpaqueAppearance() {
+        if (!shouldRestoreOverlayChatTeamPanelWindow()) return
         val root = overlayChatTeamRoot ?: return
         val mgr = windowManager ?: systemWindowManager() ?: return
         root.setBackgroundColor(overlayChatTeamSurfaceColor())
@@ -5199,14 +5208,14 @@ class CombatOverlayService : Service() {
         if (hadVisible) {
             flushOverlayHudPaneReadOnClose(closingPane, legacyChatTabIndex)
         }
+        overlayChatTeamPanelVisible = false
+        currentOverlayHudPane = null
+        OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = false
         root?.let { hideOverlayIme(it) }
         if (root != null && root.isAttachedToWindow) {
             root.visibility = View.GONE
         }
-        overlayChatTeamPanelVisible = false
         syncOverlayChatPanelVisibilityToViewModel(false)
-        currentOverlayHudPane = null
-        OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = false
         OverlayChatInteractionHold.releaseGameForegroundSuppress()
         applyAuxiliaryOverlayTouchSuppressionForFullscreenPanel(enable = false)
         resumeOverlayWindowsAfterSystemActivity(skipFullscreenRebalance = true)
