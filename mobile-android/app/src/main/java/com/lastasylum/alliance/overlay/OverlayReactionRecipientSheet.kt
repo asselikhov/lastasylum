@@ -106,6 +106,8 @@ fun OverlayReactionRecipientSheet(
     loadMembers: suspend () -> Result<List<PlayerTeamMemberDto>>,
     modifier: Modifier = Modifier,
     initialSelectedUserIds: Set<String> = emptySet(),
+    titleRes: Int = R.string.overlay_reactions_recipient_title,
+    allowBroadcast: Boolean = true,
 ) {
     val context = LocalContext.current
     var loading by remember { mutableStateOf(true) }
@@ -171,7 +173,11 @@ fun OverlayReactionRecipientSheet(
             Column(
                 modifier = Modifier.fillMaxSize(),
             ) {
-                RecipientSheetHeader(onBack = onBack, onDismiss = onDismiss)
+                RecipientSheetHeader(
+                    titleRes = titleRes,
+                    onBack = onBack,
+                    onDismiss = onDismiss,
+                )
 
                 OverlayReactionRecipientPreview(
                     reactionId = reactionId,
@@ -228,7 +234,7 @@ fun OverlayReactionRecipientSheet(
                             showSearch = members.size > 9,
                             searchQuery = searchQuery,
                             onSearchChange = { searchQuery = it },
-                            canSendToAll = members.isNotEmpty(),
+                            canSendToAll = allowBroadcast && members.isNotEmpty(),
                             onSendToAll = onSendToAll,
                         )
 
@@ -292,6 +298,7 @@ fun OverlayReactionRecipientSheet(
 
 @Composable
 private fun RecipientSheetHeader(
+    titleRes: Int,
     onBack: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -315,7 +322,7 @@ private fun RecipientSheetHeader(
             )
         }
         Text(
-            text = stringResource(R.string.overlay_reactions_recipient_title),
+            text = stringResource(titleRes),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = Color(0xFFF4F7FF),

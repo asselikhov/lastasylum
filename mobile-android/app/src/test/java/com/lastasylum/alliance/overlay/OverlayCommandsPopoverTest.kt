@@ -1,7 +1,9 @@
 package com.lastasylum.alliance.overlay
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class OverlayCommandsPopoverTest {
@@ -31,5 +33,27 @@ class OverlayCommandsPopoverTest {
             replyToLogId = "   ",
         )
         assertNull(resolved)
+    }
+
+    @Test
+    fun overlayReactionUsesReplyChannel_onlyInExplicitReplyMode() {
+        assertFalse(
+            overlayReactionUsesReplyChannel(
+                replyMode = false,
+                replyToLogId = "6641c45bbbee8f2a06e9f111",
+            ),
+        )
+        assertTrue(
+            overlayReactionUsesReplyChannel(
+                replyMode = true,
+                replyToLogId = "6641c45bbbee8f2a06e9f111",
+            ),
+        )
+        assertFalse(
+            overlayReactionUsesReplyChannel(
+                replyMode = true,
+                replyToLogId = "  ",
+            ),
+        )
     }
 }

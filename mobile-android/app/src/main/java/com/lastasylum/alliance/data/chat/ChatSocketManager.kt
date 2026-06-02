@@ -168,14 +168,26 @@ class ChatSocketManager {
     fun emitOverlayReaction(
         targetUserId: String,
         reaction: String = "heart",
-        replyToLogId: String? = null,
     ) {
         if (targetUserId.isBlank()) return
         val body = JSONObject()
             .put("targetUserId", targetUserId)
             .put("reaction", reaction)
-        replyToLogId?.trim()?.takeIf { it.isNotEmpty() }?.let { body.put("replyToLogId", it) }
         socket?.emit("overlay:reaction", body)
+    }
+
+    fun emitOverlayReactionReply(
+        targetUserId: String,
+        reaction: String,
+        replyToLogId: String,
+    ) {
+        val parentId = replyToLogId.trim()
+        if (targetUserId.isBlank() || parentId.isEmpty()) return
+        val body = JSONObject()
+            .put("targetUserId", targetUserId)
+            .put("reaction", reaction)
+            .put("replyToLogId", parentId)
+        socket?.emit("overlay:reaction:reply", body)
     }
 
     /** One server-side fan-out to all teammates in game with overlay (single rate-limit slot). */
@@ -456,14 +468,14 @@ class ChatSocketManager {
                     )
                     roomUnreadListeners.forEach { l -> runCatching { l(event) } }
                 }
-                on("overlay:reaction") { args ->
-                    val payload = args.firstOrNull() as? JSONObject ?: return@on
+                val overlayReactionHandler: (Array<out Any>) -> Unit = reactionHandler@{ args ->
+                    val payload = args.firstOrNull() as? JSONObject ?: return@reactionHandler
                     val fromUserId = payload.optString("fromUserId", "")
                     val fromUsername = payload.optString("fromUsername", "")
                     val targetUserId = payload.optString("targetUserId", "")
                     val reaction = payload.optString("reaction", "heart")
                         .ifBlank { "heart" }
-                    if (fromUserId.isBlank() || targetUserId.isBlank()) return@on
+                    if (fromUserId.isBlank() || targetUserId.isBlank()) return@reactionHandler
                     val event = OverlayReactionEvent(
                         fromUserId = fromUserId,
                         fromUsername = fromUsername,
@@ -476,6 +488,8 @@ class ChatSocketManager {
                     )
                     overlayReactionListeners.forEach { l -> runCatching { l(event) } }
                 }
+                on("overlay:reaction", overlayReactionHandler)
+                on("overlay:reaction:reply", overlayReactionHandler)
                 on("overlay:reaction:log") { args ->
                     val payload = args.firstOrNull() as? JSONObject ?: return@on
                     val logEntry = payload.optJSONObject("logEntry") ?: return@on

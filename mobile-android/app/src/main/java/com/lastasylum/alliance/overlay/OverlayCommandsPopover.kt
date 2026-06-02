@@ -67,7 +67,8 @@ class OverlayCommandsPopover(
         { _, _, _, _ -> null },
     private val prepareOptimisticRaidNotify: () -> String? = { null },
     private val removeOptimisticRaidSend: (pendingId: String) -> Unit = {},
-    private val emitOverlayReaction: (targetUserId: String, reactionId: String, replyToLogId: String?) -> Unit =
+    private val emitOverlayReaction: (targetUserId: String, reactionId: String) -> Unit = { _, _ -> },
+    private val emitOverlayReactionReply: (targetUserId: String, reactionId: String, replyToLogId: String) -> Unit =
         { _, _, _ -> },
     private val emitOverlayReactionBroadcast: (reactionId: String) -> Unit = {},
 ) {
@@ -1768,10 +1769,16 @@ class OverlayCommandsPopover(
         val overlayService = context as CombatOverlayService
         val composeOwner = overlayService.obtainOverlayPopoverComposeOwner()
         val initialSelected = preselectedReactionUserIds
+        val replyMode = preselectedReplyMode
         val replyToLogId = overlayResolveReplyToLogIdForSend(
-            replyMode = preselectedReplyMode,
+            replyMode = replyMode,
             replyToLogId = preselectedReplyToLogId,
         )
+        val recipientTitleRes = if (replyMode) {
+            R.string.overlay_notifications_reply
+        } else {
+            R.string.overlay_reactions_recipient_title
+        }
         preselectedReactionUserIds = emptySet()
         preselectedReplyToLogId = null
         preselectedReplyMode = false
@@ -1827,13 +1834,23 @@ class OverlayCommandsPopover(
                     OverlayReactionRecipientSheet(
                         reactionId = reactionId,
                         initialSelectedUserIds = initialSelected,
+                        titleRes = recipientTitleRes,
+                        allowBroadcast = !replyMode,
                         onBack = { returnToReactionsList(windowManager) },
                         onDismiss = { hideReactionPickOnly() },
                         onSendToUserIds = { userIds ->
                             if (userIds.isEmpty()) return@OverlayReactionRecipientSheet
                             if (!emitReactionIfConnected {
-                                    userIds.forEach { uid ->
-                                        emitOverlayReaction(uid, reactionId, replyToLogId)
+                                    if (replyMode) {
+                                        val parentId = replyToLogId
+                                            ?: return@emitReactionIfConnected
+                                        userIds.forEach { uid ->
+                                            emitOverlayReactionReply(uid, reactionId, parentId)
+                                        }
+                                    } else {
+                                        userIds.forEach { uid ->
+                                            emitOverlayReaction(uid, reactionId)
+                                        }
                                     }
                                 }
                             ) {
@@ -1921,3 +1938,7 @@ internal fun overlayResolveReplyToLogIdForSend(replyMode: Boolean, replyToLogId:
     } else {
         null
     }
+
+/** True when send must use overlay:reaction:reply (not overlay:reaction). */
+internal fun overlayReactionUsesReplyChannel(replyMode: Boolean, replyToLogId: String?): Boolean =
+    replyMode && !overlayResolveReplyToLogIdForSend(replyMode, replyToLogId).isNullOrBlank()

@@ -162,8 +162,13 @@ class ChatRepository(
     fun emitOverlayReaction(
         targetUserId: String,
         reaction: String = "heart",
-        replyToLogId: String? = null,
-    ) = realtime.emitOverlayReaction(targetUserId, reaction, replyToLogId)
+    ) = realtime.emitOverlayReaction(targetUserId, reaction)
+
+    fun emitOverlayReactionReply(
+        targetUserId: String,
+        reaction: String,
+        replyToLogId: String,
+    ) = realtime.emitOverlayReactionReply(targetUserId, reaction, replyToLogId)
 
     fun emitOverlayReactionBroadcast(reaction: String = "heart") =
         realtime.emitOverlayReactionBroadcast(reaction)

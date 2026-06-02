@@ -362,6 +362,48 @@ export class ChatGateway {
     @MessageBody()
     body: { targetUserId?: string; reaction?: string; replyToLogId?: string },
   ) {
+    const strayReplyToLogId =
+      typeof body?.replyToLogId === 'string' ? body.replyToLogId.trim() : '';
+    if (strayReplyToLogId) {
+      throw new WsException(
+        'replyToLogId is not allowed on overlay:reaction; use overlay:reaction:reply',
+      );
+    }
+    return this.sendPersonalOverlayReaction(client, body, {
+      deliveryEvent: 'overlay:reaction',
+      ackEvent: 'overlay:reaction:sent',
+      replyToLogId: null,
+    });
+  }
+
+  /** Reply to an existing overlay reaction log entry (notifications «Ответить реакцией»). */
+  @SubscribeMessage('overlay:reaction:reply')
+  async sendOverlayReactionReply(
+    @ConnectedSocket() client: AuthSocket,
+    @MessageBody()
+    body: { targetUserId?: string; reaction?: string; replyToLogId?: string },
+  ) {
+    const replyToLogId =
+      typeof body?.replyToLogId === 'string' ? body.replyToLogId.trim() : '';
+    if (!replyToLogId) {
+      throw new WsException('replyToLogId is required');
+    }
+    return this.sendPersonalOverlayReaction(client, body, {
+      deliveryEvent: 'overlay:reaction:reply',
+      ackEvent: 'overlay:reaction:reply:sent',
+      replyToLogId,
+    });
+  }
+
+  private async sendPersonalOverlayReaction(
+    client: AuthSocket,
+    body: { targetUserId?: string; reaction?: string },
+    options: {
+      deliveryEvent: 'overlay:reaction' | 'overlay:reaction:reply';
+      ackEvent: string;
+      replyToLogId: string | null;
+    },
+  ) {
     if (!client.data.user) {
       throw new WsException('Unauthorized socket connection');
     }
@@ -398,21 +440,18 @@ export class ChatGateway {
       throw new WsException('Recipient is not in your team');
     }
 
-    const replyToLogId =
-      typeof body?.replyToLogId === 'string' ? body.replyToLogId.trim() : '';
-
     const { entry: logEntry, recipientUserIds } =
       await this.overlayReactionLogService.createPersonal({
         sender,
         target,
         reaction,
-        replyToLogId: replyToLogId || null,
+        replyToLogId: options.replyToLogId,
       });
 
     this.server
       ?.to(`user:${targetUserId}`)
       .emit(
-        'overlay:reaction',
+        options.deliveryEvent,
         this.overlayReactionPayload(
           client.data.user,
           targetUserId,
@@ -424,7 +463,14 @@ export class ChatGateway {
 
     this.emitOverlayReactionLog(logEntry, recipientUserIds);
 
-    return { event: 'overlay:reaction:sent', data: { targetUserId, reaction } };
+    return {
+      event: options.ackEvent,
+      data: {
+        targetUserId,
+        reaction,
+        replyToLogId: options.replyToLogId,
+      },
+    };
   }
 
   /**

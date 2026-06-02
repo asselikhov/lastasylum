@@ -203,8 +203,14 @@ class CombatOverlayService : Service() {
                 }
                 removeStripMessageByKey(pendingId)
             },
-            emitOverlayReaction = { targetUserId, reactionId, replyToLogId ->
+            emitOverlayReaction = { targetUserId, reactionId ->
                 AppContainer.from(this@CombatOverlayService).chatRepository.emitOverlayReaction(
+                    targetUserId,
+                    reactionId,
+                )
+            },
+            emitOverlayReactionReply = { targetUserId, reactionId, replyToLogId ->
+                AppContainer.from(this@CombatOverlayService).chatRepository.emitOverlayReactionReply(
                     targetUserId,
                     reactionId,
                     replyToLogId,
