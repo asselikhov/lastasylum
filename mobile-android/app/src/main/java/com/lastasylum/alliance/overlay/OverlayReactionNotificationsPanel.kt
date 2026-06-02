@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -709,22 +710,28 @@ private fun OverlayReactionLogThreadParentClusterRow(
             }
         },
         expandedContent = {
-            replies.forEachIndexed { index, replyCluster ->
-                key(replyCluster.representative.id) {
-                    if (index > 0) {
-                        Spacer(modifier = Modifier.height(6.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .wrapContentHeight(),
+            ) {
+                replies.forEachIndexed { index, replyCluster ->
+                    key(replyCluster.representative.id) {
+                        if (index > 0) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                        }
+                        OverlayReactionLogFeedClusterRow(
+                            cluster = replyCluster,
+                            selfUserId = selfUserId,
+                            unreadEntryIds = unreadEntryIds,
+                            animatedPreviewIds = animatedPreviewIds,
+                            onlineUserIds = onlineUserIds,
+                            newestUnreadEntryId = newestUnreadEntryId,
+                            onPreviewCluster = onPreviewCluster,
+                            onReplyToReactionLog = onReplyToReactionLog,
+                            onToggleEmojiReaction = onToggleEmojiReaction,
+                        )
                     }
-                    OverlayReactionLogFeedClusterRow(
-                        cluster = replyCluster,
-                        selfUserId = selfUserId,
-                        unreadEntryIds = unreadEntryIds,
-                        animatedPreviewIds = animatedPreviewIds,
-                        onlineUserIds = onlineUserIds,
-                        newestUnreadEntryId = newestUnreadEntryId,
-                        onPreviewCluster = onPreviewCluster,
-                        onReplyToReactionLog = onReplyToReactionLog,
-                        onToggleEmojiReaction = onToggleEmojiReaction,
-                    )
                 }
             }
         },

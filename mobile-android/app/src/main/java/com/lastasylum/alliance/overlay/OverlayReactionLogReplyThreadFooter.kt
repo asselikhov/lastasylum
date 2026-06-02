@@ -13,15 +13,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -38,9 +36,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -113,10 +115,15 @@ fun OverlayReactionLogReplyThreadFooter(
         ReactionLogCardTokens.outgoingRail
     }
 
-    Column(modifier = modifier.fillMaxWidth()) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .wrapContentHeight(),
+    ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .wrapContentHeight()
                 .padding(bottom = CapsuleReserve),
         ) {
             cardContent()
@@ -138,6 +145,7 @@ fun OverlayReactionLogReplyThreadFooter(
             visible = expanded,
             enter = fadeIn(tween(200)),
             exit = fadeOut(tween(160)),
+            modifier = Modifier.wrapContentHeight(),
         ) {
             ReplyThreadExpandedPanel(
                 incoming = incoming,
@@ -220,10 +228,16 @@ private fun ReplyThreadExpandedPanel(
             },
         ),
     )
+    val railWidth = ReactionLogCardTokens.railWidth
+    val railWidthPx = with(LocalDensity.current) { railWidth.toPx() }
+    val railAlpha = if (incoming) 0.4f else 0.28f
+    val contentStartPad = if (incoming) 10.dp else 8.dp
+    val contentEndPad = if (incoming) 8.dp else 10.dp
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .wrapContentHeight()
             .padding(top = 4.dp),
     ) {
         Box(
@@ -234,41 +248,38 @@ private fun ReplyThreadExpandedPanel(
                 .background(railColor.copy(alpha = 0.45f)),
         )
         Surface(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .wrapContentHeight(),
             shape = ThreadPanelShape,
             color = PremiumSurfaces.layer1(PremiumSurfaces.listCardAlpha * 0.92f),
             shadowElevation = 2.dp,
             border = BorderStroke(1.dp, borderColor),
         ) {
-            // LazyColumn gives infinite max height; fillMaxHeight() on a Row child crashes without IntrinsicSize.Min.
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(IntrinsicSize.Min)
-                    .background(panelGradient),
+                    .wrapContentHeight()
+                    .drawBehind {
+                        drawRect(brush = panelGradient, size = size)
+                        drawRect(
+                            color = railColor.copy(alpha = railAlpha),
+                            topLeft = Offset.Zero,
+                            size = Size(railWidthPx, size.height),
+                        )
+                    }
+                    .padding(
+                        start = railWidth + contentStartPad,
+                        end = contentEndPad,
+                        top = 10.dp,
+                        bottom = 10.dp,
+                    ),
             ) {
-                Box(
-                    modifier = Modifier
-                        .width(ReactionLogCardTokens.railWidth)
-                        .fillMaxHeight()
-                        .background(railColor.copy(alpha = if (incoming) 0.4f else 0.28f)),
+                HorizontalDivider(
+                    color = Color(0x18FFFFFF),
+                    modifier = Modifier.padding(bottom = 8.dp),
                 )
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(
-                            start = if (incoming) 10.dp else 8.dp,
-                            end = if (incoming) 8.dp else 10.dp,
-                            top = 10.dp,
-                            bottom = 10.dp,
-                        ),
-                ) {
-                    HorizontalDivider(
-                        color = Color(0x18FFFFFF),
-                        modifier = Modifier.padding(bottom = 8.dp),
-                    )
-                    content()
-                }
+                content()
             }
         }
     }

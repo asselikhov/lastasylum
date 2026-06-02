@@ -6,16 +6,18 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.ui.components.premium.PremiumGlassSurface
 import com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces
@@ -70,8 +72,16 @@ fun OverlayReactionLogCard(
     } else {
         PremiumSurfaces.listCardAlpha - 0.06f
     }.coerceIn(0.72f, 0.96f)
+    val railWidthPx = with(LocalDensity.current) { ReactionLogCardTokens.railWidth.toPx() }
+    val railAlpha = if (incoming) {
+        if (unreadHighlight) 0.98f else 0.78f
+    } else {
+        0.55f
+    }
     PremiumGlassSurface(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .wrapContentHeight(),
         shape = shape,
         shadowElevation = if (incoming) 4.dp else 2.dp,
         layerAlpha = cardAlpha,
@@ -82,30 +92,28 @@ fun OverlayReactionLogCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .wrapContentHeight()
                 .drawBehind {
                     drawRect(brush = gradientBrush, size = size)
                     if (incoming && unreadHighlight) {
                         drawRect(color = ReactionLogCardTokens.incomingUnreadGlow, size = size)
                     }
+                    val railColor = animatedRailColor.copy(alpha = railAlpha)
+                    if (incoming) {
+                        drawRect(
+                            color = railColor,
+                            topLeft = Offset.Zero,
+                            size = Size(railWidthPx, size.height),
+                        )
+                    } else {
+                        drawRect(
+                            color = railColor,
+                            topLeft = Offset(size.width - railWidthPx, 0f),
+                            size = Size(railWidthPx, size.height),
+                        )
+                    }
                 },
         ) {
-            if (incoming) {
-                Box(
-                    modifier = Modifier
-                        .align(androidx.compose.ui.Alignment.CenterStart)
-                        .width(ReactionLogCardTokens.railWidth)
-                        .fillMaxHeight()
-                        .background(animatedRailColor.copy(alpha = if (unreadHighlight) 0.98f else 0.78f)),
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .align(androidx.compose.ui.Alignment.CenterEnd)
-                        .width(ReactionLogCardTokens.railWidth)
-                        .fillMaxHeight()
-                        .background(animatedRailColor.copy(alpha = 0.55f)),
-                )
-            }
             content()
         }
     }

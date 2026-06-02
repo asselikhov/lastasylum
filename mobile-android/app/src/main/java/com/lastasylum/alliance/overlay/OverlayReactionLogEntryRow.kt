@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -112,7 +113,9 @@ fun OverlayReactionLogEntryRow(
     AnimatedVisibility(
         visible = true,
         enter = if (animateEnter) fadeIn(tween(220)) else fadeIn(tween(0)),
-        modifier = modifier,
+        modifier = modifier
+            .fillMaxWidth()
+            .wrapContentHeight(),
     ) {
         OverlayReactionLogCard(
             incoming = incoming,
