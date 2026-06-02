@@ -22,11 +22,9 @@ import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -65,8 +63,7 @@ import com.lastasylum.alliance.ui.theme.premium.PremiumColors
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import kotlinx.coroutines.delay
 
-private val ReactionPreviewColumnWidth = 108.dp
-private val ReactionPreviewReplySlot = 36.dp
+private val ReactionPreviewColumnWidth = 100.dp
 
 @Composable
 fun OverlayReactionLogEntryRow(
@@ -278,54 +275,43 @@ private fun ReactionPreviewColumn(
     onQuickReply: (() -> Unit)?,
     playAnimatedPreview: Boolean,
 ) {
+    val showReplyCta = incoming &&
+        onQuickReply != null &&
+        !OverlayReactionLogReplyEnricher.isReplyEntry(entry)
     Column(
         modifier = Modifier.width(ReactionPreviewColumnWidth),
-        horizontalAlignment = Alignment.End,
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically,
+        Box(
+            modifier = Modifier
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onPreviewClick,
+                ),
+            contentAlignment = Alignment.Center,
         ) {
-            if (incoming && onQuickReply != null && !OverlayReactionLogReplyEnricher.isReplyEntry(entry)) {
-                IconButton(
-                    onClick = onQuickReply,
-                    modifier = Modifier.size(ReactionPreviewReplySlot),
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.Reply,
-                        contentDescription = stringResource(R.string.overlay_notifications_reply_cd),
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
+            if (cluster.mergeCount > 1) {
+                OverlayReactionLogStackedPreview(
+                    cluster = cluster,
+                    playAnimatedPreview = playAnimatedPreview,
+                )
             } else {
-                Spacer(modifier = Modifier.size(ReactionPreviewReplySlot))
+                OverlayReactionLogMiniPreview(
+                    reactionId = entry.reaction,
+                    visibility = entry.visibility,
+                    showLabel = false,
+                    playAnimatedPreview = playAnimatedPreview,
+                    previewHostKey = entry.id,
+                )
             }
-            Box(
-                modifier = Modifier
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onPreviewClick,
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (cluster.mergeCount > 1) {
-                    OverlayReactionLogStackedPreview(
-                        cluster = cluster,
-                        playAnimatedPreview = playAnimatedPreview,
-                    )
-                } else {
-                    OverlayReactionLogMiniPreview(
-                        reactionId = entry.reaction,
-                        visibility = entry.visibility,
-                        showLabel = false,
-                        playAnimatedPreview = playAnimatedPreview,
-                        previewHostKey = entry.id,
-                    )
-                }
-            }
+        }
+        if (showReplyCta) {
+            Spacer(modifier = Modifier.size(8.dp))
+            OverlayReactionReplyButton(
+                onClick = onQuickReply,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }

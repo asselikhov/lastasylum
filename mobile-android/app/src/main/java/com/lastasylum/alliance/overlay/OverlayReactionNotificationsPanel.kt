@@ -89,6 +89,8 @@ fun OverlayReactionNotificationsPanel(
     onClose: () -> Unit,
     onReplyToReactionLog: (OverlayReactionLogEntry) -> Unit,
     onOpenReactionsPicker: () -> Unit = {},
+    onRequestMarkAllReadConfirm: () -> Unit = {},
+    onRegisterMarkAllReadAction: ((() -> Unit)?) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // Overlay ComposeView: explicit owner matches CombatOverlayService HUD/chat pattern.
@@ -122,11 +124,26 @@ fun OverlayReactionNotificationsPanel(
     val newestFeedEntryIds = uiState.newestFeedEntryIds
     var previewCluster by remember { mutableStateOf<OverlayReactionLogCluster?>(null) }
     var showClearHistoryConfirm by remember { mutableStateOf(false) }
-    var showMarkAllReadConfirm by remember { mutableStateOf(false) }
     var hapticConsumedForSession by remember { mutableStateOf(false) }
     var markAllReadLoading by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val markAllReadFailedText = stringResource(R.string.overlay_notifications_mark_all_read_failed)
+
+    LaunchedEffect(repository, scope) {
+        onRegisterMarkAllReadAction {
+            scope.launch {
+                markAllReadLoading = true
+                val ok = repository.markAllReadAwait()
+                markAllReadLoading = false
+                if (!ok) {
+                    snackbarHostState.showSnackbar(markAllReadFailedText)
+                }
+            }
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose { onRegisterMarkAllReadAction(null) }
+    }
 
     DisposableEffect(controller, selfUserId) {
         controller.start(selfUserId)
@@ -173,10 +190,7 @@ fun OverlayReactionNotificationsPanel(
                 subtitle = null,
                 onClose = onClose,
                 closeIconTint = Color.White,
-                onMarkAllRead = {
-                    OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
-                    showMarkAllReadConfirm = true
-                },
+                onMarkAllRead = onRequestMarkAllReadConfirm,
                 markAllReadEnabled = unreadCount > 0 && !loading && !markAllReadLoading,
                 markAllReadLoading = markAllReadLoading,
                 markAllReadIconTint = Color.White,
@@ -533,110 +547,58 @@ fun OverlayReactionNotificationsPanel(
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 8.dp),
         )
-    }
-
-    previewCluster?.let { cluster ->
-        OverlayReactionLogPreviewSheet(
-            cluster = cluster,
-            selfUserId = selfUserId,
-            onDismiss = {
-                previewCluster = null
-                OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
-            },
-        )
-    }
-
-    if (showMarkAllReadConfirm) {
-        OverlayAwareAlertDialog(
-            onDismissRequest = {
-                showMarkAllReadConfirm = false
-                OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
-            },
-            title = {
-                Text(
-                    text = stringResource(R.string.overlay_notifications_mark_all_confirm_title),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-            },
-            text = {
-                Text(
-                    text = stringResource(R.string.overlay_notifications_mark_all_confirm_message),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showMarkAllReadConfirm = false
-                        OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
-                        scope.launch {
-                            markAllReadLoading = true
-                            val ok = repository.markAllReadAwait()
-                            markAllReadLoading = false
-                            if (!ok) {
-                                snackbarHostState.showSnackbar(markAllReadFailedText)
-                            }
-                        }
-                    },
-                ) {
-                    Text(stringResource(R.string.overlay_notifications_mark_all_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showMarkAllReadConfirm = false
-                        OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
-                    },
-                ) {
-                    Text(stringResource(R.string.overlay_notifications_clear_cancel))
-                }
-            },
-        )
-    }
-
-    if (showClearHistoryConfirm) {
-        OverlayAwareAlertDialog(
-            onDismissRequest = {
-                showClearHistoryConfirm = false
-                OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
-            },
-            title = {
-                Text(
-                    text = stringResource(R.string.overlay_notifications_clear_confirm_title),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-            },
-            text = {
-                Text(
-                    text = stringResource(R.string.overlay_notifications_clear_confirm_message),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showClearHistoryConfirm = false
-                        OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
-                        repository.clearHistoryForUser()
-                    },
-                ) {
-                    Text(stringResource(R.string.overlay_notifications_clear_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showClearHistoryConfirm = false
-                        OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
-                    },
-                ) {
-                    Text(stringResource(R.string.overlay_notifications_clear_cancel))
-                }
-            },
-        )
+        previewCluster?.let { cluster ->
+            OverlayReactionLogPreviewSheet(
+                cluster = cluster,
+                selfUserId = selfUserId,
+                onDismiss = {
+                    previewCluster = null
+                    OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
+                },
+            )
+        }
+        if (showClearHistoryConfirm) {
+            OverlayAwareAlertDialog(
+                onDismissRequest = {
+                    showClearHistoryConfirm = false
+                    OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
+                },
+                title = {
+                    Text(
+                        text = stringResource(R.string.overlay_notifications_clear_confirm_title),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                },
+                text = {
+                    Text(
+                        text = stringResource(R.string.overlay_notifications_clear_confirm_message),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showClearHistoryConfirm = false
+                            OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
+                            repository.clearHistoryForUser()
+                        },
+                    ) {
+                        Text(stringResource(R.string.overlay_notifications_clear_confirm))
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showClearHistoryConfirm = false
+                            OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
+                        },
+                    ) {
+                        Text(stringResource(R.string.overlay_notifications_clear_cancel))
+                    }
+                },
+            )
+        }
     }
 }
 

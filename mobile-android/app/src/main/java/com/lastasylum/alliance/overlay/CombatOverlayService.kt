@@ -1247,6 +1247,11 @@ class CombatOverlayService : Service() {
         }
         val params = overlayChatTeamParams ?: return
         var needsLayout = false
+        val touchableFlags = OverlayWindowLayout.historyPanelWindowFlags()
+        if (params.flags != touchableFlags) {
+            params.flags = touchableFlags
+            needsLayout = true
+        }
         if (params.format != PixelFormat.OPAQUE) {
             params.format = PixelFormat.OPAQUE
             needsLayout = true
@@ -1254,6 +1259,7 @@ class CombatOverlayService : Service() {
         if (needsLayout && root.isAttachedToWindow) {
             runCatching { mgr.updateViewLayout(root, params) }
         }
+        root.requestApplyInsets()
     }
 
     private fun syncOverlayHudWindowLayout() {
@@ -2525,11 +2531,21 @@ class CombatOverlayService : Service() {
             OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible ||
             overlayChatTeamRoot?.visibility == View.VISIBLE
 
-    private fun obscureOverlayHudForFullscreenPanel() {
-        overlayChatTeamPanelVisible = true
-        OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = true
+    private fun hideOverlayHudChromeForFullscreenPanel() {
         overlayStatusHudHost?.visibility = View.GONE
         overlayTopRightHudHost?.visibility = View.GONE
+    }
+
+    /** Gate/ suppress only — [overlayChatTeamPanelVisible] ставится после attach окна панели. */
+    private fun markOverlayFullscreenPanelSessionStarted() {
+        OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = true
+        hideOverlayHudChromeForFullscreenPanel()
+    }
+
+    private fun markOverlayFullscreenPanelSessionPresented() {
+        overlayChatTeamPanelVisible = true
+        OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = true
+        hideOverlayHudChromeForFullscreenPanel()
     }
 
     private fun syncOverlayHudsIfReady() {
@@ -5168,18 +5184,18 @@ class CombatOverlayService : Service() {
 
     private fun onOverlayChatTeamPanelPresented(needsChatPrime: Boolean) {
         val root = overlayChatTeamRoot ?: return
-        obscureOverlayHudForFullscreenPanel()
+        markOverlayFullscreenPanelSessionPresented()
         syncOverlayChatPanelVisibilityToViewModel(true)
         if (needsChatPrime) {
             scheduleOverlayChatPrimeForPanel()
         }
-        rebalanceOverlayFullscreenZOrder()
         if (isOverlayRaidStripEligible()) {
             ensureOverlayMessageStripIfNeeded()
             applyOverlayStripVisibility(rebalanceZOrder = false)
             chatStripZOrderLifted = false
-            requestChatStripZOrderLift()
         }
+        // Панель поверх ленты — иначе strip remove/add перекрывает header (крестик не нажимается).
+        rebalanceOverlayFullscreenZOrder()
         ViewCompat.requestApplyInsets(root)
     }
 
@@ -5217,6 +5233,7 @@ class CombatOverlayService : Service() {
 
     /** Поднять ленту поверх остальных окон оверлея (дорого: remove/add; не на каждое сообщение). */
     private fun requestChatStripZOrderLift() {
+        if (overlayChatTeamRoot?.visibility == View.VISIBLE) return
         if (chatStripZOrderLifted) return
         val now = System.currentTimeMillis()
         if (now - lastStripZOrderLiftMs < STRIP_ZORDER_MIN_INTERVAL_MS) return
@@ -5432,7 +5449,7 @@ class CombatOverlayService : Service() {
         }
 
         if (!warmHostOnly) {
-            obscureOverlayHudForFullscreenPanel()
+            markOverlayFullscreenPanelSessionStarted()
         }
 
         val cachedRoot = overlayChatTeamRoot
@@ -5481,20 +5498,35 @@ class CombatOverlayService : Service() {
                 ) {
                     SquadRelayTheme {
                         if (!needsChatVm) {
-                            BackHandler { hideOverlayChatTeamPanel() }
                             Surface(
                                 modifier = Modifier.fillMaxSize(),
                                 color = com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces.layer1(),
                             ) {
                                 var newsMarkReadAction by remember { mutableStateOf<(() -> Unit)?>(null) }
                                 var forumMarkReadAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+                                var showNewsMarkAllReadConfirm by remember { mutableStateOf(false) }
+                                var showForumMarkAllReadConfirm by remember { mutableStateOf(false) }
+                                var showNotificationsMarkAllReadConfirm by remember { mutableStateOf(false) }
+                                var notificationsMarkAllReadAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+                                BackHandler(
+                                    enabled = !showNewsMarkAllReadConfirm &&
+                                        !showForumMarkAllReadConfirm &&
+                                        !showNotificationsMarkAllReadConfirm &&
+                                        !OverlayChatInteractionHold.blocksFullscreenPanelBack(),
+                                ) {
+                                    hideOverlayChatTeamPanel()
+                                }
                                 Column(Modifier.fillMaxSize()) {
                                     when (overlayPane) {
                                         OverlayHudPane.News -> {
                                             OverlayHudPanelHeader(
                                                 title = stringResource(R.string.team_tab_news),
                                                 onClose = { hideOverlayChatTeamPanel() },
-                                                onMarkAllRead = { newsMarkReadAction?.invoke() },
+                                                onMarkAllRead = {
+                                                    OverlayChatInteractionHold
+                                                        .prepareOverlayModalInteraction(true)
+                                                    showNewsMarkAllReadConfirm = true
+                                                },
                                                 markAllReadEnabled = newsMarkReadAction != null,
                                             )
                                         }
@@ -5502,7 +5534,11 @@ class CombatOverlayService : Service() {
                                             OverlayHudPanelHeader(
                                                 title = stringResource(R.string.team_tab_forum),
                                                 onClose = { hideOverlayChatTeamPanel() },
-                                                onMarkAllRead = { forumMarkReadAction?.invoke() },
+                                                onMarkAllRead = {
+                                                    OverlayChatInteractionHold
+                                                        .prepareOverlayModalInteraction(true)
+                                                    showForumMarkAllReadConfirm = true
+                                                },
                                                 markAllReadEnabled = forumMarkReadAction != null,
                                             )
                                         }
@@ -5574,6 +5610,14 @@ class CombatOverlayService : Service() {
                                                     repository = container.overlayReactionLogRepository,
                                                     selfUserId = userId,
                                                     onClose = { hideOverlayChatTeamPanel() },
+                                                    onRequestMarkAllReadConfirm = {
+                                                        OverlayChatInteractionHold
+                                                            .prepareOverlayModalInteraction(true)
+                                                        showNotificationsMarkAllReadConfirm = true
+                                                    },
+                                                    onRegisterMarkAllReadAction = {
+                                                        notificationsMarkAllReadAction = it
+                                                    },
                                                     onReplyToReactionLog = { entry ->
                                                         hideOverlayChatTeamPanel(clearStrip = false)
                                                         val wm = windowManager ?: systemWindowManager()
@@ -5596,6 +5640,42 @@ class CombatOverlayService : Service() {
                                             }
                                         }
                                     }
+                                }
+                                if (showNewsMarkAllReadConfirm) {
+                                    OverlayMarkAllReadConfirmDialog(
+                                        title = stringResource(R.string.overlay_news_mark_all_read_confirm_title),
+                                        message = stringResource(R.string.overlay_news_mark_all_read_confirm_message),
+                                        onDismissRequest = { showNewsMarkAllReadConfirm = false },
+                                        onConfirm = { newsMarkReadAction?.invoke() },
+                                    )
+                                }
+                                if (showForumMarkAllReadConfirm) {
+                                    OverlayMarkAllReadConfirmDialog(
+                                        title = stringResource(R.string.overlay_forum_mark_all_read_confirm_title),
+                                        message = stringResource(R.string.overlay_forum_mark_all_read_confirm_message),
+                                        onDismissRequest = { showForumMarkAllReadConfirm = false },
+                                        onConfirm = { forumMarkReadAction?.invoke() },
+                                    )
+                                }
+                                if (showNotificationsMarkAllReadConfirm) {
+                                    OverlayMarkAllReadConfirmDialog(
+                                        title = stringResource(
+                                            R.string.overlay_notifications_mark_all_confirm_title,
+                                        ),
+                                        message = stringResource(
+                                            R.string.overlay_notifications_mark_all_confirm_message,
+                                        ),
+                                        confirmLabel = stringResource(
+                                            R.string.overlay_notifications_mark_all_confirm,
+                                        ),
+                                        cancelLabel = stringResource(
+                                            R.string.overlay_notifications_clear_cancel,
+                                        ),
+                                        onDismissRequest = {
+                                            showNotificationsMarkAllReadConfirm = false
+                                        },
+                                        onConfirm = { notificationsMarkAllReadAction?.invoke() },
+                                    )
                                 }
                             }
                             return@SquadRelayTheme
@@ -5674,11 +5754,13 @@ class CombatOverlayService : Service() {
                         var chatMarkReadBusy by remember { mutableStateOf(false) }
 
                         var showClearRoomHistoryConfirm by remember { mutableStateOf(false) }
+                        var showChatMarkAllReadConfirm by remember { mutableStateOf(false) }
                         val blockPanelBack = OverlayChatInteractionHold.blocksFullscreenPanelBack() ||
                             chromePane.activeActionMessageId != null ||
                             chromePane.confirmDeleteMessageId != null ||
                             chromePane.confirmBulkDelete ||
-                            showClearRoomHistoryConfirm
+                            showClearRoomHistoryConfirm ||
+                            showChatMarkAllReadConfirm
                         BackHandler(enabled = !blockPanelBack) {
                             hideOverlayChatTeamPanel()
                         }
@@ -5698,11 +5780,9 @@ class CombatOverlayService : Service() {
                                         !listPane.isLoading
                                     OverlayMarkAsReadIconButton(
                                         onClick = {
-                                            chatScope.launch {
-                                                chatMarkReadBusy = true
-                                                chatVm.markAllRoomsReadUpToLatest()
-                                                chatMarkReadBusy = false
-                                            }
+                                            OverlayChatInteractionHold
+                                                .prepareOverlayModalInteraction(true)
+                                            showChatMarkAllReadConfirm = true
                                         },
                                         enabled = !listPane.isLoading,
                                         loading = chatMarkReadBusy,
@@ -5815,6 +5895,20 @@ class CombatOverlayService : Service() {
                                                 },
                                             ) {
                                                 Text(getString(R.string.chat_clear_room_cancel))
+                                            }
+                                        },
+                                    )
+                                }
+                                if (showChatMarkAllReadConfirm) {
+                                    OverlayMarkAllReadConfirmDialog(
+                                        title = stringResource(R.string.overlay_chat_mark_all_read_confirm_title),
+                                        message = stringResource(R.string.overlay_chat_mark_all_read_confirm_message),
+                                        onDismissRequest = { showChatMarkAllReadConfirm = false },
+                                        onConfirm = {
+                                            chatScope.launch {
+                                                chatMarkReadBusy = true
+                                                chatVm.markAllRoomsReadUpToLatest()
+                                                chatMarkReadBusy = false
                                             }
                                         },
                                     )
