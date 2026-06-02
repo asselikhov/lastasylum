@@ -3,6 +3,8 @@ package com.lastasylum.alliance.overlay
 import android.content.Context
 import android.os.Build
 import android.util.DisplayMetrics
+import android.view.Gravity
+import android.view.WindowInsets
 import android.view.WindowManager
 
 /**
@@ -80,10 +82,15 @@ object OverlayWindowLayout {
         }
     }
 
-    /** Полноэкранная панель истории: без NOT_FOCUSABLE — нужны поле ввода и IME. */
+    /**
+     * Полноэкранная панель: фокус + IME; [FLAG_NOT_TOUCH_MODAL] — тапы вне frame окна
+     * (полоса навбара при transient bars) уходят в систему.
+     */
     fun historyPanelWindowFlags(): Int =
         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.FLAG_SPLIT_TOUCH
 
     fun applyPopupLayoutCompat(params: WindowManager.LayoutParams) {
         applyDisplayCutoutCompat(params)
@@ -101,7 +108,7 @@ object OverlayWindowLayout {
     fun applyFullscreenOverlayWindow(context: Context, params: WindowManager.LayoutParams) {
         applyHistoryLayoutCompat(params)
         applyZeroFitInsets(params)
-        params.gravity = android.view.Gravity.TOP or android.view.Gravity.START
+        params.gravity = Gravity.TOP or Gravity.START
         params.x = 0
         params.y = 0
         val h = realDisplayHeightPx(context)
@@ -109,6 +116,49 @@ object OverlayWindowLayout {
             params.width = WindowManager.LayoutParams.MATCH_PARENT
             params.height = h
         }
+    }
+
+    /**
+     * Полноэкранная HUD-панель (чат/уведомления/команда): не перекрываем navigation bar,
+     * чтобы при свайпе снизу системные кнопки оставались кликабельными.
+     */
+    fun applyFullscreenOverlayPanelWindow(context: Context, params: WindowManager.LayoutParams) {
+        applyHistoryLayoutCompat(params)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            params.setFitInsetsTypes(
+                WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars(),
+            )
+        } else {
+            applyZeroFitInsets(params)
+        }
+        params.gravity = Gravity.TOP or Gravity.START
+        params.x = 0
+        params.y = 0
+        params.width = WindowManager.LayoutParams.MATCH_PARENT
+        params.height = WindowManager.LayoutParams.MATCH_PARENT
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            val h = realDisplayHeightPx(context)
+            if (h > 0) params.height = h
+        }
+    }
+
+    /** Поджать высоту overlay-окна под видимый navigation bar (pre-API 30). */
+    fun syncFullscreenPanelHeightAboveNavigationBar(
+        context: Context,
+        windowManager: WindowManager,
+        root: android.view.View,
+        params: WindowManager.LayoutParams,
+        navigationBarInsetBottomPx: Int,
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) return
+        if (!root.isAttachedToWindow) return
+        val fullH = realDisplayHeightPx(context)
+        if (fullH <= 0) return
+        val newH = (fullH - navigationBarInsetBottomPx.coerceAtLeast(0))
+            .coerceAtLeast((fullH * 0.55f).toInt())
+        if (params.height == newH) return
+        params.height = newH
+        runCatching { windowManager.updateViewLayout(root, params) }
     }
 
     /**

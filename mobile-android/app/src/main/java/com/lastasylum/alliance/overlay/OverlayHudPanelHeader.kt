@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -45,6 +46,7 @@ fun OverlayHudPanelHeader(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .zIndex(12f)
             .padding(
                 start = SquadRelayDimens.contentPaddingHorizontal,
                 end = 4.dp,

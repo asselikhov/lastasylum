@@ -2,6 +2,7 @@ package com.lastasylum.alliance.overlay
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -147,14 +148,16 @@ fun OverlayReactionLogDetailSheet(
             }
             if (incoming && onReplyToReactionLog != null && !OverlayReactionLogReplyEnricher.isReplyEntry(entry)) {
                 Spacer(modifier = Modifier.height(12.dp))
-                OverlayReactionReplyButton(
-                    onClick = {
-                        onDismiss()
-                        onReplyToReactionLog(entry)
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    expanded = true,
-                )
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    OverlayReactionReplyButton(
+                        onClick = {
+                            onDismiss()
+                            onReplyToReactionLog(entry)
+                        },
+                        expanded = true,
+                        incoming = true,
+                    )
+                }
             }
         }
     }

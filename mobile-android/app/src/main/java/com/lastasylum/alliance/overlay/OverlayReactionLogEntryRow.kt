@@ -63,7 +63,8 @@ import com.lastasylum.alliance.ui.theme.premium.PremiumColors
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import kotlinx.coroutines.delay
 
-private val ReactionPreviewColumnWidth = 100.dp
+private val ReactionPreviewColumnWidth = 108.dp
+private val ReactionPreviewReplySlot = 36.dp
 
 @Composable
 fun OverlayReactionLogEntryRow(
@@ -278,10 +279,20 @@ private fun ReactionPreviewColumn(
     val showReplyCta = incoming &&
         onQuickReply != null &&
         !OverlayReactionLogReplyEnricher.isReplyEntry(entry)
-    Column(
+    Row(
         modifier = Modifier.width(ReactionPreviewColumnWidth),
-        horizontalAlignment = Alignment.CenterHorizontally,
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (showReplyCta) {
+            OverlayReactionReplyIconButton(
+                onClick = onQuickReply,
+                incoming = incoming,
+                modifier = Modifier.size(ReactionPreviewReplySlot),
+            )
+        } else {
+            Spacer(modifier = Modifier.size(ReactionPreviewReplySlot))
+        }
         Box(
             modifier = Modifier
                 .clickable(
@@ -305,13 +316,6 @@ private fun ReactionPreviewColumn(
                     previewHostKey = entry.id,
                 )
             }
-        }
-        if (showReplyCta) {
-            Spacer(modifier = Modifier.size(8.dp))
-            OverlayReactionReplyButton(
-                onClick = onQuickReply,
-                modifier = Modifier.fillMaxWidth(),
-            )
         }
     }
 }

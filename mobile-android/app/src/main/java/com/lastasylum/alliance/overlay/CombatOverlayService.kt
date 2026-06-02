@@ -75,6 +75,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.google.android.material.color.MaterialColors
@@ -1400,6 +1401,10 @@ class CombatOverlayService : Service() {
      */
     private fun rebalanceOverlayHudZOrder(force: Boolean = false) {
         if (!isInGameOverlayUiActive()) return
+        if (isOverlayFullscreenPanelObscuringHud()) {
+            rebalanceOverlayFullscreenZOrder()
+            return
+        }
         val now = System.currentTimeMillis()
         if (!force && now - lastHudZOrderRebalanceMs < HUD_ZORDER_REBALANCE_MIN_MS) return
         val mgr = windowManager ?: systemWindowManager() ?: return
@@ -2534,6 +2539,23 @@ class CombatOverlayService : Service() {
     private fun hideOverlayHudChromeForFullscreenPanel() {
         overlayStatusHudHost?.visibility = View.GONE
         overlayTopRightHudHost?.visibility = View.GONE
+        // GONE alone is not enough on some OEMs: lifted HUD window can still steal header taps.
+        updateOverlayHudHostsTouchPassthrough(notTouchable = true)
+    }
+
+    private fun updateOverlayHudHostsTouchPassthrough(notTouchable: Boolean) {
+        val mgr = windowManager ?: systemWindowManager() ?: return
+        val mask = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        val popupFlags = OverlayWindowLayout.popupWindowFlags()
+        fun update(host: FrameLayout?, params: WindowManager.LayoutParams?) {
+            if (host == null || params == null || !host.isAttachedToWindow) return
+            val newFlags = if (notTouchable) popupFlags or mask else popupFlags
+            if (params.flags == newFlags) return
+            params.flags = newFlags
+            runCatching { mgr.updateViewLayout(host, params) }
+        }
+        update(overlayStatusHudHost, overlayStatusHudParams)
+        update(overlayTopRightHudHost, overlayTopRightHudParams)
     }
 
     /** Gate/ suppress only — [overlayChatTeamPanelVisible] ставится после attach окна панели. */
@@ -2592,7 +2614,7 @@ class CombatOverlayService : Service() {
         val inGame = isInGameOverlayUiActive()
         val prefs = AppContainer.from(this).userSettingsPreferences
         val allowed = prefs.isOverlayPanelEnabled() && canDrawOverlaysNow()
-        val show = inGame && allowed && !overlayChatTeamPanelVisible
+        val show = inGame && allowed && !isOverlayFullscreenPanelObscuringHud()
         if (!show) {
             overlayStatusHudHost?.visibility = View.GONE
             return
@@ -2608,7 +2630,7 @@ class CombatOverlayService : Service() {
         val inGame = isInGameOverlayUiActive()
         val prefs = AppContainer.from(this).userSettingsPreferences
         val allowed = prefs.isOverlayPanelEnabled() && canDrawOverlaysNow()
-        val show = inGame && allowed && !overlayChatTeamPanelVisible
+        val show = inGame && allowed && !isOverlayFullscreenPanelObscuringHud()
         if (!show) {
             overlayTopRightHudHost?.visibility = View.GONE
             return
@@ -2792,6 +2814,9 @@ class CombatOverlayService : Service() {
             overlayHudPanelHostState.update {
                 it.copy(hudPane = pane, openGeneration = it.openGeneration + 1)
             }
+            hideOverlayHudChromeForFullscreenPanel()
+            applyOverlayStripVisibility(rebalanceZOrder = true)
+            restoreOverlayChatTeamPanelOpaqueAppearance()
             return
         }
         showOverlayChatTeamPanel(hudPane = pane)
@@ -2801,6 +2826,7 @@ class CombatOverlayService : Service() {
     private fun restoreOverlayHudChromeAfterPanel() {
         if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return
         if (isOverlayFullscreenPanelObscuringHud()) return
+        updateOverlayHudHostsTouchPassthrough(notTouchable = false)
         if (overlayStatusHudHost?.visibility != View.VISIBLE) {
             overlayStatusHudHost?.visibility = View.VISIBLE
         }
@@ -5012,10 +5038,14 @@ class CombatOverlayService : Service() {
             runCatching { ensureChatStripWindow(wm) }
         }
         if (isOverlayChatStripEnabled()) {
-            val showStrip = shouldForceShowRaidStrip() || isOverlayRaidStripEligible()
+            val stripEligible = shouldForceShowRaidStrip() || isOverlayRaidStripEligible()
+            val showStrip = stripEligible && !isOverlayFullscreenPanelObscuringHud()
             chatStripHost?.visibility = if (showStrip) View.VISIBLE else View.GONE
+            if (showStrip) {
+                syncChatStripWindowTouchPassthrough()
+            }
         }
-        if (rebalanceZOrder) {
+        if (rebalanceZOrder || isOverlayFullscreenPanelObscuringHud()) {
             rebalanceOverlayFullscreenZOrder()
         }
     }
@@ -5189,12 +5219,14 @@ class CombatOverlayService : Service() {
         if (needsChatPrime) {
             scheduleOverlayChatPrimeForPanel()
         }
+        hideOverlayHudChromeForFullscreenPanel()
         if (isOverlayRaidStripEligible()) {
             ensureOverlayMessageStripIfNeeded()
-            applyOverlayStripVisibility(rebalanceZOrder = false)
             chatStripZOrderLifted = false
         }
-        // Панель поверх ленты — иначе strip remove/add перекрывает header (крестик не нажимается).
+        applyOverlayStripVisibility(rebalanceZOrder = true)
+        restoreOverlayChatTeamPanelOpaqueAppearance()
+        // Панель поверх ленты/HUD — иначе remove/add поднимает чужие окна над header (крестик).
         rebalanceOverlayFullscreenZOrder()
         ViewCompat.requestApplyInsets(root)
     }
@@ -5772,6 +5804,7 @@ class CombatOverlayService : Service() {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
+                                        .zIndex(12f)
                                         .padding(top = 2.dp, end = 4.dp),
                                     horizontalArrangement = Arrangement.End,
                                     verticalAlignment = Alignment.CenterVertically,
@@ -5941,12 +5974,13 @@ class CombatOverlayService : Service() {
             OverlayWindowLayout.historyPanelWindowFlags(),
             PixelFormat.OPAQUE,
         ).apply {
-            OverlayWindowLayout.applyFullscreenOverlayWindow(this@CombatOverlayService, this)
+            OverlayWindowLayout.applyFullscreenOverlayPanelWindow(this@CombatOverlayService, this)
             OverlayWindowLayout.applyOverlayFullscreenChatSoftInputMode(this)
         }
 
         val surfaceArgb = overlayChatTeamSurfaceColor()
-        val root = FrameLayout(this).apply {
+        val panelParams = params
+        val root = OverlayFullscreenPanelRootLayout(this).apply {
             setBackgroundColor(surfaceArgb)
             elevation = 48f
             setViewTreeLifecycleOwner(owner)
@@ -5954,14 +5988,27 @@ class CombatOverlayService : Service() {
             setViewTreeSavedStateRegistryOwner(owner)
             setViewTreeOnBackPressedDispatcherOwner(owner)
             ViewCompat.setOnApplyWindowInsetsListener(this) { view, windowInsets ->
+                val navTypes = WindowInsetsCompat.Type.navigationBars()
                 val safeTypes = WindowInsetsCompat.Type.systemBars() or
                     WindowInsetsCompat.Type.displayCutout()
                 val imeTypes = WindowInsetsCompat.Type.ime()
+                val nav = windowInsets.getInsets(navTypes)
                 val safe = windowInsets.getInsets(safeTypes)
                 val ime = windowInsets.getInsets(imeTypes)
-                // Подъём всего Compose-дерева над клавиатурой; композер — только +8dp.
-                val bottom = if (ime.bottom > 0) ime.bottom else safe.bottom
+                (view as? OverlayFullscreenPanelRootLayout)?.updateNavigationBarInsets(nav)
+                // Подъём Compose над IME; иначе — над navigation bar / gesture inset.
+                val bottom = if (ime.bottom > 0) ime.bottom else nav.bottom
                 view.setPadding(safe.left, 0, safe.right, bottom)
+                val mgr = windowManager ?: systemWindowManager()
+                if (mgr != null) {
+                    OverlayWindowLayout.syncFullscreenPanelHeightAboveNavigationBar(
+                        context = this@CombatOverlayService,
+                        windowManager = mgr,
+                        root = view,
+                        params = panelParams,
+                        navigationBarInsetBottomPx = nav.bottom,
+                    )
+                }
                 WindowInsetsCompat.Builder(windowInsets)
                     .setInsets(safeTypes, Insets.of(safe.left, 0, safe.right, 0))
                     .setInsets(imeTypes, Insets.NONE)
