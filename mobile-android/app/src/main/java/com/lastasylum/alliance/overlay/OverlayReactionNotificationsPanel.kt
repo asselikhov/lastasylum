@@ -23,7 +23,6 @@ import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -713,10 +712,7 @@ private fun OverlayReactionLogThreadParentClusterRow(
             replies.forEachIndexed { index, replyCluster ->
                 key(replyCluster.representative.id) {
                     if (index > 0) {
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
-                            modifier = Modifier.padding(vertical = 6.dp),
-                        )
+                        Spacer(modifier = Modifier.height(6.dp))
                     }
                     OverlayReactionLogFeedClusterRow(
                         cluster = replyCluster,
@@ -728,7 +724,6 @@ private fun OverlayReactionLogThreadParentClusterRow(
                         onPreviewCluster = onPreviewCluster,
                         onReplyToReactionLog = onReplyToReactionLog,
                         onToggleEmojiReaction = onToggleEmojiReaction,
-                        wrapInCard = false,
                     )
                 }
             }
