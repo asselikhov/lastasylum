@@ -164,7 +164,7 @@ class CombatOverlayService : Service() {
                     AppContainer.from(this@CombatOverlayService).userSettingsPreferences.getOverlayLayoutPreset(),
                 ).tickerY
             },
-            onTickerWindowAttached = { rebalanceOverlayFullscreenZOrder() },
+            onTickerWindowAttached = { scheduleRebalanceOverlayFullscreenZOrder() },
         )
     }
     private val gateUserNotifier by lazy { OverlayGateUserNotifier(this, mainHandler) }
@@ -536,7 +536,7 @@ class CombatOverlayService : Service() {
             restoreOverlayChatTeamPanelOpaqueAppearance()
         }
         if (!skipFullscreenRebalance) {
-            rebalanceOverlayFullscreenZOrder()
+            scheduleRebalanceOverlayFullscreenZOrder()
         }
         repairDetachedOverlayChatTeamPanelIfNeeded()
         repairDetachedOverlayShellIfNeeded()
@@ -1121,6 +1121,11 @@ class CombatOverlayService : Service() {
         requestChatStripZOrderLift()
     }
 
+    /** Один remove/add панели на кадр — иначе при открытии окно моргает (было 3× подряд + aux). */
+    private val fullscreenZOrderRebalanceRunnable = Runnable {
+        rebalanceOverlayFullscreenZOrderNow()
+    }
+
     private val gameGateRunnable = Runnable {
         runCatching { tickGameGate() }
     }
@@ -1358,7 +1363,7 @@ class CombatOverlayService : Service() {
             runCatching { mgr.addView(host, params) }
                 .onSuccess {
                     if (isOverlayFullscreenPanelObscuringHud()) {
-                        rebalanceOverlayFullscreenZOrder()
+                        scheduleRebalanceOverlayFullscreenZOrder()
                     } else {
                         scheduleStripZOrderLift()
                     }
@@ -1393,7 +1398,7 @@ class CombatOverlayService : Service() {
             runCatching { mgr.addView(host, params) }
                 .onSuccess {
                     if (isOverlayFullscreenPanelObscuringHud()) {
-                        rebalanceOverlayFullscreenZOrder()
+                        scheduleRebalanceOverlayFullscreenZOrder()
                     }
                 }
                 .onFailure { e -> Log.w(TAG, "repairOrRemoveDetachedHudWindows: $label failed", e) }
@@ -1433,7 +1438,7 @@ class CombatOverlayService : Service() {
     private fun rebalanceOverlayHudZOrder(force: Boolean = false) {
         if (!isInGameOverlayUiActive()) return
         if (isOverlayFullscreenPanelObscuringHud()) {
-            rebalanceOverlayFullscreenZOrder()
+            scheduleRebalanceOverlayFullscreenZOrder()
             return
         }
         val now = System.currentTimeMillis()
@@ -1470,7 +1475,7 @@ class CombatOverlayService : Service() {
         if (root.isAttachedToWindow) return
         Log.w(TAG, "repairDetachedOverlayChatTeamPanelIfNeeded: fullscreen chat/team detached, re-attaching")
         runCatching { mgr.addView(root, params) }
-            .onSuccess { rebalanceOverlayFullscreenZOrder() }
+            .onSuccess { scheduleRebalanceOverlayFullscreenZOrder() }
             .onFailure { e ->
                 Log.e(TAG, "repairDetachedOverlayChatTeamPanelIfNeeded: re-attach failed", e)
             }
@@ -2627,13 +2632,11 @@ class CombatOverlayService : Service() {
     /** Gate/ suppress only — [overlayChatTeamPanelVisible] ставится после attach окна панели. */
     private fun markOverlayFullscreenPanelSessionStarted() {
         OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = true
-        hideOverlayHudChromeForFullscreenPanel()
     }
 
     private fun markOverlayFullscreenPanelSessionPresented() {
         overlayChatTeamPanelVisible = true
         OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = true
-        hideOverlayHudChromeForFullscreenPanel()
     }
 
     private fun syncOverlayHudsIfReady() {
@@ -5091,7 +5094,7 @@ class CombatOverlayService : Service() {
             }
         }
         _overlayVisible.value = true
-        rebalanceOverlayFullscreenZOrder()
+        scheduleRebalanceOverlayFullscreenZOrder()
         mainHandler.post { ensureOverlayRaidRealtimeIfNeeded() }
     }
 
@@ -5103,7 +5106,7 @@ class CombatOverlayService : Service() {
             chatStripHost?.visibility = View.GONE
             applyAuxiliaryOverlayTouchSuppressionForFullscreenPanel(enable = true)
             if (rebalanceZOrder) {
-                rebalanceOverlayFullscreenZOrder()
+                scheduleRebalanceOverlayFullscreenZOrder()
             }
             return
         }
@@ -5112,7 +5115,7 @@ class CombatOverlayService : Service() {
             chatStripHost?.visibility = if (showStrip) View.VISIBLE else View.GONE
         }
         if (rebalanceZOrder) {
-            rebalanceOverlayFullscreenZOrder()
+            scheduleRebalanceOverlayFullscreenZOrder()
         }
     }
     /** Flush in-panel read cursors and refresh HUD badges (no bulk mark-all). */
@@ -5218,6 +5221,7 @@ class CombatOverlayService : Service() {
         syncOverlayChatPanelVisibilityToViewModel(false)
         OverlayChatInteractionHold.releaseGameForegroundSuppress()
         applyAuxiliaryOverlayTouchSuppressionForFullscreenPanel(enable = false)
+        cancelScheduledRebalanceOverlayFullscreenZOrder()
         resumeOverlayWindowsAfterSystemActivity(skipFullscreenRebalance = true)
         if (hadVisible) {
             chatStripZOrderLifted = false
@@ -5293,10 +5297,8 @@ class CombatOverlayService : Service() {
             chatStripZOrderLifted = false
         }
         restoreOverlayChatTeamPanelOpaqueAppearance()
-        // Панель поверх ленты/HUD: сразу и после отложенного strip lift (гонка remove/add).
-        rebalanceOverlayFullscreenZOrder()
-        mainHandler.post { rebalanceOverlayFullscreenZOrder() }
-        mainHandler.postDelayed({ rebalanceOverlayFullscreenZOrder() }, 120L)
+        // Один remove/add панели на следующий кадр (после GONE→VISIBLE и strip/HUD suppress).
+        scheduleRebalanceOverlayFullscreenZOrder()
         ViewCompat.requestApplyInsets(root)
     }
 
@@ -5305,35 +5307,33 @@ class CombatOverlayService : Service() {
         imm.hideSoftInputFromWindow(view.windowToken, 0)
     }
 
+    /** Схлопывает несколько запросов z-order в один remove/add панели (без мигания aux-окон). */
+    private fun scheduleRebalanceOverlayFullscreenZOrder() {
+        if (!isOverlayFullscreenPanelObscuringHud()) return
+        mainHandler.removeCallbacks(fullscreenZOrderRebalanceRunnable)
+        mainHandler.post(fullscreenZOrderRebalanceRunnable)
+    }
+
+    private fun cancelScheduledRebalanceOverlayFullscreenZOrder() {
+        mainHandler.removeCallbacks(fullscreenZOrderRebalanceRunnable)
+    }
+
     /**
-     * У нескольких [TYPE_APPLICATION_OVERLAY] окон порядок «кто выше» на OEM может не совпадать с порядком
-     * addView; remove+add поднимает окно чата поверх ленты и тикера.
+     * Поднять полноэкранную панель поверх HUD/ленты. Только одно окно remove/add — aux уже GONE +
+     * [FLAG_NOT_TOUCHABLE] через [applyAuxiliaryOverlayTouchSuppressionForFullscreenPanel].
      */
-    private fun rebalanceOverlayFullscreenZOrder() {
+    private fun rebalanceOverlayFullscreenZOrderNow() {
         val mgr = windowManager ?: return
         if (!isOverlayFullscreenPanelObscuringHud()) return
         val panelRoot = overlayChatTeamRoot ?: return
         val panelParams = overlayChatTeamParams ?: return
         if (!panelRoot.isAttachedToWindow) return
         applyAuxiliaryOverlayTouchSuppressionForFullscreenPanel(enable = true)
-        fun lowerWindow(view: View?, params: WindowManager.LayoutParams?) {
-            if (view == null || params == null || !view.isAttachedToWindow) return
-            runCatching {
-                mgr.removeView(view)
-                mgr.addView(view, params)
-            }.onFailure { e ->
-                Log.w(TAG, "rebalanceOverlayFullscreenZOrder lower failed", e)
-            }
-        }
-        lowerWindow(overlayStatusHudHost, overlayStatusHudParams)
-        lowerWindow(overlayTopRightHudHost, overlayTopRightHudParams)
-        lowerWindow(chatStripHost, chatStripParams)
-        overlayTicker.lowerForZOrder()
         runCatching {
             mgr.removeView(panelRoot)
             mgr.addView(panelRoot, panelParams)
         }.onFailure { e ->
-            Log.w(TAG, "rebalanceOverlayFullscreenZOrder(chatTeam) failed", e)
+            Log.w(TAG, "rebalanceOverlayFullscreenZOrderNow failed", e)
         }
     }
 
@@ -5362,7 +5362,7 @@ class CombatOverlayService : Service() {
             mgr.addView(host, p)
         }.onSuccess {
             if (isOverlayFullscreenPanelObscuringHud()) {
-                rebalanceOverlayFullscreenZOrder()
+                scheduleRebalanceOverlayFullscreenZOrder()
             } else {
                 rebalanceOverlayHudZOrder(force = true)
             }
@@ -5579,7 +5579,6 @@ class CombatOverlayService : Service() {
                 runCatching { manager.addView(cachedRoot, cachedParams) }
             }
             if (cachedRoot.isAttachedToWindow) {
-                restoreOverlayChatTeamPanelOpaqueAppearance()
                 onOverlayChatTeamPanelPresented(needsChatPrime)
                 return
             }
