@@ -95,6 +95,7 @@ import com.lastasylum.alliance.data.chat.ChatRoomKindResolver
 import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.data.chat.OverlayReactionBurstReplyTo
 import com.lastasylum.alliance.data.chat.OverlayReactionEvent
+import com.lastasylum.alliance.data.chat.OverlayReactionIncomingBurstReplyResolver
 import com.lastasylum.alliance.data.chat.OverlayReactionLogEntryDto
 import com.lastasylum.alliance.data.chat.toBurstReplyTo
 import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
@@ -4050,37 +4051,54 @@ class CombatOverlayService : Service() {
     private fun finishPendingIncomingReactionBurst(
         logEntryId: String,
         dto: OverlayReactionLogEntryDto? = null,
+        attempt: Int = 0,
     ) {
-        val event = pendingIncomingReactionBursts.remove(logEntryId) ?: return
-        pendingIncomingReactionBurstTimers.remove(logEntryId)?.let { mainHandler.removeCallbacks(it) }
+        val event = pendingIncomingReactionBursts[logEntryId] ?: return
         val wm = windowManager ?: getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
         val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
         val container = AppContainer.from(this@CombatOverlayService)
         container.overlayReactionLogRepository.setSelfUserId(selfId)
-        val replyTo = event.replyToLog
-            ?: dto?.replyToLog?.toReplyTo()?.toBurstReplyTo()
-            ?: container.overlayReactionLogRepository.entries.value
-                .find { it.id == logEntryId }
-                ?.replyToLog
-                ?.toBurstReplyTo()
+        val replyTo = OverlayReactionIncomingBurstReplyResolver.resolve(
+            event = event,
+            logDto = dto,
+            entries = container.overlayReactionLogRepository.entries.value,
+        )
+        if (
+            OverlayReactionIncomingBurstReplyResolver.isReplyEvent(event) &&
+            replyTo == null &&
+            attempt < PENDING_REPLY_BURST_MAX_ATTEMPTS
+        ) {
+            mainHandler.postDelayed(
+                { finishPendingIncomingReactionBurst(logEntryId, dto, attempt + 1) },
+                PENDING_REPLY_BURST_RETRY_MS,
+            )
+            return
+        }
+        pendingIncomingReactionBursts.remove(logEntryId)
+        pendingIncomingReactionBurstTimers.remove(logEntryId)?.let { mainHandler.removeCallbacks(it) }
         maybeShowIncomingReactionBurst(wm, event, replyToLog = replyTo)
     }
 
     private fun queuePendingIncomingReactionBurst(event: OverlayReactionEvent) {
         val logEntryId = event.logEntryId?.trim().orEmpty()
+        val wm = windowManager ?: getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
         if (logEntryId.isEmpty()) {
-            val wm = windowManager ?: getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
-            maybeShowIncomingReactionBurst(wm, event)
+            val container = AppContainer.from(this@CombatOverlayService)
+            val replyTo = OverlayReactionIncomingBurstReplyResolver.resolve(
+                event = event,
+                entries = container.overlayReactionLogRepository.entries.value,
+            )
+            maybeShowIncomingReactionBurst(wm, event, replyToLog = replyTo)
             return
         }
         pendingIncomingReactionBursts[logEntryId] = event
         pendingIncomingReactionBurstTimers.remove(logEntryId)?.let { mainHandler.removeCallbacks(it) }
-        val fallback = Runnable {
+        val safety = Runnable {
             pendingIncomingReactionBurstTimers.remove(logEntryId)
-            finishPendingIncomingReactionBurst(logEntryId)
+            finishPendingIncomingReactionBurst(logEntryId, null, attempt = PENDING_REPLY_BURST_MAX_ATTEMPTS)
         }
-        pendingIncomingReactionBurstTimers[logEntryId] = fallback
-        mainHandler.postDelayed(fallback, 200L)
+        pendingIncomingReactionBurstTimers[logEntryId] = safety
+        mainHandler.postDelayed(safety, PENDING_REPLY_BURST_SAFETY_MS)
     }
 
     /** Id «Рейд» из prefs или свежего кэша комнат (если prefs ещё пуст после старта оверлея). */
@@ -4618,10 +4636,10 @@ class CombatOverlayService : Service() {
                 if (event.fromUserId == selfId) return@post
                 if (event.targetUserId != selfId) return@post
                 val wm = windowManager ?: getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return@post
-                if (event.replyToLog != null || event.replyToLogId.isNullOrBlank()) {
-                    maybeShowIncomingReactionBurst(wm, event)
-                } else {
-                    queuePendingIncomingReactionBurst(event)
+                when {
+                    event.replyToLog != null -> maybeShowIncomingReactionBurst(wm, event)
+                    !event.replyToLogId.isNullOrBlank() -> queuePendingIncomingReactionBurst(event)
+                    else -> maybeShowIncomingReactionBurst(wm, event)
                 }
             }
         }
@@ -5899,6 +5917,10 @@ class CombatOverlayService : Service() {
     }
 
     companion object {
+        private const val PENDING_REPLY_BURST_RETRY_MS = 80L
+        private const val PENDING_REPLY_BURST_MAX_ATTEMPTS = 50
+        private const val PENDING_REPLY_BURST_SAFETY_MS = 5_000L
+
         @Volatile
         private var runningInstance: CombatOverlayService? = null
 

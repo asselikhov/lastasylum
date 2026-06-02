@@ -589,7 +589,6 @@ private fun JSONObject.toOverlayReactionLogReplyToDto(): OverlayReactionLogReply
         ?: optString("id").takeIf { it.isNotBlank() }
         ?: return null
     val senderUserId = optString("senderUserId", "").trim()
-    if (senderUserId.isEmpty()) return null
     return OverlayReactionLogReplyToDto(
         _id = logId,
         reaction = optString("reaction", "heart").ifBlank { "heart" },

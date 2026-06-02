@@ -24,6 +24,7 @@ node scripts/<script>.mjs
 |--------|---------|-------------------|
 | [`migrate-chat-rooms.mjs`](migrate-chat-rooms.mjs) | Create default «Общий» room per alliance; backfill `message.roomId` | — |
 | [`clear-chat-messages.mjs`](clear-chat-messages.mjs) | **Destructive:** delete all chat messages, read cursors, attachment metadata (DB only; **no** socket events) | `SCRIPT_CONFIRM_CLEAR_CHAT=yes`, optional `SCRIPT_DRY_RUN=1` |
+| [`clear-overlay-reactions.mjs`](clear-overlay-reactions.mjs) | **Destructive:** delete all overlay reaction log entries and read cursors | `SCRIPT_CONFIRM_CLEAR_OVERLAY_REACTIONS=yes`, optional `SCRIPT_DRY_RUN=1` |
 
 Prefer the app admin hub **DELETE** `admin/chat/messages` (R5): same DB wipe plus `chat:history:cleared` and `rooms:unread` zero fan-out to connected clients.
 | [`normalize-legacy-users.mjs`](normalize-legacy-users.mjs) | Set `membershipStatus: active` for legacy users; optional admin role fix | `SCRIPT_ADMIN_USERNAME` (optional) |

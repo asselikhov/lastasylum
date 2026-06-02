@@ -344,10 +344,19 @@ export class ChatGateway {
       payload.logEntryId = logEntry._id;
     }
     if (logEntry?.replyToLogId) {
-      payload.replyToLogId = logEntry.replyToLogId;
+      payload.replyToLogId = String(logEntry.replyToLogId);
     }
     if (logEntry?.replyToLog) {
-      payload.replyToLog = logEntry.replyToLog;
+      const snap = logEntry.replyToLog;
+      payload.replyToLog = {
+        _id: String(snap._id),
+        reaction: snap.reaction,
+        visibility: snap.visibility,
+        senderUserId: snap.senderUserId,
+        senderUsername: snap.senderUsername,
+        targetUserId: snap.targetUserId,
+        targetUsername: snap.targetUsername,
+      };
     }
     return payload;
   }
