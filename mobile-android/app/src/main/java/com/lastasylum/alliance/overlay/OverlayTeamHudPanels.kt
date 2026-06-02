@@ -61,14 +61,20 @@ private fun OverlayTeamHudScaffold(
     val context = LocalContext.current
     val app = remember { AppContainer.from(context.applicationContext) }
     val res = context.resources
-    var loading by remember { mutableStateOf(true) }
+    val cachedInitially = remember { OverlayTeamContextCache.peekValid() }
+    var loading by remember { mutableStateOf(cachedInitially == null) }
     var error by remember { mutableStateOf<String?>(null) }
-    var hudContext by remember { mutableStateOf<OverlayTeamHudContext?>(null) }
+    var hudContext by remember { mutableStateOf(cachedInitially) }
 
     LaunchedEffect(forceReload) {
-        loading = true
-        error = null
-        hudContext = null
+        val warmCache = !forceReload && hudContext != null
+        if (!warmCache) {
+            loading = hudContext == null
+            error = null
+            if (forceReload) {
+                hudContext = null
+            }
+        }
         val loaded = withContext(Dispatchers.IO) {
             OverlayTeamContextCache.load(
                 usersRepository = app.usersRepository,
@@ -77,7 +83,11 @@ private fun OverlayTeamHudScaffold(
             )
         }
         loaded.onSuccess { hudContext = it }
-            .onFailure { e -> error = e.toUserMessageRu(res) }
+            .onFailure { e ->
+                if (hudContext == null) {
+                    error = e.toUserMessageRu(res)
+                }
+            }
         loading = false
     }
 
@@ -143,7 +153,7 @@ fun OverlayTeamForumPanel(
 ) {
     val context = LocalContext.current
     val app = remember { AppContainer.from(context.applicationContext) }
-    OverlayTeamHudScaffold(modifier = modifier, forceReload = true) { ctx ->
+    OverlayTeamHudScaffold(modifier = modifier) { ctx ->
         Box(Modifier.fillMaxSize()) {
             TeamForumNavHost(
                 teamId = ctx.teamId,

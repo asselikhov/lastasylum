@@ -27,14 +27,15 @@ internal object ReactionLogCardTokens {
     val railWidth = 3.dp
     val borderUnread = Color(0x664ADE80)
     val borderIncoming = Color(0x5534D399)
-    val borderOutgoing = Color(0x403D4A62)
+    val borderOutgoing = Color(0x5560A5FA)
     val incomingRail = Color(0xFF34D399)
-    val outgoingRail = Color(0xFF6B7A90)
+    val outgoingRail = Color(0xFF60A5FA)
     val incomingGradientTop = Color(0x2834D399)
     val incomingGradientBottom = Color(0x0A0F1A14)
-    val outgoingGradientTop = Color(0x12FFFFFF)
-    val outgoingGradientBottom = Color(0x060E1624)
+    val outgoingGradientTop = Color(0x2860A5FA)
+    val outgoingGradientBottom = Color(0x0A101C2E)
     val incomingUnreadGlow = Color(0x1A34D399)
+    val outgoingUnreadGlow = Color(0x1A60A5FA)
     val presenceOffline = Color(0xFF667788)
     val presenceRing = Color(0xFF0E1624)
 }
@@ -67,25 +68,21 @@ fun OverlayReactionLogCard(
             if (incoming) ReactionLogCardTokens.incomingGradientBottom else ReactionLogCardTokens.outgoingGradientBottom,
         ),
     )
-    val cardAlpha = if (incoming) {
-        (PremiumSurfaces.listCardAlpha + 0.04f).coerceAtMost(0.96f)
-    } else {
-        PremiumSurfaces.listCardAlpha - 0.06f
-    }.coerceIn(0.72f, 0.96f)
+    val cardAlpha = (PremiumSurfaces.listCardAlpha + 0.04f).coerceIn(0.72f, 0.96f)
     val railWidthPx = with(LocalDensity.current) { ReactionLogCardTokens.railWidth.toPx() }
-    val railAlpha = if (incoming) {
-        if (unreadHighlight) 0.98f else 0.78f
-    } else {
-        0.55f
+    val railAlpha = when {
+        unreadHighlight -> 0.98f
+        incoming -> 0.78f
+        else -> 0.78f
     }
     PremiumGlassSurface(
         modifier = modifier
             .fillMaxWidth()
             .wrapContentHeight(),
         shape = shape,
-        shadowElevation = if (incoming) 4.dp else 2.dp,
+        shadowElevation = 4.dp,
         layerAlpha = cardAlpha,
-        showInnerGlow = incoming,
+        showInnerGlow = true,
         border = BorderStroke(1.dp, animatedBorderColor),
         highlightCornerRadius = ReactionLogCardTokens.corner,
     ) {
@@ -95,8 +92,13 @@ fun OverlayReactionLogCard(
                 .wrapContentHeight()
                 .drawBehind {
                     drawRect(brush = gradientBrush, size = size)
-                    if (incoming && unreadHighlight) {
-                        drawRect(color = ReactionLogCardTokens.incomingUnreadGlow, size = size)
+                    if (unreadHighlight) {
+                        val glow = if (incoming) {
+                            ReactionLogCardTokens.incomingUnreadGlow
+                        } else {
+                            ReactionLogCardTokens.outgoingUnreadGlow
+                        }
+                        drawRect(color = glow, size = size)
                     }
                     val railColor = animatedRailColor.copy(alpha = railAlpha)
                     if (incoming) {

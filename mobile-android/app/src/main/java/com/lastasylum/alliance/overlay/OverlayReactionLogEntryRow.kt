@@ -376,7 +376,7 @@ private fun SenderAvatarBlock(
                 .size(18.dp)
                 .background(Color(0xFF0D1524), CircleShape)
                 .padding(2.dp),
-            tint = if (incoming) Color(0xFF6EE7B7) else Color(0xFF8899AA),
+            tint = if (incoming) Color(0xFF6EE7B7) else Color(0xFF93C5FD),
         )
     }
 }

@@ -86,7 +86,11 @@ class OverlayReactionNotificationsController(
             return
         }
         started = true
-        repository.loadInitial()
+        if (repository.entries.value.isEmpty()) {
+            repository.loadInitial()
+        } else {
+            rebuildFromRepositorySnapshot()
+        }
         startPresencePolling()
         repositoryUiJob = scope.launch {
             combine(

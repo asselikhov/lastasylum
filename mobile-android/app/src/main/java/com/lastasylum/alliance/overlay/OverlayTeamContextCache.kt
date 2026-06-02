@@ -46,6 +46,13 @@ internal object OverlayTeamContextCache {
         bumpRevision()
     }
 
+    /** Valid in-memory HUD context for instant overlay panel paint (news/forum/online). */
+    fun peekValid(nowMs: Long = System.currentTimeMillis()): OverlayTeamHudContext? {
+        val ctx = cached ?: return null
+        if (nowMs - cachedAtMs >= TTL_MS) return null
+        return ctx
+    }
+
     /** Ник из кэша состава команды (для подписи входящей реакции без блокирующего API). */
     fun memberUsername(userId: String): String? {
         val id = userId.trim()

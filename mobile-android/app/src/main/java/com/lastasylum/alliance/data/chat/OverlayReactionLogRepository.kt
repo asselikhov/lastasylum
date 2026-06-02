@@ -97,6 +97,7 @@ class OverlayReactionLogRepository(
 
     fun loadInitial() {
         scope.launch {
+            if (_entries.value.isNotEmpty() && !_loading.value) return@launch
             fetchFirstPage(showLoading = !shouldUseSilentInitialFetch())
         }
     }

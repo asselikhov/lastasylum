@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -47,6 +46,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces
+import kotlin.math.min
 
 private val CapsuleShape = RoundedCornerShape(12.dp)
 private val ThreadPanelShape = RoundedCornerShape(
@@ -202,27 +202,28 @@ private fun ReplyThreadExpandedPanel(
     railColor: Color,
     content: @Composable () -> Unit,
 ) {
-    val borderColor = when {
-        unreadHighlight && incoming -> ReactionLogCardTokens.borderUnread.copy(alpha = 0.7f)
-        else -> Color(0x353D4A62)
+    val panelAlpha = min(PremiumSurfaces.layer1Alpha + 0.10f, 0.62f)
+    val panelBase = PremiumSurfaces.layer1(panelAlpha)
+    val panelTintTop = if (incoming) {
+        ReactionLogCardTokens.incomingGradientTop.copy(alpha = 0.14f)
+    } else {
+        ReactionLogCardTokens.outgoingGradientTop.copy(alpha = 0.10f)
     }
+    val panelTintBottom = PremiumSurfaces.layer1(panelAlpha + 0.04f)
     val panelGradient = Brush.verticalGradient(
         colors = listOf(
-            if (incoming) {
-                ReactionLogCardTokens.incomingGradientTop.copy(alpha = 0.55f)
-            } else {
-                ReactionLogCardTokens.outgoingGradientTop.copy(alpha = 0.4f)
-            },
-            if (incoming) {
-                ReactionLogCardTokens.incomingGradientBottom
-            } else {
-                ReactionLogCardTokens.outgoingGradientBottom
-            },
+            panelTintTop,
+            panelTintBottom,
         ),
     )
+    val borderStroke = when {
+        unreadHighlight && incoming ->
+            BorderStroke(1.dp, ReactionLogCardTokens.borderUnread.copy(alpha = 0.35f))
+        else -> PremiumSurfaces.panelBorder(width = 1.dp, alpha = 0.10f)
+    }
     val railWidth = ReactionLogCardTokens.railWidth
     val railWidthPx = with(LocalDensity.current) { railWidth.toPx() }
-    val railAlpha = if (incoming) 0.4f else 0.28f
+    val railAlpha = 0.52f
     val contentStartPad = if (incoming) 10.dp else 8.dp
     val contentEndPad = if (incoming) 8.dp else 10.dp
 
@@ -232,21 +233,14 @@ private fun ReplyThreadExpandedPanel(
             .wrapContentHeight()
             .padding(top = 4.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterHorizontally)
-                .width(1.dp)
-                .height(10.dp)
-                .background(railColor.copy(alpha = 0.45f)),
-        )
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .wrapContentHeight(),
             shape = ThreadPanelShape,
-            color = PremiumSurfaces.layer1(PremiumSurfaces.listCardAlpha * 0.92f),
-            shadowElevation = 2.dp,
-            border = BorderStroke(1.dp, borderColor),
+            color = panelBase,
+            shadowElevation = 0.dp,
+            border = borderStroke,
         ) {
             Column(
                 modifier = Modifier
@@ -254,23 +248,27 @@ private fun ReplyThreadExpandedPanel(
                     .wrapContentHeight()
                     .drawBehind {
                         drawRect(brush = panelGradient, size = size)
-                        drawRect(
-                            color = railColor.copy(alpha = railAlpha),
-                            topLeft = Offset.Zero,
-                            size = Size(railWidthPx, size.height),
-                        )
+                        if (incoming) {
+                            drawRect(
+                                color = railColor.copy(alpha = railAlpha),
+                                topLeft = Offset.Zero,
+                                size = Size(railWidthPx, size.height),
+                            )
+                        } else {
+                            drawRect(
+                                color = railColor.copy(alpha = railAlpha),
+                                topLeft = Offset(size.width - railWidthPx, 0f),
+                                size = Size(railWidthPx, size.height),
+                            )
+                        }
                     }
                     .padding(
-                        start = railWidth + contentStartPad,
-                        end = contentEndPad,
-                        top = 10.dp,
-                        bottom = 10.dp,
+                        start = if (incoming) railWidth + contentStartPad else contentStartPad,
+                        end = if (incoming) contentEndPad else railWidth + contentEndPad,
+                        top = 8.dp,
+                        bottom = 8.dp,
                     ),
             ) {
-                HorizontalDivider(
-                    color = Color(0x18FFFFFF),
-                    modifier = Modifier.padding(bottom = 8.dp),
-                )
                 content()
             }
         }
