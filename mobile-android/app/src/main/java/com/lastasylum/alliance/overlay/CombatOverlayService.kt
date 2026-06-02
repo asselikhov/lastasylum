@@ -2067,7 +2067,7 @@ class CombatOverlayService : Service() {
         val hub = ChatRoomKindResolver.allianceHubRoom(rooms) ?: return 0 to 0
         cachedAllianceHubRoomId = hub.id
         ChatSessionCache.update(rooms)
-        container.chatRepository.applyOverlayRoomsFromRooms(rooms)
+        container.chatRepository.applyOverlayRoomPreferencesFromRooms(rooms)
         val effective = OverlayGameStatusHudRefresh.allianceHubUnread(rooms, localRead)
         val raw = OverlayGameStatusHudRefresh.allianceHubRawUnread(rooms)
         return effective to raw

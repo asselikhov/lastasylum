@@ -6,6 +6,7 @@ import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.data.auth.TokenStore
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import kotlinx.coroutines.flow.StateFlow
+import java.util.concurrent.CopyOnWriteArraySet
 
 /** Socket.IO subscriptions and overlay listener wiring. */
 class ChatRealtimeSubscriber(
@@ -13,8 +14,9 @@ class ChatRealtimeSubscriber(
     private val tokenStore: TokenStore,
     private val chatRoomPreferences: ChatRoomPreferences,
 ) {
-    private val primaryRealtimeRoomIds = LinkedHashSet<String>()
-    private val overlayRealtimeRoomIds = LinkedHashSet<String>()
+    /** Main + IO (hub badge, overlay notifications) may update room ids concurrently. */
+    private val primaryRealtimeRoomIds = CopyOnWriteArraySet<String>()
+    private val overlayRealtimeRoomIds = CopyOnWriteArraySet<String>()
 
     private var realtimeUiListener: ((ChatMessage) -> Unit)? = null
     private var realtimeDeleteListener: ((ChatMessageDeletedEvent) -> Unit)? = null

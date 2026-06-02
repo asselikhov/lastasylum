@@ -222,10 +222,15 @@ class ChatRepository(
     fun refreshOverlayRealtimeSubscriptions() =
         realtime.refreshOverlayRealtimeSubscriptions()
 
-    /** Сохранить id комнат «Рейд» и hub «Альянс», переподписать сокет оверлея. */
-    fun applyOverlayRoomsFromRooms(rooms: List<ChatRoomDto>) {
+    /** Сохранить id комнат «Рейд» и hub «Альянс» без переподписки сокета. */
+    fun applyOverlayRoomPreferencesFromRooms(rooms: List<ChatRoomDto>) {
         ChatRaidRoomSync.applyRaidRoomPreference(rooms, chatRoomPreferences)
         ChatHubRoomSync.applyHubRoomPreference(rooms, chatRoomPreferences)
+    }
+
+    /** Сохранить id комнат «Рейд» и hub «Альянс», переподписать сокет оверлея. */
+    fun applyOverlayRoomsFromRooms(rooms: List<ChatRoomDto>) {
+        applyOverlayRoomPreferencesFromRooms(rooms)
         refreshOverlayRealtimeSubscriptions()
     }
 
