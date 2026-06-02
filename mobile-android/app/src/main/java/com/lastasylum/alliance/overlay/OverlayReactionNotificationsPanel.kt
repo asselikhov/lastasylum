@@ -49,6 +49,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.activity.compose.BackHandler
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
@@ -89,7 +90,6 @@ fun OverlayReactionNotificationsPanel(
     onClose: () -> Unit,
     onReplyToReactionLog: (OverlayReactionLogEntry) -> Unit,
     onOpenReactionsPicker: () -> Unit = {},
-    onRequestMarkAllReadConfirm: () -> Unit = {},
     onRegisterMarkAllReadAction: ((() -> Unit)?) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -124,13 +124,14 @@ fun OverlayReactionNotificationsPanel(
     val newestFeedEntryIds = uiState.newestFeedEntryIds
     var previewCluster by remember { mutableStateOf<OverlayReactionLogCluster?>(null) }
     var showClearHistoryConfirm by remember { mutableStateOf(false) }
+    var showMarkAllReadConfirm by remember { mutableStateOf(false) }
     var hapticConsumedForSession by remember { mutableStateOf(false) }
     var markAllReadLoading by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val markAllReadFailedText = stringResource(R.string.overlay_notifications_mark_all_read_failed)
 
-    LaunchedEffect(repository, scope) {
-        onRegisterMarkAllReadAction {
+    val runMarkAllRead: () -> Unit = remember(repository, scope, markAllReadFailedText) {
+        {
             scope.launch {
                 markAllReadLoading = true
                 val ok = repository.markAllReadAwait()
@@ -139,7 +140,12 @@ fun OverlayReactionNotificationsPanel(
                     snackbarHostState.showSnackbar(markAllReadFailedText)
                 }
             }
+            Unit
         }
+    }
+
+    LaunchedEffect(runMarkAllRead) {
+        onRegisterMarkAllReadAction(runMarkAllRead)
     }
     DisposableEffect(Unit) {
         onDispose { onRegisterMarkAllReadAction(null) }
@@ -183,6 +189,12 @@ fun OverlayReactionNotificationsPanel(
         }
     }
 
+    BackHandler(enabled = showMarkAllReadConfirm || showClearHistoryConfirm) {
+        showMarkAllReadConfirm = false
+        showClearHistoryConfirm = false
+        OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
             OverlayHudPanelHeader(
@@ -190,7 +202,10 @@ fun OverlayReactionNotificationsPanel(
                 subtitle = null,
                 onClose = onClose,
                 closeIconTint = Color.White,
-                onMarkAllRead = onRequestMarkAllReadConfirm,
+                onMarkAllRead = {
+                    OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
+                    showMarkAllReadConfirm = true
+                },
                 markAllReadEnabled = unreadCount > 0 && !loading && !markAllReadLoading,
                 markAllReadLoading = markAllReadLoading,
                 markAllReadIconTint = Color.White,
@@ -555,6 +570,16 @@ fun OverlayReactionNotificationsPanel(
                     previewCluster = null
                     OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
                 },
+            )
+        }
+        if (showMarkAllReadConfirm) {
+            OverlayMarkAllReadConfirmDialog(
+                title = stringResource(R.string.overlay_notifications_mark_all_confirm_title),
+                message = stringResource(R.string.overlay_notifications_mark_all_confirm_message),
+                confirmLabel = stringResource(R.string.overlay_notifications_mark_all_confirm),
+                cancelLabel = stringResource(R.string.overlay_notifications_clear_cancel),
+                onDismissRequest = { showMarkAllReadConfirm = false },
+                onConfirm = { runMarkAllRead() },
             )
         }
         if (showClearHistoryConfirm) {

@@ -127,6 +127,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.lastasylum.alliance.BuildConfig
@@ -199,6 +200,10 @@ private object ForumRoutes {
     fun topic(id: String) = "forum_topic/$id"
 }
 
+private const val FORUM_MARK_READ_LIST_KEY = "list"
+
+private fun forumMarkReadTopicKey(topicId: String) = "topic/${topicId.trim()}"
+
 @Composable
 fun TeamForumNavHost(
     teamId: String,
@@ -220,12 +225,30 @@ fun TeamForumNavHost(
     val nav = rememberNavController()
     val topicTitles = remember { mutableStateMapOf<String, String>() }
     var listRefreshNonce by remember { mutableIntStateOf(0) }
-    var markReadAction by remember { mutableStateOf<(() -> Unit)?>(null) }
-    LaunchedEffect(markReadAction) {
-        onRegisterMarkReadAction(markReadAction)
+    var markReadHandlers by remember { mutableStateOf<Map<String, () -> Unit>>(emptyMap()) }
+    val registerMarkReadAction: (String, (() -> Unit)?) -> Unit = { key, action ->
+        markReadHandlers = if (action == null) {
+            markReadHandlers - key
+        } else {
+            markReadHandlers + (key to action)
+        }
     }
-    DisposableEffect(Unit) {
-        onDispose { onRegisterMarkReadAction(null) }
+    val navBackStackEntry by nav.currentBackStackEntryAsState()
+    val activeMarkReadAction = remember(markReadHandlers, navBackStackEntry) {
+        when (val route = navBackStackEntry?.destination?.route) {
+            ForumRoutes.LIST -> markReadHandlers[FORUM_MARK_READ_LIST_KEY]
+            else -> {
+                if (route != null && route.startsWith("forum_topic/")) {
+                    val topicId = navBackStackEntry?.arguments?.getString("topicId").orEmpty()
+                    if (topicId.isNotBlank()) markReadHandlers[forumMarkReadTopicKey(topicId)] else null
+                } else {
+                    null
+                }
+            }
+        }
+    }
+    LaunchedEffect(activeMarkReadAction) {
+        onRegisterMarkReadAction(activeMarkReadAction)
     }
     LaunchedEffect(listRefreshNonce) {
         if (listRefreshNonce > 0) onForumInboxChanged()
@@ -277,7 +300,7 @@ fun TeamForumNavHost(
                     nav.navigate(ForumRoutes.topic(t.id))
                 },
                 onBack = { },
-                onProvideMarkReadAction = { markReadAction = it },
+                onProvideMarkReadAction = registerMarkReadAction,
             )
         }
         composable(
@@ -312,7 +335,7 @@ fun TeamForumNavHost(
                     nav.popBackStack()
                     listRefreshNonce++
                 },
-                onProvideMarkReadAction = { markReadAction = it },
+                onProvideMarkReadAction = registerMarkReadAction,
             )
         }
     }
@@ -328,7 +351,7 @@ private fun TeamForumListRoute(
     refreshNonce: Int,
     onOpenTopic: (TeamForumTopicDto) -> Unit,
     @Suppress("UNUSED_PARAMETER") onBack: () -> Unit,
-    onProvideMarkReadAction: ((() -> Unit)?) -> Unit = {},
+    onProvideMarkReadAction: (String, (() -> Unit)?) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
     val res = context.resources
@@ -416,7 +439,7 @@ private fun TeamForumListRoute(
     }
 
     LaunchedEffect(teamId) {
-        onProvideMarkReadAction {
+        onProvideMarkReadAction(FORUM_MARK_READ_LIST_KEY) {
             scope.launch {
                 TeamForumMarkRead.markAllTopicsRead(teamsRepository, forumPrefs, teamId)
                 reload()
@@ -424,7 +447,7 @@ private fun TeamForumListRoute(
         }
     }
     DisposableEffect(Unit) {
-        onDispose { onProvideMarkReadAction(null) }
+        onDispose { onProvideMarkReadAction(FORUM_MARK_READ_LIST_KEY, null) }
     }
 
     LaunchedEffect(teamId, refreshNonce, currentUserId) {
@@ -792,7 +815,7 @@ private fun TeamForumTopicChatRoute(
     sectionActive: Boolean = true,
     onBack: () -> Unit,
     enabledStickerPackKeys: Set<String> = emptySet(),
-    onProvideMarkReadAction: ((() -> Unit)?) -> Unit = {},
+    onProvideMarkReadAction: (String, (() -> Unit)?) -> Unit = { _, _ -> },
 ) {
     BackHandler { onBack() }
 
@@ -965,8 +988,9 @@ private fun TeamForumTopicChatRoute(
         }
     }
 
+    val markReadTopicKey = forumMarkReadTopicKey(topicId)
     LaunchedEffect(teamId, topicId, stableMessages.lastOrNull()?.id) {
-        onProvideMarkReadAction {
+        onProvideMarkReadAction(markReadTopicKey) {
             scope.launch {
                 val newestId = stableMessages.lastOrNull()?.id
                 if (!newestId.isNullOrBlank()) {
@@ -982,8 +1006,8 @@ private fun TeamForumTopicChatRoute(
             }
         }
     }
-    DisposableEffect(Unit) {
-        onDispose { onProvideMarkReadAction(null) }
+    DisposableEffect(markReadTopicKey) {
+        onDispose { onProvideMarkReadAction(markReadTopicKey, null) }
     }
 
     fun mergeNew(msg: TeamForumMessageDto) {
