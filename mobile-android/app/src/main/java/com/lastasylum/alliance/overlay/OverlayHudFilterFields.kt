@@ -17,7 +17,7 @@ import androidx.compose.ui.unit.sp
 /** Shared filter + search fields in overlay «Уведомления» and «Участники онлайн». */
 object OverlayHudFilterFields {
     /** Same min height for filter dropdowns and search; avoids clipping with [textStyle]. */
-    val FieldHeight = 48.dp
+    val FieldHeight = 42.dp
     val FieldShape = RoundedCornerShape(10.dp)
     val FieldSpacing = 8.dp
 

@@ -2,11 +2,13 @@ package com.lastasylum.alliance.overlay
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.DropdownMenuItem
@@ -87,6 +89,8 @@ fun OverlayReactionLogFiltersBar(
                     modifier = Modifier.size(18.dp),
                 )
             },
+            prefix = { Spacer(modifier = Modifier.width(2.dp)) },
+            suffix = { Spacer(modifier = Modifier.width(4.dp)) },
             colors = fieldColors,
             shape = fieldShape,
             textStyle = fieldTextStyle,
@@ -221,6 +225,8 @@ private fun FilterDropdown(
             trailingIcon = {
                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
             },
+            prefix = { Spacer(modifier = Modifier.width(2.dp)) },
+            suffix = { Spacer(modifier = Modifier.width(2.dp)) },
             colors = fieldColors,
             shape = fieldShape,
             textStyle = fieldTextStyle,

@@ -134,6 +134,7 @@ class OverlayCommandsPopover(
         hideReactionPickOnly()
         hideReactionBurstOnly()
         hideCoordOnly()
+        clearPreselectedReactionContext()
         removePopoverLayoutListener()
         removeShell(menuScrim)
         menuScrim = null
@@ -320,6 +321,8 @@ class OverlayCommandsPopover(
             hide()
             return
         }
+        // Generic entrypoint must always start in regular (non-reply) mode.
+        clearPreselectedReactionContext()
         ensurePopoverSuppressHeld()
         warmupOverlayRaid()
         showMenu(windowManager)
@@ -327,9 +330,7 @@ class OverlayCommandsPopover(
 
     /** Opens quick commands on the reactions tab without a preselected recipient. */
     fun openReactionsTab(windowManager: WindowManager) {
-        preselectedReactionUserIds = emptySet()
-        preselectedReplyToLogId = null
-        preselectedReplyMode = false
+        clearPreselectedReactionContext()
         reopenMenuOnReactionsTab = true
         if (isShowing()) hide()
         ensurePopoverSuppressHeld()
@@ -353,6 +354,12 @@ class OverlayCommandsPopover(
         ensurePopoverSuppressHeld()
         warmupOverlayRaid()
         showMenu(windowManager)
+    }
+
+    private fun clearPreselectedReactionContext() {
+        preselectedReactionUserIds = emptySet()
+        preselectedReplyToLogId = null
+        preselectedReplyMode = false
     }
 
     /** РџРѕРєР°Р·Р°С‚СЊ РІСЃРїС‹С€РєСѓ СЂРµР°РєС†РёРё РѕС‚ СЃРѕРєРѕРјР°РЅРґРЅРёРєР° (РїСЂРёС€Р»Р° РїРѕ СЃРѕРєРµС‚Сѓ). */
