@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ExpandLess
-import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -107,10 +106,10 @@ fun OverlayReactionLogScrollToLatestFab(
         modifier = modifier,
         enter = fadeIn(tween(140)) +
             scaleIn(initialScale = 0.88f, animationSpec = tween(180)) +
-            slideInVertically(initialOffsetY = { it / 3 }, animationSpec = tween(200)),
+            slideInVertically(initialOffsetY = { -it / 3 }, animationSpec = tween(200)),
         exit = fadeOut(tween(100)) +
             scaleOut(targetScale = 0.92f, animationSpec = tween(120)) +
-            slideOutVertically(targetOffsetY = { it / 4 }, animationSpec = tween(140)),
+            slideOutVertically(targetOffsetY = { -it / 4 }, animationSpec = tween(140)),
     ) {
         PremiumGlassBar(
             shape = RoundedCornerShape(22.dp),
@@ -127,7 +126,7 @@ fun OverlayReactionLogScrollToLatestFab(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Icon(
-                    imageVector = Icons.Outlined.ExpandMore,
+                    imageVector = Icons.Outlined.ExpandLess,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(22.dp),
