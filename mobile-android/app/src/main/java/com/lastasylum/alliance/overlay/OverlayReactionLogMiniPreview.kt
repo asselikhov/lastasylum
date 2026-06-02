@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
+import android.view.ViewGroup
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -40,6 +41,8 @@ fun OverlayReactionLogMiniPreview(
     showLabel: Boolean = true,
     playAnimatedPreview: Boolean = true,
     compact: Boolean = true,
+    /** Unique per log row (entry id); avoids AndroidView pool collisions for the same reaction id. */
+    previewHostKey: String = reactionId,
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -81,7 +84,7 @@ fun OverlayReactionLogMiniPreview(
                         val maxTextWidthPx = remember(density, previewSizeDp) {
                             (previewSizeDp * density.density).toInt().coerceAtLeast(96)
                         }
-                        key(reactionId, playAnimatedPreview) {
+                        key(previewHostKey, reactionId, playAnimatedPreview) {
                             AndroidView(
                                 modifier = Modifier.size(tileSize),
                                 factory = { ctx ->
@@ -90,6 +93,9 @@ fun OverlayReactionLogMiniPreview(
                                         textPayload,
                                         maxTextWidthPx,
                                     )
+                                },
+                                onRelease = { view ->
+                                    (view.parent as? ViewGroup)?.removeView(view)
                                 },
                             )
                         }
@@ -108,6 +114,7 @@ fun OverlayReactionLogMiniPreview(
                     }
                 } else {
                     OverlayReactionTilePreviewHost(
+                        previewHostKey = previewHostKey,
                         reactionId = reactionId,
                         playAnimatedPreview = playAnimatedPreview,
                         modifier = Modifier.size(tileSize),

@@ -70,6 +70,7 @@ fun OverlayReactionLogDetailSheet(
                             showLabel = false,
                             playAnimatedPreview = true,
                             compact = false,
+                            previewHostKey = entry.id,
                         )
                     }
                 }
@@ -130,6 +131,7 @@ fun OverlayReactionLogDetailSheet(
                                 showLabel = false,
                                 playAnimatedPreview = false,
                                 compact = false,
+                                previewHostKey = item.id,
                             )
                             val itemTime = formatOverlayReactionLogTimeLabel(item.createdAt)
                             if (itemTime.isNotBlank()) {

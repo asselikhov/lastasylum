@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.data.chat.OverlayReactionLogCluster
@@ -20,15 +21,18 @@ fun OverlayReactionLogStackedPreview(
     val boxSize = (previewSizeDp + (entries.size - 1) * 10).dp
     Box(modifier = modifier.size(boxSize)) {
         entries.forEachIndexed { index, entry ->
-            OverlayReactionLogMiniPreview(
-                reactionId = entry.reaction,
-                visibility = entry.visibility,
-                previewSizeDp = previewSizeDp - index * 4,
-                showLabel = false,
-                playAnimatedPreview = playAnimatedPreview && index == 0,
-                compact = true,
-                modifier = Modifier.offset(x = (index * 10).dp, y = (index * 2).dp),
-            )
+            key(entry.id) {
+                OverlayReactionLogMiniPreview(
+                    reactionId = entry.reaction,
+                    visibility = entry.visibility,
+                    previewSizeDp = previewSizeDp - index * 4,
+                    showLabel = false,
+                    playAnimatedPreview = playAnimatedPreview && index == 0,
+                    compact = true,
+                    previewHostKey = entry.id,
+                    modifier = Modifier.offset(x = (index * 10).dp, y = (index * 2).dp),
+                )
+            }
         }
     }
 }

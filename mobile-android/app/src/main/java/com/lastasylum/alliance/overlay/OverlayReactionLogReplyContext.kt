@@ -102,6 +102,7 @@ private fun ReplyContextRow(
             showLabel = false,
             playAnimatedPreview = false,
             previewSizeDp = previewSizeDp,
+            previewHostKey = "reply-to-${replyTo.logId}",
         )
     }
 }

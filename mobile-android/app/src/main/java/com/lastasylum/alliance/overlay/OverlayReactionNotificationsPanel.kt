@@ -715,7 +715,7 @@ private fun OverlayReactionLogThreadParentClusterRow(
                     .fillMaxWidth()
                     .wrapContentHeight(),
             ) {
-                replies.forEachIndexed { index, replyCluster ->
+                for ((index, replyCluster) in replies.withIndex()) {
                     key(replyCluster.representative.id) {
                         if (index > 0) {
                             Spacer(modifier = Modifier.height(6.dp))

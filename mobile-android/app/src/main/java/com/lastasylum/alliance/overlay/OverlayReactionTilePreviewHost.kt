@@ -10,16 +10,22 @@ import androidx.compose.ui.viewinterop.AndroidView
 
 @Composable
 internal fun OverlayReactionTilePreviewHost(
+    previewHostKey: String,
     reactionId: String,
     playAnimatedPreview: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    key(reactionId, playAnimatedPreview) {
+    key(previewHostKey, reactionId, playAnimatedPreview) {
         AndroidView(
             modifier = modifier,
             factory = { ctx ->
-                OverlayReactionTilePreviewPool.obtain(ctx, reactionId, playAnimatedPreview)
+                OverlayReactionTilePreviewPool.obtain(
+                    ctx,
+                    previewHostKey,
+                    reactionId,
+                    playAnimatedPreview,
+                )
             },
             update = { host ->
                 val icon = host.tag as? ImageView ?: return@AndroidView
@@ -30,7 +36,12 @@ internal fun OverlayReactionTilePreviewHost(
                 }
             },
             onRelease = { host ->
-                OverlayReactionTilePreviewPool.release(reactionId, playAnimatedPreview, host)
+                OverlayReactionTilePreviewPool.release(
+                    previewHostKey,
+                    reactionId,
+                    playAnimatedPreview,
+                    host,
+                )
             },
         )
     }

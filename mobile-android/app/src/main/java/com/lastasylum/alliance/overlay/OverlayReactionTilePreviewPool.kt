@@ -9,11 +9,12 @@ import android.util.LruCache
 
 /**
  * Reuses paused tile preview hosts for notification list scroll.
+ * Key includes [previewHostKey] (log entry id) so multiple visible rows with the same
+ * reaction id never share one [FrameLayout] (avoids "child already has a parent" in AndroidView).
  * Animated previews are not cached (always fresh factory).
- * Cached hosts are always detached before reuse ([detachFromParent]).
  */
 internal object OverlayReactionTilePreviewPool {
-    private const val MAX_ENTRIES = 32
+    private const val MAX_ENTRIES = 48
 
     private val cache = object : LruCache<String, FrameLayout>(MAX_ENTRIES) {
         override fun entryRemoved(
@@ -27,35 +28,48 @@ internal object OverlayReactionTilePreviewPool {
         }
     }
 
-    fun cacheKey(reactionId: String, playAnimatedPreview: Boolean): String =
-        "$reactionId|animated=$playAnimatedPreview"
+    fun cacheKey(
+        previewHostKey: String,
+        reactionId: String,
+        playAnimatedPreview: Boolean,
+    ): String = "$previewHostKey|$reactionId|animated=$playAnimatedPreview"
 
     fun obtain(
         context: Context,
+        previewHostKey: String,
         reactionId: String,
         playAnimatedPreview: Boolean,
     ): FrameLayout {
         if (playAnimatedPreview) {
             return createHost(context, reactionId, playAnimatedPreview = true)
         }
-        val key = cacheKey(reactionId, playAnimatedPreview = false)
+        val key = cacheKey(previewHostKey, reactionId, playAnimatedPreview = false)
         cache.get(key)?.let { cached ->
             detachFromParent(cached)
+            if (cached.parent != null) {
+                return createHost(context, reactionId, playAnimatedPreview = false)
+            }
             (cached.tag as? ImageView)?.let { stopOverlayReactionTileAnimation(it) }
             return cached
         }
         return createHost(context, reactionId, playAnimatedPreview = false)
     }
 
-    fun release(reactionId: String, playAnimatedPreview: Boolean, host: FrameLayout) {
-        if (playAnimatedPreview) {
-            (host.tag as? ImageView)?.let { stopOverlayReactionTileAnimation(it) }
-            detachFromParent(host)
-            return
-        }
-        val key = cacheKey(reactionId, playAnimatedPreview = false)
+    fun release(
+        previewHostKey: String,
+        reactionId: String,
+        playAnimatedPreview: Boolean,
+        host: FrameLayout,
+    ) {
         (host.tag as? ImageView)?.let { stopOverlayReactionTileAnimation(it) }
         detachFromParent(host)
+        if (playAnimatedPreview) {
+            return
+        }
+        if (host.parent != null) {
+            return
+        }
+        val key = cacheKey(previewHostKey, reactionId, playAnimatedPreview = false)
         cache.put(key, host)
     }
 

@@ -106,6 +106,7 @@ fun OverlayReactionLogPreviewSheet(
                             showLabel = false,
                             playAnimatedPreview = true,
                             compact = false,
+                            previewHostKey = entry.id,
                         )
                     }
                     Text(

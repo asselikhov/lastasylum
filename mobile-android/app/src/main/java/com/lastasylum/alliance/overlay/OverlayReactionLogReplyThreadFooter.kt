@@ -29,6 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -147,12 +148,14 @@ fun OverlayReactionLogReplyThreadFooter(
             exit = fadeOut(tween(160)),
             modifier = Modifier.wrapContentHeight(),
         ) {
-            ReplyThreadExpandedPanel(
-                incoming = incoming,
-                unreadHighlight = unreadHighlight,
-                railColor = railColor,
-                content = expandedContent,
-            )
+            key(parentLogId, expanded) {
+                ReplyThreadExpandedPanel(
+                    incoming = incoming,
+                    unreadHighlight = unreadHighlight,
+                    railColor = railColor,
+                    content = expandedContent,
+                )
+            }
         }
     }
 }

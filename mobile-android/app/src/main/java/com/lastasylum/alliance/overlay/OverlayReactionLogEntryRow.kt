@@ -221,6 +221,7 @@ private fun CompactReplyRowContent(
                             playAnimatedPreview = false,
                             previewSizeDp = 24,
                             compact = true,
+                            previewHostKey = "reply-to-${p.logId}",
                         )
                     }
                 },
@@ -261,6 +262,7 @@ private fun CompactReplyRowContent(
                     visibility = entry.visibility,
                     showLabel = false,
                     playAnimatedPreview = playAnimatedPreview,
+                    previewHostKey = entry.id,
                 )
             }
         }
@@ -320,6 +322,7 @@ private fun ReactionPreviewColumn(
                         visibility = entry.visibility,
                         showLabel = false,
                         playAnimatedPreview = playAnimatedPreview,
+                        previewHostKey = entry.id,
                     )
                 }
             }
