@@ -1077,6 +1077,10 @@ class CombatOverlayService : Service() {
 
     private var overlayChatPrimeJob: Job? = null
 
+    private var overlayHudWarmupJob: Job? = null
+
+    private var overlayHudContextPreloadJob: Job? = null
+
     @Volatile
     private var overlayChatWarmupCompleted: Boolean = false
 
@@ -2707,6 +2711,12 @@ class CombatOverlayService : Service() {
         ensureOverlayRaidRealtimeIfNeeded()
         seedOverlayInboxBadgesBeforeRefresh()
         refreshOverlayStatusHudData(force = true)
+        if (!overlayChatWarmupCompleted && !overlayChatTeamPanelVisible) {
+            scheduleOverlayChatWarmup()
+        } else {
+            scheduleOverlayHudContextPreload()
+            scheduleOverlayChatCachePrime()
+        }
     }
 
     private fun syncOverlayStatusHudVisibility() {
@@ -5506,25 +5516,30 @@ class CombatOverlayService : Service() {
         activeOverlayChatSessionViewModel()?.refreshChatForOverlay()
     }
 
-    /** Прогрев чата и HUD-панелей в фоне после входа в игру. */
+    /** Прогрев чата и HUD-панелей в фоне после входа в игру (не отменяется открытием панели). */
     private fun scheduleOverlayChatWarmup() {
         if (overlayChatWarmupCompleted || overlayChatTeamPanelVisible) return
-        overlayChatPrimeJob?.cancel()
-        overlayChatPrimeJob = serviceScope.launch {
-            prepareOverlayChatBeforePanelShowSuspend()
-            prepareOverlayHudPanelsWarmupSuspend()
-            overlayChatWarmupCompleted = true
+        if (overlayHudWarmupJob?.isActive == true) return
+        overlayHudWarmupJob = serviceScope.launch {
+            try {
+                prepareOverlayChatBeforePanelShowSuspend()
+                preloadOverlayHudDataSuspend()
+            } finally {
+                overlayChatWarmupCompleted = true
+            }
         }
     }
 
-    /** Team context, presence, reaction log — до первого открытия уведомлений/новостей/форума/участников. */
-    private suspend fun prepareOverlayHudPanelsWarmupSuspend() {
+    /** Контекст команды / реакции / presence — до первого открытия новостей, форума, участников. */
+    private suspend fun preloadOverlayHudDataSuspend() {
         val uid = jwtSubFromAccessToken()?.trim().orEmpty()
         val container = AppContainer.from(this)
         withContext(Dispatchers.IO) {
             if (uid.isNotEmpty()) {
                 container.overlayReactionLogRepository.setSelfUserId(uid)
-                container.overlayReactionLogRepository.loadInitial()
+                if (container.overlayReactionLogRepository.entries.value.isEmpty()) {
+                    container.overlayReactionLogRepository.loadInitial()
+                }
             }
             val ctx = OverlayTeamContextCache.load(
                 usersRepository = container.usersRepository,
@@ -5542,23 +5557,32 @@ class CombatOverlayService : Service() {
                 forceRefresh = false,
             )
         }
-        withContext(Dispatchers.Main.immediate) {
-            prewarmOverlayHudComposeHostOnMain()
+    }
+
+    private fun scheduleOverlayHudContextPreload() {
+        if (OverlayTeamContextCache.peekValid() != null) return
+        if (overlayHudWarmupJob?.isActive == true) return
+        if (overlayHudContextPreloadJob?.isActive == true) return
+        overlayHudContextPreloadJob = serviceScope.launch {
+            preloadOverlayHudDataSuspend()
         }
     }
 
-    /** Скрытый полноэкранный host: прогрев Compose уведомлений до первого показа. */
-    private fun prewarmOverlayHudComposeHostOnMain() {
-        if (overlayChatTeamRoot != null || overlayChatTeamPanelVisible || !isInGameOverlayUiActive()) {
-            return
+    private fun scheduleOverlayChatCachePrime() {
+        if (overlayChatHubPrimed()) return
+        if (overlayHudWarmupJob?.isActive == true) return
+        if (overlayChatPrimeJob?.isActive == true) return
+        overlayChatPrimeJob = serviceScope.launch {
+            prepareOverlayChatBeforePanelShowSuspend()
         }
-        showOverlayChatTeamPanel(
-            hudPane = OverlayHudPane.Notifications,
-            warmHostOnly = true,
-        )
     }
+
+    private fun overlayChatHubPrimed(): Boolean =
+        resolveChatViewModel()?.overlayHubReadyForPanel() == true ||
+            overlayFallbackChatViewModel?.overlayHubReadyForPanel() == true
 
     private fun scheduleOverlayChatPrimeForPanel() {
+        if (overlayChatHubPrimed()) return
         overlayChatPrimeJob?.cancel()
         overlayChatPrimeJob = serviceScope.launch {
             val started = android.os.SystemClock.elapsedRealtime()
@@ -5660,7 +5684,10 @@ class CombatOverlayService : Service() {
                 runCatching { manager.addView(cachedRoot, cachedParams) }
             }
             if (cachedRoot.isAttachedToWindow) {
-                onOverlayChatTeamPanelPresented(needsChatPrime)
+                presentOverlayChatTeamPanelWhenReady(
+                    needsChatPrime = needsChatPrime,
+                    hudPane = overlayPane,
+                )
                 return
             }
             destroyOverlayChatTeamPanelHost()
@@ -5873,7 +5900,10 @@ class CombatOverlayService : Service() {
                             )
                         }
                         LaunchedEffect(vm) {
-                            vm?.refreshChatForOverlay()
+                            val chatVm = vm
+                            if (chatVm != null && !chatVm.overlayHubReadyForPanel()) {
+                                chatVm.refreshChatForOverlay()
+                            }
                             flushPendingOverlayPickedImages()
                         }
                         val chatVm = vm
@@ -6174,8 +6204,37 @@ class CombatOverlayService : Service() {
             root.visibility = View.GONE
             return
         }
-        onOverlayChatTeamPanelPresented(needsChatPrime)
+        presentOverlayChatTeamPanelWhenReady(
+            needsChatPrime = needsChatPrime,
+            hudPane = overlayPane,
+        )
     }
+
+    /**
+     * Подставить кэш чата до первого кадра панели — меньше спиннеров внутри окна чата.
+     */
+    private fun presentOverlayChatTeamPanelWhenReady(
+        needsChatPrime: Boolean,
+        hudPane: OverlayHudPane?,
+    ) {
+        val waitForChatHub = needsChatPrime &&
+            (hudPane == null || hudPane == OverlayHudPane.Chat) &&
+            !overlayChatHubPrimed()
+        if (waitForChatHub) {
+            overlayChatPrimeJob?.cancel()
+            overlayChatPrimeJob = serviceScope.launch {
+                prepareOverlayChatBeforePanelShowSuspend()
+                mainHandler.post {
+                    if (!overlayChatTeamPanelVisible) {
+                        onOverlayChatTeamPanelPresented(needsChatPrime = false)
+                    }
+                }
+            }
+            return
+        }
+        onOverlayChatTeamPanelPresented(needsChatPrime = false)
+    }
+
     private fun dp(value: Int): Int {
         val density = resources.displayMetrics.density
         return (value * density).toInt()

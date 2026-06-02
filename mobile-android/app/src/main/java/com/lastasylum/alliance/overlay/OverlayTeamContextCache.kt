@@ -113,6 +113,7 @@ internal object OverlayTeamContextCache {
             }
         }
         val profile = usersRepository.peekMyProfile()
+            ?: usersRepository.peekMyProfileDisk()
             ?: usersRepository.getMyProfile().getOrThrow()
         val teamId = profile.playerTeamId?.trim().orEmpty()
         if (teamId.isEmpty()) {

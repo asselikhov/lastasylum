@@ -868,6 +868,11 @@ class ChatViewModel(
         if (!overlayHubAlreadyReady(_state.value.rooms)) {
             scheduleBootstrap(preferAllianceHubRoom = true, force = false)
         }
+        syncOverlayRoomsQuietly()
+    }
+
+    /** Список комнат в фоне — без сброса уже показанной ленты hub. */
+    private fun syncOverlayRoomsQuietly() {
         viewModelScope.launch {
             repository.listRooms()
                 .onSuccess { raw ->
@@ -909,7 +914,12 @@ class ChatViewModel(
             refreshStickerPackAccess()
             refreshTeamProfileGateLight()
             syncReadStateFromPreferences()
-            primeOverlayChatFromCache(preferAllianceHubRoom = true)
+            val hubReady = overlayHubReadyForPanel()
+            if (!hubReady) {
+                primeOverlayChatFromCache(preferAllianceHubRoom = true)
+            } else {
+                _state.update { it.copy(isLoading = false, isRoomsLoading = false) }
+            }
             rehydrateSelectedRoomMessagesFromCache()
             reconnectRealtimeIfNeeded()
             viewModelScope.launch {
@@ -933,7 +943,12 @@ class ChatViewModel(
                 }
                 val roomId = _state.value.selectedRoomId
                 if (!roomId.isNullOrBlank()) {
-                    refreshMessagesInBackground(roomId, force = true)
+                    refreshMessagesInBackground(roomId, force = !hubReady)
+                }
+                if (!hubReady && !overlayHubReadyForPanel()) {
+                    scheduleBootstrap(preferAllianceHubRoom = true, force = false)
+                } else {
+                    syncOverlayRoomsQuietly()
                 }
             }
             startOverlayAutoMarkReadCollector()

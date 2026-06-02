@@ -67,13 +67,14 @@ private fun OverlayTeamHudScaffold(
     var hudContext by remember { mutableStateOf(cachedInitially) }
 
     LaunchedEffect(forceReload) {
-        val warmCache = !forceReload && hudContext != null
-        if (!warmCache) {
-            loading = hudContext == null
+        val hadCache = hudContext != null
+        if (forceReload) {
+            hudContext = null
+            loading = true
             error = null
-            if (forceReload) {
-                hudContext = null
-            }
+        } else if (!hadCache) {
+            loading = true
+            error = null
         }
         val loaded = withContext(Dispatchers.IO) {
             OverlayTeamContextCache.load(
