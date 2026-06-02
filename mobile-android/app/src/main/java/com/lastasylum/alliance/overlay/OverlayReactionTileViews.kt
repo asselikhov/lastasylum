@@ -90,7 +90,9 @@ internal fun createOverlayReactionTileIcon(
     reaction.memeDrawableRes?.let { memeRes ->
         return ImageView(context).apply {
             setImageDrawable(AppCompatResources.getDrawable(context, memeRes))
-            scaleType = ImageView.ScaleType.CENTER_CROP
+            // FIT_CENTER: full meme in picker, recipient sheet, and incoming burst (no edge crop).
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            adjustViewBounds = true
         }
     }
     reaction.lottieRawRes?.let { lottieRes ->

@@ -75,7 +75,7 @@ internal object OverlayReactionBurstReplyPreview {
         )
     }
 
-    /** Tile icons default to CENTER_CROP for memes; parent preview must show the full asset. */
+    /** Ensures raster previews stay uncropped if scale type is overridden elsewhere. */
     private fun applyParentPreviewFitInside(view: View) {
         if (view is ImageView) {
             view.scaleType = ImageView.ScaleType.FIT_CENTER
