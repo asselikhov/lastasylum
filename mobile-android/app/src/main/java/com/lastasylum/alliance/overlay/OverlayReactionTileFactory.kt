@@ -55,16 +55,6 @@ internal class OverlayReactionTileFactory(
             gravity = Gravity.CENTER_HORIZONTAL
             clipChildren = false
         }
-        request.replyToLog?.let { replyTo ->
-            OverlayReactionBurstReplyPreview.attachReplyRow(
-                column = column,
-                context = context,
-                replyTo = replyTo,
-                visualFactory = visualFactory,
-                dp = dp,
-                hero = mode == OverlayReactionTileMode.HERO,
-            )
-        }
         val visualHost = FrameLayout(context).apply {
             setTag(R.id.tag_overlay_reaction_anim_host, true)
             clipChildren = false
@@ -161,6 +151,16 @@ internal class OverlayReactionTileFactory(
                     },
                 )
             }
+        }
+        request.replyToLog?.let { replyTo ->
+            OverlayReactionBurstReplyPreview.attachBelowNickname(
+                column = column,
+                context = context,
+                replyTo = replyTo,
+                visualFactory = visualFactory,
+                dp = dp,
+                hero = mode == OverlayReactionTileMode.HERO,
+            )
         }
         card.contentDescription = OverlayReactionCaption.miniContentDescription(
             context,

@@ -78,7 +78,11 @@ data class OverlayReactionLogEntryDto(
             visibility = OverlayReactionLogVisibility.fromWire(visibility),
             createdAt = createdAt.trim(),
             reactions = reactions?.map { it.toChatReaction(selfUserId) } ?: emptyList(),
-            replyToLogId = replyToLogId?.trim()?.takeIf { it.isNotEmpty() },
+            // Mongo/mongoose can send `replyToLogId: null`; Android JSON parsing may yield the literal "null".
+            // Treat it as absent so personal reactions are not incorrectly marked as reply.
+            replyToLogId = replyToLogId
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) },
             replyToLog = replyToLog?.toReplyTo(),
         )
     }

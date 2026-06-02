@@ -2,19 +2,17 @@ package com.lastasylum.alliance.overlay
 
 import android.content.Context
 import android.graphics.Color
-import android.graphics.Typeface
-import android.util.TypedValue
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.TextView
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.OverlayReactionBurstReplyTo
 import com.lastasylum.alliance.data.chat.OverlayReactionLogVisibility
 
 internal object OverlayReactionBurstReplyPreview {
-    fun attachReplyRow(
+    /** Parent reaction thumbnail shown under sender nickname on reply bursts. */
+    fun attachBelowNickname(
         column: LinearLayout,
         context: Context,
         replyTo: OverlayReactionBurstReplyTo,
@@ -22,30 +20,15 @@ internal object OverlayReactionBurstReplyPreview {
         dp: (Int) -> Int,
         hero: Boolean,
     ) {
-        val previewPx = dp(if (hero) 36 else 28)
-        val row = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val label = TextView(context).apply {
-            text = context.getString(R.string.overlay_notifications_reply_scope)
-            setTextColor(Color.parseColor("#99A8B5C8"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, if (hero) 11f else 9f)
-            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
-            maxLines = 1
-        }
-        row.addView(
-            label,
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ),
-        )
-        val gap = dp(6)
+        val previewPx = dp(if (hero) 32 else 24)
         val previewHost = FrameLayout(context).apply {
             clipChildren = false
             clipToPadding = false
             background = replyPreviewBackground(context, replyTo.visibility)
+            contentDescription = context.getString(
+                R.string.overlay_reaction_burst_reply_parent_preview,
+                replyTo.reaction,
+            )
         }
         val reaction = overlayQuickReactionById(context, replyTo.reaction)
         val animView = visualFactory.createAnimView(reaction, previewPx, playLottie = false)
@@ -57,21 +40,11 @@ internal object OverlayReactionBurstReplyPreview {
                 Gravity.CENTER,
             ),
         )
-        row.addView(
+        column.addView(
             previewHost,
             LinearLayout.LayoutParams(previewPx, previewPx).apply {
-                marginStart = gap
-            },
-        )
-        column.addView(
-            row,
-            0,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply {
-                bottomMargin = dp(if (hero) 6 else 4)
                 gravity = Gravity.CENTER_HORIZONTAL
+                topMargin = dp(if (hero) 4 else 3)
             },
         )
     }

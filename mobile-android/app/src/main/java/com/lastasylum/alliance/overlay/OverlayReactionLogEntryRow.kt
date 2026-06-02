@@ -203,10 +203,26 @@ private fun CompactReplyRowContent(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "[$scopeLabel]",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = scopeColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(bottom = 2.dp),
+            )
+            val parent = entry.replyToLog
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                Text(
+                    text = stringResource(R.string.overlay_reaction_burst_from_prefix),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f),
+                )
+                Spacer(modifier = Modifier.width(4.dp))
                 Text(
                     text = entry.senderUsername.ifBlank {
                         stringResource(R.string.overlay_reaction_sender_unknown)
@@ -218,8 +234,17 @@ private fun CompactReplyRowContent(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                Spacer(modifier = Modifier.width(6.dp))
-                ScopePill(label = scopeLabel, color = scopeColor)
+                parent?.let { p ->
+                    Spacer(modifier = Modifier.width(6.dp))
+                    OverlayReactionLogMiniPreview(
+                        reactionId = p.reaction,
+                        visibility = p.visibility,
+                        showLabel = false,
+                        playAnimatedPreview = false,
+                        previewSizeDp = 24,
+                        compact = true,
+                    )
+                }
             }
             if (timeLine.isNotBlank()) {
                 Text(
@@ -230,13 +255,6 @@ private fun CompactReplyRowContent(
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
                     maxLines = 1,
                     modifier = Modifier.padding(top = 2.dp),
-                )
-            }
-            entry.replyToLog?.let { parent ->
-                OverlayReactionLogReplyContext(
-                    replyTo = parent,
-                    layout = OverlayReactionLogReplyContextLayout.Compact,
-                    previewSizeDp = 28,
                 )
             }
             AnimatedReactionsRow(
@@ -391,7 +409,22 @@ private fun NarrativeBlock(
     selfUserId: String,
 ) {
     Column {
+        Text(
+            text = "[$scopeLabel]",
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = scopeColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(bottom = 2.dp),
+        )
         Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = stringResource(R.string.overlay_reaction_burst_from_prefix),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f),
+            )
+            Spacer(modifier = Modifier.width(4.dp))
             Text(
                 text = entry.senderUsername.ifBlank {
                     stringResource(R.string.overlay_reaction_sender_unknown)
@@ -403,10 +436,8 @@ private fun NarrativeBlock(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),
             )
-            Spacer(modifier = Modifier.width(6.dp))
-            ScopePill(label = scopeLabel, color = scopeColor)
             if (cluster.mergeCount > 1) {
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(6.dp))
                 MergeCountPill(count = cluster.mergeCount)
             }
         }
@@ -429,19 +460,6 @@ private fun NarrativeBlock(
             )
         }
     }
-}
-
-@Composable
-private fun ScopePill(label: String, color: Color) {
-    Text(
-        text = label,
-        style = MaterialTheme.typography.labelSmall,
-        color = color,
-        modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(color.copy(alpha = 0.16f))
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-    )
 }
 
 @Composable

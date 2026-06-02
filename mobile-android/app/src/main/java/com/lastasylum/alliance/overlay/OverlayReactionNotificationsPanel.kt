@@ -636,7 +636,8 @@ private fun OverlayReactionLogThreadParentClusterRow(
     val parentEntry = parent.representative
     val parentIncoming =
         OverlayReactionLogVisibilityPolicy.isIncoming(parentEntry, selfUserId)
-    val defaultRepliesExpanded = replies.any { it.representative.id in unreadEntryIds }
+    // Reply threads in notifications must be collapsed by default (user can expand explicitly).
+    val defaultRepliesExpanded = false
     OverlayReactionLogReplyThreadFooter(
         parentLogId = parentEntry.id,
         replyCount = replies.size,
