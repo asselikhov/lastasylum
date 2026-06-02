@@ -23,13 +23,16 @@ import com.lastasylum.alliance.ui.theme.premium.PremiumSurfaces
 internal object ReactionLogCardTokens {
     val corner = 14.dp
     val railWidth = 3.dp
-    val borderUnread = Color(0x554ADE80)
+    val borderUnread = Color(0x664ADE80)
+    val borderIncoming = Color(0x5534D399)
+    val borderOutgoing = Color(0x403D4A62)
     val incomingRail = Color(0xFF34D399)
     val outgoingRail = Color(0xFF6B7A90)
-    val incomingGradientTop = Color(0x1A34D399)
-    val incomingGradientBottom = Color(0x08166534)
-    val outgoingGradientTop = Color(0x14FFFFFF)
+    val incomingGradientTop = Color(0x2834D399)
+    val incomingGradientBottom = Color(0x0A0F1A14)
+    val outgoingGradientTop = Color(0x12FFFFFF)
     val outgoingGradientBottom = Color(0x060E1624)
+    val incomingUnreadGlow = Color(0x1A34D399)
     val presenceOffline = Color(0xFF667788)
     val presenceRing = Color(0xFF0E1624)
 }
@@ -43,10 +46,10 @@ fun OverlayReactionLogCard(
 ) {
     val shape = RoundedCornerShape(ReactionLogCardTokens.corner)
     val animatedBorderColor by animateColorAsState(
-        targetValue = if (unreadHighlight && incoming) {
-            ReactionLogCardTokens.borderUnread
-        } else {
-            Color(0x403D4A62)
+        targetValue = when {
+            unreadHighlight && incoming -> ReactionLogCardTokens.borderUnread
+            incoming -> ReactionLogCardTokens.borderIncoming
+            else -> ReactionLogCardTokens.borderOutgoing
         },
         animationSpec = tween(200),
         label = "reaction_log_border",
@@ -62,12 +65,17 @@ fun OverlayReactionLogCard(
             if (incoming) ReactionLogCardTokens.incomingGradientBottom else ReactionLogCardTokens.outgoingGradientBottom,
         ),
     )
+    val cardAlpha = if (incoming) {
+        (PremiumSurfaces.listCardAlpha + 0.04f).coerceAtMost(0.96f)
+    } else {
+        PremiumSurfaces.listCardAlpha - 0.06f
+    }.coerceIn(0.72f, 0.96f)
     PremiumGlassSurface(
         modifier = modifier.fillMaxWidth(),
         shape = shape,
-        shadowElevation = 3.dp,
-        layerAlpha = PremiumSurfaces.listCardAlpha,
-        showInnerGlow = true,
+        shadowElevation = if (incoming) 4.dp else 2.dp,
+        layerAlpha = cardAlpha,
+        showInnerGlow = incoming,
         border = BorderStroke(1.dp, animatedBorderColor),
         highlightCornerRadius = ReactionLogCardTokens.corner,
     ) {
@@ -76,6 +84,9 @@ fun OverlayReactionLogCard(
                 .fillMaxWidth()
                 .drawBehind {
                     drawRect(brush = gradientBrush, size = size)
+                    if (incoming && unreadHighlight) {
+                        drawRect(color = ReactionLogCardTokens.incomingUnreadGlow, size = size)
+                    }
                 },
         ) {
             if (incoming) {
@@ -84,7 +95,7 @@ fun OverlayReactionLogCard(
                         .align(androidx.compose.ui.Alignment.CenterStart)
                         .width(ReactionLogCardTokens.railWidth)
                         .fillMaxHeight()
-                        .background(animatedRailColor.copy(alpha = if (unreadHighlight) 0.95f else 0.65f)),
+                        .background(animatedRailColor.copy(alpha = if (unreadHighlight) 0.98f else 0.78f)),
                 )
             } else {
                 Box(

@@ -11,7 +11,8 @@ internal data class OverlayReactionLogDisplayRow(
 data class OverlayReactionLogStickyListLayout(
     val groupedFeed: List<Pair<String, List<OverlayReactionLogFeedItem>>>,
     val firstUnreadItemIndex: Int,
-    val lastClusterItemIndex: Int,
+    /** Lazy index of the newest cluster (top of feed when newest-first). */
+    val latestClusterItemIndex: Int,
     val itemIndexToEntryId: Map<Int, String>,
 )
 
@@ -38,7 +39,7 @@ fun feedItemPrimaryEntryId(item: OverlayReactionLogFeedItem): String =
         is OverlayReactionLogFeedItem.ThreadParent -> item.parent.representative.id
     }
 
-/** Newest-first entry ids for preview animation (top of feed). */
+/** Newest-first entry ids for preview animation (first rows in newest-first feed). */
 fun buildNewestFeedEntryIds(
     groupedFeed: List<Pair<String, List<OverlayReactionLogFeedItem>>>,
     limit: Int = OverlayReactionPreviewAnimationPolicy.MAX_CONCURRENT_ANIMATED_PREVIEWS,
@@ -113,11 +114,8 @@ internal fun buildStickyListLayout(
 ): OverlayReactionLogStickyListLayout {
     var index = 0
     var firstUnread = -1
-    var lastCluster = -1
+    var latestCluster = -1
     val itemIndexToEntryId = mutableMapOf<Int, String>()
-    if (loadingMore) {
-        index++
-    }
     groupedFeed.forEach { (_, feedItems) ->
         index++
         feedItems.forEach { feedItem ->
@@ -125,15 +123,20 @@ internal fun buildStickyListLayout(
             if (entryId in unreadEntryIds && firstUnread < 0) {
                 firstUnread = index
             }
-            lastCluster = index
+            if (latestCluster < 0) {
+                latestCluster = index
+            }
             itemIndexToEntryId[index] = entryId
             index++
         }
     }
+    if (loadingMore) {
+        index++
+    }
     return OverlayReactionLogStickyListLayout(
         groupedFeed = groupedFeed,
         firstUnreadItemIndex = firstUnread,
-        lastClusterItemIndex = lastCluster,
+        latestClusterItemIndex = latestCluster,
         itemIndexToEntryId = itemIndexToEntryId,
     )
 }

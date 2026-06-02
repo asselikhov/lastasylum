@@ -53,11 +53,12 @@ class OverlayReactionCaptionTest {
             context.getString(R.string.overlay_reaction_burst_from, "RustlingGrass"),
             block.fromLineView.text.toString(),
         )
-        assertEquals(2, block.root.childCount)
+        assertEquals(1, block.root.childCount)
+        assertEquals(2, block.textColumn.childCount)
     }
 
     @Test
-    fun heroCaptionBlock_replyScopeRowFitsParentPreview() {
+    fun heroCaptionBlock_replyParentPreviewBesideTwoLines() {
         val block = OverlayReactionCaption.createHeroCaptionBlock(
             context = context,
             displayName = "Alice",
@@ -70,8 +71,8 @@ class OverlayReactionCaptionTest {
             ),
         )
         val visualFactory = OverlayReactionVisualFactory(context) { }
-        OverlayReactionBurstReplyPreview.attachBesideScopeRow(
-            scopeRow = block.scopeRow,
+        OverlayReactionBurstReplyPreview.attachBesideCaptionLines(
+            caption = block,
             context = context,
             replyTo = OverlayReactionBurstReplyTo(
                 logId = "log1",
@@ -82,8 +83,10 @@ class OverlayReactionCaptionTest {
             dp = { it },
             hero = true,
         )
-        assertEquals(2, block.scopeRow.childCount)
-        assertTrue(block.scopeRow.getChildAt(1) is android.widget.FrameLayout)
+        assertEquals(LinearLayout.HORIZONTAL, block.root.orientation)
+        assertEquals(2, block.root.childCount)
+        assertEquals(1, block.scopeRow.childCount)
+        assertTrue(block.root.getChildAt(1) is android.widget.FrameLayout)
     }
 
     @Test

@@ -13,6 +13,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.View.MeasureSpec
 import android.view.WindowManager
 import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
@@ -241,7 +242,7 @@ internal class OverlayReactionBurstPresenter(
             addView(
                 column,
                 FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT,
                     Gravity.CENTER_HORIZONTAL or Gravity.TOP,
                 ),
@@ -254,14 +255,14 @@ internal class OverlayReactionBurstPresenter(
             addView(
                 clipHost,
                 FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
                     maxH,
                     Gravity.CENTER_HORIZONTAL or Gravity.TOP,
                 ),
             )
         }
         val params = WindowManager.LayoutParams(
-            layout.screenWidthPx,
+            WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             overlayWindowType(),
             OverlayWindowLayout.reactionBurstWindowFlags(),
@@ -699,9 +700,15 @@ internal class OverlayReactionBurstPresenter(
     }
 
     private fun relayoutStagePosition() {
+        applyStageWindowLayout()
+    }
+
+    /** Content-sized window so OEMs do not block game touches on a full-screen overlay rect. */
+    private fun applyStageWindowLayout() {
         val root = stageRoot ?: return
         val params = stageParams ?: return
         val wm = attachedWindowManager ?: return
+        val column = stageColumn ?: return
         val layout = OverlayReactionBurstLayout.metrics(context, dp)
         val anchor = anchorResolver()
             ?: OverlayReactionAnchorLayout.fallbackTopEndHud(layout.screenWidthPx, dp)
@@ -711,14 +718,29 @@ internal class OverlayReactionBurstPresenter(
             dp,
             safeTopMinYProvider(),
         )
+        val widthSpec = MeasureSpec.makeMeasureSpec(layout.screenWidthPx, MeasureSpec.AT_MOST)
+        val heightSpec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+        column.measure(widthSpec, heightSpec)
+        val stageWidthPx = OverlayReactionAnchorLayout.clampStackWidthPx(column.measuredWidth, anchor)
+            .coerceAtLeast(1)
+
+        params.width = stageWidthPx
+        params.height = WindowManager.LayoutParams.WRAP_CONTENT
         params.gravity = placement.windowGravity
-        params.x = placement.x
         params.y = placement.y
-        if (placement.fullScreenWidth) {
-            params.width = layout.screenWidthPx
+        params.x = when (anchor.horizontalAlign) {
+            HorizontalAlign.END -> placement.x
+            HorizontalAlign.CENTER,
+            HorizontalAlign.SCREEN_CENTER,
+            -> OverlayReactionAnchorLayout.adjustCenteredWindowX(
+                anchor,
+                stageWidthPx,
+                layout.screenWidthPx,
+            )
         }
         stageColumn?.gravity = placement.stackContentGravity
         clipHostGravity(placement.stackContentGravity)
+        OverlayWindowLayout.applyReactionBurstWindowTouchPolicy(context, params)
         runCatching { wm.updateViewLayout(root, params) }
     }
 

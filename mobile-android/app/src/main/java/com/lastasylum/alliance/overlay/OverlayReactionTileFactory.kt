@@ -119,8 +119,8 @@ internal class OverlayReactionTileFactory(
                 mergeCount = mergeCount,
             )
             request.replyToLog?.let { replyTo ->
-                OverlayReactionBurstReplyPreview.attachBesideScopeRow(
-                    scopeRow = captionBlock.scopeRow,
+                OverlayReactionBurstReplyPreview.attachBesideCaptionLines(
+                    caption = captionBlock,
                     context = context,
                     replyTo = replyTo,
                     visualFactory = visualFactory,
@@ -236,7 +236,6 @@ internal class OverlayReactionTileFactory(
         }
     }
 
-    /** Glow (bottom) → opaque plate → reaction so TRANSLUCENT window does not wash out content. */
     private fun installBurstAnimatedVisual(
         host: FrameLayout,
         reaction: OverlayQuickReaction,
@@ -247,7 +246,6 @@ internal class OverlayReactionTileFactory(
         if (mode == OverlayReactionTileMode.HERO) {
             addHeroGlow(host, reaction.burstAccentHex, tilePx)
         }
-        addBurstReactionOpaquePlate(host, tilePx)
         val animView = visualFactory.createAnimView(reaction, tilePx, playLottie)
         host.addView(
             animView,
@@ -259,21 +257,6 @@ internal class OverlayReactionTileFactory(
         )
         applyBurstVisualFullOpacity(host)
         return animView as? LottieAnimationView
-    }
-
-    private fun addBurstReactionOpaquePlate(host: FrameLayout, sizePx: Int) {
-        val cornerPx = context.resources.displayMetrics.density * 10f
-        val plate = View(context).apply {
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#FF141C28"))
-                cornerRadius = cornerPx
-            }
-            alpha = OverlayReactionBurstLayout.CONTENT_ALPHA
-        }
-        host.addView(
-            plate,
-            FrameLayout.LayoutParams(sizePx, sizePx, Gravity.CENTER),
-        )
     }
 
     private fun addHeroGlow(host: FrameLayout, accentHex: String, sizePx: Int) {

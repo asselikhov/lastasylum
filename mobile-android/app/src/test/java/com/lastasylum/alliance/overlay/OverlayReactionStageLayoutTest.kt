@@ -75,7 +75,7 @@ class OverlayReactionStageLayoutTest {
     }
 
     @Test
-    fun computeStageWindowPlacement_screenCenterUsesFullWidth() {
+    fun computeStageWindowPlacement_screenCenterStacksCentered() {
         val anchor = OverlayReactionAnchorRect(
             bounds = android.graphics.Rect(0, 0, 100, 40),
             horizontalAlign = HorizontalAlign.SCREEN_CENTER,
@@ -87,7 +87,6 @@ class OverlayReactionStageLayoutTest {
             safeTopMinY = 100,
         )
         assertEquals(100, placement.y)
-        assertTrue(placement.fullScreenWidth)
         assertEquals(android.view.Gravity.CENTER_HORIZONTAL, placement.stackContentGravity)
     }
 

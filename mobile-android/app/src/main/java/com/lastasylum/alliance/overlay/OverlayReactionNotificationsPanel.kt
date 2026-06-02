@@ -53,6 +53,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -222,30 +223,29 @@ fun OverlayReactionNotificationsPanel(
                 onSearchQuery = controller::onSearchQuery,
             )
             key(filterKey) {
-                val lastClusterIndexForInit = listLayout.lastClusterItemIndex
+                val latestClusterIndexForInit = listLayout.latestClusterItemIndex
                 val initialListIndex = when {
                     savedScrollIndex >= 0 -> savedScrollIndex
-                    lastClusterIndexForInit >= 0 -> lastClusterIndexForInit
+                    latestClusterIndexForInit >= 0 -> latestClusterIndexForInit
                     else -> 0
-                }.coerceAtMost(lastClusterIndexForInit.coerceAtLeast(0))
+                }.coerceAtMost(latestClusterIndexForInit.coerceAtLeast(0))
                 val listState = rememberLazyListState(
                     cacheWindow = LazyLayoutCacheWindow(ahead = 140.dp, behind = 140.dp),
                     initialFirstVisibleItemIndex = initialListIndex,
                 )
-                LaunchedEffect(filterKey, listLayout.lastClusterItemIndex) {
-                    val lastIndex = listLayout.lastClusterItemIndex
-                    if (lastIndex < 0) return@LaunchedEffect
-                    if (listState.firstVisibleItemIndex > lastIndex) {
-                        listState.scrollToItem(lastIndex)
+                LaunchedEffect(filterKey, listLayout.latestClusterItemIndex) {
+                    val latestIndex = listLayout.latestClusterItemIndex
+                    if (latestIndex < 0) return@LaunchedEffect
+                    if (listState.firstVisibleItemIndex > latestIndex) {
+                        listState.scrollToItem(latestIndex)
                     }
                 }
                 val firstUnreadIndex = listLayout.firstUnreadItemIndex
-                val lastClusterIndex = listLayout.lastClusterItemIndex
-                val isNearBottom by remember(listState, lastClusterIndex) {
+                val latestClusterIndex = listLayout.latestClusterItemIndex
+                val isNearTop by remember(listState, latestClusterIndex) {
                     derivedStateOf {
-                        if (lastClusterIndex < 0) return@derivedStateOf false
-                        val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-                        lastVisible >= lastClusterIndex - 1
+                        if (latestClusterIndex < 0) return@derivedStateOf false
+                        listState.firstVisibleItemIndex <= latestClusterIndex + 1
                     }
                 }
                 val isFirstUnreadVisible by remember(listState, firstUnreadIndex) {
@@ -301,15 +301,43 @@ fun OverlayReactionNotificationsPanel(
                             markReadUpToRef.value(watermark)
                         }
                 }
-                val showScrollToLatest by remember(isNearBottom, groupedFeed) {
-                    derivedStateOf { groupedFeed.isNotEmpty() && !isNearBottom }
+                val showScrollToLatest by remember(isNearTop, groupedFeed) {
+                    derivedStateOf { groupedFeed.isNotEmpty() && !isNearTop }
                 }
-                val animatedPreviewIds by remember(listState, listLayout.itemIndexToEntryId, newestFeedEntryIds) {
+                val previewContext = LocalContext.current
+                val entryIdToReactionId by remember(groupedFeed) {
+                    derivedStateOf {
+                        buildMap {
+                            groupedFeed.forEach { (_, items) ->
+                                items.forEach { item ->
+                                    val entryId = feedItemPrimaryEntryId(item)
+                                    val reactionId = when (item) {
+                                        is OverlayReactionLogFeedItem.Root ->
+                                            item.cluster.representative.reaction
+                                        is OverlayReactionLogFeedItem.ThreadParent ->
+                                            item.parent.representative.reaction
+                                    }
+                                    put(entryId, reactionId)
+                                }
+                            }
+                        }
+                    }
+                }
+                val animatedPreviewIds by remember(
+                    listState,
+                    listLayout.itemIndexToEntryId,
+                    newestFeedEntryIds,
+                    entryIdToReactionId,
+                ) {
                     derivedStateOf {
                         OverlayReactionPreviewAnimationPolicy.resolveAnimatedEntryIds(
                             newestEntryIds = newestFeedEntryIds,
                             visibleItems = listState.layoutInfo.visibleItemsInfo,
                             itemIndexToEntryId = listLayout.itemIndexToEntryId,
+                            supportsAnimatedPreview = { entryId ->
+                                val reactionId = entryIdToReactionId[entryId] ?: return@resolveAnimatedEntryIds false
+                                overlayReactionSupportsAnimatedPreview(previewContext, reactionId)
+                            },
                         )
                     }
                 }
@@ -358,10 +386,14 @@ fun OverlayReactionNotificationsPanel(
                     }
                     else -> {
                         LaunchedEffect(listState, listLayout.itemIndexToEntryId.size) {
-                            snapshotFlow { listState.firstVisibleItemIndex }
+                            snapshotFlow {
+                                val info = listState.layoutInfo
+                                val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+                                lastVisible to info.totalItemsCount
+                            }
                                 .distinctUntilChanged()
-                                .collect { firstIndex ->
-                                    controller.loadMoreIfNeeded(firstIndex)
+                                .collect { (lastVisible, total) ->
+                                    controller.loadMoreIfNeeded(lastVisible, total)
                                 }
                         }
 
@@ -379,18 +411,6 @@ fun OverlayReactionNotificationsPanel(
                                 ),
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                if (loadingMore) {
-                                    item(key = "loading-more", contentType = 2) {
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(16.dp),
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                                        }
-                                    }
-                                }
                                 listLayout.groupedFeed.forEach { (headerKey, feedItems) ->
                                     stickyHeader(key = "header-$headerKey", contentType = 0) {
                                         val sampleCreatedAt = feedItems.firstOrNull().let { item ->
@@ -456,6 +476,18 @@ fun OverlayReactionNotificationsPanel(
                                         }
                                     }
                                 }
+                                if (loadingMore) {
+                                    item(key = "loading-more", contentType = 2) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(16.dp),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                        }
+                                    }
+                                }
                             }
                         }
 
@@ -477,15 +509,15 @@ fun OverlayReactionNotificationsPanel(
                         OverlayReactionLogScrollToLatestFab(
                             visible = showScrollToLatest,
                             onClick = {
-                                if (lastClusterIndex >= 0) {
+                                if (latestClusterIndex >= 0) {
                                     scope.launch {
-                                        animateOverlayNotificationsListToIndex(listState, lastClusterIndex)
+                                        animateOverlayNotificationsListToIndex(listState, latestClusterIndex)
                                     }
                                 }
                             },
                             modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(end = 8.dp, bottom = 12.dp)
+                                .align(Alignment.TopEnd)
+                                .padding(end = 8.dp, top = 8.dp)
                                 .zIndex(6f),
                         )
                     }

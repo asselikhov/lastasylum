@@ -149,10 +149,10 @@ object OverlayReactionLogFeedBuilder {
                 overlayReactionLogDateHeaderKey(createdAt)
             }
             .toList()
-            .sortedBy { (_, group) ->
+            .sortedByDescending { (_, group) ->
                 group.firstOrNull()?.let { feedItemSortKey(it) } ?: ""
             }
             .map { (headerKey, groupItems) ->
-                headerKey to groupItems.sortedBy { feedItemSortKey(it) }
+                headerKey to groupItems.sortedByDescending { feedItemSortKey(it) }
             }
 }

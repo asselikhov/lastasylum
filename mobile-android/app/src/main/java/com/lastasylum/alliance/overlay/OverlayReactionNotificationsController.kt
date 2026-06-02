@@ -42,7 +42,7 @@ data class OverlayReactionNotificationsUiState(
     val listLayout: OverlayReactionLogStickyListLayout = OverlayReactionLogStickyListLayout(
         groupedFeed = emptyList(),
         firstUnreadItemIndex = -1,
-        lastClusterItemIndex = -1,
+        latestClusterItemIndex = -1,
         itemIndexToEntryId = emptyMap(),
     ),
     val onlineUserIds: Set<String> = emptySet(),
@@ -161,8 +161,9 @@ class OverlayReactionNotificationsController(
         }
     }
 
-    fun loadMoreIfNeeded(firstVisibleItemIndex: Int) {
-        if (firstVisibleItemIndex <= 2) {
+    fun loadMoreIfNeeded(lastVisibleItemIndex: Int, totalItemCount: Int) {
+        if (totalItemCount <= 0) return
+        if (lastVisibleItemIndex >= totalItemCount - 3) {
             repository.loadMore()
         }
     }

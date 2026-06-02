@@ -14,6 +14,7 @@ import com.lastasylum.alliance.R
 
 internal data class OverlayReactionHeroCaptionBlock(
     val root: LinearLayout,
+    val textColumn: LinearLayout,
     val scopeRow: LinearLayout,
     val scopeLabelView: TextView,
     val fromLineView: TextView,
@@ -114,12 +115,9 @@ internal object OverlayReactionCaption {
             disableOverlayTouchTarget(this)
         }
 
-        val root = LinearLayout(context).apply {
+        val textColumn = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(padH, padV, padH, padV)
-            background = nickBackground(context, cornerDp = 6f)
-            setTag(R.id.tag_overlay_reaction_caption, true)
             addView(
                 scopeRow,
                 LinearLayout.LayoutParams(
@@ -138,12 +136,40 @@ internal object OverlayReactionCaption {
             )
         }
 
+        val root = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(padH, padV, padH, padV)
+            background = nickBackground(context, cornerDp = 6f)
+            setTag(R.id.tag_overlay_reaction_caption, true)
+            addView(
+                textColumn,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+        }
+
         return OverlayReactionHeroCaptionBlock(
             root = root,
+            textColumn = textColumn,
             scopeRow = scopeRow,
             scopeLabelView = scopeLabelView,
             fromLineView = fromLineView,
         )
+    }
+
+    private fun findFromLineView(captionRoot: View, scopeView: TextView): TextView? {
+        if (captionRoot is TextView && captionRoot !== scopeView) {
+            return captionRoot
+        }
+        if (captionRoot is ViewGroup) {
+            for (i in 0 until captionRoot.childCount) {
+                findFromLineView(captionRoot.getChildAt(i), scopeView)?.let { return it }
+            }
+        }
+        return null
     }
 
     private fun findScopeLabelView(captionRoot: View): TextView? {
@@ -177,15 +203,8 @@ internal object OverlayReactionCaption {
         scopeView.setTextColor(scopeColor(broadcast, isReply))
 
         val nick = formatReactionDisplayNick(displayName)
-        (captionRoot as? LinearLayout)?.let { root ->
-            for (i in 0 until root.childCount) {
-                val child = root.getChildAt(i)
-                if (child is TextView && child !== scopeView) {
-                    child.text = context.getString(R.string.overlay_reaction_burst_from, nick)
-                    break
-                }
-            }
-        }
+        findFromLineView(captionRoot, scopeView)?.text =
+            context.getString(R.string.overlay_reaction_burst_from, nick)
     }
 
     fun miniContentDescription(

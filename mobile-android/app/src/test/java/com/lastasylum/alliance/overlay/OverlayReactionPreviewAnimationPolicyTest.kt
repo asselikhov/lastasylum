@@ -36,6 +36,22 @@ class OverlayReactionPreviewAnimationPolicyTest {
     }
 
     @Test
+    fun resolveAnimatedEntryIds_skipsNonAnimatableCandidates() {
+        val visible = listOf(
+            FakeItemInfo(index = 1, key = "cluster-a"),
+            FakeItemInfo(index = 2, key = "cluster-b"),
+        )
+        val indexMap = mapOf(1 to "a", 2 to "b")
+        val result = OverlayReactionPreviewAnimationPolicy.resolveAnimatedEntryIds(
+            newestEntryIds = listOf("static", "a", "b"),
+            visibleItems = visible,
+            itemIndexToEntryId = indexMap,
+            supportsAnimatedPreview = { it != "static" },
+        )
+        assertEquals(setOf("a", "b"), result)
+    }
+
+    @Test
     fun resolveAnimatedEntryIds_skipsNewestNotOnScreen() {
         val visible = listOf(
             FakeItemInfo(index = 2, key = "cluster-b"),

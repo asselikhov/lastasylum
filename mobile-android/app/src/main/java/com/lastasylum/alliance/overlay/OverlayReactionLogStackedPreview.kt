@@ -25,7 +25,7 @@ fun OverlayReactionLogStackedPreview(
                 visibility = entry.visibility,
                 previewSizeDp = previewSizeDp - index * 4,
                 showLabel = false,
-                playAnimatedPreview = playAnimatedPreview && index == entries.lastIndex,
+                playAnimatedPreview = playAnimatedPreview && index == 0,
                 compact = true,
                 modifier = Modifier.offset(x = (index * 10).dp, y = (index * 2).dp),
             )
