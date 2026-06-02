@@ -6,17 +6,20 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.chat.OverlayReactionBurstReplyTo
 import com.lastasylum.alliance.data.chat.OverlayReactionLogVisibility
 
 internal object OverlayReactionBurstReplyPreview {
-    private const val HERO_PREVIEW_MIN_DP = 44
-    private const val MINI_PREVIEW_MIN_DP = 28
+    /** Fixed square beside reply caption (incoming burst hero). */
+    private const val HERO_PREVIEW_SIDE_DP = 32
+    private const val MINI_PREVIEW_SIDE_DP = 28
+    private const val PREVIEW_INSET_DP = 4
     private const val TEXT_PREVIEW_GAP_DP = 8
 
-    /** Parent reaction thumbnail to the right of scope + from lines; height matches both lines. */
+    /** Parent reaction thumbnail to the right of scope + from lines. */
     fun attachBesideCaptionLines(
         caption: OverlayReactionHeroCaptionBlock,
         context: Context,
@@ -32,10 +35,13 @@ internal object OverlayReactionBurstReplyPreview {
         root.orientation = LinearLayout.HORIZONTAL
         root.gravity = Gravity.CENTER_VERTICAL
 
-        val previewMinPx = dp(if (hero) HERO_PREVIEW_MIN_DP else MINI_PREVIEW_MIN_DP)
-        val previewHost = ReplyParentPreviewHost(context, previewMinPx).apply {
+        val previewSidePx = dp(if (hero) HERO_PREVIEW_SIDE_DP else MINI_PREVIEW_SIDE_DP)
+        val insetPx = dp(PREVIEW_INSET_DP)
+        val contentPx = (previewSidePx - insetPx * 2).coerceAtLeast(dp(18))
+        val previewHost = ReplyParentPreviewHost(context, previewSidePx).apply {
             clipChildren = false
             clipToPadding = false
+            setPadding(insetPx, insetPx, insetPx, insetPx)
             background = replyPreviewBackground(context, replyTo.visibility)
             contentDescription = context.getString(
                 R.string.overlay_reaction_burst_reply_parent_preview,
@@ -43,15 +49,12 @@ internal object OverlayReactionBurstReplyPreview {
             )
         }
         val reaction = overlayQuickReactionById(context, replyTo.reaction)
-        val animView = visualFactory.createAnimView(reaction, previewMinPx, playLottie = false)
+        val animView = visualFactory.createAnimView(reaction, contentPx, playLottie = false)
         applyBurstVisualFullOpacity(animView)
+        applyParentPreviewFitInside(animView)
         previewHost.addView(
             animView,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                Gravity.CENTER,
-            ),
+            FrameLayout.LayoutParams(contentPx, contentPx, Gravity.CENTER),
         )
 
         root.addView(
@@ -72,6 +75,13 @@ internal object OverlayReactionBurstReplyPreview {
         )
     }
 
+    /** Tile icons default to CENTER_CROP for memes; parent preview must show the full asset. */
+    private fun applyParentPreviewFitInside(view: View) {
+        if (view is ImageView) {
+            view.scaleType = ImageView.ScaleType.FIT_CENTER
+        }
+    }
+
     private fun replyPreviewBackground(
         context: Context,
         visibility: OverlayReactionLogVisibility,
@@ -89,20 +99,13 @@ internal object OverlayReactionBurstReplyPreview {
     }
 }
 
-/** Square preview at least [minSidePx]; grows with two-line caption height when taller. */
+/** Fixed square thumbnail; does not stretch with caption line count. */
 private class ReplyParentPreviewHost(
     context: Context,
-    private val minSidePx: Int,
+    private val sidePx: Int,
 ) : FrameLayout(context) {
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val heightMode = MeasureSpec.getMode(heightMeasureSpec)
-        val heightSize = MeasureSpec.getSize(heightMeasureSpec)
-        val side = when {
-            heightMode != MeasureSpec.UNSPECIFIED && heightSize > 0 ->
-                maxOf(heightSize, minSidePx)
-            else -> minSidePx
-        }
-        val sideSpec = MeasureSpec.makeMeasureSpec(side, MeasureSpec.EXACTLY)
+        val sideSpec = MeasureSpec.makeMeasureSpec(sidePx, MeasureSpec.EXACTLY)
         super.onMeasure(sideSpec, sideSpec)
     }
 }

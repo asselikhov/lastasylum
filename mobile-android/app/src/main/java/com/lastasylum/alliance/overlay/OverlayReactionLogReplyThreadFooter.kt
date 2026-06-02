@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -239,9 +240,11 @@ private fun ReplyThreadExpandedPanel(
             shadowElevation = 2.dp,
             border = BorderStroke(1.dp, borderColor),
         ) {
+            // LazyColumn gives infinite max height; fillMaxHeight() on a Row child crashes without IntrinsicSize.Min.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .height(IntrinsicSize.Min)
                     .background(panelGradient),
             ) {
                 Box(
