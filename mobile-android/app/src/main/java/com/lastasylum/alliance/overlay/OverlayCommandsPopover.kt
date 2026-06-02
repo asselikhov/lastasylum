@@ -1149,6 +1149,7 @@ class OverlayCommandsPopover(
 
         rebuildReactionTiles = fun() {
             val isTextTab = selectedReactionSubcategory == OverlayReactionCategory.TEXT
+            updateStickerPackPickerVisibility()
             reactionGridScroll?.visibility = if (isTextTab) View.GONE else View.VISIBLE
             reactionGridScroll?.post { invalidateReactionBurstAnchor() }
             reactionTextPanel.visibility = if (isTextTab) View.VISIBLE else View.GONE
@@ -1167,7 +1168,6 @@ class OverlayCommandsPopover(
             }
             hideKeyboard(reactionTextInput)
             val isStickersTab = selectedReactionSubcategory == OverlayReactionCategory.STICKERS
-            updateStickerPackPickerVisibility()
             val items = if (isStickersTab) {
                 overlayStickerReactionsForPack(
                     context,
@@ -1200,7 +1200,9 @@ class OverlayCommandsPopover(
             }
             if (cat == OverlayReactionCategory.TEXT) {
                 stopReactionPreviewKeepAlive()
+                reactionStickerPackPicker.dismissPicker()
             }
+            updateStickerPackPickerVisibility()
             refreshReactionSubTabs()
             scheduleReactionTilesRebuild()
         }
