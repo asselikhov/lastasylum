@@ -63,8 +63,9 @@ import com.lastasylum.alliance.ui.theme.premium.PremiumColors
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
 import kotlinx.coroutines.delay
 
-private val ReactionPreviewColumnWidth = 108.dp
+private val ReactionPreviewColumnWidth = 112.dp
 private val ReactionPreviewReplySlot = 36.dp
+private val ReactionPreviewReplyGap = 10.dp
 
 @Composable
 fun OverlayReactionLogEntryRow(
@@ -290,8 +291,9 @@ private fun ReactionPreviewColumn(
                 incoming = incoming,
                 modifier = Modifier.size(ReactionPreviewReplySlot),
             )
+            Spacer(modifier = Modifier.width(ReactionPreviewReplyGap))
         } else {
-            Spacer(modifier = Modifier.size(ReactionPreviewReplySlot))
+            Spacer(modifier = Modifier.width(ReactionPreviewReplySlot + ReactionPreviewReplyGap))
         }
         Box(
             modifier = Modifier

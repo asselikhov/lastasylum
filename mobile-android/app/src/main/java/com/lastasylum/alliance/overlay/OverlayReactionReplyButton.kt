@@ -3,11 +3,11 @@ package com.lastasylum.alliance.overlay
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -38,14 +39,12 @@ fun OverlayReactionReplyIconButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     incoming: Boolean = true,
-    buttonSize: Dp = 34.dp,
-    iconSize: Dp = 19.dp,
+    buttonSize: Dp = 36.dp,
+    iconSize: Dp = 22.dp,
 ) {
     val accent = if (incoming) ReactionLogCardTokens.incomingRail else ReactionLogCardTokens.outgoingRail
     val accentGlow = if (incoming) Color(0xFF6EE7B7) else Color(0xFF93C5FD)
-    val fillTop = accent.copy(alpha = if (incoming) 0.16f else 0.14f)
-    val fillBottom = if (incoming) Color(0xFF141E1A) else Color(0xFF141A24)
-    val shape = RoundedCornerShape(10.dp)
+    val shape = RoundedCornerShape(11.dp)
     val contentDesc = stringResource(R.string.overlay_notifications_reply_cd)
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
@@ -54,14 +53,12 @@ fun OverlayReactionReplyIconButton(
         animationSpec = tween(90),
         label = "reply_icon_scale",
     )
-    val borderBrush = Brush.linearGradient(
-        colors = listOf(
-            accent.copy(alpha = if (incoming) 0.55f else 0.5f),
-            accent.copy(alpha = 0.22f),
-        ),
-    )
     val fillBrush = Brush.verticalGradient(
-        colors = listOf(fillTop, fillBottom),
+        colors = listOf(
+            accent.copy(alpha = if (incoming) 0.20f else 0.16f),
+            accent.copy(alpha = if (incoming) 0.06f else 0.05f),
+            Color.Transparent,
+        ),
     )
 
     Box(
@@ -71,19 +68,55 @@ fun OverlayReactionReplyIconButton(
             .size(buttonSize)
             .clip(shape)
             .background(fillBrush)
-            .border(width = 1.dp, brush = borderBrush, shape = shape)
             .clickable(
                 interactionSource = interactionSource,
-                indication = ripple(color = accentGlow.copy(alpha = 0.18f)),
+                indication = ripple(color = accentGlow.copy(alpha = 0.16f)),
                 onClick = onClick,
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
+        OverlayReactionReplyIcon3D(
             imageVector = Icons.AutoMirrored.Outlined.Reply,
+            iconSize = iconSize,
+            incoming = incoming,
+        )
+    }
+}
+
+@Composable
+private fun OverlayReactionReplyIcon3D(
+    imageVector: ImageVector,
+    iconSize: Dp,
+    incoming: Boolean,
+) {
+    val shadow = if (incoming) Color(0xFF052218) else Color(0xFF0A1628)
+    val body = if (incoming) ReactionLogCardTokens.incomingRail else ReactionLogCardTokens.outgoingRail
+    val highlight = if (incoming) Color(0xFFA7F3D0) else Color(0xFFBFDBFE)
+    val canvas = iconSize + 4.dp
+    Box(modifier = Modifier.size(canvas), contentAlignment = Alignment.Center) {
+        Icon(
+            imageVector = imageVector,
             contentDescription = null,
-            tint = accentGlow.copy(alpha = 0.96f),
-            modifier = Modifier.size(iconSize),
+            tint = shadow.copy(alpha = 0.85f),
+            modifier = Modifier
+                .size(iconSize)
+                .offset(x = 1.4.dp, y = 2.dp),
+        )
+        Icon(
+            imageVector = imageVector,
+            contentDescription = null,
+            tint = body,
+            modifier = Modifier
+                .size(iconSize)
+                .offset(x = 0.25.dp, y = 0.5.dp),
+        )
+        Icon(
+            imageVector = imageVector,
+            contentDescription = null,
+            tint = highlight.copy(alpha = 0.72f),
+            modifier = Modifier
+                .size(iconSize * 0.88f)
+                .offset(x = (-0.6).dp, y = (-0.8).dp),
         )
     }
 }
@@ -100,7 +133,7 @@ fun OverlayReactionReplyButton(
         onClick = onClick,
         modifier = modifier,
         incoming = incoming,
-        buttonSize = if (expanded) 44.dp else 34.dp,
-        iconSize = if (expanded) 22.dp else 19.dp,
+        buttonSize = if (expanded) 44.dp else 36.dp,
+        iconSize = if (expanded) 24.dp else 22.dp,
     )
 }

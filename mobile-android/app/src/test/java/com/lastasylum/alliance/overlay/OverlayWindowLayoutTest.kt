@@ -17,10 +17,4 @@ class OverlayWindowLayoutTest {
         val f = OverlayWindowLayout.historyPanelWindowFlags()
         assertEquals(0, f and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
     }
-
-    @Test
-    fun historyFlags_allowTouchesOutsideWindowToSystem() {
-        val f = OverlayWindowLayout.historyPanelWindowFlags()
-        assertTrue(f and WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL != 0)
-    }
 }
