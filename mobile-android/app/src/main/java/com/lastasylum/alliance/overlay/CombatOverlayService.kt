@@ -15,6 +15,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
@@ -1104,6 +1105,10 @@ class CombatOverlayService : Service() {
 
     private var lastHudZOrderRebalanceMs: Long = 0L
 
+    /** Время последнего [onOverlayChatTeamPanelPresented] — в grace не делаем remove/add панели. */
+    @Volatile
+    private var lastFullscreenPanelPresentedAtMs: Long = 0L
+
     /** Подряд тиков гейта «не показывать UI» — скрываем HUD только после N, чтобы не мигать. */
     private var gateUiHideStreak: Int = 0
 
@@ -1263,14 +1268,19 @@ class CombatOverlayService : Service() {
             holdPanelVisible = OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible,
         )
 
-    /** После пикера/снимка окон — непрозрачный фон панели чата (без remove/add). */
-    private fun restoreOverlayChatTeamPanelOpaqueAppearance() {
+    /**
+     * Показать панель (без remove/add). [recordPresented] — мягкое появление Compose и grace для z-order.
+     */
+    private fun restoreOverlayChatTeamPanelOpaqueAppearance(recordPresented: Boolean = false) {
         if (!shouldRestoreOverlayChatTeamPanelWindow()) return
         val root = overlayChatTeamRoot ?: return
         val mgr = windowManager ?: systemWindowManager() ?: return
+        val compose = overlayChatTeamComposeView
         root.setBackgroundColor(overlayChatTeamSurfaceColor())
         root.alpha = 1f
-        if (root.visibility != View.VISIBLE) {
+        val becomingVisible = root.visibility != View.VISIBLE
+        if (becomingVisible) {
+            compose?.alpha = 0f
             root.visibility = View.VISIBLE
         }
         val params = overlayChatTeamParams ?: return
@@ -1288,6 +1298,18 @@ class CombatOverlayService : Service() {
             runCatching { mgr.updateViewLayout(root, params) }
         }
         root.requestApplyInsets()
+        if (recordPresented) {
+            lastFullscreenPanelPresentedAtMs = SystemClock.elapsedRealtime()
+            compose?.let { view ->
+                if (becomingVisible) {
+                    view.post {
+                        view.animate().alpha(1f).setDuration(120L).start()
+                    }
+                } else {
+                    view.alpha = 1f
+                }
+            }
+        }
     }
 
     private fun syncOverlayHudWindowLayout() {
@@ -1363,7 +1385,7 @@ class CombatOverlayService : Service() {
             runCatching { mgr.addView(host, params) }
                 .onSuccess {
                     if (isOverlayFullscreenPanelObscuringHud()) {
-                        scheduleRebalanceOverlayFullscreenZOrder()
+                        scheduleRebalanceOverlayFullscreenZOrder(force = true)
                     } else {
                         scheduleStripZOrderLift()
                     }
@@ -1398,7 +1420,7 @@ class CombatOverlayService : Service() {
             runCatching { mgr.addView(host, params) }
                 .onSuccess {
                     if (isOverlayFullscreenPanelObscuringHud()) {
-                        scheduleRebalanceOverlayFullscreenZOrder()
+                        scheduleRebalanceOverlayFullscreenZOrder(force = true)
                     }
                 }
                 .onFailure { e -> Log.w(TAG, "repairOrRemoveDetachedHudWindows: $label failed", e) }
@@ -1475,7 +1497,7 @@ class CombatOverlayService : Service() {
         if (root.isAttachedToWindow) return
         Log.w(TAG, "repairDetachedOverlayChatTeamPanelIfNeeded: fullscreen chat/team detached, re-attaching")
         runCatching { mgr.addView(root, params) }
-            .onSuccess { scheduleRebalanceOverlayFullscreenZOrder() }
+            .onSuccess { scheduleRebalanceOverlayFullscreenZOrder(force = true) }
             .onFailure { e ->
                 Log.e(TAG, "repairDetachedOverlayChatTeamPanelIfNeeded: re-attach failed", e)
             }
@@ -2560,8 +2582,13 @@ class CombatOverlayService : Service() {
         if (!prefs.isOverlayPanelEnabled() || !canDrawOverlaysNow()) return
         repairDetachedOverlayShellIfNeeded()
         if (!isOverlayFullscreenPanelObscuringHud()) {
-            overlayStatusHudHost?.visibility = View.VISIBLE
-            overlayTopRightHudHost?.visibility = View.VISIBLE
+            applyAuxiliaryOverlayTouchSuppressionForFullscreenPanel(enable = false)
+            if (overlayStatusHudHost?.visibility != View.VISIBLE) {
+                overlayStatusHudHost?.visibility = View.VISIBLE
+            }
+            if (overlayTopRightHudHost?.visibility != View.VISIBLE) {
+                overlayTopRightHudHost?.visibility = View.VISIBLE
+            }
         }
         applyOverlayStripVisibility()
     }
@@ -2577,8 +2604,8 @@ class CombatOverlayService : Service() {
     }
 
     /**
-     * Правый HUD min 280dp — при addView поверх панели перехватывает крестик.
-     * GONE + [FLAG_NOT_TOUCHABLE] и понижение Z-order перед подъёмом панели.
+     * Полноэкранная панель поверх HUD: [FLAG_NOT_TOUCHABLE] + лента GONE.
+     * Угловые HUD-окна остаются [VISIBLE] (без мигания GONE↔VISIBLE при open/close).
      */
     private fun applyAuxiliaryOverlayTouchSuppressionForFullscreenPanel(enable: Boolean) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
@@ -2588,8 +2615,6 @@ class CombatOverlayService : Service() {
         val mgr = windowManager ?: systemWindowManager() ?: return
         if (enable) {
             if (!isOverlayFullscreenPanelObscuringHud()) return
-            overlayStatusHudHost?.visibility = View.GONE
-            overlayTopRightHudHost?.visibility = View.GONE
             chatStripHost?.visibility = View.GONE
             overlayTicker.applyTouchPassthrough(true)
             val mask = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
@@ -2656,6 +2681,15 @@ class CombatOverlayService : Service() {
         ensureOverlayIfPermitted()
         ensureOverlayMessageStripIfNeeded()
         if (isOverlayFullscreenPanelObscuringHud()) {
+            ensureOverlayStatusHudWindow(allowDuringFullscreenPanel = true)
+            ensureOverlayTopRightHudWindow(allowDuringFullscreenPanel = true)
+            if (overlayStatusHudHost?.visibility != View.VISIBLE) {
+                overlayStatusHudHost?.visibility = View.VISIBLE
+            }
+            if (overlayTopRightHudHost?.visibility != View.VISIBLE) {
+                overlayTopRightHudHost?.visibility = View.VISIBLE
+            }
+            hideOverlayHudChromeForFullscreenPanel()
             applyOverlayStripVisibility()
             return
         }
@@ -2683,9 +2717,15 @@ class CombatOverlayService : Service() {
         val inGame = isInGameOverlayUiActive()
         val prefs = AppContainer.from(this).userSettingsPreferences
         val allowed = prefs.isOverlayPanelEnabled() && canDrawOverlaysNow()
-        val show = inGame && allowed && !isOverlayFullscreenPanelObscuringHud()
-        if (!show) {
+        if (!inGame || !allowed) {
             overlayStatusHudHost?.visibility = View.GONE
+            return
+        }
+        if (isOverlayFullscreenPanelObscuringHud()) {
+            if (overlayStatusHudHost?.visibility != View.VISIBLE) {
+                overlayStatusHudHost?.visibility = View.VISIBLE
+            }
+            hideOverlayHudChromeForFullscreenPanel()
             return
         }
         attachOverlayHudWindowsIfNeeded()
@@ -2699,9 +2739,15 @@ class CombatOverlayService : Service() {
         val inGame = isInGameOverlayUiActive()
         val prefs = AppContainer.from(this).userSettingsPreferences
         val allowed = prefs.isOverlayPanelEnabled() && canDrawOverlaysNow()
-        val show = inGame && allowed && !isOverlayFullscreenPanelObscuringHud()
-        if (!show) {
+        if (!inGame || !allowed) {
             overlayTopRightHudHost?.visibility = View.GONE
+            return
+        }
+        if (isOverlayFullscreenPanelObscuringHud()) {
+            if (overlayTopRightHudHost?.visibility != View.VISIBLE) {
+                overlayTopRightHudHost?.visibility = View.VISIBLE
+            }
+            hideOverlayHudChromeForFullscreenPanel()
             return
         }
         attachOverlayHudWindowsIfNeeded()
@@ -2888,23 +2934,41 @@ class CombatOverlayService : Service() {
         showOverlayChatTeamPanel(hudPane = pane)
     }
 
-    /** Показать HUD/ленту после закрытия полноэкранной панели без remove/add окон. */
+    /** После закрытия: HUD уже VISIBLE — только снять NOT_TOUCHABLE и вернуть ленту (без remove/add HUD). */
     private fun restoreOverlayHudChromeAfterPanel() {
         if (!isInGameOverlayUiActive() && !isOverlayUiHoldActive()) return
         if (isOverlayFullscreenPanelObscuringHud()) return
+        applyAuxiliaryOverlayTouchSuppressionForFullscreenPanel(enable = false)
+        ensureOverlayStatusHudWindow()
+        ensureOverlayTopRightHudWindow()
         if (overlayStatusHudHost?.visibility != View.VISIBLE) {
             overlayStatusHudHost?.visibility = View.VISIBLE
         }
         if (overlayTopRightHudHost?.visibility != View.VISIBLE) {
             overlayTopRightHudHost?.visibility = View.VISIBLE
         }
+        syncOverlayHudWindowLayout()
         applyOverlayStripVisibility(rebalanceZOrder = false)
     }
 
-    private fun ensureOverlayStatusHudWindow() {
+    /** Панель GONE, но окно могло остаться выше HUD в Z-order — один remove/add без мигания угловых кнопок. */
+    private fun stashFullscreenPanelBelowHudWindows() {
+        val panelRoot = overlayChatTeamRoot ?: return
+        val panelParams = overlayChatTeamParams ?: return
+        val mgr = windowManager ?: systemWindowManager() ?: return
+        if (!panelRoot.isAttachedToWindow || panelRoot.visibility != View.GONE) return
+        runCatching {
+            mgr.removeView(panelRoot)
+            mgr.addView(panelRoot, panelParams)
+        }.onFailure { e ->
+            Log.w(TAG, "stashFullscreenPanelBelowHudWindows failed", e)
+        }
+    }
+
+    private fun ensureOverlayStatusHudWindow(allowDuringFullscreenPanel: Boolean = false) {
         if (!isInGameOverlayUiActive()) return
         if (!AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()) return
-        if (isOverlayFullscreenPanelObscuringHud()) return
+        if (isOverlayFullscreenPanelObscuringHud() && !allowDuringFullscreenPanel) return
         val manager = windowManager ?: systemWindowManager() ?: return
         if (overlayStatusHudHost != null) return
         prefetchOverlayRaidRoomForStrip()
@@ -2985,10 +3049,10 @@ class CombatOverlayService : Service() {
         }
     }
 
-    private fun ensureOverlayTopRightHudWindow() {
+    private fun ensureOverlayTopRightHudWindow(allowDuringFullscreenPanel: Boolean = false) {
         if (!isInGameOverlayUiActive()) return
         if (!AppContainer.from(this).userSettingsPreferences.isOverlayPanelEnabled()) return
-        if (isOverlayFullscreenPanelObscuringHud()) return
+        if (isOverlayFullscreenPanelObscuringHud() && !allowDuringFullscreenPanel) return
         val manager = windowManager ?: systemWindowManager() ?: return
         if (overlayTopRightHudHost != null) return
 
@@ -5217,6 +5281,7 @@ class CombatOverlayService : Service() {
         root?.let { hideOverlayIme(it) }
         if (root != null && root.isAttachedToWindow) {
             root.visibility = View.GONE
+            mainHandler.post { stashFullscreenPanelBelowHudWindows() }
         }
         syncOverlayChatPanelVisibilityToViewModel(false)
         OverlayChatInteractionHold.releaseGameForegroundSuppress()
@@ -5290,15 +5355,18 @@ class CombatOverlayService : Service() {
         if (needsChatPrime) {
             scheduleOverlayChatPrimeForPanel()
         }
-        hideOverlayHudChromeForFullscreenPanel()
-        if (isOverlayRaidStripEligible()) {
-            ensureOverlayMessageStripIfNeeded()
-            applyOverlayStripVisibility(rebalanceZOrder = false)
-            chatStripZOrderLifted = false
+        ensureOverlayStatusHudWindow(allowDuringFullscreenPanel = true)
+        ensureOverlayTopRightHudWindow(allowDuringFullscreenPanel = true)
+        if (overlayStatusHudHost?.visibility != View.VISIBLE) {
+            overlayStatusHudHost?.visibility = View.VISIBLE
         }
-        restoreOverlayChatTeamPanelOpaqueAppearance()
-        // Один remove/add панели на следующий кадр (после GONE→VISIBLE и strip/HUD suppress).
-        scheduleRebalanceOverlayFullscreenZOrder()
+        if (overlayTopRightHudHost?.visibility != View.VISIBLE) {
+            overlayTopRightHudHost?.visibility = View.VISIBLE
+        }
+        hideOverlayHudChromeForFullscreenPanel()
+        chatStripZOrderLifted = false
+        // Не вызывать ensureOverlayMessageStripIfNeeded здесь: addView ленты поверх панели даёт вспышку.
+        restoreOverlayChatTeamPanelOpaqueAppearance(recordPresented = true)
         ViewCompat.requestApplyInsets(root)
     }
 
@@ -5307,9 +5375,17 @@ class CombatOverlayService : Service() {
         imm.hideSoftInputFromWindow(view.windowToken, 0)
     }
 
-    /** Схлопывает несколько запросов z-order в один remove/add панели (без мигания aux-окон). */
-    private fun scheduleRebalanceOverlayFullscreenZOrder() {
+    /**
+     * Схлопывает запросы z-order в один remove/add панели.
+     * После [onOverlayChatTeamPanelPresented] — grace ([PANEL_PRESENT_ZORDER_GRACE_MS]); иначе мигание.
+     * [force] — гонка с lift ленты / repair после detach.
+     */
+    private fun scheduleRebalanceOverlayFullscreenZOrder(force: Boolean = false) {
         if (!isOverlayFullscreenPanelObscuringHud()) return
+        if (!force) {
+            val sincePresent = SystemClock.elapsedRealtime() - lastFullscreenPanelPresentedAtMs
+            if (sincePresent in 0 until PANEL_PRESENT_ZORDER_GRACE_MS) return
+        }
         mainHandler.removeCallbacks(fullscreenZOrderRebalanceRunnable)
         mainHandler.post(fullscreenZOrderRebalanceRunnable)
     }
@@ -5362,7 +5438,7 @@ class CombatOverlayService : Service() {
             mgr.addView(host, p)
         }.onSuccess {
             if (isOverlayFullscreenPanelObscuringHud()) {
-                scheduleRebalanceOverlayFullscreenZOrder()
+                scheduleRebalanceOverlayFullscreenZOrder(force = true)
             } else {
                 rebalanceOverlayHudZOrder(force = true)
             }
@@ -5540,11 +5616,16 @@ class CombatOverlayService : Service() {
         val overlayPane = hudPane
         val needsChatPrime = !warmHostOnly &&
             (overlayPane == null || overlayPane == OverlayHudPane.Chat)
-        overlayHudPanelHostState.update {
+        overlayHudPanelHostState.update { state ->
+            val paneOrTabChanged = state.hudPane != overlayPane || state.initialTabIndex != initialTab
             OverlayHudPanelHostState(
                 hudPane = overlayPane,
                 initialTabIndex = initialTab,
-                openGeneration = it.openGeneration + 1,
+                openGeneration = if (paneOrTabChanged) {
+                    state.openGeneration + 1
+                } else {
+                    state.openGeneration
+                },
             )
         }
         overlayChatTeamTabIndex = initialTab
@@ -6475,6 +6556,8 @@ class CombatOverlayService : Service() {
         private const val OVERLAY_CLOSE_HUD_REFRESH_DELAY_MS = 80L
         private const val STRIP_ZORDER_MIN_INTERVAL_MS = 30_000L
         private const val STRIP_ZORDER_LIFT_DELAY_MS = 0L
+        /** После present не поднимаем панель remove/add — только NOT_TOUCHABLE aux; lift ленты — force. */
+        private const val PANEL_PRESENT_ZORDER_GRACE_MS = 500L
         private val STRIP_INGEST_RETRY_DELAYS_MS = longArrayOf(0L, 120L)
         /** Симметричный отступ HUD от края игрового экрана (левый START / правый END). */
         private const val OVERLAY_HUD_WINDOW_X_DP = OverlayHudLayout.WINDOW_X_DP
