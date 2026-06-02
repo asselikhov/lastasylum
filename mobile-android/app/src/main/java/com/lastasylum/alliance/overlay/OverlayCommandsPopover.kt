@@ -109,10 +109,11 @@ class OverlayCommandsPopover(
     @Volatile
     private var surfaceTransitionDepth = 0
     private var pendingSuppressRelease: Runnable? = null
+    private var menuRevealCategory: ((Boolean) -> Unit)? = null
 
     fun isShowing(): Boolean =
         surfaceTransitionDepth > 0 ||
-            menuScrim != null ||
+            (menuScrim?.visibility == View.VISIBLE) ||
             coordScrim != null ||
             reactionPickScrim != null ||
             reactionBurstPresenter.isActive()
@@ -137,11 +138,37 @@ class OverlayCommandsPopover(
         hideCoordOnly()
         clearPreselectedReactionContext()
         removePopoverLayoutListener()
+        val cachedMenu = menuScrim
+        if (cachedMenu != null && cachedMenu.isAttachedToWindow) {
+            cachedMenu.visibility = View.GONE
+        } else {
+            removeShell(menuScrim)
+            menuScrim = null
+            popoverCard = null
+            reactionGridScroll = null
+            reactionRow = null
+            menuRevealCategory = null
+        }
+        attachedWindowManager = null
+        surfaceTransitionDepth = 0
+        clearGameGateSuppress()
+    }
+
+    /** Снять кэш меню (выход из игры / removeOverlayControl). */
+    fun destroyCachedShells() {
+        removePopoverLayoutListener()
         removeShell(menuScrim)
         menuScrim = null
         popoverCard = null
         reactionGridScroll = null
         reactionRow = null
+        menuRevealCategory = null
+        hideReactionPickOnly()
+        hideReactionBurstOnly()
+        hideCoordOnly()
+        stopHeartPreviewPulse()
+        reactionBurstPresenter.clear()
+        clearPreselectedReactionContext()
         attachedWindowManager = null
         surfaceTransitionDepth = 0
         clearGameGateSuppress()
@@ -325,7 +352,6 @@ class OverlayCommandsPopover(
         // Generic entrypoint must always start in regular (non-reply) mode.
         clearPreselectedReactionContext()
         ensurePopoverSuppressHeld()
-        warmupOverlayRaid()
         showMenu(windowManager)
     }
 
@@ -335,7 +361,6 @@ class OverlayCommandsPopover(
         reopenMenuOnReactionsTab = true
         if (isShowing()) hide()
         ensurePopoverSuppressHeld()
-        warmupOverlayRaid()
         showMenu(windowManager)
     }
 
@@ -353,7 +378,6 @@ class OverlayCommandsPopover(
         reopenMenuOnReactionsTab = true
         if (isShowing()) hide()
         ensurePopoverSuppressHeld()
-        warmupOverlayRaid()
         showMenu(windowManager)
     }
 
@@ -674,7 +698,14 @@ class OverlayCommandsPopover(
 
     private fun showMenu(windowManager: WindowManager) {
         ensurePopoverSuppressHeld()
-        warmupOverlayRaid()
+        menuScrim?.takeIf { it.isAttachedToWindow }?.let { cached ->
+            cached.visibility = View.VISIBLE
+            attachedWindowManager = windowManager
+            val reopenOnReactions = reopenMenuOnReactionsTab
+            reopenMenuOnReactionsTab = false
+            menuRevealCategory?.invoke(reopenOnReactions)
+            return
+        }
         val screenW = context.resources.displayMetrics.widthPixels
         val popoverW = minOf(dp(328), screenW - dp(16))
 
@@ -1351,7 +1382,6 @@ class OverlayCommandsPopover(
             rebuildOptionsForCategory(cat)
             if (cat.isReactions) {
                 ensurePopoverSuppressHeld()
-                OverlayReactionBitmapCache.preloadOverlayStickerPack(context)
                 coordsAction.visibility = View.GONE
                 reactionRow?.visibility = View.VISIBLE
                 updateStickerPackPickerVisibility()
@@ -1365,6 +1395,9 @@ class OverlayCommandsPopover(
                 reactionStickerPackPicker.root.visibility = View.GONE
                 refreshPrimaryAction(cat)
                 invalidateReactionBurstAnchor()
+            }
+            if (!cat.isReactions) {
+                warmupOverlayRaid()
             }
         }
 
@@ -1472,15 +1505,18 @@ class OverlayCommandsPopover(
             openCoordsFromMenu(label, excavation = false)
         }
 
-        applyCategory(0)
-        if (reopenMenuOnReactionsTab) {
-            reopenMenuOnReactionsTab = false
-            val reactionsIndex = categories.indexOfFirst { it.isReactions }
-            if (reactionsIndex >= 0) {
+        val reactionsIndex = categories.indexOfFirst { it.isReactions }
+        menuRevealCategory = { reopenOnReactions ->
+            if (reopenOnReactions && reactionsIndex >= 0) {
                 applyCategory(reactionsIndex)
                 selectReactionSubcategory(reopenReactionSubcategory)
+            } else {
+                applyCategory(0)
             }
         }
+        val reopenOnReactions = reopenMenuOnReactionsTab
+        reopenMenuOnReactionsTab = false
+        menuRevealCategory?.invoke(reopenOnReactions)
 
         val divider = View(context).apply {
             setBackgroundColor(Color.parseColor("#288899AA"))

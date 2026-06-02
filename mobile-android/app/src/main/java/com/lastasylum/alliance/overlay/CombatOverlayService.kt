@@ -135,6 +135,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -365,9 +366,10 @@ class CombatOverlayService : Service() {
         messageTtlSeconds = OverlayChatStripBuffer.DEFAULT_MESSAGE_TTL_SECONDS,
         maxPreviewMessages = OverlayChatStripBuffer.DEFAULT_MAX_PREVIEW,
     )
-    /** Полноэкранное окно чата + команды (вкладки внизу); уничтожается в [hideOverlayChatTeamPanel]. */
+    /** Полноэкранное окно чата + команды; при закрытии скрывается (GONE), Compose переиспользуется. */
     private var overlayChatTeamRoot: FrameLayout? = null
     private var overlayChatTeamParams: WindowManager.LayoutParams? = null
+    private var overlayChatTeamComposeView: ComposeView? = null
     @Volatile
     private var overlayChatTeamPanelVisible = false
     private var currentOverlayHudPane: OverlayHudPane? = null
@@ -377,6 +379,14 @@ class CombatOverlayService : Service() {
     @Volatile
     private var pendingOpenJoinInboxOnParticipants = false
     private var overlayChatTeamComposeOwner: OverlayChatComposeOwner? = null
+
+    private data class OverlayHudPanelHostState(
+        val hudPane: OverlayHudPane? = null,
+        val initialTabIndex: Int = 0,
+        val openGeneration: Int = 0,
+    )
+
+    private val overlayHudPanelHostState = MutableStateFlow(OverlayHudPanelHostState())
     /** When activity VM is gone (game-only FGS), overlay chat uses this until panel closes. */
     private var overlayFallbackChatViewModel: ChatViewModel? = null
     /** URIs from picker if result arrived while Compose owner was torn down. */
@@ -2747,7 +2757,15 @@ class CombatOverlayService : Service() {
         extendOverlayUiHold(OVERLAY_UI_HOLD_PANEL_TRANSITION_MS)
         if (overlayChatTeamPanelVisible && currentOverlayHudPane == pane) return
         if (overlayChatTeamPanelVisible) {
-            hideOverlayChatTeamPanelNow(clearStrip = false)
+            val oldPane = currentOverlayHudPane
+            if (oldPane != pane) {
+                flushOverlayHudPaneReadOnClose(oldPane, overlayChatTeamTabIndex)
+            }
+            currentOverlayHudPane = pane
+            overlayHudPanelHostState.update {
+                it.copy(hudPane = pane, openGeneration = it.openGeneration + 1)
+            }
+            return
         }
         showOverlayChatTeamPanel(hudPane = pane)
     }
@@ -5081,19 +5099,14 @@ class CombatOverlayService : Service() {
                 lastStripRenderSignature = 0
             }
         }
-        overlayChatTeamRoot?.let { hideOverlayIme(it) }
-        val manager = windowManager ?: systemWindowManager()
-        if (root != null && manager != null) {
-            runCatching { manager.removeView(root) }
+        root?.let { hideOverlayIme(it) }
+        if (root != null && root.isAttachedToWindow) {
+            root.visibility = View.GONE
         }
-        overlayChatTeamRoot = null
-        overlayChatTeamParams = null
         pendingOverlayPickedImageUris = null
         deferredHideOverlayChatTeamPanel = false
         finalizeOverlayChatSessionAfterClose()
         runCatching { unregisterReceiver(overlaySystemResultReceiver) }
-        overlayChatTeamComposeOwner?.destroy()
-        overlayChatTeamComposeOwner = null
         ensureOverlayStatusHudWindow()
         ensureOverlayTopRightHudWindow()
         restoreOverlayHudChromeAfterPanel()
@@ -5102,6 +5115,63 @@ class CombatOverlayService : Service() {
         refreshOverlayChatStripNow()
         mainHandler.removeCallbacks(overlayCloseHudRefreshRunnable)
         mainHandler.postDelayed(overlayCloseHudRefreshRunnable, OVERLAY_CLOSE_HUD_REFRESH_DELAY_MS)
+    }
+
+    /** Полное снятие окна панели (выход из игры / removeOverlayControl). */
+    private fun destroyOverlayChatTeamPanelHost() {
+        val root = overlayChatTeamRoot
+        val manager = windowManager ?: systemWindowManager()
+        if (root != null && manager != null) {
+            runCatching { manager.removeView(root) }
+        }
+        overlayChatTeamRoot = null
+        overlayChatTeamParams = null
+        overlayChatTeamComposeView = null
+        overlayChatTeamPanelVisible = false
+        currentOverlayHudPane = null
+        OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = false
+        runCatching { unregisterReceiver(overlaySystemResultReceiver) }
+        overlayChatTeamComposeOwner?.destroy()
+        overlayChatTeamComposeOwner = null
+        overlayHudPanelHostState.value = OverlayHudPanelHostState()
+    }
+
+    private fun registerOverlayChatTeamPanelResultReceiver() {
+        runCatching { unregisterReceiver(overlaySystemResultReceiver) }
+        runCatching {
+            ContextCompat.registerReceiver(
+                this@CombatOverlayService,
+                overlaySystemResultReceiver,
+                IntentFilter().apply {
+                    addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_PICK_IMAGES_RESULT)
+                    addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_GET_CONTENT_RESULT)
+                    addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_MIC_PERMISSION_RESULT)
+                    addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_GALLERY_PERMISSION_RESULT)
+                    addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_ACTIVITY_CANCELED)
+                },
+                ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
+        }
+    }
+
+    private fun onOverlayChatTeamPanelPresented(needsChatPrime: Boolean) {
+        val root = overlayChatTeamRoot ?: return
+        overlayStatusHudHost?.visibility = View.GONE
+        overlayTopRightHudHost?.visibility = View.GONE
+        overlayChatTeamPanelVisible = true
+        syncOverlayChatPanelVisibilityToViewModel(true)
+        if (needsChatPrime) {
+            scheduleOverlayChatPrimeForPanel()
+        }
+        OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = true
+        rebalanceOverlayFullscreenZOrder()
+        if (isOverlayRaidStripEligible()) {
+            ensureOverlayMessageStripIfNeeded()
+            applyOverlayStripVisibility(rebalanceZOrder = false)
+            chatStripZOrderLifted = false
+            requestChatStripZOrderLift()
+        }
+        ViewCompat.requestApplyInsets(root)
     }
 
     private fun hideOverlayIme(view: View) {
@@ -5276,21 +5346,44 @@ class CombatOverlayService : Service() {
         val initialTab = initialTabIndex.coerceIn(0, 1)
         val overlayPane = hudPane
         val needsChatPrime = overlayPane == null || overlayPane == OverlayHudPane.Chat
+        overlayHudPanelHostState.update {
+            OverlayHudPanelHostState(
+                hudPane = overlayPane,
+                initialTabIndex = initialTab,
+                openGeneration = it.openGeneration + 1,
+            )
+        }
+        overlayChatTeamTabIndex = initialTab
         OverlayPerfDiag.logPanelOpen(pane = overlayPane?.name ?: "legacy")
         currentOverlayHudPane = hudPane
         overlayCommandsPopover.hide()
         extendOverlayUiHold(OVERLAY_UI_HOLD_PANEL_TRANSITION_MS)
         OverlayChatInteractionHold.acquireGameForegroundSuppress()
-        OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = true
         val manager = windowManager ?: run {
             showOverlayShell()
             windowManager
         }
         if (manager == null) {
-            OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = false
             OverlayChatInteractionHold.releaseGameForegroundSuppress()
             return
         }
+
+        val cachedRoot = overlayChatTeamRoot
+        val cachedOwner = overlayChatTeamComposeOwner
+        if (cachedRoot != null && cachedOwner != null) {
+            registerOverlayChatTeamPanelResultReceiver()
+            val cachedParams = overlayChatTeamParams
+            if (!cachedRoot.isAttachedToWindow && cachedParams != null) {
+                runCatching { manager.addView(cachedRoot, cachedParams) }
+            }
+            if (cachedRoot.isAttachedToWindow) {
+                restoreOverlayChatTeamPanelOpaqueAppearance()
+                onOverlayChatTeamPanelPresented(needsChatPrime)
+                return
+            }
+            destroyOverlayChatTeamPanelHost()
+        }
+
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
@@ -5300,23 +5393,13 @@ class CombatOverlayService : Service() {
 
         val owner = overlayChatTeamComposeOwner
             ?: OverlayChatComposeOwner().also { overlayChatTeamComposeOwner = it }
-        runCatching { unregisterReceiver(overlaySystemResultReceiver) }
-        runCatching {
-            ContextCompat.registerReceiver(
-                this@CombatOverlayService,
-                overlaySystemResultReceiver,
-                IntentFilter().apply {
-                    addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_PICK_IMAGES_RESULT)
-                    addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_GET_CONTENT_RESULT)
-                    addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_MIC_PERMISSION_RESULT)
-                    addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_GALLERY_PERMISSION_RESULT)
-                    addAction(OverlaySystemDialogActivity.ACTION_OVERLAY_ACTIVITY_CANCELED)
-                },
-                ContextCompat.RECEIVER_NOT_EXPORTED,
-            )
-        }
-        val compose = ComposeView(this).apply {
-            setContent {
+        registerOverlayChatTeamPanelResultReceiver()
+        val compose = overlayChatTeamComposeView ?: ComposeView(this).also { view ->
+            overlayChatTeamComposeView = view
+            view.setContent {
+                val panelHost by overlayHudPanelHostState.collectAsState()
+                val overlayPane = panelHost.hudPane
+                val initialTab = panelHost.initialTabIndex
                 val container = remember { AppContainer.from(this@CombatOverlayService) }
                 val userId = remember { jwtSubFromAccessToken().orEmpty() }
                 val userRole = remember { jwtRoleFromAccessToken() }
@@ -5451,7 +5534,9 @@ class CombatOverlayService : Service() {
                             return@SquadRelayTheme
                         }
 
-                        var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab) }
+                        var selectedTab by remember(panelHost.openGeneration, initialTab) {
+                            mutableIntStateOf(initialTab)
+                        }
                         LaunchedEffect(selectedTab) {
                             overlayChatTeamTabIndex = selectedTab
                         }
@@ -5738,16 +5823,10 @@ class CombatOverlayService : Service() {
                 getString(R.string.overlay_team_open_failed),
                 Toast.LENGTH_LONG,
             ).show()
-            overlayChatTeamRoot = null
-            overlayChatTeamParams = null
-            overlayChatTeamPanelVisible = false
-            OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = false
+            destroyOverlayChatTeamPanelHost()
             OverlayChatInteractionHold.releaseGameForegroundSuppress()
             OverlayChatInteractionHold.clearSuppressUnlessFullscreenPanel()
             restoreOverlayHudChromeAfterPanel()
-            runCatching { unregisterReceiver(overlaySystemResultReceiver) }
-            overlayChatTeamComposeOwner?.destroy()
-            overlayChatTeamComposeOwner = null
             refreshOverlayChatStrip()
             mainHandler.post {
                 requestRebuildOverlayIfRunning(this@CombatOverlayService)
@@ -5757,25 +5836,9 @@ class CombatOverlayService : Service() {
 
         ViewCompat.requestApplyInsets(root)
 
-        overlayStatusHudHost?.visibility = View.GONE
-        overlayTopRightHudHost?.visibility = View.GONE
-
         overlayChatTeamRoot = root
         overlayChatTeamParams = params
-        overlayChatTeamPanelVisible = true
-        syncOverlayChatPanelVisibilityToViewModel(true)
-        if (needsChatPrime) {
-            scheduleOverlayChatPrimeForPanel()
-        }
-        OverlayChatInteractionHold.isFullscreenChatTeamPanelVisible = true
-        rebalanceOverlayFullscreenZOrder()
-        if (isOverlayRaidStripEligible()) {
-            ensureOverlayMessageStripIfNeeded()
-            applyOverlayStripVisibility(rebalanceZOrder = false)
-            chatStripZOrderLifted = false
-            requestChatStripZOrderLift()
-        }
-        ViewCompat.requestApplyInsets(root)
+        onOverlayChatTeamPanelPresented(needsChatPrime)
     }
     private fun dp(value: Int): Int {
         val density = resources.displayMetrics.density
@@ -5897,6 +5960,8 @@ class CombatOverlayService : Service() {
             Log.i(TAG, "removeOverlayControl: skipped while overlay chat/team UI is active")
             return
         }
+        destroyOverlayChatTeamPanelHost()
+        overlayCommandsPopover.destroyCachedShells()
         OverlayChatInteractionHold.clearStaleSuppressForGameBackground(
             chatTeamPanelVisible = false,
             commandsPopoverShowing = overlayCommandsPopover.isBlockingGameGateDismiss(),

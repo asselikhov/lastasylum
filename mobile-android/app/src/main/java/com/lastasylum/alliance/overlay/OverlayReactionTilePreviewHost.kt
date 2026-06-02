@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.overlay
 
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 import androidx.compose.runtime.Composable
@@ -34,6 +35,9 @@ internal fun OverlayReactionTilePreviewHost(
                 } else {
                     stopOverlayReactionTileAnimation(icon)
                 }
+            },
+            onReset = { host ->
+                (host.parent as? ViewGroup)?.removeView(host)
             },
             onRelease = { host ->
                 OverlayReactionTilePreviewPool.release(

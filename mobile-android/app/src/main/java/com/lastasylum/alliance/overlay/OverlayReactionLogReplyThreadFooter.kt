@@ -1,10 +1,7 @@
 package com.lastasylum.alliance.overlay
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -29,7 +26,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -141,21 +137,14 @@ fun OverlayReactionLogReplyThreadFooter(
             )
         }
 
-        // No expandVertically: inside LazyColumn it measures children with infinite max height and crashes.
-        AnimatedVisibility(
-            visible = expanded,
-            enter = fadeIn(tween(200)),
-            exit = fadeOut(tween(160)),
-            modifier = Modifier.wrapContentHeight(),
-        ) {
-            key(parentLogId, expanded) {
-                ReplyThreadExpandedPanel(
-                    incoming = incoming,
-                    unreadHighlight = unreadHighlight,
-                    railColor = railColor,
-                    content = expandedContent,
-                )
-            }
+        // No AnimatedVisibility: AndroidView previews detach/attach incorrectly during exit animation.
+        if (expanded) {
+            ReplyThreadExpandedPanel(
+                incoming = incoming,
+                unreadHighlight = unreadHighlight,
+                railColor = railColor,
+                content = expandedContent,
+            )
         }
     }
 }

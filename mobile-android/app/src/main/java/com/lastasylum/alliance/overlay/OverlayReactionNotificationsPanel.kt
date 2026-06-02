@@ -730,6 +730,7 @@ private fun OverlayReactionLogThreadParentClusterRow(
                             onPreviewCluster = onPreviewCluster,
                             onReplyToReactionLog = onReplyToReactionLog,
                             onToggleEmojiReaction = onToggleEmojiReaction,
+                            staticPreview = true,
                         )
                     }
                 }
@@ -750,6 +751,7 @@ private fun OverlayReactionLogFeedClusterRow(
     onReplyToReactionLog: (OverlayReactionLogEntry) -> Unit,
     onToggleEmojiReaction: (String, String) -> Unit,
     wrapInCard: Boolean = true,
+    staticPreview: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val entry = cluster.representative
@@ -758,9 +760,9 @@ private fun OverlayReactionLogFeedClusterRow(
         cluster = cluster,
         selfUserId = selfUserId,
         unreadHighlight = entry.id in unreadEntryIds,
-        playAnimatedPreview = entry.id in animatedPreviewIds,
+        playAnimatedPreview = !staticPreview && entry.id in animatedPreviewIds,
         isOnline = entry.senderUserId.trim() in onlineUserIds,
-        animateEnter = entry.id == newestUnreadEntryId,
+        animateEnter = !staticPreview && entry.id == newestUnreadEntryId,
         wrapInCard = wrapInCard,
         modifier = modifier,
         onPreviewClick = {
