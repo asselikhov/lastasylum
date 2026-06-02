@@ -910,9 +910,23 @@ class OverlayCommandsPopover(
         fun refreshStickerPackPicker() {
             val tabs = overlayStickerPackTabs(enabledStickerPackKeys)
             if (tabs.none { it.packKey == selectedStickerPackKey }) {
-                selectedStickerPackKey = OVERLAY_REACTION_STICKER_PACK
+                selectedStickerPackKey = tabs.firstOrNull()?.packKey ?: OVERLAY_REACTION_STICKER_PACK
             }
             reactionStickerPackPicker.bind(tabs, selectedStickerPackKey)
+        }
+
+        fun updateStickerPackPickerVisibility() {
+            val show = overlayShouldShowStickerPackPicker(
+                isReactionsCategory = categories.getOrNull(selectedCategoryIndex)?.isReactions == true,
+                subcategory = selectedReactionSubcategory,
+            )
+            if (show) {
+                refreshStickerPackPicker()
+                reactionStickerPackPicker.root.visibility = View.VISIBLE
+            } else {
+                reactionStickerPackPicker.dismissPicker()
+                reactionStickerPackPicker.root.visibility = View.GONE
+            }
         }
 
         reactionStickerPackPicker.onPackSelected = { packKey ->
@@ -1153,13 +1167,7 @@ class OverlayCommandsPopover(
             }
             hideKeyboard(reactionTextInput)
             val isStickersTab = selectedReactionSubcategory == OverlayReactionCategory.STICKERS
-            if (isStickersTab) {
-                refreshStickerPackPicker()
-                reactionStickerPackPicker.root.visibility = View.VISIBLE
-            } else {
-                reactionStickerPackPicker.dismissPicker()
-                reactionStickerPackPicker.root.visibility = View.GONE
-            }
+            updateStickerPackPickerVisibility()
             val items = if (isStickersTab) {
                 overlayStickerReactionsForPack(
                     context,
@@ -1186,9 +1194,9 @@ class OverlayCommandsPopover(
             selectedReactionSubcategory = cat
             reopenReactionSubcategory = cat
             if (cat == OverlayReactionCategory.STICKERS) {
-                selectedStickerPackKey = OVERLAY_REACTION_STICKER_PACK
                 loadEnabledStickerPackKeys()
-                OverlayReactionBitmapCache.preloadStickerPack(context, OVERLAY_REACTION_STICKER_PACK)
+                refreshStickerPackPicker()
+                OverlayReactionBitmapCache.preloadStickerPack(context, selectedStickerPackKey)
             }
             if (cat == OverlayReactionCategory.TEXT) {
                 stopReactionPreviewKeepAlive()
@@ -1216,13 +1224,6 @@ class OverlayCommandsPopover(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                 ),
-            )
-            addView(
-                reactionStickerPackPicker.root,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = dp(4) },
             )
             addView(
                 reactionTextPanel,
@@ -1351,12 +1352,15 @@ class OverlayCommandsPopover(
                 OverlayReactionBitmapCache.preloadOverlayStickerPack(context)
                 coordsAction.visibility = View.GONE
                 reactionRow?.visibility = View.VISIBLE
+                updateStickerPackPickerVisibility()
                 startReactionStripPreviews()
                 reactionRow?.post { invalidateReactionBurstAnchor() }
             } else {
                 stopHeartPreviewPulse()
                 coordsAction.visibility = View.VISIBLE
                 reactionRow?.visibility = View.GONE
+                reactionStickerPackPicker.dismissPicker()
+                reactionStickerPackPicker.root.visibility = View.GONE
                 refreshPrimaryAction(cat)
                 invalidateReactionBurstAnchor()
             }
@@ -1383,7 +1387,21 @@ class OverlayCommandsPopover(
             accentDot,
             LinearLayout.LayoutParams(dp(3), dp(16)).apply { marginEnd = dp(8) },
         )
-        titleRow.addView(categoryTitle)
+        titleRow.addView(
+            categoryTitle,
+            LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f,
+            ),
+        )
+        titleRow.addView(
+            reactionStickerPackPicker.root,
+            LinearLayout.LayoutParams(
+                dp(152),
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { marginStart = dp(6) },
+        )
         bodyColumn.addView(titleRow)
         bodyColumn.addView(
             categoryHint,

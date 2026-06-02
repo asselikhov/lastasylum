@@ -256,6 +256,12 @@ internal fun decodeChatStickerReactionId(reactionId: String): Pair<String, Strin
     return packKey to stem
 }
 
+internal fun overlayShouldShowStickerPackPicker(
+    isReactionsCategory: Boolean,
+    subcategory: OverlayReactionCategory,
+): Boolean =
+    isReactionsCategory && subcategory == OverlayReactionCategory.STICKERS
+
 internal fun overlayStickerPackTabs(enabledKeys: Set<String>): List<OverlayStickerPackTab> {
     val misc = OverlayStickerPackTab(
         packKey = OVERLAY_REACTION_STICKER_PACK,

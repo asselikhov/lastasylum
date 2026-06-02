@@ -11,6 +11,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.PopupWindow
 import android.widget.ArrayAdapter
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -25,9 +26,10 @@ import com.lastasylum.alliance.R
  * Compact sticker-pack selector for overlay reactions (replaces horizontal pack chips).
  */
 internal class OverlayReactionStickerPackDropdown(
-    private val context: Context,
+    context: Context,
     private val dp: (Int) -> Int,
 ) {
+    private val context: Context = OverlayTickerUi.themedFabContext(context)
     private var tabs: List<OverlayStickerPackTab> = emptyList()
     private var selectedPackKey: String = OVERLAY_REACTION_STICKER_PACK
     private var popup: ListPopupWindow? = null
@@ -126,6 +128,9 @@ internal class OverlayReactionStickerPackDropdown(
             setAdapter(adapter)
             width = root.width.takeIf { it > 0 } ?: dp(220)
             isModal = true
+            inputMethodMode = ListPopupWindow.INPUT_METHOD_NOT_NEEDED
+            softInputMode = PopupWindow.INPUT_METHOD_NOT_NEEDED
+            setDropDownGravity(Gravity.END or Gravity.BOTTOM)
             setBackgroundDrawable(
                 roundedRect(
                     fillColor = Color.parseColor("#F0141C28"),
@@ -138,6 +143,8 @@ internal class OverlayReactionStickerPackDropdown(
                 dismiss()
                 popup = null
                 if (tab.packKey != selectedPackKey) {
+                    selectedPackKey = tab.packKey
+                    bind(tabs, selectedPackKey)
                     onPackSelected?.invoke(tab.packKey)
                 }
             }
@@ -145,10 +152,9 @@ internal class OverlayReactionStickerPackDropdown(
         }
         popup = listPopup
         root.post {
-            if (root.isAttachedToWindow) {
-                listPopup.width = root.width.coerceAtLeast(dp(200))
-                listPopup.show()
-            }
+            if (!root.isAttachedToWindow || root.visibility != View.VISIBLE) return@post
+            listPopup.width = root.width.coerceAtLeast(dp(200))
+            runCatching { listPopup.show() }
         }
     }
 

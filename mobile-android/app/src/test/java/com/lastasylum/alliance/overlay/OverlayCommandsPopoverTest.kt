@@ -36,6 +36,28 @@ class OverlayCommandsPopoverTest {
     }
 
     @Test
+    fun overlayShouldShowStickerPackPicker_onlyOnReactionsStickersTab() {
+        assertFalse(
+            overlayShouldShowStickerPackPicker(
+                isReactionsCategory = false,
+                subcategory = OverlayReactionCategory.STICKERS,
+            ),
+        )
+        assertFalse(
+            overlayShouldShowStickerPackPicker(
+                isReactionsCategory = true,
+                subcategory = OverlayReactionCategory.TEXT,
+            ),
+        )
+        assertTrue(
+            overlayShouldShowStickerPackPicker(
+                isReactionsCategory = true,
+                subcategory = OverlayReactionCategory.STICKERS,
+            ),
+        )
+    }
+
+    @Test
     fun overlayReactionUsesReplyChannel_onlyInExplicitReplyMode() {
         assertFalse(
             overlayReactionUsesReplyChannel(
