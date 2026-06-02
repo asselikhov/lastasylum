@@ -106,6 +106,20 @@ class OverlayTickerWindow(
      * Пока открыта Activity с системным пикером/разрешениями, overlay-окна остаются выше неё по Z-order.
      * [FLAG_NOT_TOUCHABLE] на тикере (если окно есть) пропускает тапы к Activity под оверлеем.
      */
+    /** Опустить тикер в Z-order (remove/add) перед подъёмом полноэкранной панели. */
+    fun lowerForZOrder() {
+        mainHandler.post {
+            val manager = windowManagerProvider() ?: return@post
+            val host = tickerHost ?: return@post
+            val params = tickerParams ?: return@post
+            if (!host.isAttachedToWindow) return@post
+            runCatching {
+                manager.removeView(host)
+                manager.addView(host, params)
+            }
+        }
+    }
+
     fun applyTouchPassthrough(enable: Boolean) {
         mainHandler.post {
             val manager = windowManagerProvider() ?: return@post
