@@ -237,7 +237,8 @@ internal class OverlayReactionBurstPresenter(
         }
         stageColumn = column
         val clipHost = FrameLayout(context).apply {
-            clipChildren = true
+            clipChildren = false
+            clipToPadding = false
             setBackgroundColor(Color.TRANSPARENT)
             addView(
                 column,

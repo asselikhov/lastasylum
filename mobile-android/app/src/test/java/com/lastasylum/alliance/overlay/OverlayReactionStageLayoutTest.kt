@@ -4,7 +4,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class OverlayReactionStageLayoutTest {
 
     private val dp: (Int) -> Int = { it * 2 }
@@ -88,6 +93,28 @@ class OverlayReactionStageLayoutTest {
         )
         assertEquals(100, placement.y)
         assertEquals(android.view.Gravity.CENTER_HORIZONTAL, placement.stackContentGravity)
+    }
+
+    @Test
+    fun hudBurstAnchor_usesMaxHudBottomAndScreenCenter() {
+        val anchor = checkNotNull(
+            OverlayReactionAnchorLayout.hudBurstAnchor(
+                statusBounds = android.graphics.Rect(10, 20, 200, 80),
+                topRightBounds = android.graphics.Rect(800, 24, 1060, 72),
+                screenWidthPx = 1080,
+            ),
+        )
+        assertEquals(80, anchor.bounds.bottom)
+        assertEquals(HorizontalAlign.SCREEN_CENTER, anchor.horizontalAlign)
+    }
+
+    @Test
+    fun adjustCenteredWindowX_screenCenterUsesScreenMiddle() {
+        val anchor = OverlayReactionAnchorRect(
+            bounds = android.graphics.Rect(900, 0, 1000, 50),
+            horizontalAlign = HorizontalAlign.SCREEN_CENTER,
+        )
+        assertEquals(420, OverlayReactionAnchorLayout.adjustCenteredWindowX(anchor, 240, 1080))
     }
 
     @Test

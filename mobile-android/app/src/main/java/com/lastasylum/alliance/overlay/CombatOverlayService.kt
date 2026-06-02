@@ -2940,17 +2940,28 @@ class CombatOverlayService : Service() {
         _overlayVisible.value = true
     }
 
-    /** Anchor below top-right HUD (quick-commands chip row). */
+    /** Anchor below overlay HUD buttons; burst stack is centered on screen width. */
     private fun hudReactionBurstAnchor(): OverlayReactionAnchorRect? {
-        val host = overlayTopRightHudHost?.takeIf {
-            it.visibility == View.VISIBLE && it.isAttachedToWindow
-        }
-        if (host != null) {
-            OverlayReactionAnchorLayout.anchorFromView(host, HorizontalAlign.SCREEN_CENTER)?.let { return it }
-        }
         val width = resources.displayMetrics.widthPixels
         if (width <= 0) return null
-        return OverlayReactionAnchorLayout.fallbackTopEndHud(width) { dp(it) }
+        val statusBounds = overlayStatusHudHost
+            ?.takeIf { it.visibility == View.VISIBLE && it.isAttachedToWindow }
+            ?.let { host ->
+                android.graphics.Rect().also { rect ->
+                    if (!host.getGlobalVisibleRect(rect) || rect.isEmpty()) return@let null
+                    rect
+                }
+            }
+        val topRightBounds = overlayTopRightHudHost
+            ?.takeIf { it.visibility == View.VISIBLE && it.isAttachedToWindow }
+            ?.let { host ->
+                android.graphics.Rect().also { rect ->
+                    if (!host.getGlobalVisibleRect(rect) || rect.isEmpty()) return@let null
+                    rect
+                }
+            }
+        return OverlayReactionAnchorLayout.hudBurstAnchor(statusBounds, topRightBounds, width)
+            ?: OverlayReactionAnchorLayout.fallbackTopEndHud(width) { dp(it) }
     }
 
     private fun overlayReactionSafeTopMinY(): Int? {

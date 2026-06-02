@@ -40,10 +40,11 @@ internal class OverlayReactionTileFactory(
         }
         val textPayload = decodeTextReactionId(request.reactionId)
         val isHeroText = textPayload != null && mode == OverlayReactionTileMode.HERO
-        val columnWidthPx = if (isHeroText) {
-            OverlayReactionBurstLayout.textMessageMaxWidthPx(m, dp(120))
-        } else {
-            tilePx
+        val isReplyHero = mode == OverlayReactionTileMode.HERO && request.replyToLog != null
+        val columnWidthPx = when {
+            isHeroText -> OverlayReactionBurstLayout.textMessageMaxWidthPx(m, dp(120))
+            isReplyHero -> ViewGroup.LayoutParams.WRAP_CONTENT
+            else -> tilePx
         }
         val card = FrameLayout(context).apply {
             clipChildren = false
@@ -129,10 +130,15 @@ internal class OverlayReactionTileFactory(
                 )
             }
             captionBlock.root.also { caption ->
+                val captionWidth = if (isReplyHero) {
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                } else {
+                    LinearLayout.LayoutParams.MATCH_PARENT
+                }
                 column.addView(
                     caption,
                     LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        captionWidth,
                         LinearLayout.LayoutParams.WRAP_CONTENT,
                     ).apply {
                         topMargin = dp(OverlayReactionStageLayout.HERO_CAPTION_TOP_MARGIN_DP)
@@ -163,10 +169,15 @@ internal class OverlayReactionTileFactory(
             request.broadcast,
             isReply = isReply,
         )
+        val cardWidth = if (columnWidthPx == ViewGroup.LayoutParams.WRAP_CONTENT) {
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        } else {
+            columnWidthPx
+        }
         card.addView(
             column,
             FrameLayout.LayoutParams(
-                columnWidthPx,
+                cardWidth,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER,
             ),

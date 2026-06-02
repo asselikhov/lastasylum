@@ -22,6 +22,7 @@ internal data class OverlayReactionHeroCaptionBlock(
 
 internal object OverlayReactionCaption {
     private const val LINE_SP = 14f
+    private const val REPLY_LINE_GAP_DP = 3f
     private val NickColor = Color.parseColor("#FFF4F7FF")
     private val ReplyScopeColor = Color.parseColor("#FF7EB8FF")
     private val PersonalScopeColor = Color.parseColor("#FF9070B8")
@@ -82,8 +83,13 @@ internal object OverlayReactionCaption {
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
             gravity = Gravity.CENTER_HORIZONTAL
             textAlignment = View.TEXT_ALIGNMENT_CENTER
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
+            if (isReply) {
+                maxLines = 2
+                ellipsize = null
+            } else {
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            }
             setShadowLayer(6f, 0f, 2f, Color.parseColor("#CC000000"))
             setTag(R.id.tag_overlay_reaction_caption_scope, true)
             disableOverlayTouchTarget(this)
@@ -109,29 +115,46 @@ internal object OverlayReactionCaption {
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
             gravity = Gravity.CENTER_HORIZONTAL
             textAlignment = View.TEXT_ALIGNMENT_CENTER
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
+            if (isReply) {
+                maxLines = 2
+                ellipsize = null
+            } else {
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            }
             setShadowLayer(6f, 0f, 2f, Color.parseColor("#CC000000"))
             disableOverlayTouchTarget(this)
         }
 
+        val lineGapPx = if (isReply) {
+            (density * REPLY_LINE_GAP_DP).toInt()
+        } else {
+            (density * 2).toInt()
+        }
+        val textLineWidth = if (isReply) {
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        } else {
+            LinearLayout.LayoutParams.MATCH_PARENT
+        }
         val textColumn = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
+            clipChildren = false
+            clipToPadding = false
             addView(
                 scopeRow,
                 LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    textLineWidth,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                 ),
             )
             addView(
                 fromLineView,
                 LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    textLineWidth,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                 ).apply {
-                    topMargin = (density * 2).toInt()
+                    topMargin = lineGapPx
                 },
             )
         }
@@ -139,13 +162,15 @@ internal object OverlayReactionCaption {
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
+            clipChildren = false
+            clipToPadding = false
             setPadding(padH, padV, padH, padV)
             background = nickBackground(context, cornerDp = 6f)
             setTag(R.id.tag_overlay_reaction_caption, true)
             addView(
                 textColumn,
                 LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                 ),
             )

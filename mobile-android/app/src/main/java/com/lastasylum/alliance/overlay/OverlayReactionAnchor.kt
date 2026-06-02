@@ -48,6 +48,23 @@ internal object OverlayReactionAnchorLayout {
         return OverlayReactionAnchorRect(rect, align, maxStackWidthPx)
     }
 
+    /** Anchor below the union of overlay HUD rows; burst is centered on screen width. */
+    fun hudBurstAnchor(
+        statusBounds: Rect?,
+        topRightBounds: Rect?,
+        screenWidthPx: Int,
+    ): OverlayReactionAnchorRect? {
+        val parts = listOfNotNull(statusBounds, topRightBounds)
+            .filter { rect -> rect.right > rect.left && rect.bottom > rect.top }
+        if (parts.isEmpty() || screenWidthPx <= 0) return null
+        val top = parts.minOf { it.top }
+        val bottom = parts.maxOf { it.bottom }
+        return OverlayReactionAnchorRect(
+            bounds = Rect(0, top, screenWidthPx, bottom),
+            horizontalAlign = HorizontalAlign.SCREEN_CENTER,
+        )
+    }
+
     fun fallbackTopEndHud(screenWidthPx: Int, dp: (Int) -> Int): OverlayReactionAnchorRect {
         val x = dp(OverlayHudLayout.WINDOW_X_DP)
         val y = dp(OverlayHudLayout.WINDOW_Y_DP)
@@ -100,7 +117,13 @@ internal object OverlayReactionAnchorLayout {
         anchor: OverlayReactionAnchorRect,
         stageWidthPx: Int,
         screenWidthPx: Int,
-    ): Int = (anchor.centerX - stageWidthPx / 2).coerceIn(0, (screenWidthPx - stageWidthPx).coerceAtLeast(0))
+    ): Int {
+        val maxX = (screenWidthPx - stageWidthPx).coerceAtLeast(0)
+        return when (anchor.horizontalAlign) {
+            HorizontalAlign.SCREEN_CENTER -> maxX / 2
+            else -> (anchor.centerX - stageWidthPx / 2).coerceIn(0, maxX)
+        }
+    }
 
     fun clampStackWidthPx(contentWidthPx: Int, anchor: OverlayReactionAnchorRect?): Int {
         val max = anchor?.maxStackWidthPx ?: return contentWidthPx
