@@ -7,9 +7,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -203,11 +207,13 @@ private fun OnlinePanelFilterSearchRow(
                 modifier = Modifier
                     .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                     .fillMaxWidth()
-                    .height(OverlayHudFilterFields.FieldHeight),
+                    .heightIn(min = OverlayHudFilterFields.FieldHeight)
+                    .defaultMinSize(minHeight = OverlayHudFilterFields.FieldHeight),
                 trailingIcon = {
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = filterExpanded)
                 },
-                contentPadding = OverlayHudFilterFields.dropdownContentPadding(),
+                prefix = { Spacer(modifier = Modifier.width(OverlayHudFilterFields.DropdownPrefixWidth)) },
+                suffix = { Spacer(modifier = Modifier.width(OverlayHudFilterFields.DropdownSuffixWidth)) },
                 colors = fieldColors,
                 shape = fieldShape,
                 textStyle = fieldTextStyle,
@@ -244,10 +250,11 @@ private fun OnlinePanelFilterSearchRow(
                     Icons.Default.Search,
                     contentDescription = null,
                     tint = tokens.mutedColor,
-                    modifier = OverlayHudFilterFields.searchLeadingIconModifier(),
+                    modifier = Modifier.size(OverlayHudFilterFields.SearchIconSize),
                 )
             },
-            contentPadding = OverlayHudFilterFields.searchContentPadding(),
+            prefix = { Spacer(modifier = Modifier.width(OverlayHudFilterFields.SearchPrefixWidth)) },
+            suffix = { Spacer(modifier = Modifier.width(OverlayHudFilterFields.SearchSuffixWidth)) },
             colors = fieldColors,
             shape = fieldShape,
             textStyle = fieldTextStyle,

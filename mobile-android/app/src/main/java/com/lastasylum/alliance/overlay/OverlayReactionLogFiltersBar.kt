@@ -2,9 +2,13 @@ package com.lastasylum.alliance.overlay
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.DropdownMenuItem
@@ -85,10 +89,11 @@ fun OverlayReactionLogFiltersBar(
                 Icon(
                     Icons.Default.Search,
                     contentDescription = null,
-                    modifier = OverlayHudFilterFields.searchLeadingIconModifier(),
+                    modifier = Modifier.size(OverlayHudFilterFields.SearchIconSize),
                 )
             },
-            contentPadding = OverlayHudFilterFields.searchContentPadding(),
+            prefix = { Spacer(modifier = Modifier.width(OverlayHudFilterFields.SearchPrefixWidth)) },
+            suffix = { Spacer(modifier = Modifier.width(OverlayHudFilterFields.SearchSuffixWidth)) },
             colors = fieldColors,
             shape = fieldShape,
             textStyle = fieldTextStyle,
@@ -218,11 +223,13 @@ private fun FilterDropdown(
             modifier = Modifier
                 .menuAnchor(androidx.compose.material3.ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                 .fillMaxWidth()
-                .height(OverlayHudFilterFields.FieldHeight),
+                .heightIn(min = OverlayHudFilterFields.FieldHeight)
+                .defaultMinSize(minHeight = OverlayHudFilterFields.FieldHeight),
             trailingIcon = {
                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
             },
-            contentPadding = OverlayHudFilterFields.dropdownContentPadding(),
+            prefix = { Spacer(modifier = Modifier.width(OverlayHudFilterFields.DropdownPrefixWidth)) },
+            suffix = { Spacer(modifier = Modifier.width(OverlayHudFilterFields.DropdownSuffixWidth)) },
             colors = fieldColors,
             shape = fieldShape,
             textStyle = fieldTextStyle,
