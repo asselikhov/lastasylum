@@ -90,6 +90,7 @@ class OverlayCommandsPopover(
     private var reopenReactionSubcategory = OverlayReactionCategory.ANIMATIONS
     private var preselectedReactionUserIds: Set<String> = emptySet()
     private var preselectedReplyToLogId: String? = null
+    private var preselectedReplyMode: Boolean = false
     private var popoverCard: View? = null
     private var popoverLayoutListener: View.OnLayoutChangeListener? = null
     private val reactionBurstPresenter = OverlayReactionBurstPresenter(context, mainHandler, dp).also {
@@ -328,6 +329,7 @@ class OverlayCommandsPopover(
     fun openReactionsTab(windowManager: WindowManager) {
         preselectedReactionUserIds = emptySet()
         preselectedReplyToLogId = null
+        preselectedReplyMode = false
         reopenMenuOnReactionsTab = true
         if (isShowing()) hide()
         ensurePopoverSuppressHeld()
@@ -345,6 +347,7 @@ class OverlayCommandsPopover(
         if (id.isEmpty()) return
         preselectedReactionUserIds = setOf(id)
         preselectedReplyToLogId = replyToLogId?.trim()?.takeIf { it.isNotEmpty() }
+        preselectedReplyMode = preselectedReplyToLogId != null
         reopenMenuOnReactionsTab = true
         if (isShowing()) hide()
         ensurePopoverSuppressHeld()
@@ -1758,9 +1761,13 @@ class OverlayCommandsPopover(
         val overlayService = context as CombatOverlayService
         val composeOwner = overlayService.obtainOverlayPopoverComposeOwner()
         val initialSelected = preselectedReactionUserIds
-        val replyToLogId = preselectedReplyToLogId
+        val replyToLogId = overlayResolveReplyToLogIdForSend(
+            replyMode = preselectedReplyMode,
+            replyToLogId = preselectedReplyToLogId,
+        )
         preselectedReactionUserIds = emptySet()
         preselectedReplyToLogId = null
+        preselectedReplyMode = false
 
         val composeHost = FrameLayout(context).apply {
             consumeTouchesInSubtree()
@@ -1900,3 +1907,10 @@ class OverlayCommandsPopover(
         const val REACTION_PREVIEW_KEEP_ALIVE_MS = 8_000L
     }
 }
+
+internal fun overlayResolveReplyToLogIdForSend(replyMode: Boolean, replyToLogId: String?): String? =
+    if (replyMode) {
+        replyToLogId?.trim()?.takeIf { it.isNotEmpty() }
+    } else {
+        null
+    }
