@@ -1,8 +1,9 @@
 package com.lastasylum.alliance.overlay
 
-import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -16,14 +17,19 @@ import androidx.compose.ui.unit.sp
 
 /** Shared filter + search fields in overlay «Уведомления» and «Участники онлайн». */
 object OverlayHudFilterFields {
-    /** Same min height for filter dropdowns and search; avoids clipping with [textStyle]. */
-    val FieldHeight = 42.dp
-    val FieldShape = RoundedCornerShape(10.dp)
-    val FieldSpacing = 8.dp
+    /** Single-line row height for dropdowns and search (fits [textStyle] without clipping). */
+    val FieldHeight = 34.dp
+    val FieldShape = RoundedCornerShape(8.dp)
+    val FieldSpacing = 6.dp
+    val SearchIconSize = 16.dp
+    val RowVerticalPadding = 2.dp
 
     @Composable
     fun textStyle(): TextStyle =
-        MaterialTheme.typography.bodySmall.copy(lineHeight = 16.sp)
+        MaterialTheme.typography.labelLarge.copy(
+            fontSize = 13.sp,
+            lineHeight = 16.sp,
+        )
 
     @Composable
     fun menuItemTextStyle(): TextStyle = textStyle()
@@ -31,8 +37,28 @@ object OverlayHudFilterFields {
     fun baseFieldModifier(): Modifier =
         Modifier
             .fillMaxWidth()
-            .heightIn(min = FieldHeight)
-            .defaultMinSize(minHeight = FieldHeight)
+            .height(FieldHeight)
+
+    @Composable
+    fun dropdownContentPadding(): PaddingValues =
+        OutlinedTextFieldDefaults.contentPadding(
+            start = 8.dp,
+            top = 0.dp,
+            end = 2.dp,
+            bottom = 0.dp,
+        )
+
+    @Composable
+    fun searchContentPadding(): PaddingValues =
+        OutlinedTextFieldDefaults.contentPadding(
+            start = 0.dp,
+            top = 0.dp,
+            end = 8.dp,
+            bottom = 0.dp,
+        )
+
+    @Composable
+    fun searchLeadingIconModifier(): Modifier = Modifier.size(SearchIconSize)
 
     @Composable
     fun notificationsFieldColors(): TextFieldColors =

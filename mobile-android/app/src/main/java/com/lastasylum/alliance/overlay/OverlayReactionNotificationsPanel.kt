@@ -23,6 +23,7 @@ import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -710,20 +711,26 @@ private fun OverlayReactionLogThreadParentClusterRow(
         },
         expandedContent = {
             replies.forEachIndexed { index, replyCluster ->
-                if (index > 0) {
-                    Spacer(modifier = Modifier.height(6.dp))
+                key(replyCluster.representative.id) {
+                    if (index > 0) {
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                            modifier = Modifier.padding(vertical = 6.dp),
+                        )
+                    }
+                    OverlayReactionLogFeedClusterRow(
+                        cluster = replyCluster,
+                        selfUserId = selfUserId,
+                        unreadEntryIds = unreadEntryIds,
+                        animatedPreviewIds = animatedPreviewIds,
+                        onlineUserIds = onlineUserIds,
+                        newestUnreadEntryId = newestUnreadEntryId,
+                        onPreviewCluster = onPreviewCluster,
+                        onReplyToReactionLog = onReplyToReactionLog,
+                        onToggleEmojiReaction = onToggleEmojiReaction,
+                        wrapInCard = false,
+                    )
                 }
-                OverlayReactionLogFeedClusterRow(
-                    cluster = replyCluster,
-                    selfUserId = selfUserId,
-                    unreadEntryIds = unreadEntryIds,
-                    animatedPreviewIds = animatedPreviewIds,
-                    onlineUserIds = onlineUserIds,
-                    newestUnreadEntryId = newestUnreadEntryId,
-                    onPreviewCluster = onPreviewCluster,
-                    onReplyToReactionLog = onReplyToReactionLog,
-                    onToggleEmojiReaction = onToggleEmojiReaction,
-                )
             }
         },
     )
@@ -740,6 +747,7 @@ private fun OverlayReactionLogFeedClusterRow(
     onPreviewCluster: (OverlayReactionLogCluster) -> Unit,
     onReplyToReactionLog: (OverlayReactionLogEntry) -> Unit,
     onToggleEmojiReaction: (String, String) -> Unit,
+    wrapInCard: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val entry = cluster.representative
@@ -751,6 +759,7 @@ private fun OverlayReactionLogFeedClusterRow(
         playAnimatedPreview = entry.id in animatedPreviewIds,
         isOnline = entry.senderUserId.trim() in onlineUserIds,
         animateEnter = entry.id == newestUnreadEntryId,
+        wrapInCard = wrapInCard,
         modifier = modifier,
         onPreviewClick = {
             OverlayChatInteractionHold.prepareOverlayModalInteraction(true)

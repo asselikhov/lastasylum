@@ -2,13 +2,9 @@ package com.lastasylum.alliance.overlay
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.DropdownMenuItem
@@ -51,7 +47,10 @@ fun OverlayReactionLogFiltersBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal, vertical = 4.dp),
+            .padding(
+                horizontal = SquadRelayDimens.contentPaddingHorizontal,
+                vertical = OverlayHudFilterFields.RowVerticalPadding,
+            ),
         horizontalArrangement = Arrangement.spacedBy(OverlayHudFilterFields.FieldSpacing),
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
     ) {
@@ -86,11 +85,10 @@ fun OverlayReactionLogFiltersBar(
                 Icon(
                     Icons.Default.Search,
                     contentDescription = null,
-                    modifier = Modifier.size(18.dp),
+                    modifier = OverlayHudFilterFields.searchLeadingIconModifier(),
                 )
             },
-            prefix = { Spacer(modifier = Modifier.width(2.dp)) },
-            suffix = { Spacer(modifier = Modifier.width(4.dp)) },
+            contentPadding = OverlayHudFilterFields.searchContentPadding(),
             colors = fieldColors,
             shape = fieldShape,
             textStyle = fieldTextStyle,
@@ -220,13 +218,11 @@ private fun FilterDropdown(
             modifier = Modifier
                 .menuAnchor(androidx.compose.material3.ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                 .fillMaxWidth()
-                .heightIn(min = OverlayHudFilterFields.FieldHeight)
-                .defaultMinSize(minHeight = OverlayHudFilterFields.FieldHeight),
+                .height(OverlayHudFilterFields.FieldHeight),
             trailingIcon = {
                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
             },
-            prefix = { Spacer(modifier = Modifier.width(2.dp)) },
-            suffix = { Spacer(modifier = Modifier.width(2.dp)) },
+            contentPadding = OverlayHudFilterFields.dropdownContentPadding(),
             colors = fieldColors,
             shape = fieldShape,
             textStyle = fieldTextStyle,

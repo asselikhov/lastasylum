@@ -14,10 +14,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -240,35 +238,30 @@ private fun ReplyThreadExpandedPanel(
             shadowElevation = 2.dp,
             border = BorderStroke(1.dp, borderColor),
         ) {
-            // LazyColumn gives infinite max height; fillMaxHeight() on a Row child crashes without IntrinsicSize.Min.
-            Row(
+            // Column only: Row+fillMaxHeight() inside LazyColumn measures with infinite max height and crashes.
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(IntrinsicSize.Min)
-                    .background(panelGradient),
+                    .background(panelGradient)
+                    .padding(
+                        start = if (incoming) 10.dp else 8.dp,
+                        end = if (incoming) 8.dp else 10.dp,
+                        top = 10.dp,
+                        bottom = 10.dp,
+                    ),
             ) {
                 Box(
                     modifier = Modifier
+                        .padding(bottom = 8.dp)
                         .width(ReactionLogCardTokens.railWidth)
-                        .fillMaxHeight()
-                        .background(railColor.copy(alpha = if (incoming) 0.4f else 0.28f)),
+                        .height(10.dp)
+                        .background(railColor.copy(alpha = 0.45f)),
                 )
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(
-                            start = if (incoming) 10.dp else 8.dp,
-                            end = if (incoming) 8.dp else 10.dp,
-                            top = 10.dp,
-                            bottom = 10.dp,
-                        ),
-                ) {
-                    HorizontalDivider(
-                        color = Color(0x18FFFFFF),
-                        modifier = Modifier.padding(bottom = 8.dp),
-                    )
-                    content()
-                }
+                HorizontalDivider(
+                    color = Color(0x18FFFFFF),
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                content()
             }
         }
     }

@@ -67,6 +67,33 @@ class OverlayReactionLogFeedBuilderTest {
     }
 
     @Test
+    fun threadParent_listsAllReplyClusters() {
+        val parentEntry = parent("p1")
+        val replies = listOf(
+            reply("r3", "p1"),
+            reply("r2", "p1"),
+            reply("r1", "p1"),
+        )
+        val all = listOf(parentEntry) + replies
+        val filtered = OverlayReactionNotificationsDeriver.filterEntries(
+            all,
+            self,
+            OverlayReactionLogFilter.All,
+            OverlayReactionLogScopeFilter.All,
+            "",
+        )
+        val feed = OverlayReactionLogFeedBuilder.buildFeedItems(
+            filteredEntries = filtered,
+            allEntries = all,
+            selfUserId = self,
+            directionFilter = OverlayReactionLogFilter.All,
+        )
+        val thread = feed.single() as OverlayReactionLogFeedItem.ThreadParent
+        assertEquals(3, thread.replies.size)
+        assertEquals(listOf("r3", "r2", "r1"), thread.replies.map { it.representative.id })
+    }
+
+    @Test
     fun outgoingParent_incomingReply_allFilter_threadsUnderParent() {
         val parentEntry = parent("p1", sender = self)
         val replyEntry = reply("r1", "p1", sender = other)
