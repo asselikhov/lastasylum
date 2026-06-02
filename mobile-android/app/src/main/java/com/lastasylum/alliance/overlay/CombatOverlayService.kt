@@ -1479,8 +1479,9 @@ class CombatOverlayService : Service() {
                 Log.w(TAG, "rebalanceOverlayHudZOrder failed", e)
             }
         }
-        lift(overlayStatusHudHost, overlayStatusHudParams)
+        // Сначала правый HUD, затем левый — «Обновить» справа в статус-баре не под прозрачным 280dp.
         lift(overlayTopRightHudHost, overlayTopRightHudParams)
+        lift(overlayStatusHudHost, overlayStatusHudParams)
         lastHudZOrderRebalanceMs = now
     }
 

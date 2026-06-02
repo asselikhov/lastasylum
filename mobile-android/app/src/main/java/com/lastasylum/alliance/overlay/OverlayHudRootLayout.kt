@@ -5,28 +5,21 @@ import android.view.MotionEvent
 import android.widget.FrameLayout
 
 /**
- * Корень компактных HUD-окон (новости / чат / участники).
+ * Корень компактных HUD-окон (левый статус / правый голос).
  *
- * Окно [WRAP_CONTENT] — весь его прямоугольник должен получать касания для [ComposeView].
- * На Android 15+ необработанный тап внутри окна может «пробиваться» в игру; здесь одиночный
- * палец всегда остаётся в оверлее. Pinch (2+ пальца) по-прежнему уходит в игру.
+ * Hit-test делегируется [ComposeView]: пустая зона (например minWidth 280dp у правого HUD
+ * без кнопок слева) не перехватывает тап — касание уходит в окно под ним (кнопка обновления).
+ * Pinch (2+ пальца) по-прежнему уходит в игру.
  */
 internal class OverlayHudRootLayout(context: Context) : FrameLayout(context) {
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         if (ev.pointerCount > 1) return false
-        if (!OverlayPassthroughMultitouchFrameLayout.hitVisibleLeafDescendant(this, ev.x, ev.y)) {
-            return false
-        }
         return super.dispatchTouchEvent(ev)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.pointerCount > 1) return false
-        if (!OverlayPassthroughMultitouchFrameLayout.hitVisibleLeafDescendant(this, event.x, event.y)) {
-            return false
-        }
-        super.onTouchEvent(event)
-        return true
+        return false
     }
 }

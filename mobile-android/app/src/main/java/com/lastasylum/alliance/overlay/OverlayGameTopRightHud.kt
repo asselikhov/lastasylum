@@ -58,9 +58,16 @@ fun OverlayGameTopRightHud(
     onVoiceSettingsDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val needsWideVoiceSlot = state.voiceSettingsVisible
     Box(
         modifier = modifier
-            .widthIn(min = HudTopRightMinWidth)
+            .then(
+                if (needsWideVoiceSlot) {
+                    Modifier.widthIn(min = HudTopRightMinWidth)
+                } else {
+                    Modifier
+                },
+            )
             .wrapContentSize(align = Alignment.TopEnd),
     ) {
         var mainBarHeightPx by remember { mutableIntStateOf(0) }

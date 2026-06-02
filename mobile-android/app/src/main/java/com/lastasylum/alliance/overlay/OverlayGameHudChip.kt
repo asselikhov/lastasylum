@@ -165,8 +165,6 @@ internal fun OverlayGameHudUpdateChip(
         ),
         label = "glow",
     )
-    val corner = HudChipCorner
-    val borderWidth = 1.5.dp
     val goldColors = remember {
         listOf(UpdateGoldDeep, UpdateGoldBright, UpdateGoldPale, UpdateGoldAmber, UpdateGoldDeep)
     }
@@ -174,7 +172,7 @@ internal fun OverlayGameHudUpdateChip(
         Box(
             modifier = Modifier
                 .drawWithContent {
-                    val strokePx = borderWidth.toPx()
+                    val strokePx = HudChipBorderWidth.toPx()
                     val inset = strokePx / 2f
                     val w = size.width - strokePx
                     val h = size.height - strokePx
@@ -187,7 +185,7 @@ internal fun OverlayGameHudUpdateChip(
                         ),
                         topLeft = Offset(inset, inset),
                         size = androidx.compose.ui.geometry.Size(w, h),
-                        cornerRadius = CornerRadius(corner.toPx()),
+                        cornerRadius = CornerRadius(HudChipCorner.toPx()),
                         style = Stroke(width = strokePx),
                         alpha = 0.65f + glow * 0.35f,
                     )
