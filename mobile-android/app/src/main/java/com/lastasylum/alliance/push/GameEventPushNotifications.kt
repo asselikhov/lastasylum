@@ -9,14 +9,12 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.text.SpannableString
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import androidx.core.app.Person
 import androidx.core.content.ContextCompat
-import androidx.core.graphics.drawable.IconCompat
+import com.lastasylum.alliance.gameevents.GameEventCategory
 import com.lastasylum.alliance.MainActivity
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.gameevents.GameEventCatalog
@@ -99,27 +97,25 @@ object GameEventPushNotifications {
             launch,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val color = GameEventCatalog.notificationColor(event.category)
+        val color = GameEventPushBannerRenderer.accentColor(event.category)
         val gameEventLine = eventText.ifBlank { event.messageText }
-        val senderHeader = senderLine.ifBlank {
-            senderNickname.trim().ifBlank { " " }
+        val senderHeader: CharSequence = senderLine.ifBlank {
+            senderNickname.trim().ifBlank { "?" }
         }
-        val personLabel = senderNickname.trim().ifBlank {
-            senderLine.toString().trim().ifBlank { "?" }
-        }
-        val senderPersonBuilder = Person.Builder().setName(personLabel)
-        senderLargeIcon?.let { bmp ->
-            senderPersonBuilder.setIcon(IconCompat.createWithBitmap(bmp))
-        }
-        val senderPerson = senderPersonBuilder.build()
-        // MessagingStyle requires a non-empty local user name (API 28+).
-        val localPerson = Person.Builder()
-            .setName(context.getString(R.string.app_name))
-            .build()
-        val eventMessage = SpannableString(gameEventLine)
-        val style = NotificationCompat.MessagingStyle(localPerson)
-            .setConversationTitle(senderHeader)
-            .addMessage(eventMessage, System.currentTimeMillis(), senderPerson)
+        val categoryLabel = categorySectionLabel(context, event.category)
+        val banner = GameEventPushBannerRenderer.createBanner(
+            category = event.category,
+            categoryLabel = categoryLabel,
+        )
+        val style = NotificationCompat.BigPictureStyle()
+            .bigPicture(banner)
+            .setBigContentTitle(gameEventLine)
+            .setSummaryText(senderHeader.toString())
+            .also { s ->
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    s.showBigPictureWhenCollapsed(false)
+                }
+            }
         val builder = NotificationCompat.Builder(context, event.channelId)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(senderHeader)
@@ -131,6 +127,9 @@ object GameEventPushNotifications {
             .setContentIntent(pending)
             .setColor(color)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            builder.setColorized(true)
+        }
         senderLargeIcon?.let { builder.setLargeIcon(it) }
         val notification = builder.build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -150,4 +149,11 @@ object GameEventPushNotifications {
             Log.w(TAG, "notify failed eventId=${event.id}", e)
         }
     }
+
+    private fun categorySectionLabel(context: Context, category: GameEventCategory): String =
+        when (category) {
+            GameEventCategory.HQ -> context.getString(R.string.game_event_section_hq)
+            GameEventCategory.PVE -> context.getString(R.string.game_event_section_pve)
+            GameEventCategory.PVP -> context.getString(R.string.game_event_section_pvp)
+        }
 }
