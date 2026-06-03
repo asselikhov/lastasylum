@@ -1273,39 +1273,9 @@ class OverlayCommandsPopover(
             )
         }
 
-        val gameEventPushCompose = ComposeView(context).apply {
-            setContent {
-                SquadRelayTheme {
-                    OverlayGameEventPushPanel(
-                        onNotify = { event ->
-                            val pendingId = prepareOptimisticGameEvent(event.id)
-                            CombatOverlayService.extendInGameOverlayUiHold()
-                            hide()
-                            scope.launch {
-                                CombatOverlayService.warmupRaidForQuickCommandSend()
-                                val result = notifyGameEvent(event.id)
-                                mainHandler.post {
-                                    result.onFailure { e ->
-                                        pendingId?.let(removeOptimisticRaidSend)
-                                        val msg = when (e.message) {
-                                            "no_room" -> context.getString(R.string.overlay_strip_no_room)
-                                            "no_raid" -> context.getString(R.string.overlay_strip_no_raid)
-                                            else ->
-                                                e.message?.takeIf { it.isNotBlank() }
-                                                    ?: context.getString(
-                                                        R.string.overlay_history_send_failed,
-                                                        e.javaClass.simpleName,
-                                                    )
-                                        }
-                                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-                                    }
-                                }
-                            }
-                        },
-                    )
-                }
-            }
-        }
+        val overlayService = context as CombatOverlayService
+        val popoverComposeOwner = overlayService.obtainOverlayPopoverComposeOwner()
+        val gameEventPushCompose = ComposeView(context)
         val gameEventPushHost = FrameLayout(context).apply {
             visibility = View.GONE
             addView(
@@ -1592,6 +1562,46 @@ class OverlayCommandsPopover(
         }
 
         if (runCatching { windowManager.addView(scrim, params) }.isFailure) return
+
+        overlayService.attachOverlayComposeTree(scrim, card, gameEventPushHost, gameEventPushCompose)
+        gameEventPushCompose.setContent {
+            CompositionLocalProvider(
+                LocalLifecycleOwner provides popoverComposeOwner,
+                LocalViewModelStoreOwner provides popoverComposeOwner,
+                LocalSavedStateRegistryOwner provides popoverComposeOwner,
+                LocalOnBackPressedDispatcherOwner provides popoverComposeOwner,
+            ) {
+                SquadRelayTheme {
+                    OverlayGameEventPushPanel(
+                        onNotify = { event ->
+                            val pendingId = prepareOptimisticGameEvent(event.id)
+                            CombatOverlayService.extendInGameOverlayUiHold()
+                            hide()
+                            scope.launch {
+                                CombatOverlayService.warmupRaidForQuickCommandSend()
+                                val result = notifyGameEvent(event.id)
+                                mainHandler.post {
+                                    result.onFailure { e ->
+                                        pendingId?.let(removeOptimisticRaidSend)
+                                        val msg = when (e.message) {
+                                            "no_room" -> context.getString(R.string.overlay_strip_no_room)
+                                            "no_raid" -> context.getString(R.string.overlay_strip_no_raid)
+                                            else ->
+                                                e.message?.takeIf { it.isNotBlank() }
+                                                    ?: context.getString(
+                                                        R.string.overlay_history_send_failed,
+                                                        e.javaClass.simpleName,
+                                                    )
+                                        }
+                                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            }
+                        },
+                    )
+                }
+            }
+        }
 
         ensurePopoverSuppressHeld()
         menuScrim = scrim
