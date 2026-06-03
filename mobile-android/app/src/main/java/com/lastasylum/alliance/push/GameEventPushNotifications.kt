@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.text.SpannableString
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -81,10 +82,10 @@ object GameEventPushNotifications {
     fun show(
         context: Context,
         event: GameEventDefinition,
-        title: String,
-        body: String,
+        eventText: String,
         roomId: String?,
-        senderDisplayName: String = "",
+        senderLine: CharSequence,
+        senderNickname: String = "",
         senderLargeIcon: Bitmap? = null,
     ) {
         ensureChannels(context)
@@ -99,22 +100,25 @@ object GameEventPushNotifications {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val color = GameEventCatalog.notificationColor(event.category)
-        val eventTitle = title.ifBlank { event.messageText }
-        val eventBody = body.ifBlank { event.messageText }
-        val senderName = senderDisplayName.trim().ifBlank { " " }
-        val senderPersonBuilder = Person.Builder().setName(senderName)
+        val gameEventLine = eventText.ifBlank { event.messageText }
+        val senderHeader = senderLine.ifBlank {
+            senderNickname.trim().ifBlank { " " }
+        }
+        val personLabel = senderNickname.trim().ifBlank { " " }
+        val senderPersonBuilder = Person.Builder().setName(personLabel)
         senderLargeIcon?.let { bmp ->
             senderPersonBuilder.setIcon(IconCompat.createWithBitmap(bmp))
         }
         val senderPerson = senderPersonBuilder.build()
         val localPerson = Person.Builder().setName("").build()
+        val eventMessage = SpannableString(gameEventLine)
         val style = NotificationCompat.MessagingStyle(localPerson)
-            .setConversationTitle(eventTitle)
-            .addMessage(eventBody, System.currentTimeMillis(), senderPerson)
+            .setConversationTitle(senderHeader)
+            .addMessage(eventMessage, System.currentTimeMillis(), senderPerson)
         val builder = NotificationCompat.Builder(context, event.channelId)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle(eventTitle)
-            .setContentText(eventBody)
+            .setContentTitle(senderHeader)
+            .setContentText(gameEventLine)
             .setStyle(style)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)

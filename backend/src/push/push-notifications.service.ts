@@ -100,11 +100,9 @@ export class PushNotificationsService implements OnModuleInit {
     const senderSquadRole = (input.senderSquadRole ?? '').trim().toUpperCase();
     const teamTag = (input.senderTeamTag ?? '').trim();
     const serverNum = input.senderServerNumber;
-    const body = senderLine.length > 0 ? senderLine : event.messageText;
     try {
       const res = await admin.messaging().sendEachForMulticast({
         tokens: unique,
-        notification: { title, body },
         data: {
           ...input.data,
           type: 'game_event_alert',
@@ -121,15 +119,10 @@ export class PushNotificationsService implements OnModuleInit {
               ? String(serverNum)
               : '',
           title,
-          body,
+          eventText: title,
         },
         android: {
           priority: 'high',
-          notification: {
-            channelId: event.channelId,
-            title,
-            body,
-          },
         },
         apns: {
           headers: { 'apns-priority': '10' },

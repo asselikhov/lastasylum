@@ -63,19 +63,18 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
         if (CombatOverlayService.inGameOverlayUiActive.value) {
             return
         }
-        val title = message.data["title"]?.trim()?.takeIf { it.isNotEmpty() }
+        val eventText = message.data["title"]?.trim()?.takeIf { it.isNotEmpty() }
+            ?: message.data["eventText"]?.trim()?.takeIf { it.isNotEmpty() }
             ?: message.notification?.title?.trim()?.takeIf { it.isNotEmpty() }
             ?: event.messageText
         val nickname = message.data["senderName"]?.trim().orEmpty()
-        val senderLine = message.data["senderLine"]?.trim()?.takeIf { it.isNotEmpty() }
-            ?: chatSenderDisplayLine(
-                teamTag = message.data["senderTeamTag"]?.trim()?.ifBlank { null },
-                username = nickname,
-                serverNumber = message.data["senderServerNumber"]?.toIntOrNull()?.takeIf { it > 0 },
-            )
-        val body = senderLine.ifBlank {
-            message.notification?.body?.trim().orEmpty()
-        }.ifBlank { event.messageText }
+        val teamTag = message.data["senderTeamTag"]?.trim()?.ifBlank { null }
+        val serverNumber = message.data["senderServerNumber"]?.toIntOrNull()?.takeIf { it > 0 }
+        val senderLineColored = PushNotificationSenderLineSpans.build(
+            teamTag = teamTag,
+            username = nickname,
+            serverNumber = serverNumber,
+        )
         val telegram = message.data["senderTelegramUsername"]?.trim().orEmpty()
         val squadRole = message.data["senderSquadRole"]?.trim().orEmpty()
         val largeIcon = PushNotificationSenderAvatar.loadLargeIcon(
@@ -88,10 +87,10 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
             GameEventPushNotifications.show(
                 context = app,
                 event = event,
-                title = title,
-                body = body,
+                eventText = eventText,
                 roomId = message.data["roomId"],
-                senderDisplayName = senderLine,
+                senderLine = senderLineColored,
+                senderNickname = nickname,
                 senderLargeIcon = largeIcon,
             )
         }
