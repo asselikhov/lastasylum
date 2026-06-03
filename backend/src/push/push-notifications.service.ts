@@ -128,7 +128,10 @@ export class PushNotificationsService implements OnModuleInit {
           headers: { 'apns-priority': '10' },
           payload: {
             aps: {
-              alert: { title, body },
+              alert: {
+                title: senderLine.length > 0 ? senderLine : title,
+                body: title,
+              },
               sound: 'default',
             },
           },
