@@ -30,21 +30,31 @@ import { OverlayReactionLogService } from './overlay-reaction-log.service';
 import { normalizeOverlayChatStickerReaction } from './overlay-sticker-reaction.util';
 import { filterPersonalChatFanoutUserIds } from './chat-realtime-broadcast.util';
 import { resolveGameEventId } from '../game-events/game-event-catalog';
+import { formatGameEventPushSenderLine } from '../game-events/game-event-push.util';
 
 function gameEventPushSenderFromMessage(message: unknown): {
   senderName: string;
   senderTelegramUsername: string;
   senderSquadRole: string;
+  senderTeamTag: string;
+  senderServerNumber: number | null;
 } {
   const m = message as {
     senderUsername?: string;
     senderTelegramUsername?: string | null;
     senderRole?: string;
+    senderTeamTag?: string | null;
+    senderServerNumber?: number | null;
   };
+  const serverRaw = m.senderServerNumber;
+  const server =
+    typeof serverRaw === 'number' && serverRaw >= 1 ? serverRaw : null;
   return {
     senderName: (m.senderUsername ?? '').trim(),
     senderTelegramUsername: (m.senderTelegramUsername ?? '').trim(),
     senderSquadRole: (m.senderRole ?? '').trim().toUpperCase(),
+    senderTeamTag: (m.senderTeamTag ?? '').trim(),
+    senderServerNumber: server,
   };
 }
 
@@ -660,14 +670,24 @@ export class ChatGateway {
       input.messageAllianceId !== GLOBAL_CHAT_ALLIANCE_ID
     ) {
       const pushSender = gameEventPushSenderFromMessage(input.message);
+      const senderName =
+        pushSender.senderName || (input.senderName ?? '').trim();
+      const senderLine = formatGameEventPushSenderLine({
+        username: senderName,
+        teamTag: pushSender.senderTeamTag || null,
+        serverNumber: pushSender.senderServerNumber,
+      });
       void this.pushNotifications
         .notifyGameEventAlert({
           allianceId: input.messageAllianceId,
           excludeUserId: senderUserId,
           eventId,
-          senderName: pushSender.senderName || (input.senderName ?? ''),
+          senderName,
+          senderLine,
           senderTelegramUsername: pushSender.senderTelegramUsername,
           senderSquadRole: pushSender.senderSquadRole,
+          senderTeamTag: pushSender.senderTeamTag,
+          senderServerNumber: pushSender.senderServerNumber,
           body: input.gameEventText ?? '',
           data: {
             roomId,

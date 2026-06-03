@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import * as admin from 'firebase-admin';
 import { getGameEventById } from '../game-events/game-event-catalog';
+import { formatGameEventPushSenderLine } from '../game-events/game-event-push.util';
 import { UsersService } from '../users/users.service';
 
 const CHAT_PUSH_DEBOUNCE_MS = 45_000;
@@ -59,8 +60,11 @@ export class PushNotificationsService implements OnModuleInit {
     excludeUserId: string;
     eventId: string;
     senderName: string;
+    senderLine?: string;
     senderTelegramUsername?: string;
     senderSquadRole?: string;
+    senderTeamTag?: string;
+    senderServerNumber?: number | null;
     body: string;
     data: Record<string, string>;
   }): Promise<void> {
@@ -85,9 +89,18 @@ export class PushNotificationsService implements OnModuleInit {
     const unique = [...new Set(tokens)].slice(0, 500);
     const title = event.messageText;
     const sender = input.senderName.trim();
+    const senderLine =
+      (input.senderLine ?? '').trim() ||
+      formatGameEventPushSenderLine({
+        username: sender,
+        teamTag: input.senderTeamTag ?? null,
+        serverNumber: input.senderServerNumber ?? null,
+      });
     const senderTelegram = (input.senderTelegramUsername ?? '').trim();
     const senderSquadRole = (input.senderSquadRole ?? '').trim().toUpperCase();
-    const body = sender.length > 0 ? `От ${sender}` : event.messageText;
+    const teamTag = (input.senderTeamTag ?? '').trim();
+    const serverNum = input.senderServerNumber;
+    const body = senderLine.length > 0 ? senderLine : event.messageText;
     try {
       const res = await admin.messaging().sendEachForMulticast({
         tokens: unique,
@@ -99,8 +112,14 @@ export class PushNotificationsService implements OnModuleInit {
           category: event.category,
           channelId: event.channelId,
           senderName: sender,
+          senderLine,
           senderTelegramUsername: senderTelegram,
           senderSquadRole: senderSquadRole,
+          senderTeamTag: teamTag,
+          senderServerNumber:
+            typeof serverNum === 'number' && serverNum >= 1
+              ? String(serverNum)
+              : '',
           title,
           body,
         },

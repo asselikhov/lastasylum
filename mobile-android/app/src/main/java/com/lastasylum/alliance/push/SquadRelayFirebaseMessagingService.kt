@@ -1,7 +1,7 @@
 package com.lastasylum.alliance.push
 
-import com.lastasylum.alliance.R
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.ui.util.chatSenderDisplayLine
 import com.lastasylum.alliance.gameevents.GameEventCatalog
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.google.firebase.messaging.FirebaseMessagingService
@@ -66,12 +66,15 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
         val title = message.data["title"]?.trim()?.takeIf { it.isNotEmpty() }
             ?: message.notification?.title?.trim()?.takeIf { it.isNotEmpty() }
             ?: event.messageText
-        val dataBody = message.data["body"]?.trim().orEmpty()
-        val sender = message.data["senderName"]?.trim().orEmpty()
-        val body = when {
-            dataBody.isNotEmpty() && !dataBody.equals(title, ignoreCase = true) -> dataBody
-            sender.isNotEmpty() -> getString(R.string.game_event_push_body_from, sender)
-            else -> message.notification?.body?.trim().orEmpty()
+        val nickname = message.data["senderName"]?.trim().orEmpty()
+        val senderLine = message.data["senderLine"]?.trim()?.takeIf { it.isNotEmpty() }
+            ?: chatSenderDisplayLine(
+                teamTag = message.data["senderTeamTag"]?.trim()?.ifBlank { null },
+                username = nickname,
+                serverNumber = message.data["senderServerNumber"]?.toIntOrNull()?.takeIf { it > 0 },
+            )
+        val body = senderLine.ifBlank {
+            message.notification?.body?.trim().orEmpty()
         }.ifBlank { event.messageText }
         val telegram = message.data["senderTelegramUsername"]?.trim().orEmpty()
         val squadRole = message.data["senderSquadRole"]?.trim().orEmpty()
@@ -79,7 +82,7 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
             context = app,
             telegramUsername = telegram.ifBlank { null },
             squadRole = squadRole.ifBlank { null },
-            fallbackName = sender.ifBlank { null },
+            fallbackName = nickname.ifBlank { null },
         )
         withContext(Dispatchers.Main) {
             GameEventPushNotifications.show(
@@ -88,7 +91,7 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
                 title = title,
                 body = body,
                 roomId = message.data["roomId"],
-                senderDisplayName = sender,
+                senderDisplayName = senderLine,
                 senderLargeIcon = largeIcon,
             )
         }

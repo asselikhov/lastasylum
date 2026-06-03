@@ -29,3 +29,22 @@ export function buildGameEventPushEnabledMap(user: {
   }
   return out;
 }
+
+/** Same order as Android [chatSenderDisplayLine]: `#109 [TAG] nickname`. */
+export function formatGameEventPushSenderLine(input: {
+  username: string;
+  teamTag?: string | null;
+  serverNumber?: number | null;
+}): string {
+  const u = (input.username ?? '').trim() || '—';
+  const parts: string[] = [];
+  const server = input.serverNumber;
+  if (typeof server === 'number' && server >= 1) {
+    parts.push(`#${server}`);
+  }
+  const rawTag = (input.teamTag ?? '').trim().replace(/^\[|\]$/g, '');
+  if (rawTag.length > 0) {
+    parts.push(`[${rawTag}]`);
+  }
+  return parts.length > 0 ? `${parts.join(' ')} ${u}` : u;
+}
