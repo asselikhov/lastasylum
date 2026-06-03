@@ -720,10 +720,6 @@
     <string name="game_event_push_group_name">Игровые события</string>
     <string name="game_event_push_channel_desc">Оповещение: %1$s</string>
     <string name="game_event_push_body_from">От %1$s</string>
-    <string name="fcm_default_push_channel_name">Оповещения приложения</string>
-    <string name="fcm_default_push_channel_desc">Служебные push, если канал события ещё не создан</string>
-    <string name="alliance_chat_push_channel_name">Сообщения альянса</string>
-    <string name="alliance_chat_push_channel_desc">Push о новых сообщениях в чате</string>
     <string name="overlay_excavation_message">Раскопки альянса X:%1$d Y:%2$d</string>
     <string name="overlay_excavation_notify_message">Раскопки альянса</string>
     <string name="overlay_cmd_column_excavation">Раскопки</string>

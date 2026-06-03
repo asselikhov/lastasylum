@@ -7,6 +7,7 @@ import android.content.Context
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.lastasylum.alliance.R
+import com.lastasylum.alliance.push.GameEventPushNotifications
 
 /** Foreground-уведомление боевого оверлея (микрофон / FGS). */
 object OverlayForegroundNotifications {
@@ -17,6 +18,7 @@ object OverlayForegroundNotifications {
     fun ensureChannel(context: Context) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            GameEventPushNotifications.dropLegacyUngroupedChannels(manager)
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 context.getString(R.string.overlay_channel_name),

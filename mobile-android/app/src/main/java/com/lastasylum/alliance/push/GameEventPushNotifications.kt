@@ -24,9 +24,14 @@ import com.lastasylum.alliance.gameevents.GameEventDefinition
 /** Per-event channels under group «Игровые события». */
 object GameEventPushNotifications {
     const val CHANNEL_GROUP_ID = "game_events"
-    /** FCM default when channel id is missing — avoids system «Miscellaneous». */
-    const val FCM_DEFAULT_CHANNEL_ID = "squadrelay_push_default"
-    const val ALLIANCE_CHAT_CHANNEL_ID = "alliance_chat_messages"
+
+    /** Ungrouped channels removed on startup (were listed under «Прочее»). */
+    private val LEGACY_UNGROUPED_CHANNEL_IDS = listOf(
+        ExcavationPushNotifications.CHANNEL_ID,
+        "squadrelay_push_default",
+        "alliance_chat_messages",
+        "fcm_fallback_notification_channel",
+    )
 
     private const val NOTIFICATION_ID_BASE = 43_000
     private const val TAG = "GameEventPush"
@@ -35,9 +40,7 @@ object GameEventPushNotifications {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager =
             context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        dropLegacyExcavationChannel(manager)
-        ensureFcmDefaultChannel(manager, context)
-        ensureAllianceChatChannel(manager, context)
+        dropLegacyUngroupedChannels(manager)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             val group = NotificationChannelGroup(
                 CHANNEL_GROUP_ID,
@@ -68,34 +71,11 @@ object GameEventPushNotifications {
         }
     }
 
-    /** Removes pre–game-event channel «Раскопки альянса» (duplicate of hq_excavation). */
-    private fun dropLegacyExcavationChannel(manager: NotificationManager) {
-        manager.deleteNotificationChannel(ExcavationPushNotifications.CHANNEL_ID)
-    }
-
-    private fun ensureFcmDefaultChannel(manager: NotificationManager, context: Context) {
-        val channel = NotificationChannel(
-            FCM_DEFAULT_CHANNEL_ID,
-            context.getString(R.string.fcm_default_push_channel_name),
-            NotificationManager.IMPORTANCE_DEFAULT,
-        ).apply {
-            description = context.getString(R.string.fcm_default_push_channel_desc)
-            setShowBadge(true)
+    /** Drops channels that must not appear in system «Прочее» (only overlay FGS stays there). */
+    fun dropLegacyUngroupedChannels(manager: NotificationManager) {
+        for (id in LEGACY_UNGROUPED_CHANNEL_IDS) {
+            manager.deleteNotificationChannel(id)
         }
-        manager.createNotificationChannel(channel)
-    }
-
-    private fun ensureAllianceChatChannel(manager: NotificationManager, context: Context) {
-        val channel = NotificationChannel(
-            ALLIANCE_CHAT_CHANNEL_ID,
-            context.getString(R.string.alliance_chat_push_channel_name),
-            NotificationManager.IMPORTANCE_DEFAULT,
-        ).apply {
-            description = context.getString(R.string.alliance_chat_push_channel_desc)
-            enableVibration(true)
-            setShowBadge(true)
-        }
-        manager.createNotificationChannel(channel)
     }
 
     fun show(

@@ -188,14 +188,7 @@ export class PushNotificationsService implements OnModuleInit {
         tokens: unique,
         notification: { title, body },
         data: input.data,
-        android: {
-          priority: 'high',
-          notification: {
-            channelId: 'alliance_chat_messages',
-            title,
-            body,
-          },
-        },
+        android: { priority: 'high' },
       });
       await this.pruneInvalidTokens(unique, res);
       if (res.failureCount > 0) {
