@@ -82,18 +82,19 @@ export class PushNotificationsService implements OnModuleInit {
     }
     const unique = [...new Set(tokens)].slice(0, 500);
     const title = event.messageText;
-    const body =
-      input.body.trim().length > 0 ? input.body.trim() : event.messageText;
+    const sender = input.senderName.trim();
+    const body = sender.length > 0 ? `От ${sender}` : event.messageText;
     try {
       const res = await admin.messaging().sendEachForMulticast({
         tokens: unique,
+        notification: { title, body },
         data: {
           ...input.data,
           type: 'game_event_alert',
           eventId: event.id,
           category: event.category,
           channelId: event.channelId,
-          senderName: input.senderName,
+          senderName: sender,
           title,
           body,
         },
@@ -101,6 +102,8 @@ export class PushNotificationsService implements OnModuleInit {
           priority: 'high',
           notification: {
             channelId: event.channelId,
+            title,
+            body,
           },
         },
         apns: {
@@ -153,12 +156,21 @@ export class PushNotificationsService implements OnModuleInit {
     );
     if (tokens.length === 0) return;
     const unique = [...new Set(tokens)].slice(0, 500);
+    const title = input.title.trim();
+    const body = input.body.trim();
     try {
       const res = await admin.messaging().sendEachForMulticast({
         tokens: unique,
-        notification: { title: input.title, body: input.body },
+        notification: { title, body },
         data: input.data,
-        android: { priority: 'high' },
+        android: {
+          priority: 'high',
+          notification: {
+            channelId: 'alliance_chat_messages',
+            title,
+            body,
+          },
+        },
       });
       await this.pruneInvalidTokens(unique, res);
       if (res.failureCount > 0) {

@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.push
 
+import com.lastasylum.alliance.R
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.gameevents.GameEventCatalog
 import com.lastasylum.alliance.overlay.CombatOverlayService
@@ -54,13 +55,16 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
         if (CombatOverlayService.inGameOverlayUiActive.value) {
             return
         }
-        val title = message.data["title"]
-            ?: message.notification?.title
+        val title = message.data["title"]?.trim()?.takeIf { it.isNotEmpty() }
+            ?: message.notification?.title?.trim()?.takeIf { it.isNotEmpty() }
             ?: event.messageText
-        val body = message.data["body"]
-            ?: message.notification?.body
-            ?: message.data["senderName"]
-            ?: event.messageText
+        val dataBody = message.data["body"]?.trim().orEmpty()
+        val sender = message.data["senderName"]?.trim().orEmpty()
+        val body = when {
+            dataBody.isNotEmpty() && !dataBody.equals(title, ignoreCase = true) -> dataBody
+            sender.isNotEmpty() -> getString(R.string.game_event_push_body_from, sender)
+            else -> message.notification?.body?.trim().orEmpty()
+        }.ifBlank { event.messageText }
         GameEventPushNotifications.show(
             context = app,
             event = event,
