@@ -12,7 +12,7 @@ import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.lastasylum.alliance.overlay.OverlayRuntimeScheduler
-import com.lastasylum.alliance.push.ExcavationPushNotifications
+import com.lastasylum.alliance.push.GameEventPushNotifications
 import com.lastasylum.alliance.push.FcmTokenManager
 import com.lastasylum.alliance.ui.chat.SquadRelayImageLoader
 import kotlinx.coroutines.CoroutineScope
@@ -29,7 +29,7 @@ class SquadRelayApplication : Application(), SingletonImageLoader.Factory {
         super.onCreate()
         // Раньше ProfileInstaller: FirebaseInitProvider отключён в манифесте без google-services.json.
         initFirebaseIfConfigured()
-        ExcavationPushNotifications.ensureChannel(this)
+        GameEventPushNotifications.ensureChannels(this)
         if (FirebaseApp.getApps(this).isNotEmpty()) {
             runCatching {
                 FirebaseCrashlytics.getInstance().isCrashlyticsCollectionEnabled = !BuildConfig.DEBUG
@@ -46,8 +46,8 @@ class SquadRelayApplication : Application(), SingletonImageLoader.Factory {
                     val profile = container.usersRepository.peekMyProfileDisk()
                         ?: container.usersRepository.peekMyProfile()
                     if (profile != null) {
-                        container.userSettingsPreferences.setExcavationPushEnabled(
-                            profile.excavationPushEnabled,
+                        container.userSettingsPreferences.applyGameEventPushEnabledFromServer(
+                            profile.gameEventPushEnabled,
                         )
                     }
                 }

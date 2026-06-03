@@ -28,6 +28,7 @@ import {
   withUploadSlot,
 } from '../common/upload-concurrency';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
+import { resolveGameEventId } from '../game-events/game-event-catalog';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { GLOBAL_CHAT_ALLIANCE_ID } from '../common/constants/chat-room-constants';
 import { resolveChatAllianceScope } from './chat-alliance-scope';
@@ -234,12 +235,16 @@ export class ChatController {
             (message as { _id?: { toString?: () => string } })._id != null
           ? (message as { _id: { toString: () => string } })._id.toString()
           : '';
+    const gameEventId = resolveGameEventId(
+      dto.gameEventAlert,
+      dto.excavationAlert,
+    );
     await this.chatGateway.afterMessageCreated({
       roomId: dto.roomId,
       message,
       senderUserId: req.user.userId,
-      excavationAlert: dto.excavationAlert === true,
-      excavationText: dto.text?.trim() ?? '',
+      gameEventId,
+      gameEventText: dto.text?.trim() ?? '',
       messageAllianceId: message.allianceId,
       messageId,
       senderName: req.user.username,

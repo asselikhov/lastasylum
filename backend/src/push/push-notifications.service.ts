@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import * as admin from 'firebase-admin';
+import { getGameEventById } from '../game-events/game-event-catalog';
 import { UsersService } from '../users/users.service';
 
 const CHAT_PUSH_DEBOUNCE_MS = 45_000;
@@ -35,6 +36,7 @@ export class PushNotificationsService implements OnModuleInit {
     }
   }
 
+  /** @deprecated Use notifyGameEventAlert */
   async notifyExcavationAlert(input: {
     allianceId: string;
     excludeUserId: string;
@@ -42,39 +44,64 @@ export class PushNotificationsService implements OnModuleInit {
     body: string;
     data: Record<string, string>;
   }): Promise<void> {
+    return this.notifyGameEventAlert({
+      allianceId: input.allianceId,
+      excludeUserId: input.excludeUserId,
+      eventId: 'hq_excavation',
+      senderName: input.senderName,
+      body: input.body,
+      data: input.data,
+    });
+  }
+
+  async notifyGameEventAlert(input: {
+    allianceId: string;
+    excludeUserId: string;
+    eventId: string;
+    senderName: string;
+    body: string;
+    data: Record<string, string>;
+  }): Promise<void> {
     if (!this.ready) return;
-    const tokens = await this.usersService.collectPushTokensForExcavationAlert(
+    const event = getGameEventById(input.eventId);
+    if (!event) {
+      this.logger.warn(`FCM game event: unknown eventId=${input.eventId}`);
+      return;
+    }
+    const tokens = await this.usersService.collectPushTokensForGameEvent(
       input.allianceId,
+      input.eventId,
       input.excludeUserId,
     );
     if (tokens.length === 0) {
       this.logger.warn(
-        `FCM excavation: no device tokens for allianceId=${input.allianceId} ` +
-          `(excludeUserId=${input.excludeUserId}). Recipients need pushFcmTokens, excavation push enabled, ` +
-          `and must not be overlay-ingame (those allies get the raid strip card only).`,
+        `FCM game event: no device tokens for allianceId=${input.allianceId} ` +
+          `eventId=${input.eventId} (excludeUserId=${input.excludeUserId})`,
       );
       return;
     }
     const unique = [...new Set(tokens)].slice(0, 500);
-    const title = '⛏ Раскопки';
+    const title = event.messageText;
     const body =
-      input.body.trim().length > 0
-        ? input.body.trim()
-        : 'Союзники отметили координаты раскопок';
+      input.body.trim().length > 0 ? input.body.trim() : event.messageText;
     try {
-      // Data-only on Android: система не перехватывает показ в фоне — клиент
-      // всегда получает onMessageReceived и показывает канал excavation_alerts.
       const res = await admin.messaging().sendEachForMulticast({
         tokens: unique,
         data: {
           ...input.data,
-          type: 'excavation_alert',
+          type: 'game_event_alert',
+          eventId: event.id,
+          category: event.category,
+          channelId: event.channelId,
           senderName: input.senderName,
           title,
           body,
         },
         android: {
           priority: 'high',
+          notification: {
+            channelId: event.channelId,
+          },
         },
         apns: {
           headers: { 'apns-priority': '10' },
@@ -89,15 +116,17 @@ export class PushNotificationsService implements OnModuleInit {
       await this.pruneInvalidTokens(unique, res);
       if (res.failureCount > 0) {
         this.logger.warn(
-          `FCM excavation partial failure: ${res.failureCount}/${unique.length}`,
+          `FCM game event partial failure: ${res.failureCount}/${unique.length} eventId=${event.id}`,
         );
       } else {
         this.logger.log(
-          `FCM excavation sent to ${unique.length} device token(s) (allianceId=${input.allianceId})`,
+          `FCM game event sent to ${unique.length} token(s) eventId=${event.id} allianceId=${input.allianceId}`,
         );
       }
     } catch (e) {
-      this.logger.warn(`FCM excavation send failed: ${(e as Error).message}`);
+      this.logger.warn(
+        `FCM game event send failed eventId=${event.id}: ${(e as Error).message}`,
+      );
     }
   }
 

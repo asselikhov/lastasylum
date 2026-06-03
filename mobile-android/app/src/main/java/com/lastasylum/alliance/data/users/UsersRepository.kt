@@ -87,9 +87,18 @@ class UsersRepository(
         }
 
     suspend fun updateExcavationPushEnabled(enabled: Boolean): Result<MyProfileDto> =
+        updateGameEventPushEnabled("hq_excavation", enabled)
+
+    suspend fun updateGameEventPushEnabled(
+        eventId: String,
+        enabled: Boolean,
+    ): Result<MyProfileDto> =
         applyProfileMutation {
             usersApi.updateNotificationPreferences(
-                UpdateNotificationPreferencesBody(excavationPushEnabled = enabled),
+                UpdateNotificationPreferencesBody(
+                    gameEventId = eventId,
+                    enabled = enabled,
+                ),
             )
         }
 

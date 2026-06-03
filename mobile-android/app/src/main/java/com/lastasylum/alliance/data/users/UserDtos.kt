@@ -72,6 +72,7 @@ data class MyProfileDto(
     val playerTeamSquadRole: String? = null,
     val enabledStickerPacks: List<String> = emptyList(),
     val excavationPushEnabled: Boolean = true,
+    val gameEventPushEnabled: Map<String, Boolean> = emptyMap(),
     val pushNotificationsRegistered: Boolean = false,
     val gameIdentities: List<GameIdentityDto> = emptyList(),
     val activeGameIdentityId: String? = null,
@@ -81,7 +82,9 @@ data class MyProfileDto(
 
 @JsonClass(generateAdapter = true)
 data class UpdateNotificationPreferencesBody(
-    val excavationPushEnabled: Boolean,
+    val gameEventId: String? = null,
+    val enabled: Boolean? = null,
+    val excavationPushEnabled: Boolean? = null,
 )
 
 @JsonClass(generateAdapter = true)

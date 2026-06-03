@@ -165,13 +165,43 @@ class UserSettingsPreferences(context: Context) {
     private fun effectiveOverlayVoiceVolume(stored: Float): Float =
         if (stored <= 0f) OVERLAY_VOICE_VOLUME_DEFAULT else clampOverlayVoiceVolume(stored)
 
-    /** Push о координатах раскопок (сервер + локальный кэш). */
-    fun isExcavationPushEnabled(): Boolean =
-        prefs.getBoolean(KEY_EXCAVATION_PUSH, true)
+    /** @deprecated Use [isGameEventPushEnabled] for hq_excavation. */
+    fun isExcavationPushEnabled(): Boolean = isGameEventPushEnabled("hq_excavation")
 
     fun setExcavationPushEnabled(value: Boolean) {
-        prefs.edit().putBoolean(KEY_EXCAVATION_PUSH, value).apply()
+        setGameEventPushEnabled("hq_excavation", value)
     }
+
+    fun isGameEventPushEnabled(eventId: String): Boolean {
+        val key = gameEventPushKey(eventId)
+        if (prefs.contains(key)) {
+            return prefs.getBoolean(key, true)
+        }
+        return prefs.getBoolean(KEY_EXCAVATION_PUSH, true)
+    }
+
+    fun setGameEventPushEnabled(eventId: String, value: Boolean) {
+        prefs.edit().putBoolean(gameEventPushKey(eventId), value).apply()
+        if (eventId == "hq_excavation") {
+            prefs.edit().putBoolean(KEY_EXCAVATION_PUSH, value).apply()
+        }
+    }
+
+    fun applyGameEventPushEnabledFromServer(map: Map<String, Boolean>) {
+        val editor = prefs.edit()
+        for (event in com.lastasylum.alliance.gameevents.GameEventCatalog.all) {
+            val enabled = map[event.id] ?: true
+            editor.putBoolean(gameEventPushKey(event.id), enabled)
+        }
+        editor.putBoolean(
+            KEY_EXCAVATION_PUSH,
+            map["hq_excavation"] ?: true,
+        )
+        editor.apply()
+    }
+
+    private fun gameEventPushKey(eventId: String): String =
+        "$KEY_GAME_EVENT_PUSH_PREFIX$eventId"
 
     fun bindUser(userId: String) {
         val id = userId.trim()
@@ -337,6 +367,7 @@ class UserSettingsPreferences(context: Context) {
         const val OVERLAY_VOICE_VOLUME_MAX = 1.5f
         const val OVERLAY_VOICE_VOLUME_DEFAULT = 1f
         private const val KEY_EXCAVATION_PUSH = "excavation_push_enabled"
+        private const val KEY_GAME_EVENT_PUSH_PREFIX = "game_event_push_"
         private const val KEY_LAST_SEEN_TEAM_NEWS_CREATED_AT = "last_seen_team_news_created_at"
         private const val KEY_OVERLAY_TARGET_LEGACY_MIGRATED = "overlay_target_legacy_migrated_v1"
         private const val KEY_OVERLAY_TARGET_PLAY_MIGRATED = "overlay_target_play_migrated_v2"

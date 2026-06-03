@@ -21,6 +21,9 @@ import {
 } from './game-identities.service';
 import { StickerAccessService } from './sticker-access.service';
 import { TeamsService } from './teams.service';
+import { isValidGameEventId } from '../game-events/game-event-catalog';
+import { buildGameEventPushEnabledMap } from '../game-events/game-event-push.util';
+import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 import {
   type ChatRoomAccessFields,
   userMayAccessChatRoom,
@@ -58,6 +61,7 @@ export type SafeUser = {
   /** Alliance sticker packs this account may send (wire keys, e.g. zlobyaka). */
   enabledStickerPacks: string[];
   excavationPushEnabled: boolean;
+  gameEventPushEnabled: Record<string, boolean>;
   /** True when at least one FCM device token is stored (push can be delivered). */
   pushNotificationsRegistered: boolean;
   gameIdentities: SafeGameIdentity[];
@@ -431,7 +435,10 @@ export class UsersService implements OnModuleInit {
       telegramUsername: reconciled.telegramUsername ?? null,
       ...teamFields,
       enabledStickerPacks,
-      excavationPushEnabled: reconciled.excavationPushEnabled !== false,
+      excavationPushEnabled: buildGameEventPushEnabledMap(reconciled)[
+        'hq_excavation'
+      ],
+      gameEventPushEnabled: buildGameEventPushEnabledMap(reconciled),
       pushNotificationsRegistered: (reconciled.pushFcmTokens?.length ?? 0) > 0,
       gameIdentities,
       activeGameIdentityId: active?._id?.toString() ?? null,
@@ -444,14 +451,28 @@ export class UsersService implements OnModuleInit {
 
   async updateNotificationPreferences(
     userId: string,
-    excavationPushEnabled: boolean,
+    dto: UpdateNotificationPreferencesDto,
   ): Promise<UserDocument | null> {
+    const $set: Record<string, unknown> = {};
+    if (dto.excavationPushEnabled !== undefined) {
+      $set.excavationPushEnabled = dto.excavationPushEnabled;
+      $set['gameEventPushEnabled.hq_excavation'] = dto.excavationPushEnabled;
+    }
+    const eventId = dto.gameEventId?.trim();
+    if (eventId && dto.enabled !== undefined) {
+      if (!isValidGameEventId(eventId)) {
+        throw new BadRequestException('Invalid game event id');
+      }
+      $set[`gameEventPushEnabled.${eventId}`] = dto.enabled;
+      if (eventId === 'hq_excavation') {
+        $set.excavationPushEnabled = dto.enabled;
+      }
+    }
+    if (Object.keys($set).length === 0) {
+      throw new BadRequestException('No notification preference fields to update');
+    }
     return this.userModel
-      .findByIdAndUpdate(
-        userId,
-        { $set: { excavationPushEnabled } },
-        { returnDocument: 'after' },
-      )
+      .findByIdAndUpdate(userId, { $set }, { returnDocument: 'after' })
       .exec();
   }
 
@@ -761,12 +782,24 @@ export class UsersService implements OnModuleInit {
     allianceId: string,
     excludeUserId: string,
   ): Promise<string[]> {
+    return this.collectPushTokensForGameEvent(
+      allianceId,
+      'hq_excavation',
+      excludeUserId,
+    );
+  }
+
+  async collectPushTokensForGameEvent(
+    allianceId: string,
+    eventId: string,
+    excludeUserId: string,
+  ): Promise<string[]> {
     if (!Types.ObjectId.isValid(excludeUserId)) return [];
+    if (!isValidGameEventId(eventId)) return [];
     const filter: Record<string, unknown> = {
       membershipStatus: TeamMembershipStatus.ACTIVE,
       _id: { $ne: new Types.ObjectId(excludeUserId) },
       pushFcmTokens: { $exists: true, $ne: [] },
-      excavationPushEnabled: { $ne: false },
     };
     if (allianceId.startsWith('pt:')) {
       const teamId = allianceId.slice(3);
@@ -781,13 +814,30 @@ export class UsersService implements OnModuleInit {
     }
     const users = await this.userModel
       .find(filter)
-      .select('_id pushFcmTokens')
-      .lean<Array<{ _id: Types.ObjectId; pushFcmTokens?: string[] }>>()
+      .select('_id pushFcmTokens gameEventPushEnabled excavationPushEnabled')
+      .lean<
+        Array<{
+          _id: Types.ObjectId;
+          pushFcmTokens?: string[];
+          gameEventPushEnabled?: Record<string, boolean>;
+          excavationPushEnabled?: boolean;
+        }>
+      >()
       .exec();
     const out: string[] = [];
     let excludedOverlayIngame = 0;
+    let excludedOptOut = 0;
     for (const u of users) {
       const userId = u._id.toString();
+      if (
+        !buildGameEventPushEnabledMap({
+          gameEventPushEnabled: u.gameEventPushEnabled,
+          excavationPushEnabled: u.excavationPushEnabled,
+        })[eventId]
+      ) {
+        excludedOptOut++;
+        continue;
+      }
       if (await this.isOverlayIngameNow(userId)) {
         excludedOverlayIngame++;
         continue;
@@ -795,9 +845,10 @@ export class UsersService implements OnModuleInit {
       const arr = u.pushFcmTokens;
       if (Array.isArray(arr)) out.push(...arr);
     }
-    if (excludedOverlayIngame > 0) {
+    if (excludedOverlayIngame > 0 || excludedOptOut > 0) {
       this.logger.debug(
-        `FCM excavation: excluded ${excludedOverlayIngame} overlay-ingame ally(ies) (allianceId=${allianceId})`,
+        `FCM game event ${eventId}: excluded overlay-ingame=${excludedOverlayIngame} ` +
+          `opt-out=${excludedOptOut} (allianceId=${allianceId})`,
       );
     }
     return out;

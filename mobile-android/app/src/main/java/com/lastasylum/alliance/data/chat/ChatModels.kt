@@ -71,6 +71,7 @@ data class SendMessageRequest(
     val replyToMessageId: String? = null,
     val attachments: List<String>? = null,
     val excavationAlert: Boolean? = null,
+    val gameEventAlert: String? = null,
 )
 
 data class EditMessageRequest(

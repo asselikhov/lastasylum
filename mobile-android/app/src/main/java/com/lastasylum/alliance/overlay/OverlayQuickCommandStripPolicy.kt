@@ -1,19 +1,15 @@
 package com.lastasylum.alliance.overlay
 
 import com.lastasylum.alliance.game.MapCoordinateParser
-import java.util.Locale
+import com.lastasylum.alliance.gameevents.GameEventCatalog
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Suppresses raid strip cards for the sender of overlay quick commands (Attack/Storm/Reinf/Excavation).
+ * Suppresses raid strip cards for the sender of overlay quick commands (Attack/Storm/Reinf/game events).
  * Chat room «Рейд» is unaffected — only the top overlay strip is hidden for own sends.
  */
 internal object OverlayQuickCommandStripPolicy {
     private const val SUPPRESS_TTL_MS = 15_000L
-
-    /** Alliance excavation notify without coordinates. */
-    private fun isExcavationNotify(text: String): Boolean =
-        text.lowercase(Locale.ROOT) == "раскопки альянса"
 
     private val suppressUntilByText = ConcurrentHashMap<String, Long>()
 
@@ -37,12 +33,12 @@ internal object OverlayQuickCommandStripPolicy {
         return System.currentTimeMillis() < until
     }
 
-    /** Detects coordinate quick commands and excavation notify without coords. */
+    /** Detects coordinate quick commands and game-event notify texts. */
     fun isQuickCommandShape(text: String): Boolean {
         val t = normalizeText(text)
         if (t.isEmpty()) return false
         if (MapCoordinateParser.parse(t) != null) return true
-        return isExcavationNotify(t)
+        return GameEventCatalog.allMessageTexts().contains(t)
     }
 
     private fun normalizeText(text: String): String = text.trim()

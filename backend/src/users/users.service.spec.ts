@@ -297,7 +297,7 @@ describe('UsersService', () => {
       );
       expect(out).toEqual(['t1']);
       const call = findForAlliance.mock.calls[0][0] as Record<string, unknown>;
-      expect(call.excavationPushEnabled).toEqual({ $ne: false });
+      expect(call.excavationPushEnabled).toBeUndefined();
       expect(call.$or).toBeDefined();
     });
 
@@ -322,6 +322,35 @@ describe('UsersService', () => {
         });
       const out = await usersService.collectPushTokensForExcavationAlert(
         'ally1',
+        exclude.toHexString(),
+      );
+      expect(out).toEqual(['keep']);
+    });
+  });
+
+  describe('collectPushTokensForGameEvent', () => {
+    it('skips tokens for users who opted out of the event', async () => {
+      const exclude = new Types.ObjectId();
+      execCollect.mockResolvedValue([
+        {
+          _id: new Types.ObjectId(),
+          pushFcmTokens: ['skip'],
+          gameEventPushEnabled: { pve_gather_5m: false },
+        },
+        {
+          _id: new Types.ObjectId(),
+          pushFcmTokens: ['keep'],
+          gameEventPushEnabled: {},
+        },
+      ]);
+      execFindByIdLean.mockResolvedValue({
+        presenceStatus: 'online',
+        lastPresenceAt: new Date(0),
+        membershipStatus: TeamMembershipStatus.ACTIVE,
+      });
+      const out = await usersService.collectPushTokensForGameEvent(
+        'ally1',
+        'pve_gather_5m',
         exclude.toHexString(),
       );
       expect(out).toEqual(['keep']);

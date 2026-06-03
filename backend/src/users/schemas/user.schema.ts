@@ -94,9 +94,13 @@ export class User {
   @Prop({ type: String, default: null, trim: true, lowercase: true })
   telegramUsername: string | null;
 
-  /** Push when allies post excavation coords from overlay (off-game allies). */
+  /** @deprecated Synced with gameEventPushEnabled.hq_excavation */
   @Prop({ type: Boolean, default: true })
   excavationPushEnabled: boolean;
+
+  /** Per game-event push toggles; missing key = enabled. */
+  @Prop({ type: Object, default: {} })
+  gameEventPushEnabled: Record<string, boolean>;
 
   /** Игровые ники по серверам; команда привязана к записи, не к аккаунту целиком. */
   @Prop({ type: [GameIdentitySchema], default: [] })

@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.overlay
 
+import com.lastasylum.alliance.gameevents.GameEventCatalog
 import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -36,8 +37,15 @@ class OverlayQuickCommandStripPolicyTest {
     }
 
     @Test
-    fun excavationNotifyShapeDetected() {
-        assertTrue(OverlayQuickCommandStripPolicy.isQuickCommandShape("Раскопки альянса"))
+    fun gameEventNotifyShapesDetected() {
+        for (text in GameEventCatalog.allMessageTexts()) {
+            assertTrue("expected quick-command shape: $text", OverlayQuickCommandStripPolicy.isQuickCommandShape(text))
+        }
+    }
+
+    @Test
+    fun legacyExcavationTextWithoutPrefixNotDetected() {
+        assertFalse(OverlayQuickCommandStripPolicy.isQuickCommandShape("Раскопки альянса"))
     }
 
     @Test

@@ -60,12 +60,12 @@ class OverlayCommandsPopover(
     private val mainHandler: Handler,
     private val scope: CoroutineScope,
     private val dp: (Int) -> Int,
-    private val sendCoords: suspend (label: String, x: Int, y: Int, excavation: Boolean) -> Result<ChatMessage>,
-    private val notifyExcavation: suspend () -> Result<ChatMessage>,
+    private val sendCoords: suspend (label: String, x: Int, y: Int) -> Result<ChatMessage>,
+    private val notifyGameEvent: suspend (eventId: String) -> Result<ChatMessage>,
     private val warmupOverlayRaid: () -> Unit = {},
-    private val prepareOptimisticRaidQuickCommand: (label: String, x: Int, y: Int, excavation: Boolean) -> String? =
-        { _, _, _, _ -> null },
-    private val prepareOptimisticRaidNotify: () -> String? = { null },
+    private val prepareOptimisticRaidQuickCommand: (label: String, x: Int, y: Int) -> String? =
+        { _, _, _ -> null },
+    private val prepareOptimisticGameEvent: (eventId: String) -> String? = { null },
     private val removeOptimisticRaidSend: (pendingId: String) -> Unit = {},
     private val emitOverlayReaction: (targetUserId: String, reactionId: String) -> Unit = { _, _ -> },
     private val emitOverlayReactionReply: (targetUserId: String, reactionId: String, replyToLogId: String) -> Unit =
@@ -577,7 +577,7 @@ class OverlayCommandsPopover(
         val accentColor: Int,
         val options: List<CommandOption>? = null,
         val hintRes: Int? = null,
-        val excavation: Boolean = false,
+        val isPush: Boolean = false,
         val isReactions: Boolean = false,
     )
 
@@ -684,7 +684,7 @@ class OverlayCommandsPopover(
         }
     }
 
-    private fun openCoordsFromMenu(commandLabel: String, excavation: Boolean) {
+    private fun openCoordsFromMenu(commandLabel: String) {
         val wm = attachedWindowManager ?: return
         hideCoordOnly()
         removeShell(menuScrim)
@@ -692,7 +692,6 @@ class OverlayCommandsPopover(
         showCoordinateDialog(
             windowManager = wm,
             commandLabel = commandLabel,
-            excavation = excavation,
         )
     }
 
@@ -741,12 +740,12 @@ class OverlayCommandsPopover(
                 ),
             ),
             CommandCategory(
-                titleRes = R.string.overlay_cmd_column_excavation,
-                shortLabelRes = R.string.overlay_cmd_tab_excavation,
-                iconRes = R.drawable.ic_overlay_cmd_excavation,
-                accentColor = Color.parseColor("#FF7E57C2"),
-                hintRes = R.string.overlay_cmd_excavation_hint,
-                excavation = true,
+                titleRes = R.string.overlay_cmd_column_push,
+                shortLabelRes = R.string.overlay_cmd_tab_push,
+                iconRes = R.drawable.ic_overlay_send,
+                accentColor = Color.parseColor("#FF5C6BC0"),
+                hintRes = R.string.overlay_cmd_push_hint,
+                isPush = true,
             ),
             CommandCategory(
                 titleRes = R.string.overlay_cmd_column_reactions,
@@ -1274,6 +1273,50 @@ class OverlayCommandsPopover(
             )
         }
 
+        val gameEventPushCompose = ComposeView(context).apply {
+            setContent {
+                SquadRelayTheme {
+                    OverlayGameEventPushPanel(
+                        onNotify = { event ->
+                            val pendingId = prepareOptimisticGameEvent(event.id)
+                            CombatOverlayService.extendInGameOverlayUiHold()
+                            hide()
+                            scope.launch {
+                                CombatOverlayService.warmupRaidForQuickCommandSend()
+                                val result = notifyGameEvent(event.id)
+                                mainHandler.post {
+                                    result.onFailure { e ->
+                                        pendingId?.let(removeOptimisticRaidSend)
+                                        val msg = when (e.message) {
+                                            "no_room" -> context.getString(R.string.overlay_strip_no_room)
+                                            "no_raid" -> context.getString(R.string.overlay_strip_no_raid)
+                                            else ->
+                                                e.message?.takeIf { it.isNotBlank() }
+                                                    ?: context.getString(
+                                                        R.string.overlay_history_send_failed,
+                                                        e.javaClass.simpleName,
+                                                    )
+                                        }
+                                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            }
+                        },
+                    )
+                }
+            }
+        }
+        val gameEventPushHost = FrameLayout(context).apply {
+            visibility = View.GONE
+            addView(
+                gameEventPushCompose,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+        }
+
         val bodyColumn = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(2), dp(14), dp(12))
@@ -1317,24 +1360,12 @@ class OverlayCommandsPopover(
         }
 
         fun refreshPrimaryAction(cat: CommandCategory) {
-            when {
-                cat.excavation -> {
-                    coordsLabel.text = context.getString(R.string.overlay_cmd_excavation_notify)
-                    coordsIcon.setImageDrawable(
-                        AppCompatResources.getDrawable(context, R.drawable.ic_overlay_send)?.mutate()?.also { d ->
-                            DrawableCompat.setTint(d, Color.parseColor("#FF8FAEFF"))
-                        },
-                    )
-                }
-                else -> {
-                    coordsLabel.text = context.getString(R.string.overlay_cmd_column_open_coords)
-                    coordsIcon.setImageDrawable(
-                        AppCompatResources.getDrawable(context, R.drawable.ic_overlay_cmd_coords)?.mutate()?.also { d ->
-                            DrawableCompat.setTint(d, Color.parseColor("#FF8FAEFF"))
-                        },
-                    )
-                }
-            }
+            coordsLabel.text = context.getString(R.string.overlay_cmd_column_open_coords)
+            coordsIcon.setImageDrawable(
+                AppCompatResources.getDrawable(context, R.drawable.ic_overlay_cmd_coords)?.mutate()?.also { d ->
+                    DrawableCompat.setTint(d, Color.parseColor("#FF8FAEFF"))
+                },
+            )
         }
 
         fun rebuildOptionsForCategory(cat: CommandCategory) {
@@ -1383,13 +1414,25 @@ class OverlayCommandsPopover(
             if (cat.isReactions) {
                 ensurePopoverSuppressHeld()
                 coordsAction.visibility = View.GONE
+                gameEventPushHost.visibility = View.GONE
                 reactionRow?.visibility = View.VISIBLE
                 updateStickerPackPickerVisibility()
                 startReactionStripPreviews()
                 reactionRow?.post { invalidateReactionBurstAnchor() }
+            } else if (cat.isPush) {
+                stopHeartPreviewPulse()
+                coordsAction.visibility = View.GONE
+                reactionRow?.visibility = View.GONE
+                gameEventPushHost.visibility = View.VISIBLE
+                reactionStickerPackPicker.dismissPicker()
+                reactionStickerPackPicker.root.visibility = View.GONE
+                categoryHint.visibility = View.VISIBLE
+                categoryHint.text = context.getString(R.string.overlay_cmd_push_hint)
+                invalidateReactionBurstAnchor()
             } else {
                 stopHeartPreviewPulse()
                 coordsAction.visibility = View.VISIBLE
+                gameEventPushHost.visibility = View.GONE
                 reactionRow?.visibility = View.GONE
                 reactionStickerPackPicker.dismissPicker()
                 reactionStickerPackPicker.root.visibility = View.GONE
@@ -1460,6 +1503,13 @@ class OverlayCommandsPopover(
             ).apply { topMargin = dp(10) },
         )
         bodyColumn.addView(
+            gameEventPushHost,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(8) },
+        )
+        bodyColumn.addView(
             coordsAction,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -1470,39 +1520,14 @@ class OverlayCommandsPopover(
         close.setOnClickListener { hide() }
         coordsAction.setOnClickListener {
             val cat = categories[selectedCategoryIndex]
-            if (cat.excavation) {
-                val pendingId = prepareOptimisticRaidNotify()
-                CombatOverlayService.extendInGameOverlayUiHold()
-                hide()
-                scope.launch {
-                    CombatOverlayService.warmupRaidForQuickCommandSend()
-                    val result = notifyExcavation()
-                    mainHandler.post {
-                        result.onFailure { e ->
-                            pendingId?.let(removeOptimisticRaidSend)
-                            val msg = when (e.message) {
-                                "no_room" -> context.getString(R.string.overlay_strip_no_room)
-                                "no_raid" -> context.getString(R.string.overlay_strip_no_raid)
-                                else ->
-                                    e.message?.takeIf { it.isNotBlank() }
-                                        ?: context.getString(
-                                            R.string.overlay_history_send_failed,
-                                            e.javaClass.simpleName,
-                                        )
-                            }
-                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-                        }
-                    }
-                }
-                return@setOnClickListener
-            }
+            if (cat.isPush) return@setOnClickListener
             val label = if (cat.options != null) {
                 val idx = selectedOptionIndex.coerceIn(0, cat.options.lastIndex)
                 context.getString(cat.options[idx].labelCommandRes)
             } else {
                 context.getString(cat.titleRes)
             }
-            openCoordsFromMenu(label, excavation = false)
+            openCoordsFromMenu(label)
         }
 
         val reactionsIndex = categories.indexOfFirst { it.isReactions }
@@ -1577,7 +1602,6 @@ class OverlayCommandsPopover(
     private fun showCoordinateDialog(
         windowManager: WindowManager,
         commandLabel: String,
-        excavation: Boolean,
     ) {
         ensurePopoverSuppressHeld()
         CombatOverlayService.extendInGameOverlayUiHold()
@@ -1776,7 +1800,7 @@ class OverlayCommandsPopover(
             }
             hideKeyboard(editX)
             hideKeyboard(editY)
-            val pendingId = prepareOptimisticRaidQuickCommand(commandLabel, xv, yv, excavation)
+            val pendingId = prepareOptimisticRaidQuickCommand(commandLabel, xv, yv)
             if (pendingId == null) {
                 Toast.makeText(context, R.string.overlay_strip_no_raid, Toast.LENGTH_SHORT).show()
             }
@@ -1784,7 +1808,7 @@ class OverlayCommandsPopover(
             hideCoordOnly()
             scope.launch {
                 CombatOverlayService.warmupRaidForQuickCommandSend()
-                val result = sendCoords(commandLabel, xv, yv, excavation)
+                val result = sendCoords(commandLabel, xv, yv)
                 mainHandler.post {
                     result.onFailure { e ->
                         pendingId?.let(removeOptimisticRaidSend)

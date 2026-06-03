@@ -26,7 +26,13 @@ class ChatRepository(
         replyToMessageId: String? = null,
         attachments: List<String>? = null,
         excavationAlert: Boolean = false,
-    ): Result<ChatMessage> = rest.sendMessage(text, roomId, replyToMessageId, attachments, excavationAlert)
+    ): Result<ChatMessage> = rest.sendMessage(
+        text = text,
+        roomId = roomId,
+        replyToMessageId = replyToMessageId,
+        attachments = attachments,
+        excavationAlert = excavationAlert,
+    )
 
     suspend fun sendExcavationAlertWithRetries(text: String, roomId: String): Result<ChatMessage> =
         rest.sendExcavationAlertWithRetries(
@@ -83,11 +89,11 @@ class ChatRepository(
     suspend fun sendOverlayRaidCommandFast(
         text: String,
         roomId: String,
-        excavationAlert: Boolean = false,
+        gameEventAlert: String? = null,
     ): Result<ChatMessage> = rest.sendOverlayRaidCommandFast(
         text = text,
         roomId = roomId,
-        excavationAlert = excavationAlert,
+        gameEventAlert = gameEventAlert,
     )
 
     suspend fun uploadImageFile(roomId: String, file: File, mimeType: String): Result<UploadChatAttachmentResponse> =

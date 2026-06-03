@@ -708,6 +708,17 @@
     <string name="overlay_cmd_tab_reactions">Реакции</string>
     <string name="overlay_cmd_tab_reinf">Подкр.</string>
     <string name="overlay_cmd_tab_excavation">Раскопки</string>
+    <string name="overlay_cmd_tab_push">Push</string>
+    <string name="overlay_cmd_column_push">Игровые события</string>
+    <string name="overlay_cmd_push_hint">Push союзникам вне игры; в игре — карточка в ленте</string>
+    <string name="overlay_game_event_pick_hint">Выберите событие</string>
+    <string name="game_event_section_hq">[ШТАБ]</string>
+    <string name="game_event_section_pve">[PvE]</string>
+    <string name="game_event_section_pvp">[PvP]</string>
+    <string name="settings_game_events_push_section">Игровые события</string>
+    <string name="settings_game_event_push_subtitle">Push, когда вы не в игре</string>
+    <string name="game_event_push_group_name">Игровые события</string>
+    <string name="game_event_push_channel_desc">Оповещение: %1$s</string>
     <string name="overlay_excavation_message">Раскопки альянса X:%1$d Y:%2$d</string>
     <string name="overlay_excavation_notify_message">Раскопки альянса</string>
     <string name="overlay_cmd_column_excavation">Раскопки</string>

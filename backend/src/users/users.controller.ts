@@ -103,7 +103,7 @@ export class UsersController {
   ) {
     const updated = await this.usersService.updateNotificationPreferences(
       req.user.userId,
-      dto.excavationPushEnabled,
+      dto,
     );
     if (!updated) {
       throw new NotFoundException('User not found');

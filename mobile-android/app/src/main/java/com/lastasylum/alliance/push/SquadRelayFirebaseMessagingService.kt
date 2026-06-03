@@ -1,6 +1,7 @@
 package com.lastasylum.alliance.push
 
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.gameevents.GameEventCatalog
 import com.lastasylum.alliance.overlay.CombatOverlayService
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
@@ -14,7 +15,7 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onCreate() {
         super.onCreate()
-        ExcavationPushNotifications.ensureChannel(this)
+        GameEventPushNotifications.ensureChannels(this)
     }
 
     override fun onNewToken(token: String) {
@@ -27,32 +28,45 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
         val dataType = message.data["type"]
-        if (dataType == "excavation_alert") {
-            val app = applicationContext
-            val prefs = AppContainer.from(app).userSettingsPreferences
-            if (!prefs.isExcavationPushEnabled()) {
-                return
-            }
-            // В игре с оверлеем — сокет/лента; push только вне матча (не привязываем к overlayVisible:
-            // на части устройств окна остаются attached в GONE и ложно блокировали FCM).
-            if (CombatOverlayService.inGameOverlayUiActive.value) {
-                return
-            }
-            val title = message.data["title"]
-                ?: message.notification?.title
-                ?: getString(com.lastasylum.alliance.R.string.excavation_push_default_title)
-            val body = message.data["body"]
-                ?: message.notification?.body
-                ?: message.data["senderName"]
-                ?: ""
-            ExcavationPushNotifications.show(
-                context = applicationContext,
-                title = title,
-                body = body,
-                roomId = message.data["roomId"],
+        when (dataType) {
+            "game_event_alert" -> handleGameEventAlert(message)
+            "excavation_alert" -> handleGameEventAlert(
+                message,
+                fallbackEventId = "hq_excavation",
             )
+            else -> super.onMessageReceived(message)
+        }
+    }
+
+    private fun handleGameEventAlert(
+        message: RemoteMessage,
+        fallbackEventId: String? = null,
+    ) {
+        val eventId = message.data["eventId"]?.trim()
+            ?: fallbackEventId
+            ?: return
+        val event = GameEventCatalog.byId(eventId) ?: return
+        val app = applicationContext
+        val prefs = AppContainer.from(app).userSettingsPreferences
+        if (!prefs.isGameEventPushEnabled(eventId)) {
             return
         }
-        super.onMessageReceived(message)
+        if (CombatOverlayService.inGameOverlayUiActive.value) {
+            return
+        }
+        val title = message.data["title"]
+            ?: message.notification?.title
+            ?: event.messageText
+        val body = message.data["body"]
+            ?: message.notification?.body
+            ?: message.data["senderName"]
+            ?: event.messageText
+        GameEventPushNotifications.show(
+            context = app,
+            event = event,
+            title = title,
+            body = body,
+            roomId = message.data["roomId"],
+        )
     }
 }

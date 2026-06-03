@@ -35,8 +35,14 @@ export class CreateMessageDto {
   @IsMongoId({ each: true })
   attachments?: string[];
 
-  /** Overlay «Раскопки»: отдельный push союзникам вне игры (см. [PushNotificationsService.notifyExcavationAlert]). */
+  /** @deprecated Use gameEventAlert (hq_excavation). */
   @IsOptional()
   @IsBoolean()
   excavationAlert?: boolean;
+
+  /** Overlay game event id from [GAME_EVENT_CATALOG] — push + raid alert. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  gameEventAlert?: string;
 }

@@ -179,28 +179,31 @@ class CombatOverlayService : Service() {
             mainHandler = mainHandler,
             scope = serviceScope,
             dp = { dp(it) },
-            sendCoords = { label, x, y, excavation ->
+            sendCoords = { label, x, y ->
                 sendOverlayRaidQuickCommandHttp(
-                    text = formatOverlayRaidQuickCommandText(label, x, y, excavation),
-                    excavationAlert = excavation,
+                    text = formatOverlayRaidQuickCommandText(label, x, y),
                 )
             },
-            notifyExcavation = {
+            notifyGameEvent = { eventId ->
+                val event = com.lastasylum.alliance.gameevents.GameEventCatalog.byId(eventId)
+                    ?: return@OverlayCommandsPopover Result.failure(
+                        IllegalArgumentException("invalid_event"),
+                    )
                 sendOverlayRaidQuickCommandHttp(
-                    text = getString(R.string.overlay_excavation_notify_message),
-                    excavationAlert = true,
+                    text = event.messageText,
+                    gameEventAlert = eventId,
                 )
             },
             warmupOverlayRaid = { warmupOverlayRaidForQuickCommands() },
-            prepareOptimisticRaidQuickCommand = { label, x, y, excavation ->
+            prepareOptimisticRaidQuickCommand = { label, x, y ->
                 postOptimisticOverlayRaidQuickCommand(
-                    formatOverlayRaidQuickCommandText(label, x, y, excavation),
+                    formatOverlayRaidQuickCommandText(label, x, y),
                 )
             },
-            prepareOptimisticRaidNotify = {
-                postOptimisticOverlayRaidQuickCommand(
-                    getString(R.string.overlay_excavation_notify_message),
-                )
+            prepareOptimisticGameEvent = { eventId ->
+                val event = com.lastasylum.alliance.gameevents.GameEventCatalog.byId(eventId)
+                    ?: return@OverlayCommandsPopover null
+                postOptimisticOverlayRaidQuickCommand(event.messageText)
             },
             removeOptimisticRaidSend = { pendingId ->
                 pendingQuickCommandTexts.remove(pendingId)?.let { text ->
@@ -4042,18 +4045,13 @@ class CombatOverlayService : Service() {
         label: String,
         x: Int,
         y: Int,
-        excavation: Boolean,
     ): String =
-        if (excavation) {
-            getString(R.string.overlay_excavation_message, x, y)
-        } else {
-            com.lastasylum.alliance.game.MapCoordinateFormatter.format(
-                label = label,
-                targetName = null,
-                x = x,
-                y = y,
-            )
-        }
+        com.lastasylum.alliance.game.MapCoordinateFormatter.format(
+            label = label,
+            targetName = null,
+            x = x,
+            y = y,
+        )
 
     /** Register outgoing quick command; no strip card for sender (receivers get socket ingest). */
     private fun postOptimisticOverlayRaidQuickCommand(text: String): String? {
@@ -4096,7 +4094,7 @@ class CombatOverlayService : Service() {
 
     private suspend fun sendOverlayRaidQuickCommandHttp(
         text: String,
-        excavationAlert: Boolean,
+        gameEventAlert: String? = null,
     ): Result<ChatMessage> {
         val repo = AppContainer.from(this@CombatOverlayService).chatRepository
         val roomId = ensureOverlayRaidRoomReadyForSend()
@@ -4104,7 +4102,7 @@ class CombatOverlayService : Service() {
         val result = repo.sendOverlayRaidCommandFast(
             text = text,
             roomId = roomId,
-            excavationAlert = excavationAlert,
+            gameEventAlert = gameEventAlert,
         )
         result.onSuccess { sent ->
             mainHandler.post {

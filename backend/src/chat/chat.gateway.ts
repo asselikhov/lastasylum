@@ -29,6 +29,7 @@ import { ChatAttachmentsService } from './chat-attachments.service';
 import { OverlayReactionLogService } from './overlay-reaction-log.service';
 import { normalizeOverlayChatStickerReaction } from './overlay-sticker-reaction.util';
 import { filterPersonalChatFanoutUserIds } from './chat-realtime-broadcast.util';
+import { resolveGameEventId } from '../game-events/game-event-catalog';
 
 /** Must match overlay reaction ids in Android OverlayQuickReactions.kt */
 const ALLOWED_OVERLAY_ANIMATION_REACTIONS = [
@@ -222,12 +223,16 @@ export class ChatGateway {
             (message as { _id?: { toString?: () => string } })._id != null
           ? (message as { _id: { toString: () => string } })._id.toString()
           : '';
+    const gameEventId = resolveGameEventId(
+      payload.gameEventAlert,
+      payload.excavationAlert,
+    );
     await this.afterMessageCreated({
       roomId,
       message,
       senderUserId: client.data.user.userId,
-      excavationAlert: payload.excavationAlert === true,
-      excavationText: payload.text?.trim() ?? '',
+      gameEventId,
+      gameEventText: payload.text?.trim() ?? '',
       messageAllianceId:
         typeof (message as { allianceId?: string }).allianceId === 'string'
           ? (message as { allianceId: string }).allianceId
@@ -610,14 +615,14 @@ export class ChatGateway {
   }
 
   /**
-   * HTTP + WS: broadcast message, unread snapshots, optional excavation push.
+   * HTTP + WS: broadcast message, unread snapshots, optional game-event push.
    */
   async afterMessageCreated(input: {
     roomId: string;
     message: unknown;
     senderUserId: string;
-    excavationAlert?: boolean;
-    excavationText?: string;
+    gameEventId?: string | null;
+    gameEventText?: string;
     messageAllianceId?: string;
     messageId?: string;
     senderName?: string;
@@ -631,17 +636,19 @@ export class ChatGateway {
       senderUserId,
     );
     await this.notifyRoomUnreadAfterNewMessage(roomId, senderUserId);
+    const eventId = input.gameEventId?.trim();
     if (
-      input.excavationAlert &&
+      eventId &&
       input.messageAllianceId &&
       input.messageAllianceId !== GLOBAL_CHAT_ALLIANCE_ID
     ) {
       void this.pushNotifications
-        .notifyExcavationAlert({
+        .notifyGameEventAlert({
           allianceId: input.messageAllianceId,
           excludeUserId: senderUserId,
+          eventId,
           senderName: input.senderName ?? '',
-          body: input.excavationText ?? '',
+          body: input.gameEventText ?? '',
           data: {
             roomId,
             messageId: input.messageId ?? '',

@@ -29,6 +29,7 @@ class ChatRestRepository(
         roomId: String,
         replyToMessageId: String? = null,
         attachments: List<String>? = null,
+        gameEventAlert: String? = null,
         excavationAlert: Boolean = false,
     ): Result<ChatMessage> =
         runCatching {
@@ -38,7 +39,8 @@ class ChatRestRepository(
                     roomId = roomId,
                     replyToMessageId = replyToMessageId,
                     attachments = attachments,
-                    excavationAlert = if (excavationAlert) true else null,
+                    gameEventAlert = gameEventAlert,
+                    excavationAlert = if (gameEventAlert == null && excavationAlert) true else null,
                 ),
             )
         }
@@ -60,7 +62,13 @@ class ChatRestRepository(
     ): Result<ChatMessage> {
         var last: Throwable? = null
         repeat(3) { attempt ->
-            val r = sendMessage(text, roomId, replyToMessageId, attachments, excavationAlert)
+            val r = sendMessage(
+                text = text,
+                roomId = roomId,
+                replyToMessageId = replyToMessageId,
+                attachments = attachments,
+                excavationAlert = excavationAlert,
+            )
             if (r.isSuccess) {
                 r.getOrNull()?.let { sent -> onHttpSuccess?.invoke(sent) }
                 return r
@@ -77,11 +85,11 @@ class ChatRestRepository(
     suspend fun sendOverlayRaidCommandFast(
         text: String,
         roomId: String,
-        excavationAlert: Boolean = false,
+        gameEventAlert: String? = null,
     ): Result<ChatMessage> {
         var last: Throwable? = null
         repeat(2) { attempt ->
-            val r = sendMessage(text, roomId, excavationAlert = excavationAlert)
+            val r = sendMessage(text, roomId, gameEventAlert = gameEventAlert)
             if (r.isSuccess) return r
             last = r.exceptionOrNull()
             if (attempt < 1) delay(80L)
