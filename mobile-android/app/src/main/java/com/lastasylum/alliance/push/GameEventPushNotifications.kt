@@ -104,13 +104,18 @@ object GameEventPushNotifications {
         val senderHeader = senderLine.ifBlank {
             senderNickname.trim().ifBlank { " " }
         }
-        val personLabel = senderNickname.trim().ifBlank { " " }
+        val personLabel = senderNickname.trim().ifBlank {
+            senderLine.toString().trim().ifBlank { "?" }
+        }
         val senderPersonBuilder = Person.Builder().setName(personLabel)
         senderLargeIcon?.let { bmp ->
             senderPersonBuilder.setIcon(IconCompat.createWithBitmap(bmp))
         }
         val senderPerson = senderPersonBuilder.build()
-        val localPerson = Person.Builder().setName("").build()
+        // MessagingStyle requires a non-empty local user name (API 28+).
+        val localPerson = Person.Builder()
+            .setName(context.getString(R.string.app_name))
+            .build()
         val eventMessage = SpannableString(gameEventLine)
         val style = NotificationCompat.MessagingStyle(localPerson)
             .setConversationTitle(senderHeader)
