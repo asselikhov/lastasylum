@@ -84,7 +84,7 @@ object GameEventPushNotifications {
         senderLine: CharSequence,
         teamDisplayName: String,
         senderNickname: String = "",
-        senderLargeIcon: Bitmap? = null,
+        senderLargeIcon: Bitmap,
     ) {
         ensureChannels(context)
         val launch = Intent(context, MainActivity::class.java).apply {
@@ -135,7 +135,7 @@ object GameEventPushNotifications {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             builder.setColorized(true)
         }
-        senderLargeIcon?.let { builder.setLargeIcon(it) }
+        builder.setLargeIcon(senderLargeIcon)
         val notification = builder.build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val granted = ContextCompat.checkSelfPermission(

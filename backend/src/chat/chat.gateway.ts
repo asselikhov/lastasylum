@@ -692,6 +692,12 @@ export class ChatGateway {
           senderUserId,
           input.messageAllianceId,
         );
+      let senderTelegramUsername = pushSender.senderTelegramUsername;
+      if (!senderTelegramUsername) {
+        const telegramMap =
+          await this.usersService.findTelegramUsernamesByIds([senderUserId]);
+        senderTelegramUsername = (telegramMap.get(senderUserId) ?? '').trim();
+      }
       void this.pushNotifications
         .notifyGameEventAlert({
           allianceId: input.messageAllianceId,
@@ -699,7 +705,7 @@ export class ChatGateway {
           eventId,
           senderName,
           senderLine,
-          senderTelegramUsername: pushSender.senderTelegramUsername,
+          senderTelegramUsername,
           senderSquadRole: pushSender.senderSquadRole,
           senderTeamTag: pushSender.senderTeamTag,
           senderServerNumber: pushSender.senderServerNumber,

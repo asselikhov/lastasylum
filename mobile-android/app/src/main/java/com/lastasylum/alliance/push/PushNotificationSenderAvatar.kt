@@ -10,12 +10,12 @@ import android.graphics.Typeface
 import android.text.TextPaint
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.scale
-import coil3.ImageLoader
-import coil3.request.ImageRequest
+import coil3.imageLoader
+import coil3.request.ErrorResult
 import coil3.request.SuccessResult
-import coil3.request.allowHardware
 import coil3.toBitmap
 import androidx.compose.ui.graphics.toArgb
+import com.lastasylum.alliance.ui.chat.SquadRelayImageRequests
 import com.lastasylum.alliance.ui.theme.roleAccentColor
 import com.lastasylum.alliance.ui.theme.roleOnAccentColor
 import com.lastasylum.alliance.ui.util.telegramAvatarUrl
@@ -31,32 +31,36 @@ object PushNotificationSenderAvatar {
         telegramUsername: String?,
         squadRole: String?,
         fallbackName: String?,
-    ): Bitmap? = withContext(Dispatchers.IO) {
-        runCatching {
-            val avatar = loadAvatarBitmap(context, telegramUsername, fallbackName)
-            composeWithRank(avatar, squadRole, fallbackName)
-        }.getOrNull()
+    ): Bitmap = withContext(Dispatchers.IO) {
+        val avatar = loadAvatarBitmapWithRetry(context, telegramUsername, fallbackName)
+        composeWithRank(avatar, squadRole, fallbackName)
     }
 
-    private suspend fun loadAvatarBitmap(
+    private suspend fun loadAvatarBitmapWithRetry(
         context: Context,
         telegramUsername: String?,
         fallbackName: String?,
     ): Bitmap? {
         val url = telegramAvatarUrl(telegramUsername)
-        if (!url.isNullOrBlank()) {
-            val loader = ImageLoader(context.applicationContext)
-            val request = ImageRequest.Builder(context.applicationContext)
-                .data(url)
-                .size(OUTPUT_PX, OUTPUT_PX)
-                .allowHardware(false)
-                .build()
-            val result = loader.execute(request)
-            if (result is SuccessResult) {
-                return result.image.toBitmap().scale(OUTPUT_PX, OUTPUT_PX)
+        if (url.isNullOrBlank()) {
+            return null
+        }
+        val appContext = context.applicationContext
+        val loader = appContext.imageLoader
+        repeat(2) { attempt ->
+            val request = SquadRelayImageRequests.chatAvatar(appContext, url)
+            when (val result = loader.execute(request)) {
+                is SuccessResult -> {
+                    return result.image.toBitmap().scale(OUTPUT_PX, OUTPUT_PX)
+                }
+                is ErrorResult -> {
+                    if (attempt == 0) {
+                        kotlinx.coroutines.delay(280)
+                    }
+                }
             }
         }
-        return initialsBitmap(fallbackName)
+        return null
     }
 
     private fun initialsBitmap(fallbackName: String?): Bitmap {

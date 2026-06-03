@@ -41,7 +41,7 @@ object GameEventPushBannerRenderer {
         }
         canvas.drawRect(0f, 0f, WIDTH.toFloat(), HEIGHT.toFloat(), bg)
         drawAccentGlow(canvas, palette.glowColor)
-        drawWatermark(canvas, category, palette)
+        drawWatermark(canvas, context, category, palette)
         drawAttentionHeadline(
             canvas = canvas,
             context = context,
@@ -64,21 +64,34 @@ object GameEventPushBannerRenderer {
 
     private fun drawWatermark(
         canvas: Canvas,
+        context: Context,
         category: GameEventCategory,
         palette: CategoryPalette,
     ) {
-        val short = when (category) {
-            GameEventCategory.HQ -> "HQ"
+        val label = when (category) {
+            GameEventCategory.HQ -> context.getString(R.string.game_event_push_watermark_hq)
             GameEventCategory.PVE -> "PvE"
             GameEventCategory.PVP -> "PvP"
         }
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        val x = WIDTH * 0.58f
+        val y = HEIGHT * 0.78f
+        val textSize = 216f
+        val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = palette.watermark
-            alpha = 38
-            textSize = 200f
+            alpha = 42
+            this.textSize = textSize
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            style = Paint.Style.STROKE
+            strokeWidth = 2.5f
+        }
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = palette.watermark
+            alpha = 56
+            this.textSize = textSize
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
-        canvas.drawText(short, WIDTH * 0.58f, HEIGHT * 0.78f, paint)
+        canvas.drawText(label, x, y, stroke)
+        canvas.drawText(label, x, y, fill)
     }
 
     private fun drawAttentionHeadline(
@@ -92,8 +105,9 @@ object GameEventPushBannerRenderer {
         val inter = ResourcesCompat.getFont(context, R.font.inter)
             ?: Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
         val teamName = teamDisplayName.trim().ifBlank { "—" }
-        val prefix = attentionPrefix.ifEmpty { "Внимание " }
-        val suffix = attentionSuffix.ifEmpty { " !" }
+        val attentionWord = attentionPrefix.trim().ifEmpty { "Внимание" }
+        val exclamation = attentionSuffix.trim().ifEmpty { "!" }
+        val space = " "
 
         var textSize = 52f
         val maxWidth = WIDTH * 0.88f
@@ -119,9 +133,11 @@ object GameEventPushBannerRenderer {
             prefixPaint.textSize = size
             teamPaint.textSize = size * 1.08f
             suffixPaint.textSize = size
-            return prefixPaint.measureText(prefix) +
+            return prefixPaint.measureText(attentionWord) +
+                prefixPaint.measureText(space) +
                 teamPaint.measureText(teamName) +
-                suffixPaint.measureText(suffix)
+                suffixPaint.measureText(space) +
+                suffixPaint.measureText(exclamation)
         }
 
         while (totalWidth(textSize) > maxWidth && textSize > 34f) {
@@ -133,11 +149,15 @@ object GameEventPushBannerRenderer {
 
         val baseline = HEIGHT * 0.34f
         var x = left
-        canvas.drawText(prefix, x, baseline, prefixPaint)
-        x += prefixPaint.measureText(prefix)
-        canvas.drawText(teamName, x, baseline, teamPaint)
-        x += teamPaint.measureText(teamName)
-        canvas.drawText(suffix, x, baseline, suffixPaint)
+        fun drawSegment(text: String, paint: Paint) {
+            canvas.drawText(text, x, baseline, paint)
+            x += paint.measureText(text)
+        }
+        drawSegment(attentionWord, prefixPaint)
+        drawSegment(space, prefixPaint)
+        drawSegment(teamName, teamPaint)
+        drawSegment(space, suffixPaint)
+        drawSegment(exclamation, suffixPaint)
     }
 
     fun accentColor(category: GameEventCategory): Int =
