@@ -121,6 +121,20 @@ export class TeamsService {
     private readonly gameIdentities: GameIdentitiesService,
   ) {}
 
+  /** Display name for game-event push banner (FCM data). */
+  async findTeamDisplayName(teamId: string): Promise<string | null> {
+    if (!Types.ObjectId.isValid(teamId)) {
+      return null;
+    }
+    const row = await this.teamModel
+      .findById(teamId)
+      .select('displayName')
+      .lean<{ displayName?: string }>()
+      .exec();
+    const name = row?.displayName?.trim();
+    return name && name.length > 0 ? name : null;
+  }
+
   private async ensurePlayerTeamChatRooms(
     team: PlayerTeamDocument,
   ): Promise<void> {

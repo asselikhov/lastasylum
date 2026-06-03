@@ -718,6 +718,8 @@
     <string name="settings_game_events_push_section">Игровые события</string>
     <string name="settings_game_event_push_subtitle">Push, когда вы не в игре</string>
     <string name="game_event_push_group_name">Игровые события</string>
+    <string name="game_event_push_attention_prefix">Внимание </string>
+    <string name="game_event_push_attention_suffix"> !</string>
     <string name="game_event_push_channel_desc">Оповещение: %1$s</string>
     <string name="game_event_push_body_from">От %1$s</string>
     <string name="overlay_excavation_message">Раскопки альянса X:%1$d Y:%2$d</string>

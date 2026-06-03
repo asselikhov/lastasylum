@@ -65,6 +65,7 @@ export class PushNotificationsService implements OnModuleInit {
     senderSquadRole?: string;
     senderTeamTag?: string;
     senderServerNumber?: number | null;
+    senderTeamDisplayName?: string;
     body: string;
     data: Record<string, string>;
   }): Promise<void> {
@@ -99,6 +100,7 @@ export class PushNotificationsService implements OnModuleInit {
     const senderTelegram = (input.senderTelegramUsername ?? '').trim();
     const senderSquadRole = (input.senderSquadRole ?? '').trim().toUpperCase();
     const teamTag = (input.senderTeamTag ?? '').trim();
+    const teamDisplayName = (input.senderTeamDisplayName ?? '').trim();
     const serverNum = input.senderServerNumber;
     try {
       const res = await admin.messaging().sendEachForMulticast({
@@ -114,6 +116,7 @@ export class PushNotificationsService implements OnModuleInit {
           senderTelegramUsername: senderTelegram,
           senderSquadRole: senderSquadRole,
           senderTeamTag: teamTag,
+          teamDisplayName,
           senderServerNumber:
             typeof serverNum === 'number' && serverNum >= 1
               ? String(serverNum)

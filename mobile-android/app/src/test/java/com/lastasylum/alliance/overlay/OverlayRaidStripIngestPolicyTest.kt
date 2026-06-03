@@ -18,6 +18,32 @@ class OverlayRaidStripIngestPolicyTest {
     }
 
     @Test
+    fun inbound_game_event_drop_when_only_listener_without_ingame() {
+        assertFalse(
+            OverlayRaidStripIngestPolicy.shouldIngestInbound(
+                overlayRealtimeListenerActive = true,
+                overlayStripEnabled = true,
+                overlayIngamePresenceActive = false,
+                stripEligible = false,
+                isGameEventNotify = true,
+            ),
+        )
+    }
+
+    @Test
+    fun inbound_game_event_ingest_when_strip_eligible() {
+        assertTrue(
+            OverlayRaidStripIngestPolicy.shouldIngestInbound(
+                overlayRealtimeListenerActive = true,
+                overlayStripEnabled = true,
+                overlayIngamePresenceActive = false,
+                stripEligible = true,
+                isGameEventNotify = true,
+            ),
+        )
+    }
+
+    @Test
     fun inbound_ingest_when_ingame_presence_active() {
         assertTrue(
             OverlayRaidStripIngestPolicy.shouldIngestInbound(

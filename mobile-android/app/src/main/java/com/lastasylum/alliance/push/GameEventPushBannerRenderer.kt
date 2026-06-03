@@ -1,14 +1,15 @@
 package com.lastasylum.alliance.push
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.LinearGradient
 import android.graphics.Paint
-import android.graphics.Path
-import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
+import androidx.core.content.res.ResourcesCompat
 import androidx.core.graphics.createBitmap
+import com.lastasylum.alliance.R
 import com.lastasylum.alliance.gameevents.GameEventCategory
 import com.lastasylum.alliance.gameevents.GameEventCatalog
 
@@ -18,8 +19,11 @@ object GameEventPushBannerRenderer {
     private const val HEIGHT = 280
 
     fun createBanner(
+        context: Context,
         category: GameEventCategory,
-        categoryLabel: String,
+        teamDisplayName: String,
+        attentionPrefix: String,
+        attentionSuffix: String,
     ): Bitmap {
         val palette = paletteFor(category)
         val bitmap = createBitmap(WIDTH, HEIGHT)
@@ -37,8 +41,15 @@ object GameEventPushBannerRenderer {
         }
         canvas.drawRect(0f, 0f, WIDTH.toFloat(), HEIGHT.toFloat(), bg)
         drawAccentGlow(canvas, palette.glowColor)
-        drawCategoryPill(canvas, categoryLabel, palette)
         drawWatermark(canvas, category, palette)
+        drawAttentionHeadline(
+            canvas = canvas,
+            context = context,
+            teamDisplayName = teamDisplayName,
+            attentionPrefix = attentionPrefix,
+            attentionSuffix = attentionSuffix,
+            palette = palette,
+        )
         return bitmap
     }
 
@@ -49,41 +60,6 @@ object GameEventPushBannerRenderer {
         }
         canvas.drawCircle(WIDTH * 0.82f, HEIGHT * 0.22f, HEIGHT * 0.55f, glow)
         canvas.drawCircle(WIDTH * 0.12f, HEIGHT * 0.78f, HEIGHT * 0.38f, glow)
-    }
-
-    private fun drawCategoryPill(
-        canvas: Canvas,
-        label: String,
-        palette: CategoryPalette,
-    ) {
-        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = palette.pillText
-            textSize = 44f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        }
-        val padH = 36f
-        val padV = 22f
-        val textW = textPaint.measureText(label)
-        val boxW = textW + padH * 2f
-        val boxH = 44f + padV * 2f
-        val left = 40f
-        val top = 36f
-        val rect = RectF(left, top, left + boxW, top + boxH)
-        val path = Path().apply { addRoundRect(rect, 22f, 22f, Path.Direction.CW) }
-        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = palette.pillBg
-            alpha = 210
-        }
-        val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeWidth = 2f
-            color = palette.pillStroke
-            alpha = 180
-        }
-        canvas.drawPath(path, fill)
-        canvas.drawPath(path, stroke)
-        val textY = rect.centerY() - (textPaint.descent() + textPaint.ascent()) / 2f
-        canvas.drawText(label, rect.left + padH, textY, textPaint)
     }
 
     private fun drawWatermark(
@@ -103,6 +79,65 @@ object GameEventPushBannerRenderer {
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
         canvas.drawText(short, WIDTH * 0.58f, HEIGHT * 0.78f, paint)
+    }
+
+    private fun drawAttentionHeadline(
+        canvas: Canvas,
+        context: Context,
+        teamDisplayName: String,
+        attentionPrefix: String,
+        attentionSuffix: String,
+        palette: CategoryPalette,
+    ) {
+        val inter = ResourcesCompat.getFont(context, R.font.inter)
+            ?: Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
+        val teamName = teamDisplayName.trim().ifBlank { "—" }
+        val prefix = attentionPrefix.ifEmpty { "Внимание " }
+        val suffix = attentionSuffix.ifEmpty { " !" }
+
+        var textSize = 52f
+        val maxWidth = WIDTH * 0.88f
+        val left = WIDTH * 0.06f
+
+        val prefixPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = palette.pillText
+            alpha = 235
+            typeface = Typeface.create(inter, Typeface.NORMAL)
+        }
+        val teamPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = palette.pillStroke
+            typeface = Typeface.create(inter, Typeface.BOLD)
+            setShadowLayer(6f, 0f, 2f, 0x66000000)
+        }
+        val suffixPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = palette.pillText
+            alpha = 235
+            typeface = Typeface.create(inter, Typeface.NORMAL)
+        }
+
+        fun totalWidth(size: Float): Float {
+            prefixPaint.textSize = size
+            teamPaint.textSize = size * 1.08f
+            suffixPaint.textSize = size
+            return prefixPaint.measureText(prefix) +
+                teamPaint.measureText(teamName) +
+                suffixPaint.measureText(suffix)
+        }
+
+        while (totalWidth(textSize) > maxWidth && textSize > 34f) {
+            textSize -= 2f
+        }
+        prefixPaint.textSize = textSize
+        teamPaint.textSize = textSize * 1.08f
+        suffixPaint.textSize = textSize
+
+        val baseline = HEIGHT * 0.34f
+        var x = left
+        canvas.drawText(prefix, x, baseline, prefixPaint)
+        x += prefixPaint.measureText(prefix)
+        canvas.drawText(teamName, x, baseline, teamPaint)
+        x += teamPaint.measureText(teamName)
+        canvas.drawText(suffix, x, baseline, suffixPaint)
     }
 
     fun accentColor(category: GameEventCategory): Int =

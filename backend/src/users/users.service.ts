@@ -854,6 +854,32 @@ export class UsersService implements OnModuleInit {
     return out;
   }
 
+  /** Full team name for expanded game-event push banner. */
+  async resolveTeamDisplayNameForGameEventPush(
+    userId: string,
+    allianceId?: string,
+  ): Promise<string> {
+    if (Types.ObjectId.isValid(userId)) {
+      const row = await this.userModel
+        .findById(userId)
+        .select('teamDisplayName')
+        .lean<{ teamDisplayName?: string | null }>()
+        .exec();
+      const fromUser = row?.teamDisplayName?.trim();
+      if (fromUser) {
+        return fromUser;
+      }
+    }
+    const aid = (allianceId ?? '').trim();
+    if (aid.startsWith('pt:')) {
+      const fromTeam = await this.teamsService.findTeamDisplayName(aid.slice(3));
+      if (fromTeam) {
+        return fromTeam;
+      }
+    }
+    return '';
+  }
+
   async removeInvalidPushTokens(tokens: string[]): Promise<void> {
     const unique = [...new Set(tokens.filter((t) => t.trim().length > 0))];
     if (unique.length === 0) return;

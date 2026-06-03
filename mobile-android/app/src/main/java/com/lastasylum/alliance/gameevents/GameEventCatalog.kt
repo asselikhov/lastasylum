@@ -95,6 +95,9 @@ object GameEventCatalog {
 
     fun allMessageTexts(): Set<String> = all.map { it.messageText }.toSet()
 
+    fun isNotifyMessageText(text: String): Boolean =
+        allMessageTexts().contains(text.trim())
+
     fun eventsByCategory(category: GameEventCategory): List<GameEventDefinition> =
         all.filter { it.category == category }
 }

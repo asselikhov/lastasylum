@@ -68,6 +68,8 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
             ?: message.notification?.title?.trim()?.takeIf { it.isNotEmpty() }
             ?: event.messageText
         val nickname = message.data["senderName"]?.trim().orEmpty()
+        val teamDisplayName = message.data["teamDisplayName"]?.trim()?.ifBlank { null }
+            ?: AppContainer.from(app).usersRepository.peekMyProfile()?.teamDisplayName?.trim()
         val teamTag = message.data["senderTeamTag"]?.trim()?.ifBlank { null }
         val serverNumber = message.data["senderServerNumber"]?.toIntOrNull()?.takeIf { it > 0 }
         val senderLineColored = PushNotificationSenderLineSpans.build(
@@ -90,6 +92,7 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
                 eventText = eventText,
                 roomId = message.data["roomId"],
                 senderLine = senderLineColored,
+                teamDisplayName = teamDisplayName.orEmpty(),
                 senderNickname = nickname,
                 senderLargeIcon = largeIcon,
             )

@@ -657,13 +657,23 @@ export class ChatGateway {
     const roomId = input.roomId.trim();
     const senderUserId = input.senderUserId.trim();
     if (!roomId || !senderUserId) return;
-    this.broadcastNewMessageWithOverlayFanout(
-      roomId,
-      input.message,
-      senderUserId,
-    );
-    await this.notifyRoomUnreadAfterNewMessage(roomId, senderUserId);
     const eventId = input.gameEventId?.trim();
+    if (eventId) {
+      // Game events: raid strip only for ingame overlay teammates; offline allies get push only.
+      this.broadcastNewMessage(roomId, input.message);
+      void this.fanOutRaidMessageToIngameOverlayTeammates(
+        roomId,
+        input.message,
+        senderUserId,
+      );
+    } else {
+      this.broadcastNewMessageWithOverlayFanout(
+        roomId,
+        input.message,
+        senderUserId,
+      );
+    }
+    await this.notifyRoomUnreadAfterNewMessage(roomId, senderUserId);
     if (
       eventId &&
       input.messageAllianceId &&
@@ -677,6 +687,11 @@ export class ChatGateway {
         teamTag: pushSender.senderTeamTag || null,
         serverNumber: pushSender.senderServerNumber,
       });
+      const senderTeamDisplayName =
+        await this.usersService.resolveTeamDisplayNameForGameEventPush(
+          senderUserId,
+          input.messageAllianceId,
+        );
       void this.pushNotifications
         .notifyGameEventAlert({
           allianceId: input.messageAllianceId,
@@ -688,6 +703,7 @@ export class ChatGateway {
           senderSquadRole: pushSender.senderSquadRole,
           senderTeamTag: pushSender.senderTeamTag,
           senderServerNumber: pushSender.senderServerNumber,
+          senderTeamDisplayName,
           body: input.gameEventText ?? '',
           data: {
             roomId,

@@ -145,10 +145,17 @@ class OverlayChatStripBuffer(
      * ([_id] или [ChatMessage.stableKey]).
      */
     fun removeMessageWithKey(messageKey: String) {
+        val removedKeys = mutableListOf<String>()
         messages.removeAll { m ->
             val k = m._id?.takeIf { it.isNotBlank() } ?: m.stableKey()
-            k == messageKey
+            val drop = k == messageKey
+            if (drop) {
+                removedKeys.add(m.stableKey())
+                m._id?.takeIf { it.isNotBlank() }?.let { removedKeys.add(it) }
+            }
+            drop
         }
+        removedKeys.forEach { receivedAt.remove(it) }
         receivedAt.remove(messageKey)
     }
 

@@ -218,7 +218,10 @@ fun OverlayChatStrip(
                     msg = msg,
                     messageKey = key,
                     onNoticeClick = onNoticeClick,
-                    onDismiss = { onDismissMessage(msg) },
+                    onDismiss = {
+                        leaving[key] = true
+                        onDismissMessage(msg)
+                    },
                     onReportDismissBounds = { mk, rect -> reportBounds(mk, rect) },
                     onClearDismissRegion = { mk -> clearRegion(mk) },
                 )

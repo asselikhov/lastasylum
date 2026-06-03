@@ -107,6 +107,7 @@ import com.lastasylum.alliance.data.chat.chatImageAttachments
 import com.lastasylum.alliance.data.voice.VoiceChatSession
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.di.AppContainer
+import com.lastasylum.alliance.gameevents.GameEventCatalog
 import com.lastasylum.alliance.overlay.layout.OverlayLayoutDp
 import com.lastasylum.alliance.ui.screens.ChatScreen
 import com.lastasylum.alliance.ui.screens.TeamMainSection
@@ -3669,6 +3670,15 @@ class CombatOverlayService : Service() {
             mainHandler.post { dismissStripMessage(msg) }
             return
         }
+        val serverId = msg._id?.trim().orEmpty()
+        if (
+            serverId.isNotEmpty() &&
+            !serverId.startsWith("overlay-pending-") &&
+            !serverId.startsWith("pending-")
+        ) {
+            removeStripServerMessageAndOptimisticEchoes(serverId)
+            return
+        }
         val key = msg._id?.takeIf { it.isNotBlank() } ?: msg.stableKey()
         removeStripMessageByKey(key)
     }
@@ -3854,13 +3864,16 @@ class CombatOverlayService : Service() {
         return System.currentTimeMillis() - last < OVERLAY_INGAME_GRACE_MS
     }
 
-    private fun shouldIngestInboundRaidStrip(): Boolean =
-        OverlayRaidStripIngestPolicy.shouldIngestInbound(
+    private fun shouldIngestInboundRaidStrip(msg: ChatMessage? = null): Boolean {
+        val isGameEvent = msg?.text?.let { GameEventCatalog.isNotifyMessageText(it) } == true
+        return OverlayRaidStripIngestPolicy.shouldIngestInbound(
             overlayRealtimeListenerActive = overlayMessageListener != null,
             overlayStripEnabled = isOverlayChatStripEnabled(),
             overlayIngamePresenceActive = overlayIngamePresenceActive,
             stripEligible = isOverlayRaidStripEligible(),
+            isGameEventNotify = isGameEvent,
         )
+    }
 
     /** Показать ленту сразу при входящем raid-сообщении, не дожидаясь game-gate tick. */
     private fun revealStripForInboundRaidIfNeeded() {
@@ -4435,10 +4448,12 @@ class CombatOverlayService : Service() {
             }
             return
         }
+        val raidId = resolveOverlayRaidRoomId() ?: trustedOverlayRaidRoomId
+        val normalized = normalizeStripRaidMessage(msg, raidId)
         // Не копим карточки вне матча — иначе при входе в игру всплывает старый рейд-чат.
         if (!forceIngest) {
             val allowed = if (inbound) {
-                shouldIngestInboundRaidStrip()
+                shouldIngestInboundRaidStrip(normalized)
             } else {
                 OverlayRaidStripIngestPolicy.shouldIngestOutbound(isOverlayRaidStripEligible())
             }
@@ -4446,14 +4461,12 @@ class CombatOverlayService : Service() {
                 if (BuildConfig.DEBUG) {
                     Log.d(
                         OVERLAY_DIAG_TAG,
-                        "stripDrop reason=not_eligible id=${msg._id} inbound=$inbound",
+                        "stripDrop reason=not_eligible id=${normalized._id} inbound=$inbound",
                     )
                 }
                 return
             }
         }
-        val raidId = resolveOverlayRaidRoomId() ?: trustedOverlayRaidRoomId
-        val normalized = normalizeStripRaidMessage(msg, raidId)
         val selfId = jwtSubFromAccessToken()?.trim().orEmpty()
         if (!OverlayStripRecipientPolicy.shouldShowIncomingStripCard(normalized, selfId)) {
             if (BuildConfig.DEBUG) {
@@ -4945,7 +4958,7 @@ class CombatOverlayService : Service() {
                             OverlayQuickCommandStripPolicy.clearOutgoingQuickCommand(msg.text)
                         }
                     } else {
-                        val allowIngest = shouldIngestInboundRaidStrip()
+                        val allowIngest = shouldIngestInboundRaidStrip(normalized)
                         if (allowIngest) {
                             ingestOverlayRaidMessage(
                                 normalized,

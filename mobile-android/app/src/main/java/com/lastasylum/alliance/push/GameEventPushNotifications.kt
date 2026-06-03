@@ -14,7 +14,6 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import com.lastasylum.alliance.gameevents.GameEventCategory
 import com.lastasylum.alliance.MainActivity
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.gameevents.GameEventCatalog
@@ -83,6 +82,7 @@ object GameEventPushNotifications {
         eventText: String,
         roomId: String?,
         senderLine: CharSequence,
+        teamDisplayName: String,
         senderNickname: String = "",
         senderLargeIcon: Bitmap? = null,
     ) {
@@ -102,15 +102,20 @@ object GameEventPushNotifications {
         val senderHeader: CharSequence = senderLine.ifBlank {
             senderNickname.trim().ifBlank { "?" }
         }
-        val categoryLabel = categorySectionLabel(context, event.category)
+        val bannerTeamName = teamDisplayName.trim().ifBlank {
+            resolveTeamDisplayNameFallback(context, senderLine, senderNickname)
+        }
         val banner = GameEventPushBannerRenderer.createBanner(
+            context = context,
             category = event.category,
-            categoryLabel = categoryLabel,
+            teamDisplayName = bannerTeamName,
+            attentionPrefix = context.getString(R.string.game_event_push_attention_prefix),
+            attentionSuffix = context.getString(R.string.game_event_push_attention_suffix),
         )
         val style = NotificationCompat.BigPictureStyle()
             .bigPicture(banner)
-            .setBigContentTitle(gameEventLine)
-            .setSummaryText(senderHeader.toString())
+            .setBigContentTitle(senderHeader)
+            .setSummaryText(gameEventLine)
             .also { s ->
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     s.showBigPictureWhenCollapsed(false)
@@ -150,10 +155,26 @@ object GameEventPushNotifications {
         }
     }
 
-    private fun categorySectionLabel(context: Context, category: GameEventCategory): String =
-        when (category) {
-            GameEventCategory.HQ -> context.getString(R.string.game_event_section_hq)
-            GameEventCategory.PVE -> context.getString(R.string.game_event_section_pve)
-            GameEventCategory.PVP -> context.getString(R.string.game_event_section_pvp)
+    private fun resolveTeamDisplayNameFallback(
+        context: Context,
+        senderLine: CharSequence,
+        senderNickname: String,
+    ): String {
+        val fromProfile = runCatching {
+            com.lastasylum.alliance.di.AppContainer.from(context)
+                .usersRepository
+                .peekMyProfile()
+                ?.teamDisplayName
+                ?.trim()
+        }.getOrNull()
+        if (!fromProfile.isNullOrBlank()) {
+            return fromProfile
         }
+        val line = senderLine.toString()
+        val tagMatch = Regex("""\[([^\]]+)\]""").find(line)?.groupValues?.getOrNull(1)?.trim()
+        if (!tagMatch.isNullOrBlank()) {
+            return tagMatch
+        }
+        return senderNickname.trim().ifBlank { "—" }
+    }
 }
