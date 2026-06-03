@@ -60,7 +60,6 @@ fun OverlayControlScreen() {
 
     var targetPkg by remember { mutableStateOf(prefs.getOverlayTargetGamePackage()) }
     var overlayEnabled by remember { mutableStateOf(prefs.isOverlayPanelEnabled()) }
-    var excavationPushEnabled by remember { mutableStateOf(prefs.isExcavationPushEnabled()) }
     var detectedGamePackages by remember {
         mutableStateOf<List<OverlayGamePackageSuggestions.DetectedGamePackage>>(emptyList())
     }
@@ -81,8 +80,7 @@ fun OverlayControlScreen() {
 
     LaunchedEffect(Unit) {
         appContainer.usersRepository.getMyProfile().getOrNull()?.let { profile ->
-            prefs.setExcavationPushEnabled(profile.excavationPushEnabled)
-            excavationPushEnabled = profile.excavationPushEnabled
+            prefs.applyGameEventPushEnabledFromServer(profile.gameEventPushEnabled)
         }
     }
 
@@ -188,30 +186,11 @@ fun OverlayControlScreen() {
                         }
                     },
                 )
-                SettingsDivider()
-                SettingsToggleRow(
-                    title = stringResource(R.string.settings_excavation_push_title),
-                    subtitle = stringResource(R.string.settings_excavation_push_subtitle),
-                    checked = excavationPushEnabled,
-                    onCheckedChange = { on ->
-                        excavationPushEnabled = on
-                        prefs.setExcavationPushEnabled(on)
-                        scope.launch {
-                            appContainer.usersRepository
-                                .updateExcavationPushEnabled(on)
-                                .onSuccess {
-                                    runCatching {
-                                        com.lastasylum.alliance.push.FcmTokenManager
-                                            .registerWithBackend(context.applicationContext)
-                                    }
-                                }
-                                .onFailure {
-                                    excavationPushEnabled = !on
-                                    prefs.setExcavationPushEnabled(!on)
-                                }
-                        }
-                    },
-                )
+            }
+        }
+        item {
+            SettingsPanelCard {
+                GameEventPushSettingsSection(prefs = prefs)
             }
         }
 
