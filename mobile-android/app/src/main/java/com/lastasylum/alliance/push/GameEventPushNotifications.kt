@@ -29,6 +29,7 @@ object GameEventPushNotifications {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager =
             context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        dropLegacyExcavationChannel(manager)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             val group = NotificationChannelGroup(
                 CHANNEL_GROUP_ID,
@@ -57,6 +58,11 @@ object GameEventPushNotifications {
             }
             manager.createNotificationChannel(channel)
         }
+    }
+
+    /** Removes pre–game-event channel «Раскопки альянса» (duplicate of hq_excavation). */
+    private fun dropLegacyExcavationChannel(manager: NotificationManager) {
+        manager.deleteNotificationChannel(ExcavationPushNotifications.CHANNEL_ID)
     }
 
     fun show(
