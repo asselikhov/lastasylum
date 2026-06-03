@@ -8,11 +8,14 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.Person
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.IconCompat
 import com.lastasylum.alliance.MainActivity
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.gameevents.GameEventCatalog
@@ -101,6 +104,8 @@ object GameEventPushNotifications {
         title: String,
         body: String,
         roomId: String?,
+        senderDisplayName: String = "",
+        senderLargeIcon: Bitmap? = null,
     ) {
         ensureChannels(context)
         val launch = Intent(context, MainActivity::class.java).apply {
@@ -114,22 +119,31 @@ object GameEventPushNotifications {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val color = GameEventCatalog.notificationColor(event.category)
-        val notification = NotificationCompat.Builder(context, event.channelId)
+        val eventTitle = title.ifBlank { event.messageText }
+        val eventBody = body.ifBlank { event.messageText }
+        val senderName = senderDisplayName.trim().ifBlank { " " }
+        val senderPersonBuilder = Person.Builder().setName(senderName)
+        senderLargeIcon?.let { bmp ->
+            senderPersonBuilder.setIcon(IconCompat.createWithBitmap(bmp))
+        }
+        val senderPerson = senderPersonBuilder.build()
+        val localPerson = Person.Builder().setName("").build()
+        val style = NotificationCompat.MessagingStyle(localPerson)
+            .setConversationTitle(eventTitle)
+            .addMessage(eventBody, System.currentTimeMillis(), senderPerson)
+        val builder = NotificationCompat.Builder(context, event.channelId)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle(title.ifBlank { event.messageText })
-            .setContentText(body.ifBlank { event.messageText })
-            .setStyle(
-                NotificationCompat.BigTextStyle().bigText(
-                    body.ifBlank { event.messageText },
-                ),
-            )
+            .setContentTitle(eventTitle)
+            .setContentText(eventBody)
+            .setStyle(style)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setAutoCancel(true)
             .setContentIntent(pending)
             .setColor(color)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
-            .build()
+        senderLargeIcon?.let { builder.setLargeIcon(it) }
+        val notification = builder.build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val granted = ContextCompat.checkSelfPermission(
                 context,

@@ -31,6 +31,23 @@ import { normalizeOverlayChatStickerReaction } from './overlay-sticker-reaction.
 import { filterPersonalChatFanoutUserIds } from './chat-realtime-broadcast.util';
 import { resolveGameEventId } from '../game-events/game-event-catalog';
 
+function gameEventPushSenderFromMessage(message: unknown): {
+  senderName: string;
+  senderTelegramUsername: string;
+  senderSquadRole: string;
+} {
+  const m = message as {
+    senderUsername?: string;
+    senderTelegramUsername?: string | null;
+    senderRole?: string;
+  };
+  return {
+    senderName: (m.senderUsername ?? '').trim(),
+    senderTelegramUsername: (m.senderTelegramUsername ?? '').trim(),
+    senderSquadRole: (m.senderRole ?? '').trim().toUpperCase(),
+  };
+}
+
 /** Must match overlay reaction ids in Android OverlayQuickReactions.kt */
 const ALLOWED_OVERLAY_ANIMATION_REACTIONS = [
   'heart',
@@ -642,12 +659,15 @@ export class ChatGateway {
       input.messageAllianceId &&
       input.messageAllianceId !== GLOBAL_CHAT_ALLIANCE_ID
     ) {
+      const pushSender = gameEventPushSenderFromMessage(input.message);
       void this.pushNotifications
         .notifyGameEventAlert({
           allianceId: input.messageAllianceId,
           excludeUserId: senderUserId,
           eventId,
-          senderName: input.senderName ?? '',
+          senderName: pushSender.senderName || (input.senderName ?? ''),
+          senderTelegramUsername: pushSender.senderTelegramUsername,
+          senderSquadRole: pushSender.senderSquadRole,
           body: input.gameEventText ?? '',
           data: {
             roomId,

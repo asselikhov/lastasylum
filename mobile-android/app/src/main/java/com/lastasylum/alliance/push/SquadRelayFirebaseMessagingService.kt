@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -30,8 +31,8 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         val dataType = message.data["type"]
         when (dataType) {
-            "game_event_alert" -> handleGameEventAlert(message)
-            "excavation_alert" -> handleGameEventAlert(
+            "game_event_alert" -> handleGameEventAlertAsync(message)
+            "excavation_alert" -> handleGameEventAlertAsync(
                 message,
                 fallbackEventId = "hq_excavation",
             )
@@ -39,7 +40,14 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
         }
     }
 
-    private fun handleGameEventAlert(
+    private fun handleGameEventAlertAsync(
+        message: RemoteMessage,
+        fallbackEventId: String? = null,
+    ) {
+        scope.launch { handleGameEventAlert(message, fallbackEventId) }
+    }
+
+    private suspend fun handleGameEventAlert(
         message: RemoteMessage,
         fallbackEventId: String? = null,
     ) {
@@ -65,12 +73,24 @@ class SquadRelayFirebaseMessagingService : FirebaseMessagingService() {
             sender.isNotEmpty() -> getString(R.string.game_event_push_body_from, sender)
             else -> message.notification?.body?.trim().orEmpty()
         }.ifBlank { event.messageText }
-        GameEventPushNotifications.show(
+        val telegram = message.data["senderTelegramUsername"]?.trim().orEmpty()
+        val squadRole = message.data["senderSquadRole"]?.trim().orEmpty()
+        val largeIcon = PushNotificationSenderAvatar.loadLargeIcon(
             context = app,
-            event = event,
-            title = title,
-            body = body,
-            roomId = message.data["roomId"],
+            telegramUsername = telegram.ifBlank { null },
+            squadRole = squadRole.ifBlank { null },
+            fallbackName = sender.ifBlank { null },
         )
+        withContext(Dispatchers.Main) {
+            GameEventPushNotifications.show(
+                context = app,
+                event = event,
+                title = title,
+                body = body,
+                roomId = message.data["roomId"],
+                senderDisplayName = sender,
+                senderLargeIcon = largeIcon,
+            )
+        }
     }
 }

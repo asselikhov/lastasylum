@@ -59,6 +59,8 @@ export class PushNotificationsService implements OnModuleInit {
     excludeUserId: string;
     eventId: string;
     senderName: string;
+    senderTelegramUsername?: string;
+    senderSquadRole?: string;
     body: string;
     data: Record<string, string>;
   }): Promise<void> {
@@ -83,6 +85,8 @@ export class PushNotificationsService implements OnModuleInit {
     const unique = [...new Set(tokens)].slice(0, 500);
     const title = event.messageText;
     const sender = input.senderName.trim();
+    const senderTelegram = (input.senderTelegramUsername ?? '').trim();
+    const senderSquadRole = (input.senderSquadRole ?? '').trim().toUpperCase();
     const body = sender.length > 0 ? `От ${sender}` : event.messageText;
     try {
       const res = await admin.messaging().sendEachForMulticast({
@@ -95,6 +99,8 @@ export class PushNotificationsService implements OnModuleInit {
           category: event.category,
           channelId: event.channelId,
           senderName: sender,
+          senderTelegramUsername: senderTelegram,
+          senderSquadRole: senderSquadRole,
           title,
           body,
         },
