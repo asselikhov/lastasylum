@@ -3,6 +3,7 @@ package com.lastasylum.alliance.data.chat
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import com.lastasylum.alliance.data.auth.JwtAccessTokenClaims
 import io.socket.client.IO
 import io.socket.client.Socket
 import java.util.concurrent.CopyOnWriteArrayList
@@ -412,7 +413,8 @@ class ChatSocketManager {
                     if (msgRoom.isNotBlank() && !isSubscribedRoom(msgRoom)) {
                         opportunisticallyJoinRoom(msgRoom)
                     }
-                    val message = payload.toReactionSocketMessage()
+                    val viewerUserId = JwtAccessTokenClaims.sub(tokenProvider?.invoke())
+                    val message = payload.toReactionSocketMessage(viewerUserId)
                     messageListeners.forEach { l -> runCatching { l(message) } }
                 }
                 on("message:deleted") { args ->
@@ -678,7 +680,7 @@ private fun org.json.JSONArray.toReactions(viewerUserId: String? = null): List<C
 }
 
 /** Neutral backend payload or legacy full message row. */
-private fun JSONObject.toReactionSocketMessage(): ChatMessage {
+private fun JSONObject.toReactionSocketMessage(viewerUserId: String? = null): ChatMessage {
     val compactId = optString("messageId").takeIf { it.isNotBlank() }
     return if (compactId != null && !has("senderId")) {
         ChatMessage(
@@ -688,7 +690,7 @@ private fun JSONObject.toReactionSocketMessage(): ChatMessage {
             senderId = "",
             senderUsername = "",
             senderRole = "",
-            reactions = optJSONArray("reactions")?.toReactions().orEmpty(),
+            reactions = optJSONArray("reactions")?.toReactions(viewerUserId).orEmpty(),
             text = "",
             createdAt = "",
         )

@@ -1786,6 +1786,7 @@ class ChatViewModel(
             isLoadingOlder = false,
             error = null,
             replyToMessage = null,
+            editingMessage = null,
             scrollToMessageId = null,
             highlightMessageId = null,
             transientNotice = null,
@@ -1881,11 +1882,14 @@ class ChatViewModel(
         val previousById = _state.value.rooms.associateBy { it.id }
         return serverRooms.map { room ->
             val previousUnread = previousById[room.id]?.unreadCount ?: 0
-            val floor = optimisticUnreadFloorByRoom[room.id] ?: 0
             val serverUnread = when {
                 isRoomActivelyViewed(room.id) -> 0
                 else -> effectiveUnreadForRoom(room)
             }
+            if (serverUnread == 0) {
+                clearOptimisticUnreadFloor(room.id)
+            }
+            val floor = optimisticUnreadFloorByRoom[room.id] ?: 0
             val unread = displayedUnreadCount(
                 effectiveUnread = serverUnread,
                 previouslyDisplayed = previousUnread,
@@ -2807,6 +2811,15 @@ class ChatViewModel(
     }
 
     fun sendDraftMessage() {
+        val editing = _state.value.editingMessage
+        if (editing != null) {
+            val id = editing._id?.trim().orEmpty()
+            val trimmed = _draftMessage.value.trim()
+            if (id.isEmpty() || trimmed.isBlank()) return
+            editMessage(id, trimmed)
+            cancelEditMessage()
+            return
+        }
         val text = _draftMessage.value.trim()
         if (text.isBlank() && _pickedImageUris.value.isEmpty()) return
         val roomId = _state.value.selectedRoomId ?: return
@@ -3022,6 +3035,7 @@ class ChatViewModel(
         if (target.deletedAt != null) return
         _state.value = _state.value.copy(
             replyToMessage = target,
+            editingMessage = null,
             activeActionMessageId = null,
             selectedMessageIds = emptySet(),
             confirmBulkDelete = false,
@@ -3031,6 +3045,25 @@ class ChatViewModel(
     fun clearReplyToMessage() {
         if (_state.value.replyToMessage == null) return
         _state.value = _state.value.copy(replyToMessage = null)
+    }
+
+    fun beginEditMessage(messageId: String) {
+        val target = _state.value.messages.find { it._id == messageId } ?: return
+        if (target.deletedAt != null || target.text.isBlank()) return
+        _draftMessage.value = target.text
+        _state.value = _state.value.copy(
+            editingMessage = target,
+            replyToMessage = null,
+            activeActionMessageId = null,
+            selectedMessageIds = emptySet(),
+            confirmBulkDelete = false,
+        )
+    }
+
+    fun cancelEditMessage() {
+        if (_state.value.editingMessage == null) return
+        _draftMessage.value = ""
+        _state.value = _state.value.copy(editingMessage = null)
     }
 
     fun openMessageActions(messageId: String) {
@@ -3119,16 +3152,22 @@ class ChatViewModel(
         ChatSessionCache.update(_state.value.rooms)
     }
 
-    fun pinMessage(messageId: String) {
+    fun pinMessage(messageId: String, previewSource: ChatMessage? = null) {
         val roomId = _state.value.selectedRoomId?.trim().orEmpty()
         val trimmedId = messageId.trim()
         if (roomId.isEmpty() || trimmedId.isEmpty() || _state.value.pinInFlight) return
         val roomsSnapshot = _state.value.rooms
         val roomBefore = roomsSnapshot.find { it.id == roomId }
-        val message = _state.value.messages.find { it._id == trimmedId }
+        val message = previewSource?.takeIf { it._id == trimmedId }
+            ?: _state.value.messages.find { it._id == trimmedId }
         val preview = message?.toPinnedPreview()
         val optimisticRoom = roomBefore?.let { room ->
             preview?.let { room.withOptimisticPin(trimmedId, it, _state.value.currentUserId) }
+                ?: room.copy(
+                    pinnedMessageId = trimmedId,
+                    pinnedAt = java.time.Instant.now().toString(),
+                    pinnedByUserId = _state.value.currentUserId,
+                )
         }
         if (optimisticRoom != null) {
             publishRoomPin(optimisticRoom)

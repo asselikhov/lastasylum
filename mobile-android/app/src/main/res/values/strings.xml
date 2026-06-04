@@ -128,10 +128,16 @@
     <string name="err_chat_no_room">Откройте вкладку «Чат», чтобы подтянуть комнату «Рейд», затем снова запишите голос.</string>
     <string name="chat_replying_to">Ответ для %1$s</string>
     <string name="chat_reply_cancel">Отменить ответ</string>
+    <string name="chat_editing_message">Редактирование</string>
+    <string name="chat_edit_save_cd">Сохранить изменения</string>
     <string name="chat_deleting_progress">Удаление…</string>
     <string name="chat_action_reply">Ответить</string>
     <string name="chat_action_copy">Копировать</string>
     <string name="chat_action_view_images">Открыть фото</string>
+    <string name="chat_action_save_to_gallery">Сохранить в галерею</string>
+    <string name="chat_gallery_saved_toast">Сохранено: %1$d фото</string>
+    <string name="chat_gallery_save_failed_toast">Не удалось сохранить</string>
+    <string name="chat_gallery_save_partial_toast">Сохранено: %1$d из %2$d</string>
     <string name="chat_action_paste_to_input">Вставить в поле ввода</string>
     <string name="chat_action_select">Выбрать</string>
     <string name="chat_pasted_to_input_toast">Текст вставлен в поле ввода</string>

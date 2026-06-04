@@ -53,7 +53,6 @@ fun displayedUnreadCount(
     val raw = rawServerUnread.coerceAtLeast(0)
     val floor = optimisticFloor.coerceAtLeast(0)
     if (raw > 0 && effective == 0) {
-        if (floor > 0) return maxOf(floor, previous)
         return 0
     }
     if (effective == 0) {

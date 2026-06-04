@@ -61,6 +61,8 @@ fun MessageSheetActionRow(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     tint: Color = LocalContentColor.current,
+    iconTint: Color = tint,
+    labelColor: Color = tint,
 ) {
     TextButton(
         onClick = onClick,
@@ -76,12 +78,12 @@ fun MessageSheetActionRow(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = if (enabled) tint else tint.copy(alpha = 0.38f),
+                tint = if (enabled) iconTint else iconTint.copy(alpha = 0.38f),
             )
             Text(
                 text = label,
                 style = MaterialTheme.typography.bodyLarge,
-                color = if (enabled) tint else tint.copy(alpha = 0.38f),
+                color = if (enabled) labelColor else labelColor.copy(alpha = 0.38f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),

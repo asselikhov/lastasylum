@@ -43,6 +43,8 @@ import com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthCap
 import com.lastasylum.alliance.ui.chat.ChatBubbleMaxWidthFraction
 import com.lastasylum.alliance.ui.chat.ChatScrollToLatestFab
 import com.lastasylum.alliance.ui.chat.LocalChatBubbleMaxWidth
+import com.lastasylum.alliance.ui.chat.LocalMessageExpandScrollCompensation
+import com.lastasylum.alliance.ui.chat.scrollReverseChatCompensateExpand
 import com.lastasylum.alliance.ui.chat.LocalOpenRemoteChatImagePreview
 import com.lastasylum.alliance.ui.chat.isAtReverseChatBottom
 import com.lastasylum.alliance.ui.chat.scrollReverseChatRevealLatest
@@ -148,6 +150,7 @@ import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamForumTopicPinChangedEvent
 import com.lastasylum.alliance.ui.chat.PinnedMessageBar
 import com.lastasylum.alliance.ui.chat.toPinnedPreview
+import com.lastasylum.alliance.ui.chat.resolveForumPinnedPreview
 import com.lastasylum.alliance.data.teams.TeamForumTypingEvent
 import com.lastasylum.alliance.data.teams.TeamForumMarkRead
 import com.lastasylum.alliance.data.teams.TeamsRepository
@@ -155,6 +158,7 @@ import com.lastasylum.alliance.ui.chat.MessageActionOpenRequest
 import com.lastasylum.alliance.ui.chat.MessageContextMenuActions
 import com.lastasylum.alliance.ui.chat.MessageContextMenuPopup
 import com.lastasylum.alliance.ui.chat.MessageContextMenuScrim
+import com.lastasylum.alliance.ui.chat.saveChatImagesToGallery
 import com.lastasylum.alliance.ui.chat.resolvedChatAttachmentImageUrl
 import com.lastasylum.alliance.ui.util.copyForumMessageToClipboard
 import com.lastasylum.alliance.ui.util.forumMessageHasCopyableContent
@@ -398,9 +402,16 @@ private fun TeamForumListRoute(
     fun applyTopicRows(rows: List<TeamForumTopicDto>) {
         topics.clear()
         hydrateReadCursorsFromTopics(rows)
-        topics.addAll(rows)
-        rows.forEach { t -> topicTitles[t.id] = t.title }
-        rows.filter { topic ->
+        val patchedRows = rows.map { topic ->
+            if (effectiveTopicUnread(topic) == 0 && topic.unreadCount > 0) {
+                topic.copy(unreadCount = 0)
+            } else {
+                topic
+            }
+        }
+        topics.addAll(patchedRows)
+        patchedRows.forEach { t -> topicTitles[t.id] = t.title }
+        patchedRows.filter { topic ->
             topic.unreadCount > 0 && effectiveTopicUnread(topic) == 0
         }.forEach { topic ->
             val localLast = lastReadByTopic[topic.id] ?: return@forEach
@@ -817,8 +828,6 @@ private fun TeamForumTopicChatRoute(
     enabledStickerPackKeys: Set<String> = emptySet(),
     onProvideMarkReadAction: (String, (() -> Unit)?) -> Unit = { _, _ -> },
 ) {
-    BackHandler { onBack() }
-
     val context = LocalContext.current
     val res = context.resources
     val overlayUi = LocalOverlayUiMode.current
@@ -871,15 +880,11 @@ private fun TeamForumTopicChatRoute(
     val forumPrefs = remember { AppContainer.from(context).teamForumPreferences }
     var lastReadCursor by remember { mutableStateOf<String?>(null) }
 
-    var editMessage by remember { mutableStateOf<TeamForumMessageDto?>(null) }
-    var editBody by remember { mutableStateOf("") }
-    var editBusy by remember { mutableStateOf(false) }
+    var editingForumMessage by remember { mutableStateOf<TeamForumMessageDto?>(null) }
     var replyToMessage by remember { mutableStateOf<TeamForumMessageDto?>(null) }
     var activeActionMessageId by remember { mutableStateOf<String?>(null) }
-    var messageActionAnchor by remember { mutableStateOf<Rect?>(null) }
     var selectedMessageIds by remember { mutableStateOf(setOf<String>()) }
     val dismissMessageActions: () -> Unit = {
-        messageActionAnchor = null
         activeActionMessageId = null
     }
     var confirmBulkDelete by remember { mutableStateOf(false) }
@@ -889,7 +894,7 @@ private fun TeamForumTopicChatRoute(
     var pinnedMessage by remember(teamId, topicId) { mutableStateOf<PinnedMessagePreviewDto?>(null) }
     var pinNotice by remember { mutableStateOf<String?>(null) }
     var pinInFlight by remember { mutableStateOf(false) }
-    var pendingForumPinMessageId by remember { mutableStateOf<String?>(null) }
+    var pendingForumPinMessage by remember { mutableStateOf<TeamForumMessageDto?>(null) }
     var remoteImagePreview by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
     val openImages = remember {
         { urls: List<String>, idx: Int -> remoteImagePreview = urls to idx }
@@ -928,17 +933,16 @@ private fun TeamForumTopicChatRoute(
         refreshTopicPinFromServer()
     }
 
-    fun pinForumMessage(messageId: String) {
+    fun pinForumMessage(messageId: String, previewSource: TeamForumMessageDto? = null) {
         val trimmedId = messageId.trim()
         if (trimmedId.isEmpty() || pinInFlight) return
         val pinIdSnapshot = pinnedMessageId
         val pinPreviewSnapshot = pinnedMessage
-        val msg = messages.find { it.id == trimmedId }
+        val msg = previewSource?.takeIf { it.id == trimmedId }
+            ?: messages.find { it.id == trimmedId }
         val optimisticPreview = msg?.toPinnedPreview()
-        if (optimisticPreview != null) {
-            pinnedMessageId = trimmedId
-            pinnedMessage = optimisticPreview
-        }
+        pinnedMessageId = trimmedId
+        pinnedMessage = optimisticPreview ?: pinPreviewSnapshot?.takeIf { it.id == trimmedId }
         pinInFlight = true
         scope.launch {
             teamsRepository.pinForumTopicMessage(teamId, topicId, trimmedId)
@@ -1029,11 +1033,10 @@ private fun TeamForumTopicChatRoute(
         bumpMessagesGeneration()
         if (activeActionMessageId == messageId) {
             activeActionMessageId = null
-            messageActionAnchor = null
         }
         selectedMessageIds = selectedMessageIds - messageId
         if (replyToMessage?.id == messageId) replyToMessage = null
-        if (editMessage?.id == messageId) editMessage = null
+        if (editingForumMessage?.id == messageId) editingForumMessage = null
     }
 
     fun applyDeleted(ev: TeamForumMessageDeletedEvent) {
@@ -1062,6 +1065,23 @@ private fun TeamForumTopicChatRoute(
             teamsRepository.markForumTopicRead(teamId, topicId, messageId)
         }
     }
+
+    fun flushPendingMarkForumTopicRead() {
+        markForumReadJob?.cancel()
+        markForumReadJob = null
+        val cursor = lastReadCursor?.trim().orEmpty()
+        if (cursor.isBlank()) return
+        scope.launch {
+            teamsRepository.markForumTopicRead(teamId, topicId, cursor)
+        }
+    }
+
+    fun leaveTopic() {
+        flushPendingMarkForumTopicRead()
+        onBack()
+    }
+
+    BackHandler { leaveTopic() }
 
     fun markTopicReadToLatest(forceSync: Boolean = false) {
         val newestId = stableMessages.lastOrNull()?.id ?: return
@@ -1471,7 +1491,14 @@ private fun TeamForumTopicChatRoute(
                 if (pinNotice == notice) pinNotice = null
             }
         }
-        pinnedMessage?.let { preview ->
+        val forumPinnedPreview = remember(pinnedMessageId, pinnedMessage, stableMessages) {
+            resolveForumPinnedPreview(
+                pinnedMessageId = pinnedMessageId,
+                pinnedMessage = pinnedMessage,
+                messages = stableMessages,
+            )
+        }
+        forumPinnedPreview?.let { preview ->
             PinnedMessageBar(
                 preview = preview,
                 canUnpin = canModerateMessages,
@@ -1521,7 +1548,18 @@ private fun TeamForumTopicChatRoute(
                         ChatBubbleMaxWidthCap,
                     )
                 }
-                CompositionLocalProvider(LocalChatBubbleMaxWidth provides listBubbleMaxWidth) {
+                val expandScrollCompensation = remember(listState, scope) {
+                    { deltaPx: Int ->
+                        scope.launch {
+                            listState.scrollReverseChatCompensateExpand(deltaPx)
+                        }
+                        Unit
+                    }
+                }
+                CompositionLocalProvider(
+                    LocalChatBubbleMaxWidth provides listBubbleMaxWidth,
+                    LocalMessageExpandScrollCompensation provides expandScrollCompensation,
+                ) {
                 ForumTopicMessagesLazyList(
                     modifier = Modifier.fillMaxSize(),
                     messages = stableMessages,
@@ -1576,7 +1614,6 @@ private fun TeamForumTopicChatRoute(
                                 if (overlayUi) {
                                     OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
                                 }
-                                messageActionAnchor = req.anchorBounds
                                 activeActionMessageId = req.messageId
                             }
                         },
@@ -1604,7 +1641,7 @@ private fun TeamForumTopicChatRoute(
                 }
                 if (overlayUi) {
                     ForumTopicOverlayBackChip(
-                        onClick = onBack,
+                        onClick = { leaveTopic() },
                         modifier = Modifier
                             .align(Alignment.TopStart)
                             .padding(
@@ -1644,11 +1681,15 @@ private fun TeamForumTopicChatRoute(
         val forumReplyChat = remember(replyToMessage, teamId, topicId) {
             replyToMessage?.toDisplayChatMessage(teamId, topicId)
         }
+        val forumEditingChat = remember(editingForumMessage, teamId, topicId) {
+            editingForumMessage?.toDisplayChatMessage(teamId, topicId)
+        }
         ChatComposerBar {
         ChatComposer(
             draft = draft,
             pickedImageUris = pickedImageUris,
             replyToMessage = forumReplyChat,
+            editingMessage = forumEditingChat,
             isSending = sending,
             sendEnabled = true,
             readOnly = uploadingImage || uploadingFile,
@@ -1659,6 +1700,27 @@ private fun TeamForumTopicChatRoute(
             },
             onSendDraft = {
                 scope.launch {
+                    val editing = editingForumMessage
+                    if (editing != null) {
+                        val trimmed = draft.trim()
+                        if (trimmed.isEmpty() &&
+                            editing.imageRelativeUrls.isEmpty() &&
+                            editing.imageRelativeUrl.isNullOrBlank()
+                        ) {
+                            return@launch
+                        }
+                        if (sending) return@launch
+                        sending = true
+                        teamsRepository.patchForumMessage(teamId, topicId, editing.id, trimmed)
+                            .onSuccess {
+                                applyEdited(it)
+                                draft = ""
+                                editingForumMessage = null
+                            }
+                            .onFailure { e -> error = e.toUserMessageRu(res) }
+                        sending = false
+                        return@launch
+                    }
                     val trimmed = draft.trim()
                     val urisToUpload = pickedImageUris
                     if (trimmed.isEmpty() && urisToUpload.isEmpty() && pendingApkFileId == null) {
@@ -1729,7 +1791,13 @@ private fun TeamForumTopicChatRoute(
                 pickedImageUris = pickedImageUris.filterNot { it == uri }
             },
             onClearPickedImages = { clearPendingAttachment() },
-            onClearReply = { replyToMessage = null },
+            onClearReply = {
+                replyToMessage = null
+            },
+            onClearEdit = {
+                editingForumMessage = null
+                draft = ""
+            },
             onOpenAttachmentPreview = { idx -> attachmentPreviewStartIndex = idx },
             pendingApkLabel = pendingApkLabel,
             onClearPendingApk = { clearPendingAttachment() },
@@ -1797,74 +1865,27 @@ private fun TeamForumTopicChatRoute(
         }
     }
 
-    // legacy menu dialog removed (replaced with bottom sheet)
+    // legacy menu dialog removed (replaced with context menu popup)
 
-    editMessage?.let { msg ->
-        OverlayModalScope(preparedByCaller = true) {
-        OverlayAwareAlertDialog(
-            onDismissRequest = { if (!editBusy) editMessage = null },
-            title = { Text(stringResource(R.string.team_forum_edit_message_title)) },
-            text = {
-                OutlinedTextField(
-                    value = editBody,
-                    onValueChange = { editBody = it.take(4000) },
-                    maxLines = 8,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !editBusy,
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = !editBusy &&
-                        (
-                            editBody.trim().isNotEmpty() ||
-                                msg.imageRelativeUrls.isNotEmpty() ||
-                                !msg.imageRelativeUrl.isNullOrBlank()
-                            ),
-                    onClick = {
-                        scope.launch {
-                            editBusy = true
-                            teamsRepository.patchForumMessage(teamId, topicId, msg.id, editBody)
-                                .onSuccess {
-                                    applyEdited(it)
-                                    editMessage = null
-                                }
-                                .onFailure { e -> error = e.toUserMessageRu(res) }
-                            editBusy = false
-                        }
-                    },
-                ) {
-                    Text(stringResource(R.string.profile_action_save))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { if (!editBusy) editMessage = null }) {
-                    Text(stringResource(R.string.profile_action_cancel))
-                }
-            },
-        )
-        }
-    }
-
-    pendingForumPinMessageId?.let { pinTargetId ->
+    pendingForumPinMessage?.let { pinTarget ->
+        val pinTargetId = pinTarget.id
         OverlayModalScope {
             OverlayAwareAlertDialog(
-                onDismissRequest = { pendingForumPinMessageId = null },
+                onDismissRequest = { pendingForumPinMessage = null },
                 title = { Text(stringResource(R.string.forum_pin_replace_title)) },
                 text = { Text(stringResource(R.string.forum_pin_replace_message)) },
                 confirmButton = {
                     TextButton(
                         onClick = {
-                            pinForumMessage(pinTargetId)
-                            pendingForumPinMessageId = null
-                            dismissMessageActions()
+                            pinForumMessage(pinTargetId, pinTarget)
+                            pendingForumPinMessage = null
                         },
                     ) {
                         Text(stringResource(R.string.chat_pin_replace_confirm))
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { pendingForumPinMessageId = null }) {
+                    TextButton(onClick = { pendingForumPinMessage = null }) {
                         Text(stringResource(R.string.profile_action_cancel))
                     }
                 },
@@ -1905,21 +1926,19 @@ private fun TeamForumTopicChatRoute(
                 Box(Modifier.fillMaxSize().zIndex(6f)) {
                     MessageContextMenuScrim(onDismiss = dismissMessageActions)
                     MessageContextMenuPopup(
-                        anchorBounds = messageActionAnchor ?: Rect.Zero,
                         showReactions = true,
                         canCopy = forumMessageHasCopyableContent(msg),
                         canPin = menuCanPin,
                         isPinned = isTopicPinnedMessage,
                         pinActionsEnabled = !pinInFlight,
                         mayEdit = menuMayEdit,
-                        canDelete = canDeleteForumMessage(msg),
                         hasImages = menuHasImages,
                         hasMapCoordinate = menuHasMapCoordinate,
-                        canForward = msg.deletedAt.isNullOrBlank(),
                         onDismiss = dismissMessageActions,
                         actions = MessageContextMenuActions(
                             onReply = {
                                 replyToMessage = msg
+                                editingForumMessage = null
                                 dismissMessageActions()
                             },
                             onCopy = {
@@ -1929,10 +1948,9 @@ private fun TeamForumTopicChatRoute(
                             onPin = {
                                 val existingPin = pinnedMessageId?.trim().orEmpty()
                                 if (existingPin.isNotEmpty() && existingPin != msg.id) {
-                                    pendingForumPinMessageId = msg.id
+                                    pendingForumPinMessage = msg
                                 } else {
-                                    pinForumMessage(msg.id)
-                                    dismissMessageActions()
+                                    pinForumMessage(msg.id, msg)
                                 }
                             },
                             onUnpin = {
@@ -1940,17 +1958,10 @@ private fun TeamForumTopicChatRoute(
                                 dismissMessageActions()
                             },
                             onEdit = {
-                                editMessage = msg
-                                editBody = msg.text
-                                dismissMessageActions()
-                            },
-                            onDelete = {
-                                dismissMessageActions()
-                                scope.launch {
-                                    teamsRepository.deleteForumMessage(teamId, topicId, msg.id)
-                                        .onSuccess { removeMessage(msg.id) }
-                                        .onFailure { e -> error = e.toUserMessageRu(res) }
-                                }
+                                editingForumMessage = msg
+                                draft = msg.text
+                                replyToMessage = null
+                                clearPendingAttachment()
                             },
                             onReact = { emoji -> toggleForumReaction(msg.id, emoji) },
                             onViewImages = if (menuHasImages) {
@@ -1961,17 +1972,37 @@ private fun TeamForumTopicChatRoute(
                             } else {
                                 null
                             },
+                            onSaveToGallery = if (menuHasImages) {
+                                {
+                                    val urls = menuImageUrls
+                                    dismissMessageActions()
+                                    scope.launch {
+                                        val result = saveChatImagesToGallery(context, urls)
+                                        val toastRes = when {
+                                            result.savedCount == 0 ->
+                                                R.string.chat_gallery_save_failed_toast
+                                            result.failedCount > 0 ->
+                                                R.string.chat_gallery_save_partial_toast
+                                            else ->
+                                                R.string.chat_gallery_saved_toast
+                                        }
+                                        val text = when (toastRes) {
+                                            R.string.chat_gallery_save_partial_toast ->
+                                                context.getString(toastRes, result.savedCount, result.totalRequested)
+                                            R.string.chat_gallery_saved_toast ->
+                                                context.getString(toastRes, result.savedCount)
+                                            else ->
+                                                context.getString(toastRes)
+                                        }
+                                        android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            } else {
+                                null
+                            },
                             onGoToMap = {
                                 com.lastasylum.alliance.game.GameMapNavigator.openFromMessage(context, msg.text)
                                 dismissMessageActions()
-                            },
-                            onForward = {
-                                dismissMessageActions()
-                                scope.launch {
-                                    teamsRepository.forwardForumMessage(teamId, topicId, msg.id)
-                                        .onSuccess { mergeNew(it) }
-                                        .onFailure { e -> error = e.toUserMessageRu(res) }
-                                }
                             },
                         ),
                     )

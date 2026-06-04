@@ -71,6 +71,12 @@ internal suspend fun LazyListState.scrollReverseChatRevealLatest(
     }
 }
 
+/** Keep bubble top fixed when long text expands in a reverse-layout chat list. */
+internal suspend fun LazyListState.scrollReverseChatCompensateExpand(heightDeltaPx: Int) {
+    if (heightDeltaPx <= 0) return
+    scrollBy(heightDeltaPx.toFloat())
+}
+
 internal suspend fun LazyListState.scrollTimelineItemToViewportCenter(index: Int) {
     if (index < 0) return
     scrollToItem(index)

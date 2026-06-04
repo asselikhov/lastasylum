@@ -54,3 +54,25 @@ fun ChatRoomDto.withOptimisticUnpin(): ChatRoomDto = copy(
     pinnedByUserId = null,
     pinnedMessage = null,
 )
+
+fun resolveChatPinnedPreview(
+    pinnedMessageId: String?,
+    pinnedMessage: PinnedMessagePreviewDto?,
+    messages: List<ChatMessage>,
+): PinnedMessagePreviewDto? {
+    pinnedMessage?.let { return it }
+    val id = pinnedMessageId?.trim().orEmpty()
+    if (id.isEmpty()) return null
+    return messages.find { it._id == id }?.toPinnedPreview()
+}
+
+fun resolveForumPinnedPreview(
+    pinnedMessageId: String?,
+    pinnedMessage: PinnedMessagePreviewDto?,
+    messages: List<TeamForumMessageDto>,
+): PinnedMessagePreviewDto? {
+    pinnedMessage?.let { return it }
+    val id = pinnedMessageId?.trim().orEmpty()
+    if (id.isEmpty()) return null
+    return messages.find { it.id == id }?.toPinnedPreview()
+}

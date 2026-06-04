@@ -1,8 +1,7 @@
 package com.lastasylum.alliance.data.chat
 
 import org.json.JSONObject
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEqualsimport org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -70,14 +69,33 @@ class ChatAttachmentUtilsTest {
     }
 
     @Test
-    fun hasVisibleText_ignoresWhitespaceOnly() {
-        val msg = ChatMessage(
+    fun mergeIncomingChatUpdate_compactReaction_preservesTextAndSender() {
+        val existing = ChatMessage(
+            _id = "1",
             allianceId = "a",
-            senderId = "u",
-            senderUsername = "u",
+            roomId = "room",
+            senderId = "u1",
+            senderUsername = "alice",
             senderRole = "R1",
-            text = "   ",
+            text = "hello world",
         )
-        assertTrue(!msg.hasVisibleText())
+        val compact = ChatMessage(
+            _id = "1",
+            allianceId = "",
+            roomId = "room",
+            senderId = "",
+            senderUsername = "",
+            senderRole = "",
+            text = "",
+            reactions = listOf(
+                ChatReaction(emoji = "👍", count = 2, reactedByMe = true),
+            ),
+        )
+        assertTrue(compact.isCompactReactionSocketUpdate())
+        val merged = compact.mergeIncomingChatUpdate(existing)
+        assertEquals("hello world", merged.text)
+        assertEquals("alice", merged.senderUsername)
+        assertEquals("u1", merged.senderId)
+        assertEquals(2, merged.reactions.single().count)
     }
 }

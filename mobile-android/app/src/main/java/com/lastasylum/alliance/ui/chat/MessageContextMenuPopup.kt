@@ -8,38 +8,36 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.PushPin
-import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.SaveAlt
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.lastasylum.alliance.R
-import com.lastasylum.alliance.ui.theme.SquadRelayDimens
-import kotlin.math.roundToInt
+
+private val ContextMenuIconTint = Color(0xFFB8B8B8)
+private val ContextMenuLabelColor = Color.White
+private val ContextMenuSurfaceColor = Color(0xFF2F2F2F)
 
 data class MessageContextMenuActions(
     val onReply: () -> Unit,
@@ -47,58 +45,32 @@ data class MessageContextMenuActions(
     val onPin: (() -> Unit)? = null,
     val onUnpin: (() -> Unit)? = null,
     val onEdit: (() -> Unit)? = null,
-    val onDelete: (() -> Unit)? = null,
     val onReact: (String) -> Unit,
     val onViewImages: (() -> Unit)? = null,
+    val onSaveToGallery: (() -> Unit)? = null,
     val onGoToMap: (() -> Unit)? = null,
-    val onForward: (() -> Unit)? = null,
-    val onPasteToInput: (() -> Unit)? = null,
 )
 
 @Composable
 fun MessageContextMenuPopup(
-    anchorBounds: Rect,
     showReactions: Boolean,
     canCopy: Boolean,
     canPin: Boolean,
     isPinned: Boolean,
     pinActionsEnabled: Boolean,
     mayEdit: Boolean,
-    canDelete: Boolean,
     hasImages: Boolean,
     hasMapCoordinate: Boolean,
-    canForward: Boolean = true,
-    canPasteToInput: Boolean = false,
     onDismiss: () -> Unit,
     actions: MessageContextMenuActions,
 ) {
-    val density = LocalDensity.current
-    val screenHeightPx = with(density) {
-        LocalConfiguration.current.screenHeightDp.dp.toPx()
-    }
-    val menuWidthPx = with(density) { 240.dp.toPx() }
-    val reactionHeightPx = with(density) { 52.dp.toPx() }
-    val menuHeightEstimatePx = with(density) { 280.dp.toPx() }
-    val marginPx = with(density) { 8.dp.toPx() }
-
-    val centerX = anchorBounds.left + anchorBounds.width / 2f
-    val left = (centerX - menuWidthPx / 2f)
-        .coerceIn(marginPx, with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() } - menuWidthPx - marginPx)
-    val placeAbove = anchorBounds.top > menuHeightEstimatePx + reactionHeightPx + marginPx * 2
-    val top = if (placeAbove) {
-        (anchorBounds.top - reactionHeightPx - menuHeightEstimatePx - marginPx)
-            .coerceAtLeast(marginPx)
-    } else {
-        (anchorBounds.bottom + marginPx).coerceAtMost(screenHeightPx - menuHeightEstimatePx - marginPx)
-    }
-
     Popup(
-        alignment = Alignment.TopStart,
-        offset = IntOffset(left.roundToInt(), top.roundToInt()),
+        alignment = Alignment.Center,
         onDismissRequest = onDismiss,
         properties = PopupProperties(focusable = true),
     ) {
         Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.widthIn(min = 200.dp, max = 280.dp),
         ) {
@@ -112,110 +84,106 @@ fun MessageContextMenuPopup(
             }
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                color = ContextMenuSurfaceColor.copy(alpha = 0.96f),
                 tonalElevation = 6.dp,
                 shadowElevation = 8.dp,
             ) {
-                Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                    MessageSheetActionRow(
-                        icon = Icons.AutoMirrored.Outlined.Reply,
-                        label = stringResource(R.string.chat_action_reply),
-                        onClick = {
-                            actions.onReply()
-                            onDismiss()
-                        },
-                    )
-                    if (canCopy) {
+                CompositionLocalProvider(LocalContentColor provides ContextMenuLabelColor) {
+                    Column(modifier = Modifier.padding(vertical = 4.dp)) {
                         MessageSheetActionRow(
-                            icon = Icons.Outlined.ContentCopy,
-                            label = stringResource(R.string.chat_action_copy),
+                            icon = Icons.AutoMirrored.Outlined.Reply,
+                            label = stringResource(R.string.chat_action_reply),
+                            iconTint = ContextMenuIconTint,
+                            labelColor = ContextMenuLabelColor,
                             onClick = {
-                                actions.onCopy()
+                                actions.onReply()
                                 onDismiss()
                             },
                         )
-                    }
-                    if (hasImages) {
-                        MessageSheetActionRow(
-                            icon = Icons.Outlined.Image,
-                            label = stringResource(R.string.chat_action_view_images),
-                            onClick = {
-                                actions.onViewImages?.invoke()
-                                onDismiss()
-                            },
-                        )
-                    }
-                    if (canPin && !isPinned) {
-                        MessageSheetActionRow(
-                            icon = Icons.Outlined.PushPin,
-                            label = stringResource(R.string.forum_action_pin),
-                            onClick = {
-                                actions.onPin?.invoke()
-                                onDismiss()
-                            },
-                            enabled = pinActionsEnabled,
-                        )
-                    }
-                    if (canPin && isPinned) {
-                        MessageSheetActionRow(
-                            icon = Icons.Outlined.PushPin,
-                            label = stringResource(R.string.forum_action_unpin),
-                            onClick = {
-                                actions.onUnpin?.invoke()
-                                onDismiss()
-                            },
-                            enabled = pinActionsEnabled,
-                        )
-                    }
-                    if (mayEdit) {
-                        MessageSheetActionRow(
-                            icon = Icons.Outlined.Edit,
-                            label = stringResource(R.string.chat_action_edit),
-                            onClick = {
-                                actions.onEdit?.invoke()
-                            },
-                        )
-                    }
-                    if (canDelete) {
-                        MessageSheetActionRow(
-                            icon = Icons.Outlined.DeleteOutline,
-                            label = stringResource(R.string.chat_action_delete),
-                            onClick = {
-                                actions.onDelete?.invoke()
-                                onDismiss()
-                            },
-                            tint = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                    if (hasMapCoordinate) {
-                        MessageSheetActionRow(
-                            icon = Icons.Outlined.Place,
-                            label = stringResource(R.string.chat_action_go_to_map),
-                            onClick = {
-                                actions.onGoToMap?.invoke()
-                                onDismiss()
-                            },
-                        )
-                    }
-                    if (canForward) {
-                        MessageSheetActionRow(
-                            icon = Icons.Outlined.Share,
-                            label = stringResource(R.string.chat_action_forward),
-                            onClick = {
-                                actions.onForward?.invoke()
-                                onDismiss()
-                            },
-                        )
-                    }
-                    if (canPasteToInput) {
-                        MessageSheetActionRow(
-                            icon = Icons.Outlined.ContentCopy,
-                            label = stringResource(R.string.chat_action_paste_to_input),
-                            onClick = {
-                                actions.onPasteToInput?.invoke()
-                                onDismiss()
-                            },
-                        )
+                        if (canCopy) {
+                            MessageSheetActionRow(
+                                icon = Icons.Outlined.ContentCopy,
+                                label = stringResource(R.string.chat_action_copy),
+                                iconTint = ContextMenuIconTint,
+                                labelColor = ContextMenuLabelColor,
+                                onClick = {
+                                    actions.onCopy()
+                                    onDismiss()
+                                },
+                            )
+                        }
+                        if (hasImages) {
+                            MessageSheetActionRow(
+                                icon = Icons.Outlined.Image,
+                                label = stringResource(R.string.chat_action_view_images),
+                                iconTint = ContextMenuIconTint,
+                                labelColor = ContextMenuLabelColor,
+                                onClick = {
+                                    actions.onViewImages?.invoke()
+                                    onDismiss()
+                                },
+                            )
+                            MessageSheetActionRow(
+                                icon = Icons.Outlined.SaveAlt,
+                                label = stringResource(R.string.chat_action_save_to_gallery),
+                                iconTint = ContextMenuIconTint,
+                                labelColor = ContextMenuLabelColor,
+                                onClick = {
+                                    actions.onSaveToGallery?.invoke()
+                                    onDismiss()
+                                },
+                            )
+                        }
+                        if (canPin && !isPinned) {
+                            MessageSheetActionRow(
+                                icon = Icons.Outlined.PushPin,
+                                label = stringResource(R.string.forum_action_pin),
+                                iconTint = ContextMenuIconTint,
+                                labelColor = ContextMenuLabelColor,
+                                onClick = {
+                                    actions.onPin?.invoke()
+                                    onDismiss()
+                                },
+                                enabled = pinActionsEnabled,
+                            )
+                        }
+                        if (canPin && isPinned) {
+                            MessageSheetActionRow(
+                                icon = Icons.Outlined.PushPin,
+                                label = stringResource(R.string.forum_action_unpin),
+                                iconTint = ContextMenuIconTint,
+                                labelColor = ContextMenuLabelColor,
+                                onClick = {
+                                    actions.onUnpin?.invoke()
+                                    onDismiss()
+                                },
+                                enabled = pinActionsEnabled,
+                            )
+                        }
+                        if (mayEdit) {
+                            MessageSheetActionRow(
+                                icon = Icons.Outlined.Edit,
+                                label = stringResource(R.string.chat_action_edit),
+                                iconTint = ContextMenuIconTint,
+                                labelColor = ContextMenuLabelColor,
+                                onClick = {
+                                    actions.onEdit?.invoke()
+                                    onDismiss()
+                                },
+                            )
+                        }
+                        if (hasMapCoordinate) {
+                            MessageSheetActionRow(
+                                icon = Icons.Outlined.Place,
+                                label = stringResource(R.string.chat_action_go_to_map),
+                                iconTint = ContextMenuIconTint,
+                                labelColor = ContextMenuLabelColor,
+                                onClick = {
+                                    actions.onGoToMap?.invoke()
+                                    onDismiss()
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -241,7 +209,7 @@ fun MessageContextMenuScrim(onDismiss: () -> Unit) {
 private fun MessageContextReactionStrip(onReact: (String) -> Unit) {
     Surface(
         shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+        color = ContextMenuSurfaceColor.copy(alpha = 0.96f),
         tonalElevation = 4.dp,
         shadowElevation = 6.dp,
     ) {
@@ -254,6 +222,7 @@ private fun MessageContextReactionStrip(onReact: (String) -> Unit) {
                 Text(
                     text = emoji,
                     style = MaterialTheme.typography.titleLarge,
+                    color = Color.White,
                     modifier = Modifier
                         .clickable { onReact(emoji) }
                         .padding(horizontal = 6.dp, vertical = 2.dp),

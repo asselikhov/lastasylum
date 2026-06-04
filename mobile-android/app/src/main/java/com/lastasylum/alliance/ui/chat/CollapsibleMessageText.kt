@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -39,6 +40,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -76,11 +78,15 @@ fun CollapsibleMessageText(
     expandStateKey: String? = null,
     expandLinkColor: Color = color.copy(alpha = 0.92f),
     fadeBaseColor: Color,
+    onExpandHeightDelta: ((Int) -> Unit)? = null,
 ) {
     if (text.isBlank()) return
     val saveKey = expandStateKey?.let { "collapsible_msg_$it" }
     var expanded by rememberSaveable(saveKey) { mutableStateOf(false) }
     var layoutResult by remember(text) { mutableStateOf<TextLayoutResult?>(null) }
+    var columnHeightPx by remember(text, expandStateKey) { mutableIntStateOf(0) }
+    var pendingExpandCompensation by remember(text, expandStateKey) { mutableStateOf(false) }
+    val scrollCompensate = onExpandHeightDelta ?: LocalMessageExpandScrollCompensation.current
 
     val isLong = remember(text, collapsedMaxLines, layoutResult, expanded) {
         val layout = layoutResult ?: return@remember false
@@ -94,7 +100,22 @@ fun CollapsibleMessageText(
     val collapseCd = stringResource(R.string.chat_message_collapse_cd)
 
     Column(
-        modifier = modifier.animateContentSize(animationSpec = ContentSizeAnim),
+        modifier = modifier
+            .animateContentSize(
+                animationSpec = ContentSizeAnim,
+                alignment = Alignment.TopStart,
+            )
+            .onSizeChanged { size ->
+                val previous = columnHeightPx
+                columnHeightPx = size.height
+                if (pendingExpandCompensation && expanded && previous > 0) {
+                    val delta = size.height - previous
+                    if (delta > 0) {
+                        scrollCompensate?.invoke(delta)
+                    }
+                    pendingExpandCompensation = false
+                }
+            },
     ) {
         Box(
             modifier = Modifier
@@ -142,7 +163,12 @@ fun CollapsibleMessageText(
                 contentDescription = if (expanded) collapseCd else expandCd,
                 accentColor = expandLinkColor,
                 fadeBaseColor = fadeBaseColor,
-                onToggle = { expanded = !expanded },
+                onToggle = {
+                    if (!expanded) {
+                        pendingExpandCompensation = true
+                    }
+                    expanded = !expanded
+                },
             )
         }
     }

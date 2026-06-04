@@ -184,6 +184,7 @@ import com.lastasylum.alliance.ui.chat.ChatState
 import com.lastasylum.alliance.ui.chat.ChatListPaneState
 import com.lastasylum.alliance.ui.chat.ChatChromePaneState
 import com.lastasylum.alliance.ui.chat.PinnedMessageBar
+import com.lastasylum.alliance.ui.chat.resolveChatPinnedPreview
 import com.lastasylum.alliance.ui.chat.canPinChatMessage
 import com.lastasylum.alliance.ui.chat.ChatComposerPaneState
 import com.lastasylum.alliance.ui.chat.toListPane
@@ -218,6 +219,7 @@ import com.lastasylum.alliance.ui.chat.MessageActionOpenRequest
 import com.lastasylum.alliance.ui.chat.MessageContextMenuActions
 import com.lastasylum.alliance.ui.chat.MessageContextMenuPopup
 import com.lastasylum.alliance.ui.chat.MessageContextMenuScrim
+import com.lastasylum.alliance.ui.chat.saveChatImagesToGallery
 import com.lastasylum.alliance.ui.chat.handleMessageLongPressForSelection
 import com.lastasylum.alliance.ui.chat.handleMessageTapForActions
 import com.lastasylum.alliance.ui.chat.ChatScrollToLatestFab
@@ -249,6 +251,8 @@ import com.lastasylum.alliance.ui.chat.ChatMessageBubbleRow
 import com.lastasylum.alliance.ui.chat.ChatMessageClusterFlags
 import com.lastasylum.alliance.ui.chat.ChatListImagePrefetchEffect
 import com.lastasylum.alliance.ui.chat.LocalChatBubbleMaxWidth
+import com.lastasylum.alliance.ui.chat.LocalMessageExpandScrollCompensation
+import com.lastasylum.alliance.ui.chat.scrollReverseChatCompensateExpand
 import com.lastasylum.alliance.ui.chat.LocalChatHighlightMessageId
 import com.lastasylum.alliance.ui.chat.LocalOpenRemoteChatImagePreview
 import com.lastasylum.alliance.ui.chat.ChatMessageReactionsRow
@@ -274,8 +278,6 @@ import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.theme.roleAccentColor
 import com.lastasylum.alliance.ui.util.chatRoomTabLabelForServer
 import com.lastasylum.alliance.ui.util.chatMessageHasCopyableContent
-import com.lastasylum.alliance.ui.util.appendTextToDraft
-import com.lastasylum.alliance.ui.util.chatMessageHasPasteableText
 import com.lastasylum.alliance.ui.util.chatMessageTextForComposer
 import com.lastasylum.alliance.ui.util.copyChatMessageToClipboard
 import com.lastasylum.alliance.ui.util.ComposerPasteChipRow
@@ -383,7 +385,7 @@ private fun ChatScreenMessagesHost(
     messageListKey: (ChatMessage) -> String,
     onRequestClearRoomHistory: (() -> Unit)? = null,
     clearRoomHistoryEnabled: Boolean = true,
-    onPinMessage: (String) -> Unit = {},
+    onPinMessage: (String, ChatMessage?) -> Unit = { id, _ -> },
     onUnpinRoom: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -403,7 +405,13 @@ private fun ChatScreenMessagesHost(
     val selectedRoom = remember(selectedRoomId, chromePane.rooms) {
         selectedRoomId?.let { id -> chromePane.rooms.find { it.id == id } }
     }
-    val pinnedPreview = selectedRoom?.pinnedMessage
+    val pinnedPreview = remember(selectedRoom, messages) {
+        resolveChatPinnedPreview(
+            pinnedMessageId = selectedRoom?.pinnedMessageId,
+            pinnedMessage = selectedRoom?.pinnedMessage,
+            messages = messages,
+        )
+    }
     val canUnpinPinned = canPinChatMessage(
         selectedRoom?.allianceId,
         chromePane.playerTeamSquadRole,
@@ -788,6 +796,7 @@ private fun ChatScreenComposerSection(
     onRemovePickedImage: (Uri) -> Unit,
     onClearPickedImages: () -> Unit,
     onClearReply: () -> Unit,
+    onClearEdit: () -> Unit,
     onRetrySendFailure: () -> Unit,
     onDismissSendFailure: () -> Unit,
 ) {
@@ -872,6 +881,7 @@ private fun ChatScreenComposerSection(
                 draft = draftMessage,
                 pickedImageUris = pickedImageUris,
                 replyToMessage = composerPane.replyToMessage,
+                editingMessage = composerPane.editingMessage,
                 isSending = composerPane.isSending,
                 sendEnabled = !globalComposerLocked,
                 readOnly = false,
@@ -882,6 +892,7 @@ private fun ChatScreenComposerSection(
                     if (!globalComposerLocked &&
                         (
                             !draftMessage.isBlank() ||
+                                composerPane.editingMessage != null ||
                                 (allowMediaAttachments && pickedImageUris.isNotEmpty())
                             ) &&
                         !composerPane.isSending
@@ -902,6 +913,7 @@ private fun ChatScreenComposerSection(
                 onRemovePickedImage = onRemovePickedImage,
                 onClearPickedImages = onClearPickedImages,
                 onClearReply = onClearReply,
+                onClearEdit = onClearEdit,
                 onOpenAttachmentPreview = onAttachmentPreviewStartIndex,
             )
         }
@@ -943,8 +955,8 @@ fun ChatScreen(
     onConfirmDeleteSelectedMessages: () -> Unit,
     onRetrySendFailure: () -> Unit,
     onDismissSendFailure: () -> Unit,
-    onEditMessage: (String, String) -> Unit,
-    onForwardMessage: (String) -> Unit,
+    onBeginEditMessage: (String) -> Unit,
+    onClearEditMessage: () -> Unit,
     onToggleReaction: (String, String) -> Unit,
     onScrollToLatest: () -> Unit = {},
     onJumpToFirstUnread: (() -> Unit)? = null,
@@ -960,10 +972,11 @@ fun ChatScreen(
     /** Overlay panel: hide room bar, rely on cached session + narrow socket subscriptions. */
     compactOverlayMode: Boolean = false,
     onClearRoomHistory: () -> Unit = {},
-    onPinMessage: (String) -> Unit = {},
+    onPinMessage: (String, ChatMessage?) -> Unit = { id, _ -> },
     onUnpinRoom: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val overlayUi = LocalOverlayUiMode.current
     var showClearRoomHistoryConfirm by remember { mutableStateOf(false) }
     val canHandleBack = LocalOnBackPressedDispatcherOwner.current != null
@@ -975,13 +988,10 @@ fun ChatScreen(
     val showGlobalTeamNotice = selectedRoom?.allianceId == ChatAllianceIds.GLOBAL &&
         !chromePane.hasTeamProfileForGlobalChat
     val globalComposerLocked = showGlobalTeamNotice
-    var messageActionAnchor by remember { mutableStateOf<Rect?>(null) }
     val dismissMessageActions: () -> Unit = {
-        messageActionAnchor = null
         onDismissMessageActions()
     }
     val openMessageActionsFromBubble: (MessageActionOpenRequest) -> Unit = { request ->
-        messageActionAnchor = request.anchorBounds
         onOpenMessageActions(request.messageId)
     }
     val activeActionMessage = remember(chromePane.activeActionMessageId, listPane.messages) {
@@ -1099,31 +1109,32 @@ fun ChatScreen(
                 onRemovePickedImage = onRemovePickedImage,
                 onClearPickedImages = onClearPickedImages,
                 onClearReply = onClearReply,
+                onClearEdit = onClearEditMessage,
                 onRetrySendFailure = onRetrySendFailure,
                 onDismissSendFailure = onDismissSendFailure,
             )
         }
 
-    var pendingPinMessageId by remember { mutableStateOf<String?>(null) }
-    pendingPinMessageId?.let { pinTargetId ->
+    var pendingPinReplaceMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    pendingPinReplaceMessage?.let { pinTarget ->
+        val pinTargetId = pinTarget._id ?: return@let
         OverlayModalScope {
             OverlayAwareAlertDialog(
-                onDismissRequest = { pendingPinMessageId = null },
+                onDismissRequest = { pendingPinReplaceMessage = null },
                 title = { Text(stringResource(R.string.chat_pin_replace_title)) },
                 text = { Text(stringResource(R.string.chat_pin_replace_message)) },
                 confirmButton = {
                     TextButton(
                         onClick = {
-                            onPinMessage(pinTargetId)
-                            pendingPinMessageId = null
-                            dismissMessageActions()
+                            onPinMessage(pinTargetId, pinTarget)
+                            pendingPinReplaceMessage = null
                         },
                     ) {
                         Text(stringResource(R.string.chat_pin_replace_confirm))
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { pendingPinMessageId = null }) {
+                    TextButton(onClick = { pendingPinReplaceMessage = null }) {
                         Text(stringResource(R.string.chat_edit_cancel))
                     }
                 },
@@ -1133,38 +1144,6 @@ fun ChatScreen(
 
     if (!inSelectionMode) {
         activeActionMessage?.let { message ->
-            var showEdit by remember(message._id) { mutableStateOf(false) }
-            var editDraft by remember(message._id) { mutableStateOf(message.text) }
-            if (showEdit) {
-                OverlayModalScope {
-                    OverlayAwareAlertDialog(
-                        onDismissRequest = { showEdit = false },
-                        title = { Text(stringResource(R.string.chat_edit_title)) },
-                        text = {
-                            OutlinedTextField(
-                                value = editDraft,
-                                onValueChange = { editDraft = it },
-                                modifier = Modifier.fillMaxWidth(),
-                                maxLines = 6,
-                            )
-                        },
-                        confirmButton = {
-                            TextButton(
-                                onClick = {
-                                    message._id?.let { onEditMessage(it, editDraft) }
-                                    showEdit = false
-                                    dismissMessageActions()
-                                },
-                            ) { Text(stringResource(R.string.chat_edit_confirm)) }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { showEdit = false }) {
-                                Text(stringResource(R.string.chat_edit_cancel))
-                            }
-                        },
-                    )
-                }
-            }
             val menuCanModerate = canDeleteChatMessage(
                 message = message,
                 currentUserId = chromePane.currentUserId,
@@ -1189,7 +1168,6 @@ fun ChatScreen(
                 Box(Modifier.fillMaxSize().zIndex(6f)) {
                     MessageContextMenuScrim(onDismiss = dismissMessageActions)
                     MessageContextMenuPopup(
-                        anchorBounds = messageActionAnchor ?: Rect.Zero,
                         showReactions = true,
                         canCopy = chatMessageHasCopyableContent(message),
                         canPin = menuCanPin && message.deletedAt == null,
@@ -1199,10 +1177,8 @@ fun ChatScreen(
                             message.deletedAt == null &&
                             menuCanModerate &&
                             message.text.isNotBlank(),
-                        canDelete = menuCanModerate,
                         hasImages = menuHasImages,
                         hasMapCoordinate = menuHasMapCoordinate,
-                        canPasteToInput = chatMessageHasPasteableText(message),
                         onDismiss = dismissMessageActions,
                         actions = MessageContextMenuActions(
                             onReply = {
@@ -1217,23 +1193,17 @@ fun ChatScreen(
                                 val msgId = message._id ?: return@MessageContextMenuActions
                                 val existingPin = roomPinnedId?.trim().orEmpty()
                                 if (existingPin.isNotEmpty() && existingPin != msgId) {
-                                    pendingPinMessageId = msgId
+                                    pendingPinReplaceMessage = message
                                 } else {
-                                    onPinMessage(msgId)
-                                    dismissMessageActions()
+                                    onPinMessage(msgId, message)
                                 }
                             },
                             onUnpin = {
                                 onUnpinRoom()
                                 dismissMessageActions()
                             },
-                            onEdit = { showEdit = true },
-                            onDelete = {
-                                if (overlayUi) {
-                                    OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
-                                }
-                                message._id?.let(onRequestDeleteMessage)
-                                dismissMessageActions()
+                            onEdit = {
+                                message._id?.let(onBeginEditMessage)
                             },
                             onReact = { emoji ->
                                 message._id?.let { id ->
@@ -1249,23 +1219,36 @@ fun ChatScreen(
                             } else {
                                 null
                             },
+                            onSaveToGallery = if (menuHasImages) {
+                                {
+                                    val urls = menuImageUrls
+                                    dismissMessageActions()
+                                    scope.launch {
+                                        val result = saveChatImagesToGallery(context, urls)
+                                        val toastRes = when {
+                                            result.savedCount == 0 ->
+                                                R.string.chat_gallery_save_failed_toast
+                                            result.failedCount > 0 ->
+                                                R.string.chat_gallery_save_partial_toast
+                                            else ->
+                                                R.string.chat_gallery_saved_toast
+                                        }
+                                        val text = when (toastRes) {
+                                            R.string.chat_gallery_save_partial_toast ->
+                                                context.getString(toastRes, result.savedCount, result.totalRequested)
+                                            R.string.chat_gallery_saved_toast ->
+                                                context.getString(toastRes, result.savedCount)
+                                            else ->
+                                                context.getString(toastRes)
+                                        }
+                                        Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            } else {
+                                null
+                            },
                             onGoToMap = {
                                 com.lastasylum.alliance.game.GameMapNavigator.openFromMessage(context, message.text)
-                                dismissMessageActions()
-                            },
-                            onForward = {
-                                message._id?.let(onForwardMessage)
-                                dismissMessageActions()
-                            },
-                            onPasteToInput = {
-                                chatMessageTextForComposer(message)?.let { text ->
-                                    onDraftChange(appendTextToDraft(draftMessage, text))
-                                    Toast.makeText(
-                                        context,
-                                        context.getString(R.string.chat_pasted_to_input_toast),
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
-                                }
                                 dismissMessageActions()
                             },
                         ),
@@ -1460,8 +1443,8 @@ fun ChatScreen(
     onConfirmDeleteSelectedMessages: () -> Unit,
     onRetrySendFailure: () -> Unit,
     onDismissSendFailure: () -> Unit,
-    onEditMessage: (String, String) -> Unit,
-    onForwardMessage: (String) -> Unit,
+    onBeginEditMessage: (String) -> Unit,
+    onClearEditMessage: () -> Unit,
     onToggleReaction: (String, String) -> Unit,
     onScrollToLatest: () -> Unit = {},
     onJumpToQuotedMessage: (String) -> Unit = {},
@@ -1506,8 +1489,8 @@ fun ChatScreen(
     onConfirmDeleteSelectedMessages = onConfirmDeleteSelectedMessages,
     onRetrySendFailure = onRetrySendFailure,
     onDismissSendFailure = onDismissSendFailure,
-    onEditMessage = onEditMessage,
-    onForwardMessage = onForwardMessage,
+    onBeginEditMessage = onBeginEditMessage,
+    onClearEditMessage = onClearEditMessage,
     onToggleReaction = onToggleReaction,
     onScrollToLatest = onScrollToLatest,
     onJumpToQuotedMessage = onJumpToQuotedMessage,
@@ -1647,9 +1630,19 @@ private fun ChatMessagesLazyList(
     val onReplyRef = rememberUpdatedState(onReplyToMessage)
     val onToggleSelectionRef = rememberUpdatedState(onToggleMessageSelection)
     val onJumpRef = rememberUpdatedState(jumpToQuotedMessage)
+    val expandScrollScope = rememberCoroutineScope()
+    val expandScrollCompensation = remember(listState, expandScrollScope) {
+        { deltaPx: Int ->
+            expandScrollScope.launch {
+                listState.scrollReverseChatCompensateExpand(deltaPx)
+            }
+            Unit
+        }
+    }
     CompositionLocalProvider(
         LocalChatBubbleMaxWidth provides listBubbleMaxWidth,
         LocalChatHighlightMessageId provides highlightMessageId?.trim()?.takeIf { it.isNotEmpty() },
+        LocalMessageExpandScrollCompensation provides expandScrollCompensation,
     ) {
     if (timeline.isNotEmpty()) {
         ChatListImagePrefetchEffect(listState = listState, timeline = timeline)

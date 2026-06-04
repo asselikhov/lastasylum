@@ -59,9 +59,8 @@ fun ForumTopicFeedCard(
 ) {
     val accent = ForumTopicCardTokens.accentForIndex(listIndex)
     val badgeUnread = (displayUnreadCount ?: topic.unreadCount).coerceAtLeast(0)
-    val activityUnread = maxOf(topic.unreadCount.coerceAtLeast(0), badgeUnread)
+    val activityLevel = ForumTopicCardTokens.activityLevel(badgeUnread, topic.messageCount)
     val hasUnread = badgeUnread > 0
-    val activityLevel = ForumTopicCardTokens.activityLevel(activityUnread, topic.messageCount)
     val metaDesc = remember(topic.id, topic.title, topic.messageCount, badgeUnread, messageMeta) {
         buildString {
             append(topic.title)

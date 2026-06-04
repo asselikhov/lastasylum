@@ -40,6 +40,7 @@ data class ChatChromePaneState(
 @Immutable
 data class ChatComposerPaneState(
     val replyToMessage: ChatMessage? = null,
+    val editingMessage: ChatMessage? = null,
     val sendFailure: ChatSendFailure? = null,
     val isSending: Boolean = false,
     val enabledStickerPackKeys: Set<String> = emptySet(),
@@ -81,6 +82,7 @@ fun ChatState.toChromePane(): ChatChromePaneState =
 fun ChatState.toComposerPane(): ChatComposerPaneState =
     ChatComposerPaneState(
         replyToMessage = replyToMessage,
+        editingMessage = editingMessage,
         sendFailure = sendFailure,
         isSending = isSending,
         enabledStickerPackKeys = enabledStickerPackKeys,

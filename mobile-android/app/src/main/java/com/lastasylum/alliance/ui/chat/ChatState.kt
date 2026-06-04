@@ -36,6 +36,7 @@ data class ChatState(
     val hasMoreOlder: Boolean = true,
     val isSending: Boolean = false,
     val replyToMessage: ChatMessage? = null,
+    val editingMessage: ChatMessage? = null,
     val activeActionMessageId: String? = null,
     val confirmDeleteMessageId: String? = null,
     /** Multi-select for bulk delete (long-press on a deletable message, then tap more). */

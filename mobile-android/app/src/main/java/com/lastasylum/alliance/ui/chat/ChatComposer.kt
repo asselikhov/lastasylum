@@ -117,6 +117,7 @@ internal fun ChatComposer(
     draft: String,
     pickedImageUris: List<Uri>,
     replyToMessage: ChatMessage?,
+    editingMessage: ChatMessage? = null,
     isSending: Boolean,
     sendEnabled: Boolean = true,
     readOnly: Boolean = false,
@@ -129,6 +130,7 @@ internal fun ChatComposer(
     onRemovePickedImage: (Uri) -> Unit,
     onClearPickedImages: () -> Unit,
     onClearReply: () -> Unit,
+    onClearEdit: () -> Unit = {},
     onOpenAttachmentPreview: (Int) -> Unit = {},
     pendingApkLabel: String? = null,
     onClearPendingApk: (() -> Unit)? = null,
@@ -141,6 +143,8 @@ internal fun ChatComposer(
     var showAttachmentsSheet by remember { mutableStateOf(false) }
     var showOverlayGalleryPicker by remember { mutableStateOf(false) }
     val composerLocked = readOnly || isSending || isUploadingFile
+    val isEditing = editingMessage != null
+    val effectiveAllowMedia = allowMediaAttachments && !isEditing
     val pasteState = rememberComposerPasteState(
         readOnly = composerLocked,
         draft = draft,
@@ -154,9 +158,9 @@ internal fun ChatComposer(
     val enabledStickerPacks = remember(enabledStickerPackKeys, context) {
         StickerPacks.enabledPacks(enabledStickerPackKeys)
     }
-    val hasStickerPacks = allowMediaAttachments && enabledStickerPacks.isNotEmpty()
-    LaunchedEffect(allowMediaAttachments) {
-        if (!allowMediaAttachments) {
+    val hasStickerPacks = effectiveAllowMedia && enabledStickerPacks.isNotEmpty()
+    LaunchedEffect(allowMediaAttachments, isEditing) {
+        if (!effectiveAllowMedia) {
             showMediaPanel = false
         }
     }
@@ -583,6 +587,48 @@ internal fun ChatComposer(
                         }
                     }
                 }
+                editingMessage?.let { editing ->
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = SquadRelaySurfaces.subtleColor(0.48f),
+                        tonalElevation = 0.dp,
+                        shadowElevation = 3.dp,
+                        border = SquadRelaySurfaces.panelBorder(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = SquadRelayDimens.contentPaddingHorizontal),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(
+                                horizontal = SquadRelayDimens.itemGap,
+                                vertical = SquadRelayDimens.itemGap,
+                            ),
+                            horizontalArrangement = Arrangement.spacedBy(SquadRelayDimens.itemGap),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.chat_editing_message),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                Text(
+                                    text = replyPreviewText(editing.text),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            TextButton(onClick = onClearEdit) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Close,
+                                    contentDescription = stringResource(R.string.chat_edit_cancel),
+                                )
+                            }
+                        }
+                    }
+                }
 
                 Column(
                     modifier = Modifier
@@ -696,10 +742,10 @@ internal fun ChatComposer(
                                     textStyle = MaterialTheme.typography.bodyMedium,
                                     placeholder = {
                                         Text(
-                                            text = if (pickedImageUris.isNotEmpty()) {
-                                                stringResource(R.string.chat_caption_hint)
-                                            } else {
-                                                stringResource(R.string.chat_message_hint)
+                                            text = when {
+                                                isEditing -> stringResource(R.string.chat_editing_message)
+                                                pickedImageUris.isNotEmpty() -> stringResource(R.string.chat_caption_hint)
+                                                else -> stringResource(R.string.chat_message_hint)
                                             },
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -724,8 +770,9 @@ internal fun ChatComposer(
                                 !composerLocked &&
                                 (
                                     draft.isNotBlank() ||
-                                        (allowMediaAttachments && pickedImageUris.isNotEmpty()) ||
-                                        (allowMediaAttachments && hasReadyFileAttachment)
+                                        isEditing ||
+                                        (effectiveAllowMedia && pickedImageUris.isNotEmpty()) ||
+                                        (effectiveAllowMedia && hasReadyFileAttachment)
                                     )
                             val sendButtonEnabled = canSend && !isSending
                             val showSendButton = canSend || isSending
@@ -758,7 +805,7 @@ internal fun ChatComposer(
                                 )
                             }
 
-                            if (allowMediaAttachments) {
+                            if (effectiveAllowMedia) {
                                 IconButton(
                                     onClick = { openImageAttach() },
                                     enabled = !composerLocked,
@@ -775,7 +822,7 @@ internal fun ChatComposer(
                                     )
                                 }
                             }
-                            if (allowMediaAttachments && onPickApk != null) {
+                            if (effectiveAllowMedia && onPickApk != null) {
                                 IconButton(
                                     onClick = {
                                         if (composerLocked) return@IconButton
@@ -814,7 +861,11 @@ internal fun ChatComposer(
                                     } else {
                                         Icon(
                                             imageVector = Icons.AutoMirrored.Outlined.Send,
-                                            contentDescription = stringResource(R.string.chat_send),
+                                            contentDescription = if (isEditing) {
+                                                stringResource(R.string.chat_edit_save_cd)
+                                            } else {
+                                                stringResource(R.string.chat_send)
+                                            },
                                             tint = MaterialTheme.colorScheme.primary,
                                         )
                                     }

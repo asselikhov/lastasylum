@@ -116,9 +116,9 @@ class InboxReadCursorTest {
     }
 
     @Test
-    fun displayedUnread_keepsOptimisticFloorWhenLocalReadSuppressesStaleServer() {
+    fun displayedUnread_clearsOptimisticFloorWhenLocalReadSuppressesStaleServer() {
         assertEquals(
-            2,
+            0,
             displayedUnreadCount(
                 effectiveUnread = 0,
                 previouslyDisplayed = 1,

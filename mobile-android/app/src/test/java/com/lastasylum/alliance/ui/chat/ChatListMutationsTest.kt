@@ -4,7 +4,7 @@ import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatAttachment
 import com.lastasylum.alliance.data.chat.ChatMessage
 import com.lastasylum.alliance.data.chat.ChatReaction
-import com.lastasylum.alliance.data.chat.mergePreservingAttachments
+import com.lastasylum.alliance.data.chat.isCompactReactionSocketUpdate
 import com.lastasylum.alliance.data.chat.resolveFromSocketUpdate
 import com.lastasylum.alliance.data.chat.ChatMessageReplyPreview
 import org.junit.Assert.assertEquals
@@ -75,6 +75,27 @@ class ChatListMutationsTest {
         )
         val r = upsertMessage(listOf(withReaction), incoming, known)
         assertEquals(2, r.messages[0].reactions.single().count)
+    }
+
+    @Test
+    fun upsertMessage_compactReaction_doesNotWipeContent() {
+        val known = linkedSetOf("1")
+        val existing = msg("1", "hello").copy(senderUsername = "alice")
+        val compact = ChatMessage(
+            _id = "1",
+            allianceId = "",
+            roomId = "room",
+            senderId = "",
+            senderUsername = "",
+            senderRole = "",
+            text = "",
+            reactions = listOf(ChatReaction(emoji = "👍", count = 1, reactedByMe = true)),
+        )
+        assertTrue(compact.isCompactReactionSocketUpdate())
+        val r = upsertMessage(listOf(existing), compact, known)
+        assertEquals("hello", r.messages[0].text)
+        assertEquals("alice", r.messages[0].senderUsername)
+        assertEquals(1, r.messages[0].reactions.single().count)
     }
 
     @Test

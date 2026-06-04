@@ -5801,11 +5801,14 @@ class CombatOverlayService : Service() {
                             ) {
                                 var newsMarkReadAction by remember { mutableStateOf<(() -> Unit)?>(null) }
                                 var forumMarkReadAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+                                var notificationsMarkReadAction by remember { mutableStateOf<(() -> Unit)?>(null) }
                                 var showNewsMarkAllReadConfirm by remember { mutableStateOf(false) }
                                 var showForumMarkAllReadConfirm by remember { mutableStateOf(false) }
+                                var showNotificationsMarkAllReadConfirm by remember { mutableStateOf(false) }
                                 BackHandler(
                                     enabled = !showNewsMarkAllReadConfirm &&
                                         !showForumMarkAllReadConfirm &&
+                                        !showNotificationsMarkAllReadConfirm &&
                                         !OverlayChatInteractionHold.blocksFullscreenPanelBack(),
                                 ) {
                                     hideOverlayChatTeamPanel()
@@ -5904,6 +5907,12 @@ class CombatOverlayService : Service() {
                                                     repository = container.overlayReactionLogRepository,
                                                     selfUserId = userId,
                                                     onClose = { hideOverlayChatTeamPanel() },
+                                                    onRegisterMarkAllReadAction = { notificationsMarkReadAction = it },
+                                                    onRequestMarkAllReadConfirm = {
+                                                        OverlayChatInteractionHold
+                                                            .prepareOverlayModalInteraction(true)
+                                                        showNotificationsMarkAllReadConfirm = true
+                                                    },
                                                     onReplyToReactionLog = { entry ->
                                                         hideOverlayChatTeamPanel(clearStrip = false)
                                                         val wm = windowManager ?: systemWindowManager()
@@ -5941,6 +5950,19 @@ class CombatOverlayService : Service() {
                                         message = stringResource(R.string.overlay_forum_mark_all_read_confirm_message),
                                         onDismissRequest = { showForumMarkAllReadConfirm = false },
                                         onConfirm = { forumMarkReadAction?.invoke() },
+                                    )
+                                }
+                                if (showNotificationsMarkAllReadConfirm) {
+                                    OverlayMarkAllReadConfirmDialog(
+                                        title = stringResource(R.string.overlay_notifications_mark_all_confirm_title),
+                                        message = stringResource(R.string.overlay_notifications_mark_all_confirm_message),
+                                        confirmLabel = stringResource(R.string.overlay_notifications_mark_all_confirm),
+                                        cancelLabel = stringResource(R.string.overlay_notifications_clear_cancel),
+                                        onDismissRequest = { showNotificationsMarkAllReadConfirm = false },
+                                        onConfirm = {
+                                            showNotificationsMarkAllReadConfirm = false
+                                            notificationsMarkReadAction?.invoke()
+                                        },
                                     )
                                 }
                             }

@@ -91,6 +91,7 @@ fun OverlayReactionNotificationsPanel(
     onReplyToReactionLog: (OverlayReactionLogEntry) -> Unit,
     onOpenReactionsPicker: () -> Unit = {},
     onRegisterMarkAllReadAction: ((() -> Unit)?) -> Unit = {},
+    onRequestMarkAllReadConfirm: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // Overlay ComposeView: explicit owner matches CombatOverlayService HUD/chat pattern.
@@ -124,7 +125,6 @@ fun OverlayReactionNotificationsPanel(
     val newestFeedEntryIds = uiState.newestFeedEntryIds
     var previewCluster by remember { mutableStateOf<OverlayReactionLogCluster?>(null) }
     var showClearHistoryConfirm by remember { mutableStateOf(false) }
-    var showMarkAllReadConfirm by remember { mutableStateOf(false) }
     var hapticConsumedForSession by remember { mutableStateOf(false) }
     var markAllReadLoading by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -189,8 +189,7 @@ fun OverlayReactionNotificationsPanel(
         }
     }
 
-    BackHandler(enabled = showMarkAllReadConfirm || showClearHistoryConfirm) {
-        showMarkAllReadConfirm = false
+    BackHandler(enabled = showClearHistoryConfirm) {
         showClearHistoryConfirm = false
         OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
     }
@@ -204,7 +203,7 @@ fun OverlayReactionNotificationsPanel(
                 closeIconTint = Color.White,
                 onMarkAllRead = {
                     OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
-                    showMarkAllReadConfirm = true
+                    onRequestMarkAllReadConfirm()
                 },
                 markAllReadEnabled = unreadCount > 0 && !loading && !markAllReadLoading,
                 markAllReadLoading = markAllReadLoading,
@@ -570,16 +569,6 @@ fun OverlayReactionNotificationsPanel(
                     previewCluster = null
                     OverlayChatInteractionHold.cancelPreparedOverlayModalInteraction(true)
                 },
-            )
-        }
-        if (showMarkAllReadConfirm) {
-            OverlayMarkAllReadConfirmDialog(
-                title = stringResource(R.string.overlay_notifications_mark_all_confirm_title),
-                message = stringResource(R.string.overlay_notifications_mark_all_confirm_message),
-                confirmLabel = stringResource(R.string.overlay_notifications_mark_all_confirm),
-                cancelLabel = stringResource(R.string.overlay_notifications_clear_cancel),
-                onDismissRequest = { showMarkAllReadConfirm = false },
-                onConfirm = { runMarkAllRead() },
             )
         }
         if (showClearHistoryConfirm) {

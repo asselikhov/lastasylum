@@ -44,6 +44,11 @@ fun ChatMessage.mergePreservingAttachments(existing: ChatMessage): ChatMessage {
 
 /** In-place row from socket (reactions, edit, delete) — incoming fields win except attachments. */
 fun ChatMessage.mergeIncomingChatUpdate(existing: ChatMessage): ChatMessage {
+    if (isCompactReactionSocketUpdate()) {
+        return existing.copy(
+            reactions = reactions.resolveFromSocketUpdate(existing.reactions),
+        )
+    }
     val merged = mergePreservingAttachments(existing)
     return merged.copy(reactions = merged.reactions.resolveFromSocketUpdate(existing.reactions))
 }
