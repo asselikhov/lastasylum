@@ -184,6 +184,58 @@ export class ChatRoomsService {
     return this.roomModel.findById(roomId).exec();
   }
 
+  async setPinnedMessage(
+    roomId: string,
+    pin: {
+      messageId: Types.ObjectId | null;
+      pinnedAt: Date | null;
+      pinnedByUserId: string | null;
+    },
+  ): Promise<ChatRoomDocument | null> {
+    if (!Types.ObjectId.isValid(roomId)) {
+      return null;
+    }
+    return this.roomModel
+      .findByIdAndUpdate(
+        roomId,
+        {
+          $set: {
+            pinnedMessageId: pin.messageId,
+            pinnedAt: pin.pinnedAt,
+            pinnedByUserId: pin.pinnedByUserId,
+          },
+        },
+        { new: true },
+      )
+      .exec();
+  }
+
+  /** Returns true when the room had this message pinned and pin fields were cleared. */
+  async clearPinnedMessageIfMatches(
+    roomId: string,
+    messageId: string,
+  ): Promise<boolean> {
+    if (!Types.ObjectId.isValid(roomId) || !Types.ObjectId.isValid(messageId)) {
+      return false;
+    }
+    const res = await this.roomModel
+      .updateOne(
+        {
+          _id: new Types.ObjectId(roomId),
+          pinnedMessageId: new Types.ObjectId(messageId),
+        },
+        {
+          $set: {
+            pinnedMessageId: null,
+            pinnedAt: null,
+            pinnedByUserId: null,
+          },
+        },
+      )
+      .exec();
+    return (res.modifiedCount ?? 0) > 0;
+  }
+
   async createRoom(allianceId: string, title: string, sortOrder?: number) {
     const trimmed = title.trim();
     if (!trimmed) {

@@ -86,7 +86,7 @@ class AuthViewModel(
         _state.value = _state.value.copy(error = null, infoMessage = null)
     }
 
-    private fun bindReadCursors(userId: String) {
+    private suspend fun bindAndSyncReadCursors(userId: String) {
         ReadCursorSession.bind(
             chatRoomPreferences,
             teamForumPreferences,
@@ -94,13 +94,14 @@ class AuthViewModel(
             userId,
         )
         val app = AppContainer.from(getApplication())
-        viewModelScope.launch {
-            ReadCursorSession.syncTeamNewsReadCursor(
-                app.usersRepository,
-                app.teamsRepository,
-                userSettingsPreferences,
-            )
-        }
+        ReadCursorSession.syncAllInboxReadCursors(
+            usersRepository = app.usersRepository,
+            teamsRepository = app.teamsRepository,
+            chatRepository = app.chatRepository,
+            chatRoomPreferences = chatRoomPreferences,
+            teamForumPreferences = teamForumPreferences,
+            userSettingsPreferences = userSettingsPreferences,
+        )
     }
 
     private fun registerFcmInBackground() {
@@ -124,7 +125,7 @@ class AuthViewModel(
             _state.value = _state.value.copy(isLoading = true, error = null, infoMessage = null)
             authRepository.login(email, password)
                 .onSuccess { user ->
-                    bindReadCursors(user.id)
+                    bindAndSyncReadCursors(user.id)
                     registerFcmInBackground()
                     completeAuthenticated(user)
                 }
@@ -153,7 +154,7 @@ class AuthViewModel(
                 .onSuccess { result ->
                     when (result) {
                         is RegisterResult.LoggedIn -> {
-                            bindReadCursors(result.user.id)
+                            bindAndSyncReadCursors(result.user.id)
                             registerFcmInBackground()
                             completeAuthenticated(result.user)
                         }
@@ -270,7 +271,7 @@ class AuthViewModel(
             JwtAccessTokenClaims.isAccessTokenValid(access) &&
             fastUser != null
         ) {
-            bindReadCursors(fastUser.id)
+            bindAndSyncReadCursors(fastUser.id)
             completeAuthenticated(fastUser)
             logBootstrapDebug(
                 bootstrapStartMs = bootstrapStartMs,
@@ -311,7 +312,7 @@ class AuthViewModel(
             }
             refreshResult.isSuccess -> {
                 val user = refreshResult.getOrThrow()
-                bindReadCursors(user.id)
+                bindAndSyncReadCursors(user.id)
                 completeAuthenticated(user)
                 logBootstrapDebug(
                     bootstrapStartMs = bootstrapStartMs,
@@ -341,12 +342,12 @@ class AuthViewModel(
         }
     }
 
-    private fun tryAuthenticateFromFastPath(access: String?): Boolean {
+    private suspend fun tryAuthenticateFromFastPath(access: String?): Boolean {
         if (access.isNullOrBlank() || !JwtAccessTokenClaims.isAccessTokenValid(access)) {
             return false
         }
         val user = authRepository.resolveSessionUserForFastPath(access) ?: return false
-        bindReadCursors(user.id)
+        bindAndSyncReadCursors(user.id)
         completeAuthenticated(user)
         return true
     }
@@ -357,8 +358,8 @@ class AuthViewModel(
             val refreshStart = System.currentTimeMillis()
             authRepository.refreshSession()
                 .onSuccess { user ->
+                    bindAndSyncReadCursors(user.id)
                     withContext(Dispatchers.Main) {
-                        bindReadCursors(user.id)
                         if (_state.value.isAuthenticated) {
                             _state.value = _state.value.copy(user = user)
                         }

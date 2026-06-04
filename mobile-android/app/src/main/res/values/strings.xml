@@ -96,6 +96,7 @@
     <string name="chat_stickers_pack_zlobyaka">Злобяка</string>
     <string name="chat_stickers_pack_chushuy">Дракончик Чушуй</string>
     <string name="chat_stickers_pack_soidow_cat">Soidow cat</string>
+    <string name="chat_stickers_pack_obzhory">ОБЖОРЫ</string>
     <string name="chat_reply_preview_sticker">Стикер «Злобяка»</string>
     <string name="chat_reply_preview_sticker_named">Стикер «%1$s»</string>
     <string name="cd_chat_sticker">Стикер «Злобяка»</string>
@@ -141,6 +142,15 @@
     <string name="chat_sheet_section_actions">Действия</string>
     <string name="chat_sheet_section_reactions">Реакции</string>
     <string name="chat_sheet_section_manage">Управление</string>
+    <string name="chat_action_pin">Закрепить</string>
+    <string name="chat_action_unpin">Открепить</string>
+    <string name="chat_pinned_bar_cd">Закреплённое сообщение</string>
+    <string name="chat_pinned_preview_sticker">Стикер</string>
+    <string name="chat_pinned_preview_photo">Фото</string>
+    <string name="chat_pinned_toast_pinned">Сообщение закреплено</string>
+    <string name="chat_pinned_toast_unpinned">Закрепление снято</string>
+    <string name="err_chat_pin_team_r45_only">Закреплять сообщения могут только ранги R4 и R5</string>
+    <string name="err_chat_pin_team_room_only">Закрепление доступно только в командных чатах</string>
     <string name="chat_action_delete">Удалить сообщение</string>
     <string name="chat_action_forward">Переслать</string>
     <string name="chat_action_edit">Редактировать</string>
@@ -919,6 +929,12 @@
     <string name="err_chat_moderate_global_server_admin_only">В «Межсерв» и серверных комнатах чужие сообщения может менять только администратор приложения.</string>
     <string name="err_chat_moderate_team_r5_only">В командном чате чужие сообщения могут менять только ранги R4 и R5.</string>
     <string name="err_forum_topics_r5_only">Темами форума могут управлять только ранги R4 и R5.</string>
+    <string name="err_forum_pin_r45_only">Закреплять сообщения в форуме могут только ранги R4 и R5</string>
+    <string name="forum_action_pin">Закрепить</string>
+    <string name="forum_action_unpin">Открепить</string>
+    <string name="forum_pinned_bar_cd">Закреплённое сообщение в теме</string>
+    <string name="forum_pinned_toast_pinned">Сообщение закреплено</string>
+    <string name="forum_pinned_toast_unpinned">Закрепление снято</string>
     <string name="err_form_check">Проверьте данные в форме.</string>
     <string name="err_forbidden">Доступ запрещён.</string>
     <string name="err_rate_limit">Слишком много запросов. Подождите минуту.</string>

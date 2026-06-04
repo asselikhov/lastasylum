@@ -31,6 +31,23 @@ class TeamInboxUnreadTest {
     }
 
     @Test
+    fun sumForumUnread_zeroWhenLocalReadCursorAtOrPastServer() {
+        val topic = TeamForumTopicDto(
+            id = "topic1",
+            teamId = "team1",
+            title = "Topic",
+            createdByUserId = "u1",
+            messageCount = 12,
+            unreadCount = 4,
+            lastReadMessageId = "000000000000000000000010",
+            createdAt = "2020-01-01T00:00:00Z",
+            updatedAt = "2020-01-01T00:00:00Z",
+        )
+        val localRead = mapOf("topic1" to "000000000000000000000020")
+        assertEquals(0, TeamInboxUnread.sumForumUnread(listOf(topic), localRead))
+    }
+
+    @Test
     fun countUnreadNews_excludesAuthorPosts() {
         val prefs = prefs()
         val items = listOf(

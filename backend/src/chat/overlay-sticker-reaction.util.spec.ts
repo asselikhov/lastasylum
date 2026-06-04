@@ -23,6 +23,16 @@ describe('overlay-sticker-reaction.util', () => {
     });
   });
 
+  it('parses and normalizes obzhory overlay sticker id', () => {
+    const id = encodeOverlayChatStickerReactionId('obzhory', '2');
+    expect(id).toBe('sticker/obzhory/2');
+    expect(parseOverlayChatStickerReactionId(id)).toEqual({
+      packKey: 'obzhory',
+      stem: '2',
+    });
+    expect(normalizeOverlayChatStickerReaction(id)).toBe(id);
+  });
+
   it('rejects misc overlay ids (sticker_01)', () => {
     expect(parseOverlayChatStickerReactionId('sticker_01')).toBeNull();
     expect(normalizeOverlayChatStickerReaction('sticker_01')).toBeNull();

@@ -154,6 +154,13 @@ interface TeamsApi {
         @Body body: CreateTeamForumTopicBody,
     ): TeamForumTopicDto
 
+    @PUT("teams/{teamId}/forum/topics/{topicId}/pin")
+    suspend fun pinForumTopicMessage(
+        @Path("teamId") teamId: String,
+        @Path("topicId") topicId: String,
+        @Body body: PinTeamForumTopicRequest,
+    ): TeamForumTopicDto
+
     @PATCH("teams/{teamId}/forum/topics/{topicId}")
     suspend fun updateForumTopic(
         @Path("teamId") teamId: String,

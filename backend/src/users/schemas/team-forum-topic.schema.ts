@@ -26,6 +26,15 @@ export class TeamForumTopic {
   @Prop({ required: true, default: 0 })
   messageCount: number;
 
+  @Prop({ type: Types.ObjectId, default: null, index: true })
+  pinnedMessageId: Types.ObjectId | null;
+
+  @Prop({ type: Date, default: null })
+  pinnedAt: Date | null;
+
+  @Prop({ type: String, default: null })
+  pinnedByUserId: string | null;
+
   createdAt?: Date;
   updatedAt?: Date;
 }

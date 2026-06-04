@@ -4,6 +4,7 @@ import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatHubRoomSync
 import com.lastasylum.alliance.data.chat.ChatRoomDto
 import com.lastasylum.alliance.data.ReadCursorSession
+import com.lastasylum.alliance.data.InboxUnreadReconciler
 import com.lastasylum.alliance.data.effectiveUnreadCount
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.teams.PlayerTeamMemberDto
@@ -95,9 +96,11 @@ internal object OverlayGameStatusHudRefresh {
                     ?.let { TeamInboxUnread.countUnreadNews(it, prefs, profileUserId) }
                     ?: 0
             val forumPrefs = container.teamForumPreferences
-            val localRead = forumPrefs.loadAllLastReadMessageIds(teamId)
-            forumUnread = teamsRepository.listForumTopics(teamId)
+            val topics = teamsRepository.listForumTopics(teamId)
                 .getOrNull()
+            topics?.let { InboxUnreadReconciler.hydrateForumPrefsFromTopics(forumPrefs, teamId, it) }
+            val localRead = forumPrefs.loadAllLastReadMessageIds(teamId)
+            forumUnread = topics
                 ?.let { TeamInboxUnread.sumForumUnread(it, localRead) }
                 ?: badges?.forumUnread?.coerceAtLeast(0)
                 ?: 0

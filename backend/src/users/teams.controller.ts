@@ -391,6 +391,31 @@ export class TeamsController {
     );
   }
 
+  @Put(':teamId/forum/topics/:topicId/pin')
+  @Roles(AllianceRole.MEMBER)
+  async pinForumTopicMessage(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Param('topicId') topicId: string,
+    @Body() dto: { messageId?: string | null },
+  ) {
+    const raw = dto?.messageId;
+    const messageId =
+      raw === null || raw === undefined
+        ? null
+        : typeof raw === 'string'
+          ? raw
+          : null;
+    const { topic, pinChanged } = await this.teamForum.setTopicPinnedMessage(
+      teamId,
+      topicId,
+      req.user.userId,
+      messageId,
+    );
+    this.teamForumGateway.broadcastTopicPinChanged(pinChanged);
+    return topic;
+  }
+
   @Delete(':teamId/forum/topics/:topicId')
   @Roles(AllianceRole.MEMBER)
   async deleteForumTopic(
@@ -507,7 +532,7 @@ export class TeamsController {
     @Param('topicId') topicId: string,
     @Param('messageId') messageId: string,
   ) {
-    await this.teamForum.deleteMessage(
+    const pinChanged = await this.teamForum.deleteMessage(
       teamId,
       topicId,
       messageId,
@@ -521,6 +546,9 @@ export class TeamsController {
       deletedAt,
       req.user.userId,
     );
+    if (pinChanged) {
+      this.teamForumGateway.broadcastTopicPinChanged(pinChanged);
+    }
     return { ok: true };
   }
 
@@ -538,7 +566,7 @@ export class TeamsController {
           .filter(Boolean)
       : [];
     const deletedAt = new Date().toISOString();
-    const deletedIds = await this.teamForum.bulkDeleteMessages(
+    const { deletedIds, pinChanged } = await this.teamForum.bulkDeleteMessages(
       teamId,
       topicId,
       ids,
@@ -552,6 +580,9 @@ export class TeamsController {
         deletedAt,
         req.user.userId,
       );
+    }
+    if (pinChanged) {
+      this.teamForumGateway.broadcastTopicPinChanged(pinChanged);
     }
     return { ok: true };
   }

@@ -12,10 +12,12 @@ fun isObjectIdNewer(candidate: String, baseline: String?): Boolean {
 }
 
 /**
- * Per-user unread badge on this device: when the local read cursor is at or past the server cursor,
- * trust that the user already read (including reads persisted locally before server sync). Stale
- * [serverUnread] with equal cursors, or a missing server cursor with a local one, must not
- * resurrect badges after update or reinstall.
+ * Per-user unread badge on this device: when the **device-persisted** read cursor is at or past
+ * the server cursor, trust that the user already read (including reads persisted locally before
+ * server sync). Stale [serverUnread] with equal cursors, or a missing server cursor with a local
+ * one, must not resurrect badges after update or reinstall.
+ *
+ * [localLastReadMessageId] must be prefs/memory only — do not pass server [lastReadMessageId] here.
  */
 fun effectiveUnreadCount(
     serverUnread: Int,

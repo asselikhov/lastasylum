@@ -26,6 +26,10 @@ import { GameIdentitiesService } from './game-identities.service';
 import { TeamsService } from './teams.service';
 import { StickerAccessService } from './sticker-access.service';
 import { UsersService } from './users.service';
+import {
+  buildPinnedPreviewFromForumMessage,
+  PinnedMessagePreview,
+} from '../common/pinned-message-preview';
 
 export type TeamForumTopicRow = {
   id: string;
@@ -44,6 +48,19 @@ export type TeamForumTopicRow = {
   lastMessageSenderTelegramUsername: string | null;
   createdAt: string;
   updatedAt: string;
+  pinnedMessageId: string | null;
+  pinnedAt: string | null;
+  pinnedByUserId: string | null;
+  pinnedMessage: PinnedMessagePreview | null;
+};
+
+export type TeamForumTopicPinChangedPayload = {
+  teamId: string;
+  topicId: string;
+  pinnedMessageId: string | null;
+  pinnedAt: string | null;
+  pinnedByUserId: string | null;
+  pinnedMessage: PinnedMessagePreview | null;
 };
 
 export type TeamForumMessageRow = {
@@ -190,6 +207,73 @@ export class TeamForumService {
     }
   }
 
+  private async assertMayPinInTeamForum(
+    teamId: string,
+    userId: string,
+  ): Promise<void> {
+    const team = await this.teams.getTeamIfMemberOrThrow(teamId, userId);
+    const role = this.teams.getSquadRoleForUser(team, userId);
+    if (!isSquadOfficerRole(role)) {
+      throw new ForbiddenException(
+        'Only squad ranks R4 and R5 can pin forum messages',
+      );
+    }
+  }
+
+  private topicPinChangedPayload(
+    teamId: string,
+    topicId: string,
+    doc: Pick<
+      TeamForumTopic,
+      'pinnedMessageId' | 'pinnedAt' | 'pinnedByUserId'
+    >,
+    pinnedMessage: PinnedMessagePreview | null,
+  ): TeamForumTopicPinChangedPayload {
+    return {
+      teamId,
+      topicId,
+      pinnedMessageId: doc.pinnedMessageId?.toString() ?? null,
+      pinnedAt: doc.pinnedAt?.toISOString() ?? null,
+      pinnedByUserId: doc.pinnedByUserId ?? null,
+      pinnedMessage,
+    };
+  }
+
+  private async buildPinnedPreviewsForTopics(
+    docs: Array<{ _id: Types.ObjectId; pinnedMessageId?: Types.ObjectId | null }>,
+  ): Promise<Map<string, PinnedMessagePreview | null>> {
+    const pinIds = [
+      ...new Set(
+        docs
+          .map((d) => d.pinnedMessageId?.toString())
+          .filter((id): id is string => !!id && Types.ObjectId.isValid(id)),
+      ),
+    ];
+    const out = new Map<string, PinnedMessagePreview | null>();
+    if (pinIds.length === 0) {
+      for (const doc of docs) {
+        out.set(doc._id.toString(), null);
+      }
+      return out;
+    }
+    const msgs = await this.messageModel
+      .find({ _id: { $in: pinIds.map((id) => new Types.ObjectId(id)) } })
+      .lean()
+      .exec();
+    const byMsgId = new Map(
+      msgs.map((m) => [
+        String(m._id),
+        buildPinnedPreviewFromForumMessage(m),
+      ]),
+    );
+    for (const doc of docs) {
+      const tid = doc._id.toString();
+      const pinId = doc.pinnedMessageId?.toString();
+      out.set(tid, pinId ? (byMsgId.get(pinId) ?? null) : null);
+    }
+    return out;
+  }
+
   private topicRow(
     doc: TeamForumTopicDocument,
     extras?: {
@@ -198,6 +282,7 @@ export class TeamForumService {
       lastReadMessageId?: string | null;
       lastMessageSenderUserId?: string | null;
       lastMessageSenderUsername?: string | null;
+      pinnedMessage?: PinnedMessagePreview | null;
     },
   ): TeamForumTopicRow {
     return {
@@ -213,6 +298,10 @@ export class TeamForumService {
       lastMessageSenderUserId: extras?.lastMessageSenderUserId ?? null,
       lastMessageSenderUsername: extras?.lastMessageSenderUsername ?? null,
       lastMessageSenderTelegramUsername: null,
+      pinnedMessageId: doc.pinnedMessageId?.toString() ?? null,
+      pinnedAt: doc.pinnedAt?.toISOString() ?? null,
+      pinnedByUserId: doc.pinnedByUserId ?? null,
+      pinnedMessage: extras?.pinnedMessage ?? null,
       createdAt: doc.createdAt?.toISOString() ?? new Date().toISOString(),
       updatedAt: doc.updatedAt?.toISOString() ?? new Date().toISOString(),
     };
@@ -613,6 +702,9 @@ export class TeamForumService {
       topicIds,
     );
     const lastSenderMap = await this.lastMessageSendersByTopicIds(tid, topicIds);
+    const pinPreviews = await this.buildPinnedPreviewsForTopics(
+      rows as Array<{ _id: Types.ObjectId; pinnedMessageId?: Types.ObjectId | null }>,
+    );
     return this.enrichTopicsWithTelegram(
       rows.map((r) => {
         const doc = r as unknown as TeamForumTopicDocument;
@@ -625,8 +717,97 @@ export class TeamForumService {
           lastReadMessageId: lastReadMap.get(id) ?? null,
           lastMessageSenderUserId: last?.senderUserId ?? null,
           lastMessageSenderUsername: last?.senderUsername ?? null,
+          pinnedMessage: pinPreviews.get(id) ?? null,
         });
       }),
+    );
+  }
+
+  async setTopicPinnedMessage(
+    teamId: string,
+    topicId: string,
+    userId: string,
+    messageId: string | null,
+  ): Promise<{
+    topic: TeamForumTopicRow;
+    pinChanged: TeamForumTopicPinChangedPayload;
+  }> {
+    await this.teams.getTeamIfMemberOrThrow(teamId, userId);
+    await this.assertMayPinInTeamForum(teamId, userId);
+    const teamOid = new Types.ObjectId(teamId);
+    const topOid = new Types.ObjectId(topicId);
+    const topic = await this.topicModel.findOne({
+      _id: topOid,
+      teamId: teamOid,
+    });
+    if (!topic) {
+      throw new NotFoundException('Topic not found');
+    }
+
+    const trimmed = messageId?.trim() ?? '';
+    if (!trimmed) {
+      topic.pinnedMessageId = null;
+      topic.pinnedAt = null;
+      topic.pinnedByUserId = null;
+      await topic.save();
+      const row = this.topicRow(topic, { pinnedMessage: null });
+      return {
+        topic: row,
+        pinChanged: this.topicPinChangedPayload(teamId, topicId, topic, null),
+      };
+    }
+
+    if (!Types.ObjectId.isValid(trimmed)) {
+      throw new BadRequestException('Invalid message id');
+    }
+    const msg = await this.messageModel.findOne({
+      _id: new Types.ObjectId(trimmed),
+      topicId: topOid,
+      teamId: teamOid,
+      deletedAt: null,
+    });
+    if (!msg) {
+      throw new NotFoundException('Message not found');
+    }
+
+    topic.pinnedMessageId = msg._id;
+    topic.pinnedAt = new Date();
+    topic.pinnedByUserId = userId;
+    await topic.save();
+    const preview = buildPinnedPreviewFromForumMessage(msg);
+    const row = this.topicRow(topic, { pinnedMessage: preview });
+    return {
+      topic: row,
+      pinChanged: this.topicPinChangedPayload(teamId, topicId, topic, preview),
+    };
+  }
+
+  private async clearTopicPinIfMessage(
+    teamId: Types.ObjectId,
+    topicId: Types.ObjectId,
+    messageId: string,
+  ): Promise<TeamForumTopicPinChangedPayload | null> {
+    if (!Types.ObjectId.isValid(messageId)) {
+      return null;
+    }
+    const msgOid = new Types.ObjectId(messageId);
+    const topic = await this.topicModel.findOne({
+      _id: topicId,
+      teamId,
+      pinnedMessageId: msgOid,
+    });
+    if (!topic) {
+      return null;
+    }
+    topic.pinnedMessageId = null;
+    topic.pinnedAt = null;
+    topic.pinnedByUserId = null;
+    await topic.save();
+    return this.topicPinChangedPayload(
+      teamId.toString(),
+      topicId.toString(),
+      topic,
+      null,
     );
   }
 
@@ -1126,7 +1307,7 @@ export class TeamForumService {
     topicId: string,
     messageId: string,
     userId: string,
-  ): Promise<void> {
+  ): Promise<TeamForumTopicPinChangedPayload | null> {
     const teamOid = new Types.ObjectId(teamId);
     const topOid = new Types.ObjectId(topicId);
     const msgOid = new Types.ObjectId(messageId);
@@ -1150,6 +1331,7 @@ export class TeamForumService {
       throw new NotFoundException('Message not found');
     }
     await this.decrementTopicMessageCount(topOid, teamOid, 1);
+    return this.clearTopicPinIfMessage(teamOid, topOid, messageId);
   }
 
   async bulkDeleteMessages(
@@ -1157,13 +1339,15 @@ export class TeamForumService {
     topicId: string,
     messageIds: string[],
     userId: string,
-  ): Promise<string[]> {
+  ): Promise<{ deletedIds: string[]; pinChanged: TeamForumTopicPinChangedPayload | null }> {
     await this.teams.getTeamIfMemberOrThrow(teamId, userId);
     const teamOid = new Types.ObjectId(teamId);
     const topOid = new Types.ObjectId(topicId);
     const uniq = [...new Set(messageIds.map((x) => x.trim()).filter(Boolean))];
     const valid = uniq.filter((id) => Types.ObjectId.isValid(id));
-    if (valid.length === 0) return [];
+    if (valid.length === 0) {
+      return { deletedIds: [], pinChanged: null };
+    }
 
     const docs = await this.messageModel.find({
       _id: { $in: valid.map((id) => new Types.ObjectId(id)) },
@@ -1175,7 +1359,12 @@ export class TeamForumService {
     for (const msg of docs) {
       await this.assertMayEditMessage(teamId, msg, userId);
     }
-    if (docs.length === 0) return [];
+    if (docs.length === 0) {
+      return { deletedIds: [], pinChanged: null };
+    }
+
+    const topic = await this.topicModel.findOne({ _id: topOid, teamId: teamOid });
+    const pinnedId = topic?.pinnedMessageId?.toString();
 
     const ids = docs.map((m) => m._id);
     const res = await this.messageModel.deleteMany({
@@ -1186,7 +1375,12 @@ export class TeamForumService {
     if (res.deletedCount > 0) {
       await this.decrementTopicMessageCount(topOid, teamOid, res.deletedCount);
     }
-    return docs.map((m) => m._id.toString());
+    const deletedIds = docs.map((m) => m._id.toString());
+    let pinChanged: TeamForumTopicPinChangedPayload | null = null;
+    if (pinnedId && deletedIds.includes(pinnedId)) {
+      pinChanged = await this.clearTopicPinIfMessage(teamOid, topOid, pinnedId);
+    }
+    return { deletedIds, pinChanged };
   }
 
   private async decrementTopicMessageCount(

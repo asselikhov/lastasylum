@@ -245,6 +245,10 @@ internal fun isStickerOrGifReactionId(reactionId: String): Boolean {
     return reactionId.startsWith("gif_")
 }
 
+/**
+ * Incoming `sticker/{packKey}/{stem}` reactions (e.g. obzhory) are rendered from APK assets
+ * without checking [enabledStickerPackKeys]; grants only gate the sender sticker picker.
+ */
 internal fun decodeChatStickerReactionId(reactionId: String): Pair<String, String>? {
     if (!reactionId.startsWith(CHAT_STICKER_REACTION_ID_PREFIX)) return null
     val rest = reactionId.removePrefix(CHAT_STICKER_REACTION_ID_PREFIX)

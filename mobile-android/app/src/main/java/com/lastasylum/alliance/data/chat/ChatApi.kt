@@ -6,6 +6,7 @@ import retrofit2.http.GET
 import retrofit2.http.Multipart
 import retrofit2.http.PATCH
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
@@ -65,6 +66,12 @@ interface ChatApi {
         @Path("messageId") messageId: String,
         @Body body: ForwardMessageRequest,
     ): ChatMessage
+
+    @PUT("chat/rooms/{roomId}/pin")
+    suspend fun pinRoomMessage(
+        @Path("roomId") roomId: String,
+        @Body body: PinRoomMessageRequest,
+    ): ChatRoomDto
 
     @POST("chat/rooms/{roomId}/read")
     suspend fun markRoomRead(

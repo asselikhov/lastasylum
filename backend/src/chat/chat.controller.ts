@@ -9,6 +9,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -56,6 +57,10 @@ class ForwardMessageDto {
 
 class MarkReadDto {
   messageId: string;
+}
+
+class PinRoomMessageDto {
+  messageId: string | null;
 }
 
 class OverlayReactionReadCursorDto {
@@ -107,7 +112,7 @@ export class ChatController {
       req.user.userId,
       roomIds,
     );
-    return rooms.map((r) => {
+    const withUnread = rooms.map((r) => {
       const id = (r as { _id: Types.ObjectId })._id.toString();
       return {
         ...r,
@@ -115,6 +120,30 @@ export class ChatController {
         lastReadMessageId: lastReadMap.get(id) ?? null,
       };
     });
+    return this.chatService.attachPinStateToRooms(withUnread);
+  }
+
+  @Put('rooms/:roomId/pin')
+  @Roles(AllianceRole.MEMBER)
+  async pinRoomMessage(
+    @Req() req: { user: RequestUser },
+    @Param('roomId') roomId: string,
+    @Body() dto: PinRoomMessageDto,
+  ) {
+    const raw = dto?.messageId;
+    const messageId =
+      raw === null || raw === undefined
+        ? null
+        : typeof raw === 'string'
+          ? raw
+          : null;
+    const { room, pinChanged } = await this.chatService.setRoomPinnedMessage(
+      req.user.userId,
+      roomId,
+      messageId,
+    );
+    this.chatGateway.broadcastRoomPinChanged(pinChanged);
+    return room;
   }
 
   @Post('rooms')
@@ -385,6 +414,9 @@ export class ChatController {
       messageId: deleted.messageId,
       roomId: deleted.roomId,
     });
+    if (deleted.pinChanged) {
+      this.chatGateway.broadcastRoomPinChanged(deleted.pinChanged);
+    }
     void this.chatGateway.notifyRoomUnreadAfterNewMessage(deleted.roomId, '');
     return deleted;
   }

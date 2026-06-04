@@ -1,10 +1,12 @@
 import { BadRequestException } from '@nestjs/common';
 import {
   STICKER_PACK_CHUSHUY,
+  STICKER_PACK_OBZHORY,
   STICKER_PACK_SOIDOW_CAT,
   STICKER_PACK_ZLOBYAKA,
 } from '../common/constants/sticker-packs';
 import { CHUSHUY_STICKER_STEMS } from './chushuy-stickers.const';
+import { OBZHORY_STICKER_STEMS } from './obzhory-stickers.const';
 import { parseStickerOnlyMessage } from './sticker-wire.util';
 import { SOIDOW_CAT_STICKER_STEMS } from './soidow-cat-stickers.const';
 import { ZLOBYAKA_STICKER_STEMS } from './zlobyaka-stickers.const';
@@ -13,6 +15,7 @@ const STEM_CATALOGS: Record<string, ReadonlySet<string>> = {
   [STICKER_PACK_ZLOBYAKA]: ZLOBYAKA_STICKER_STEMS,
   [STICKER_PACK_CHUSHUY]: CHUSHUY_STICKER_STEMS,
   [STICKER_PACK_SOIDOW_CAT]: SOIDOW_CAT_STICKER_STEMS,
+  [STICKER_PACK_OBZHORY]: OBZHORY_STICKER_STEMS,
 };
 
 export function isKnownStickerStem(packKey: string, stem: string): boolean {

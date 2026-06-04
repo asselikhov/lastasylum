@@ -5550,7 +5550,9 @@ class CombatOverlayService : Service() {
             if (uid.isNotEmpty()) {
                 container.overlayReactionLogRepository.setSelfUserId(uid)
                 if (container.overlayReactionLogRepository.entries.value.isEmpty()) {
-                    container.overlayReactionLogRepository.loadInitial()
+                    serviceScope.launch(Dispatchers.IO) {
+                        container.overlayReactionLogRepository.loadInitial()
+                    }
                 }
             }
             val ctx = OverlayTeamContextCache.load(

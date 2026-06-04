@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.data.teams
 
+import com.lastasylum.alliance.data.chat.PinnedMessagePreviewDto
 import com.squareup.moshi.JsonClass
 
 @JsonClass(generateAdapter = true)
@@ -240,6 +241,25 @@ data class TeamForumTopicDto(
     val lastMessageSenderTelegramUsername: String? = null,
     val createdAt: String,
     val updatedAt: String,
+    val pinnedMessageId: String? = null,
+    val pinnedAt: String? = null,
+    val pinnedByUserId: String? = null,
+    val pinnedMessage: PinnedMessagePreviewDto? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class PinTeamForumTopicRequest(
+    val messageId: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class TeamForumTopicPinChangedEvent(
+    val teamId: String,
+    val topicId: String,
+    val pinnedMessageId: String? = null,
+    val pinnedAt: String? = null,
+    val pinnedByUserId: String? = null,
+    val pinnedMessage: PinnedMessagePreviewDto? = null,
 )
 
 @JsonClass(generateAdapter = true)

@@ -68,6 +68,8 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.automirrored.outlined.Forward
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Keyboard
@@ -177,6 +179,8 @@ import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.ui.chat.ChatState
 import com.lastasylum.alliance.ui.chat.ChatListPaneState
 import com.lastasylum.alliance.ui.chat.ChatChromePaneState
+import com.lastasylum.alliance.ui.chat.PinnedMessageBar
+import com.lastasylum.alliance.ui.chat.canPinChatMessage
 import com.lastasylum.alliance.ui.chat.ChatComposerPaneState
 import com.lastasylum.alliance.ui.chat.toListPane
 import com.lastasylum.alliance.ui.chat.toChromePane
@@ -372,6 +376,8 @@ private fun ChatScreenMessagesHost(
     messageListKey: (ChatMessage) -> String,
     onRequestClearRoomHistory: (() -> Unit)? = null,
     clearRoomHistoryEnabled: Boolean = true,
+    onPinMessage: (String) -> Unit = {},
+    onUnpinRoom: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -387,6 +393,14 @@ private fun ChatScreenMessagesHost(
     }
     val messages = listPane.messages
     val selectedRoomId = listPane.selectedRoomId
+    val selectedRoom = remember(selectedRoomId, chromePane.rooms) {
+        selectedRoomId?.let { id -> chromePane.rooms.find { it.id == id } }
+    }
+    val pinnedPreview = selectedRoom?.pinnedMessage
+    val canUnpinPinned = canPinChatMessage(
+        selectedRoom?.allianceId,
+        chromePane.playerTeamSquadRole,
+    )
     val inSelectionMode = listPane.selectedMessageIds.isNotEmpty()
     val timelineSize = listDerived.timeline.size
 
@@ -666,6 +680,15 @@ private fun ChatScreenMessagesHost(
                     clearHistoryEnabled = clearRoomHistoryEnabled,
                 )
             }
+            if (pinnedPreview != null) {
+                PinnedMessageBar(
+                    preview = pinnedPreview,
+                    canUnpin = canUnpinPinned,
+                    onTap = { onJumpToQuotedMessage(pinnedPreview.id) },
+                    onUnpin = onUnpinRoom,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
             if (inSelectionMode) {
                 ChatSelectionToolbar(
                     selectedCount = listPane.selectedMessageIds.size,
@@ -923,6 +946,8 @@ fun ChatScreen(
     /** Overlay panel: hide room bar, rely on cached session + narrow socket subscriptions. */
     compactOverlayMode: Boolean = false,
     onClearRoomHistory: () -> Unit = {},
+    onPinMessage: (String) -> Unit = {},
+    onUnpinRoom: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val overlayUi = LocalOverlayUiMode.current
@@ -1031,6 +1056,8 @@ fun ChatScreen(
                 },
                 clearRoomHistoryEnabled = !listPane.isLoading &&
                     !chromePane.selectedRoomId.isNullOrBlank(),
+                onPinMessage = onPinMessage,
+                onUnpinRoom = onUnpinRoom,
             )
             ChatScreenComposerSection(
                 composerPane = composerPane,
@@ -1091,6 +1118,13 @@ fun ChatScreen(
                 isAppAdmin = chromePane.isAppAdmin,
                 playerTeamSquadRole = chromePane.playerTeamSquadRole,
             )
+            val sheetCanPin = canPinChatMessage(
+                message.allianceId,
+                chromePane.playerTeamSquadRole,
+            )
+            val roomPinnedId = selectedRoom?.pinnedMessageId
+            val isRoomPinnedMessage =
+                message._id != null && roomPinnedId != null && message._id == roomPinnedId
             ChatMessageActionsSheet(
                 message = message,
                 canDelete = sheetCanModerate,
@@ -1098,6 +1132,16 @@ fun ChatScreen(
                     message.deletedAt == null &&
                     sheetCanModerate &&
                     message.text.isNotBlank(),
+                canPin = sheetCanPin && message.deletedAt == null,
+                isPinned = isRoomPinnedMessage,
+                onPin = {
+                    message._id?.let(onPinMessage)
+                    onDismissMessageActions()
+                },
+                onUnpin = {
+                    onUnpinRoom()
+                    onDismissMessageActions()
+                },
                 onDismiss = onDismissMessageActions,
                 onGoToMap = {
                     com.lastasylum.alliance.game.GameMapNavigator.openFromMessage(context, message.text)
@@ -2882,6 +2926,10 @@ private fun ChatMessageActionsSheet(
     message: ChatMessage,
     canDelete: Boolean,
     mayEdit: Boolean,
+    canPin: Boolean = false,
+    isPinned: Boolean = false,
+    onPin: () -> Unit = {},
+    onUnpin: () -> Unit = {},
     onDismiss: () -> Unit,
     onReply: () -> Unit,
     onForward: () -> Unit,
@@ -3017,6 +3065,20 @@ private fun ChatMessageActionsSheet(
                         Text(e, style = MaterialTheme.typography.titleMedium)
                     }
                 }
+            }
+            if (canPin && !isPinned) {
+                MessageSheetActionRow(
+                    icon = Icons.Outlined.PushPin,
+                    label = stringResource(R.string.chat_action_pin),
+                    onClick = onPin,
+                )
+            }
+            if (canPin && isPinned) {
+                MessageSheetActionRow(
+                    icon = Icons.Outlined.PushPin,
+                    label = stringResource(R.string.chat_action_unpin),
+                    onClick = onUnpin,
+                )
             }
             if (mayEdit || canDelete) {
                 Text(

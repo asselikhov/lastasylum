@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument } from 'mongoose';
+import { HydratedDocument, Types } from 'mongoose';
 
 export type ChatRoomDocument = HydratedDocument<ChatRoom>;
 
@@ -16,6 +16,15 @@ export class ChatRoom {
 
   @Prop({ type: Date, default: null })
   archivedAt: Date | null;
+
+  @Prop({ type: Types.ObjectId, default: null, index: true })
+  pinnedMessageId: Types.ObjectId | null;
+
+  @Prop({ type: Date, default: null })
+  pinnedAt: Date | null;
+
+  @Prop({ type: String, default: null })
+  pinnedByUserId: string | null;
 }
 
 export const ChatRoomSchema = SchemaFactory.createForClass(ChatRoom);

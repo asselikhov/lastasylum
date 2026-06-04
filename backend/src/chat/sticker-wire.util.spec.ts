@@ -22,6 +22,11 @@ describe('sticker-wire.util', () => {
     ).toBe('zlobyaka');
   });
 
+  it('parses obzhory wire message', () => {
+    const parsed = parseStickerOnlyMessage('[[obzhory:3]]');
+    expect(parsed).toEqual({ packKey: 'obzhory', stem: '3' });
+  });
+
   it('rejects unknown pack keys', () => {
     expect(parseStickerOnlyMessage('[[unknown:stem]]')).toBeNull();
   });

@@ -56,4 +56,19 @@ class StickerPacksTest {
         assertEquals(1, packs.size)
         assertEquals("soidow_cat", packs.first().packKey)
     }
+
+    @Test
+    fun parse_obzhoryWire() {
+        val parsed = StickerPacks.parse("[[obzhory:2]]")
+        assertNotNull(parsed)
+        assertEquals("obzhory", parsed!!.packKey)
+        assertEquals("2", parsed.stem)
+    }
+
+    @Test
+    fun enabledPacks_includesObzhoryWhenGranted() {
+        val packs = StickerPacks.enabledPacks(setOf("obzhory"))
+        assertEquals(1, packs.size)
+        assertEquals("obzhory", packs.first().packKey)
+    }
 }

@@ -140,13 +140,17 @@ import com.lastasylum.alliance.data.teams.TeamForumMessageDto
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.data.teams.TeamForumMessageDeletedEvent
 import com.lastasylum.alliance.data.teams.TeamForumSocketManager
+import com.lastasylum.alliance.data.chat.PinnedMessagePreviewDto
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
+import com.lastasylum.alliance.data.teams.TeamForumTopicPinChangedEvent
+import com.lastasylum.alliance.ui.chat.PinnedMessageBar
 import com.lastasylum.alliance.data.teams.TeamForumTypingEvent
 import com.lastasylum.alliance.data.teams.TeamForumMarkRead
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Place
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
@@ -263,13 +267,16 @@ fun TeamForumNavHost(
                         listRefreshNonce++
                     }
                 }
+            val onTopicPin: (TeamForumTopicPinChangedEvent) -> Unit = { listRefreshNonce++ }
             forumSocket.addTopicActivityListener(onTopicActivity)
+            forumSocket.addTopicPinChangedListener(onTopicPin)
             forumSocket.connectTeamInbox(
                 com.lastasylum.alliance.BuildConfig.API_BASE_URL,
                 teamId,
             ) { tokenStore.getAccessToken() }
             onDispose {
                 forumSocket.removeTopicActivityListener(onTopicActivity)
+                forumSocket.removeTopicPinChangedListener(onTopicPin)
             }
         }
     }
@@ -880,6 +887,9 @@ private fun TeamForumTopicChatRoute(
     var confirmBulkDelete by remember { mutableStateOf(false) }
     var deletingSelection by remember { mutableStateOf(false) }
     var highlightMessageId by remember { mutableStateOf<String?>(null) }
+    var pinnedMessageId by remember(teamId, topicId) { mutableStateOf<String?>(null) }
+    var pinnedMessage by remember(teamId, topicId) { mutableStateOf<PinnedMessagePreviewDto?>(null) }
+    var pinNotice by remember { mutableStateOf<String?>(null) }
     var remoteImagePreview by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
     val openImages = remember {
         { urls: List<String>, idx: Int -> remoteImagePreview = urls to idx }
@@ -890,6 +900,51 @@ private fun TeamForumTopicChatRoute(
         attachmentPreviewStartIndex = null
         pendingApkFileId = null
         pendingApkLabel = null
+    }
+
+    fun applyTopicPin(event: TeamForumTopicPinChangedEvent) {
+        if (event.teamId != teamId || event.topicId != topicId) return
+        pinnedMessageId = event.pinnedMessageId
+        pinnedMessage = event.pinnedMessage
+    }
+
+    fun refreshTopicPinFromServer() {
+        scope.launch {
+            teamsRepository.listForumTopics(teamId)
+                .onSuccess { topics ->
+                    val topic = topics.find { it.id == topicId } ?: return@onSuccess
+                    pinnedMessageId = topic.pinnedMessageId
+                    pinnedMessage = topic.pinnedMessage
+                }
+        }
+    }
+
+    LaunchedEffect(teamId, topicId) {
+        refreshTopicPinFromServer()
+    }
+
+    fun pinForumMessage(messageId: String) {
+        scope.launch {
+            teamsRepository.pinForumTopicMessage(teamId, topicId, messageId)
+                .onSuccess { topic ->
+                    pinnedMessageId = topic.pinnedMessageId
+                    pinnedMessage = topic.pinnedMessage
+                    pinNotice = res.getString(R.string.forum_pinned_toast_pinned)
+                }
+                .onFailure { e -> error = e.toUserMessageRu(res) }
+        }
+    }
+
+    fun unpinForumTopic() {
+        scope.launch {
+            teamsRepository.pinForumTopicMessage(teamId, topicId, null)
+                .onSuccess { topic ->
+                    pinnedMessageId = topic.pinnedMessageId
+                    pinnedMessage = topic.pinnedMessage
+                    pinNotice = res.getString(R.string.forum_pinned_toast_unpinned)
+                }
+                .onFailure { e -> error = e.toUserMessageRu(res) }
+        }
     }
 
     fun applyEdited(msg: TeamForumMessageDto) {
@@ -914,6 +969,10 @@ private fun TeamForumTopicChatRoute(
 
     fun applyDeleted(ev: TeamForumMessageDeletedEvent) {
         removeMessage(ev.messageId)
+        if (pinnedMessageId == ev.messageId) {
+            pinnedMessageId = null
+            pinnedMessage = null
+        }
     }
 
     fun mergeReadCursor(messageId: String) {
@@ -1257,10 +1316,12 @@ private fun TeamForumTopicChatRoute(
                     typingHint = context.getString(R.string.team_forum_typing, ev.username)
                 }
             }
+            val onPin: (TeamForumTopicPinChangedEvent) -> Unit = { applyTopicPin(it) }
             forumSocket.addMessageListener(onNew)
             forumSocket.addMessageEditedListener(onEdited)
             forumSocket.addMessageDeletedListener(onDeleted)
             forumSocket.addTypingListener(onTyping)
+            forumSocket.addTopicPinChangedListener(onPin)
             forumSocket.connect(
                 BuildConfig.API_BASE_URL,
                 teamId,
@@ -1282,6 +1343,7 @@ private fun TeamForumTopicChatRoute(
                 forumSocket.removeMessageEditedListener(onEdited)
                 forumSocket.removeMessageDeletedListener(onDeleted)
                 forumSocket.removeTypingListener(onTyping)
+                forumSocket.removeTopicPinChangedListener(onPin)
                 forumSocket.connectTeamInbox(
                     BuildConfig.API_BASE_URL,
                     teamId,
@@ -1319,6 +1381,40 @@ private fun TeamForumTopicChatRoute(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+            )
+        }
+        pinNotice?.let { notice ->
+            Text(
+                notice,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+            )
+            LaunchedEffect(notice) {
+                delay(2500)
+                if (pinNotice == notice) pinNotice = null
+            }
+        }
+        pinnedMessage?.let { preview ->
+            PinnedMessageBar(
+                preview = preview,
+                canUnpin = canModerateMessages,
+                onTap = {
+                    val targetId = preview.id
+                    val lazyIdx = listDerived.timeline.indexOfFirst { entry ->
+                        entry is ForumTimelineEntry.Message && entry.messageId == targetId
+                    }
+                    if (lazyIdx >= 0) {
+                        scope.launch {
+                            runCatching { listState.scrollTimelineItemToViewportCenter(lazyIdx) }
+                            highlightMessageId = targetId
+                            delay(900)
+                            if (highlightMessageId == targetId) highlightMessageId = null
+                        }
+                    }
+                },
+                onUnpin = { unpinForumTopic() },
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
             )
         }
         if (selectedMessageIds.isNotEmpty()) {
@@ -1678,6 +1774,16 @@ private fun TeamForumTopicChatRoute(
                     com.lastasylum.alliance.game.GameMapNavigator.openFromMessage(context, msg.text)
                     activeActionMessageId = null
                 },
+                canPin = canModerateMessages && msg.deletedAt.isNullOrBlank(),
+                isPinned = pinnedMessageId != null && msg.id == pinnedMessageId,
+                onPin = {
+                    pinForumMessage(msg.id)
+                    activeActionMessageId = null
+                },
+                onUnpin = {
+                    unpinForumTopic()
+                    activeActionMessageId = null
+                },
                 canEdit = (msg.senderUserId == currentUserId || canModerateMessages) &&
                     msg.deletedAt.isNullOrBlank() &&
                     (
@@ -1983,6 +2089,10 @@ private fun ForumMessageActionsSheet(
     canEdit: Boolean,
     canDelete: Boolean,
     canForward: Boolean,
+    canPin: Boolean = false,
+    isPinned: Boolean = false,
+    onPin: () -> Unit = {},
+    onUnpin: () -> Unit = {},
     onDismiss: () -> Unit,
     onReply: () -> Unit,
     onEdit: () -> Unit,
@@ -2094,6 +2204,20 @@ private fun ForumMessageActionsSheet(
                 onClick = onForward,
                 enabled = canForward,
             )
+            if (canPin && !isPinned) {
+                MessageSheetActionRow(
+                    icon = Icons.Outlined.PushPin,
+                    label = stringResource(R.string.forum_action_pin),
+                    onClick = onPin,
+                )
+            }
+            if (canPin && isPinned) {
+                MessageSheetActionRow(
+                    icon = Icons.Outlined.PushPin,
+                    label = stringResource(R.string.forum_action_unpin),
+                    onClick = onUnpin,
+                )
+            }
             MessageSheetActionRow(
                 icon = Icons.Outlined.Edit,
                 label = stringResource(R.string.chat_action_edit),

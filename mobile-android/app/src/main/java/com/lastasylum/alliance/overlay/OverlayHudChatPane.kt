@@ -71,5 +71,7 @@ internal fun OverlayHudChatPane(
         onClearHighlightMessage = vm::clearHighlightMessage,
         onConsumeTransientNotice = vm::consumeTransientNotice,
         messageListKey = vm::messageListCompositionKey,
+        onPinMessage = vm::pinMessage,
+        onUnpinRoom = vm::unpinSelectedRoom,
     )
 }

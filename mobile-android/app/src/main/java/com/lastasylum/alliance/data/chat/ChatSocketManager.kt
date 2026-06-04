@@ -23,6 +23,8 @@ class ChatSocketManager {
     private val typingListeners = CopyOnWriteArrayList<(ChatTypingEvent) -> Unit>()
     private val readListeners = CopyOnWriteArrayList<(ChatRoomReadEvent) -> Unit>()
     private val roomUnreadListeners = CopyOnWriteArrayList<(ChatRoomUnreadEvent) -> Unit>()
+    private val roomPinChangedListeners =
+        CopyOnWriteArrayList<(ChatRoomPinChangedEvent) -> Unit>()
     private val overlayReactionListeners =
         CopyOnWriteArrayList<(OverlayReactionEvent) -> Unit>()
     private val overlayReactionLogListeners =
@@ -112,6 +114,16 @@ class ChatSocketManager {
 
     fun removeRoomUnreadListener(listener: (ChatRoomUnreadEvent) -> Unit) {
         roomUnreadListeners.remove(listener)
+    }
+
+    fun addRoomPinChangedListener(listener: (ChatRoomPinChangedEvent) -> Unit) {
+        if (!roomPinChangedListeners.contains(listener)) {
+            roomPinChangedListeners.add(listener)
+        }
+    }
+
+    fun removeRoomPinChangedListener(listener: (ChatRoomPinChangedEvent) -> Unit) {
+        roomPinChangedListeners.remove(listener)
     }
 
     fun addOverlayReactionListener(listener: (OverlayReactionEvent) -> Unit) {
@@ -468,6 +480,15 @@ class ChatSocketManager {
                     )
                     roomUnreadListeners.forEach { l -> runCatching { l(event) } }
                 }
+                on("room:pin-changed") { args ->
+                    val payload = args.firstOrNull() as? JSONObject ?: return@on
+                    val event = payload.toChatRoomPinChangedEvent() ?: return@on
+                    val rid = event.roomId
+                    if (rid.isNotBlank() && !isSubscribedRoom(rid)) {
+                        opportunisticallyJoinRoom(rid)
+                    }
+                    roomPinChangedListeners.forEach { l -> runCatching { l(event) } }
+                }
                 val overlayReactionHandler: (Array<out Any>) -> Unit = reactionHandler@{ args ->
                     val payload = args.firstOrNull() as? JSONObject ?: return@reactionHandler
                     val fromUserId = payload.optString("fromUserId", "")
@@ -699,5 +720,32 @@ private fun JSONObject.toChatMessage(): ChatMessage {
         deletedAt = optString("deletedAt").takeIf { it.isNotBlank() },
         deletedByUserId = optString("deletedByUserId").takeIf { it.isNotBlank() },
         attachments = parseChatAttachments(),
+    )
+}
+
+private fun JSONObject.toPinnedMessagePreviewDto(): PinnedMessagePreviewDto? {
+    val id = optString("id").ifBlank { optString("_id") }
+    if (id.isBlank()) return null
+    return PinnedMessagePreviewDto(
+        id = id,
+        text = optString("text"),
+        senderUsername = optString("senderUsername"),
+        senderTeamTag = optString("senderTeamTag").takeIf { it.isNotBlank() },
+        senderServerNumber = optInt("senderServerNumber").takeIf { it > 0 },
+        createdAt = optString("createdAt"),
+        editedAt = optString("editedAt").takeIf { it.isNotBlank() },
+        hasImage = optBoolean("hasImage", false),
+        isSticker = optBoolean("isSticker", false),
+    )
+}
+
+private fun JSONObject.toChatRoomPinChangedEvent(): ChatRoomPinChangedEvent? {
+    val roomId = optString("roomId").ifBlank { return null }
+    return ChatRoomPinChangedEvent(
+        roomId = roomId,
+        pinnedMessageId = optString("pinnedMessageId").takeIf { it.isNotBlank() },
+        pinnedAt = optString("pinnedAt").takeIf { it.isNotBlank() },
+        pinnedByUserId = optString("pinnedByUserId").takeIf { it.isNotBlank() },
+        pinnedMessage = optJSONObject("pinnedMessage")?.toPinnedMessagePreviewDto(),
     )
 }

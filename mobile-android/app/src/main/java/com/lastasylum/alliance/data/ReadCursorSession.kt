@@ -1,10 +1,13 @@
 package com.lastasylum.alliance.data
 
+import com.lastasylum.alliance.data.InboxUnreadReconciler
 import com.lastasylum.alliance.data.auth.JwtAccessTokenClaims
+import com.lastasylum.alliance.data.chat.ChatRepository
 import com.lastasylum.alliance.data.chat.ChatRoomPreferences
 import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.teams.TeamForumPreferences
+import com.lastasylum.alliance.data.teams.TeamForumReadCursorSync
 import com.lastasylum.alliance.data.teams.TeamNewsReadCursorSync
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.users.UsersRepository
@@ -46,6 +49,26 @@ object ReadCursorSession {
                 userSettingsPreferences,
                 teamId,
             )
+        }
+    }
+
+    /** News + forum + chat read cursors after login/reinstall before badges render. */
+    suspend fun syncAllInboxReadCursors(
+        usersRepository: UsersRepository,
+        teamsRepository: TeamsRepository,
+        chatRepository: ChatRepository,
+        chatRoomPreferences: ChatRoomPreferences,
+        teamForumPreferences: TeamForumPreferences,
+        userSettingsPreferences: UserSettingsPreferences,
+    ) {
+        withContext(Dispatchers.IO) {
+            syncTeamNewsReadCursor(usersRepository, teamsRepository, userSettingsPreferences)
+            val teamId = usersRepository.resolveMyProfilePreferCache()?.playerTeamId?.trim().orEmpty()
+            if (teamId.isNotEmpty()) {
+                TeamForumReadCursorSync.sync(teamsRepository, teamForumPreferences, teamId)
+            }
+            InboxUnreadReconciler.repairChatStaleUnread(chatRepository, chatRoomPreferences)
+            OverlayGameStatusHudRefresh.invalidateNewsForumCache()
         }
     }
 

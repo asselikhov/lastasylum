@@ -32,6 +32,14 @@ import { Message, MessageAttachment } from './schemas/message.schema';
 import { ChatRoomReadState } from './schemas/chat-room-read-state.schema';
 import { ChatAttachmentsService } from './chat-attachments.service';
 import { assertStickerPayload } from './sticker-payload.util';
+import {
+  buildPinnedPreviewFromChatMessage,
+  PinnedMessagePreview,
+} from '../common/pinned-message-preview';
+import {
+  ChatRoom,
+  ChatRoomDocument,
+} from './schemas/chat-room.schema';
 
 type MessageAuthor = {
   userId: string;
@@ -121,6 +129,21 @@ export type ChatClearHistoryForAdminResult = {
   messagesDeleted: number;
   readStatesDeleted: number;
   attachmentsDeleted: number;
+};
+
+export type ChatRoomPinChangedPayload = {
+  roomId: string;
+  pinnedMessageId: string | null;
+  pinnedAt: string | null;
+  pinnedByUserId: string | null;
+  pinnedMessage: PinnedMessagePreview | null;
+};
+
+export type ChatRoomWithPinState = {
+  pinnedMessageId: string | null;
+  pinnedAt: string | null;
+  pinnedByUserId: string | null;
+  pinnedMessage: PinnedMessagePreview | null;
 };
 
 @Injectable()
@@ -248,6 +271,193 @@ export class ChatService {
       return;
     }
     throw new ForbiddenException('Not allowed to moderate this message');
+  }
+
+  /** Pin/unpin in `pt:<teamId>` team chat rooms — squad R4/R5 only. */
+  private async assertMayPinInTeamRoom(
+    actor: UserDocument,
+    room: Pick<ChatRoom, 'allianceId'>,
+  ): Promise<void> {
+    const teamId = parsePlayerTeamIdFromChatScope(room.allianceId);
+    if (!teamId) {
+      throw new ForbiddenException(
+        'Pinning is only available in team chat rooms',
+      );
+    }
+    const team = await this.teamsService.getTeamIfMemberOrThrow(
+      teamId,
+      actor._id.toString(),
+    );
+    const squadRole = this.teamsService.getSquadRoleForUser(
+      team,
+      actor._id.toString(),
+    );
+    if (!isSquadOfficerRole(squadRole)) {
+      throw new ForbiddenException(
+        'Only squad ranks R4 and R5 can pin messages',
+      );
+    }
+  }
+
+  private roomPinChangedPayload(
+    roomId: string,
+    room: Pick<
+      ChatRoom,
+      'pinnedMessageId' | 'pinnedAt' | 'pinnedByUserId'
+    >,
+    pinnedMessage: PinnedMessagePreview | null,
+  ): ChatRoomPinChangedPayload {
+    return {
+      roomId,
+      pinnedMessageId: room.pinnedMessageId?.toString() ?? null,
+      pinnedAt: room.pinnedAt?.toISOString() ?? null,
+      pinnedByUserId: room.pinnedByUserId ?? null,
+      pinnedMessage,
+    };
+  }
+
+  private async pinnedPreviewForMessageId(
+    messageId: Types.ObjectId | string | null | undefined,
+  ): Promise<PinnedMessagePreview | null> {
+    const id = messageId?.toString()?.trim();
+    if (!id || !Types.ObjectId.isValid(id)) {
+      return null;
+    }
+    const msg = await this.messageModel.findById(id).lean().exec();
+    if (!msg) {
+      return null;
+    }
+    return buildPinnedPreviewFromChatMessage(msg);
+  }
+
+  async buildPinnedPreviewsForRooms<
+    T extends {
+      _id: Types.ObjectId;
+      pinnedMessageId?: Types.ObjectId | null;
+    },
+  >(rooms: T[]): Promise<Map<string, PinnedMessagePreview | null>> {
+    const pinIds = [
+      ...new Set(
+        rooms
+          .map((r) => r.pinnedMessageId?.toString())
+          .filter((id): id is string => !!id && Types.ObjectId.isValid(id)),
+      ),
+    ];
+    const out = new Map<string, PinnedMessagePreview | null>();
+    if (pinIds.length === 0) {
+      for (const room of rooms) {
+        out.set(room._id.toString(), null);
+      }
+      return out;
+    }
+    const msgs = await this.messageModel
+      .find({ _id: { $in: pinIds.map((id) => new Types.ObjectId(id)) } })
+      .lean()
+      .exec();
+    const byMsgId = new Map(
+      msgs.map((m) => [
+        String(m._id),
+        buildPinnedPreviewFromChatMessage(m),
+      ]),
+    );
+    for (const room of rooms) {
+      const rid = room._id.toString();
+      const pinId = room.pinnedMessageId?.toString();
+      out.set(rid, pinId ? (byMsgId.get(pinId) ?? null) : null);
+    }
+    return out;
+  }
+
+  attachPinStateToRoom<T extends ChatRoom>(
+    room: T,
+    pinnedMessage: PinnedMessagePreview | null,
+  ): T & ChatRoomWithPinState {
+    return {
+      ...room,
+      pinnedMessageId: room.pinnedMessageId?.toString() ?? null,
+      pinnedAt: room.pinnedAt?.toISOString() ?? null,
+      pinnedByUserId: room.pinnedByUserId ?? null,
+      pinnedMessage,
+    };
+  }
+
+  async attachPinStateToRooms<
+    T extends {
+      _id: Types.ObjectId;
+      pinnedMessageId?: Types.ObjectId | null;
+      pinnedAt?: Date | null;
+      pinnedByUserId?: string | null;
+    },
+  >(rooms: T[]): Promise<(T & ChatRoomWithPinState)[]> {
+    const previews = await this.buildPinnedPreviewsForRooms(rooms);
+    return rooms.map((room) =>
+      this.attachPinStateToRoom(
+        room as T & ChatRoom,
+        previews.get(room._id.toString()) ?? null,
+      ),
+    );
+  }
+
+  async setRoomPinnedMessage(
+    userId: string,
+    roomId: string,
+    messageId: string | null,
+  ): Promise<{
+    room: ChatRoomDocument & ChatRoomWithPinState;
+    pinChanged: ChatRoomPinChangedPayload;
+  }> {
+    await this.assertUserMayUseChat(userId);
+    const actor = await this.usersService.findById(userId);
+    if (!actor) {
+      throw new ForbiddenException('User not found');
+    }
+    await this.assertRoomForUser(userId, roomId);
+    const roomBefore = await this.chatRoomsService.findById(roomId);
+    if (!roomBefore || roomBefore.archivedAt) {
+      throw new NotFoundException('Room not found');
+    }
+    await this.assertMayPinInTeamRoom(actor, roomBefore);
+
+    const trimmed = messageId?.trim() ?? '';
+    if (!trimmed) {
+      const updated = await this.chatRoomsService.setPinnedMessage(roomId, {
+        messageId: null,
+        pinnedAt: null,
+        pinnedByUserId: null,
+      });
+      if (!updated) {
+        throw new NotFoundException('Room not found');
+      }
+      const room = this.attachPinStateToRoom(updated, null);
+      return {
+        room,
+        pinChanged: this.roomPinChangedPayload(roomId, updated, null),
+      };
+    }
+
+    if (!Types.ObjectId.isValid(trimmed)) {
+      throw new BadRequestException('Invalid message id');
+    }
+    const msg = await this.messageModel.findById(trimmed).lean().exec();
+    if (!msg || msg.roomId.toString() !== roomBefore._id.toString()) {
+      throw new NotFoundException('Message not found');
+    }
+
+    const msgOid = new Types.ObjectId(trimmed);
+    const updated = await this.chatRoomsService.setPinnedMessage(roomId, {
+      messageId: msgOid,
+      pinnedAt: new Date(),
+      pinnedByUserId: userId,
+    });
+    if (!updated) {
+      throw new NotFoundException('Room not found');
+    }
+    const preview = buildPinnedPreviewFromChatMessage(msg);
+    const room = this.attachPinStateToRoom(updated, preview);
+    return {
+      room,
+      pinChanged: this.roomPinChangedPayload(roomId, updated, preview),
+    };
   }
 
   private async assertMayAccessMessageRoom(
@@ -1130,7 +1340,11 @@ export class ChatService {
   async deleteMessage(
     userId: string,
     messageId: string,
-  ): Promise<{ messageId: string; roomId: string }> {
+  ): Promise<{
+    messageId: string;
+    roomId: string;
+    pinChanged: ChatRoomPinChangedPayload | null;
+  }> {
     const trimmedId = messageId.trim();
     if (!Types.ObjectId.isValid(trimmedId)) {
       throw new BadRequestException('Invalid message id');
@@ -1171,7 +1385,21 @@ export class ChatService {
         )
         .exec();
     }
-    return { messageId: trimmedId, roomId };
+    let pinChanged: ChatRoomPinChangedPayload | null = null;
+    if (res.deletedCount === 1) {
+      const cleared = await this.chatRoomsService.clearPinnedMessageIfMatches(
+        roomId,
+        trimmedId,
+      );
+      if (cleared) {
+        pinChanged = this.roomPinChangedPayload(roomId, {
+          pinnedMessageId: null,
+          pinnedAt: null,
+          pinnedByUserId: null,
+        }, null);
+      }
+    }
+    return { messageId: trimmedId, roomId, pinChanged };
   }
 
   /**

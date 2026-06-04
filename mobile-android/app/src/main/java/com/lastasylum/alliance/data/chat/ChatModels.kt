@@ -4,6 +4,19 @@ import androidx.compose.runtime.Immutable
 import com.squareup.moshi.Json
 
 @Immutable
+data class PinnedMessagePreviewDto(
+    val id: String,
+    val text: String,
+    val senderUsername: String,
+    val senderTeamTag: String? = null,
+    val senderServerNumber: Int? = null,
+    val createdAt: String,
+    val editedAt: String? = null,
+    val hasImage: Boolean = false,
+    val isSticker: Boolean = false,
+)
+
+@Immutable
 data class ChatRoomDto(
     @Json(name = "_id") val id: String,
     val allianceId: String? = null,
@@ -12,6 +25,23 @@ data class ChatRoomDto(
     val archivedAt: String? = null,
     val unreadCount: Int = 0,
     val lastReadMessageId: String? = null,
+    val pinnedMessageId: String? = null,
+    val pinnedAt: String? = null,
+    val pinnedByUserId: String? = null,
+    val pinnedMessage: PinnedMessagePreviewDto? = null,
+)
+
+/** Realtime + REST pin state for a chat room. */
+data class ChatRoomPinChangedEvent(
+    val roomId: String,
+    val pinnedMessageId: String? = null,
+    val pinnedAt: String? = null,
+    val pinnedByUserId: String? = null,
+    val pinnedMessage: PinnedMessagePreviewDto? = null,
+)
+
+data class PinRoomMessageRequest(
+    val messageId: String? = null,
 )
 
 @Immutable

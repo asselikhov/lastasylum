@@ -35,6 +35,17 @@ fun canModerateChatMessage(
     return false
 }
 
+/** Squad R4/R5 may pin/unpin in `pt:*` team chat rooms. */
+fun canPinChatMessage(
+    allianceId: String?,
+    playerTeamSquadRole: String?,
+): Boolean {
+    val scope = allianceId?.trim().orEmpty()
+    if (!scope.startsWith("pt:")) return false
+    val r = playerTeamSquadRole?.trim()?.uppercase() ?: return false
+    return r == "R4" || r == "R5"
+}
+
 /** @deprecated Use [canModerateChatMessage]. */
 fun canDeleteChatMessage(
     message: ChatMessage,

@@ -2,6 +2,7 @@ package com.lastasylum.alliance.ui
 
 import android.app.Application
 import com.lastasylum.alliance.data.chat.stickers.ChushuyStickerPack
+import com.lastasylum.alliance.data.chat.stickers.ObzhoryStickerPack
 import com.lastasylum.alliance.data.chat.stickers.SoidowCatStickerPack
 import com.lastasylum.alliance.data.chat.stickers.ZlobyakaStickerPack
 import com.lastasylum.alliance.di.AppContainer
@@ -34,11 +35,12 @@ suspend fun runAppLaunchWarmup(
                         }
                     }
             }
-            val chat = async { chatViewModel.warmUpForLaunch() }
+            val chat = async { chatViewModel.warmUpForLaunchLight() }
             launch {
                 ZlobyakaStickerPack.listSortedStems(application)
                 ChushuyStickerPack.listSortedStems(application)
                 SoidowCatStickerPack.listSortedStems(application)
+                ObzhoryStickerPack.listSortedStems(application)
             }
             launch {
                 val profileResult = profile.await()

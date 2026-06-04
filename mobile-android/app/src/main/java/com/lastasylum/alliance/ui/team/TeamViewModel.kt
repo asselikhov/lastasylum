@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.cache.LaunchDiskCache
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
+import com.lastasylum.alliance.data.InboxUnreadReconciler
 import com.lastasylum.alliance.data.teams.TeamDetailDto
 import com.lastasylum.alliance.data.teams.TeamForumPreferences
 import com.lastasylum.alliance.data.teams.TeamInboxUnread
@@ -141,7 +142,6 @@ class TeamViewModel(
         }
         viewModelScope.launch {
             val newsAfter = userSettingsPreferences.getLastSeenTeamNewsCreatedAt()
-            val localForumRead = teamForumPreferences.loadAllLastReadMessageIds(teamId)
             val diskTopics = if (currentUserId.isNotBlank()) {
                 launchDiskCache.loadForumTopics(currentUserId, teamId)
             } else {
@@ -153,6 +153,18 @@ class TeamViewModel(
                 }
             }
             val topics = networkTopics ?: diskTopics
+            topics?.let { topicList ->
+                InboxUnreadReconciler.hydrateForumPrefsFromTopics(teamForumPreferences, teamId, topicList)
+                if (networkTopics != null) {
+                    InboxUnreadReconciler.repairForumStaleUnread(
+                        teamsRepository = teamsRepository,
+                        forumPrefs = teamForumPreferences,
+                        teamId = teamId,
+                        topics = topicList,
+                    )
+                }
+            }
+            val localForumRead = teamForumPreferences.loadAllLastReadMessageIds(teamId)
             val profileId = _data.value.profile?.id?.trim().orEmpty()
             val forumUnread = topics?.let { TeamInboxUnread.sumForumUnread(it, localForumRead) }
             val newsFallback = teamsRepository.listTeamNews(teamId, cursor = null, limit = 40)

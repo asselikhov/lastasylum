@@ -141,4 +141,9 @@ class ChatRestRepository(
 
     suspend fun clearRoomHistoryForUser(roomId: String): Result<ClearRoomHistoryResponse> =
         runCatching { chatApi.clearRoomHistory(roomId) }
+
+    suspend fun pinRoomMessage(roomId: String, messageId: String?): Result<ChatRoomDto> =
+        runCatching {
+            chatApi.pinRoomMessage(roomId, PinRoomMessageRequest(messageId = messageId))
+        }
 }

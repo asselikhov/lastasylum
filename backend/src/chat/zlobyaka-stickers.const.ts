@@ -1,4 +1,5 @@
 import { isChushuyStickerOnlyMessage } from './chushuy-stickers.const';
+import { isObzhoryStickerOnlyMessage } from './obzhory-stickers.const';
 import { isSoidowCatStickerOnlyMessage } from './soidow-cat-stickers.const';
 
 /**
@@ -30,6 +31,9 @@ export function formatChatPushBody(text: string): string {
   }
   if (isSoidowCatStickerOnlyMessage(text)) {
     return 'Стикер «Soidow cat»';
+  }
+  if (isObzhoryStickerOnlyMessage(text)) {
+    return 'Стикер «ОБЖОРЫ»';
   }
   const t = text.trim();
   return t.length > 140 ? `${t.slice(0, 137)}...` : t;

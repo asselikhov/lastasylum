@@ -10,6 +10,7 @@ import kotlin.math.min
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import com.lastasylum.alliance.data.chat.PinnedMessagePreviewDto
 import org.json.JSONObject
 
 enum class TeamForumSocketState {
@@ -47,6 +48,8 @@ class TeamForumSocketManager {
     private val typingListeners = CopyOnWriteArrayList<(TeamForumTypingEvent) -> Unit>()
     private val topicActivityListeners =
         CopyOnWriteArrayList<(TeamForumTopicActivityEvent) -> Unit>()
+    private val topicPinChangedListeners =
+        CopyOnWriteArrayList<(TeamForumTopicPinChangedEvent) -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var reconnectAttempt = 0
     private var intentionalDisconnect = false
@@ -112,6 +115,16 @@ class TeamForumSocketManager {
 
     fun removeTopicActivityListener(listener: (TeamForumTopicActivityEvent) -> Unit) {
         topicActivityListeners.remove(listener)
+    }
+
+    fun addTopicPinChangedListener(listener: (TeamForumTopicPinChangedEvent) -> Unit) {
+        if (!topicPinChangedListeners.contains(listener)) {
+            topicPinChangedListeners.add(listener)
+        }
+    }
+
+    fun removeTopicPinChangedListener(listener: (TeamForumTopicPinChangedEvent) -> Unit) {
+        topicPinChangedListeners.remove(listener)
     }
 
     fun clearListeners() {
@@ -355,6 +368,14 @@ class TeamForumSocketManager {
                         messageDeletedListeners.forEach { l -> runCatching { l(event) } }
                     }
                 }
+                on("topic:pin-changed") { args ->
+                    val payload = args.firstOrNull() as? JSONObject ?: return@on
+                    val event = payload.toTeamForumTopicPinChangedEvent() ?: return@on
+                    if (event.teamId != teamId) return@on
+                    dispatchMain {
+                        topicPinChangedListeners.forEach { l -> runCatching { l(event) } }
+                    }
+                }
                 on("user:typing") { args ->
                     val payload = args.firstOrNull() as? JSONObject ?: return@on
                     val activeTopic = topicId?.trim()?.takeIf { it.isNotEmpty() } ?: return@on
@@ -477,5 +498,34 @@ private fun JSONObject.toForumMessageDto(): TeamForumMessageDto? {
         createdAt = optString("createdAt"),
         updatedAt = optionalStringField("updatedAt").orEmpty()
             .ifBlank { optString("createdAt") },
+    )
+}
+
+private fun JSONObject.toPinnedMessagePreviewDto(): PinnedMessagePreviewDto? {
+    val id = optString("id").ifBlank { optString("_id") }
+    if (id.isBlank()) return null
+    return PinnedMessagePreviewDto(
+        id = id,
+        text = optString("text"),
+        senderUsername = optString("senderUsername"),
+        senderTeamTag = optionalStringField("senderTeamTag"),
+        senderServerNumber = optInt("senderServerNumber").takeIf { it > 0 },
+        createdAt = optString("createdAt"),
+        editedAt = optionalStringField("editedAt"),
+        hasImage = optBoolean("hasImage", false),
+        isSticker = optBoolean("isSticker", false),
+    )
+}
+
+private fun JSONObject.toTeamForumTopicPinChangedEvent(): TeamForumTopicPinChangedEvent? {
+    val teamId = optString("teamId").ifBlank { return null }
+    val topicId = optString("topicId").ifBlank { return null }
+    return TeamForumTopicPinChangedEvent(
+        teamId = teamId,
+        topicId = topicId,
+        pinnedMessageId = optionalStringField("pinnedMessageId"),
+        pinnedAt = optionalStringField("pinnedAt"),
+        pinnedByUserId = optionalStringField("pinnedByUserId"),
+        pinnedMessage = optJSONObject("pinnedMessage")?.toPinnedMessagePreviewDto(),
     )
 }

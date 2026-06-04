@@ -149,6 +149,25 @@ export class ChatGateway {
     );
     /** Personal room for push-style overlay signals (reactions, etc.). */
     void client.join(`user:${user.userId}`);
+    void this.emitAllUnreadSnapshotsOnConnect(user.userId);
+  }
+
+  /** Full unread snapshot after reconnect/reinstall so badges match server read state. */
+  private async emitAllUnreadSnapshotsOnConnect(userId: string): Promise<void> {
+    const uid = userId?.trim();
+    if (!uid) return;
+    try {
+      const user = await this.usersService.findById(uid);
+      if (!user) return;
+      const rooms = await this.chatRoomsService.listRoomsVisibleToUser(user);
+      for (const room of rooms) {
+        await this.emitUnreadToUser(uid, room.id);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `emitAllUnreadSnapshotsOnConnect failed user=${uid}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
   }
 
   @SubscribeMessage('room:join')
@@ -723,6 +742,16 @@ export class ChatGateway {
   /**
    * Emit to joined `chat:{roomId}` sockets and mirror on `user:{id}` for eligible users not in the room.
    */
+  broadcastRoomPinChanged(payload: {
+    roomId: string;
+    pinnedMessageId: string | null;
+    pinnedAt: string | null;
+    pinnedByUserId: string | null;
+    pinnedMessage: unknown;
+  }): void {
+    this.broadcastChatRoomEvent(payload.roomId, 'room:pin-changed', payload);
+  }
+
   broadcastChatRoomEvent(
     roomId: string,
     event: string,

@@ -145,6 +145,12 @@ private fun translateKnownServerMessage(english: String, resources: Resources): 
         resources.getString(R.string.err_chat_moderate_global_server_admin_only)
     english.contains("Only squad ranks R4 and R5 can moderate team chat messages", ignoreCase = true) ->
         resources.getString(R.string.err_chat_moderate_team_r5_only)
+    english.contains("Only squad ranks R4 and R5 can pin messages", ignoreCase = true) ->
+        resources.getString(R.string.err_chat_pin_team_r45_only)
+    english.contains("Only squad ranks R4 and R5 can pin forum messages", ignoreCase = true) ->
+        resources.getString(R.string.err_forum_pin_r45_only)
+    english.contains("Pinning is only available in team chat rooms", ignoreCase = true) ->
+        resources.getString(R.string.err_chat_pin_team_room_only)
     english.contains("Only squad ranks R4 and R5 can manage forum topics", ignoreCase = true) ->
         resources.getString(R.string.err_forum_topics_r5_only)
     english.contains("User already joined another team", ignoreCase = true) ->

@@ -12,7 +12,11 @@ import { Server, Socket } from 'socket.io';
 import { authenticateSocketConnection } from '../common/socket-auth.util';
 import { AllianceRole } from '../common/enums/alliance-role.enum';
 import { parseAllowedOriginsFromEnv } from '../common/config/allowed-origins';
-import { TeamForumService, TeamForumMessageRow } from './team-forum.service';
+import {
+  TeamForumService,
+  TeamForumMessageRow,
+  TeamForumTopicPinChangedPayload,
+} from './team-forum.service';
 
 type GatewayUser = {
   userId: string;
@@ -239,5 +243,15 @@ export class TeamForumGateway {
     this.server
       ?.to(this.roomKey(teamId, topicId))
       .emit('message:edited', { ...message, teamId, topicId });
+  }
+
+  broadcastTopicPinChanged(payload: TeamForumTopicPinChangedPayload): void {
+    const { teamId, topicId } = payload;
+    this.server
+      ?.to(this.roomKey(teamId, topicId))
+      .emit('topic:pin-changed', payload);
+    this.server
+      ?.to(this.teamInboxRoomKey(teamId))
+      .emit('topic:pin-changed', payload);
   }
 }

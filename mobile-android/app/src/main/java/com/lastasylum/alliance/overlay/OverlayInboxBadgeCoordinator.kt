@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.overlay
 
+import com.lastasylum.alliance.data.InboxUnreadReconciler
 import com.lastasylum.alliance.data.displayedUnreadCount
 import com.lastasylum.alliance.data.settings.UserSettingsPreferences
 import com.lastasylum.alliance.data.teams.TeamInboxUnread
@@ -104,10 +105,11 @@ internal class OverlayInboxBadgeCoordinator {
     ): Int = withContext(Dispatchers.IO) {
         val container = AppContainer.from(context)
         val forumPrefs = container.teamForumPreferences
-        val localRead = forumPrefs.loadAllLastReadMessageIds(teamId)
         val topics = container.teamsRepository.listForumTopics(teamId).getOrNull()
         if (topics != null) {
-            return@withContext TeamInboxUnread.sumForumUnread(topics, localRead)
+            InboxUnreadReconciler.hydrateForumPrefsFromTopics(forumPrefs, teamId, topics)
+            val hydratedLocal = forumPrefs.loadAllLastReadMessageIds(teamId)
+            return@withContext TeamInboxUnread.sumForumUnread(topics, hydratedLocal)
         }
         container.teamsRepository.getTeamInboxBadges(teamId, null)
             .getOrNull()
@@ -152,22 +154,32 @@ internal class OverlayInboxBadgeCoordinator {
         authoritative: Int,
         prevDisplayed: Int,
         useAuthoritative: Boolean,
-    ): Int = when {
-        shouldDeferNewsReconcile() ->
-            maxOf(authoritative, prevDisplayed, newsOptimisticFloor)
-        useAuthoritative -> mergeNewsDisplayed(authoritative, prevDisplayed)
-        else -> mergeNewsDisplayed(authoritative, prevDisplayed)
+    ): Int {
+        if (authoritative <= 0 && !shouldDeferNewsReconcile()) {
+            clearNewsOptimistic()
+        }
+        return when {
+            shouldDeferNewsReconcile() ->
+                maxOf(authoritative, prevDisplayed, newsOptimisticFloor)
+            useAuthoritative -> mergeNewsDisplayed(authoritative, prevDisplayed)
+            else -> mergeNewsDisplayed(authoritative, prevDisplayed)
+        }
     }
 
     fun mergeHudForum(
         authoritative: Int,
         prevDisplayed: Int,
         useAuthoritative: Boolean,
-    ): Int = when {
-        isForumOptimisticActive() || shouldDeferForumReconcile() ->
-            maxOf(authoritative, prevDisplayed, forumOptimisticFloor)
-        useAuthoritative -> mergeForumDisplayed(authoritative, prevDisplayed)
-        else -> mergeForumDisplayed(authoritative, prevDisplayed)
+    ): Int {
+        if (authoritative <= 0 && !shouldDeferForumReconcile() && !isForumOptimisticActive()) {
+            clearForumOptimistic()
+        }
+        return when {
+            isForumOptimisticActive() || shouldDeferForumReconcile() ->
+                maxOf(authoritative, prevDisplayed, forumOptimisticFloor)
+            useAuthoritative -> mergeForumDisplayed(authoritative, prevDisplayed)
+            else -> mergeForumDisplayed(authoritative, prevDisplayed)
+        }
     }
 
     fun cacheNewsForum(teamId: String, news: Int, forum: Int) {

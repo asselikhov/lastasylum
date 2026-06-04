@@ -8,6 +8,7 @@ object StickerPacks {
         ZlobyakaStickerPack,
         ChushuyStickerPack,
         SoidowCatStickerPack,
+        ObzhoryStickerPack,
     )
 
     private val byKey: Map<String, ChatStickerPack> = all.associateBy { it.packKey }

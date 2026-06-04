@@ -42,12 +42,6 @@ fun OverlayGameStatusHud(
                 contentDescription = stringResource(R.string.overlay_hud_forum_cd, state.forumUnread),
                 onClick = onForumClick,
             )
-            if (!state.appUpdateDownloadUrl.isNullOrBlank()) {
-                OverlayGameHudUpdateChip(
-                    contentDescription = stringResource(R.string.overlay_hud_app_update_cd),
-                    onClick = onAppUpdateClick,
-                )
-            }
             OverlayGameHudChip(
                 icon = Icons.Outlined.Email,
                 accent = OverlayHudChipAccent.Mail,
@@ -58,6 +52,12 @@ fun OverlayGameStatusHud(
                 ),
                 onClick = onMailClick,
             )
+            if (!state.appUpdateDownloadUrl.isNullOrBlank()) {
+                OverlayGameHudUpdateChip(
+                    contentDescription = stringResource(R.string.overlay_hud_app_update_cd),
+                    onClick = onAppUpdateClick,
+                )
+            }
         }
     }
 }

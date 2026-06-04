@@ -23,6 +23,7 @@ class ChatRealtimeSubscriber(
     private var realtimeTypingListener: ((ChatTypingEvent) -> Unit)? = null
     private var realtimeReadListener: ((ChatRoomReadEvent) -> Unit)? = null
     private var realtimeRoomUnreadListener: ((ChatRoomUnreadEvent) -> Unit)? = null
+    private var realtimeRoomPinChangedListener: ((ChatRoomPinChangedEvent) -> Unit)? = null
     private var realtimeHistoryClearedListener: (() -> Unit)? = null
     private val overlayMessageListeners =
         java.util.concurrent.CopyOnWriteArrayList<(ChatMessage) -> Unit>()
@@ -84,6 +85,7 @@ class ChatRealtimeSubscriber(
         onTyping: (ChatTypingEvent) -> Unit = {},
         onRead: (ChatRoomReadEvent) -> Unit = {},
         onRoomUnread: (ChatRoomUnreadEvent) -> Unit = {},
+        onRoomPinChanged: (ChatRoomPinChangedEvent) -> Unit = {},
     ) {
         connectRealtimeRooms(
             roomIds = realtimeRoomIdsForPrimary(roomId),
@@ -92,6 +94,7 @@ class ChatRealtimeSubscriber(
             onTyping = onTyping,
             onRead = onRead,
             onRoomUnread = onRoomUnread,
+            onRoomPinChanged = onRoomPinChanged,
         )
     }
 
@@ -102,6 +105,7 @@ class ChatRealtimeSubscriber(
         onTyping: (ChatTypingEvent) -> Unit = {},
         onRead: (ChatRoomReadEvent) -> Unit = {},
         onRoomUnread: (ChatRoomUnreadEvent) -> Unit = {},
+        onRoomPinChanged: (ChatRoomPinChangedEvent) -> Unit = {},
         onHistoryCleared: (() -> Unit)? = null,
     ) {
         val nextIds = roomIds.map { it.trim() }.filter { it.isNotEmpty() }
@@ -113,6 +117,7 @@ class ChatRealtimeSubscriber(
             realtimeTypingListener = onTyping
             realtimeReadListener = onRead
             realtimeRoomUnreadListener = onRoomUnread
+            realtimeRoomPinChangedListener = onRoomPinChanged
             if (onHistoryCleared != null) {
                 realtimeHistoryClearedListener?.let { socketManager.removeChatHistoryClearedListener(it) }
                 realtimeHistoryClearedListener = onHistoryCleared
@@ -125,18 +130,21 @@ class ChatRealtimeSubscriber(
         realtimeTypingListener?.let { socketManager.removeTypingListener(it) }
         realtimeReadListener?.let { socketManager.removeReadListener(it) }
         realtimeRoomUnreadListener?.let { socketManager.removeRoomUnreadListener(it) }
+        realtimeRoomPinChangedListener?.let { socketManager.removeRoomPinChangedListener(it) }
         realtimeHistoryClearedListener?.let { socketManager.removeChatHistoryClearedListener(it) }
         realtimeUiListener = onMessage
         realtimeDeleteListener = onDeleteMessage
         realtimeTypingListener = onTyping
         realtimeReadListener = onRead
         realtimeRoomUnreadListener = onRoomUnread
+        realtimeRoomPinChangedListener = onRoomPinChanged
         realtimeHistoryClearedListener = onHistoryCleared
         socketManager.addMessageListener(onMessage)
         socketManager.addMessageDeletedListener(onDeleteMessage)
         socketManager.addTypingListener(onTyping)
         socketManager.addReadListener(onRead)
         socketManager.addRoomUnreadListener(onRoomUnread)
+        socketManager.addRoomPinChangedListener(onRoomPinChanged)
         onHistoryCleared?.let { socketManager.addChatHistoryClearedListener(it) }
         primaryRealtimeRoomIds.clear()
         primaryRealtimeRoomIds.addAll(nextIds)

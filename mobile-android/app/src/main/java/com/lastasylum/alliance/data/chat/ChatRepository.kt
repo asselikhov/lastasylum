@@ -137,6 +137,9 @@ class ChatRepository(
     suspend fun clearRoomHistoryForUser(roomId: String): Result<ClearRoomHistoryResponse> =
         rest.clearRoomHistoryForUser(roomId)
 
+    suspend fun pinRoomMessage(roomId: String, messageId: String?): Result<ChatRoomDto> =
+        rest.pinRoomMessage(roomId, messageId)
+
     fun connectRealtime(
         roomId: String,
         onMessage: (ChatMessage) -> Unit,
@@ -152,6 +155,7 @@ class ChatRepository(
         onTyping: (ChatTypingEvent) -> Unit = {},
         onRead: (ChatRoomReadEvent) -> Unit = {},
         onRoomUnread: (ChatRoomUnreadEvent) -> Unit = {},
+        onRoomPinChanged: (ChatRoomPinChangedEvent) -> Unit = {},
         onHistoryCleared: (() -> Unit)? = null,
     ) = realtime.connectRealtimeRooms(
         roomIds,
@@ -160,6 +164,7 @@ class ChatRepository(
         onTyping,
         onRead,
         onRoomUnread,
+        onRoomPinChanged,
         onHistoryCleared,
     )
 

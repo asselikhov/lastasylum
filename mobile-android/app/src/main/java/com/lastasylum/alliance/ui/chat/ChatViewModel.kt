@@ -25,6 +25,7 @@ import com.lastasylum.alliance.data.chat.ChatConnectionState
 import com.lastasylum.alliance.data.chat.ChatRepository
 import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.data.chat.ChatRoomReadEvent
+import com.lastasylum.alliance.data.chat.ChatRoomPinChangedEvent
 import com.lastasylum.alliance.data.chat.ChatRoomUnreadEvent
 import com.lastasylum.alliance.data.chat.ChatTypingEvent
 import com.lastasylum.alliance.data.chat.ChatRoomDto
@@ -206,6 +207,9 @@ class ChatViewModel(
 
     @Volatile
     private var launchWarmupNeedsMessages = false
+
+    @Volatile
+    private var launchWarmupNeedsBootstrap = false
 
     @Volatile
     private var cachedTeamProfileGate: Boolean? = null
@@ -525,6 +529,47 @@ class ChatViewModel(
         lazyColumnKeyByMessageId.remove(id)
     }
 
+    /** Splash (критический путь): комнаты с диска или один listRooms; без openRoom / сети сообщений. */
+    suspend fun warmUpForLaunchLight() {
+        val primed = primeFromLaunchDisk()
+        if (_state.value.rooms.isEmpty()) {
+            val roomsResult = withContext(Dispatchers.IO) { repository.listRooms() }
+            roomsResult
+                .onSuccess { raw ->
+                    val rooms = applyRoomsFromServer(raw)
+                    syncRaidRoomPreference(rooms)
+                    val selected = resolveOverlayPreferredRoomId(
+                        rooms = rooms,
+                        preferOverlayRaidRoom = false,
+                    ) ?: rooms.firstOrNull()?.id
+                    selected?.let { chatRoomPreferences.setSelectedRoomId(it) }
+                    reconcileStaleServerUnread(rooms, raw)
+                    _state.update {
+                        it.copy(
+                            rooms = rooms,
+                            isRoomsLoading = false,
+                            selectedRoomId = selected ?: it.selectedRoomId,
+                        )
+                    }
+                    schedulePersistChatSnapshot()
+                }
+                .onFailure {
+                    _state.update { it.copy(isRoomsLoading = false) }
+                }
+        } else {
+            recomputeRoomUnreadBadges()
+            _state.update { it.copy(isRoomsLoading = false) }
+        }
+        launchWarmupNeedsBootstrap = true
+        if (
+            (primed || _state.value.rooms.isNotEmpty()) &&
+            _state.value.messages.isEmpty() &&
+            !_state.value.selectedRoomId.isNullOrBlank()
+        ) {
+            launchWarmupNeedsMessages = true
+        }
+    }
+
     /** Splash: комнаты сразу; сообщения — из диска или фоном после UI. */
     suspend fun warmUpForLaunch() {
         val primed = primeFromLaunchDisk()
@@ -544,9 +589,13 @@ class ChatViewModel(
         }
     }
 
-    /** После splash: догрузить ленту, если splash завершился без сообщений. */
+    /** После splash: openRoom / bootstrap и догрузка ленты. */
     fun continueLaunchWarmup() {
         viewModelScope.launch {
+            if (launchWarmupNeedsBootstrap) {
+                launchWarmupNeedsBootstrap = false
+                bootstrap(preferAllianceHubRoom = true, force = false, deferNetworkMessages = false)
+            }
             if (!launchWarmupNeedsMessages) {
                 if (_state.value.rooms.isNotEmpty()) schedulePersistChatSnapshot()
                 return@launch
@@ -1806,8 +1855,8 @@ class ChatViewModel(
     private fun applyRoomsFromServer(serverRooms: List<ChatRoomDto>): List<ChatRoomDto> {
         hydrateReadCursorsFromPreferences()
         val sorted = sortChatRoomsForDisplay(serverRooms)
-        hydrateReadCursorsFromRooms(sorted)
         val merged = mergeRoomsUnreadFromServer(sorted)
+        hydrateReadCursorsFromRooms(sorted)
         ChatSessionCache.update(merged)
         flushPendingUnreadBumps()
         syncOverlayAllianceHubBadge(merged)
@@ -1853,6 +1902,19 @@ class ChatViewModel(
         }
     }
 
+    private fun deviceLastReadMessageId(roomId: String): String? {
+        val fromMemory = lastMarkedReadByRoom[roomId]?.trim().orEmpty()
+        val fromPrefs = chatRoomPreferences.getLastReadMessageId(roomId)?.trim().orEmpty()
+        return listOf(fromMemory, fromPrefs)
+            .filter { it.isNotBlank() }
+            .reduceOrNull { acc, next ->
+                if (isObjectIdNewer(next, acc)) next else acc
+            }
+    }
+
+    private fun deviceLastReadMessageId(room: ChatRoomDto): String? =
+        deviceLastReadMessageId(room.id)
+
     private fun resolvedLastReadMessageId(room: ChatRoomDto): String? {
         val fromMemory = lastMarkedReadByRoom[room.id]?.trim().orEmpty()
         val fromPrefs = chatRoomPreferences.getLastReadMessageId(room.id)?.trim().orEmpty()
@@ -1868,7 +1930,7 @@ class ChatViewModel(
         effectiveUnreadCount(
             serverUnread = room.unreadCount,
             lastReadMessageId = room.lastReadMessageId,
-            localLastReadMessageId = resolvedLastReadMessageId(room),
+            localLastReadMessageId = deviceLastReadMessageId(room),
         )
 
     private fun shouldTrackUnreadForMessage(roomId: String, messageId: String): Boolean {
@@ -2035,10 +2097,10 @@ class ChatViewModel(
             val effectiveRaw = effectiveUnreadCount(
                 serverUnread = raw.unreadCount,
                 lastReadMessageId = raw.lastReadMessageId,
-                localLastReadMessageId = resolvedLastReadMessageId(room),
+                localLastReadMessageId = deviceLastReadMessageId(room),
             )
             if (effectiveRaw > 0 && room.unreadCount > raw.unreadCount) continue
-            val localLast = resolvedLastReadMessageId(room) ?: continue
+            val localLast = deviceLastReadMessageId(room) ?: continue
             val serverLast = raw.lastReadMessageId?.trim().orEmpty()
             val localAhead =
                 serverLast.isBlank() || isObjectIdNewer(localLast, serverLast)
@@ -2108,7 +2170,7 @@ class ChatViewModel(
         val serverLast = event.lastReadMessageId?.trim().orEmpty()
         val serverUnread = event.unreadCount.coerceAtLeast(0)
         val roomDto = _state.value.rooms.find { it.id == roomId }
-        val localLast = roomDto?.let { resolvedLastReadMessageId(it) }
+        val localLast = roomDto?.let { deviceLastReadMessageId(it) }
             ?: chatRoomPreferences.getLastReadMessageId(roomId)
         if (serverUnread > 0 && !localLast.isNullOrBlank()) {
             val suppressed = effectiveUnreadCount(
@@ -2182,6 +2244,7 @@ class ChatViewModel(
             onTyping = ::onTypingFromPeer,
             onRead = ::onRoomReadEvent,
             onRoomUnread = ::onRoomUnreadFromServer,
+            onRoomPinChanged = ::onRoomPinChanged,
             onHistoryCleared = ::onChatHistoryClearedFromServer,
         )
     }
@@ -2272,6 +2335,7 @@ class ChatViewModel(
             onTyping = ::onTypingFromPeer,
             onRead = ::onRoomReadEvent,
             onRoomUnread = ::onRoomUnreadFromServer,
+            onRoomPinChanged = ::onRoomPinChanged,
             onHistoryCleared = ::onChatHistoryClearedFromServer,
         )
         val cached = roomMessageCache[roomId]
@@ -3014,6 +3078,68 @@ class ChatViewModel(
                     } else {
                         publishMessagesDerived(previousMessages)
                     }
+                }
+        }
+    }
+
+    private fun applyRoomPinToRooms(rooms: List<ChatRoomDto>, room: ChatRoomDto): List<ChatRoomDto> =
+        rooms.map { if (it.id == room.id) room else it }
+
+    private fun applyRoomPinEvent(rooms: List<ChatRoomDto>, event: ChatRoomPinChangedEvent): List<ChatRoomDto> =
+        rooms.map { room ->
+            if (room.id != event.roomId) room
+            else room.copy(
+                pinnedMessageId = event.pinnedMessageId,
+                pinnedAt = event.pinnedAt,
+                pinnedByUserId = event.pinnedByUserId,
+                pinnedMessage = event.pinnedMessage,
+            )
+        }
+
+    private fun publishRoomPin(room: ChatRoomDto) {
+        _state.update { st -> st.copy(rooms = applyRoomPinToRooms(st.rooms, room)) }
+        ChatSessionCache.update(_state.value.rooms)
+    }
+
+    fun onRoomPinChanged(event: ChatRoomPinChangedEvent) {
+        _state.update { st -> st.copy(rooms = applyRoomPinEvent(st.rooms, event)) }
+        ChatSessionCache.update(_state.value.rooms)
+    }
+
+    fun pinMessage(messageId: String) {
+        val roomId = _state.value.selectedRoomId?.trim().orEmpty()
+        if (roomId.isEmpty() || messageId.isBlank()) return
+        viewModelScope.launch {
+            repository.pinRoomMessage(roomId, messageId)
+                .onSuccess { room ->
+                    publishRoomPin(room)
+                    _state.update {
+                        it.copy(
+                            transientNotice = res.getString(R.string.chat_pinned_toast_pinned),
+                        )
+                    }
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(error = e.toUserMessageRu(res))
+                }
+        }
+    }
+
+    fun unpinSelectedRoom() {
+        val roomId = _state.value.selectedRoomId?.trim().orEmpty()
+        if (roomId.isEmpty()) return
+        viewModelScope.launch {
+            repository.pinRoomMessage(roomId, null)
+                .onSuccess { room ->
+                    publishRoomPin(room)
+                    _state.update {
+                        it.copy(
+                            transientNotice = res.getString(R.string.chat_pinned_toast_unpinned),
+                        )
+                    }
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(error = e.toUserMessageRu(res))
                 }
         }
     }

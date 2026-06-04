@@ -624,7 +624,8 @@ internal fun ChatComposer(
                                         if (readOnly) return@IconButton
                                         if (showMediaPanel) {
                                             showMediaPanel = false
-                                            focusRequester.requestFocus()
+                                            focusManager.clearFocus()
+                                            keyboard?.hide()
                                         } else {
                                             focusManager.clearFocus()
                                             keyboard?.hide()
