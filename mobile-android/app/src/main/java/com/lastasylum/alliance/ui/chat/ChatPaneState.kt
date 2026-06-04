@@ -34,6 +34,7 @@ data class ChatChromePaneState(
     val confirmDeleteMessageId: String? = null,
     val confirmBulkDelete: Boolean = false,
     val isDeletingSelection: Boolean = false,
+    val pinInFlight: Boolean = false,
 )
 
 @Immutable
@@ -74,6 +75,7 @@ fun ChatState.toChromePane(): ChatChromePaneState =
         confirmDeleteMessageId = confirmDeleteMessageId,
         confirmBulkDelete = confirmBulkDelete,
         isDeletingSelection = isDeletingSelection,
+        pinInFlight = pinInFlight,
     )
 
 fun ChatState.toComposerPane(): ChatComposerPaneState =

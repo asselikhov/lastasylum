@@ -1813,6 +1813,7 @@ class CombatOverlayService : Service() {
     private fun refreshOverlayStatusHudData(force: Boolean = false) {
         if (!isInGameOverlayUiActive()) return
         bindOverlayReadCursorsIfPossible()
+        applyInstantOverlayHudFromLocalCaches()
         val now = System.currentTimeMillis()
         if (!force && now - lastHudRefreshCompletedAtMs < HUD_REFRESH_MIN_INTERVAL_MS) {
             val remaining = HUD_REFRESH_MIN_INTERVAL_MS - (now - lastHudRefreshCompletedAtMs)
@@ -1844,8 +1845,9 @@ class CombatOverlayService : Service() {
                     container.chatRepository.applyOverlayRoomsFromRooms(list)
                     mainHandler.post { syncOverlayRaidRoomSubscription() }
                 }
-                val refreshNewsForum = force ||
-                    now - lastHudRefreshCompletedAtMs >= STATUS_HUD_REFRESH_MS
+                val skipNewsForumNetwork = force && OverlayGameStatusHudRefresh.hasRecentDiskSeed()
+                val refreshNewsForum = !skipNewsForumNetwork &&
+                    (force || now - lastHudRefreshCompletedAtMs >= STATUS_HUD_REFRESH_MS)
                 val state = runCatching {
                     OverlayGameStatusHudRefresh.load(
                         context = this@CombatOverlayService,
@@ -2015,6 +2017,25 @@ class CombatOverlayService : Service() {
      * Keep HUD chips visible after re-entering the game until the next network refresh completes.
      * Uses in-memory coordinator cache and local read cursors (no zero flash).
      */
+    private fun applyInstantOverlayHudFromLocalCaches() {
+        if (!isInGameOverlayUiActive()) return
+        val instant = OverlayGameStatusHudRefresh.buildInstantLocalState(this) ?: return
+        val prev = overlayStatusHudFlow.value
+        overlayStatusHudFlow.value = prev.copy(
+            allianceChatUnread = maxOf(
+                instant.allianceChatUnread,
+                prev.allianceChatUnread,
+                hubUnreadOptimisticFloor,
+            ),
+            teamNewsUnread = maxOf(instant.teamNewsUnread, prev.teamNewsUnread),
+            forumUnread = maxOf(instant.forumUnread, prev.forumUnread),
+        )
+    }
+
+    /**
+     * Keep HUD chips visible after re-entering the game until the next network refresh completes.
+     * Uses in-memory coordinator cache and local read cursors (no zero flash).
+     */
     private fun seedOverlayInboxBadgesBeforeRefresh() {
         bindOverlayReadCursorsIfPossible()
         serviceScope.launch(Dispatchers.IO) {
@@ -2033,9 +2054,11 @@ class CombatOverlayService : Service() {
             val cachedNews = inboxBadgeCoordinator.readCachedNews(teamId)
             val cachedForum = inboxBadgeCoordinator.readCachedForum(teamId)
             val localForumRead = container.teamForumPreferences.loadAllLastReadMessageIds(teamId)
-            val forumFromTopics = container.teamsRepository.listForumTopics(teamId)
-                .getOrNull()
+            val forumFromTopics = container.launchDiskCache.loadForumTopics(userId, teamId)
                 ?.let { TeamInboxUnread.sumForumUnread(it, localForumRead) }
+                ?: container.teamsRepository.listForumTopics(teamId)
+                    .getOrNull()
+                    ?.let { TeamInboxUnread.sumForumUnread(it, localForumRead) }
             val hubPair = computeAllianceHubUnreadFromCache()
             mainHandler.post {
                 if (!isInGameOverlayUiActive()) return@post
@@ -3330,8 +3353,17 @@ class CombatOverlayService : Service() {
             resetOverlayVoiceForGameEntry()
             ensureOverlayRaidRealtimeIfNeeded()
             ensureOverlayForumInboxRealtimeIfNeeded()
+            val uid = jwtSubFromAccessToken()?.trim().orEmpty()
+            if (uid.isNotEmpty()) {
+                serviceScope.launch(Dispatchers.IO) {
+                    OverlayColdStartHydrator.hydrate(this@CombatOverlayService, uid)
+                    mainHandler.post { applyInstantOverlayHudFromLocalCaches() }
+                }
+            }
             seedOverlayInboxBadgesBeforeRefresh()
-            OverlayGameStatusHudRefresh.invalidateNewsForumCache()
+            if (!OverlayGameStatusHudRefresh.hasRecentDiskSeed()) {
+                OverlayGameStatusHudRefresh.invalidateNewsForumCache()
+            }
             lastHudRefreshCompletedAtMs = 0L
             syncOverlayHubBadgeFromAppReadState()
             repairDetachedOverlayShellIfNeeded()
@@ -5534,8 +5566,34 @@ class CombatOverlayService : Service() {
         if (overlayHudWarmupJob?.isActive == true) return
         overlayHudWarmupJob = serviceScope.launch {
             try {
+                val uid = jwtSubFromAccessToken()?.trim().orEmpty()
+                if (uid.isNotEmpty()) {
+                    val hydrateStarted = android.os.SystemClock.elapsedRealtime()
+                    val hydrateResult = withContext(Dispatchers.IO) {
+                        OverlayColdStartHydrator.hydrate(this@CombatOverlayService, uid)
+                    }
+                    withContext(Dispatchers.Main.immediate) {
+                        applyInstantOverlayHudFromLocalCaches()
+                    }
+                    OverlayPerfDiag.logColdHydrate(
+                        durationMs = android.os.SystemClock.elapsedRealtime() - hydrateStarted,
+                        seededContext = hydrateResult.seededContext,
+                        seededRooms = hydrateResult.seededRooms,
+                        seededBadges = hydrateResult.seededBadges,
+                    )
+                    if (hydrateResult.needsNetworkPrefetch) {
+                        launch(Dispatchers.IO) {
+                            OverlayColdStartHydrator.prefetchTeamContent(this@CombatOverlayService, uid)
+                        }
+                    }
+                }
                 prepareOverlayChatBeforePanelShowSuspend()
                 preloadOverlayHudDataSuspend()
+                mainHandler.post {
+                    if (isInGameOverlayUiActive()) {
+                        showOverlayChatTeamPanel(warmHostOnly = true)
+                    }
+                }
             } finally {
                 overlayChatWarmupCompleted = true
             }
@@ -5574,7 +5632,7 @@ class CombatOverlayService : Service() {
     }
 
     private fun scheduleOverlayHudContextPreload() {
-        if (OverlayTeamContextCache.peekValid() != null) return
+        if (OverlayTeamContextCache.peekForPanel() != null) return
         if (overlayHudWarmupJob?.isActive == true) return
         if (overlayHudContextPreloadJob?.isActive == true) return
         overlayHudContextPreloadJob = serviceScope.launch {
@@ -6231,22 +6289,13 @@ class CombatOverlayService : Service() {
         needsChatPrime: Boolean,
         hudPane: OverlayHudPane?,
     ) {
-        val waitForChatHub = needsChatPrime &&
+        onOverlayChatTeamPanelPresented(needsChatPrime = false)
+        val shouldPrime = needsChatPrime &&
             (hudPane == null || hudPane == OverlayHudPane.Chat) &&
             !overlayChatHubPrimed()
-        if (waitForChatHub) {
-            overlayChatPrimeJob?.cancel()
-            overlayChatPrimeJob = serviceScope.launch {
-                prepareOverlayChatBeforePanelShowSuspend()
-                mainHandler.post {
-                    if (!overlayChatTeamPanelVisible) {
-                        onOverlayChatTeamPanelPresented(needsChatPrime = false)
-                    }
-                }
-            }
-            return
+        if (shouldPrime) {
+            scheduleOverlayChatPrimeForPanel()
         }
-        onOverlayChatTeamPanelPresented(needsChatPrime = false)
     }
 
     private fun dp(value: Int): Int {

@@ -1,5 +1,6 @@
 package com.lastasylum.alliance.data.teams
 
+import com.lastasylum.alliance.data.chat.ToggleReactionRequest
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -308,6 +309,21 @@ class TeamsRepository(
                 teamId,
                 topicId,
                 messageId,
+            )
+        }
+
+    suspend fun toggleForumMessageReaction(
+        teamId: String,
+        topicId: String,
+        messageId: String,
+        emoji: String,
+    ): Result<TeamForumMessageDto> =
+        runCatching {
+            teamsApi.toggleForumMessageReaction(
+                teamId,
+                topicId,
+                messageId,
+                ToggleReactionRequest(emoji = emoji),
             )
         }
 }

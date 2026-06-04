@@ -1,9 +1,11 @@
 import {
   IsArray,
+  IsMongoId,
   IsOptional,
   IsString,
   Length,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 
 export class CreateTeamForumTopicDto {
@@ -54,6 +56,14 @@ export class UpdateTeamForumMessageDto {
 export class MarkTeamForumTopicReadDto {
   @IsString()
   messageId: string;
+}
+
+/** PUT /teams/:teamId/forum/topics/:topicId/pin */
+export class PinTeamForumTopicMessageDto {
+  @IsOptional()
+  @ValidateIf((_, value) => value != null)
+  @IsMongoId()
+  messageId?: string | null;
 }
 
 export class BulkDeleteTeamForumMessagesDto {

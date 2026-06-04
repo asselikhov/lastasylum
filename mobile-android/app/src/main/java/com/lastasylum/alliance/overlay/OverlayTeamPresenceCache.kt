@@ -80,7 +80,7 @@ internal object OverlayTeamPresenceCache {
         val now = System.currentTimeMillis()
         if (!forceRefresh) {
             val hit = cachedPresence
-            if (hit != null && cachedTeamId == tid && now - cachedAtMs < TTL_MS) {
+            if (hit != null && cachedTeamId == tid) {
                 return@runCatching hit
             }
         }

@@ -99,8 +99,16 @@ export type TeamForumMessageRow = {
     senderTeamTag: string | null;
     senderServerNumber: number | null;
   } | null;
+  reactions: { emoji: string; count: number; reactedByMe: boolean }[];
   createdAt: string;
   updatedAt: string;
+};
+
+export type TeamForumMessageReactionBroadcastPayload = {
+  teamId: string;
+  topicId: string;
+  messageId: string;
+  reactions: { emoji: string; count: number; userIds: string[] }[];
 };
 
 @Injectable()
@@ -523,9 +531,24 @@ export class TeamForumService {
     };
   }
 
+  private mapReactionsForViewer(
+    doc: TeamForumMessageDocument,
+    viewerUserId?: string | null,
+  ): { emoji: string; count: number; reactedByMe: boolean }[] {
+    if (doc.deletedAt) return [];
+    return (doc.reactions ?? [])
+      .filter((r) => r.emoji && (r.userIds?.length ?? 0) > 0)
+      .map((r) => ({
+        emoji: r.emoji,
+        count: r.userIds.length,
+        reactedByMe: viewerUserId ? r.userIds.includes(viewerUserId) : false,
+      }));
+  }
+
   messageRow(
     doc: TeamForumMessageDocument,
     replyTarget?: TeamForumMessageDocument | null,
+    viewerUserId?: string | null,
   ): TeamForumMessageRow {
     const teamIdStr = doc.teamId.toString();
     const legacyHasImage =
@@ -588,8 +611,94 @@ export class TeamForumService {
             senderServerNumber: doc.forwardedFrom.senderServerNumber ?? null,
           }
         : null,
+      reactions: this.mapReactionsForViewer(doc, viewerUserId),
       createdAt: doc.createdAt?.toISOString() ?? new Date().toISOString(),
       updatedAt: doc.updatedAt?.toISOString() ?? new Date().toISOString(),
+    };
+  }
+
+  async toggleMessageReaction(
+    teamId: string,
+    topicId: string,
+    userId: string,
+    messageId: string,
+    emoji: string,
+  ): Promise<TeamForumMessageRow> {
+    await this.teams.getTeamIfMemberOrThrow(teamId, userId);
+    if (!Types.ObjectId.isValid(messageId)) {
+      throw new BadRequestException('Invalid message id');
+    }
+    const trimmed = emoji.trim();
+    if (!trimmed) {
+      throw new BadRequestException('emoji is required');
+    }
+    const teamOid = new Types.ObjectId(teamId);
+    const topicOid = new Types.ObjectId(topicId);
+    const msg = await this.messageModel
+      .findOne({
+        _id: new Types.ObjectId(messageId),
+        teamId: teamOid,
+        topicId: topicOid,
+        deletedAt: null,
+      })
+      .exec();
+    if (!msg) {
+      throw new NotFoundException('Message not found');
+    }
+    const list = (msg.reactions ?? []) as {
+      emoji: string;
+      userIds: string[];
+    }[];
+    const existing = list.find((x) => x.emoji === trimmed);
+    if (!existing) {
+      list.push({ emoji: trimmed, userIds: [userId] });
+    } else {
+      const idx = existing.userIds.indexOf(userId);
+      if (idx >= 0) {
+        existing.userIds.splice(idx, 1);
+      } else {
+        existing.userIds.push(userId);
+      }
+    }
+    msg.reactions = list.filter((x) => x.userIds.length > 0) as typeof msg.reactions;
+    await msg.save();
+    const replyId = this.asIdString(msg.replyToMessageId);
+    let replyTarget: TeamForumMessageDocument | null = null;
+    if (replyId) {
+      replyTarget = await this.messageModel.findById(replyId).exec();
+    }
+    const row = this.messageRow(msg, replyTarget, userId);
+    return (await this.enrichMessagesWithTelegram([row]))[0] ?? row;
+  }
+
+  async getReactionBroadcastPayload(
+    teamId: string,
+    topicId: string,
+    messageId: string,
+  ): Promise<TeamForumMessageReactionBroadcastPayload | null> {
+    if (!Types.ObjectId.isValid(messageId)) {
+      return null;
+    }
+    const msg = await this.messageModel
+      .findOne({
+        _id: new Types.ObjectId(messageId),
+        teamId: new Types.ObjectId(teamId),
+        topicId: new Types.ObjectId(topicId),
+      })
+      .lean();
+    if (!msg || msg.deletedAt) {
+      return null;
+    }
+    const reactions = (msg.reactions ?? []).map((r) => ({
+      emoji: r.emoji,
+      count: r.userIds.length,
+      userIds: r.userIds,
+    }));
+    return {
+      teamId,
+      topicId,
+      messageId,
+      reactions,
     };
   }
 
@@ -989,7 +1098,7 @@ export class TeamForumService {
       docs
         .map((d) => {
           const rid = this.asIdString(d.replyToMessageId);
-          return this.messageRow(d, rid ? replyMap.get(rid) : null);
+          return this.messageRow(d, rid ? replyMap.get(rid) : null, userId);
         })
         .reverse(),
     );
@@ -1134,7 +1243,7 @@ export class TeamForumService {
     topic.lastMessageAt = doc.createdAt ?? new Date();
     topic.messageCount = (topic.messageCount ?? 0) + 1;
     await topic.save();
-    const row = this.messageRow(doc, replyTarget);
+    const row = this.messageRow(doc, replyTarget, userId);
     return {
       ...row,
       senderTelegramUsername: senderDoc.telegramUsername ?? null,
@@ -1239,7 +1348,7 @@ export class TeamForumService {
     }
 
     const rows = await this.enrichMessagesWithTelegram([
-      this.messageRow(doc, null),
+      this.messageRow(doc, null, userId),
     ]);
     return rows[0];
   }
@@ -1297,7 +1406,7 @@ export class TeamForumService {
     msg.editedAt = new Date();
     await msg.save();
     const rows = await this.enrichMessagesWithTelegram([
-      this.messageRow(msg, null),
+      this.messageRow(msg, null, userId),
     ]);
     return rows[0];
   }

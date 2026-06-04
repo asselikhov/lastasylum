@@ -44,6 +44,8 @@ import { CreateMessageDto } from './dto/create-message.dto';
 import { UpdateChatRoomDto } from './dto/update-chat-room.dto';
 import { UploadChatAttachmentDto } from './dto/upload-chat-attachment.dto';
 import { ToggleReactionDto } from './dto/toggle-reaction.dto';
+import { MarkRoomReadDto } from './dto/mark-room-read.dto';
+import { PinRoomMessageDto } from './dto/pin-room-message.dto';
 import type { Response } from 'express';
 import { Types } from 'mongoose';
 
@@ -53,14 +55,6 @@ class EditMessageDto {
 
 class ForwardMessageDto {
   roomId: string;
-}
-
-class MarkReadDto {
-  messageId: string;
-}
-
-class PinRoomMessageDto {
-  messageId: string | null;
 }
 
 class OverlayReactionReadCursorDto {
@@ -511,7 +505,7 @@ export class ChatController {
   async markRoomRead(
     @Req() req: { user: RequestUser },
     @Param('roomId') roomId: string,
-    @Body() dto: MarkReadDto,
+    @Body() dto: MarkRoomReadDto,
   ) {
     const messageId = dto?.messageId?.trim() ?? '';
     if (!messageId) throw new BadRequestException('messageId is required');

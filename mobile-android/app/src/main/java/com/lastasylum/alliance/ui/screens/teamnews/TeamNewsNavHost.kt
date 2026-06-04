@@ -500,8 +500,8 @@ private fun TeamNewsListRoute(
     var loadingMore by remember { mutableStateOf(false) }
     var loadError by remember { mutableStateOf<String?>(null) }
 
-    suspend fun loadNewsPage(cursor: String?, append: Boolean) {
-        if (append) loadingMore = true else loading = true
+    suspend fun loadNewsPage(cursor: String?, append: Boolean, silent: Boolean = false) {
+        if (append) loadingMore = true else if (!silent) loading = true
         if (!append) loadError = null
         teamsRepository.listTeamNews(teamId, cursor, limit = 40)
             .onSuccess { page ->
@@ -527,7 +527,11 @@ private fun TeamNewsListRoute(
 
     LaunchedEffect(teamId, sectionActive) {
         if (!sectionActive) return@LaunchedEffect
-        loadNewsPage(cursor = null, append = false)
+        loadNewsPage(
+            cursor = null,
+            append = false,
+            silent = cachedPage != null,
+        )
     }
 
     val unreadNewsIds = remember(newsItems, currentUserId) {

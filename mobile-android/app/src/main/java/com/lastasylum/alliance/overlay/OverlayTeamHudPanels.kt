@@ -61,7 +61,7 @@ private fun OverlayTeamHudScaffold(
     val context = LocalContext.current
     val app = remember { AppContainer.from(context.applicationContext) }
     val res = context.resources
-    val cachedInitially = remember { OverlayTeamContextCache.peekValid() }
+    val cachedInitially = remember { OverlayTeamContextCache.peekForPanel() }
     var loading by remember { mutableStateOf(cachedInitially == null) }
     var error by remember { mutableStateOf<String?>(null) }
     var hudContext by remember { mutableStateOf(cachedInitially) }
@@ -75,6 +75,22 @@ private fun OverlayTeamHudScaffold(
         } else if (!hadCache) {
             loading = true
             error = null
+            val diskCtx = withContext(Dispatchers.IO) {
+                val uid = app.usersRepository.peekMyProfile()?.id?.trim().orEmpty()
+                if (uid.isNotEmpty()) {
+                    OverlayTeamContextCache.hydrateFromDisk(
+                        userId = uid,
+                        usersRepository = app.usersRepository,
+                        launchDiskCache = app.launchDiskCache,
+                    )
+                } else {
+                    null
+                }
+            }
+            if (diskCtx != null) {
+                hudContext = diskCtx
+                loading = false
+            }
         }
         val loaded = withContext(Dispatchers.IO) {
             OverlayTeamContextCache.load(

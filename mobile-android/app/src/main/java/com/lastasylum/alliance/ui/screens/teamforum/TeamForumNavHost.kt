@@ -91,6 +91,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Checkbox
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -139,33 +140,28 @@ import com.lastasylum.alliance.data.isObjectIdNewer
 import com.lastasylum.alliance.data.teams.TeamForumMessageDto
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.data.teams.TeamForumMessageDeletedEvent
+import com.lastasylum.alliance.data.teams.TeamForumMessageReactionEvent
 import com.lastasylum.alliance.data.teams.TeamForumSocketManager
+import com.lastasylum.alliance.data.chat.ChatReaction
 import com.lastasylum.alliance.data.chat.PinnedMessagePreviewDto
 import com.lastasylum.alliance.data.teams.TeamForumTopicDto
 import com.lastasylum.alliance.data.teams.TeamForumTopicPinChangedEvent
 import com.lastasylum.alliance.ui.chat.PinnedMessageBar
+import com.lastasylum.alliance.ui.chat.toPinnedPreview
 import com.lastasylum.alliance.data.teams.TeamForumTypingEvent
 import com.lastasylum.alliance.data.teams.TeamForumMarkRead
 import com.lastasylum.alliance.data.teams.TeamsRepository
-import androidx.compose.material.icons.automirrored.outlined.Reply
-import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.Place
-import androidx.compose.material.icons.outlined.PushPin
-import androidx.compose.material.icons.outlined.ContentPaste
-import androidx.compose.material.icons.outlined.DeleteOutline
-import androidx.compose.material.icons.outlined.Edit
-import com.lastasylum.alliance.ui.chat.MessageSheetActionRow
-import com.lastasylum.alliance.ui.chat.MessageSheetDividerSpaced
-import com.lastasylum.alliance.ui.chat.MessageSheetPreviewSurface
-import com.lastasylum.alliance.ui.chat.chatAuthedImageRequest
-import com.lastasylum.alliance.ui.chat.replyPreviewText
+import com.lastasylum.alliance.ui.chat.MessageActionOpenRequest
+import com.lastasylum.alliance.ui.chat.MessageContextMenuActions
+import com.lastasylum.alliance.ui.chat.MessageContextMenuPopup
+import com.lastasylum.alliance.ui.chat.MessageContextMenuScrim
+import com.lastasylum.alliance.ui.chat.resolvedChatAttachmentImageUrl
 import com.lastasylum.alliance.ui.util.copyForumMessageToClipboard
 import com.lastasylum.alliance.ui.util.forumMessageHasCopyableContent
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayReactionLogJumpToUnreadFab
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
-import com.lastasylum.alliance.overlay.OverlayAwareBottomSheet
 import com.lastasylum.alliance.overlay.OverlayInteractionSuppressEffect
 import com.lastasylum.alliance.overlay.OverlayModalScope
 import com.lastasylum.alliance.ui.util.toUserMessageRu
@@ -173,11 +169,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import coil3.compose.AsyncImage
-import coil3.request.ImageRequest
-import coil3.request.crossfade
-import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 import com.lastasylum.alliance.ui.chat.ChatStickerFormat
+import androidx.compose.ui.geometry.Rect
 import com.lastasylum.alliance.ui.chat.chatDayKey
 import com.lastasylum.alliance.ui.chat.formatChatDaySeparator
 import com.lastasylum.alliance.ui.chat.formatChatTime
@@ -883,16 +876,28 @@ private fun TeamForumTopicChatRoute(
     var editBusy by remember { mutableStateOf(false) }
     var replyToMessage by remember { mutableStateOf<TeamForumMessageDto?>(null) }
     var activeActionMessageId by remember { mutableStateOf<String?>(null) }
+    var messageActionAnchor by remember { mutableStateOf<Rect?>(null) }
     var selectedMessageIds by remember { mutableStateOf(setOf<String>()) }
+    val dismissMessageActions: () -> Unit = {
+        messageActionAnchor = null
+        activeActionMessageId = null
+    }
     var confirmBulkDelete by remember { mutableStateOf(false) }
     var deletingSelection by remember { mutableStateOf(false) }
     var highlightMessageId by remember { mutableStateOf<String?>(null) }
     var pinnedMessageId by remember(teamId, topicId) { mutableStateOf<String?>(null) }
     var pinnedMessage by remember(teamId, topicId) { mutableStateOf<PinnedMessagePreviewDto?>(null) }
     var pinNotice by remember { mutableStateOf<String?>(null) }
+    var pinInFlight by remember { mutableStateOf(false) }
+    var pendingForumPinMessageId by remember { mutableStateOf<String?>(null) }
     var remoteImagePreview by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
     val openImages = remember {
         { urls: List<String>, idx: Int -> remoteImagePreview = urls to idx }
+    }
+
+    BackHandler(enabled = selectedMessageIds.isNotEmpty() && !deletingSelection) {
+        selectedMessageIds = emptySet()
+        dismissMessageActions()
     }
 
     fun clearPendingAttachment() {
@@ -924,26 +929,55 @@ private fun TeamForumTopicChatRoute(
     }
 
     fun pinForumMessage(messageId: String) {
+        val trimmedId = messageId.trim()
+        if (trimmedId.isEmpty() || pinInFlight) return
+        val pinIdSnapshot = pinnedMessageId
+        val pinPreviewSnapshot = pinnedMessage
+        val msg = messages.find { it.id == trimmedId }
+        val optimisticPreview = msg?.toPinnedPreview()
+        if (optimisticPreview != null) {
+            pinnedMessageId = trimmedId
+            pinnedMessage = optimisticPreview
+        }
+        pinInFlight = true
         scope.launch {
-            teamsRepository.pinForumTopicMessage(teamId, topicId, messageId)
+            teamsRepository.pinForumTopicMessage(teamId, topicId, trimmedId)
                 .onSuccess { topic ->
                     pinnedMessageId = topic.pinnedMessageId
                     pinnedMessage = topic.pinnedMessage
                     pinNotice = res.getString(R.string.forum_pinned_toast_pinned)
+                    pinInFlight = false
                 }
-                .onFailure { e -> error = e.toUserMessageRu(res) }
+                .onFailure { e ->
+                    pinnedMessageId = pinIdSnapshot
+                    pinnedMessage = pinPreviewSnapshot
+                    pinNotice = e.toUserMessageRu(res)
+                    pinInFlight = false
+                }
         }
     }
 
     fun unpinForumTopic() {
+        if (pinInFlight) return
+        val pinIdSnapshot = pinnedMessageId
+        val pinPreviewSnapshot = pinnedMessage
+        pinnedMessageId = null
+        pinnedMessage = null
+        pinInFlight = true
         scope.launch {
             teamsRepository.pinForumTopicMessage(teamId, topicId, null)
                 .onSuccess { topic ->
                     pinnedMessageId = topic.pinnedMessageId
                     pinnedMessage = topic.pinnedMessage
                     pinNotice = res.getString(R.string.forum_pinned_toast_unpinned)
+                    pinInFlight = false
                 }
-                .onFailure { e -> error = e.toUserMessageRu(res) }
+                .onFailure { e ->
+                    pinnedMessageId = pinIdSnapshot
+                    pinnedMessage = pinPreviewSnapshot
+                    pinNotice = e.toUserMessageRu(res)
+                    pinInFlight = false
+                }
         }
     }
 
@@ -958,10 +992,45 @@ private fun TeamForumTopicChatRoute(
         bumpMessagesGeneration()
     }
 
+    fun applyForumMessageReactions(messageId: String, reactions: List<ChatReaction>) {
+        val i = messages.indexOfFirst { it.id == messageId }
+        if (i < 0) return
+        val current = messages[i]
+        if (current.reactions == reactions) return
+        messages[i] = current.copy(reactions = reactions)
+        bumpMessagesGeneration()
+    }
+
+    fun toggleForumReaction(messageId: String, emoji: String) {
+        if (messageId.isBlank() || emoji.isBlank()) return
+        val i = messages.indexOfFirst { it.id == messageId }
+        if (i < 0) return
+        val previous = messages[i]
+        val optimistic = applyOptimisticForumReactionToggle(previous, emoji)
+        if (optimistic === previous) return
+        messages[i] = optimistic
+        bumpMessagesGeneration()
+        scope.launch {
+            teamsRepository.toggleForumMessageReaction(teamId, topicId, messageId, emoji)
+                .onSuccess { updated -> applyForumMessageReactions(updated.id, updated.reactions) }
+                .onFailure { e ->
+                    val rollbackIndex = messages.indexOfFirst { it.id == messageId }
+                    if (rollbackIndex >= 0) {
+                        messages[rollbackIndex] = previous
+                        bumpMessagesGeneration()
+                    }
+                    error = e.toUserMessageRu(res)
+                }
+        }
+    }
+
     fun removeMessage(messageId: String) {
         messages.removeAll { it.id == messageId }
         bumpMessagesGeneration()
-        if (activeActionMessageId == messageId) activeActionMessageId = null
+        if (activeActionMessageId == messageId) {
+            activeActionMessageId = null
+            messageActionAnchor = null
+        }
         selectedMessageIds = selectedMessageIds - messageId
         if (replyToMessage?.id == messageId) replyToMessage = null
         if (editMessage?.id == messageId) editMessage = null
@@ -1317,9 +1386,15 @@ private fun TeamForumTopicChatRoute(
                 }
             }
             val onPin: (TeamForumTopicPinChangedEvent) -> Unit = { applyTopicPin(it) }
+            val onReaction: (TeamForumMessageReactionEvent) -> Unit = { ev ->
+                if (ev.teamId == teamId && ev.topicId == topicId) {
+                    applyForumMessageReactions(ev.messageId, ev.reactions)
+                }
+            }
             forumSocket.addMessageListener(onNew)
             forumSocket.addMessageEditedListener(onEdited)
             forumSocket.addMessageDeletedListener(onDeleted)
+            forumSocket.addMessageReactionListener(onReaction)
             forumSocket.addTypingListener(onTyping)
             forumSocket.addTopicPinChangedListener(onPin)
             forumSocket.connect(
@@ -1342,6 +1417,7 @@ private fun TeamForumTopicChatRoute(
                 forumSocket.removeMessageListener(onNew)
                 forumSocket.removeMessageEditedListener(onEdited)
                 forumSocket.removeMessageDeletedListener(onDeleted)
+                forumSocket.removeMessageReactionListener(onReaction)
                 forumSocket.removeTypingListener(onTyping)
                 forumSocket.removeTopicPinChangedListener(onPin)
                 forumSocket.connectTeamInbox(
@@ -1482,21 +1558,29 @@ private fun TeamForumTopicChatRoute(
                                 }
                             }
                         },
-                        onToggleSelection = {
+                        onToggleSelection = { id ->
                             selectedMessageIds =
-                                if (isSelected) selectedMessageIds - msg.id else selectedMessageIds + msg.id
+                                if (id in selectedMessageIds) selectedMessageIds - id else selectedMessageIds + id
+                        },
+                        onBeginSelection = { id ->
+                            selectedMessageIds = setOf(id)
+                            dismissMessageActions()
                         },
                         onSwipeReply = {
                             if (msg.deletedAt.isNullOrBlank()) {
                                 replyToMessage = msg
                             }
                         },
-                        onOpenActions = {
+                        onOpenActions = { req ->
                             if (msg.deletedAt.isNullOrBlank()) {
-                                OverlayChatInteractionHold.prepareOverlayModalInteraction(overlayUi)
-                                activeActionMessageId = msg.id
+                                if (overlayUi) {
+                                    OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
+                                }
+                                messageActionAnchor = req.anchorBounds
+                                activeActionMessageId = req.messageId
                             }
                         },
+                        onToggleReaction = { messageId, emoji -> toggleForumReaction(messageId, emoji) },
                         downloadingForumFileUrl = downloadingForumFileUrl,
                         onDownloadForumFile = { forumMsg ->
                             val url = forumMsg.fileRelativeUrl?.trim().orEmpty()
@@ -1762,64 +1846,143 @@ private fun TeamForumTopicChatRoute(
         }
     }
 
+    pendingForumPinMessageId?.let { pinTargetId ->
+        OverlayModalScope {
+            OverlayAwareAlertDialog(
+                onDismissRequest = { pendingForumPinMessageId = null },
+                title = { Text(stringResource(R.string.forum_pin_replace_title)) },
+                text = { Text(stringResource(R.string.forum_pin_replace_message)) },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            pinForumMessage(pinTargetId)
+                            pendingForumPinMessageId = null
+                            dismissMessageActions()
+                        },
+                    ) {
+                        Text(stringResource(R.string.chat_pin_replace_confirm))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingForumPinMessageId = null }) {
+                        Text(stringResource(R.string.profile_action_cancel))
+                    }
+                },
+            )
+        }
+    }
+
     val activeActionMessage = remember(activeActionMessageId, messages) {
         activeActionMessageId?.let { id -> messages.firstOrNull { it.id == id } }
     }
     if (selectedMessageIds.isEmpty()) {
         activeActionMessage?.let { msg ->
-            OverlayModalScope(preparedByCaller = true) {
-            ForumMessageActionsSheet(
-                message = msg,
-                onGoToMap = {
-                    com.lastasylum.alliance.game.GameMapNavigator.openFromMessage(context, msg.text)
-                    activeActionMessageId = null
-                },
-                canPin = canModerateMessages && msg.deletedAt.isNullOrBlank(),
-                isPinned = pinnedMessageId != null && msg.id == pinnedMessageId,
-                onPin = {
-                    pinForumMessage(msg.id)
-                    activeActionMessageId = null
-                },
-                onUnpin = {
-                    unpinForumTopic()
-                    activeActionMessageId = null
-                },
-                canEdit = (msg.senderUserId == currentUserId || canModerateMessages) &&
-                    msg.deletedAt.isNullOrBlank() &&
-                    (
-                        msg.text.isNotBlank() ||
-                            msg.imageRelativeUrls.isNotEmpty() ||
-                            !msg.imageRelativeUrl.isNullOrBlank()
+            val menuCanPin = canModerateMessages && msg.deletedAt.isNullOrBlank()
+            val isTopicPinnedMessage = pinnedMessageId != null && msg.id == pinnedMessageId
+            val menuImageUrls = remember(msg.id, msg.imageRelativeUrl, msg.imageRelativeUrls) {
+                buildList {
+                    msg.imageRelativeUrl?.trim()?.takeIf { it.isNotBlank() }?.let {
+                        add(resolvedChatAttachmentImageUrl(it))
+                    }
+                    msg.imageRelativeUrls.forEach { raw ->
+                        val t = raw.trim()
+                        if (t.isNotBlank()) add(resolvedChatAttachmentImageUrl(t))
+                    }
+                }.distinct()
+            }
+            val menuHasImages = menuImageUrls.isNotEmpty()
+            val menuHasMapCoordinate = remember(msg.text) {
+                com.lastasylum.alliance.game.MapCoordinateParser.parse(msg.text) != null
+            }
+            val menuMayEdit = (msg.senderUserId == currentUserId || canModerateMessages) &&
+                msg.deletedAt.isNullOrBlank() &&
+                (
+                    msg.text.isNotBlank() ||
+                        msg.imageRelativeUrls.isNotEmpty() ||
+                        !msg.imageRelativeUrl.isNullOrBlank()
+                    )
+            val menuScope: @Composable () -> Unit = {
+                Box(Modifier.fillMaxSize().zIndex(6f)) {
+                    MessageContextMenuScrim(onDismiss = dismissMessageActions)
+                    MessageContextMenuPopup(
+                        anchorBounds = messageActionAnchor ?: Rect.Zero,
+                        showReactions = true,
+                        canCopy = forumMessageHasCopyableContent(msg),
+                        canPin = menuCanPin,
+                        isPinned = isTopicPinnedMessage,
+                        pinActionsEnabled = !pinInFlight,
+                        mayEdit = menuMayEdit,
+                        canDelete = canDeleteForumMessage(msg),
+                        hasImages = menuHasImages,
+                        hasMapCoordinate = menuHasMapCoordinate,
+                        canForward = msg.deletedAt.isNullOrBlank(),
+                        onDismiss = dismissMessageActions,
+                        actions = MessageContextMenuActions(
+                            onReply = {
+                                replyToMessage = msg
+                                dismissMessageActions()
+                            },
+                            onCopy = {
+                                copyForumMessageToClipboard(context, msg)
+                                dismissMessageActions()
+                            },
+                            onPin = {
+                                val existingPin = pinnedMessageId?.trim().orEmpty()
+                                if (existingPin.isNotEmpty() && existingPin != msg.id) {
+                                    pendingForumPinMessageId = msg.id
+                                } else {
+                                    pinForumMessage(msg.id)
+                                    dismissMessageActions()
+                                }
+                            },
+                            onUnpin = {
+                                unpinForumTopic()
+                                dismissMessageActions()
+                            },
+                            onEdit = {
+                                editMessage = msg
+                                editBody = msg.text
+                                dismissMessageActions()
+                            },
+                            onDelete = {
+                                dismissMessageActions()
+                                scope.launch {
+                                    teamsRepository.deleteForumMessage(teamId, topicId, msg.id)
+                                        .onSuccess { removeMessage(msg.id) }
+                                        .onFailure { e -> error = e.toUserMessageRu(res) }
+                                }
+                            },
+                            onReact = { emoji -> toggleForumReaction(msg.id, emoji) },
+                            onViewImages = if (menuHasImages) {
+                                {
+                                    remoteImagePreview = menuImageUrls to 0
+                                    dismissMessageActions()
+                                }
+                            } else {
+                                null
+                            },
+                            onGoToMap = {
+                                com.lastasylum.alliance.game.GameMapNavigator.openFromMessage(context, msg.text)
+                                dismissMessageActions()
+                            },
+                            onForward = {
+                                dismissMessageActions()
+                                scope.launch {
+                                    teamsRepository.forwardForumMessage(teamId, topicId, msg.id)
+                                        .onSuccess { mergeNew(it) }
+                                        .onFailure { e -> error = e.toUserMessageRu(res) }
+                                }
+                            },
                         ),
-                canDelete = canDeleteForumMessage(msg),
-                canForward = msg.deletedAt.isNullOrBlank(),
-                onDismiss = { activeActionMessageId = null },
-                onReply = {
-                    replyToMessage = msg
-                    activeActionMessageId = null
-                },
-                onEdit = {
-                    editMessage = msg
-                    editBody = msg.text
-                    activeActionMessageId = null
-                },
-                onDelete = {
-                    activeActionMessageId = null
-                    scope.launch {
-                        teamsRepository.deleteForumMessage(teamId, topicId, msg.id)
-                            .onSuccess { removeMessage(msg.id) }
-                            .onFailure { e -> error = e.toUserMessageRu(res) }
-                    }
-                },
-                onForward = {
-                    activeActionMessageId = null
-                    scope.launch {
-                        teamsRepository.forwardForumMessage(teamId, topicId, msg.id)
-                            .onSuccess { mergeNew(it) }
-                            .onFailure { e -> error = e.toUserMessageRu(res) }
-                    }
-                },
-            )
+                    )
+                }
+            }
+            if (overlayUi) {
+                OverlayModalScope(preparedByCaller = true) {
+                    menuScope()
+                }
+            } else {
+                menuScope()
             }
         }
     }
@@ -2082,156 +2245,34 @@ private fun ForumSelectionToolbar(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ForumMessageActionsSheet(
+/** Telegram-like instant feedback before REST round-trip. */
+private fun applyOptimisticForumReactionToggle(
     message: TeamForumMessageDto,
-    canEdit: Boolean,
-    canDelete: Boolean,
-    canForward: Boolean,
-    canPin: Boolean = false,
-    isPinned: Boolean = false,
-    onPin: () -> Unit = {},
-    onUnpin: () -> Unit = {},
-    onDismiss: () -> Unit,
-    onReply: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
-    onForward: () -> Unit,
-    onGoToMap: () -> Unit = {},
-) {
-    val context = LocalContext.current
-    val stickerStem = remember(message.text) { StickerPacks.stemForMessage(message.text) }
-    val canCopy = forumMessageHasCopyableContent(message)
-    val hasMapCoordinate = remember(message.text) {
-        com.lastasylum.alliance.game.MapCoordinateParser.parse(message.text) != null
-    }
-    OverlayAwareBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    horizontal = SquadRelayDimens.contentPaddingHorizontal,
-                    vertical = SquadRelayDimens.itemGap,
-                ),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            MessageSheetPreviewSurface {
-                Text(
-                    text = message.senderUsername.trim().ifBlank { "—" },
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                when {
-                    stickerStem != null -> {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            AsyncImage(
-                                model = ImageRequest.Builder(context)
-                                    .data(StickerPacks.assetUriForMessage(message.text))
-                                    .size(200)
-                                    .crossfade(true)
-                                    .build(),
-                                contentDescription = stringResource(R.string.cd_chat_sticker),
-                                modifier = Modifier
-                                    .size(72.dp)
-                                    .clip(RoundedCornerShape(10.dp)),
-                                contentScale = ContentScale.Fit,
-                            )
-                            Text(
-                                text = replyPreviewText(message.text),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 4,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                    }
-                    message.text.isNotBlank() -> {
-                        Text(
-                            text = message.text,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 5,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    message.imageRelativeUrls.isNotEmpty() ||
-                        !message.imageRelativeUrl.isNullOrBlank() -> {
-                        Text(
-                            text = stringResource(R.string.chat_copy_image_placeholder),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    else -> {
-                        Text(
-                            text = stringResource(R.string.chat_sheet_preview_empty),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+    emoji: String,
+): TeamForumMessageDto {
+    val reactions = message.reactions.toMutableList()
+    val at = reactions.indexOfFirst { it.emoji == emoji }
+    if (at >= 0) {
+        val row = reactions[at]
+        if (row.reactedByMe) {
+            val nextCount = row.count - 1
+            if (nextCount <= 0) {
+                reactions.removeAt(at)
+            } else {
+                reactions[at] = row.copy(count = nextCount, reactedByMe = false)
             }
-            MessageSheetDividerSpaced()
-            MessageSheetActionRow(
-                icon = Icons.Outlined.ContentCopy,
-                label = stringResource(R.string.chat_action_copy),
-                onClick = {
-                    copyForumMessageToClipboard(context, message)
-                    onDismiss()
-                },
-                enabled = canCopy,
-            )
-            MessageSheetActionRow(
-                icon = Icons.Outlined.Place,
-                label = stringResource(R.string.chat_action_go_to_map),
-                onClick = onGoToMap,
-                enabled = hasMapCoordinate,
-            )
-            MessageSheetActionRow(
-                icon = Icons.AutoMirrored.Outlined.Reply,
-                label = stringResource(R.string.chat_action_reply),
-                onClick = onReply,
-            )
-            MessageSheetActionRow(
-                icon = Icons.Outlined.ContentPaste,
-                label = stringResource(R.string.chat_action_forward),
-                onClick = onForward,
-                enabled = canForward,
-            )
-            if (canPin && !isPinned) {
-                MessageSheetActionRow(
-                    icon = Icons.Outlined.PushPin,
-                    label = stringResource(R.string.forum_action_pin),
-                    onClick = onPin,
-                )
-            }
-            if (canPin && isPinned) {
-                MessageSheetActionRow(
-                    icon = Icons.Outlined.PushPin,
-                    label = stringResource(R.string.forum_action_unpin),
-                    onClick = onUnpin,
-                )
-            }
-            MessageSheetActionRow(
-                icon = Icons.Outlined.Edit,
-                label = stringResource(R.string.chat_action_edit),
-                onClick = onEdit,
-                enabled = canEdit,
-            )
-            MessageSheetActionRow(
-                icon = Icons.Outlined.DeleteOutline,
-                label = stringResource(R.string.chat_action_delete),
-                onClick = onDelete,
-                enabled = canDelete,
-                tint = MaterialTheme.colorScheme.error,
-            )
-            Spacer(Modifier.height(8.dp))
+        } else {
+            reactions[at] = row.copy(count = row.count + 1, reactedByMe = true)
         }
+    } else {
+        reactions.add(
+            ChatReaction(
+                emoji = emoji,
+                count = 1,
+                reactedByMe = true,
+            ),
+        )
     }
+    if (reactions == message.reactions) return message
+    return message.copy(reactions = reactions)
 }

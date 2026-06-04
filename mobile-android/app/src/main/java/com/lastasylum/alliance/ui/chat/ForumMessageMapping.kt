@@ -53,6 +53,7 @@ fun TeamForumMessageDto.toDisplayChatMessage(
                 senderServerNumber = fwd.senderServerNumber,
             )
         },
+        reactions = reactions,
         attachments = attachments,
         createdAt = createdAt,
         updatedAt = updatedAt,

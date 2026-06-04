@@ -43,7 +43,7 @@ object InboxUnreadReconciler {
                     teamsRepository.markForumTopicRead(tid, topic.id, local)
                 }
                 !topic.lastReadMessageId.isNullOrBlank() -> {
-                    val serverLast = topic.lastReadMessageId!!.trim()
+                    val serverLast = topic.lastReadMessageId.trim()
                     teamsRepository.markForumTopicRead(tid, topic.id, serverLast)
                     mergeForumReadCursor(forumPrefs, tid, topic.id, serverLast)
                 }
@@ -78,7 +78,7 @@ object InboxUnreadReconciler {
                     mergeChatReadCursor(chatRoomPreferences, room.id, deviceLocal)
                 }
                 !room.lastReadMessageId.isNullOrBlank() -> {
-                    val serverLast = room.lastReadMessageId!!.trim()
+                    val serverLast = room.lastReadMessageId.trim()
                     chatRepository.markRoomRead(room.id, serverLast)
                     mergeChatReadCursor(chatRoomPreferences, room.id, serverLast)
                 }

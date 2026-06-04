@@ -52,6 +52,8 @@ data class ChatState(
     val highlightMessageId: String? = null,
     /** One-shot toast/snackbar text (e.g. quote not found). */
     val transientNotice: String? = null,
+    /** Pin/unpin REST in flight — disables sheet actions. */
+    val pinInFlight: Boolean = false,
     val sendFailure: ChatSendFailure? = null,
     /** Wire keys for sticker packs the user may send (e.g. zlobyaka). */
     val enabledStickerPackKeys: Set<String> = emptySet(),

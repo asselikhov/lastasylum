@@ -10,8 +10,10 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -131,7 +133,10 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -168,7 +173,6 @@ import com.lastasylum.alliance.data.chat.stickers.StickerPacks
 import com.lastasylum.alliance.di.AppContainer
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
 import com.lastasylum.alliance.overlay.OverlayAwareAlertDialog
-import com.lastasylum.alliance.overlay.OverlayAwareBottomSheet
 import com.lastasylum.alliance.overlay.OverlayChatInteractionHold
 import com.lastasylum.alliance.data.chat.chatImageAttachments
 import com.lastasylum.alliance.data.chat.hasVisibleText
@@ -210,7 +214,12 @@ import com.lastasylum.alliance.ui.chat.chatBubbleSurfaceWidth
 import com.lastasylum.alliance.ui.chat.ChatMessageTimeOverlayChip
 import com.lastasylum.alliance.ui.chat.ChatMessageTimeWithReadStatus
 import com.lastasylum.alliance.ui.chat.isChatMessageReadByPeer
-import com.lastasylum.alliance.ui.chat.ChatQuickReactions
+import com.lastasylum.alliance.ui.chat.MessageActionOpenRequest
+import com.lastasylum.alliance.ui.chat.MessageContextMenuActions
+import com.lastasylum.alliance.ui.chat.MessageContextMenuPopup
+import com.lastasylum.alliance.ui.chat.MessageContextMenuScrim
+import com.lastasylum.alliance.ui.chat.handleMessageLongPressForSelection
+import com.lastasylum.alliance.ui.chat.handleMessageTapForActions
 import com.lastasylum.alliance.ui.chat.ChatScrollToLatestFab
 import com.lastasylum.alliance.ui.chat.isAtReverseChatBottom
 import com.lastasylum.alliance.ui.chat.scrollReverseChatRevealLatest
@@ -263,9 +272,6 @@ import com.lastasylum.alliance.ui.theme.ChatTelegramTimeMutedIncoming
 import com.lastasylum.alliance.ui.theme.SquadRelayDimens
 import com.lastasylum.alliance.ui.theme.SquadRelaySurfaces
 import com.lastasylum.alliance.ui.theme.roleAccentColor
-import com.lastasylum.alliance.ui.chat.MessageSheetActionRow
-import com.lastasylum.alliance.ui.chat.MessageSheetDividerSpaced
-import com.lastasylum.alliance.ui.chat.MessageSheetPreviewSurface
 import com.lastasylum.alliance.ui.util.chatRoomTabLabelForServer
 import com.lastasylum.alliance.ui.util.chatMessageHasCopyableContent
 import com.lastasylum.alliance.ui.util.appendTextToDraft
@@ -361,7 +367,8 @@ private fun ChatScreenMessagesHost(
     onLoadOlder: () -> Unit,
     onJumpToQuotedMessage: (String) -> Unit,
     onToggleReaction: (String, String) -> Unit,
-    onOpenMessageActions: (String) -> Unit,
+    onOpenMessageActions: (MessageActionOpenRequest) -> Unit,
+    onBeginMessageSelection: (String) -> Unit,
     onReplyToMessage: (String) -> Unit,
     onToggleMessageSelection: (String) -> Unit,
     onClearMessageSelection: () -> Unit,
@@ -680,14 +687,20 @@ private fun ChatScreenMessagesHost(
                     clearHistoryEnabled = clearRoomHistoryEnabled,
                 )
             }
-            if (pinnedPreview != null) {
-                PinnedMessageBar(
-                    preview = pinnedPreview,
-                    canUnpin = canUnpinPinned,
-                    onTap = { onJumpToQuotedMessage(pinnedPreview.id) },
-                    onUnpin = onUnpinRoom,
-                    modifier = Modifier.padding(bottom = 4.dp),
-                )
+            AnimatedVisibility(
+                visible = pinnedPreview != null,
+                enter = expandVertically(),
+                exit = shrinkVertically(),
+            ) {
+                pinnedPreview?.let { preview ->
+                    PinnedMessageBar(
+                        preview = preview,
+                        canUnpin = canUnpinPinned,
+                        onTap = { onJumpToQuotedMessage(preview.id) },
+                        onUnpin = onUnpinRoom,
+                        modifier = Modifier.padding(bottom = 4.dp),
+                    )
+                }
             }
             if (inSelectionMode) {
                 ChatSelectionToolbar(
@@ -718,6 +731,7 @@ private fun ChatScreenMessagesHost(
                     highlightMessageId = listPane.highlightMessageId,
                     onToggleReaction = onToggleReaction,
                     onOpenMessageActions = onOpenMessageActions,
+                    onBeginMessageSelection = onBeginMessageSelection,
                     onReplyToMessage = onReplyToMessage,
                     onClearError = onClearError,
                     inSelectionMode = inSelectionMode,
@@ -961,6 +975,15 @@ fun ChatScreen(
     val showGlobalTeamNotice = selectedRoom?.allianceId == ChatAllianceIds.GLOBAL &&
         !chromePane.hasTeamProfileForGlobalChat
     val globalComposerLocked = showGlobalTeamNotice
+    var messageActionAnchor by remember { mutableStateOf<Rect?>(null) }
+    val dismissMessageActions: () -> Unit = {
+        messageActionAnchor = null
+        onDismissMessageActions()
+    }
+    val openMessageActionsFromBubble: (MessageActionOpenRequest) -> Unit = { request ->
+        messageActionAnchor = request.anchorBounds
+        onOpenMessageActions(request.messageId)
+    }
     val activeActionMessage = remember(chromePane.activeActionMessageId, listPane.messages) {
         findChatMessage(listPane.messages, chromePane.activeActionMessageId)
     }
@@ -1017,6 +1040,7 @@ fun ChatScreen(
         } else {
             Modifier.padding(top = SquadRelayDimens.screenTopPadding)
         }
+        Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             ChatScreenMessagesHost(
                 modifier = Modifier
@@ -1036,7 +1060,8 @@ fun ChatScreen(
                 onLoadOlder = onLoadOlder,
                 onJumpToQuotedMessage = onJumpToQuotedMessage,
                 onToggleReaction = onToggleReaction,
-                onOpenMessageActions = onOpenMessageActions,
+                onOpenMessageActions = openMessageActionsFromBubble,
+                onBeginMessageSelection = onBeginMessageSelection,
                 onReplyToMessage = onReplyToMessage,
                 onToggleMessageSelection = onToggleMessageSelection,
                 onClearMessageSelection = onClearMessageSelection,
@@ -1079,112 +1104,180 @@ fun ChatScreen(
             )
         }
 
+    var pendingPinMessageId by remember { mutableStateOf<String?>(null) }
+    pendingPinMessageId?.let { pinTargetId ->
+        OverlayModalScope {
+            OverlayAwareAlertDialog(
+                onDismissRequest = { pendingPinMessageId = null },
+                title = { Text(stringResource(R.string.chat_pin_replace_title)) },
+                text = { Text(stringResource(R.string.chat_pin_replace_message)) },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            onPinMessage(pinTargetId)
+                            pendingPinMessageId = null
+                            dismissMessageActions()
+                        },
+                    ) {
+                        Text(stringResource(R.string.chat_pin_replace_confirm))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingPinMessageId = null }) {
+                        Text(stringResource(R.string.chat_edit_cancel))
+                    }
+                },
+            )
+        }
+    }
+
     if (!inSelectionMode) {
         activeActionMessage?.let { message ->
-            OverlayModalScope(preparedByCaller = true) {
             var showEdit by remember(message._id) { mutableStateOf(false) }
             var editDraft by remember(message._id) { mutableStateOf(message.text) }
             if (showEdit) {
                 OverlayModalScope {
-                OverlayAwareAlertDialog(
-                    onDismissRequest = { showEdit = false },
-                    title = { Text(stringResource(R.string.chat_edit_title)) },
-                    text = {
-                        OutlinedTextField(
-                            value = editDraft,
-                            onValueChange = { editDraft = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            maxLines = 6,
-                        )
-                    },
-                    confirmButton = {
-                        TextButton(
-                            onClick = {
-                                message._id?.let { onEditMessage(it, editDraft) }
-                                showEdit = false
-                                onDismissMessageActions()
-                            },
-                        ) { Text(stringResource(R.string.chat_edit_confirm)) }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showEdit = false }) { Text(stringResource(R.string.chat_edit_cancel)) }
-                    },
-                )
+                    OverlayAwareAlertDialog(
+                        onDismissRequest = { showEdit = false },
+                        title = { Text(stringResource(R.string.chat_edit_title)) },
+                        text = {
+                            OutlinedTextField(
+                                value = editDraft,
+                                onValueChange = { editDraft = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                maxLines = 6,
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    message._id?.let { onEditMessage(it, editDraft) }
+                                    showEdit = false
+                                    dismissMessageActions()
+                                },
+                            ) { Text(stringResource(R.string.chat_edit_confirm)) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showEdit = false }) {
+                                Text(stringResource(R.string.chat_edit_cancel))
+                            }
+                        },
+                    )
                 }
             }
-            val sheetCanModerate = canDeleteChatMessage(
+            val menuCanModerate = canDeleteChatMessage(
                 message = message,
                 currentUserId = chromePane.currentUserId,
                 isAppAdmin = chromePane.isAppAdmin,
                 playerTeamSquadRole = chromePane.playerTeamSquadRole,
             )
-            val sheetCanPin = canPinChatMessage(
+            val menuCanPin = canPinChatMessage(
                 message.allianceId,
                 chromePane.playerTeamSquadRole,
             )
             val roomPinnedId = selectedRoom?.pinnedMessageId
             val isRoomPinnedMessage =
                 message._id != null && roomPinnedId != null && message._id == roomPinnedId
-            ChatMessageActionsSheet(
-                message = message,
-                canDelete = sheetCanModerate,
-                mayEdit = message._id != null &&
-                    message.deletedAt == null &&
-                    sheetCanModerate &&
-                    message.text.isNotBlank(),
-                canPin = sheetCanPin && message.deletedAt == null,
-                isPinned = isRoomPinnedMessage,
-                onPin = {
-                    message._id?.let(onPinMessage)
-                    onDismissMessageActions()
-                },
-                onUnpin = {
-                    onUnpinRoom()
-                    onDismissMessageActions()
-                },
-                onDismiss = onDismissMessageActions,
-                onGoToMap = {
-                    com.lastasylum.alliance.game.GameMapNavigator.openFromMessage(context, message.text)
-                    onDismissMessageActions()
-                },
-                onReply = {
-                    message._id?.let(onReplyToMessage)
-                    onDismissMessageActions()
-                },
-                onForward = {
-                    message._id?.let(onForwardMessage)
-                    onDismissMessageActions()
-                },
-                onReact = { emoji ->
-                    message._id?.let { id ->
-                        onToggleReaction(id, emoji)
-                        onDismissMessageActions()
-                    }
-                },
-                onEdit = { showEdit = true },
-                onDelete = {
-                    if (overlayUi) {
-                        OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
-                    }
-                    message._id?.let(onRequestDeleteMessage)
-                    onDismissMessageActions()
-                },
-                onSelect = {
-                    message._id?.let(onBeginMessageSelection)
-                    onDismissMessageActions()
-                },
-                onPasteToInput = {
-                    chatMessageTextForComposer(message)?.let { text ->
-                        onDraftChange(appendTextToDraft(draftMessage, text))
-                        Toast.makeText(
-                            context,
-                            context.getString(R.string.chat_pasted_to_input_toast),
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                    }
-                    onDismissMessageActions()
-                },
-            )
+            val menuImageUrls = remember(message.attachments) {
+                message.chatImageAttachments().map { resolvedChatAttachmentImageUrl(it.url) }
+            }
+            val menuHasImages = menuImageUrls.isNotEmpty()
+            val menuHasMapCoordinate = remember(message.text) {
+                com.lastasylum.alliance.game.MapCoordinateParser.parse(message.text) != null
+            }
+            val menuScope: @Composable () -> Unit = {
+                Box(Modifier.fillMaxSize().zIndex(6f)) {
+                    MessageContextMenuScrim(onDismiss = dismissMessageActions)
+                    MessageContextMenuPopup(
+                        anchorBounds = messageActionAnchor ?: Rect.Zero,
+                        showReactions = true,
+                        canCopy = chatMessageHasCopyableContent(message),
+                        canPin = menuCanPin && message.deletedAt == null,
+                        isPinned = isRoomPinnedMessage,
+                        pinActionsEnabled = !chromePane.pinInFlight,
+                        mayEdit = message._id != null &&
+                            message.deletedAt == null &&
+                            menuCanModerate &&
+                            message.text.isNotBlank(),
+                        canDelete = menuCanModerate,
+                        hasImages = menuHasImages,
+                        hasMapCoordinate = menuHasMapCoordinate,
+                        canPasteToInput = chatMessageHasPasteableText(message),
+                        onDismiss = dismissMessageActions,
+                        actions = MessageContextMenuActions(
+                            onReply = {
+                                message._id?.let(onReplyToMessage)
+                                dismissMessageActions()
+                            },
+                            onCopy = {
+                                copyChatMessageToClipboard(context, message)
+                                dismissMessageActions()
+                            },
+                            onPin = {
+                                val msgId = message._id ?: return@MessageContextMenuActions
+                                val existingPin = roomPinnedId?.trim().orEmpty()
+                                if (existingPin.isNotEmpty() && existingPin != msgId) {
+                                    pendingPinMessageId = msgId
+                                } else {
+                                    onPinMessage(msgId)
+                                    dismissMessageActions()
+                                }
+                            },
+                            onUnpin = {
+                                onUnpinRoom()
+                                dismissMessageActions()
+                            },
+                            onEdit = { showEdit = true },
+                            onDelete = {
+                                if (overlayUi) {
+                                    OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
+                                }
+                                message._id?.let(onRequestDeleteMessage)
+                                dismissMessageActions()
+                            },
+                            onReact = { emoji ->
+                                message._id?.let { id ->
+                                    onToggleReaction(id, emoji)
+                                    dismissMessageActions()
+                                }
+                            },
+                            onViewImages = if (menuHasImages) {
+                                {
+                                    remoteChatImagePreview = menuImageUrls to 0
+                                    dismissMessageActions()
+                                }
+                            } else {
+                                null
+                            },
+                            onGoToMap = {
+                                com.lastasylum.alliance.game.GameMapNavigator.openFromMessage(context, message.text)
+                                dismissMessageActions()
+                            },
+                            onForward = {
+                                message._id?.let(onForwardMessage)
+                                dismissMessageActions()
+                            },
+                            onPasteToInput = {
+                                chatMessageTextForComposer(message)?.let { text ->
+                                    onDraftChange(appendTextToDraft(draftMessage, text))
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(R.string.chat_pasted_to_input_toast),
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
+                                dismissMessageActions()
+                            },
+                        ),
+                    )
+                }
+            }
+            if (overlayUi) {
+                OverlayModalScope(preparedByCaller = true) {
+                    menuScope()
+                }
+            } else {
+                menuScope()
             }
         }
     }
@@ -1330,6 +1423,7 @@ fun ChatScreen(
                     )
                 }
             }
+        }
     }
 }
 
@@ -1519,7 +1613,8 @@ private fun ChatMessagesLazyList(
     jumpToQuotedMessage: (String) -> Unit,
     highlightMessageId: String?,
     onToggleReaction: (String, String) -> Unit,
-    onOpenMessageActions: (String) -> Unit,
+    onOpenMessageActions: (MessageActionOpenRequest) -> Unit,
+    onBeginMessageSelection: (String) -> Unit,
     onReplyToMessage: (String) -> Unit,
     onClearError: () -> Unit,
     inSelectionMode: Boolean,
@@ -1547,6 +1642,7 @@ private fun ChatMessagesLazyList(
         minOf(rowWidth * fraction, cap)
     }
     val onOpenActionsRef = rememberUpdatedState(onOpenMessageActions)
+    val onBeginSelectionRef = rememberUpdatedState(onBeginMessageSelection)
     val onToggleReactionRef = rememberUpdatedState(onToggleReaction)
     val onReplyRef = rememberUpdatedState(onReplyToMessage)
     val onToggleSelectionRef = rememberUpdatedState(onToggleMessageSelection)
@@ -1705,6 +1801,7 @@ private fun ChatMessagesLazyList(
                                 inMessageList = true,
                                 onToggleReaction = onToggleReactionRef.value,
                                 onOpenActions = onOpenActionsRef.value,
+                                onBeginSelection = onBeginSelectionRef.value,
                                 onToggleSelection = onToggleSelectionRef.value,
                                 onSwipeReply = onReplyRef.value,
                                 onJumpToQuotedMessage = onJumpRef.value,
@@ -1740,6 +1837,7 @@ private fun ChatMessagesLazyList(
                                 inMessageList = true,
                                 onToggleReaction = onToggleReactionRef.value,
                                 onOpenActions = onOpenActionsRef.value,
+                                onBeginSelection = onBeginSelectionRef.value,
                                 onToggleSelection = onToggleSelectionRef.value,
                                 onSwipeReply = onReplyRef.value,
                             )
@@ -1919,6 +2017,7 @@ private fun ChatBubbleInnerColumn(
     downloadingFileUrl: String? = null,
     inMessageList: Boolean = false,
     overlayUi: Boolean = false,
+    onImageGridTap: ((Int) -> Unit)? = null,
 ) {
     val openRemoteChatImagePreview = LocalOpenRemoteChatImagePreview.current
     val bubblePadH = ChatMessengerStyle.bubbleHorizontalPadding(stickerStem)
@@ -2105,7 +2204,13 @@ private fun ChatBubbleInnerColumn(
                             TelegramLikeAttachmentsGrid(
                                 urls = fullResolvedUrls,
                                 contentDescription = messageImageTapLabel,
-                                onOpen = { idx -> openRemoteChatImagePreview(fullResolvedUrls, idx) },
+                                onOpen = { idx ->
+                                    if (onImageGridTap != null) {
+                                        onImageGridTap(idx)
+                                    } else {
+                                        openRemoteChatImagePreview(fullResolvedUrls, idx)
+                                    }
+                                },
                                 modifier = Modifier.fillMaxWidth(),
                                 roundTileCorners = false,
                                 bottomRound = !hasCaption,
@@ -2214,6 +2319,7 @@ private fun ChatFloatingImageAttachmentsBlock(
     onImageLongPress: () -> Unit,
     inMessageList: Boolean = false,
     overlayUi: Boolean = false,
+    onImageGridTap: ((Int) -> Unit)? = null,
 ) {
     val openRemote = LocalOpenRemoteChatImagePreview.current
     val label = stringResource(R.string.cd_chat_message_image)
@@ -2273,7 +2379,13 @@ private fun ChatFloatingImageAttachmentsBlock(
                     TelegramLikeAttachmentsGrid(
                         urls = urls,
                         contentDescription = label,
-                        onOpen = { idx -> openRemote(urls, idx) },
+                        onOpen = { idx ->
+                            if (onImageGridTap != null) {
+                                onImageGridTap(idx)
+                            } else {
+                                openRemote(urls, idx)
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         roundTileCorners = true,
                         bottomRound = !hasCaption,
@@ -2333,11 +2445,14 @@ private fun ChatAlbumRow(
     overlayUi: Boolean,
     inMessageList: Boolean = false,
     onToggleReaction: (String, String) -> Unit,
-    onOpenActions: (String) -> Unit,
+    onOpenActions: (MessageActionOpenRequest) -> Unit,
+    onBeginSelection: (String) -> Unit,
     onToggleSelection: (String) -> Unit,
     onSwipeReply: (String) -> Unit,
 ) {
     val messageId = message._id
+    var anchorBounds by remember(messageId) { mutableStateOf(Rect.Zero) }
+    val selectionHighlight = highlighted || isSelected
     val isChainBottom = cluster?.isChainBottom ?: true
     val readByPeer = remember(message._id, otherReadUptoMessageId, isMine, isChainBottom) {
         isMine && isChainBottom && isChatMessageReadByPeer(message._id, otherReadUptoMessageId)
@@ -2407,94 +2522,120 @@ private fun ChatAlbumRow(
         }
         .combinedClickable(
             onClick = {
-                if (inSelectionMode && canDelete && !messageId.isNullOrBlank()) {
-                    onToggleSelection(messageId)
-                }
-            },
-            onLongClick = {
-                handleChatMessageLongPress(
+                handleMessageTapForActions(
                     messageId = messageId,
+                    anchorBounds = anchorBounds,
                     inSelectionMode = inSelectionMode,
                     canDelete = canDelete,
-                    haptics = haptics,
                     overlayUi = overlayUi,
                     onOpenActions = onOpenActions,
+                    onToggleSelection = onToggleSelection,
+                )
+            },
+            onLongClick = {
+                handleMessageLongPressForSelection(
+                    messageId = messageId,
+                    canDelete = canDelete,
+                    inSelectionMode = inSelectionMode,
+                    haptics = haptics,
+                    onBeginSelection = onBeginSelection,
                     onToggleSelection = onToggleSelection,
                 )
             },
         )
 
     val imageLongPress: () -> Unit = {
-        handleChatMessageLongPress(
+        handleMessageLongPressForSelection(
             messageId = messageId,
-            inSelectionMode = inSelectionMode,
             canDelete = canDelete,
+            inSelectionMode = inSelectionMode,
             haptics = haptics,
-            overlayUi = overlayUi,
-            onOpenActions = onOpenActions,
+            onBeginSelection = onBeginSelection,
             onToggleSelection = onToggleSelection,
         )
     }
-
-    ChatMessageBubbleRow(
-        isMine = isMine,
-        clusterTopSpacing = clusterTopSpacing,
-        inSelectionMode = inSelectionMode,
-        canDelete = canDelete,
-        bubbleWidthFraction = ChatMessengerStyle.bubbleWidthFraction,
-        bubbleWidthCap = ChatMessengerStyle.bubbleWidthCap,
-        showIncomingAvatar = !isMine && isChainBottom,
-        reserveIncomingAvatarSpace = !isMine && !isChainBottom,
-        leadingAvatar = {
-            ChatSenderAvatar(
-                telegramUrl = telegramUrl,
-                size = ChatIncomingAvatarSize,
-                modifier = Modifier.padding(end = ChatIncomingAvatarEndPad),
-                fallbackName = displayName,
+    val imageGridTap: ((Int) -> Unit)? = if (inMessageList) {
+        {
+            handleMessageTapForActions(
+                messageId = messageId,
+                anchorBounds = anchorBounds,
+                inSelectionMode = inSelectionMode,
+                canDelete = canDelete,
+                overlayUi = overlayUi,
+                onOpenActions = onOpenActions,
+                onToggleSelection = onToggleSelection,
             )
+        }
+    } else {
+        null
+    }
+
+    Box(
+        modifier = Modifier.onGloballyPositioned { coordinates ->
+            anchorBounds = coordinates.boundsInRoot()
         },
-        selectionControl = {
-            if (inSelectionMode && canDelete) {
-                Checkbox(
-                    checked = isSelected,
-                    onCheckedChange = {
-                        if (!messageId.isNullOrBlank()) onToggleSelection(messageId)
-                    },
-                    enabled = !messageId.isNullOrBlank(),
-                )
-            }
-        },
-    ) { maxBubble ->
-        ChatFloatingImageAttachmentsBlock(
-            maxBubble = maxBubble,
-            urls = resolvedImageUrls,
+    ) {
+        ChatMessageBubbleRow(
             isMine = isMine,
-            showClusterHeader = showClusterHeader,
-            stemTag = stemTag,
-            nickname = nickname,
-            senderAccent = senderAccent,
-            message = message,
-            isChainBottom = isChainBottom,
-            readByPeer = readByPeer,
-            highlighted = highlighted,
-            formattedTime = formattedTime,
-            caption = caption,
-            captionBarBg = captionBarBg,
-            onBubble = onBubble,
-            timeMuted = timeMuted,
-            inMessageList = inMessageList,
-            bubbleClickModifier = bubbleClickModifier,
-            swipeModifier = swipeModifier,
-            deleting = deleting,
+            clusterTopSpacing = clusterTopSpacing,
+            inSelectionMode = inSelectionMode,
             canDelete = canDelete,
-            onImageLongPress = imageLongPress,
-            overlayUi = overlayUi,
-        )
-        ChatMessageReactionsRow(
-            reactions = message.reactions,
-            onReactionToggle = onReactionChip,
-            modifier = Modifier.padding(top = 4.dp),
-        )
+            bubbleWidthFraction = ChatMessengerStyle.bubbleWidthFraction,
+            bubbleWidthCap = ChatMessengerStyle.bubbleWidthCap,
+            showIncomingAvatar = !isMine && isChainBottom,
+            reserveIncomingAvatarSpace = !isMine && !isChainBottom,
+            leadingAvatar = {
+                ChatSenderAvatar(
+                    telegramUrl = telegramUrl,
+                    size = ChatIncomingAvatarSize,
+                    modifier = Modifier.padding(end = ChatIncomingAvatarEndPad),
+                    fallbackName = displayName,
+                )
+            },
+            selectionControl = {
+                if (inSelectionMode && canDelete) {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = {
+                            if (!messageId.isNullOrBlank()) onToggleSelection(messageId)
+                        },
+                        enabled = !messageId.isNullOrBlank(),
+                    )
+                }
+            },
+        ) { maxBubble ->
+            ChatFloatingImageAttachmentsBlock(
+                maxBubble = maxBubble,
+                urls = resolvedImageUrls,
+                isMine = isMine,
+                showClusterHeader = showClusterHeader,
+                stemTag = stemTag,
+                nickname = nickname,
+                senderAccent = senderAccent,
+                message = message,
+                isChainBottom = isChainBottom,
+                readByPeer = readByPeer,
+                highlighted = selectionHighlight,
+                formattedTime = formattedTime,
+                caption = caption,
+                captionBarBg = captionBarBg,
+                onBubble = onBubble,
+                timeMuted = timeMuted,
+                inMessageList = inMessageList,
+                bubbleClickModifier = bubbleClickModifier,
+                swipeModifier = swipeModifier,
+                deleting = deleting,
+                canDelete = canDelete,
+                onImageLongPress = imageLongPress,
+                overlayUi = overlayUi,
+                onImageGridTap = imageGridTap,
+            )
+            ChatMessageReactionsRow(
+                reactions = message.reactions,
+                onReactionToggle = onReactionChip,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
     }
 }
 
@@ -2515,7 +2656,8 @@ internal fun ChatMessageBubble(
     /** Lazy list: skip horizontal swipe detector to reduce scroll jank. */
     inMessageList: Boolean = false,
     onToggleReaction: ((String, String) -> Unit)?,
-    onOpenActions: (String) -> Unit,
+    onOpenActions: (MessageActionOpenRequest) -> Unit,
+    onBeginSelection: (String) -> Unit,
     onToggleSelection: (String) -> Unit,
     onSwipeReply: (String) -> Unit,
     onJumpToQuotedMessage: (String) -> Unit,
@@ -2524,6 +2666,8 @@ internal fun ChatMessageBubble(
     @androidx.annotation.StringRes deletedPlaceholderRes: Int = R.string.team_forum_message_deleted,
 ) {
     val messageId = message._id
+    var anchorBounds by remember(messageId) { mutableStateOf(Rect.Zero) }
+    val selectionHighlight = highlighted || isSelected
     val isDeleted = !message.deletedAt.isNullOrBlank() &&
         !message.deletedAt.equals("null", ignoreCase = true)
     val haptics = LocalHapticFeedback.current
@@ -2558,14 +2702,14 @@ internal fun ChatMessageBubble(
     val senderAccent = roleAccentColor(message.senderRole)
     val scheme = MaterialTheme.colorScheme
     val highlightTint = scheme.primary.copy(alpha = 0.35f)
-    val bubbleBg = ChatMessengerStyle.bubbleBackground(isMine, highlighted, highlightTint)
+    val bubbleBg = ChatMessengerStyle.bubbleBackground(isMine, selectionHighlight, highlightTint)
     val onBubble = ChatMessengerStyle.bubbleContentColor(isMine)
     val timeMuted = ChatMessengerStyle.timeMutedColor(isMine)
     val bubbleBorder = BorderStroke(
         1.dp,
         ChatMessengerStyle.bubbleBorderColor(
             isMine = isMine,
-            highlighted = highlighted,
+            highlighted = selectionHighlight,
             highlightBorder = scheme.primary.copy(alpha = 0.55f),
         ),
     )
@@ -2623,33 +2767,52 @@ internal fun ChatMessageBubble(
         }
         .combinedClickable(
             onClick = {
-                if (inSelectionMode && canDelete && !messageId.isNullOrBlank()) {
-                    onToggleSelection(messageId)
-                }
-            },
-            onLongClick = {
-                handleChatMessageLongPress(
+                handleMessageTapForActions(
                     messageId = messageId,
+                    anchorBounds = anchorBounds,
                     inSelectionMode = inSelectionMode,
                     canDelete = canDelete,
-                    haptics = haptics,
                     overlayUi = overlayUi,
                     onOpenActions = onOpenActions,
+                    onToggleSelection = onToggleSelection,
+                )
+            },
+            onLongClick = {
+                handleMessageLongPressForSelection(
+                    messageId = messageId,
+                    canDelete = canDelete,
+                    inSelectionMode = inSelectionMode,
+                    haptics = haptics,
+                    onBeginSelection = onBeginSelection,
                     onToggleSelection = onToggleSelection,
                 )
             },
         )
 
     val imageLongPress: () -> Unit = {
-        handleChatMessageLongPress(
+        handleMessageLongPressForSelection(
             messageId = messageId,
-            inSelectionMode = inSelectionMode,
             canDelete = canDelete,
+            inSelectionMode = inSelectionMode,
             haptics = haptics,
-            overlayUi = overlayUi,
-            onOpenActions = onOpenActions,
+            onBeginSelection = onBeginSelection,
             onToggleSelection = onToggleSelection,
         )
+    }
+    val imageGridTap: ((Int) -> Unit)? = if (inMessageList) {
+        {
+            handleMessageTapForActions(
+                messageId = messageId,
+                anchorBounds = anchorBounds,
+                inSelectionMode = inSelectionMode,
+                canDelete = canDelete,
+                overlayUi = overlayUi,
+                onOpenActions = onOpenActions,
+                onToggleSelection = onToggleSelection,
+            )
+        }
+    } else {
+        null
     }
 
     val expandBubble = when {
@@ -2660,18 +2823,23 @@ internal fun ChatMessageBubble(
             stickerStem = stickerStem,
         )
     }
-    ChatMessageBubbleRow(
-        isMine = isMine,
-        clusterTopSpacing = clusterTopSpacing,
-        inSelectionMode = inSelectionMode,
-        canDelete = canDelete,
-        bubbleWidthFraction = ChatMessengerStyle.bubbleWidthFraction,
-        bubbleWidthCap = ChatMessengerStyle.bubbleWidthCap,
-        showIncomingAvatar = !isMine && isChainBottom,
-        reserveIncomingAvatarSpace = !isMine && !isChainBottom,
-        leadingAvatar = {
-            if (overlayUi && !isMine) {
-                ChatSenderAvatarWithSquadRank(
+    Box(
+        modifier = Modifier.onGloballyPositioned { coordinates ->
+            anchorBounds = coordinates.boundsInRoot()
+        },
+    ) {
+        ChatMessageBubbleRow(
+            isMine = isMine,
+            clusterTopSpacing = clusterTopSpacing,
+            inSelectionMode = inSelectionMode,
+            canDelete = canDelete,
+            bubbleWidthFraction = ChatMessengerStyle.bubbleWidthFraction,
+            bubbleWidthCap = ChatMessengerStyle.bubbleWidthCap,
+            showIncomingAvatar = !isMine && isChainBottom,
+            reserveIncomingAvatarSpace = !isMine && !isChainBottom,
+            leadingAvatar = {
+                if (overlayUi && !isMine) {
+                    ChatSenderAvatarWithSquadRank(
                     telegramUrl = telegramUrl,
                     squadRole = message.senderRole,
                     size = ChatIncomingAvatarSize,
@@ -2832,7 +3000,7 @@ internal fun ChatMessageBubble(
                     message = message,
                     isChainBottom = isChainBottom,
                     readByPeer = readByPeer,
-                    highlighted = highlighted,
+                    highlighted = selectionHighlight,
                     formattedTime = formattedTime,
                     inMessageList = inMessageList,
                     bubbleClickModifier = bubbleClickModifier,
@@ -2841,6 +3009,7 @@ internal fun ChatMessageBubble(
                     canDelete = canDelete,
                     onImageLongPress = imageLongPress,
                     overlayUi = overlayUi,
+                    onImageGridTap = imageGridTap,
                 )
                 if (onReactionChip != null) {
                     ChatMessageReactionsRow(
@@ -2905,6 +3074,7 @@ internal fun ChatMessageBubble(
                             downloadingFileUrl = downloadingFileUrl,
                             inMessageList = inMessageList,
                             overlayUi = overlayUi,
+                            onImageGridTap = imageGridTap,
                         )
                     }
                     if (onReactionChip != null) {
@@ -2918,219 +3088,5 @@ internal fun ChatMessageBubble(
             }
         }
     }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ChatMessageActionsSheet(
-    message: ChatMessage,
-    canDelete: Boolean,
-    mayEdit: Boolean,
-    canPin: Boolean = false,
-    isPinned: Boolean = false,
-    onPin: () -> Unit = {},
-    onUnpin: () -> Unit = {},
-    onDismiss: () -> Unit,
-    onReply: () -> Unit,
-    onForward: () -> Unit,
-    onReact: (String) -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
-    onSelect: () -> Unit,
-    onPasteToInput: () -> Unit,
-    onGoToMap: () -> Unit = {},
-) {
-    OverlayAwareBottomSheet(onDismissRequest = onDismiss) {
-        val sheetScroll = rememberScrollState()
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(sheetScroll)
-                .padding(
-                    horizontal = SquadRelayDimens.contentPaddingHorizontal,
-                    vertical = SquadRelayDimens.itemGap,
-                ),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            val sheetStickerStem = remember(message.text) { StickerPacks.stemForMessage(message.text) }
-            val sheetContext = LocalContext.current
-            val canCopy = chatMessageHasCopyableContent(message)
-            val hasMapCoordinate = remember(message.text) {
-                com.lastasylum.alliance.game.MapCoordinateParser.parse(message.text) != null
-            }
-            MessageSheetPreviewSurface {
-                Text(
-                    text = chatSenderDisplayWithTag(message.senderTeamTag, message.senderUsername, message.senderServerNumber),
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                if (sheetStickerStem != null) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(sheetContext)
-                                .data(StickerPacks.assetUriForMessage(message.text))
-                                .size(200)
-                                .crossfade(false)
-                                .build(),
-                            contentDescription = stringResource(R.string.cd_chat_sticker),
-                            modifier = Modifier
-                                .size(72.dp)
-                                .clip(RoundedCornerShape(10.dp)),
-                            contentScale = ContentScale.Fit,
-                        )
-                        Text(
-                            text = replyPreviewText(message.text),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 4,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                } else {
-                    val previewText = when {
-                        message.text.isNotBlank() -> message.text
-                        message.attachments.any { it.kind == "image" && it.url.isNotBlank() } ->
-                            stringResource(R.string.chat_copy_image_placeholder)
-                        else -> stringResource(R.string.chat_sheet_preview_empty)
-                    }
-                    Text(
-                        text = previewText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 5,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            MessageSheetDividerSpaced()
-            Text(
-                text = stringResource(R.string.chat_sheet_section_actions),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
-            )
-            MessageSheetActionRow(
-                icon = Icons.Outlined.ContentCopy,
-                label = stringResource(R.string.chat_action_copy),
-                onClick = {
-                    copyChatMessageToClipboard(sheetContext, message)
-                    onDismiss()
-                },
-                enabled = canCopy,
-            )
-            MessageSheetActionRow(
-                icon = Icons.Outlined.Place,
-                label = stringResource(R.string.chat_action_go_to_map),
-                onClick = onGoToMap,
-                enabled = hasMapCoordinate,
-            )
-            MessageSheetActionRow(
-                icon = Icons.Outlined.ContentPaste,
-                label = stringResource(R.string.chat_action_paste_to_input),
-                onClick = onPasteToInput,
-                enabled = chatMessageHasPasteableText(message),
-            )
-            MessageSheetActionRow(
-                icon = Icons.AutoMirrored.Outlined.Reply,
-                label = stringResource(R.string.chat_action_reply),
-                onClick = onReply,
-            )
-            MessageSheetActionRow(
-                icon = Icons.AutoMirrored.Outlined.Forward,
-                label = stringResource(R.string.chat_action_forward),
-                onClick = onForward,
-            )
-            Text(
-                text = stringResource(R.string.chat_sheet_section_reactions),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
-            )
-            val quickReactions = ChatQuickReactions.defaults
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(quickReactions) { e ->
-                    OutlinedButton(
-                        onClick = { onReact(e) },
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.widthIn(min = 48.dp),
-                    ) {
-                        Text(e, style = MaterialTheme.typography.titleMedium)
-                    }
-                }
-            }
-            if (canPin && !isPinned) {
-                MessageSheetActionRow(
-                    icon = Icons.Outlined.PushPin,
-                    label = stringResource(R.string.chat_action_pin),
-                    onClick = onPin,
-                )
-            }
-            if (canPin && isPinned) {
-                MessageSheetActionRow(
-                    icon = Icons.Outlined.PushPin,
-                    label = stringResource(R.string.chat_action_unpin),
-                    onClick = onUnpin,
-                )
-            }
-            if (mayEdit || canDelete) {
-                Text(
-                    text = stringResource(R.string.chat_sheet_section_manage),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
-                )
-            }
-            if (mayEdit) {
-                MessageSheetActionRow(
-                    icon = Icons.Outlined.Edit,
-                    label = stringResource(R.string.chat_action_edit),
-                    onClick = onEdit,
-                )
-            }
-            if (canDelete) {
-                MessageSheetActionRow(
-                    icon = Icons.Outlined.SelectAll,
-                    label = stringResource(R.string.chat_action_select),
-                    onClick = onSelect,
-                )
-                MessageSheetActionRow(
-                    icon = Icons.Outlined.DeleteOutline,
-                    label = stringResource(R.string.chat_action_delete),
-                    onClick = onDelete,
-                    tint = MaterialTheme.colorScheme.error,
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-        }
-    }
-}
-
-private fun handleChatMessageLongPress(
-    messageId: String?,
-    inSelectionMode: Boolean,
-    canDelete: Boolean,
-    haptics: androidx.compose.ui.hapticfeedback.HapticFeedback,
-    overlayUi: Boolean,
-    onOpenActions: (String) -> Unit,
-    onToggleSelection: (String) -> Unit,
-) {
-    if (messageId.isNullOrBlank()) return
-    haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-    when {
-        inSelectionMode && canDelete -> onToggleSelection(messageId)
-        else -> {
-            if (overlayUi) {
-                OverlayChatInteractionHold.prepareOverlayModalInteraction(true)
-            }
-            onOpenActions(messageId)
-        }
     }
 }

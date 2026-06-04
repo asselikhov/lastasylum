@@ -109,6 +109,18 @@ export class TeamForumMessage {
     senderServerNumber: number | null;
   } | null;
 
+  /** Emoji reactions with explicit user lists for toggling. */
+  @Prop({
+    type: [
+      {
+        emoji: { type: String, required: true, trim: true },
+        userIds: { type: [String], default: [] },
+      },
+    ],
+    default: [],
+  })
+  reactions: { emoji: string; userIds: string[] }[];
+
   createdAt?: Date;
   updatedAt?: Date;
 }

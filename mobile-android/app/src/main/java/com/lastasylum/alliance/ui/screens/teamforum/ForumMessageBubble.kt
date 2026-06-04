@@ -5,6 +5,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.data.teams.TeamForumMessageDto
 import com.lastasylum.alliance.ui.chat.ForumMessageClusterFlags
+import com.lastasylum.alliance.ui.chat.MessageActionOpenRequest
 import com.lastasylum.alliance.ui.chat.toChatClusterFlags
 import com.lastasylum.alliance.ui.chat.toDisplayChatMessage
 import com.lastasylum.alliance.overlay.LocalOverlayUiMode
@@ -25,9 +26,11 @@ internal fun ForumMessageBubble(
     isSelected: Boolean,
     highlighted: Boolean,
     onJumpToMessage: (String) -> Unit,
-    onToggleSelection: () -> Unit,
+    onToggleSelection: (String) -> Unit,
+    onBeginSelection: (String) -> Unit,
     onSwipeReply: () -> Unit,
-    onOpenActions: () -> Unit,
+    onOpenActions: (MessageActionOpenRequest) -> Unit,
+    onToggleReaction: ((String, String) -> Unit)? = null,
     downloadingForumFileUrl: String? = null,
     onDownloadForumFile: (TeamForumMessageDto) -> Unit = {},
 ) {
@@ -46,15 +49,10 @@ internal fun ForumMessageBubble(
         overlayUi = overlayUi,
         otherReadUptoMessageId = null,
         inMessageList = true,
-        onToggleReaction = null,
-        onOpenActions = {
-            if (inSelectionMode && canDelete) {
-                onToggleSelection()
-            } else {
-                onOpenActions()
-            }
-        },
-        onToggleSelection = { onToggleSelection() },
+        onToggleReaction = onToggleReaction,
+        onOpenActions = onOpenActions,
+        onBeginSelection = onBeginSelection,
+        onToggleSelection = onToggleSelection,
         onSwipeReply = { onSwipeReply() },
         onJumpToQuotedMessage = onJumpToMessage,
         onFileDownload = { onDownloadForumFile(message) },

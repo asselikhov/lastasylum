@@ -131,6 +131,7 @@
     <string name="chat_deleting_progress">Удаление…</string>
     <string name="chat_action_reply">Ответить</string>
     <string name="chat_action_copy">Копировать</string>
+    <string name="chat_action_view_images">Открыть фото</string>
     <string name="chat_action_paste_to_input">Вставить в поле ввода</string>
     <string name="chat_action_select">Выбрать</string>
     <string name="chat_pasted_to_input_toast">Текст вставлен в поле ввода</string>
@@ -149,6 +150,9 @@
     <string name="chat_pinned_preview_photo">Фото</string>
     <string name="chat_pinned_toast_pinned">Сообщение закреплено</string>
     <string name="chat_pinned_toast_unpinned">Закрепление снято</string>
+    <string name="chat_pin_replace_title">Заменить закрепление?</string>
+    <string name="chat_pin_replace_message">Другое сообщение уже закреплено. Закрепить это вместо него?</string>
+    <string name="chat_pin_replace_confirm">Закрепить</string>
     <string name="err_chat_pin_team_r45_only">Закреплять сообщения могут только ранги R4 и R5</string>
     <string name="err_chat_pin_team_room_only">Закрепление доступно только в командных чатах</string>
     <string name="chat_action_delete">Удалить сообщение</string>
@@ -935,6 +939,8 @@
     <string name="forum_pinned_bar_cd">Закреплённое сообщение в теме</string>
     <string name="forum_pinned_toast_pinned">Сообщение закреплено</string>
     <string name="forum_pinned_toast_unpinned">Закрепление снято</string>
+    <string name="forum_pin_replace_title">Заменить закрепление?</string>
+    <string name="forum_pin_replace_message">Другое сообщение уже закреплено в теме. Закрепить это вместо него?</string>
     <string name="err_form_check">Проверьте данные в форме.</string>
     <string name="err_forbidden">Доступ запрещён.</string>
     <string name="err_rate_limit">Слишком много запросов. Подождите минуту.</string>

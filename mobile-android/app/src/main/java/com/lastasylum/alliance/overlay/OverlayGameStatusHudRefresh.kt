@@ -3,6 +3,7 @@ package com.lastasylum.alliance.overlay
 import com.lastasylum.alliance.data.chat.ChatAllianceIds
 import com.lastasylum.alliance.data.chat.ChatHubRoomSync
 import com.lastasylum.alliance.data.chat.ChatRoomDto
+import com.lastasylum.alliance.data.chat.ChatSessionCache
 import com.lastasylum.alliance.data.ReadCursorSession
 import com.lastasylum.alliance.data.InboxUnreadReconciler
 import com.lastasylum.alliance.data.effectiveUnreadCount
@@ -33,8 +34,44 @@ internal object OverlayGameStatusHudRefresh {
     @Volatile
     private var cachedBadgeAtMs: Long = 0L
 
+    @Volatile
+    private var diskSeedAtMs: Long = 0L
+
+    private const val DISK_SEED_TTL_MS = 5 * 60_000L
+
     fun invalidateNewsForumCache() {
         cachedBadgeAtMs = 0L
+        diskSeedAtMs = 0L
+    }
+
+    fun hasRecentDiskSeed(nowMs: Long = System.currentTimeMillis()): Boolean =
+        diskSeedAtMs > 0 && nowMs - diskSeedAtMs < DISK_SEED_TTL_MS
+
+    fun seedBadgesFromDisk(teamId: String, newsUnread: Int, forumUnread: Int) {
+        val tid = teamId.trim()
+        if (tid.isEmpty()) return
+        cachedBadgeTeamId = tid
+        cachedNewsUnread = newsUnread.coerceAtLeast(0)
+        cachedForumUnread = forumUnread.coerceAtLeast(0)
+        val now = System.currentTimeMillis()
+        cachedBadgeAtMs = now
+        diskSeedAtMs = now
+    }
+
+    /** Instant HUD badge paint from seeded RAM / chat session cache (no network). */
+    fun buildInstantLocalState(context: android.content.Context): OverlayGameStatusHudState? {
+        val container = AppContainer.from(context)
+        val rooms = ChatSessionCache.getFreshRooms()
+        val localChatRead = container.chatRoomPreferences.loadAllLastReadMessageIds()
+        val allianceUnread = rooms?.let { allianceHubUnread(it, localChatRead) }
+        val hasBadgeSeed = cachedBadgeAtMs > 0
+        val hasRooms = rooms != null
+        if (!hasBadgeSeed && !hasRooms) return null
+        return OverlayGameStatusHudState(
+            allianceChatUnread = allianceUnread ?: 0,
+            teamNewsUnread = if (hasBadgeSeed) cachedNewsUnread else 0,
+            forumUnread = if (hasBadgeSeed) cachedForumUnread else 0,
+        )
     }
 
     fun invalidateNewsCache() = invalidateNewsForumCache()

@@ -16,6 +16,7 @@ import {
   TeamForumService,
   TeamForumMessageRow,
   TeamForumTopicPinChangedPayload,
+  TeamForumMessageReactionBroadcastPayload,
 } from './team-forum.service';
 
 type GatewayUser = {
@@ -243,6 +244,13 @@ export class TeamForumGateway {
     this.server
       ?.to(this.roomKey(teamId, topicId))
       .emit('message:edited', { ...message, teamId, topicId });
+  }
+
+  broadcastMessageReaction(payload: TeamForumMessageReactionBroadcastPayload) {
+    const { teamId, topicId } = payload;
+    this.server
+      ?.to(this.roomKey(teamId, topicId))
+      .emit('message:reaction', payload);
   }
 
   broadcastTopicPinChanged(payload: TeamForumTopicPinChangedPayload): void {

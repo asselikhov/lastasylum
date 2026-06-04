@@ -1,6 +1,8 @@
 package com.lastasylum.alliance.data.teams
 
+import com.lastasylum.alliance.data.chat.ChatReaction
 import com.lastasylum.alliance.data.chat.PinnedMessagePreviewDto
+import com.lastasylum.alliance.data.chat.ToggleReactionRequest
 import com.squareup.moshi.JsonClass
 
 @JsonClass(generateAdapter = true)
@@ -299,6 +301,7 @@ data class TeamForumMessageDto(
     val fileRelativeUrl: String? = null,
     val fileFilename: String? = null,
     val forwardedFrom: TeamForumForwardedFromDto? = null,
+    val reactions: List<ChatReaction> = emptyList(),
     val createdAt: String,
     val updatedAt: String,
 )

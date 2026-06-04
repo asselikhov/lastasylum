@@ -59,6 +59,19 @@ internal object OverlayPerfDiag {
         Log.d(TAG, "panelPrime ms=$durationMs hubReady=$hubReady")
     }
 
+    fun logColdHydrate(
+        durationMs: Long,
+        seededContext: Boolean,
+        seededRooms: Boolean,
+        seededBadges: Boolean,
+    ) {
+        if (!BuildConfig.DEBUG) return
+        Log.d(
+            TAG,
+            "coldHydrate ms=$durationMs ctx=$seededContext rooms=$seededRooms badges=$seededBadges",
+        )
+    }
+
     fun logPanelOpen(pane: String) {
         if (!BuildConfig.DEBUG) return
         Log.d(TAG, "panelOpen pane=$pane")

@@ -47,6 +47,7 @@ import {
   CreateTeamForumTopicDto,
   BulkDeleteTeamForumMessagesDto,
   MarkTeamForumTopicReadDto,
+  PinTeamForumTopicMessageDto,
   UpdateTeamForumMessageDto,
   UpdateTeamForumTopicDto,
 } from './dto/team-forum.dto';
@@ -54,6 +55,7 @@ import { TeamNewsAttachmentsService } from './team-news-attachments.service';
 import { TeamNewsService } from './team-news.service';
 import { TeamForumService } from './team-forum.service';
 import { TeamsService } from './teams.service';
+import { ToggleReactionDto } from '../chat/dto/toggle-reaction.dto';
 
 type RequestUser = {
   userId: string;
@@ -397,14 +399,14 @@ export class TeamsController {
     @Req() req: { user: RequestUser },
     @Param('teamId') teamId: string,
     @Param('topicId') topicId: string,
-    @Body() dto: { messageId?: string | null },
+    @Body() dto: PinTeamForumTopicMessageDto,
   ) {
     const raw = dto?.messageId;
     const messageId =
       raw === null || raw === undefined
         ? null
         : typeof raw === 'string'
-          ? raw
+          ? raw.trim()
           : null;
     const { topic, pinChanged } = await this.teamForum.setTopicPinnedMessage(
       teamId,
@@ -522,6 +524,33 @@ export class TeamsController {
     );
     this.teamForumGateway.broadcastMessageEdited(teamId, topicId, message);
     return message;
+  }
+
+  @Post(':teamId/forum/topics/:topicId/messages/:messageId/reactions')
+  @Roles(AllianceRole.MEMBER)
+  async toggleForumMessageReaction(
+    @Req() req: { user: RequestUser },
+    @Param('teamId') teamId: string,
+    @Param('topicId') topicId: string,
+    @Param('messageId') messageId: string,
+    @Body() dto: ToggleReactionDto,
+  ) {
+    const updated = await this.teamForum.toggleMessageReaction(
+      teamId,
+      topicId,
+      req.user.userId,
+      messageId,
+      dto?.emoji ?? '',
+    );
+    const broadcast = await this.teamForum.getReactionBroadcastPayload(
+      teamId,
+      topicId,
+      messageId,
+    );
+    if (broadcast) {
+      this.teamForumGateway.broadcastMessageReaction(broadcast);
+    }
+    return updated;
   }
 
   @Delete(':teamId/forum/topics/:topicId/messages/:messageId')

@@ -1274,8 +1274,21 @@ class ChatViewModel(
             messagesBelongToRoom(_state.value.messages, hubId)
     }
 
+    private fun overlayHubRoomsReady(rooms: List<ChatRoomDto>): Boolean {
+        if (rooms.isEmpty()) return false
+        val hubId = allianceHubRoomId(rooms) ?: return false
+        return !_state.value.isRoomsLoading &&
+            _state.value.error.isNullOrBlank() &&
+            (_state.value.selectedRoomId == hubId || _state.value.selectedRoomId.isNullOrBlank())
+    }
+
+    /** Overlay panel: hub room selected with rooms list (messages may still load in background). */
+    fun overlayHubRoomsReadyForPanel(): Boolean = overlayHubRoomsReady(_state.value.rooms)
+
     /** Overlay panel: hub room has messages to show without waiting on network. */
-    fun overlayHubReadyForPanel(): Boolean = overlayHubAlreadyReady(_state.value.rooms)
+    fun overlayHubReadyForPanel(): Boolean =
+        overlayHubAlreadyReady(_state.value.rooms) ||
+            overlayHubRoomsReady(_state.value.rooms)
 
     private fun overlayRaidAlreadyReady(rooms: List<ChatRoomDto>): Boolean {
         val raidId = allianceRaidRoomId(rooms) ?: return false
@@ -3108,38 +3121,70 @@ class ChatViewModel(
 
     fun pinMessage(messageId: String) {
         val roomId = _state.value.selectedRoomId?.trim().orEmpty()
-        if (roomId.isEmpty() || messageId.isBlank()) return
+        val trimmedId = messageId.trim()
+        if (roomId.isEmpty() || trimmedId.isEmpty() || _state.value.pinInFlight) return
+        val roomsSnapshot = _state.value.rooms
+        val roomBefore = roomsSnapshot.find { it.id == roomId }
+        val message = _state.value.messages.find { it._id == trimmedId }
+        val preview = message?.toPinnedPreview()
+        val optimisticRoom = roomBefore?.let { room ->
+            preview?.let { room.withOptimisticPin(trimmedId, it, _state.value.currentUserId) }
+        }
+        if (optimisticRoom != null) {
+            publishRoomPin(optimisticRoom)
+        }
+        _state.update { it.copy(pinInFlight = true) }
         viewModelScope.launch {
-            repository.pinRoomMessage(roomId, messageId)
+            repository.pinRoomMessage(roomId, trimmedId)
                 .onSuccess { room ->
                     publishRoomPin(room)
                     _state.update {
                         it.copy(
+                            pinInFlight = false,
                             transientNotice = res.getString(R.string.chat_pinned_toast_pinned),
                         )
                     }
                 }
                 .onFailure { e ->
-                    _state.value = _state.value.copy(error = e.toUserMessageRu(res))
+                    _state.update {
+                        it.copy(
+                            rooms = roomsSnapshot,
+                            pinInFlight = false,
+                            transientNotice = e.toUserMessageRu(res),
+                        )
+                    }
                 }
         }
     }
 
     fun unpinSelectedRoom() {
         val roomId = _state.value.selectedRoomId?.trim().orEmpty()
-        if (roomId.isEmpty()) return
+        if (roomId.isEmpty() || _state.value.pinInFlight) return
+        val roomsSnapshot = _state.value.rooms
+        val optimisticRoom = roomsSnapshot.find { it.id == roomId }?.withOptimisticUnpin()
+        if (optimisticRoom != null) {
+            publishRoomPin(optimisticRoom)
+        }
+        _state.update { it.copy(pinInFlight = true) }
         viewModelScope.launch {
             repository.pinRoomMessage(roomId, null)
                 .onSuccess { room ->
                     publishRoomPin(room)
                     _state.update {
                         it.copy(
+                            pinInFlight = false,
                             transientNotice = res.getString(R.string.chat_pinned_toast_unpinned),
                         )
                     }
                 }
                 .onFailure { e ->
-                    _state.value = _state.value.copy(error = e.toUserMessageRu(res))
+                    _state.update {
+                        it.copy(
+                            rooms = roomsSnapshot,
+                            pinInFlight = false,
+                            transientNotice = e.toUserMessageRu(res),
+                        )
+                    }
                 }
         }
     }

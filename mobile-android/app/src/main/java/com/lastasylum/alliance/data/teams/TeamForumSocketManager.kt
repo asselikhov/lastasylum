@@ -35,6 +35,13 @@ data class TeamForumTopicActivityEvent(
     val senderUserId: String,
 )
 
+data class TeamForumMessageReactionEvent(
+    val teamId: String,
+    val topicId: String,
+    val messageId: String,
+    val reactions: List<com.lastasylum.alliance.data.chat.ChatReaction>,
+)
+
 class TeamForumSocketManager {
     private var socket: Socket? = null
     private var subscribedTeamId: String? = null
@@ -43,6 +50,8 @@ class TeamForumSocketManager {
     private var tokenProvider: (() -> String?)? = null
     private val messageListeners = CopyOnWriteArrayList<(TeamForumMessageDto) -> Unit>()
     private val messageEditedListeners = CopyOnWriteArrayList<(TeamForumMessageDto) -> Unit>()
+    private val messageReactionListeners =
+        CopyOnWriteArrayList<(TeamForumMessageReactionEvent) -> Unit>()
     private val messageDeletedListeners =
         CopyOnWriteArrayList<(TeamForumMessageDeletedEvent) -> Unit>()
     private val typingListeners = CopyOnWriteArrayList<(TeamForumTypingEvent) -> Unit>()
@@ -85,6 +94,16 @@ class TeamForumSocketManager {
 
     fun removeMessageEditedListener(listener: (TeamForumMessageDto) -> Unit) {
         messageEditedListeners.remove(listener)
+    }
+
+    fun addMessageReactionListener(listener: (TeamForumMessageReactionEvent) -> Unit) {
+        if (!messageReactionListeners.contains(listener)) {
+            messageReactionListeners.add(listener)
+        }
+    }
+
+    fun removeMessageReactionListener(listener: (TeamForumMessageReactionEvent) -> Unit) {
+        messageReactionListeners.remove(listener)
     }
 
     fun addMessageDeletedListener(listener: (TeamForumMessageDeletedEvent) -> Unit) {
@@ -130,6 +149,7 @@ class TeamForumSocketManager {
     fun clearListeners() {
         messageListeners.clear()
         messageEditedListeners.clear()
+        messageReactionListeners.clear()
         messageDeletedListeners.clear()
         typingListeners.clear()
         topicActivityListeners.clear()
@@ -352,6 +372,15 @@ class TeamForumSocketManager {
                         messageEditedListeners.forEach { l -> runCatching { l(msg) } }
                     }
                 }
+                on("message:reaction") { args ->
+                    val payload = args.firstOrNull() as? JSONObject ?: return@on
+                    val event = payload.toForumMessageReactionEvent() ?: return@on
+                    val activeTopic = topicId?.trim()?.takeIf { it.isNotEmpty() } ?: return@on
+                    if (event.teamId != teamId || event.topicId != activeTopic) return@on
+                    dispatchMain {
+                        messageReactionListeners.forEach { l -> runCatching { l(event) } }
+                    }
+                }
                 on("message:deleted") { args ->
                     val payload = args.firstOrNull() as? JSONObject ?: return@on
                     val event = TeamForumMessageDeletedEvent(
@@ -495,10 +524,45 @@ private fun JSONObject.toForumMessageDto(): TeamForumMessageDto? {
                 senderServerNumber = fwd.optInt("senderServerNumber").takeIf { it > 0 },
             )
         },
+        reactions = optJSONArray("reactions").toForumReactions(),
         createdAt = optString("createdAt"),
         updatedAt = optionalStringField("updatedAt").orEmpty()
             .ifBlank { optString("createdAt") },
     )
+}
+
+private fun JSONObject.toForumMessageReactionEvent(): TeamForumMessageReactionEvent? {
+    val messageId = optString("messageId").takeIf { it.isNotBlank() } ?: return null
+    val teamId = optString("teamId").takeIf { it.isNotBlank() } ?: return null
+    val topicId = optString("topicId").takeIf { it.isNotBlank() } ?: return null
+    return TeamForumMessageReactionEvent(
+        teamId = teamId,
+        topicId = topicId,
+        messageId = messageId,
+        reactions = optJSONArray("reactions").toForumReactions(),
+    )
+}
+
+private fun org.json.JSONArray?.toForumReactions(): List<com.lastasylum.alliance.data.chat.ChatReaction> {
+    if (this == null) return emptyList()
+    val out = ArrayList<com.lastasylum.alliance.data.chat.ChatReaction>(length())
+    for (i in 0 until length()) {
+        val o = optJSONObject(i) ?: continue
+        val emoji = o.optString("emoji").takeIf { it.isNotBlank() } ?: continue
+        val count = when {
+            o.has("count") -> o.optInt("count", 0)
+            o.has("userIds") -> o.optJSONArray("userIds")?.length() ?: 0
+            else -> 0
+        }
+        out.add(
+            com.lastasylum.alliance.data.chat.ChatReaction(
+                emoji = emoji,
+                count = count.coerceAtLeast(0),
+                reactedByMe = o.optBoolean("reactedByMe", false),
+            ),
+        )
+    }
+    return out
 }
 
 private fun JSONObject.toPinnedMessagePreviewDto(): PinnedMessagePreviewDto? {

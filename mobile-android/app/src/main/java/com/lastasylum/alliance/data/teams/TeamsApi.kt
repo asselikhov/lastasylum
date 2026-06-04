@@ -2,6 +2,7 @@ package com.lastasylum.alliance.data.teams
 
 import okhttp3.MultipartBody
 import retrofit2.Response
+import com.lastasylum.alliance.data.chat.ToggleReactionRequest
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
@@ -223,5 +224,13 @@ interface TeamsApi {
         @Path("teamId") teamId: String,
         @Path("topicId") topicId: String,
         @Path("messageId") messageId: String,
+    ): TeamForumMessageDto
+
+    @POST("teams/{teamId}/forum/topics/{topicId}/messages/{messageId}/reactions")
+    suspend fun toggleForumMessageReaction(
+        @Path("teamId") teamId: String,
+        @Path("topicId") topicId: String,
+        @Path("messageId") messageId: String,
+        @Body body: ToggleReactionRequest,
     ): TeamForumMessageDto
 }
