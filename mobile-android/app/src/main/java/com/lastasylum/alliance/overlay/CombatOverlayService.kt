@@ -315,6 +315,7 @@ class CombatOverlayService : Service() {
     private var chatStripHost: View? = null
     private var chatStripParams: WindowManager.LayoutParams? = null
     private val chatStripPreviewFlow = MutableStateFlow<List<ChatMessage>>(emptyList())
+    private val raidPinPreviewFlow = MutableStateFlow<com.lastasylum.alliance.data.chat.PinnedMessagePreviewDto?>(null)
     private var overlayMessageListener: ((ChatMessage) -> Unit)? = null
     private var overlayMessageDeletedListener: ((com.lastasylum.alliance.data.chat.ChatMessageDeletedEvent) -> Unit)? = null
     private var overlayChatHistoryClearedListener: (() -> Unit)? = null
@@ -3839,10 +3840,23 @@ class CombatOverlayService : Service() {
             )
         }
         chatStripPreviewFlow.value = preview
+        refreshRaidPinPreviewFromCache()
         lastStripRenderSignature = signature
         val wm = windowManager ?: systemWindowManager() ?: return
         runCatching { ensureChatStripWindow(wm) }
         ensureStripWindowVisibleForRaidTraffic()
+    }
+
+    private fun refreshRaidPinPreviewFromCache() {
+        val raidId = resolveOverlayRaidRoomId()?.trim().orEmpty()
+        if (raidId.isEmpty()) {
+            raidPinPreviewFlow.value = null
+            return
+        }
+        val room = com.lastasylum.alliance.data.chat.ChatSessionCache.getFreshRooms()
+            ?.firstOrNull { it.id == raidId }
+        val pinId = room?.pinnedMessageId?.trim().orEmpty()
+        raidPinPreviewFlow.value = if (pinId.isNotEmpty()) room?.pinnedMessage else null
     }
 
     /** Лента «Рейд» на экране — только в игре / краткий grace / принудительный показ после отправки. */
@@ -4645,25 +4659,39 @@ class CombatOverlayService : Service() {
 
         val compose = ComposeView(this).apply {
             setContent {
-                val preview by chatStripPreviewFlow.collectAsStateWithLifecycle(owner)
-                val selfId = remember { jwtSubFromAccessToken().orEmpty() }
                 SquadRelayTheme {
-                    OverlayChatStrip(
-                        messages = preview,
-                        selfUserId = selfId,
-                        lightStrip = isOverlayLightStripMode(),
-                        onDismissMessage = { m -> dismissStripMessage(m) },
-                        onNoticeClick = { noticeId ->
-                            when (noticeId) {
-                                OverlayStripNoticeIds.NO_RAID ->
-                                    OverlayMainActivityLaunch.launchChatTab(this@CombatOverlayService)
-                            }
-                        },
-                        onDismissRegionsChanged = { updateStripDismissScreenRects(it) },
+                    val preview by chatStripPreviewFlow.collectAsStateWithLifecycle(owner)
+                    val raidPin by raidPinPreviewFlow.collectAsStateWithLifecycle(owner)
+                    val hudPanel by overlayHudPanelHostState.collectAsStateWithLifecycle(owner)
+                    val chatPanelOpen = hudPanel.hudPane == OverlayHudPane.Chat
+                    val selfId = remember { jwtSubFromAccessToken().orEmpty() }
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 2.dp, vertical = 2.dp),
-                    )
+                    ) {
+                        if (raidPin != null && !chatPanelOpen) {
+                            OverlayRaidPinTeaser(
+                                preview = raidPin!!,
+                                onTap = { showOverlayHudPane(OverlayHudPane.Chat) },
+                                modifier = Modifier.padding(bottom = 2.dp),
+                            )
+                        }
+                        OverlayChatStrip(
+                            messages = preview,
+                            selfUserId = selfId,
+                            lightStrip = isOverlayLightStripMode(),
+                            onDismissMessage = { m -> dismissStripMessage(m) },
+                            onNoticeClick = { noticeId ->
+                                when (noticeId) {
+                                    OverlayStripNoticeIds.NO_RAID ->
+                                        OverlayMainActivityLaunch.launchChatTab(this@CombatOverlayService)
+                                }
+                            },
+                            onDismissRegionsChanged = { updateStripDismissScreenRects(it) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
             }
         }

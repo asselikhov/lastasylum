@@ -26,6 +26,7 @@ import { TeamsService } from '../users/teams.service';
 import { GameIdentitiesService } from '../users/game-identities.service';
 import { UsersService } from '../users/users.service';
 import { StickerAccessService } from '../users/sticker-access.service';
+import { PinAuditService } from '../users/pin-audit.service';
 import { ChatRoomsService } from './chat-rooms.service';
 import { buildMessageReactionBroadcastPayload } from './chat-realtime-broadcast.util';
 import { Message, MessageAttachment } from './schemas/message.schema';
@@ -168,6 +169,8 @@ export class ChatService {
     private readonly teamsService: TeamsService,
     private readonly chatRoomsService: ChatRoomsService,
     private readonly stickerAccess: StickerAccessService,
+    @Inject(forwardRef(() => PinAuditService))
+    private readonly pinAudit: PinAuditService,
   ) {}
 
   private withSquadDisplayRoles(
@@ -479,6 +482,66 @@ export class ChatService {
     };
   }
 
+  private async buildPinnedMessagesForRoomsBatch<
+    T extends {
+      _id: Types.ObjectId;
+      pinHistory?: PinHistoryEntry[];
+    },
+  >(rooms: T[]): Promise<Map<string, PinnedMessagePreview[]>> {
+    const histories = rooms.map((doc) => ({
+      roomId: doc._id.toString(),
+      history: this.chatRoomsService.pinHistoryForRoom(doc as ChatRoomDocument),
+    }));
+    const allMessageIds = [
+      ...new Set(
+        histories.flatMap((h) =>
+          h.history.map((entry) => entry.messageId.toString()),
+        ),
+      ),
+    ].filter((id) => Types.ObjectId.isValid(id));
+    const msgs =
+      allMessageIds.length === 0
+        ? []
+        : await this.messageModel
+            .find({
+              _id: { $in: allMessageIds.map((id) => new Types.ObjectId(id)) },
+            })
+            .lean()
+            .exec();
+    const byId = new Map(
+      msgs.map((m) => [String(m._id), buildPinnedPreviewFromChatMessage(m)]),
+    );
+    const actorIds = [
+      ...new Set(
+        histories.flatMap((h) =>
+          h.history.map((entry) => entry.pinnedByUserId.trim()).filter(Boolean),
+        ),
+      ),
+    ];
+    const actorNames = await this.resolvePinnedByUsernames(actorIds);
+    const out = new Map<string, PinnedMessagePreview[]>();
+    for (const { roomId, history } of histories) {
+      const previews: PinnedMessagePreview[] = [];
+      for (const entry of history) {
+        const msgId = entry.messageId.toString();
+        const preview =
+          byId.get(msgId) ??
+          buildStubPinnedPreview(
+            msgId,
+            actorNames.get(entry.pinnedByUserId.trim()) ?? null,
+          );
+        previews.push(
+          enrichPinnedPreview(
+            preview,
+            actorNames.get(entry.pinnedByUserId.trim()) ?? null,
+          ),
+        );
+      }
+      out.set(roomId, previews);
+    }
+    return out;
+  }
+
   async attachPinStateToRooms<
     T extends {
       _id: Types.ObjectId;
@@ -490,12 +553,17 @@ export class ChatService {
   >(rooms: T[]): Promise<(T & ChatRoomWithPinState)[]> {
     const startedAt = Date.now();
     const previews = await this.buildPinnedPreviewsForRooms(rooms);
+    const historyMap = await this.buildPinnedMessagesForRoomsBatch(rooms);
     const result = rooms.map((room) => {
-      const activePreview = previews.get(room._id.toString()) ?? null;
+      const rid = room._id.toString();
+      const activePreview = previews.get(rid) ?? null;
+      const pinnedMessages =
+        historyMap.get(rid) ??
+        (activePreview ? [activePreview] : []);
       return this.attachPinStateToRoom(
         room as T & ChatRoom,
         activePreview,
-        [],
+        pinnedMessages,
       );
     });
     const elapsedMs = Date.now() - startedAt;
@@ -543,6 +611,13 @@ export class ChatService {
         null,
         pinChanged.pinnedMessages,
       );
+      await this.writeChatPinAudit(
+        roomBefore,
+        roomId,
+        userId,
+        'unpin_all',
+        null,
+      );
       return { room, pinChanged };
     }
 
@@ -569,6 +644,7 @@ export class ChatService {
       pinChanged.pinnedMessage,
       pinChanged.pinnedMessages,
     );
+    await this.writeChatPinAudit(roomBefore, roomId, userId, 'pin', trimmed);
     return { room, pinChanged };
   }
 
@@ -605,7 +681,27 @@ export class ChatService {
       pinChanged.pinnedMessage,
       pinChanged.pinnedMessages,
     );
+    await this.writeChatPinAudit(roomBefore, roomId, userId, 'unpin', trimmed);
     return { room, pinChanged };
+  }
+
+  private async writeChatPinAudit(
+    room: { allianceId?: string | null },
+    roomId: string,
+    userId: string,
+    action: 'pin' | 'unpin' | 'unpin_all',
+    messageId: string | null,
+  ): Promise<void> {
+    const teamId = parsePlayerTeamIdFromChatScope(room.allianceId ?? '');
+    if (!teamId) return;
+    await this.pinAudit.append({
+      teamId,
+      scope: 'chat',
+      scopeId: roomId,
+      messageId,
+      action,
+      userId,
+    });
   }
 
   private async assertMayAccessMessageRoom(

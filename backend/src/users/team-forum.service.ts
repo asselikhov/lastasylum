@@ -1,8 +1,10 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model, Types } from 'mongoose';
@@ -41,6 +43,7 @@ import {
   removePinHistoryEntry,
   type PinHistoryEntry,
 } from '../common/pin-history.util';
+import { PinAuditService } from './pin-audit.service';
 
 export type TeamForumTopicRow = {
   id: string;
@@ -145,6 +148,8 @@ export class TeamForumService {
     private readonly stickerAccess: StickerAccessService,
     private readonly gameIdentities: GameIdentitiesService,
     private readonly usersService: UsersService,
+    @Inject(forwardRef(() => PinAuditService))
+    private readonly pinAudit: PinAuditService,
   ) {}
 
   private async enrichMessagesWithTelegram(
@@ -1253,6 +1258,14 @@ export class TeamForumService {
         pinnedMessage: null,
         pinnedMessages: pinChanged.pinnedMessages,
       });
+      await this.pinAudit.append({
+        teamId,
+        scope: 'forum',
+        scopeId: topicId,
+        messageId: null,
+        action: 'unpin_all',
+        userId,
+      });
       return { topic: row, pinChanged };
     }
 
@@ -1280,6 +1293,14 @@ export class TeamForumService {
     const row = this.topicRow(topic, {
       pinnedMessage: pinChanged.pinnedMessage,
       pinnedMessages: pinChanged.pinnedMessages,
+    });
+    await this.pinAudit.append({
+      teamId,
+      scope: 'forum',
+      scopeId: topicId,
+      messageId: trimmed,
+      action: 'pin',
+      userId,
     });
     return { topic: row, pinChanged };
   }
@@ -1318,6 +1339,14 @@ export class TeamForumService {
     const row = this.topicRow(topic, {
       pinnedMessage: pinChanged.pinnedMessage,
       pinnedMessages: pinChanged.pinnedMessages,
+    });
+    await this.pinAudit.append({
+      teamId,
+      scope: 'forum',
+      scopeId: topicId,
+      messageId: trimmed,
+      action: 'unpin',
+      userId,
     });
     return { topic: row, pinChanged };
   }

@@ -130,6 +130,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.geometry.Rect
@@ -182,6 +183,7 @@ import com.lastasylum.alliance.data.chat.chatSenderDisplayWithTag
 import com.lastasylum.alliance.ui.chat.ChatState
 import com.lastasylum.alliance.ui.chat.ChatListPaneState
 import com.lastasylum.alliance.ui.chat.ChatChromePaneState
+import com.lastasylum.alliance.ui.chat.PinnedMessagesCompactChip
 import com.lastasylum.alliance.ui.chat.PinnedMessageBar
 import com.lastasylum.alliance.overlay.OverlayMarkAllReadConfirmDialog
 import com.lastasylum.alliance.overlay.OverlayMarkAsReadIconButton
@@ -396,6 +398,7 @@ private fun ChatScreenMessagesHost(
     onJumpToPinnedMessage: (String) -> Unit = {},
     onUnpinOnePinned: (String) -> Unit = {},
     onDismissPinBar: () -> Unit = {},
+    onRestorePinBar: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -456,6 +459,18 @@ private fun ChatScreenMessagesHost(
     val pinnedSheetItems = remember(chromePane.pinnedMessages, pinnedPreview) {
         chromePane.pinnedMessages.ifEmpty {
             pinnedPreview?.let { listOf(it) } ?: emptyList()
+        }
+    }
+    val pinBarDismissed = chromePane.isPinBarDismissed
+    val compactPinCount = pinHistoryCount.coerceAtLeast(
+        if (selectedRoom?.pinnedMessageId != null) 1 else 0,
+    )
+    val pinnedMessageIds = remember(selectedRoom?.pinnedMessageId, chromePane.pinnedMessages) {
+        buildSet {
+            selectedRoom?.pinnedMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let { add(it) }
+            chromePane.pinnedMessages.forEach { pin ->
+                pin.id.trim().takeIf { it.isNotEmpty() }?.let { add(it) }
+            }
         }
     }
     val canUnpinPinned = canPinChatMessage(
@@ -755,7 +770,7 @@ private fun ChatScreenMessagesHost(
                 )
             }
             AnimatedVisibility(
-                visible = pinnedPreview != null && selectedRoom?.pinnedMessageId != null,
+                visible = pinnedPreview != null && selectedRoom?.pinnedMessageId != null && !pinBarDismissed,
                 enter = expandVertically(),
                 exit = shrinkVertically(),
             ) {
@@ -774,6 +789,14 @@ private fun ChatScreenMessagesHost(
                         modifier = Modifier.padding(bottom = 4.dp),
                     )
                 }
+            }
+            if (pinBarDismissed && compactPinCount > 0) {
+                PinnedMessagesCompactChip(
+                    count = compactPinCount,
+                    onTap = { showPinnedSheet = true },
+                    onLongPress = onRestorePinBar,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
             }
             PinnedMessagesSheet(
                 visible = showPinnedSheet,
@@ -833,6 +856,7 @@ private fun ChatScreenMessagesHost(
                     selectedMessageIds = listPane.selectedMessageIds,
                     onToggleMessageSelection = onToggleMessageSelection,
                     messageListKey = messageListKey,
+                    pinnedMessageIds = pinnedMessageIds,
                 )
                 ChatTypingIndicator(
                     typingPeers = typingPeers,
@@ -1066,6 +1090,7 @@ fun ChatScreen(
     onJumpToPinnedMessage: (String) -> Unit = {},
     onUnpinOnePinned: (String) -> Unit = {},
     onDismissPinBar: () -> Unit = {},
+    onRestorePinBar: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1198,6 +1223,7 @@ fun ChatScreen(
                 onJumpToPinnedMessage = onJumpToPinnedMessage,
                 onUnpinOnePinned = onUnpinOnePinned,
                 onDismissPinBar = onDismissPinBar,
+                onRestorePinBar = onRestorePinBar,
             )
             ChatScreenComposerSection(
                 composerPane = composerPane,
@@ -1220,33 +1246,6 @@ fun ChatScreen(
             )
         }
 
-    var pendingPinReplaceMessage by remember { mutableStateOf<ChatMessage?>(null) }
-    pendingPinReplaceMessage?.let { pinTarget ->
-        val pinTargetId = pinTarget._id ?: return@let
-        OverlayModalScope {
-            OverlayAwareAlertDialog(
-                onDismissRequest = { pendingPinReplaceMessage = null },
-                title = { Text(stringResource(R.string.chat_pin_replace_title)) },
-                text = { Text(stringResource(R.string.chat_pin_replace_message)) },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            onPinMessage(pinTargetId, pinTarget)
-                            pendingPinReplaceMessage = null
-                            dismissMessageActions()
-                        },
-                    ) {
-                        Text(stringResource(R.string.chat_pin_replace_confirm))
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { pendingPinReplaceMessage = null }) {
-                        Text(stringResource(R.string.chat_edit_cancel))
-                    }
-                },
-            )
-        }
-    }
 
     if (!inSelectionMode) {
         activeActionMessage?.let { message ->
@@ -1305,13 +1304,8 @@ fun ChatScreen(
                             },
                             onPin = {
                                 val msgId = message._id ?: return@MessageContextMenuActions
-                                val existingPin = roomPinnedId?.trim().orEmpty()
-                                if (existingPin.isNotEmpty() && existingPin != msgId) {
-                                    pendingPinReplaceMessage = message
-                                } else {
-                                    onPinMessage(msgId, message)
-                                    dismissMessageActions()
-                                }
+                                onPinMessage(msgId, message)
+                                dismissMessageActions()
                             },
                             onUnpin = {
                                 message._id?.let(onUnpinOnePinned)
@@ -1594,6 +1588,7 @@ fun ChatScreen(
     onJumpToPinnedMessage: (String) -> Unit = {},
     onUnpinOnePinned: (String) -> Unit = {},
     onDismissPinBar: () -> Unit = {},
+    onRestorePinBar: () -> Unit = {},
 ) = ChatScreen(
     listPane = state.toListPane(),
     chromePane = state.toChromePane(),
@@ -1646,6 +1641,7 @@ fun ChatScreen(
     onJumpToPinnedMessage = onJumpToPinnedMessage,
     onUnpinOnePinned = onUnpinOnePinned,
     onDismissPinBar = onDismissPinBar,
+    onRestorePinBar = onRestorePinBar,
 )
 
 @Composable
@@ -1785,6 +1781,7 @@ private fun ChatMessagesLazyList(
     selectedMessageIds: Set<String>,
     onToggleMessageSelection: (String) -> Unit,
     messageListKey: (ChatMessage) -> String,
+    pinnedMessageIds: Set<String> = emptySet(),
 ) {
     val overlayUi = LocalOverlayUiMode.current
     val minSystemViewport = (LocalConfiguration.current.screenHeightDp * 0.55f).dp.coerceAtLeast(280.dp)
@@ -1960,6 +1957,7 @@ private fun ChatMessagesLazyList(
                                 cluster = cluster,
                                 isMine = chatMessageIsOwn(message, listUiState.currentUserId),
                                 highlighted = highlighted,
+                                showPinnedMarker = messageId != null && messageId in pinnedMessageIds,
                                 clusterTopSpacing = clusterTop,
                                 canDelete = canDeleteChatMessage(
                                     message = message,
@@ -2104,7 +2102,7 @@ private fun ChatRoomsBar(
         return
     }
     val roomsKey = remember(rooms) {
-        rooms.joinToString("|") { "${it.id}:${it.unreadCount}:${it.title}" }
+        rooms.joinToString("|") { "${it.id}:${it.unreadCount}:${it.pinnedMessageId}:${it.title}" }
     }
     val tabs = remember(roomsKey) {
         rooms.map { room ->
@@ -2129,6 +2127,7 @@ private fun ChatRoomsBar(
                 accent = accent,
                 accentEnd = accentEnd,
                 unreadCount = room.unreadCount.coerceAtLeast(0),
+                hasPinned = !room.pinnedMessageId.isNullOrBlank(),
                 iconGlyph = if (kind == ChatRoomVisualKind.Server) "#" else null,
             )
         }
@@ -2801,6 +2800,7 @@ internal fun ChatMessageBubble(
     cluster: ChatMessageClusterFlags?,
     isMine: Boolean,
     highlighted: Boolean = false,
+    showPinnedMarker: Boolean = false,
     clusterTopSpacing: Dp,
     canDelete: Boolean,
     deleting: Boolean,
@@ -2868,6 +2868,16 @@ internal fun ChatMessageBubble(
             highlightBorder = scheme.primary.copy(alpha = 0.55f),
         ),
     )
+    val pinMarkerModifier = if (showPinnedMarker) {
+        Modifier.drawBehind {
+            drawRect(
+                color = scheme.primary.copy(alpha = 0.85f),
+                size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height),
+            )
+        }
+    } else {
+        Modifier
+    }
     val stemTag = message.senderTeamTag?.trim()?.takeIf { it.isNotEmpty() }
     val displayName = message.senderUsername.trim().ifBlank { senderLine }
     val nickname = message.senderUsername.trim().ifBlank { displayName }
@@ -2915,7 +2925,7 @@ internal fun ChatMessageBubble(
         Modifier
     }
 
-    val bubbleClickModifier = Modifier
+    val bubbleClickModifier = pinMarkerModifier
         .semantics(mergeDescendants = true) {
             contentDescription = bubbleDescription
             role = Role.Button

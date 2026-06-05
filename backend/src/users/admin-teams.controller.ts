@@ -21,6 +21,7 @@ import { TeamsService } from './teams.service';
 import { TeamNewsService } from './team-news.service';
 import { TeamForumService } from './team-forum.service';
 import { UsersService } from './users.service';
+import { PinAuditService } from './pin-audit.service';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -33,6 +34,7 @@ export class AdminTeamsController {
     private readonly chatGateway: ChatGateway,
     private readonly teamNews: TeamNewsService,
     private readonly teamForum: TeamForumService,
+    private readonly pinAudit: PinAuditService,
   ) {}
 
   @Get('player-teams')
@@ -164,6 +166,19 @@ export class AdminTeamsController {
       limit,
     });
     return Promise.all(docs.map((u) => this.users.toSafeUser(u)));
+  }
+
+  @Get('player-teams/:teamId/pin-audit')
+  @Roles(AllianceRole.ADMIN)
+  listPinAudit(
+    @Param('teamId') teamId: string,
+    @Query('limit') limitRaw?: string,
+  ) {
+    const limit = Math.min(
+      200,
+      Math.max(1, Number.parseInt(limitRaw ?? '50', 10) || 50),
+    );
+    return this.pinAudit.listForTeam(teamId, limit);
   }
 
   @Get('overview')

@@ -151,6 +151,7 @@ import com.lastasylum.alliance.data.teams.TeamForumTopicPinChangedEvent
 import com.lastasylum.alliance.data.teams.TeamForumTopicReadEvent
 import com.lastasylum.alliance.ui.chat.ForumPinCoordinator
 import com.lastasylum.alliance.ui.chat.PinnedMessageBar
+import com.lastasylum.alliance.ui.chat.PinnedMessagesCompactChip
 import com.lastasylum.alliance.ui.chat.TopicPinSnapshot
 import com.lastasylum.alliance.ui.chat.formatPinnedMetaLine
 import com.lastasylum.alliance.ui.chat.forumPinPreviewDisplayState
@@ -1002,7 +1003,6 @@ private fun TeamForumTopicChatRoute(
     }
     var pinNotice by remember { mutableStateOf<String?>(null) }
     var showForumPinnedSheet by remember { mutableStateOf(false) }
-    var pendingForumPinMessage by remember { mutableStateOf<TeamForumMessageDto?>(null) }
     var remoteImagePreview by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
     val openImages = remember {
         { urls: List<String>, idx: Int -> remoteImagePreview = urls to idx }
@@ -1850,6 +1850,17 @@ private fun TeamForumTopicChatRoute(
             )
             }
         }
+        if (pinBarDismissed && pinHistoryCount > 0) {
+            PinnedMessagesCompactChip(
+                count = pinHistoryCount,
+                onTap = { showForumPinnedSheet = true },
+                onLongPress = {
+                    pinCoordinator.restorePinBar()
+                    bumpPinUi()
+                },
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+            )
+        }
         PinnedMessagesSheet(
             visible = showForumPinnedSheet,
             items = pinCoordinator.pinnedMessages.ifEmpty {
@@ -1953,6 +1964,7 @@ private fun TeamForumTopicChatRoute(
                     val inSelectionMode = selectedMessageIds.isNotEmpty()
                     val isSelected = msg.id in selectedMessageIds
                     val canDeleteMsg = canDeleteForumMessage(msg)
+                    val pinnedMessageIds = remember(pinRevision) { pinCoordinator.pinnedMessageIds() }
                     ForumMessageBubble(
                         message = msg,
                         teamId = teamId,
@@ -1963,6 +1975,7 @@ private fun TeamForumTopicChatRoute(
                         inSelectionMode = inSelectionMode,
                         isSelected = isSelected,
                         highlighted = LocalChatHighlightMessageId.current == msg.id,
+                        showPinnedMarker = msg.id in pinnedMessageIds,
                         onJumpToMessage = { targetId ->
                             val lazyIdx = listDerived.fullLazyIndexForMessageId(targetId)
                             if (lazyIdx != null) {
@@ -2247,31 +2260,6 @@ private fun TeamForumTopicChatRoute(
 
     // legacy menu dialog removed (replaced with context menu popup)
 
-    pendingForumPinMessage?.let { pinTarget ->
-        val pinTargetId = pinTarget.id
-        OverlayModalScope {
-            OverlayAwareAlertDialog(
-                onDismissRequest = { pendingForumPinMessage = null },
-                title = { Text(stringResource(R.string.forum_pin_replace_title)) },
-                text = { Text(stringResource(R.string.forum_pin_replace_message)) },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            pinForumMessage(pinTargetId, pinTarget)
-                            pendingForumPinMessage = null
-                        },
-                    ) {
-                        Text(stringResource(R.string.chat_pin_replace_confirm))
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { pendingForumPinMessage = null }) {
-                        Text(stringResource(R.string.profile_action_cancel))
-                    }
-                },
-            )
-        }
-    }
 
     val activeActionMessage = remember(activeActionMessageId, messages) {
         activeActionMessageId?.let { id -> messages.firstOrNull { it.id == id } }
@@ -2279,8 +2267,8 @@ private fun TeamForumTopicChatRoute(
     if (selectedMessageIds.isEmpty()) {
         activeActionMessage?.let { msg ->
             val menuCanPin = canModerateMessages && msg.deletedAt.isNullOrBlank()
-            val isTopicPinnedMessage =
-                pinCoordinator.pinnedMessageId != null && msg.id == pinCoordinator.pinnedMessageId
+            val pinnedMessageIds = remember(pinRevision) { pinCoordinator.pinnedMessageIds() }
+            val isTopicPinnedMessage = msg.id in pinnedMessageIds
             val menuImageUrls = remember(msg.id, msg.imageRelativeUrl, msg.imageRelativeUrls) {
                 buildList {
                     msg.imageRelativeUrl?.trim()?.takeIf { it.isNotBlank() }?.let {
@@ -2327,12 +2315,8 @@ private fun TeamForumTopicChatRoute(
                                 dismissMessageActions()
                             },
                             onPin = {
-                                val existingPin = pinCoordinator.pinnedMessageId?.trim().orEmpty()
-                                if (existingPin.isNotEmpty() && existingPin != msg.id) {
-                                    pendingForumPinMessage = msg
-                                } else {
-                                    pinForumMessage(msg.id, msg)
-                                }
+                                pinForumMessage(msg.id, msg)
+                                dismissMessageActions()
                             },
                             onUnpin = {
                                 unpinOneForumMessage(msg.id)

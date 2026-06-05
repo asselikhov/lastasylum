@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -56,6 +58,7 @@ data class ChatRoomTabSpec(
     val accent: Color,
     val accentEnd: Color = accent,
     val unreadCount: Int = 0,
+    val hasPinned: Boolean = false,
     /** Например `#` у серверной комнаты — показывается вместо [icon], без дубля в [label]. */
     val iconGlyph: String? = null,
 )
@@ -216,6 +219,16 @@ private fun ChatRoomChip(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .offset(x = 5.dp, y = (-5).dp),
+                )
+            } else if (tab.hasPinned) {
+                Icon(
+                    imageVector = Icons.Outlined.PushPin,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 4.dp, y = (-4).dp)
+                        .size(10.dp),
+                    tint = tab.accent.copy(alpha = if (selected) 1f else 0.85f),
                 )
             }
         }

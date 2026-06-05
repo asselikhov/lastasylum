@@ -164,9 +164,11 @@
     <string name="chat_pinned_meta_you">Вы</string>
     <string name="chat_pinned_meta_user">@%1$s</string>
     <string name="forum_topic_pinned_preview">Закреплено</string>
-    <string name="chat_pin_replace_title">Заменить закрепление?</string>
-    <string name="chat_pin_replace_message">Другое сообщение уже закреплено. Закрепить это вместо него?</string>
-    <string name="chat_pin_replace_confirm">Закрепить</string>
+    <string name="chat_pinned_chip_label">%1$d закреп.</string>
+    <string name="chat_pinned_active_label">Активное</string>
+    <string name="chat_pin_added_toast">Сообщение добавлено в закреплённые</string>
+    <string name="forum_pin_added_toast">Сообщение добавлено в закреплённые</string>
+    <string name="overlay_raid_pin_teaser_title">Рейд:</string>
     <string name="err_chat_pin_team_r45_only">Закреплять сообщения могут только ранги R4 и R5</string>
     <string name="err_chat_pin_team_room_only">Закрепление доступно только в командных чатах</string>
     <string name="chat_action_delete">Удалить сообщение</string>
@@ -958,8 +960,6 @@
     <string name="forum_pinned_bar_cd">Закреплённое сообщение в теме</string>
     <string name="forum_pinned_toast_pinned">Сообщение закреплено</string>
     <string name="forum_pinned_toast_unpinned">Закрепление снято</string>
-    <string name="forum_pin_replace_title">Заменить закрепление?</string>
-    <string name="forum_pin_replace_message">Другое сообщение уже закреплено в теме. Закрепить это вместо него?</string>
     <string name="err_form_check">Проверьте данные в форме.</string>
     <string name="err_forbidden">Доступ запрещён.</string>
     <string name="err_rate_limit">Слишком много запросов. Подождите минуту.</string>

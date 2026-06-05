@@ -43,4 +43,16 @@ describe('PushNotificationsService', () => {
     });
     expect(collectPushTokensForAlliance).not.toHaveBeenCalled();
   });
+
+  it('notifyRaidPinAlert delegates to alliance chat push when Firebase is not configured', async () => {
+    collectPushTokensForAlliance.mockResolvedValue(['t1']);
+    await service.notifyRaidPinAlert({
+      allianceId: `pt:${new Types.ObjectId().toHexString()}`,
+      excludeUserId: new Types.ObjectId().toHexString(),
+      roomId: 'room1',
+      messageId: 'msg1',
+      body: 'Raid pin preview',
+    });
+    expect(collectPushTokensForAlliance).not.toHaveBeenCalled();
+  });
 });

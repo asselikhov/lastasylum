@@ -76,6 +76,23 @@ class ForumPinCoordinatorTest {
     }
 
     @Test
+    fun pinnedMessageIds_includesAllHistoryEntries() {
+        val second = PinnedMessagePreviewDto(
+            id = "507f1f77bcf86cd799439015",
+            text = "second",
+            senderUsername = "alice",
+            createdAt = "2026-01-02T00:00:00Z",
+        )
+        coordinator.onEnterTopic(
+            topicWithPin().copy(
+                pinnedMessages = listOf(preview, second),
+            ),
+        )
+        assertTrue(coordinator.pinnedMessageIds().contains(preview.id))
+        assertTrue(coordinator.pinnedMessageIds().contains(second.id))
+    }
+
+    @Test
     fun applyPinBarUi_showsBarAfterReentryWithEmptyMessages() {
         coordinator.onEnterTopic(topicWithPin())
         coordinator.applyPinBarUi(emptyList())

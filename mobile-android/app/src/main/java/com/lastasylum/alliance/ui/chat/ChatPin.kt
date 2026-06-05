@@ -28,7 +28,7 @@ private fun firstForumImageRelativeUrl(msg: TeamForumMessageDto): String? {
     return msg.imageRelativeUrl?.trim()?.takeIf { it.isNotEmpty() }
 }
 
-fun ChatMessage.toPinnedPreview(): PinnedMessagePreviewDto? {
+fun ChatMessage.toPinnedPreview(actorUsername: String? = null): PinnedMessagePreviewDto? {
     val id = _id?.trim().orEmpty()
     if (id.isEmpty()) return null
     val imageUrl = attachments.firstOrNull { it.kind == "image" && it.url.isNotBlank() }?.url
@@ -44,7 +44,7 @@ fun ChatMessage.toPinnedPreview(): PinnedMessagePreviewDto? {
         hasImage = hasImage,
         isSticker = StickerPacks.stemForMessage(text) != null,
         imageThumbnailUrl = imageUrl,
-        pinnedByUsername = null,
+        pinnedByUsername = actorUsername,
     )
 }
 

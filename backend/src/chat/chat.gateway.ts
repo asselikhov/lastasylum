@@ -750,6 +750,30 @@ export class ChatGateway {
     pinnedMessage: unknown;
   }): void {
     this.broadcastChatRoomEvent(payload.roomId, 'room:pin-changed', payload);
+    void this.maybeNotifyRaidPinPush(payload);
+  }
+
+  private async maybeNotifyRaidPinPush(payload: {
+    roomId: string;
+    pinnedMessageId: string | null;
+    pinnedByUserId: string | null;
+    pinnedMessage: unknown;
+  }): Promise<void> {
+    const pinId = payload.pinnedMessageId?.trim() ?? '';
+    if (!pinId) return;
+    const room = await this.chatRoomsService.findById(payload.roomId);
+    if (!room || room.title !== ALLIANCE_RAID_ROOM_TITLE) return;
+    const allianceId = room.allianceId?.trim() ?? '';
+    if (!allianceId.startsWith('pt:')) return;
+    const preview = payload.pinnedMessage as { text?: string } | null;
+    const body = preview?.text?.trim() || 'Закреплено сообщение';
+    await this.pushNotifications.notifyRaidPinAlert({
+      allianceId,
+      excludeUserId: payload.pinnedByUserId?.trim() ?? '',
+      roomId: payload.roomId,
+      messageId: pinId,
+      body,
+    });
   }
 
   broadcastChatRoomEvent(

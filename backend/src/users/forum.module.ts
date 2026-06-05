@@ -18,6 +18,11 @@ import {
 } from './schemas/team-forum-topic-read-state.schema';
 import { TeamForumService } from './team-forum.service';
 import { TeamForumSocketModule } from './team-forum-socket.module';
+import {
+  PinAuditLog,
+  PinAuditLogSchema,
+} from './schemas/pin-audit-log.schema';
+import { PinAuditService } from './pin-audit.service';
 
 @Module({
   imports: [
@@ -33,9 +38,10 @@ import { TeamForumSocketModule } from './team-forum-socket.module';
         name: TeamForumTopicReadState.name,
         schema: TeamForumTopicReadStateSchema,
       },
+      { name: PinAuditLog.name, schema: PinAuditLogSchema },
     ]),
   ],
-  providers: [TeamForumService],
-  exports: [TeamForumService, MongooseModule],
+  providers: [TeamForumService, PinAuditService],
+  exports: [TeamForumService, PinAuditService, MongooseModule],
 })
 export class ForumModule {}

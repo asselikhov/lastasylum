@@ -11,6 +11,7 @@ import { UsersService } from '../users/users.service';
 import { GameIdentitiesService } from '../users/game-identities.service';
 import { TeamsService } from '../users/teams.service';
 import { StickerAccessService } from '../users/sticker-access.service';
+import { PinAuditService } from '../users/pin-audit.service';
 import { PlayerTeamMemberRole } from '../common/enums/player-team-member-role.enum';
 import { TeamMembershipStatus } from '../common/enums/team-membership-status.enum';
 import { playerTeamChatAllianceId } from './chat-alliance-scope';
@@ -140,6 +141,10 @@ describe('ChatService pin (team rooms)', () => {
     assertUserMaySendStickerMessage: jest.fn().mockResolvedValue(undefined),
   };
 
+  const pinAudit = {
+    append: jest.fn().mockResolvedValue(undefined),
+  };
+
   let service: ChatService;
 
   beforeEach(async () => {
@@ -166,6 +171,7 @@ describe('ChatService pin (team rooms)', () => {
         { provide: TeamsService, useValue: teamsService },
         { provide: ChatRoomsService, useValue: chatRoomsService },
         { provide: StickerAccessService, useValue: stickerAccess },
+        { provide: PinAuditService, useValue: pinAudit },
       ],
     }).compile();
 
@@ -284,6 +290,42 @@ describe('ChatService pin (team rooms)', () => {
     await expect(
       service.setRoomPinnedMessage(userId, roomId, messageId),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('attachPinStateToRooms returns full pin history for multi-pin rooms', async () => {
+    const msg2Id = '507f1f77bcf86cd799439016';
+    const pinnedRoomMulti = {
+      ...roomDoc,
+      pinnedMessageId: new Types.ObjectId(messageId),
+      pinHistory: [
+        {
+          messageId: new Types.ObjectId(messageId),
+          pinnedAt: new Date(),
+          pinnedByUserId: userId,
+        },
+        {
+          messageId: new Types.ObjectId(msg2Id),
+          pinnedAt: new Date(),
+          pinnedByUserId: userId,
+        },
+      ],
+    };
+    chatRoomsService.pinHistoryForRoom.mockImplementation((room: {
+      pinHistory?: { messageId: Types.ObjectId }[];
+    }) => room.pinHistory ?? []);
+    messageModel.find.mockReturnValue({
+      lean: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue([
+          messageLean,
+          { ...messageLean, _id: new Types.ObjectId(msg2Id), text: 'second' },
+        ]),
+      }),
+    });
+    jest
+      .spyOn(service as never, 'resolvePinnedByUsernames' as never)
+      .mockResolvedValue(new Map() as never);
+    const rows = await service.attachPinStateToRooms([pinnedRoomMulti as never]);
+    expect(rows[0].pinnedMessages.length).toBeGreaterThan(1);
   });
 
   it('admin wipe clears all room pins', async () => {

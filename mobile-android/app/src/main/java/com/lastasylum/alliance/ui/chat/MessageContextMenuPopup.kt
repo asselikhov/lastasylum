@@ -137,7 +137,7 @@ fun MessageContextMenuPopup(
                         if (canPin && !isPinned) {
                             MessageSheetActionRow(
                                 icon = Icons.Outlined.PushPin,
-                                label = stringResource(R.string.forum_action_pin),
+                                label = stringResource(R.string.chat_action_pin),
                                 iconTint = ContextMenuIconTint,
                                 labelColor = ContextMenuLabelColor,
                                 onClick = {
@@ -150,7 +150,7 @@ fun MessageContextMenuPopup(
                         if (canPin && isPinned) {
                             MessageSheetActionRow(
                                 icon = Icons.Outlined.PushPin,
-                                label = stringResource(R.string.forum_action_unpin),
+                                label = stringResource(R.string.chat_action_unpin),
                                 iconTint = ContextMenuIconTint,
                                 labelColor = ContextMenuLabelColor,
                                 onClick = {

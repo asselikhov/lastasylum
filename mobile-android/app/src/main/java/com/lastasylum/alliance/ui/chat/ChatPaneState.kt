@@ -39,6 +39,7 @@ data class ChatChromePaneState(
     val pinBarPreview: PinnedMessagePreviewDto? = null,
     val pinHistoryCount: Int = 0,
     val pinnedMessages: List<PinnedMessagePreviewDto> = emptyList(),
+    val isPinBarDismissed: Boolean = false,
 )
 
 @Immutable
@@ -84,6 +85,7 @@ fun ChatState.toChromePane(): ChatChromePaneState =
         pinBarPreview = pinBarPreview,
         pinHistoryCount = pinHistoryCount,
         pinnedMessages = pinnedMessages,
+        isPinBarDismissed = isPinBarDismissed,
     )
 
 fun ChatState.toComposerPane(): ChatComposerPaneState =

@@ -157,6 +157,27 @@ export class PushNotificationsService implements OnModuleInit {
     }
   }
 
+  async notifyRaidPinAlert(input: {
+    allianceId: string;
+    excludeUserId: string;
+    roomId: string;
+    messageId: string;
+    body: string;
+  }): Promise<void> {
+    if (!this.ready) return;
+    await this.notifyAllianceChatMessage({
+      allianceId: input.allianceId,
+      excludeUserId: input.excludeUserId,
+      title: 'Рейд: закреплено сообщение',
+      body: input.body.trim().slice(0, 120) || 'Закреплено сообщение',
+      data: {
+        roomId: input.roomId,
+        messageId: input.messageId,
+        type: 'raid_pin',
+      },
+    });
+  }
+
   async notifyAllianceChatMessage(input: {
     allianceId: string;
     excludeUserId: string;
