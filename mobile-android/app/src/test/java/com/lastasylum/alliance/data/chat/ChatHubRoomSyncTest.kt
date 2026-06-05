@@ -14,6 +14,12 @@ class ChatHubRoomSyncTest {
     }
 
     @Test
+    fun allianceHubRoom_picksAllianceNameScope() {
+        val hub = room(id = "hub", sortOrder = 1, allianceId = "SquadRelay", title = "Альянс")
+        assertEquals("hub", ChatHubRoomSync.allianceHubRoom(listOf(hub))?.id)
+    }
+
+    @Test
     fun isAllianceHubRoom_rejectsRaidAndGlobal() {
         assertFalse(ChatHubRoomSync.isAllianceHubRoom(room(id = "r", sortOrder = 2, allianceId = "pt:1", title = "Рейд")))
         assertFalse(ChatHubRoomSync.isAllianceHubRoom(room(id = "g", sortOrder = 1, allianceId = ChatAllianceIds.GLOBAL)))

@@ -63,6 +63,7 @@ internal object OverlayColdStartHydrator {
         val rooms = disk.loadChatRooms(uid)
         if (!rooms.isNullOrEmpty()) {
             ChatSessionCache.update(rooms)
+            ChatHubRoomSync.applyHubRoomPreference(rooms, container.chatRoomPreferences)
             seededRooms = true
             hasAnyDisk = true
             ChatHubRoomSync.allianceHubRoom(rooms)?.id?.let { hubId ->

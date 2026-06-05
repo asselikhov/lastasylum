@@ -85,14 +85,29 @@ fun buildPresenceSections(
     ).map { it.toUiModel(selfUserId, inGameNow = true) }
     val recentModels = sortRecentMembers(
         recentlyActive.filter {
-            !isOverlayIngameNow(it.presenceStatus, it.lastPresenceAt) &&
-                it.userId !in ingameIds
+            it.userId !in ingameIds &&
+                isRecentlyActiveOverlay(it.presenceStatus, it.lastPresenceAt)
         },
     ).map { it.toUiModel(selfUserId, inGameNow = false) }
     return listOf(
         OverlayOnlinePresenceSection(PresenceSectionKind.Ingame, ingameModels),
         OverlayOnlinePresenceSection(PresenceSectionKind.Recent, recentModels),
     )
+}
+
+fun isRecentlyActiveOverlay(
+    presenceStatus: String?,
+    lastPresenceAt: String?,
+    now: Instant = Instant.now(),
+): Boolean {
+    val status = presenceStatus?.trim()?.lowercase().orEmpty()
+    if (status == "ingame") return false
+    if (isOverlayIngameNow(presenceStatus, lastPresenceAt)) return false
+    val iso = lastPresenceAt?.trim().orEmpty()
+    if (iso.isEmpty()) return false
+    val instant = parseIsoInstant(iso) ?: return false
+    val ageMs = Duration.between(instant, now).toMillis().coerceAtLeast(0)
+    return ageMs <= OVERLAY_INGAME_PRESENCE_STALE_MS
 }
 
 fun mergePresenceSocketEvent(
@@ -106,24 +121,23 @@ fun mergePresenceSocketEvent(
     val existing = ingame.firstOrNull { it.userId == event.userId }
         ?: recent.firstOrNull { it.userId == event.userId }
         ?: fallbackMember
+        ?: event.toMinimalMember()
     if (nowIngame) {
         recent.removeAll { it.userId == event.userId }
-        if (existing != null) {
-            val patched = existing.copy(
-                presenceStatus = event.presenceStatus ?: existing.presenceStatus,
-                lastPresenceAt = event.lastPresenceAt ?: existing.lastPresenceAt,
-            )
-            ingame.removeAll { it.userId == event.userId }
-            ingame.add(patched)
-        }
+        val patched = existing.copy(
+            presenceStatus = event.presenceStatus ?: existing.presenceStatus,
+            lastPresenceAt = event.lastPresenceAt ?: existing.lastPresenceAt,
+        )
+        ingame.removeAll { it.userId == event.userId }
+        ingame.add(patched)
     } else {
         ingame.removeAll { it.userId == event.userId }
-        if (existing != null) {
+        recent.removeAll { it.userId == event.userId }
+        if (isRecentlyActiveOverlay(event.presenceStatus, event.lastPresenceAt)) {
             val patched = existing.copy(
                 presenceStatus = event.presenceStatus ?: existing.presenceStatus,
                 lastPresenceAt = event.lastPresenceAt ?: existing.lastPresenceAt,
             )
-            recent.removeAll { it.userId == event.userId }
             recent.add(patched)
         }
     }
@@ -205,15 +219,9 @@ fun reconcilePresenceLists(
 ): OverlayOnlinePresenceLists {
     val freshIngame = ingame.filter { isOverlayIngameNow(it.presenceStatus, it.lastPresenceAt) }
     val ingameIds = freshIngame.map { it.userId }.toSet()
-    val recentById = recentlyActive.associateBy { it.userId }.toMutableMap()
-    ingame.forEach { member ->
-        if (member.userId !in ingameIds) {
-            recentById[member.userId] = member
-        }
-    }
-    val freshRecent = recentById.values.filter { member ->
+    val freshRecent = recentlyActive.filter { member ->
         member.userId !in ingameIds &&
-            !isOverlayIngameNow(member.presenceStatus, member.lastPresenceAt)
+            isRecentlyActiveOverlay(member.presenceStatus, member.lastPresenceAt)
     }
     return OverlayOnlinePresenceLists(ingame = freshIngame, recentlyActive = freshRecent)
 }
@@ -224,7 +232,8 @@ fun rawRecentCount(
 ): Int {
     val ingameIds = ingame.map { it.userId }.toSet()
     return recentlyActive.count {
-        !isOverlayIngameNow(it.presenceStatus, it.lastPresenceAt) && it.userId !in ingameIds
+        it.userId !in ingameIds &&
+            isRecentlyActiveOverlay(it.presenceStatus, it.lastPresenceAt)
     }
 }
 
@@ -306,15 +315,22 @@ fun buildVoiceFlagsMap(
     }
 }
 
+private fun TeamPresenceSocketEvent.toMinimalMember(): PlayerTeamMemberDto =
+    PlayerTeamMemberDto(
+        userId = userId,
+        username = userId.take(12),
+        isLeader = false,
+        teamRole = "R1",
+        telegramUsername = null,
+        presenceStatus = presenceStatus,
+        lastPresenceAt = lastPresenceAt,
+    )
+
 private fun PlayerTeamMemberDto.toUiModel(
     selfUserId: String?,
     inGameNow: Boolean,
 ): OverlayOnlineMemberUiModel {
-    val freshness = if (inGameNow) {
-        presenceFreshness(lastPresenceAt)
-    } else {
-        PresenceFreshness.Stale
-    }
+    val freshness = presenceFreshness(lastPresenceAt)
     return OverlayOnlineMemberUiModel(
         userId = userId,
         username = username,

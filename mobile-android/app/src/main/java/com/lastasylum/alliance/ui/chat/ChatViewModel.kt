@@ -2320,6 +2320,15 @@ class ChatViewModel(
             return
         }
         if (_state.value.rooms.none { it.id == roomId }) {
+            val hubId = chatRoomPreferences.getHubRoomId()?.trim().orEmpty()
+            if (hubId.isNotEmpty() && roomId == hubId) {
+                ChatSessionCache.patchRoomUnread(
+                    roomId,
+                    event.unreadCount.coerceAtLeast(0),
+                    event.lastReadMessageId,
+                )
+                syncOverlayAllianceHubBadge()
+            }
             scheduleUnreadSyncFromServer()
             return
         }

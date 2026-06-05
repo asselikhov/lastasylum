@@ -149,7 +149,7 @@ class LaunchDiskCache(private val context: Context) {
     fun loadForumTopics(userId: String, teamId: String): List<TeamForumTopicDto>? {
         val cached = readCached(userId, forumFileName(teamId), forumTopicsAdapter) ?: return null
         if (isStale(cached.savedAtMs)) return null
-        return cached.topics.takeIf { it.isNotEmpty() }
+        return cached.topics
     }
 
     fun saveForumMessages(
@@ -159,7 +159,7 @@ class LaunchDiskCache(private val context: Context) {
         messages: List<TeamForumMessageDto>,
         hasMoreOlder: Boolean,
     ) {
-        if (userId.isBlank() || teamId.isBlank() || topicId.isBlank() || messages.isEmpty()) return
+        if (userId.isBlank() || teamId.isBlank() || topicId.isBlank()) return
         write(
             userId,
             forumMessagesFileName(teamId, topicId),
@@ -182,7 +182,7 @@ class LaunchDiskCache(private val context: Context) {
             forumMessagesAdapter,
         ) ?: return null
         if (isStale(cached.savedAtMs)) return null
-        return cached.takeIf { it.messages.isNotEmpty() }
+        return cached
     }
 
     fun clearUser(userId: String) {

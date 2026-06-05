@@ -76,7 +76,7 @@ class OverlayTeamOnlinePresenceLogicTest {
             fallbackMember = member("u1", "alice"),
         )
         assertTrue(merged.ingame.isEmpty())
-        assertEquals(1, merged.recentlyActive.size)
+        assertTrue(merged.recentlyActive.isEmpty())
     }
 
     @Test
@@ -125,7 +125,7 @@ class OverlayTeamOnlinePresenceLogicTest {
     }
 
     @Test
-    fun reconcilePresenceLists_movesStaleIngameToRecent() {
+    fun reconcilePresenceLists_dropsStaleIngame() {
         val staleAt = Instant.now()
             .minusMillis(OVERLAY_INGAME_PRESENCE_STALE_MS + 1_000)
             .toString()
@@ -135,8 +135,7 @@ class OverlayTeamOnlinePresenceLogicTest {
             recentlyActive = emptyList(),
         )
         assertTrue(reconciled.ingame.isEmpty())
-        assertEquals(1, reconciled.recentlyActive.size)
-        assertEquals("u1", reconciled.recentlyActive.first().userId)
+        assertTrue(reconciled.recentlyActive.isEmpty())
     }
 
     @Test
@@ -207,7 +206,7 @@ class OverlayTeamOnlinePresenceLogicTest {
                     "u3",
                     "c",
                     presenceStatus = "online",
-                    lastPresenceAt = freshIso(200),
+                    lastPresenceAt = freshIso(45),
                 ),
             ),
             selfUserId = null,
@@ -259,10 +258,33 @@ class OverlayTeamOnlinePresenceLogicTest {
                 "u2",
                 "b",
                 presenceStatus = "online",
-                lastPresenceAt = freshIso(200),
+                lastPresenceAt = freshIso(45),
             ),
         )
         assertEquals(1, rawRecentCount(ingame, recent))
+    }
+
+    @Test
+    fun socket_addsUnknownIngameMemberFromEvent() {
+        val lists = OverlayOnlinePresenceLists(
+            ingame = emptyList(),
+            recentlyActive = emptyList(),
+        )
+        val freshAt = freshIso(5)
+        val merged = mergePresenceSocketEvent(
+            lists = lists,
+            event = TeamPresenceSocketEvent("new-user", "ingame", freshAt),
+            fallbackMember = null,
+        )
+        assertEquals(1, merged.ingame.size)
+        assertEquals("new-user", merged.ingame.first().userId)
+    }
+
+    @Test
+    fun isRecentlyActiveOverlay_rejectsIngameAndStale() {
+        assertFalse(isRecentlyActiveOverlay("ingame", freshIso(30)))
+        assertFalse(isRecentlyActiveOverlay("online", freshIso(120)))
+        assertTrue(isRecentlyActiveOverlay("online", freshIso(30)))
     }
 
     @Test

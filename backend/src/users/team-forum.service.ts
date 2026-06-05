@@ -600,7 +600,7 @@ export class TeamForumService {
       const doc = docById.get(id);
       const lastMsgId = doc?.lastMessageId ?? null;
       if (!lastMsgId) {
-        needsHeavy.push(topicId);
+        out.set(id, 0);
         continue;
       }
       const senderId = doc?.lastMessageSenderUserId?.trim();
@@ -1431,6 +1431,28 @@ export class TeamForumService {
     await t.deleteOne();
   }
 
+  /** Lightweight membership + topic access check (socket topic:join, no message fetch). */
+  async assertTopicMemberAccess(
+    teamId: string,
+    topicId: string,
+    userId: string,
+  ): Promise<void> {
+    await this.teams.getTeamIfMemberOrThrow(teamId, userId);
+    if (!Types.ObjectId.isValid(topicId)) {
+      throw new NotFoundException('Topic not found');
+    }
+    const topic = await this.topicModel
+      .findOne({
+        _id: new Types.ObjectId(topicId),
+        teamId: new Types.ObjectId(teamId),
+      })
+      .select('_id')
+      .lean();
+    if (!topic) {
+      throw new NotFoundException('Topic not found');
+    }
+  }
+
   async listMessages(
     teamId: string,
     topicId: string,
@@ -1439,16 +1461,10 @@ export class TeamForumService {
     limitRaw?: number,
   ): Promise<TeamForumMessageRow[]> {
     const startedAt = Date.now();
-    const team = await this.teams.getTeamIfMemberOrThrow(teamId, userId);
+    await this.assertTopicMemberAccess(teamId, topicId, userId);
     const teamOid = new Types.ObjectId(teamId);
     const topOid = new Types.ObjectId(topicId);
-    const topic = await this.topicModel.findOne({
-      _id: topOid,
-      teamId: teamOid,
-    });
-    if (!topic) {
-      throw new NotFoundException('Topic not found');
-    }
+    const team = await this.teams.getTeamIfMemberOrThrow(teamId, userId);
     const limit = Math.min(Math.max(limitRaw ?? 50, 1), 100);
     const filter: Record<string, unknown> = {
       topicId: topOid,

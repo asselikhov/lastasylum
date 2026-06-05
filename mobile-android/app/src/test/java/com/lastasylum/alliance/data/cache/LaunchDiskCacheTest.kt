@@ -137,6 +137,17 @@ class LaunchDiskCacheTest {
     }
 
     @Test
+    fun emptyForumTopicsAndMessagesRoundTrip() {
+        cache.saveForumTopics(userId, teamId, emptyList())
+        assertEquals(0, cache.loadForumTopics(userId, teamId)?.size)
+
+        cache.saveForumMessages(userId, teamId, "empty-topic", emptyList(), hasMoreOlder = false)
+        val loaded = cache.loadForumMessages(userId, teamId, "empty-topic")
+        assertEquals(0, loaded?.messages?.size)
+        assertEquals(false, loaded?.hasMoreOlder)
+    }
+
+    @Test
     fun isStaleAfterSoftTtl() {
         val old = System.currentTimeMillis() - LaunchDiskCache.SOFT_TTL_MS - 1
         assertTrue(LaunchDiskCache.isStale(old))

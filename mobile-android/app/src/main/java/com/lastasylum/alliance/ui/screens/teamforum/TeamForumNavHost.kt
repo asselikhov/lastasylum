@@ -464,12 +464,18 @@ private fun TeamForumListRoute(
             topicSnapshots[t.id] = t
         }
         onForumTopicsSynced(patchedRows)
-        patchedRows.filter { topic ->
-            topic.unreadCount > 0 && effectiveTopicUnread(topic) == 0
-        }.forEach { topic ->
-            val localLast = lastReadByTopic[topic.id] ?: return@forEach
+        val staleReads = patchedRows.mapNotNull { topic ->
+            if (topic.unreadCount > 0 && effectiveTopicUnread(topic) == 0) {
+                lastReadByTopic[topic.id]?.let { topic.id to it }
+            } else {
+                null
+            }
+        }
+        if (staleReads.isNotEmpty()) {
             scope.launch {
-                teamsRepository.markForumTopicRead(teamId, topic.id, localLast)
+                staleReads.forEach { (topicId, localLast) ->
+                    teamsRepository.markForumTopicRead(teamId, topicId, localLast)
+                }
             }
         }
     }
@@ -487,7 +493,7 @@ private fun TeamForumListRoute(
             lastReadSnapshot.forEach { (topicId, messageId) ->
                 mergeTopicReadCursor(topicId, messageId)
             }
-            if (!diskTopics.isNullOrEmpty()) {
+            if (diskTopics != null) {
                 applyTopicRows(diskTopics)
                 loading = false
             } else {
@@ -1058,8 +1064,13 @@ private fun TeamForumTopicChatRoute(
         topicSnapshot?.let { snapshot ->
             pinCoordinator.applyTopicFromServer(snapshot, stableMessages)
         }
-        refreshTopicPinFromServer()
         bumpPinUi()
+    }
+
+    LaunchedEffect(showForumPinnedSheet) {
+        if (showForumPinnedSheet) {
+            refreshTopicPinFromServer()
+        }
     }
 
     LaunchedEffect(stableMessages.size, pinCoordinator.pinnedMessageId) {
@@ -1430,6 +1441,7 @@ private fun TeamForumTopicChatRoute(
                 loadingOlder = true
             } else {
                 error = null
+                val knownEmpty = (topicSnapshot?.messageCount ?: -1) == 0
                 val diskSnapshot = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                     if (currentUserId.isNotBlank()) {
                         app.launchDiskCache.loadForumMessages(currentUserId, teamId, topicId)
@@ -1442,6 +1454,10 @@ private fun TeamForumTopicChatRoute(
                     messages.addAll(visibleForumMessages(diskSnapshot.messages))
                     trimForumMessagesInMemory()
                     hasMoreOlder = diskSnapshot.hasMoreOlder
+                    loading = false
+                } else if (knownEmpty) {
+                    messages.clear()
+                    hasMoreOlder = false
                     loading = false
                 } else {
                     loading = true
@@ -1461,7 +1477,7 @@ private fun TeamForumTopicChatRoute(
                         trimForumMessagesInMemory()
                     }
                     hasMoreOlder = page.size >= 50 && messages.isNotEmpty()
-                    if (!appendOlder && currentUserId.isNotBlank() && messages.isNotEmpty()) {
+                    if (!appendOlder && currentUserId.isNotBlank()) {
                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                             app.launchDiskCache.saveForumMessages(
                                 currentUserId,

@@ -24,6 +24,14 @@ class ChatRoomKindResolverTest {
     }
 
     @Test
+    fun hub_picksSortOrderOneAllianceNameScope() {
+        val hub = room(id = "hub", sortOrder = 1, allianceId = "SquadRelay", title = "Альянс")
+        assertTrue(ChatRoomKindResolver.isAllianceHubRoom(hub))
+        assertEquals("hub", ChatRoomKindResolver.allianceHubRoom(listOf(hub))?.id)
+        assertEquals(ChatRoomKind.AllianceHub, ChatRoomKindResolver.kindOf(hub))
+    }
+
+    @Test
     fun hub_rejectsRaidAndGlobal() {
         assertFalse(
             ChatRoomKindResolver.isAllianceHubRoom(

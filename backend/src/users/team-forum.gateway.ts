@@ -112,12 +112,10 @@ export class TeamForumGateway {
       throw new WsException('teamId and topicId are required');
     }
 
-    await this.forumService.listMessages(
+    await this.forumService.assertTopicMemberAccess(
       teamId,
       topicId,
       client.data.user.userId,
-      undefined,
-      1,
     );
 
     const key = this.roomKey(teamId, topicId);

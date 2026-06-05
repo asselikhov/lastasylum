@@ -117,6 +117,28 @@ class ChatUnreadCountsTest {
     }
 
     @Test
+    fun allianceHubUnread_allianceNameScope() {
+        val rooms = listOf(
+            room(
+                id = "hub",
+                sortOrder = 1,
+                allianceId = "SquadRelay",
+                title = "Альянс",
+                unread = 3,
+            ),
+            room(
+                id = "raid",
+                sortOrder = 2,
+                allianceId = "pt:team1",
+                title = "Рейд",
+                unread = 9,
+            ),
+        )
+        assertEquals(3, ChatUnreadCounts.allianceHubUnread(rooms))
+        assertEquals(3, ChatUnreadCounts.overlayAllianceHubBadge(rooms, emptyMap()))
+    }
+
+    @Test
     fun hubClear_mustNotUseReconcileDisplayedUnread() {
         assertEquals(
             0,

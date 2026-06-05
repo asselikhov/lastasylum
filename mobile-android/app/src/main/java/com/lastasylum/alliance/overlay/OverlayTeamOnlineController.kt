@@ -38,7 +38,7 @@ data class OverlayTeamOnlineUiState(
     val ingameRaw: List<PlayerTeamMemberDto> = emptyList(),
     val recentRaw: List<PlayerTeamMemberDto> = emptyList(),
     val searchQuery: String = "",
-    val activeFilterChip: OverlayOnlineFilterChip = OverlayOnlineFilterChip.IngameOnly,
+    val activeFilterChip: OverlayOnlineFilterChip = OverlayOnlineFilterChip.All,
     val ingameCount: Int = 0,
     val recentCount: Int = 0,
 )
@@ -77,9 +77,7 @@ class OverlayTeamOnlineController(
                     merged.ingame.forEach { add(it.userId) }
                     merged.recentlyActive.forEach { add(it.userId) }
                 }
-                val needsFullRefresh = event.userId !in knownUserIds &&
-                    fallback == null &&
-                    isOverlayIngameNow(event.presenceStatus, event.lastPresenceAt)
+                val needsFullRefresh = event.userId !in knownUserIds && fallback == null
                 if (needsFullRefresh) {
                     refreshPresenceOnly(showRefreshing = false)
                 } else {
@@ -293,7 +291,7 @@ class OverlayTeamOnlineController(
             OverlayTeamPresenceCache.load(
                 teamId = tid,
                 teamsRepository = teamsRepository,
-                forceRefresh = false,
+                forceRefresh = true,
             )
         }
         loaded.onSuccess { presence ->

@@ -26,6 +26,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -176,24 +178,35 @@ class TeamViewModel(
                 }
                 lastBadgeRefreshAtMs = now
                 val newsAfter = userSettingsPreferences.getLastSeenTeamNewsCreatedAt()
-                teamsRepository.getTeamInboxBadges(teamId, newsAfter)
-                    .onSuccess { badges ->
-                        val localForumRead = teamForumPreferences.loadAllLastReadMessageIds(teamId)
-                        val topics = teamsRepository.listForumTopics(teamId).getOrNull()
-                        val forumUnread = topics?.let {
-                            TeamInboxBadgeDeriver.computeForumUnread(it, localForumRead)
-                        } ?: badges.forumUnread.coerceAtLeast(0)
-                        _data.update {
-                            it.copy(
-                                sectionBadges = TeamSectionBadges(
-                                    newsUnread = badges.newsUnread.coerceAtLeast(0),
-                                    forumUnread = forumUnread,
-                                ),
-                            )
-                        }
-                        OverlayGameStatusHudRefresh.invalidateNewsForumCache()
-                        Log.d(PERF_TAG, "refreshSectionBadges ok teamId=$teamId")
+                val localForumRead = teamForumPreferences.loadAllLastReadMessageIds(teamId)
+                val cachedTopics = teamsRepository.peekCachedForumTopics(teamId)
+                coroutineScope {
+                    val badgesDeferred = async {
+                        teamsRepository.getTeamInboxBadges(teamId, newsAfter)
                     }
+                    val topicsDeferred = async {
+                        cachedTopics?.let { Result.success(it) }
+                            ?: teamsRepository.listForumTopics(teamId)
+                    }
+                    badgesDeferred.await()
+                        .onSuccess { badges ->
+                            val topics = topicsDeferred.await().getOrNull()
+                            val clientForumUnread = topics?.let {
+                                TeamInboxBadgeDeriver.computeForumUnread(it, localForumRead)
+                            }
+                            val forumUnread = clientForumUnread
+                                ?: badges.forumUnread.coerceAtLeast(0)
+                            _data.update {
+                                it.copy(
+                                    sectionBadges = TeamSectionBadges(
+                                        newsUnread = badges.newsUnread.coerceAtLeast(0),
+                                        forumUnread = forumUnread,
+                                    ),
+                                )
+                            }
+                            OverlayGameStatusHudRefresh.invalidateNewsForumCache()
+                            Log.d(PERF_TAG, "refreshSectionBadges ok teamId=$teamId")
+                        }
                     .onFailure {
                         val diskTopics = if (currentUserId.isNotBlank()) {
                             launchDiskCache.loadForumTopics(currentUserId, teamId)
@@ -225,6 +238,7 @@ class TeamViewModel(
                         }
                         Log.d(PERF_TAG, "refreshSectionBadges fallback teamId=$teamId")
                     }
+                }
             }
         }
     }

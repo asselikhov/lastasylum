@@ -40,6 +40,8 @@ import androidx.compose.ui.unit.dp
 import com.lastasylum.alliance.BuildConfig
 import com.lastasylum.alliance.R
 import com.lastasylum.alliance.data.teams.TeamPresenceSocketManager
+import com.lastasylum.alliance.data.teams.TeamPresenceSocketState
+import com.lastasylum.alliance.ui.util.OVERLAY_ONLINE_PANEL_POLL_MS
 import com.lastasylum.alliance.data.teams.TeamsRepository
 import com.lastasylum.alliance.data.users.UsersRepository
 import com.lastasylum.alliance.data.voice.TeamVoicePresenceStore
@@ -89,8 +91,11 @@ fun OverlayTeamOnlinePanel(
 
     val lifecycleOwner = LocalLifecycleOwner.current
 
+    val presenceSocketState by teamPresenceSocket.connectionState.collectAsStateWithLifecycle(lifecycleOwner)
+
     LaunchedEffect(controller) {
         controller.start()
+        controller.refresh(force = true)
     }
     DisposableEffect(controller) {
         onDispose { controller.stop() }
@@ -291,12 +296,21 @@ fun OverlayTeamOnlinePanel(
         onMemberLongClick = { longPressMember = it },
         topBar = {
             val tokens = OverlayOnlineMemberTokens
+            val realtimeLabel = when (presenceSocketState) {
+                TeamPresenceSocketState.Connected ->
+                    stringResource(R.string.overlay_online_realtime_live)
+                else ->
+                    stringResource(
+                        R.string.overlay_online_realtime_poll,
+                        OVERLAY_ONLINE_PANEL_POLL_MS / 1_000,
+                    )
+            }
             OverlayHudPanelHeader(
                 title = stringResource(R.string.overlay_online_title),
                 subtitle = stringResource(
                     R.string.overlay_online_summary_ingame,
                     uiState.ingameCount,
-                ),
+                ) + " · $realtimeLabel",
                 onClose = onClose,
                 subtitleTrailing = {
                     IconButton(

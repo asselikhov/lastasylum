@@ -2239,7 +2239,6 @@ class CombatOverlayService : Service() {
 
     /** Realtime [rooms:unread] for any overlay chat room (hub HUD + overlay panel tabs). */
     private fun applyOverlayRoomUnreadFromSocket(event: com.lastasylum.alliance.data.chat.ChatRoomUnreadEvent) {
-        if (activityChatViewModelHandlesUnread()) return
         val roomId = event.roomId.trim()
         if (roomId.isEmpty()) return
         ChatSessionCache.patchRoomUnread(
@@ -2247,10 +2246,13 @@ class CombatOverlayService : Service() {
             event.unreadCount.coerceAtLeast(0),
             event.lastReadMessageId,
         )
-        resolveChatViewModel()?.applyRoomUnreadFromServer(event)
         val hubId = resolveOverlayHubRoomId().trim()
-        if (hubId.isEmpty() || roomId != hubId) return
-        applyOverlayHubUnreadHudFromSocket(event)
+        val isHubEvent = hubId.isNotEmpty() && roomId == hubId
+        if (isHubEvent) {
+            applyOverlayHubUnreadHudFromSocket(event)
+        }
+        if (activityChatViewModelHandlesUnread()) return
+        resolveChatViewModel()?.applyRoomUnreadFromServer(event)
     }
 
     /** Alliance hub badge on status HUD (independent of [ChatViewModel]). */
@@ -4944,7 +4946,9 @@ class CombatOverlayService : Service() {
         val roomUnreadListener: (com.lastasylum.alliance.data.chat.ChatRoomUnreadEvent) -> Unit =
             roomUnreadListener@{ event ->
                 mainHandler.post {
-                    if (!isOverlayChatRoutingActive()) return@post
+                    val hubId = resolveOverlayHubRoomId().trim()
+                    val isHubEvent = hubId.isNotEmpty() && event.roomId.trim() == hubId
+                    if (!isHubEvent && !isOverlayChatRoutingActive()) return@post
                     applyOverlayRoomUnreadFromSocket(event)
                 }
             }

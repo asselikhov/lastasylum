@@ -22,9 +22,10 @@ object ChatRoomKindResolver {
     }
 
     fun isAllianceHubRoom(room: ChatRoomDto): Boolean {
-        if (room.allianceId.isNullOrBlank() || !room.allianceId.startsWith("pt:")) return false
-        if (room.allianceId == ChatAllianceIds.GLOBAL) return false
-        if (ChatAllianceIds.isServerScope(room.allianceId)) return false
+        val scope = room.allianceId?.trim().orEmpty()
+        if (scope.isEmpty()) return false
+        if (scope == ChatAllianceIds.GLOBAL) return false
+        if (ChatAllianceIds.isServerScope(scope)) return false
         return room.sortOrder == 1
     }
 

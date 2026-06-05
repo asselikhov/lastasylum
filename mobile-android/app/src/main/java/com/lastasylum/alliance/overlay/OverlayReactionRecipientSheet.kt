@@ -92,7 +92,13 @@ internal suspend fun loadOverlayIngameReactionRecipients(
                 teamsRepository = teamsRepository,
             ).getOrThrow()
                 .ingame
-                .filter { it.userId != self }
+                .filter { member ->
+                    member.userId != self &&
+                        com.lastasylum.alliance.ui.util.isOverlayIngameNow(
+                            member.presenceStatus,
+                            member.lastPresenceAt,
+                        )
+                }
         }
     }
 

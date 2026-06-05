@@ -13,6 +13,7 @@ class TeamsRepository(
     private val forumMessagesDedup = InFlightDedup<String, List<TeamForumMessageDto>>()
     private val teamNewsDedup = InFlightDedup<String, TeamNewsListPageDto>()
     private val forumTopicsResultCache = mutableMapOf<String, ForumTopicsCacheEntry>()
+    private val forumMessagesResultCache = mutableMapOf<String, ForumMessagesCacheEntry>()
     suspend fun createTeam(displayName: String, tag: String): Result<CreatePlayerTeamResponse> =
         runCatching {
             teamsApi.createTeam(CreatePlayerTeamBody(displayName = displayName, tag = tag))
@@ -284,12 +285,49 @@ class TeamsRepository(
         topicId: String,
         before: String? = null,
         limit: Int = 50,
+        bypassCache: Boolean = false,
     ): Result<List<TeamForumMessageDto>> {
         val key = "${teamId.trim()}|${topicId.trim()}|${before?.trim().orEmpty()}|$limit"
+        val now = System.currentTimeMillis()
+        if (!bypassCache && before.isNullOrBlank()) {
+            synchronized(forumMessagesResultCache) {
+                forumMessagesResultCache[key]?.let { entry ->
+                    if (now - entry.fetchedAtMs < FORUM_MESSAGES_TTL_MS) {
+                        Log.d(PERF_TAG, "listForumMessages cache hit key=$key")
+                        return Result.success(entry.messages)
+                    }
+                }
+            }
+        }
         return forumMessagesDedup.run(key) {
             Log.d(PERF_TAG, "listForumMessages network key=$key")
             runCatching { teamsApi.listForumMessages(teamId, topicId, before, limit) }
+                .also { result ->
+                    if (before.isNullOrBlank()) {
+                        result.onSuccess { messages ->
+                            synchronized(forumMessagesResultCache) {
+                                forumMessagesResultCache[key] = ForumMessagesCacheEntry(
+                                    messages = messages,
+                                    fetchedAtMs = System.currentTimeMillis(),
+                                )
+                            }
+                        }
+                    }
+                }
         }
+    }
+
+    fun peekCachedForumTopics(teamId: String): List<TeamForumTopicDto>? {
+        val key = teamId.trim()
+        val now = System.currentTimeMillis()
+        synchronized(forumTopicsResultCache) {
+            forumTopicsResultCache[key]?.let { entry ->
+                if (now - entry.fetchedAtMs < FORUM_TOPICS_TTL_MS) {
+                    return entry.topics
+                }
+            }
+        }
+        return null
     }
 
     suspend fun postForumMessage(
@@ -406,8 +444,14 @@ class TeamsRepository(
         val fetchedAtMs: Long,
     )
 
+    private data class ForumMessagesCacheEntry(
+        val messages: List<TeamForumMessageDto>,
+        val fetchedAtMs: Long,
+    )
+
     private companion object {
         const val PERF_TAG = "PerfDiag"
         const val FORUM_TOPICS_TTL_MS = 15_000L
+        const val FORUM_MESSAGES_TTL_MS = 20_000L
     }
 }

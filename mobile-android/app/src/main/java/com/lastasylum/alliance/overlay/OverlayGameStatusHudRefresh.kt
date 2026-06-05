@@ -135,10 +135,15 @@ internal object OverlayGameStatusHudRefresh {
                     ?: 0
             forumUnread = run {
                     val forumPrefs = container.teamForumPreferences
-                    val topics = teamsRepository.listForumTopics(teamId).getOrNull()
+                    val apiForumUnread = badges?.forumUnread?.coerceAtLeast(0)
+                    val topics = teamsRepository.peekCachedForumTopics(teamId)
+                        ?: teamsRepository.listForumTopics(teamId).getOrNull()
                     topics?.let { InboxUnreadReconciler.hydrateForumPrefsFromTopics(forumPrefs, teamId, it) }
                     val localRead = forumPrefs.loadAllLastReadMessageIds(teamId)
-                    topics?.let { TeamInboxBadgeDeriver.computeForumUnread(it, localRead) } ?: 0
+                    val clientForumUnread = topics?.let {
+                        TeamInboxBadgeDeriver.computeForumUnread(it, localRead)
+                    }
+                    apiForumUnread ?: clientForumUnread ?: 0
                 }
             cachedBadgeTeamId = teamId
             cachedNewsUnread = newsUnread
