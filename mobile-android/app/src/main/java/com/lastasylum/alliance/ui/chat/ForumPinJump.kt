@@ -3,7 +3,8 @@ package com.lastasylum.alliance.ui.chat
 import com.lastasylum.alliance.data.teams.TeamForumMessageDto
 import kotlinx.coroutines.delay
 
-const val FORUM_PIN_JUMP_MAX_ATTEMPTS = 40
+/** @deprecated Use [PIN_JUMP_MAX_LOAD_ATTEMPTS]. */
+const val FORUM_PIN_JUMP_MAX_ATTEMPTS = PIN_JUMP_MAX_LOAD_ATTEMPTS
 
 /** Resolve lazy-list index even when deferred timeline derive is still empty/stale. */
 fun forumLazyIndexForMessageId(
@@ -18,13 +19,23 @@ fun forumLazyIndexForMessageId(
     return buildForumMessagesListDerived(messages).fullLazyIndexForMessageId(id) ?: -1
 }
 
+private suspend fun waitForLoadingOlderToFinish(
+    isLoadingOlder: () -> Boolean,
+    maxWaitMs: Long = 8_000L,
+) {
+    val deadline = System.currentTimeMillis() + maxWaitMs
+    while (isLoadingOlder() && System.currentTimeMillis() < deadline) {
+        delay(16)
+    }
+}
+
 /**
  * Scroll to a pinned forum message, loading older pages when needed.
  * Returns true when the message was found and scroll initiated.
  */
 suspend fun jumpToForumPinnedMessage(
     messageId: String,
-    messageIdsOldestFirst: List<String>,
+    messageIdsOldestFirst: () -> List<String>,
     hasMoreOlder: () -> Boolean,
     isLoadingOlder: () -> Boolean,
     loadOlder: suspend () -> Boolean,
@@ -35,9 +46,6 @@ suspend fun jumpToForumPinnedMessage(
 ): Boolean {
     val id = messageId.trim()
     if (id.isEmpty()) return false
-
-    fun messageLoaded(): Boolean =
-        messageIdsOldestFirst.any { it.trim() == id }
 
     suspend fun tryJump(): Boolean {
         val idx = timelineIndexForMessageId(id)
@@ -52,18 +60,17 @@ suspend fun jumpToForumPinnedMessage(
     if (!hasMoreOlder()) return false
 
     var attempts = 0
-    while (attempts < FORUM_PIN_JUMP_MAX_ATTEMPTS) {
-        if (messageLoaded()) {
-            if (tryJump()) return true
-        }
+    while (attempts < PIN_JUMP_MAX_LOAD_ATTEMPTS) {
+        if (tryJump()) return true
         if (!hasMoreOlder()) break
         if (isLoadingOlder()) {
-            delay(40)
+            waitForLoadingOlderToFinish(isLoadingOlder)
             attempts++
             continue
         }
         val loaded = loadOlder()
-        if (!loaded) break
+        waitForLoadingOlderToFinish(isLoadingOlder)
+        if (!loaded && !messageIdsOldestFirst().any { it.trim() == id }) break
         attempts++
     }
     return tryJump()

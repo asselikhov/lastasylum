@@ -2,13 +2,26 @@ package com.lastasylum.alliance.ui.chat
 
 import kotlinx.coroutines.delay
 
+/** Max older-page fetches while jumping to a pinned / quoted message. */
+const val PIN_JUMP_MAX_LOAD_ATTEMPTS = 40
+
+private suspend fun waitForLoadingOlderToFinish(
+    isLoadingOlder: () -> Boolean,
+    maxWaitMs: Long = 8_000L,
+) {
+    val deadline = System.currentTimeMillis() + maxWaitMs
+    while (isLoadingOlder() && System.currentTimeMillis() < deadline) {
+        delay(16)
+    }
+}
+
 /**
  * Scroll to a pinned chat message, loading older pages when needed.
  * Returns true when the message was found and scroll was requested.
  */
 suspend fun jumpToChatPinnedMessage(
     messageId: String,
-    messageIdsNewestFirst: List<String>,
+    messageIdsNewestFirst: () -> List<String>,
     hasMoreOlder: () -> Boolean,
     isLoadingOlder: () -> Boolean,
     loadOlder: suspend () -> Boolean,
@@ -29,18 +42,17 @@ suspend fun jumpToChatPinnedMessage(
     if (!hasMoreOlder()) return false
 
     var attempts = 0
-    while (attempts < FORUM_PIN_JUMP_MAX_ATTEMPTS) {
-        if (messageIdsNewestFirst.any { it.trim() == id }) {
-            if (tryJump()) return true
-        }
+    while (attempts < PIN_JUMP_MAX_LOAD_ATTEMPTS) {
+        if (tryJump()) return true
         if (!hasMoreOlder()) break
         if (isLoadingOlder()) {
-            delay(40)
+            waitForLoadingOlderToFinish(isLoadingOlder)
             attempts++
             continue
         }
         val loaded = loadOlder()
-        if (!loaded) break
+        waitForLoadingOlderToFinish(isLoadingOlder)
+        if (!loaded && !messageIdsNewestFirst().any { it.trim() == id }) break
         attempts++
     }
     return tryJump()

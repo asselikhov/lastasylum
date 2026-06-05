@@ -33,6 +33,20 @@ class ChatPinMergeTest {
     }
 
     @Test
+    fun mergePinFromPrevious_localUnpinWinsOverStaleServerList() {
+        val previous = ChatRoomDto(
+            id = "room1",
+            allianceId = "pt:team",
+            title = "Raid",
+        )
+        val serverStale = roomWithIdOnly.copy(pinnedMessage = preview)
+        val merged = serverStale.mergePinFromPrevious(previous, pinOperationInFlight = true)
+        assertNull(merged.pinnedMessageId)
+        assertNull(merged.pinnedMessage)
+        assertTrue(merged.pinnedMessagesOrEmpty().isEmpty())
+    }
+
+    @Test
     fun mergePinFromPrevious_preservesOptimisticPinWhileInFlight() {
         val previous = roomWithIdOnly.copy(pinnedMessage = preview)
         val serverStale = ChatRoomDto(
@@ -67,6 +81,25 @@ class ChatPinMergeTest {
     fun ensureRoomPinPreview_noOpWhenUnpinned() {
         val room = ChatRoomDto(id = "room1", allianceId = "pt:team", title = "Raid")
         assertNull(ensureRoomPinPreview(room, preview, "user1").pinnedMessageId)
+    }
+
+    @Test
+    fun topicMergePinFromPrevious_localUnpinWinsOverStaleServerList() {
+        val previous = TopicPinSnapshot(
+            pinnedMessageId = null,
+            pinnedAt = null,
+            pinnedByUserId = null,
+            pinnedMessage = null,
+        )
+        val serverStale = TopicPinSnapshot(
+            pinnedMessageId = preview.id,
+            pinnedAt = "2026-01-01T00:00:00Z",
+            pinnedByUserId = "user1",
+            pinnedMessage = preview,
+        )
+        val merged = serverStale.mergePinFromPrevious(previous, pinOperationInFlight = true)
+        assertNull(merged.pinnedMessageId)
+        assertNull(merged.pinnedMessage)
     }
 
     @Test

@@ -120,7 +120,12 @@ fun ChatRoomDto.mergePinFromPrevious(
                 pinnedMessageId = previous.pinnedMessageId,
                 pinnedAt = previous.pinnedAt,
                 pinnedByUserId = previous.pinnedByUserId,
-                pinnedMessage = previous.pinnedMessage ?: pinnedMessage,
+                pinnedMessage = when {
+                    prevPinId.isEmpty() -> null
+                    previous.pinnedMessage != null -> previous.pinnedMessage
+                    else -> pinnedMessage
+                },
+                pinnedMessages = previous.pinnedMessagesOrEmpty(),
             )
         }
     }
@@ -430,7 +435,11 @@ fun TopicPinSnapshot.mergePinFromPrevious(
                 pinnedMessageId = previous.pinnedMessageId,
                 pinnedAt = previous.pinnedAt,
                 pinnedByUserId = previous.pinnedByUserId,
-                pinnedMessage = previous.pinnedMessage ?: pinnedMessage,
+                pinnedMessage = when {
+                    prevPinId.isEmpty() -> null
+                    previous.pinnedMessage != null -> previous.pinnedMessage
+                    else -> pinnedMessage
+                },
             )
         }
     }

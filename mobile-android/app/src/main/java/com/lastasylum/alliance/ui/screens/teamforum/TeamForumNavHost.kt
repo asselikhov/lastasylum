@@ -1049,7 +1049,7 @@ private fun TeamForumTopicChatRoute(
         }
     }
 
-    LaunchedEffect(teamId, topicId, topicSnapshot?.pinnedMessageId) {
+    LaunchedEffect(teamId, topicId) {
         pinCoordinator.onEnterTopic(topicSnapshot)
         topicSnapshot?.let { snapshot ->
             pinCoordinator.applyTopicFromServer(snapshot, stableMessages)
@@ -1106,12 +1106,17 @@ private fun TeamForumTopicChatRoute(
             pinnedMessage = pinCoordinator.pinnedMessage,
         )
         pinCoordinator.pinInFlight = true
+        pinCoordinator.prepareOptimisticUnpinOne(trimmedId, stableMessages)
         bumpPinUi()
         scope.launch {
             teamsRepository.unpinOneForumTopicMessage(teamId, topicId, trimmedId)
                 .onSuccess { topic ->
                     pinCoordinator.pinInFlight = false
-                    pinCoordinator.onPinSuccess(topic, stableMessages)
+                    if (topic.pinnedMessageId.isNullOrBlank()) {
+                        pinCoordinator.onUnpinSuccess(topic, stableMessages)
+                    } else {
+                        pinCoordinator.onPinSuccess(topic, stableMessages)
+                    }
                     onTopicSnapshotUpdate(topic)
                     bumpPinUi()
                     pinNotice = res.getString(R.string.forum_pinned_toast_unpinned)
@@ -1140,7 +1145,7 @@ private fun TeamForumTopicChatRoute(
             teamsRepository.pinForumTopicMessage(teamId, topicId, null)
                 .onSuccess { topic ->
                     pinCoordinator.pinInFlight = false
-                    pinCoordinator.onUnpinSuccess(topic)
+                    pinCoordinator.onUnpinSuccess(topic, stableMessages)
                     onTopicSnapshotUpdate(topic)
                     bumpPinUi()
                     pinNotice = res.getString(R.string.forum_pinned_toast_unpinned)
@@ -1761,7 +1766,7 @@ private fun TeamForumTopicChatRoute(
                         if (targetId.isEmpty()) return@launch
                         val jumped = jumpToForumPinnedMessage(
                             messageId = targetId,
-                            messageIdsOldestFirst = stableMessages.map { it.id },
+                            messageIdsOldestFirst = { stableMessages.map { it.id } },
                             hasMoreOlder = { hasMoreOlder },
                             isLoadingOlder = { loadingOlder },
                             loadOlder = { loadOlderForumPage() },
@@ -1786,7 +1791,15 @@ private fun TeamForumTopicChatRoute(
                         }
                     }
                 },
-                onUnpin = { unpinForumTopic() },
+                onUnpin = {
+                    val pinId = pinBarPreview.id.trim()
+                        .ifEmpty { pinCoordinator.pinnedMessageId?.trim().orEmpty() }
+                    if (pinId.isNotEmpty()) {
+                        unpinOneForumMessage(pinId)
+                    } else {
+                        unpinForumTopic()
+                    }
+                },
                 historyCount = pinHistoryCount,
                 messageDeleted = pinnedDeleted,
                 messageUnavailable = pinnedUnavailable,
@@ -1809,7 +1822,7 @@ private fun TeamForumTopicChatRoute(
                 scope.launch {
                     val jumped = jumpToForumPinnedMessage(
                         messageId = messageId,
-                        messageIdsOldestFirst = stableMessages.map { it.id },
+                        messageIdsOldestFirst = { stableMessages.map { it.id } },
                         hasMoreOlder = { hasMoreOlder },
                         isLoadingOlder = { loadingOlder },
                         loadOlder = { loadOlderForumPage() },
@@ -2281,7 +2294,7 @@ private fun TeamForumTopicChatRoute(
                                 }
                             },
                             onUnpin = {
-                                unpinForumTopic()
+                                unpinOneForumMessage(msg.id)
                                 dismissMessageActions()
                             },
                             onEdit = {

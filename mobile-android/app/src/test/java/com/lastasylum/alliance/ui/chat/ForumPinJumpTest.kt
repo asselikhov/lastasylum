@@ -12,7 +12,7 @@ class ForumPinJumpTest {
         var highlighted: String? = null
         val found = jumpToForumPinnedMessage(
             messageId = "msg-b",
-            messageIdsOldestFirst = listOf("msg-a", "msg-b"),
+            messageIdsOldestFirst = { listOf("msg-a", "msg-b") },
             hasMoreOlder = { false },
             isLoadingOlder = { false },
             loadOlder = { false },
@@ -32,7 +32,7 @@ class ForumPinJumpTest {
     fun jumpToForumPinnedMessage_notFoundWhenNoOlderPages() = runBlocking {
         val found = jumpToForumPinnedMessage(
             messageId = "missing",
-            messageIdsOldestFirst = listOf("msg-a"),
+            messageIdsOldestFirst = { listOf("msg-a") },
             hasMoreOlder = { false },
             isLoadingOlder = { false },
             loadOlder = { false },

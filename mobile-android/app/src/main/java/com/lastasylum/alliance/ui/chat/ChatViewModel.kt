@@ -178,6 +178,11 @@ class ChatViewModel(
     private val pinBarIndexByRoom = mutableMapOf<String, Int>()
     /** Detect active pin change to reset bar cycle index. */
     private val lastSyncedActivePinIdByRoom = mutableMapOf<String, String>()
+    /**
+     * Rooms where a local pin/unpin mutation must win over stale listRooms or socket payloads
+     * until the server confirms the same active pin id.
+     */
+    private val pinStateAuthoritativeRoomIds = mutableSetOf<String>()
 
     private val knownMessageIds = LinkedHashSet<String>()
   /** messageId → index in [ChatState.messages] (newest-first); cleared on room switch. */
@@ -299,6 +304,7 @@ class ChatViewModel(
         lastMarkedReadByRoom.clear()
         pinHistoryByRoom.clear()
         pinBarIndexByRoom.clear()
+        pinStateAuthoritativeRoomIds.clear()
 
         val selected = _state.value.selectedRoomId
         _state.update { st ->
@@ -1979,6 +1985,12 @@ class ChatViewModel(
         val pinInFlight = _state.value.pinInFlight
         val selectedRoomId = _state.value.selectedRoomId?.trim().orEmpty()
         return serverRooms.map { room ->
+            val previous = previousById[room.id]
+            val serverPinId = room.pinnedMessageId?.trim().orEmpty()
+            val prevPinId = previous?.pinnedMessageId?.trim().orEmpty()
+            if (serverPinId == prevPinId) {
+                pinStateAuthoritativeRoomIds.remove(room.id)
+            }
             val previousUnread = previousById[room.id]?.unreadCount ?: 0
             val serverUnread = when {
                 isRoomActivelyViewed(room.id) -> 0
@@ -2002,8 +2014,9 @@ class ChatViewModel(
                 unreadCount = unread,
                 lastReadMessageId = resolvedLast ?: room.lastReadMessageId,
             ).mergePinFromPrevious(
-                previous = previousById[room.id],
-                pinOperationInFlight = pinInFlight && room.id == selectedRoomId,
+                previous = previous,
+                pinOperationInFlight = (pinInFlight && room.id == selectedRoomId) ||
+                    room.id in pinStateAuthoritativeRoomIds,
             )
         }
     }
@@ -2851,7 +2864,11 @@ class ChatViewModel(
                         isLoadingOlder = false,
                         hasMoreOlder = older.size >= PAGE_SIZE,
                     )
-                    publishMessagesDerived(merged)
+                    if (ignoreHiddenWatermark) {
+                        publishMessagesDerivedImmediate(merged)
+                    } else {
+                        publishMessagesDerived(merged)
+                    }
                 }
             }
             .onFailure { e ->
@@ -2876,14 +2893,16 @@ class ChatViewModel(
         viewModelScope.launch {
             val found = jumpToChatPinnedMessage(
                 messageId = id,
-                messageIdsNewestFirst = _state.value.messages.mapNotNull { it._id },
+                messageIdsNewestFirst = {
+                    _state.value.messages.mapNotNull { it._id }
+                },
                 hasMoreOlder = { _state.value.hasMoreOlder },
                 isLoadingOlder = { _state.value.isLoadingOlder },
-                loadOlder = { loadOlderMessagesAwait() },
+                loadOlder = { loadOlderMessagesAwait(ignoreHiddenWatermark = true) },
                 timelineIndexForMessageId = { targetId ->
-                    chatTimelineIndexForMessageId(
-                        _listDerived.value.timeline,
+                    chatLazyIndexForMessageId(
                         _state.value.messages,
+                        _listDerived.value,
                         targetId,
                     )
                 },
@@ -3362,12 +3381,14 @@ class ChatViewModel(
         val optimisticRoom = roomsSnapshot.find { it.id == roomId }
             ?.withOptimisticUnpinOne(trimmedId, localHistory)
         if (optimisticRoom != null) {
+            markPinStateAuthoritative(roomId)
             publishRoomPin(optimisticRoom)
         }
         _state.update { it.copy(pinInFlight = true) }
         viewModelScope.launch {
             repository.unpinOneRoomMessage(roomId, trimmedId)
                 .onSuccess { room ->
+                    ChatRoomsSessionCache.invalidate()
                     pinHistoryByRoom[roomId] = serverPinHistoryFromRoom(room)
                     publishRoomPin(room)
                     _state.update {
@@ -3420,15 +3441,17 @@ class ChatViewModel(
         viewModelScope.launch {
             val found = jumpToChatPinnedMessage(
                 messageId = targetId,
-                messageIdsNewestFirst = _state.value.messages.mapNotNull { it._id },
+                messageIdsNewestFirst = {
+                    _state.value.messages.mapNotNull { it._id }
+                },
                 hasMoreOlder = { _state.value.hasMoreOlder },
                 isLoadingOlder = { _state.value.isLoadingOlder },
                 loadOlder = { loadOlderMessagesAwait(ignoreHiddenWatermark = true) },
-                timelineIndexForMessageId = { id ->
-                    chatTimelineIndexForMessageId(
-                        _listDerived.value.timeline,
+                timelineIndexForMessageId = { jumpId ->
+                    chatLazyIndexForMessageId(
                         _state.value.messages,
-                        id,
+                        _listDerived.value,
+                        jumpId,
                     )
                 },
                 onJumpToMessage = { id ->
@@ -3472,15 +3495,17 @@ class ChatViewModel(
         viewModelScope.launch {
             val found = jumpToChatPinnedMessage(
                 messageId = targetId,
-                messageIdsNewestFirst = _state.value.messages.mapNotNull { it._id },
+                messageIdsNewestFirst = {
+                    _state.value.messages.mapNotNull { it._id }
+                },
                 hasMoreOlder = { _state.value.hasMoreOlder },
                 isLoadingOlder = { _state.value.isLoadingOlder },
                 loadOlder = { loadOlderMessagesAwait(ignoreHiddenWatermark = true) },
-                timelineIndexForMessageId = { id ->
-                    chatTimelineIndexForMessageId(
-                        _listDerived.value.timeline,
+                timelineIndexForMessageId = { jumpId ->
+                    chatLazyIndexForMessageId(
                         _state.value.messages,
-                        id,
+                        _listDerived.value,
+                        jumpId,
                     )
                 },
                 onJumpToMessage = { id ->
@@ -3517,6 +3542,11 @@ class ChatViewModel(
             else room.mergePinFromEvent(event)
         }
 
+    private fun markPinStateAuthoritative(roomId: String) {
+        val id = roomId.trim()
+        if (id.isNotEmpty()) pinStateAuthoritativeRoomIds.add(id)
+    }
+
     private fun publishRoomPin(room: ChatRoomDto) {
         _state.update { st ->
             val withRooms = st.copy(rooms = applyRoomPinToRooms(st.rooms, room))
@@ -3526,6 +3556,22 @@ class ChatViewModel(
     }
 
     fun onRoomPinChanged(event: ChatRoomPinChangedEvent) {
+        if (event.roomId in pinStateAuthoritativeRoomIds) {
+            val localPinId = _state.value.rooms
+                .find { it.id == event.roomId }
+                ?.pinnedMessageId
+                ?.trim()
+                .orEmpty()
+            val eventPinId = event.pinnedMessageId?.trim().orEmpty()
+            if (localPinId != eventPinId) {
+                Log.d(
+                    PIN_DIAG_TAG,
+                    "ignore stale room pin-changed roomId=${event.roomId} local=$localPinId event=$eventPinId",
+                )
+                return
+            }
+            pinStateAuthoritativeRoomIds.remove(event.roomId)
+        }
         val serverHistory = event.pinnedMessages.ifEmpty {
             event.pinnedMessage?.let { listOf(it) } ?: emptyList()
         }
@@ -3621,12 +3667,14 @@ class ChatViewModel(
                 )
         }
         if (optimisticRoom != null) {
+            markPinStateAuthoritative(roomId)
             publishRoomPin(optimisticRoom)
         }
         _state.update { it.copy(pinInFlight = true) }
         viewModelScope.launch {
             repository.pinRoomMessage(roomId, trimmedId)
                 .onSuccess { room ->
+                    ChatRoomsSessionCache.invalidate()
                     val merged = ensureRoomPinPreview(
                         room = room,
                         preview = preview,
@@ -3659,14 +3707,17 @@ class ChatViewModel(
         if (roomId.isEmpty() || _state.value.pinInFlight) return
         val roomsSnapshot = _state.value.rooms
         val pinHistorySnapshot = pinHistoryByRoom[roomId]?.toList().orEmpty()
+        pinHistoryByRoom.remove(roomId)
         val optimisticRoom = roomsSnapshot.find { it.id == roomId }?.withOptimisticUnpin()
         if (optimisticRoom != null) {
+            markPinStateAuthoritative(roomId)
             publishRoomPin(optimisticRoom)
         }
         _state.update { it.copy(pinInFlight = true) }
         viewModelScope.launch {
             repository.pinRoomMessage(roomId, null)
                 .onSuccess { room ->
+                    ChatRoomsSessionCache.invalidate()
                     pinHistoryByRoom.remove(roomId)
                     pinBarIndexByRoom.remove(roomId)
                     publishRoomPin(room)
@@ -4148,7 +4199,7 @@ class ChatViewModel(
             if (idx !in messages.indices) return
             messages[idx] = updated.mergeIncomingChatUpdate(messages[idx])
             rebuildMessageIdIndex(messages, messageIdIndex)
-            publishMessagesDerived(messages)
+            publishMessagesDerivedAfterPatch(messages, idx)
             val roomId = _state.value.selectedRoomId?.trim().orEmpty()
             _state.value = syncSelections(_state.value.copy(messages = messages))
             if (roomId.isNotEmpty()) {

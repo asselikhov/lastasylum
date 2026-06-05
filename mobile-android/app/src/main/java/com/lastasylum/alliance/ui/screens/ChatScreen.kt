@@ -244,6 +244,7 @@ import com.lastasylum.alliance.ui.chat.ChatTimelineEntry
 import com.lastasylum.alliance.ui.chat.ChatTypingIndicator
 import com.lastasylum.alliance.ui.chat.chatMessageIsOwn
 import com.lastasylum.alliance.ui.chat.chatMessageKey
+import com.lastasylum.alliance.ui.chat.chatLazyIndexForMessageId
 import com.lastasylum.alliance.ui.chat.chatTimelineIndexForMessageId
 import com.lastasylum.alliance.ui.chat.ChatSenderAvatar
 import com.lastasylum.alliance.ui.chat.ChatSenderAvatarWithSquadRank
@@ -614,11 +615,10 @@ private fun ChatScreenMessagesHost(
         }
     }
 
-    LaunchedEffect(listPane.scrollToMessageId, listDerived.timeline) {
+    LaunchedEffect(listPane.scrollToMessageId, listDerived.timeline, messages.size) {
         val targetId = listPane.scrollToMessageId?.trim().orEmpty()
         if (targetId.isEmpty()) return@LaunchedEffect
-        val timeline = listDerived.timeline
-        val idx = chatTimelineIndexForMessageId(timeline, messagesRef.value, targetId)
+        val idx = chatLazyIndexForMessageId(messagesRef.value, listDerived, targetId)
         if (idx < 0) return@LaunchedEffect
         runCatching { listState.scrollTimelineItemToViewportCenter(idx) }
             .onFailure { listState.scrollToItem(idx) }
@@ -764,7 +764,7 @@ private fun ChatScreenMessagesHost(
                         preview = preview,
                         canUnpin = canUnpinPinned,
                         onTap = onPinnedBarTap,
-                        onUnpin = onUnpinRoom,
+                        onUnpin = { onUnpinOnePinned(preview.id) },
                         historyCount = pinHistoryCount,
                         messageDeleted = pinnedMessageDeleted,
                         messageUnavailable = pinnedMessageUnavailable,

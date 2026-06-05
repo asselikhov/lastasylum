@@ -12,7 +12,7 @@ class ChatPinJumpTest {
         var jumpedTo: String? = null
         val found = jumpToChatPinnedMessage(
             messageId = "msg-b",
-            messageIdsNewestFirst = listOf("msg-c", "msg-b", "msg-a"),
+            messageIdsNewestFirst = { listOf("msg-c", "msg-b", "msg-a") },
             hasMoreOlder = { false },
             isLoadingOlder = { false },
             loadOlder = { false },
@@ -28,13 +28,15 @@ class ChatPinJumpTest {
     @Test
     fun jumpToChatPinnedMessage_loadsOlderUntilFound() = runBlocking {
         var loadCalls = 0
+        val ids = mutableListOf("msg-a")
         val found = jumpToChatPinnedMessage(
             messageId = "msg-b",
-            messageIdsNewestFirst = listOf("msg-a"),
+            messageIdsNewestFirst = { ids },
             hasMoreOlder = { loadCalls < 1 },
             isLoadingOlder = { false },
             loadOlder = {
                 loadCalls++
+                ids += "msg-b"
                 true
             },
             timelineIndexForMessageId = { id ->
@@ -50,7 +52,7 @@ class ChatPinJumpTest {
     fun jumpToChatPinnedMessage_notFoundWhenNoOlderPages() = runBlocking {
         val found = jumpToChatPinnedMessage(
             messageId = "missing",
-            messageIdsNewestFirst = listOf("msg-a"),
+            messageIdsNewestFirst = { listOf("msg-a") },
             hasMoreOlder = { false },
             isLoadingOlder = { false },
             loadOlder = { false },

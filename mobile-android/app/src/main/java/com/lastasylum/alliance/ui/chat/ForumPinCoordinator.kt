@@ -19,6 +19,8 @@ class ForumPinCoordinator(
     var pinnedAt: String? = null
     var pinnedByUserId: String? = null
     var pinInFlight: Boolean = false
+    /** Local pin/unpin wins over stale topic list until server confirms the same active pin id. */
+    var pinStateAuthoritative: Boolean = false
     var pinBarPreview: PinnedMessagePreviewDto? = null
     var pinHistoryCount: Int = 0
     var pinnedMessages: List<PinnedMessagePreviewDto> = emptyList()
@@ -48,6 +50,18 @@ class ForumPinCoordinator(
     }
 
     fun applyTopicPin(event: TeamForumTopicPinChangedEvent, messages: List<TeamForumMessageDto>) {
+        if (pinStateAuthoritative || pinInFlight) {
+            val localPinId = pinnedMessageId?.trim().orEmpty()
+            val eventPinId = event.pinnedMessageId?.trim().orEmpty()
+            if (localPinId != eventPinId) {
+                Log.d(
+                    TAG,
+                    "ignore stale topic pin-changed topicId=${event.topicId} local=$localPinId event=$eventPinId",
+                )
+                return
+            }
+            pinStateAuthoritative = false
+        }
         val merged = currentSnapshot().mergePinFromEventWithHistory(event)
         applySnapshot(merged.snapshot)
         pinHistory = merged.pinnedMessages
@@ -64,14 +78,19 @@ class ForumPinCoordinator(
     }
 
     fun applyTopicFromServer(topic: TeamForumTopicDto, messages: List<TeamForumMessageDto>) {
-        if (pinInFlight) {
-            val merged = topic.toPinSnapshot().mergePinFromPrevious(currentSnapshot(), pinOperationInFlight = true)
-            applySnapshot(merged)
-        } else {
-            applySnapshot(topic.toPinSnapshot())
+        val serverSnapshot = topic.toPinSnapshot()
+        val merged = serverSnapshot.mergePinFromPrevious(
+            currentSnapshot(),
+            pinOperationInFlight = pinInFlight || pinStateAuthoritative,
+        )
+        applySnapshot(merged)
+        val serverPinId = topic.pinnedMessageId?.trim().orEmpty()
+        val mergedPinId = merged.pinnedMessageId?.trim().orEmpty()
+        if (serverPinId == mergedPinId && !pinInFlight) {
+            pinStateAuthoritative = false
+            pinHistory = serverPinHistoryFromTopic(topic)
+            pinnedMessages = pinHistory
         }
-        pinHistory = serverPinHistoryFromTopic(topic)
-        pinnedMessages = pinHistory
         applyPinBarUi(messages)
     }
 
@@ -79,22 +98,24 @@ class ForumPinCoordinator(
         applySnapshot(topic.toPinSnapshot())
         pinHistory = serverPinHistoryFromTopic(topic)
         pinnedMessages = pinHistory
+        pinStateAuthoritative = false
         topic.pinnedMessageId?.trim()?.takeIf { it.isNotEmpty() }?.let {
             pinHistoryPrefs.clearDismissedPinBar(scopeKey)
         }
         applyPinBarUi(messages)
     }
 
-    fun onUnpinSuccess(topic: TeamForumTopicDto) {
+    fun onUnpinSuccess(topic: TeamForumTopicDto, messages: List<TeamForumMessageDto> = emptyList()) {
         applySnapshot(topic.toPinSnapshot())
         pinHistory = serverPinHistoryFromTopic(topic)
         pinnedMessages = pinHistory
+        pinStateAuthoritative = false
         if (pinnedMessageId.isNullOrBlank()) {
             pinHistory = emptyList()
             pinnedMessages = emptyList()
             pinBarIndex = 0
         }
-        applyPinBarUi(emptyList())
+        applyPinBarUi(messages)
     }
 
     fun prepareOptimisticPin(
@@ -111,6 +132,7 @@ class ForumPinCoordinator(
         pinnedMessage = preview ?: pinnedMessage?.takeIf { it.id == trimmedId }
         pinnedAt = java.time.Instant.now().toString()
         pinnedByUserId = actorUserId
+        pinStateAuthoritative = true
         applyPinBarUi(messages)
     }
 
@@ -119,6 +141,30 @@ class ForumPinCoordinator(
         pinnedMessage = null
         pinnedAt = null
         pinnedByUserId = null
+        pinHistory = emptyList()
+        pinnedMessages = emptyList()
+        pinStateAuthoritative = true
+        applyPinBarUi(messages)
+    }
+
+    fun prepareOptimisticUnpinOne(messageId: String, messages: List<TeamForumMessageDto>) {
+        val id = messageId.trim()
+        if (id.isEmpty()) return
+        pinHistory = removePinFromHistory(pinHistory, id)
+        pinnedMessages = pinHistory
+        if (pinnedMessageId?.trim() == id) {
+            val next = pinHistory.firstOrNull()
+            if (next != null) {
+                pinnedMessageId = next.id
+                pinnedMessage = next
+            } else {
+                pinnedMessageId = null
+                pinnedMessage = null
+                pinnedAt = null
+                pinnedByUserId = null
+            }
+        }
+        pinStateAuthoritative = true
         applyPinBarUi(messages)
     }
 

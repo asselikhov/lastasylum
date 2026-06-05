@@ -152,3 +152,21 @@ fun chatTimelineIndexForMessageId(
         }
     }
 }
+
+/** Resolve lazy-list index even when deferred timeline derive is still empty/stale. */
+fun chatLazyIndexForMessageId(
+    messages: List<ChatMessage>,
+    derived: ChatMessagesListDerived,
+    messageId: String,
+): Int {
+    val id = messageId.trim()
+    if (id.isEmpty()) return -1
+    val fromDerived = chatTimelineIndexForMessageId(derived.timeline, messages, id)
+    if (fromDerived >= 0) return fromDerived
+    if (messages.isEmpty()) return -1
+    return chatTimelineIndexForMessageId(
+        buildChatMessagesListDerived(messages).timeline,
+        messages,
+        id,
+    )
+}
